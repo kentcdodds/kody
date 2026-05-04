@@ -560,6 +560,145 @@ function createFakeRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
+			case 'show-log-recent':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.lineCount === undefined
+							? 'show log'
+							: `show log ${request.lineCount}`,
+					],
+					stdout: [
+						'2026-05-02 15:50:00 info net: link state change',
+						'2026-05-02 15:50:01 info net: link state change',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-top':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.limit === undefined
+							? 'show ip top'
+							: `show ip top ${request.limit}`,
+					],
+					stdout: [
+						'IP Address    Bytes In  Bytes Out',
+						'------------  --------  ---------',
+						'192.168.0.52  1200000   2400000',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-host':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`show ip host ${request.host}`,
+					],
+					stdout: `Host stats for ${request.host}: rx=120 tx=240`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-sessions':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip sessions'
+							: `show ip sessions ${request.host}`,
+					],
+					stdout: 'Protocol  Source              Destination',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-nat-translations':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip nat'
+							: `show ip nat ${request.host}`,
+					],
+					stdout: 'Active NAT translations',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-dhcp':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip dhcp'
+							: `show ip dhcp ${request.host}`,
+					],
+					stdout: 'Active DHCP leases',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-arp':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip arp'
+							: `show ip arp ${request.host}`,
+					],
+					stdout: 'ARP table contents',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-counters':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip counters'],
+					stdout: 'Interface counters',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-dns-stats':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip dns'],
+					stdout: 'DNS stats and cache',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
 			case 'show-interface':
 				return {
 					id: request.id,
@@ -1228,6 +1367,244 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 	})
 })
 
+test('island router adapter runs the expanded allowlisted CLI command set with proper validation', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const recordedRequests: Array<IslandRouterCommandRequest> = []
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: async (request) => {
+			recordedRequests.push(request)
+			return await createFakeRunner()(request)
+		},
+	})
+	const acknowledgement =
+		islandRouter.writeAcknowledgements.runAllowlistedCliCommand
+	const reason =
+		'The typed tools do not surface this raw CLI view and the targeted output is needed for diagnosis.'
+
+	const cases: Array<{
+		input: Parameters<typeof islandRouter.runAllowlistedCliCommand>[0]
+		expectedCommandLine: string
+		expectedCommandId: string
+	}> = [
+		{
+			input: {
+				command: 'show-ip-top',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip top',
+			expectedCommandId: 'show-ip-top',
+		},
+		{
+			input: {
+				command: 'show-ip-top',
+				limit: 5,
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip top 5',
+			expectedCommandId: 'show-ip-top',
+		},
+		{
+			input: {
+				command: 'show-ip-host',
+				host: '192.168.0.52',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip host 192.168.0.52',
+			expectedCommandId: 'show-ip-host',
+		},
+		{
+			input: {
+				command: 'show-ip-sessions',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip sessions',
+			expectedCommandId: 'show-ip-sessions',
+		},
+		{
+			input: {
+				command: 'show-ip-sessions',
+				host: '192.168.0.52',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip sessions 192.168.0.52',
+			expectedCommandId: 'show-ip-sessions',
+		},
+		{
+			input: {
+				command: 'show-ip-nat',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip nat',
+			expectedCommandId: 'show-ip-nat-translations',
+		},
+		{
+			input: {
+				command: 'show-ip-nat',
+				host: '192.168.0.52',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip nat 192.168.0.52',
+			expectedCommandId: 'show-ip-nat-translations',
+		},
+		{
+			input: {
+				command: 'show-ip-dhcp',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip dhcp',
+			expectedCommandId: 'show-ip-dhcp',
+		},
+		{
+			input: {
+				command: 'show-ip-dhcp',
+				host: '192.168.0.52',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip dhcp 192.168.0.52',
+			expectedCommandId: 'show-ip-dhcp',
+		},
+		{
+			input: {
+				command: 'show-ip-arp',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip arp',
+			expectedCommandId: 'show-ip-arp',
+		},
+		{
+			input: {
+				command: 'show-ip-arp',
+				host: '00:11:22:33:44:55',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip arp 00:11:22:33:44:55',
+			expectedCommandId: 'show-ip-arp',
+		},
+		{
+			input: {
+				command: 'show-ip-arp',
+				host: '00-11-22-33-44-55',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip arp 00:11:22:33:44:55',
+			expectedCommandId: 'show-ip-arp',
+		},
+		{
+			input: {
+				command: 'show-ip-counters',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip counters',
+			expectedCommandId: 'show-ip-counters',
+		},
+		{
+			input: {
+				command: 'show-log-recent',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show log',
+			expectedCommandId: 'show-log-recent',
+		},
+		{
+			input: {
+				command: 'show-log-recent',
+				lineCount: 25,
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show log 25',
+			expectedCommandId: 'show-log-recent',
+		},
+		{
+			input: {
+				command: 'show-ip-dns-stats',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip dns',
+			expectedCommandId: 'show-ip-dns-stats',
+		},
+	]
+
+	for (const { input, expectedCommandLine, expectedCommandId } of cases) {
+		const result = await islandRouter.runAllowlistedCliCommand(input)
+		expect(result.command).toBe(input.command)
+		expect(result.commandId).toBe(expectedCommandId)
+		expect(result.commandLines).toContain(expectedCommandLine)
+	}
+
+	expect(recordedRequests.length).toBeGreaterThanOrEqual(cases.length)
+
+	await expect(
+		islandRouter.runAllowlistedCliCommand({
+			command: 'show-ip-host',
+			host: '',
+			acknowledgeHighRisk: true,
+			reason,
+			confirmation: acknowledgement,
+		}),
+	).rejects.toThrow('host')
+	await expect(
+		islandRouter.runAllowlistedCliCommand({
+			command: 'show-ip-host',
+			host: 'not a; valid host',
+			acknowledgeHighRisk: true,
+			reason,
+			confirmation: acknowledgement,
+		}),
+	).rejects.toThrow('Host must be')
+	await expect(
+		islandRouter.runAllowlistedCliCommand({
+			command: 'show-ip-top',
+			limit: -1,
+			acknowledgeHighRisk: true,
+			reason,
+			confirmation: acknowledgement,
+		}),
+	).rejects.toThrow('positive integer')
+	await expect(
+		islandRouter.runAllowlistedCliCommand({
+			command: 'show-log-recent',
+			lineCount: 0,
+			acknowledgeHighRisk: true,
+			reason,
+			confirmation: acknowledgement,
+		}),
+	).rejects.toThrow('positive integer')
+})
+
 test('island router adapter rejects write operations without host verification and exact confirmation', async () => {
 	using _env = withTemporaryEnv({})
 	createConfig()
@@ -1584,6 +1961,25 @@ test('island router adapter accepts real CLI transcripts that exit with code 1',
 						'Dodds-Island>exit',
 						'Goodbye',
 					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-log-recent':
+			case 'show-ip-top':
+			case 'show-ip-host':
+			case 'show-ip-sessions':
+			case 'show-ip-nat-translations':
+			case 'show-ip-dhcp':
+			case 'show-ip-arp':
+			case 'show-ip-counters':
+			case 'show-ip-dns-stats':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip stub'],
+					stdout: '',
 					stderr: '',
 					exitCode: 1,
 					signal: null,

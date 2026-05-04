@@ -2273,3 +2273,12 @@ export function parseIslandRouterBandwidthUsage(
 		rawOutput: lines.join('\n'),
 	}
 }
+
+export function parseIslandRouterRawOutput(
+	stdout: string,
+	commandLines: Array<string>,
+) {
+	return {
+		rawOutput: sanitizeIslandRouterOutput(stdout, commandLines).join('\n'),
+	}
+}

@@ -51,6 +51,7 @@ import {
 	parseIslandRouterNtpConfig,
 	parseIslandRouterPingResult,
 	parseIslandRouterQosConfig,
+	parseIslandRouterRawOutput,
 	parseIslandRouterRecentEvents,
 	parseIslandRouterRoutingTable,
 	parseIslandRouterSecurityPolicy,
@@ -111,6 +112,9 @@ type SetWanFailoverRequest = WriteOperationRequest & {
 type RunAllowlistedCliCommandRequest = WriteOperationRequest & {
 	command: IslandRouterAllowlistedCliCommand
 	interfaceName?: string
+	host?: string
+	limit?: number
+	lineCount?: number
 }
 
 type SetDhcpReservationRequest = WriteOperationRequest & {
@@ -1025,6 +1029,26 @@ export function createIslandRouterAdapter(input: {
 			})
 		},
 		async runAllowlistedCliCommand(request: RunAllowlistedCliCommandRequest) {
+			const requireHost = (field: string) =>
+				validateIslandRouterHost(
+					assertNonEmpty(request.host ?? '', field),
+				).normalizedValue
+			const requirePositiveInteger = (
+				field: string,
+				value: number | undefined,
+			) => {
+				if (value === undefined) {
+					throw new Error(`${field} is required for this command.`)
+				}
+				if (
+					!Number.isFinite(value) ||
+					!Number.isInteger(value) ||
+					value <= 0
+				) {
+					throw new Error(`${field} must be a positive integer.`)
+				}
+				return value
+			}
 			let commandRequest: IslandRouterCommandRequest
 			switch (request.command) {
 				case 'show-version':
@@ -1051,6 +1075,60 @@ export function createIslandRouterAdapter(input: {
 							assertNonEmpty(request.interfaceName ?? '', 'interfaceName'),
 						),
 					}
+					break
+				case 'show-ip-top':
+					commandRequest = {
+						id: 'show-ip-top',
+						limit:
+							request.limit === undefined
+								? undefined
+								: requirePositiveInteger('limit', request.limit),
+					}
+					break
+				case 'show-ip-host':
+					commandRequest = {
+						id: 'show-ip-host',
+						host: requireHost('host'),
+					}
+					break
+				case 'show-ip-sessions':
+					commandRequest = {
+						id: 'show-ip-sessions',
+						host: request.host === undefined ? undefined : requireHost('host'),
+					}
+					break
+				case 'show-ip-nat':
+					commandRequest = {
+						id: 'show-ip-nat-translations',
+						host: request.host === undefined ? undefined : requireHost('host'),
+					}
+					break
+				case 'show-ip-dhcp':
+					commandRequest = {
+						id: 'show-ip-dhcp',
+						host: request.host === undefined ? undefined : requireHost('host'),
+					}
+					break
+				case 'show-ip-arp':
+					commandRequest = {
+						id: 'show-ip-arp',
+						host: request.host === undefined ? undefined : requireHost('host'),
+					}
+					break
+				case 'show-ip-counters':
+					commandRequest = { id: 'show-ip-counters' }
+					break
+				case 'show-log-recent':
+					commandRequest = {
+						id: 'show-log-recent',
+						lineCount:
+							request.lineCount === undefined
+								? undefined
+								: requirePositiveInteger('lineCount', request.lineCount),
+					}
+					break
+				case 'show-ip-dns-stats':
+					commandRequest = { id: 'show-ip-dns-stats' }
 					break
 				default: {
 					const _exhaustive: never = request.command
@@ -1098,6 +1176,20 @@ export function createIslandRouterAdapter(input: {
 				case 'show-interface':
 				case 'show-ip-interface':
 					parsedResult = parseIslandRouterInterfaceDetails(
+						result.stdout,
+						result.commandLines,
+					)
+					break
+				case 'show-ip-top':
+				case 'show-ip-host':
+				case 'show-ip-sessions':
+				case 'show-ip-nat':
+				case 'show-ip-dhcp':
+				case 'show-ip-arp':
+				case 'show-ip-counters':
+				case 'show-log-recent':
+				case 'show-ip-dns-stats':
+					parsedResult = parseIslandRouterRawOutput(
 						result.stdout,
 						result.commandLines,
 					)

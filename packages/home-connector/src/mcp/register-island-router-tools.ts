@@ -1,6 +1,7 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { type createIslandRouterAdapter } from '../adapters/island-router/index.ts'
+import { type IslandRouterAllowlistedCliCommand } from '../adapters/island-router/types.ts'
 import {
 	buildToolInputSchema,
 	type ToolInputSchema,
@@ -893,6 +894,15 @@ export function registerIslandRouterHomeConnectorTools(input: {
 				'show-interface-summary',
 				'show-interface',
 				'show-ip-interface',
+				'show-ip-top',
+				'show-ip-host',
+				'show-ip-sessions',
+				'show-ip-nat',
+				'show-ip-dhcp',
+				'show-ip-arp',
+				'show-ip-counters',
+				'show-log-recent',
+				'show-ip-dns-stats',
 			])
 			.describe(
 				'Allowlisted read-only Island router CLI command alias. No arbitrary CLI execution is allowed.',
@@ -903,6 +913,31 @@ export function registerIslandRouterHomeConnectorTools(input: {
 			.optional()
 			.describe(
 				'Required only for interface-scoped commands such as show-interface or show-ip-interface.',
+			),
+		host: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional IPv4, IPv6, MAC, or hostname. Required for show-ip-host. Optional filter for show-ip-sessions, show-ip-nat, show-ip-dhcp, and show-ip-arp.',
+			),
+		limit: z
+			.number()
+			.int()
+			.min(1)
+			.max(1000)
+			.optional()
+			.describe(
+				'Optional positive integer limit for show-ip-top to cap the number of returned hosts.',
+			),
+		lineCount: z
+			.number()
+			.int()
+			.min(1)
+			.max(10_000)
+			.optional()
+			.describe(
+				'Optional positive integer line count for show-log-recent to limit recent log lines.',
 			),
 		acknowledgeHighRisk: z
 			.literal(true)
@@ -943,16 +978,15 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		},
 		async (args) => {
 			const result = await islandRouter.runAllowlistedCliCommand({
-				command: args['command'] as
-					| 'show-version'
-					| 'show-clock'
-					| 'show-interface-summary'
-					| 'show-interface'
-					| 'show-ip-interface',
+				command: args['command'] as IslandRouterAllowlistedCliCommand,
 				interfaceName:
 					args['interfaceName'] == null
 						? undefined
 						: String(args['interfaceName']),
+				host: args['host'] == null ? undefined : String(args['host']),
+				limit: args['limit'] == null ? undefined : Number(args['limit']),
+				lineCount:
+					args['lineCount'] == null ? undefined : Number(args['lineCount']),
 				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
 				reason: String(args['reason'] ?? ''),
 				confirmation: String(args['confirmation'] ?? ''),
