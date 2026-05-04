@@ -1,0 +1,21 @@
+{
+  "name": "@kentcdodds/unleashed-wifi",
+  "version": "0.4.0",
+  "type": "module",
+  "description": "High-level Access Networks / RUCKUS Unleashed WiFi controller helpers built on top of the home connector's generic home_access_networks_unleashed_request capability.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "kody": {
+    "id": "unleashed-wifi",
+    "description": "High-level helpers for the Access Networks / RUCKUS Unleashed AJAX API. Wraps the home connector's home_access_networks_unleashed_request capability with status reads, WLAN/AP/DPSK/rogue/alarm management, and controller lifecycle commands.",
+    "tags": [
+      "home",
+      "network",
+      "wifi",
+      "unleashed",
+      "ruckus",
+      "access-networks"
+    ]
+  }
+}
