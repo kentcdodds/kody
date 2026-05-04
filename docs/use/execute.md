@@ -50,7 +50,7 @@ structured result. Split into multiple **execute** calls only when you need new
 user input, confirmation, or a result that changes the plan.
 
 To read field shapes while coding, use **search** with
-**`entity: "{name}:capability"`** for builtin capability schemas, or inspect the
+**`entity: "{name}:capability"`** for builtin capability type definitions, or inspect the
 relevant saved package with **`entity: "{kody_id}:package"`**.
 
 ## Saved packages

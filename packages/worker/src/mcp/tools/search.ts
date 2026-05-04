@@ -289,7 +289,7 @@ function buildRecommendedNextStep(
 		return `Inspect connector detail with \`search({ entity: "${topMatch.connectorName}:connector" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'capability') {
-		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`codemode.${topMatch.name}(args)\`. Add \`includeSchemas: true\` only if you explicitly need raw JSON Schema.`
+		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`codemode.${topMatch.name}(args)\`.`
 	}
 	return undefined
 }
@@ -1159,9 +1159,6 @@ If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_list_remote_connector_status\` / \`meta_get_home_connector_status\` (remote connectors).
 
 Optional **limit** (default 15) and **maxResponseSize** trim low-ranked results.
-Set **includeSchemas: true** on entity detail only when you explicitly need the
-underlying JSON Schema.
-
 Example arguments:
 - \`{ "query": "saved github automation package", "limit": 10 }\`
 - \`{ "query": "preferred org value or saved connector", "limit": 10 }\`
@@ -1505,12 +1502,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.describe(
 						'Max response size in characters before trimming low-ranked results. Defaults to 4000.',
 					),
-				includeSchemas: z
-					.boolean()
-					.optional()
-					.describe(
-						'Only for entity detail: include raw JSON schemas in addition to TypeScript type definitions. Defaults to false.',
-					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
 			},
@@ -1521,7 +1512,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			entity?: string
 			limit?: number
 			maxResponseSize?: number
-			includeSchemas?: boolean
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
@@ -1668,9 +1658,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				)
 
 				if (outcome.mode === 'entity') {
-					const entityResult = formatEntityDetailMarkdown(outcome.detail, {
-						includeSchemas: args.includeSchemas === true,
-					})
+					const entityResult = formatEntityDetailMarkdown(outcome.detail)
 					const timing = finishToolTiming(timingStart)
 					logMcpEvent({
 						category: 'mcp',

@@ -45,7 +45,7 @@ What shows up in \`search\` (before you search)
 
 search
 - \`query\`: natural language; results are ranked (order matters). Optional \`limit\`, \`maxResponseSize\`.
-- \`entity: "{id}:{type}"\` (\`capability\` | \`package\` | \`value\` | \`connector\` | \`secret\`) for one entity’s detail (schemas, usage). If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
+- \`entity: "{id}:{type}"\` (\`capability\` | \`package\` | \`value\` | \`connector\` | \`secret\`) for one entity’s detail (TypeScript call shapes, usage). If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
 - Examples:
   - search({ query: 'saved package for github automation' })
   - search({ query: 'Cloudflare API zones dns workers d1' })
