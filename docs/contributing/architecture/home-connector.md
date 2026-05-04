@@ -142,8 +142,14 @@ The adapter exposes a small command substrate:
   `show running-config`, `show running-config differences`, `show ip dhcp`,
   `show ip routes`, and `show ip recommendations`
 - `router_run_write_operation` for the explicit guarded operations
-  `renew dhcp clients`, `clear log buffer`, and `save running config`, mapped to
-  `clear dhcp-client`, `clear log`, and `write memory`
+  `renew dhcp clients`, `clear log buffer`, `save running config`,
+  `reserve dhcp address`, and `remove dhcp reservation`, mapped to documented
+  Island CLI commands. DHCP reservation writes require typed `ipAddress` and
+  `macAddress` inputs, normalize the MAC address before command construction,
+  and enter global configuration context only for the allowlisted
+  `ip dhcp-reserve <ip> <mac>` / `no ip dhcp-reserve <ip> <mac>` commands.
+  Reservation writes do not automatically run `write memory`; callers can run
+  `save running config` separately when they want persistence.
 
 The adapter intentionally does not expose guessed aliases such as `show-ip-arp`,
 `show-ip-sessions`, or `show-log-recent`, nor unsupported public commands such
@@ -165,6 +171,13 @@ MCP surface requires:
 - typed operation inputs instead of free-form CLI
 - an operator reason and an exact acknowledgement phrase per operation
 - destructive tool annotations and warning-heavy descriptions
+
+DHCP reservation write operations are high risk because they can affect future
+address assignment and connectivity for a device. Kody validates IPv4 and 48-bit
+colon- or hyphen-separated MAC formatting before building the CLI command
+sequence. Island performs final semantic validation, including whether the
+reserved IPv4 address belongs to one of its interface networks. The address does
+not need to be inside an Island DHCP scope.
 
 SSH transport is conservative:
 

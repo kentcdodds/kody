@@ -150,12 +150,24 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		operation: z
 			.enum(islandRouterWriteOperationStrings)
 			.describe(
-				'Explicit high-risk router operation entry. Each operation maps to one documented allowlisted Island CLI command and includes catalog blast-radius metadata in the result.',
+				'Explicit high-risk router operation entry. Each operation maps to one documented allowlisted Island CLI command sequence and includes catalog blast-radius metadata in the result.',
+			),
+		ipAddress: z
+			.string()
+			.optional()
+			.describe(
+				'Required only for reserve dhcp address and remove dhcp reservation. Must be a valid IPv4 address; it does not need to be inside DHCP scope.',
+			),
+		macAddress: z
+			.string()
+			.optional()
+			.describe(
+				'Required only for reserve dhcp address and remove dhcp reservation. Must be a 48-bit colon- or hyphen-separated MAC address and is normalized before command construction.',
 			),
 		acknowledgeHighRisk: z
 			.literal(true)
 			.describe(
-				'Must be true. Set this only when you are highly certain the requested router mutation is necessary and correct.',
+				'Must be true. Set this only when you are highly certain the requested router mutation is necessary and correct. DHCP reservation changes can affect address assignment and future connectivity for a device.',
 			),
 		reason: z
 			.string()
@@ -182,7 +194,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		{
 			name: 'router_run_write_operation',
 			title: 'Run Guarded Island Router Write Operation',
-			description: `${routerWriteDangerNotice} This accepts only explicit typed operation entries (${islandRouterWriteOperationStrings.join(', ')}), never arbitrary CLI text. Review the returned catalog entry for the command and blast radius.`,
+			description: `${routerWriteDangerNotice} This accepts only explicit typed operation entries (${islandRouterWriteOperationStrings.join(', ')}), never arbitrary CLI text. DHCP reservation operations require ipAddress and macAddress, validate those tokens before building CLI commands, and do not automatically save running config; separately run save running config if persistence is desired. Review the returned catalog entry for the command and blast radius.`,
 			inputSchema: writeOperationSchema.inputSchema,
 			sdkInputSchema: writeOperationSchema.sdkInputSchema,
 			annotations: {
@@ -190,13 +202,24 @@ export function registerIslandRouterHomeConnectorTools(input: {
 			},
 		},
 		async (args) => {
-			const result = await islandRouter.runWriteOperation({
-				operation: args['operation'] as IslandRouterWriteOperation,
+			const operation = args['operation'] as IslandRouterWriteOperation
+			const requestBase = {
 				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
 				reason: String(args['reason'] ?? ''),
 				confirmation: String(args['confirmation'] ?? ''),
 				timeoutMs:
 					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			}
+			const result = await islandRouter.runWriteOperation({
+				...requestBase,
+				operation,
+				...(operation === 'reserve dhcp address' ||
+				operation === 'remove dhcp reservation'
+					? {
+							ipAddress: String(args['ipAddress'] ?? ''),
+							macAddress: String(args['macAddress'] ?? ''),
+						}
+					: {}),
 			})
 			return structuredTextResult(
 				`Ran guarded Island router write operation ${result.catalogEntry.operation}.`,

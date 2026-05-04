@@ -11,9 +11,27 @@ const hostnamePattern =
 const sha256FingerprintPattern = /^SHA256:[A-Za-z0-9+/]+={0,2}$/
 const md5FingerprintPattern = /^MD5:(?:[0-9a-fA-F]{2}:){15}[0-9a-fA-F]{2}$/
 
-function normalizeMacAddress(value: string) {
+export function normalizeIslandRouterMacAddress(value: string) {
 	const octets = value.trim().toLowerCase().replaceAll('-', ':').split(':')
 	return octets.map((octet) => octet.padStart(2, '0')).join(':')
+}
+
+export function validateIslandRouterIpv4Address(value: string, field: string) {
+	const trimmed = value.trim()
+	if (isIP(trimmed) !== 4) {
+		throw new Error(`${field} must be a valid IPv4 address.`)
+	}
+	return trimmed
+}
+
+export function validateIslandRouterMacAddress(value: string, field: string) {
+	const trimmed = value.trim()
+	if (!macAddressPattern.test(trimmed)) {
+		throw new Error(
+			`${field} must be a valid 48-bit MAC address using colon or hyphen separated octets.`,
+		)
+	}
+	return normalizeIslandRouterMacAddress(trimmed)
 }
 
 function normalizeIpv6(value: string) {
@@ -48,7 +66,7 @@ export function validateIslandRouterHost(
 		return {
 			kind: 'mac',
 			value: trimmed,
-			normalizedValue: normalizeMacAddress(trimmed),
+			normalizedValue: normalizeIslandRouterMacAddress(trimmed),
 		}
 	}
 

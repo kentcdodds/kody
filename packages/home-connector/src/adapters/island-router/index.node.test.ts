@@ -222,6 +222,26 @@ function createFakeRunner() {
 					['write memory'],
 					'Running configuration saved.',
 				)
+			case 'reserve-dhcp-address':
+				return createResult(
+					request,
+					[
+						'configure terminal',
+						`ip dhcp-reserve ${request.ipAddress} ${request.macAddress}`,
+						'exit',
+					],
+					'DHCP reservation added.',
+				)
+			case 'remove-dhcp-reservation':
+				return createResult(
+					request,
+					[
+						'configure terminal',
+						`no ip dhcp-reserve ${request.ipAddress} ${request.macAddress}`,
+						'exit',
+					],
+					'DHCP reservation removed.',
+				)
 			default: {
 				const _exhaustive: never = request
 				throw new Error(
@@ -428,9 +448,18 @@ test('island router guarded write operations require verification and exact ackn
 		'renew dhcp clients',
 		'clear log buffer',
 		'save running config',
+		'reserve dhcp address',
+		'remove dhcp reservation',
 	] as const) {
 		const result = await islandRouter.runWriteOperation({
 			operation,
+			...(operation === 'reserve dhcp address' ||
+			operation === 'remove dhcp reservation'
+				? {
+						ipAddress: '192.168.0.77',
+						macAddress: '00-00-5E-00-53-7A',
+					}
+				: {}),
 			acknowledgeHighRisk: true,
 			reason,
 			confirmation: islandRouter.writeAcknowledgements.runWriteOperation,
@@ -440,7 +469,14 @@ test('island router guarded write operations require verification and exact ackn
 			riskLevel: 'high',
 			blastRadius: expect.any(String),
 		})
-		expect(result.commandLines).toContain(result.catalogEntry.command)
+		if (
+			operation === 'reserve dhcp address' ||
+			operation === 'remove dhcp reservation'
+		) {
+			expect(result.catalogEntry.command).toContain('dhcp-reserve <ip> <mac>')
+		} else {
+			expect(result.commandLines).toContain(result.catalogEntry.command)
+		}
 	}
 
 	createConfig()
@@ -486,6 +522,102 @@ test('island router guarded write operations require verification and exact ackn
 			confirmation: 'wrong',
 		}),
 	).rejects.toThrow('exact acknowledgement')
+})
+
+test('island router guarded DHCP reservation writes build normalized config commands', async () => {
+	using _env = withTemporaryEnv({})
+	const islandRouter = createIslandRouterAdapter({
+		config: createConfig(),
+		commandRunner: createFakeRunner(),
+	})
+	const reason =
+		'The operator verified this DHCP reservation change is needed for a planned device setup.'
+
+	const reserveResult = await islandRouter.runWriteOperation({
+		operation: 'reserve dhcp address',
+		ipAddress: '192.168.0.77',
+		macAddress: '00-00-5E-00-53-7A',
+		acknowledgeHighRisk: true,
+		reason,
+		confirmation: islandRouter.writeAcknowledgements.runWriteOperation,
+	})
+	expect(reserveResult).toMatchObject({
+		operationId: 'reserve-dhcp-address',
+		commandId: 'reserve-dhcp-address',
+	})
+	expect(reserveResult.commandLines).toEqual([
+		'terminal length 0',
+		'configure terminal',
+		'ip dhcp-reserve 192.168.0.77 00:00:5e:00:53:7a',
+		'exit',
+	])
+	expect(reserveResult.commandLines).not.toContain('write memory')
+
+	const removeResult = await islandRouter.runWriteOperation({
+		operation: 'remove dhcp reservation',
+		ipAddress: '192.168.0.77',
+		macAddress: '00:00:5E:00:53:7A',
+		acknowledgeHighRisk: true,
+		reason,
+		confirmation: islandRouter.writeAcknowledgements.runWriteOperation,
+	})
+	expect(removeResult).toMatchObject({
+		operationId: 'remove-dhcp-reservation',
+		commandId: 'remove-dhcp-reservation',
+	})
+	expect(removeResult.commandLines).toEqual([
+		'terminal length 0',
+		'configure terminal',
+		'no ip dhcp-reserve 192.168.0.77 00:00:5e:00:53:7a',
+		'exit',
+	])
+	expect(removeResult.commandLines).not.toContain('write memory')
+})
+
+test('island router guarded DHCP reservation writes reject malformed and injected tokens', async () => {
+	using _env = withTemporaryEnv({})
+	const islandRouter = createIslandRouterAdapter({
+		config: createConfig(),
+		commandRunner: createFakeRunner(),
+	})
+	const reason =
+		'The operator verified this DHCP reservation change is needed for a planned device setup.'
+	const safeRequest = {
+		operation: 'reserve dhcp address',
+		ipAddress: '192.168.0.77',
+		macAddress: '00:00:5E:00:53:7A',
+		acknowledgeHighRisk: true,
+		reason,
+		confirmation: islandRouter.writeAcknowledgements.runWriteOperation,
+	} as const
+
+	await expect(
+		islandRouter.runWriteOperation({
+			...safeRequest,
+			ipAddress: '999.168.0.77',
+		}),
+	).rejects.toThrow('ipAddress must be a valid IPv4 address')
+
+	await expect(
+		islandRouter.runWriteOperation({
+			...safeRequest,
+			macAddress: '00:00:5E:00:53',
+		}),
+	).rejects.toThrow('macAddress must be a valid 48-bit MAC address')
+
+	await expect(
+		islandRouter.runWriteOperation({
+			...safeRequest,
+			ipAddress: '192.168.0.77\nwrite memory',
+		}),
+	).rejects.toThrow('ipAddress must be a valid IPv4 address')
+
+	await expect(
+		islandRouter.runWriteOperation({
+			...safeRequest,
+			macAddress: '00:00:5E:00:53:7A; write memory',
+		}),
+	).rejects.toThrow('macAddress must be a valid 48-bit MAC address')
 })
 
 test('parsers handle documented Island command output shapes used by status and packages', () => {

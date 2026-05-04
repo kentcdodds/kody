@@ -104,7 +104,8 @@ export const islandRouterReadCommandCatalog = [
 		params: [],
 		riskLevel: 'low',
 		description: 'Read documented DHCP information.',
-		riskNotes: 'May reveal DHCP leases or reservations when firmware includes them.',
+		riskNotes:
+			'May reveal DHCP leases or reservations when firmware includes them.',
 	},
 	{
 		command: 'show ip routes',
@@ -128,6 +129,8 @@ export const islandRouterWriteOperationStrings = [
 	'renew dhcp clients',
 	'clear log buffer',
 	'save running config',
+	'reserve dhcp address',
+	'remove dhcp reservation',
 ] as const
 
 export type IslandRouterWriteOperation =
@@ -162,9 +165,28 @@ export const islandRouterWriteOperationCatalog = [
 		operation: 'save running config',
 		command: 'write memory',
 		riskLevel: 'high',
-		description: 'Persist the current running configuration to startup storage.',
+		description:
+			'Persist the current running configuration to startup storage.',
 		blastRadius:
 			'Can make a bad live configuration survive reboot until manually corrected.',
+	},
+	{
+		operation: 'reserve dhcp address',
+		command: 'configure terminal; ip dhcp-reserve <ip> <mac>; exit',
+		riskLevel: 'high',
+		description:
+			'Add one global Island DHCP reservation for an IPv4 address and MAC address. Save running config separately if persistence is desired.',
+		blastRadius:
+			'Can affect future DHCP address assignment and device connectivity for the reserved device or any device currently using the selected address.',
+	},
+	{
+		operation: 'remove dhcp reservation',
+		command: 'configure terminal; no ip dhcp-reserve <ip> <mac>; exit',
+		riskLevel: 'high',
+		description:
+			'Remove one global Island DHCP reservation for an IPv4 address and MAC address. Save running config separately if persistence is desired.',
+		blastRadius:
+			'Can change future DHCP address assignment and connectivity expectations for the device that previously depended on the reservation.',
 	},
 ] as const satisfies ReadonlyArray<IslandRouterWriteOperationCatalogEntry>
 
@@ -195,6 +217,8 @@ export type IslandRouterCommandId =
 	| 'clear-dhcp-client'
 	| 'clear-log'
 	| 'write-memory'
+	| 'reserve-dhcp-address'
+	| 'remove-dhcp-reservation'
 
 export type IslandRouterCommandRequest =
 	| {
@@ -267,6 +291,18 @@ export type IslandRouterCommandRequest =
 			id: 'write-memory'
 			timeoutMs?: number
 	  }
+	| {
+			id: 'reserve-dhcp-address'
+			ipAddress: string
+			macAddress: string
+			timeoutMs?: number
+	  }
+	| {
+			id: 'remove-dhcp-reservation'
+			ipAddress: string
+			macAddress: string
+			timeoutMs?: number
+	  }
 
 export type IslandRouterCommandResult = {
 	id: IslandRouterCommandId
@@ -287,12 +323,18 @@ export type IslandRouterWriteOperationId =
 	| 'renew-dhcp-clients'
 	| 'clear-log-buffer'
 	| 'save-running-config'
+	| 'reserve-dhcp-address'
+	| 'remove-dhcp-reservation'
 
 export type IslandRouterWriteOperationResult = {
 	operationId: IslandRouterWriteOperationId
 	commandId: Extract<
 		IslandRouterCommandId,
-		'clear-dhcp-client' | 'clear-log' | 'write-memory'
+		| 'clear-dhcp-client'
+		| 'clear-log'
+		| 'write-memory'
+		| 'reserve-dhcp-address'
+		| 'remove-dhcp-reservation'
 	>
 	catalogEntry: IslandRouterWriteOperationCatalogEntry
 	commandLines: Array<string>

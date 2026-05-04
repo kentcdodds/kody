@@ -26,6 +26,8 @@ import {
 	assertIslandRouterConfigured,
 	assertIslandRouterWriteConfigured,
 	getIslandRouterConfigStatus,
+	validateIslandRouterIpv4Address,
+	validateIslandRouterMacAddress,
 } from './validation.ts'
 
 type WriteOperationRequest = {
@@ -43,16 +45,31 @@ type RunReadCommandRequest = {
 	timeoutMs?: number
 }
 
-type RunWriteOperationRequest = WriteOperationRequest & {
-	operation: IslandRouterWriteOperation
-}
+type RunWriteOperationRequest = WriteOperationRequest &
+	(
+		| {
+				operation: Exclude<
+					IslandRouterWriteOperation,
+					'reserve dhcp address' | 'remove dhcp reservation'
+				>
+		  }
+		| {
+				operation: 'reserve dhcp address' | 'remove dhcp reservation'
+				ipAddress: string
+				macAddress: string
+		  }
+	)
 
 const islandRouterWriteAcknowledgements = {
 	runWriteOperation:
 		'I am highly certain running this guarded Island router write operation is necessary right now.',
 } as const
 
-function normalizeLimit(value: number | undefined, fallback: number, max: number) {
+function normalizeLimit(
+	value: number | undefined,
+	fallback: number,
+	max: number,
+) {
 	if (value == null || !Number.isFinite(value)) return fallback
 	return Math.max(1, Math.min(max, Math.trunc(value)))
 }
@@ -220,8 +237,7 @@ async function runHighRiskCommand(input: {
 	)
 	return {
 		operationId: input.operationId,
-		commandId:
-			result.id as IslandRouterWriteOperationResult['commandId'],
+		commandId: result.id as IslandRouterWriteOperationResult['commandId'],
 		commandLines: result.commandLines,
 		stdout: result.stdout,
 		stderr: result.stderr,
@@ -471,6 +487,34 @@ export function createIslandRouterAdapter(input: {
 				case 'save running config':
 					operationId = 'save-running-config'
 					commandRequest = { id: 'write-memory' }
+					break
+				case 'reserve dhcp address':
+					operationId = 'reserve-dhcp-address'
+					commandRequest = {
+						id: 'reserve-dhcp-address',
+						ipAddress: validateIslandRouterIpv4Address(
+							request.ipAddress,
+							'ipAddress',
+						),
+						macAddress: validateIslandRouterMacAddress(
+							request.macAddress,
+							'macAddress',
+						),
+					}
+					break
+				case 'remove dhcp reservation':
+					operationId = 'remove-dhcp-reservation'
+					commandRequest = {
+						id: 'remove-dhcp-reservation',
+						ipAddress: validateIslandRouterIpv4Address(
+							request.ipAddress,
+							'ipAddress',
+						),
+						macAddress: validateIslandRouterMacAddress(
+							request.macAddress,
+							'macAddress',
+						),
+					}
 					break
 				default: {
 					const _exhaustive: never = request.operation

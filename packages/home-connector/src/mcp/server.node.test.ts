@@ -447,9 +447,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			),
 		).toBe(true)
 		expect(
-			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_request',
-			),
+			tools.some((tool) => tool.name === 'access_networks_unleashed_request'),
 		).toBe(true)
 		expect(
 			tools.some(
@@ -458,7 +456,8 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		).toBe(true)
 		expect(
 			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_authenticate_controller',
+				(tool) =>
+					tool.name === 'access_networks_unleashed_authenticate_controller',
 			),
 		).toBe(true)
 		const removedToolNames = [
@@ -867,9 +866,9 @@ test('mcp server exposes island router write tools when host verification is con
 
 	try {
 		const tools = mcp.listTools()
-		expect(tools.some((tool) => tool.name === 'router_run_write_operation')).toBe(
-			true,
-		)
+		expect(
+			tools.some((tool) => tool.name === 'router_run_write_operation'),
+		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
 		).toBe(false)
@@ -889,7 +888,15 @@ test('mcp server exposes island router write tools when host verification is con
 			'renew dhcp clients',
 			'clear log buffer',
 			'save running config',
+			'reserve dhcp address',
+			'remove dhcp reservation',
 		])
+		expect(writeProperties?.ipAddress?.description).toContain(
+			'valid IPv4 address',
+		)
+		expect(writeProperties?.macAddress?.description).toContain(
+			'48-bit colon- or hyphen-separated MAC address',
+		)
 		expect(writeProperties?.acknowledgeHighRisk?.const).toBe(true)
 		expect(writeProperties?.confirmation?.const).toBe(
 			'I am highly certain running this guarded Island router write operation is necessary right now.',
@@ -909,6 +916,31 @@ test('mcp server exposes island router write tools when host verification is con
 			catalogEntry: {
 				operation: 'renew dhcp clients',
 				blastRadius: expect.any(String),
+			},
+		})
+
+		const reserveResult = await mcp.callTool('router_run_write_operation', {
+			operation: 'reserve dhcp address',
+			ipAddress: '192.168.0.77',
+			macAddress: '00-00-5E-00-53-7A',
+			acknowledgeHighRisk: true,
+			reason:
+				'Add the planned DHCP reservation after confirming this is the correct lab device.',
+			confirmation:
+				'I am highly certain running this guarded Island router write operation is necessary right now.',
+		})
+		expect(reserveResult.structuredContent).toMatchObject({
+			operationId: 'reserve-dhcp-address',
+			commandId: 'reserve-dhcp-address',
+			commandLines: [
+				'terminal length 0',
+				'configure terminal',
+				'ip dhcp-reserve 192.168.0.77 00:00:5e:00:53:7a',
+				'exit',
+			],
+			catalogEntry: {
+				operation: 'reserve dhcp address',
+				blastRadius: expect.stringContaining('address assignment'),
 			},
 		})
 

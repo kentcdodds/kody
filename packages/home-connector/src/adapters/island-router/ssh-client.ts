@@ -5,7 +5,9 @@ import path from 'node:path'
 import { type HomeConnectorConfig } from '../../config.ts'
 import {
 	assertIslandRouterConfigured,
+	validateIslandRouterIpv4Address,
 	validateIslandRouterFingerprint,
+	validateIslandRouterMacAddress,
 } from './validation.ts'
 import { isSuccessfulIslandRouterCliSession } from './parsing.ts'
 import {
@@ -287,6 +289,18 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 			return ['clear log']
 		case 'write-memory':
 			return ['write memory']
+		case 'reserve-dhcp-address':
+			return [
+				'configure terminal',
+				`ip dhcp-reserve ${validateIslandRouterIpv4Address(request.ipAddress, 'ipAddress')} ${validateIslandRouterMacAddress(request.macAddress, 'macAddress')}`,
+				'exit',
+			]
+		case 'remove-dhcp-reservation':
+			return [
+				'configure terminal',
+				`no ip dhcp-reserve ${validateIslandRouterIpv4Address(request.ipAddress, 'ipAddress')} ${validateIslandRouterMacAddress(request.macAddress, 'macAddress')}`,
+				'exit',
+			]
 		default: {
 			const _exhaustive: never = request
 			throw new Error(

@@ -70,6 +70,67 @@ test('ssh runner explicitly disables host verification when no known-host or fin
 	}
 })
 
+test('ssh runner builds guarded DHCP reservation commands from validated tokens', async () => {
+	const config = createConfig()
+	const tempDir = await mkdtemp(
+		path.join(os.tmpdir(), 'kody-island-router-test-'),
+	)
+	const binDir = path.join(tempDir, 'bin')
+	const stdinPath = path.join(tempDir, 'ssh-stdin.txt')
+	await mkdir(binDir, { recursive: true })
+	const fakeSshPath = path.join(binDir, 'ssh')
+	await writeFile(
+		fakeSshPath,
+		[
+			'#!/bin/sh',
+			`while IFS= read -r line; do printf '%s\n' "$line" >> "${stdinPath}"; done`,
+			'exit 0',
+		].join('\n'),
+		'utf8',
+	)
+	await chmod(fakeSshPath, 0o755)
+
+	const originalPath = process.env.PATH
+	process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ''}`
+
+	try {
+		const runner = createIslandRouterSshCommandRunner(config)
+		const reserveResult = await runner({
+			id: 'reserve-dhcp-address',
+			ipAddress: '192.168.3.77',
+			macAddress: '00-00-5E-00-53-7A',
+			timeoutMs: 1000,
+		})
+		expect(reserveResult.commandLines).toEqual([
+			'terminal length 0',
+			'configure terminal',
+			'ip dhcp-reserve 192.168.3.77 00:00:5e:00:53:7a',
+			'exit',
+		])
+
+		const removeResult = await runner({
+			id: 'remove-dhcp-reservation',
+			ipAddress: '192.168.3.77',
+			macAddress: '00:00:5E:00:53:7A',
+			timeoutMs: 1000,
+		})
+		expect(removeResult.commandLines).toEqual([
+			'terminal length 0',
+			'configure terminal',
+			'no ip dhcp-reserve 192.168.3.77 00:00:5e:00:53:7a',
+			'exit',
+		])
+
+		const stdin = await readFile(stdinPath, 'utf8')
+		expect(stdin).toContain('ip dhcp-reserve 192.168.3.77 00:00:5e:00:53:7a')
+		expect(stdin).toContain('no ip dhcp-reserve 192.168.3.77 00:00:5e:00:53:7a')
+		expect(stdin).not.toContain('write memory')
+	} finally {
+		process.env.PATH = originalPath
+		await rm(tempDir, { recursive: true, force: true })
+	}
+})
+
 test('ssh runner treats completed Island CLI sessions with exit code 1 as success', async () => {
 	const config = createConfig()
 	const tempDir = await mkdtemp(
