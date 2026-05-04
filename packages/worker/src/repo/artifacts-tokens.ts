@@ -23,12 +23,12 @@ export async function revokeStaleArtifactsTokens(
 		}
 		try {
 			await repo.revokeToken(token.id)
+			revoked += 1
 		} catch (error) {
 			if (!(error instanceof CloudflareApiError && error.status === 404)) {
 				throw error
 			}
 		}
-		revoked += 1
 	}
 	return {
 		checked: tokens.length,

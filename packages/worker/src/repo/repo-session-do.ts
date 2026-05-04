@@ -7,6 +7,7 @@ import {
 } from '@cloudflare/shell'
 import { applyPatch, formatPatch, parsePatch } from 'diff'
 import { createGit } from '@cloudflare/shell/git'
+import * as git from 'isomorphic-git'
 import {
 	deleteRepoSession,
 	getRepoSessionById,
@@ -456,18 +457,15 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (input.ancestor === input.descendant) {
 			return true
 		}
-		const commits = await this.git.log({
+		return git.isDescendent({
+			fs: this.fileSystem as unknown as Parameters<
+				typeof git.isDescendent
+			>[0]['fs'],
 			dir: repoSessionWorkspacePrefix,
-			depth: 1000,
+			oid: input.descendant,
+			ancestor: input.ancestor,
+			depth: -1,
 		})
-		const commitIds = commits.map((commit) => commit.oid)
-		const descendantIndex = commitIds.indexOf(input.descendant)
-		const ancestorIndex = commitIds.indexOf(input.ancestor)
-		return (
-			descendantIndex >= 0 &&
-			ancestorIndex >= 0 &&
-			ancestorIndex >= descendantIndex
-		)
 	}
 
 	private async writeCheckStatus(status: RepoSessionCheckStatus) {

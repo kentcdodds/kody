@@ -185,6 +185,47 @@ test('refuses non-fast-forward publish unless allowForce is true', async () => {
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
+test('allows non-fast-forward publish when allowForce is true', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+	})
+
+	const result = await publishFromExternalRef({
+		env: { APP_DB: {} } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-rewritten',
+		isFastForward: false,
+		allowForce: true,
+		workspace: workspace(),
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(result).toEqual(
+		expect.objectContaining({
+			status: 'published',
+			previous_commit: 'commit-old',
+			published_commit: 'commit-rewritten',
+		}),
+	)
+	expect(mockModule.runRepoChecks).toHaveBeenCalledTimes(1)
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-rewritten',
+		}),
+	)
+})
+
 test('check failure leaves D1 untouched', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({

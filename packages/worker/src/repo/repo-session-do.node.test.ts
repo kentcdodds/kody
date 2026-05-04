@@ -901,6 +901,29 @@ test('readWithRetry distinguishes null from other falsy values', async () => {
 	expect(eventualRead).toHaveBeenCalledTimes(3)
 })
 
+test('publishFromExternalRef rejects stale expected HEAD values', async () => {
+	setCommonSessionFixtures()
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+		defaultBranch: 'main',
+		commit: 'commit-new',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.publishFromExternalRef({
+			sessionId: 'external-publish-source-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-stale',
+			expectedHead: 'commit-stale',
+		}),
+	).rejects.toThrow(
+		'Artifacts HEAD changed from "commit-stale" to "commit-new" before publish.',
+	)
+})
+
 test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
 	// Guards against a regression where the cache, populated by openSession,
 	// would shadow fresh D1 reads and hide updates such as rebaseSession
