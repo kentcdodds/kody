@@ -7,19 +7,21 @@ The **search** tool finds **built-in capabilities**, **saved packages**,
 ## Queries and ranking
 
 Pass a **`query`** string that describes what you want to do. Results are
-ranked; order in the response matters.
+ranked; order in the response matters. Query responses are intentionally
+compact: the markdown response is a short list of matches with the result type,
+title, one-line summary, and entity reference when applicable.
 
-When a tool call also includes **`memoryContext`**, Kody may attach a small
-number of relevant long-term memories that have not already been surfaced for
-that **`conversationId`**.
+When a tool call also includes **`memoryContext`**, Kody may include relevant
+long-term memory metadata in structured content, but broad query markdown stays
+focused on the ranked matches.
 
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
 how long the ranked lookup or entity lookup took.
 
 Optional **`limit`** caps how many ranked hits return. Optional
-**`maxResponseSize`** trims low-ranked matches when the response must stay
-small.
+**`maxResponseSize`** trims low-ranked matches against the compact list when the
+response must stay small.
 
 ## Single-entity detail
 
@@ -57,16 +59,11 @@ for an empty ranked list.
 Saved **packages** require a signed-in MCP user. Capabilities and built-in
 behavior work without user-scoped data.
 
-Package search hits summarize whether the package has an app surface and, when
-they do, include a direct `open_generated_ui({ kody_id: "..." })` hint.
-When a saved package includes a root `README` file, ranked search hits include a
-short README excerpt so agents can quickly see usage notes, examples, or
-maintenance caveats without separately inspecting the package repo. Exact
-package detail (`entity: "my-package:package"`) includes the README content, or
-a substantial leading section when the README is long.
-Connector hits also include operational details such as the token URL, API base
-URL, required hosts, and related stored value/secret names so common
-setup/debugging work can often proceed without an immediate detail lookup.
+Package and connector query hits stay summary-only. Exact package detail
+(`entity: "my-package:package"`) includes package app, export, job, retriever,
+and README metadata. Exact connector detail (`entity: "github:connector"`)
+includes operational details such as token URL, API base URL, required hosts,
+and related stored value/secret names.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

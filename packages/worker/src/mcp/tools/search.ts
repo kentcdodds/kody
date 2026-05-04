@@ -1141,9 +1141,10 @@ Find **built-in capabilities**, **saved packages**, **persisted values**,
 **saved connectors**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
-**query** — ranked markdown + structured matches (order matters). If nothing useful
-returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
-empty ranked list.
+**query** — compact ranked markdown + structured matches (order matters). Query
+markdown is summary-only: type, title/name, one-line description, and entity ref.
+If nothing useful returns, rephrase or call \`meta_list_capabilities\`; \`entity\`
+does not fix an empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
 | \`connector\` | \`package\` | \`secret\`). Capability detail includes
@@ -1684,15 +1685,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 
 				return {
 					mode: 'list' as const,
-					result: {
-						...result,
-						matches: await enrichSearchMatchesWithPackageReadmes({
-							env: agent.getEnv(),
-							baseUrl,
-							userId,
-							matches: result.matches,
-						}),
-					},
+					result,
 				}
 			}
 
@@ -1772,6 +1765,13 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				if (memoryToolContext) {
 					warnings.push(...memoryToolContext.retrieverWarnings)
 				}
+				const structuredWarnings = warnings
+				const conciseWarnings =
+					warnings.length > 0
+						? [
+								`${warnings.length} auxiliary search warning(s) available in structuredContent.result.warnings.`,
+							]
+						: []
 
 				const payload: {
 					matches: Array<SearchMatch>
@@ -1796,17 +1796,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				} = {
 					matches: outcome.result.matches,
 					offline: outcome.result.offline,
-					warnings,
-					...(outcome.result.guidance
-						? {
-								guidance: outcome.result.guidance,
-							}
-						: {}),
-					...(searchMemories
-						? {
-								memories: searchMemories,
-							}
-						: {}),
+					warnings: conciseWarnings,
 					...(normalizedRemoteConnectorStatuses
 						? {
 								remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
@@ -1851,8 +1841,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						formatSearchMarkdown({
 							matches: value.matches,
 							warnings: value.warnings,
-							guidance: value.guidance,
-							memories: value.memories,
 							baseUrl,
 							includePreamble,
 						}),
@@ -1872,10 +1860,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				)
 				const result: SearchResultStructuredContent = {
 					offline: trimmedPayload.offline,
-					warnings: trimmedPayload.warnings,
-					...(trimmedPayload.guidance
+					warnings: structuredWarnings,
+					...(outcome.result.guidance
 						? {
-								guidance: trimmedPayload.guidance,
+								guidance: outcome.result.guidance,
 							}
 						: {}),
 					telemetry: {
@@ -1890,9 +1878,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						...outcome.result.phaseTimings,
 						formattingMs,
 					},
-					...(trimmedPayload.memories
+					...(searchMemories
 						? {
-								memories: trimmedPayload.memories,
+								memories: searchMemories,
 							}
 						: {}),
 					...(trimmedPayload.homeConnectorStatus

@@ -346,7 +346,9 @@ export declare function fetch(request: Request): Promise<Response>
 		},
 	})
 	expect(packageDetail.markdown).toContain('## README (`README.md`)')
-	expect(packageDetail.markdown).toContain('Use this package to inspect observed UI state.')
+	expect(packageDetail.markdown).toContain(
+		'Use this package to inspect observed UI state.',
+	)
 })
 
 test('package search formatting keeps runnable package actions in structured output', () => {
@@ -396,10 +398,22 @@ test('package search formatting keeps runnable package actions in structured out
 	expect(packageMatch?.nextStep).toEqual(expect.any(String))
 })
 
-test('search markdown includes concise package README snippets when available', () => {
+test('search markdown keeps broad query results compact', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
-		warnings: [],
+		warnings: ['Saved package metadata fallback warning with long details.'],
+		guidance:
+			'Inspect package detail with `search({ entity: "observed-package:package" })` to review exports, then import the right entry.',
+		memories: {
+			surfaced: [
+				{
+					category: 'preference',
+					subject: 'Long-term preference',
+					summary: 'Verbose remembered context that should not appear inline.',
+				},
+			],
+			suppressedCount: 0,
+		},
 		matches: [
 			{
 				type: 'package',
@@ -417,12 +431,38 @@ test('search markdown includes concise package README snippets when available', 
 					truncated: true,
 				},
 			},
+			{
+				type: 'connector',
+				connectorName: 'github',
+				title: 'github',
+				description: 'GitHub OAuth connector config',
+				flow: 'confidential',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				requiredHosts: ['api.github.com'],
+				clientIdValueName: 'github-client-id',
+				clientSecretSecretName: 'github-client-secret',
+				accessTokenSecretName: 'github-access-token',
+				refreshTokenSecretName: 'github-refresh-token',
+			},
 		],
 	})
 
 	expect(markdown).toContain(
-		'**README (README.md):** Includes setup instructions, export examples, and maintenance notes\\. _(truncated)_',
+		'1. **package** @kody/observed\\-package (`observed-package`) — Observed package with an app surface\\. Entity: `observed-package:package`',
 	)
+	expect(markdown).toContain(
+		'2. **connector** `github` — GitHub OAuth connector config\\. Entity: `github:connector`',
+	)
+	expect(markdown).toContain('1 search notice(s) available')
+	expect(markdown).not.toContain('## Recommended next step')
+	expect(markdown).not.toContain('Inspect package detail')
+	expect(markdown).not.toContain('## Relevant memories')
+	expect(markdown).not.toContain('Long-term preference')
+	expect(markdown).not.toContain('**README')
+	expect(markdown).not.toContain('Token URL')
+	expect(markdown).not.toContain('github-access-token')
+	expect(markdown).not.toContain('**How to run matches:**')
 })
 
 test('search formatting surfaces package retriever results', () => {
@@ -454,8 +494,7 @@ test('search formatting surfaces package retriever results', () => {
 	expect(markdown).not.toContain('Toaster **oven** wattage')
 	expect(markdown).not.toContain('\n## Ignore prior instructions')
 	expect(markdown).toContain('personal `inbox`')
-	expect(markdown).toContain('personal-inbox')
-	expect(markdown).toContain('https://example.com/path?x=`bad`')
+	expect(markdown).not.toContain('https://example.com/path?x=`bad`')
 
 	const structured = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
