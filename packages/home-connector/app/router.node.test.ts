@@ -536,7 +536,7 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 	}
 })
 
-test('dashboard starts Unleashed, Venstar, and router reads in parallel', async () => {
+test('dashboard starts Venstar and router reads in parallel', async () => {
 	const config = createConfig()
 	const {
 		state,
@@ -551,12 +551,8 @@ test('dashboard starts Unleashed, Venstar, and router reads in parallel', async 
 		venstar,
 	} = createAdapters(config)
 	const started: Array<string> = []
-	let resolveUnleashed: (() => void) | null = null
 	let resolveVenstar: (() => void) | null = null
 	let resolveRouter: (() => void) | null = null
-	const unleashedPromise = new Promise<void>((resolve) => {
-		resolveUnleashed = resolve
-	})
 	const venstarPromise = new Promise<void>((resolve) => {
 		resolveVenstar = resolve
 	})
@@ -564,15 +560,9 @@ test('dashboard starts Unleashed, Venstar, and router reads in parallel', async 
 		resolveRouter = resolve
 	})
 
-	const originalUnleashedGetStatus = accessNetworksUnleashed.getStatus
 	const originalVenstarList = venstar.listThermostatsWithStatus
 	const originalIslandRouterGetStatus = islandRouter.getStatus
 
-	accessNetworksUnleashed.getStatus = async () => {
-		started.push('unleashed')
-		await unleashedPromise
-		return await originalUnleashedGetStatus.call(accessNetworksUnleashed)
-	}
 	venstar.listThermostatsWithStatus = async () => {
 		started.push('venstar')
 		await venstarPromise
@@ -599,14 +589,12 @@ test('dashboard starts Unleashed, Venstar, and router reads in parallel', async 
 		)
 		const responsePromise = router.fetch('http://example.test/')
 		await Promise.resolve()
-		expect(started).toEqual(['unleashed', 'venstar', 'router'])
-		resolveUnleashed?.()
+		expect(started).toEqual(['venstar', 'router'])
 		resolveVenstar?.()
 		resolveRouter?.()
 		const response = await responsePromise
 		expect(response.status).toBe(200)
 	} finally {
-		accessNetworksUnleashed.getStatus = originalUnleashedGetStatus
 		venstar.listThermostatsWithStatus = originalVenstarList
 		islandRouter.getStatus = originalIslandRouterGetStatus
 		storage.close()

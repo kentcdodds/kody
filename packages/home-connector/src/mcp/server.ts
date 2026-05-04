@@ -102,7 +102,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, typed allowlisted Island router SSH operations, and Access Networks Unleashed WiFi controller reads/writes. Island router and Access Networks Unleashed write operations are high risk and must be used only when highly certain. Arbitrary CLI execution is never exposed. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				"Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, typed allowlisted Island router SSH operations, and a single generic Access Networks / RUCKUS Unleashed WiFi raw-request capability. Use 'access_networks_unleashed_scan_controllers', 'access_networks_unleashed_adopt_controller', 'access_networks_unleashed_set_credentials', and 'access_networks_unleashed_authenticate_controller' to wire up a controller, then 'access_networks_unleashed_request' to issue authenticated AJAX requests. Island router and Access Networks Unleashed write operations are high risk and must be used only when highly certain. Arbitrary CLI execution is never exposed. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.",
 		},
 	)
 

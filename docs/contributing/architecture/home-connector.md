@@ -197,24 +197,30 @@ now managed locally through the connector's SQLite database:
 - `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` can still raise the default 8s
   request timeout for slower controllers or networks
 
-The adapter exposes read-only tools for controller status, access point
-inventory, active and inactive clients, blocked clients, active/known/blocked
-rogue access points, WLAN/SSID configuration, AP groups, DPSKs, mesh topology,
-recent events, active alarms, raw syslog, per-VAP throughput, and per-WLAN-group
-and per-AP-group statistics. It also exposes a typed write surface for client
-block/unblock, WLAN enable/disable, WLAN passphrase changes, WLAN
-add/edit/clone/delete, WLAN-group add/clone/delete, AP restart, and AP LED
-visibility changes (including dedicated `hide_ap_leds` and `show_ap_leds`
-shortcuts).
+Beyond controller lifecycle (scan/list/adopt/remove/credentials/authenticate),
+the adapter exposes a single generic capability:
 
-The write tools are deliberately warning-heavy. Each requires:
+- `access_networks_unleashed_request` posts an authenticated XML payload to the
+  adopted controller's `POST {host}/admin/_cmdstat.jsp` endpoint. It accepts
+  `action` (`getstat` | `setconf` | `docmd`), `comp` (Unleashed component name
+  such as `system`, `stamgr`, `apStat`, `eventd`), `xmlBody` (inner XML appended
+  inside the `<ajax-request>` envelope), an optional `updater` string (defaults
+  to `<comp>.<timestamp>.<rand>`), and an optional `allowInsecureTls` override.
+  Responses are returned as both raw XML and a best-effort parsed object.
+
+The capability is deliberately warning-heavy because `setconf` and `docmd`
+actions can disconnect clients, take SSIDs offline, reboot access points, or
+otherwise disrupt local connectivity. Each call requires:
 
 - `acknowledgeHighRisk: true`
-- an operator reason
-- an exact operation-specific confirmation phrase
+- an operator reason of at least 20 characters
+- the exact confirmation phrase rejected for any other value
 
-The adapter does not expose arbitrary Unleashed CLI or arbitrary AJAX payload
-execution.
+Higher-level Unleashed flows (list APs, list clients, edit WLANs, block clients,
+restart APs, etc.) are intended to live in saved Kody packages that wrap
+`home_access_networks_unleashed_request` through `kody:runtime`. The home
+connector itself does not expose any typed Unleashed CLI or per-operation
+capabilities.
 
 ## Local persistence
 

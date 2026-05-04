@@ -208,12 +208,11 @@ async function loadDashboardSnapshot(
 	const bondStatus = deps.bond.getStatus()
 	const jellyfishStatus = deps.jellyfish.getStatus()
 	const venstarDiscoveryStatus = deps.venstar.getStatus()
-	const [
-		accessNetworksUnleashedStatus,
-		venstarStatus,
-		loadedIslandRouterStatus,
-	] = await Promise.all([
-		deps.accessNetworksUnleashed.getStatus(),
+	const accessNetworksUnleashedControllers =
+		deps.accessNetworksUnleashed.listControllers()
+	const accessNetworksUnleashedAdoptedController =
+		deps.accessNetworksUnleashed.getAdoptedController()
+	const [venstarStatus, loadedIslandRouterStatus] = await Promise.all([
 		deps.venstar.listThermostatsWithStatus(),
 		input.islandRouterStatus
 			? Promise.resolve(input.islandRouterStatus)
@@ -247,9 +246,9 @@ async function loadDashboardSnapshot(
 			diagnosticsCaptured: deps.state.lutronDiscoveryDiagnostics != null,
 		},
 		accessNetworksUnleashed: {
-			controllers: accessNetworksUnleashedStatus.controllers.length,
-			adopted: accessNetworksUnleashedStatus.controller ? 1 : 0,
-			withCredentials: accessNetworksUnleashedStatus.controllers.filter(
+			controllers: accessNetworksUnleashedControllers.length,
+			adopted: accessNetworksUnleashedAdoptedController ? 1 : 0,
+			withCredentials: accessNetworksUnleashedControllers.filter(
 				(controller) => controller.hasStoredCredentials,
 			).length,
 			diagnosticsCaptured:
@@ -306,7 +305,7 @@ async function loadDashboardSnapshot(
 			managedEndpoints:
 				rokuAdopted.length +
 				lutronStatus.processors.length +
-				(accessNetworksUnleashedStatus.controller ? 1 : 0) +
+				(accessNetworksUnleashedAdoptedController ? 1 : 0) +
 				sonosStatus.adopted.length +
 				samsungStatus.adopted.length +
 				bondStatus.adopted.length +
@@ -315,8 +314,8 @@ async function loadDashboardSnapshot(
 			unmanagedDiscoveries:
 				rokuDiscovered.length +
 				Math.max(
-					accessNetworksUnleashedStatus.controllers.length -
-						(accessNetworksUnleashedStatus.controller ? 1 : 0),
+					accessNetworksUnleashedControllers.length -
+						(accessNetworksUnleashedAdoptedController ? 1 : 0),
 					0,
 				) +
 				sonosStatus.discovered.length +

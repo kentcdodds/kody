@@ -71,207 +71,6 @@ afterEach(() => {
 	globalThis.fetch = originalFetch
 })
 
-test('unblock client preserves unrelated system ACL XML', async () => {
-	using _env = createTemporaryEnv({})
-	const config = createConfig()
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const href = String(url)
-		if (init?.method === 'GET' && href === 'https://unleashed.local') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://unleashed.local/',
-			})
-		}
-		if (init?.method === 'GET' && href.includes('username=admin')) {
-			return response(null, {
-				status: 302,
-				headers: {
-					HTTP_X_CSRF_TOKEN: 'csrf-token',
-					'set-cookie': 'JSESSIONID=abc; Path=/admin',
-				},
-				url: href,
-			})
-		}
-		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
-			return response(null, {
-				status: 200,
-				url: 'https://unleashed.local/admin/wsg/login.jsp',
-			})
-		}
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><acl-list>',
-						"<acl id='1' name='System' description='Keep me' default-mode='allow' EDITABLE='false' custom='preserve'>",
-						"<deny mac='aa:bb:cc:dd:ee:ff' type='single'/>",
-						"<deny mac='11:22:33:44:55:66' type='single'/>",
-						"<allow mac='77:88:99:aa:bb:cc' type='single'/>",
-						'</acl>',
-						'</acl-list></ajax-response>',
-					].join(''),
-				)
-			}
-			return response('<ajax-response><xmsg status="0"/></ajax-response>')
-		}
-		throw new Error(`Unexpected fetch ${href}`)
-	})
-	globalThis.fetch = fetchMock as typeof fetch
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).unblockClient('aa:bb:cc:dd:ee:ff')
-
-	const updateBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='updobj'"))
-	expect(updateBody).toContain("custom='preserve'")
-	expect(updateBody).toContain("<allow mac='77:88:99:aa:bb:cc' type='single'/>")
-	expect(updateBody).toContain("<deny mac='11:22:33:44:55:66' type='single'/>")
-	expect(updateBody).not.toContain("<deny mac='aa:bb:cc:dd:ee:ff'")
-})
-
-test('post XML redirects reset session and stop after one reauthentication', async () => {
-	const config = createConfig()
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const href = String(url)
-		if (init?.method === 'GET' && href === 'https://unleashed.local') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://unleashed.local/',
-			})
-		}
-		if (init?.method === 'GET' && href.includes('username=admin')) {
-			return response(null, {
-				status: 302,
-				headers: {
-					HTTP_X_CSRF_TOKEN: 'csrf-token',
-					'set-cookie': 'JSESSIONID=abc; Path=/admin',
-				},
-				url: href,
-			})
-		}
-		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
-			return response(null, {
-				status: 200,
-				url: 'https://unleashed.local/admin/wsg/login.jsp',
-			})
-		}
-		if (href.endsWith('/_conf.jsp')) {
-			return response(null, { status: 302 })
-		}
-		throw new Error(`Unexpected fetch ${href}`)
-	})
-	globalThis.fetch = fetchMock as typeof fetch
-
-	await expect(
-		createAccessNetworksUnleashedAjaxClient({
-			config,
-			controller: createController(),
-		}).listWlans(),
-	).rejects.toThrow('redirected after reauthentication')
-})
-
-test('mutating post XML does not retry after session redirect', async () => {
-	const config = createConfig()
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const href = String(url)
-		if (init?.method === 'GET' && href === 'https://unleashed.local') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://unleashed.local/',
-			})
-		}
-		if (init?.method === 'GET' && href.includes('username=admin')) {
-			return response(null, {
-				status: 302,
-				headers: {
-					HTTP_X_CSRF_TOKEN: 'csrf-token',
-					'set-cookie': 'JSESSIONID=abc; Path=/admin',
-				},
-				url: href,
-			})
-		}
-		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
-			return response(null, {
-				status: 200,
-				url: 'https://unleashed.local/admin/wsg/login.jsp',
-			})
-		}
-		if (href.endsWith('/_cmdstat.jsp')) {
-			return response(null, { status: 302 })
-		}
-		throw new Error(`Unexpected fetch ${href}`)
-	})
-	globalThis.fetch = fetchMock as typeof fetch
-
-	await expect(
-		createAccessNetworksUnleashedAjaxClient({
-			config,
-			controller: createController(),
-		}).restartAccessPoint('24:79:de:ad:be:ef'),
-	).rejects.toThrow('redirected during a command')
-
-	const loginAttempts = fetchMock.mock.calls.filter((call) =>
-		String(call[0]).includes('username=admin'),
-	)
-	expect(loginAttempts).toHaveLength(1)
-})
-
-test('concurrent reads share one login flow', async () => {
-	const config = createConfig()
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const href = String(url)
-		if (init?.method === 'GET' && href === 'https://unleashed.local') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://unleashed.local/',
-			})
-		}
-		if (init?.method === 'GET' && href.includes('username=admin')) {
-			return response(null, {
-				status: 302,
-				headers: {
-					HTTP_X_CSRF_TOKEN: 'csrf-token',
-					'set-cookie': 'JSESSIONID=abc; Path=/admin',
-				},
-				url: href,
-			})
-		}
-		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
-			await new Promise((resolve) => setTimeout(resolve, 5))
-			return response(null, {
-				status: 200,
-				url: 'https://unleashed.local/admin/wsg/login.jsp',
-			})
-		}
-		if (href.endsWith('/_cmdstat.jsp')) {
-			return response(
-				'<ajax-response><client mac="aa:bb:cc:dd:ee:ff"/></ajax-response>',
-			)
-		}
-		throw new Error(`Unexpected fetch ${href}`)
-	})
-	globalThis.fetch = fetchMock as typeof fetch
-	const client = createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	})
-
-	await Promise.all([client.listClients(), client.listClients()])
-
-	const loginAttempts = fetchMock.mock.calls.filter((call) =>
-		String(call[0]).includes('username=admin'),
-	)
-	expect(loginAttempts).toHaveLength(1)
-})
-
 type FetchHandler = (
 	url: string,
 	init: RequestInit | undefined,
@@ -319,425 +118,190 @@ function installFetch(...handlers: Array<FetchHandler>) {
 	return fetchMock
 }
 
-test('list blocked clients returns deny entries from system ACL', async () => {
+test('request posts a fully formed ajax-request envelope to _cmdstat.jsp', async () => {
 	const config = createConfig()
-	installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='acl-list'")) {
-				return response(
-					[
-						'<ajax-response><acl-list>',
-						"<acl id='1' name='System' default-mode='allow' EDITABLE='false'>",
-						"<deny mac='aa:bb:cc:dd:ee:ff' type='single'/>",
-						"<deny mac='11:22:33:44:55:66' type='single'/>",
-						'</acl>',
-						'</acl-list></ajax-response>',
-					].join(''),
-				)
-			}
-		}
-		return null
-	})
-
-	const blocked = await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).listBlockedClients()
-	expect(blocked).toHaveLength(2)
-	expect(blocked.map((entry) => entry['mac'])).toEqual([
-		'aa:bb:cc:dd:ee:ff',
-		'11:22:33:44:55:66',
-	])
-})
-
-test('get syslog extracts text from xmsg/res body', async () => {
-	const config = createConfig()
-	installFetch(loginHandler(), (href, init) => {
+	const fetchMock = installFetch(loginHandler(), (href) => {
 		if (href.endsWith('/_cmdstat.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("xcmd='get-syslog'") || body.includes('get-syslog')) {
-				return response(
-					'<ajax-response><xmsg><res>line1\nline2</res></xmsg></ajax-response>',
-				)
-			}
-		}
-		return null
-	})
-	const syslog = await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).getSyslog()
-	expect(syslog).toContain('line1')
-	expect(syslog).toContain('line2')
-})
-
-test('list blocked clients returns empty when no ACL list is present', async () => {
-	const config = createConfig()
-	installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='acl-list'")) {
-				return response('<ajax-response><acl-list/></ajax-response>')
-			}
+			return response(
+				'<ajax-response><system name="Unleashed" version="200.15"/></ajax-response>',
+			)
 		}
 		return null
 	})
 
-	const blocked = await createAccessNetworksUnleashedAjaxClient({
+	const client = createAccessNetworksUnleashedAjaxClient({
 		config,
 		controller: createController(),
-	}).listBlockedClients()
-	expect(blocked).toEqual([])
+	})
+	const result = await client.request({
+		action: 'getstat',
+		comp: 'system',
+		xmlBody: '<sysinfo/>',
+	})
+
+	expect(result.action).toBe('getstat')
+	expect(result.comp).toBe('system')
+	expect(result.updater).toMatch(/^system\.\d+\.[a-z0-9]+$/)
+	expect(result.xml).toContain('<system')
+	expect(result.parsed).toEqual({
+		'ajax-response': {
+			system: {
+				'@name': 'Unleashed',
+				'@version': '200.15',
+			},
+		},
+	})
+
+	const cmdCall = fetchMock.mock.calls.find(([url]) =>
+		String(url).endsWith('/_cmdstat.jsp'),
+	)
+	const body = String(cmdCall?.[1]?.body ?? '')
+	expect(body.startsWith('request=')).toBe(true)
+	const decoded = decodeURIComponent(body.slice('request='.length))
+	expect(decoded).toContain("action='getstat'")
+	expect(decoded).toContain("comp='system'")
+	expect(decoded).toContain('<sysinfo/>')
+	expect(decoded).toMatch(/updater='system\.\d+\.[a-z0-9]+'/)
+	expect(new Headers(cmdCall?.[1]?.headers).get('Content-Type')).toBe(
+		'application/x-www-form-urlencoded',
+	)
 })
 
-test('list blocked clients ignores ACLs whose id is not 1', async () => {
+test('request honors a caller-supplied updater', async () => {
 	const config = createConfig()
-	installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='acl-list'")) {
-				return response(
-					[
-						'<ajax-response><acl-list>',
-						"<acl id='2' name='Custom' default-mode='deny'>",
-						"<deny mac='aa:bb:cc:dd:ee:ff' type='single'/>",
-						'</acl>',
-						'</acl-list></ajax-response>',
-					].join(''),
-				)
-			}
-		}
-		return null
-	})
-
-	const blocked = await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).listBlockedClients()
-	expect(blocked).toEqual([])
-})
-
-test('set wlan password posts an updated wlansvc with a new passphrase', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><wlansvc-list>',
-						"<wlansvc id='1' name='Main' ssid='Main' encryption='wpa2'>",
-						"<wpa cipher='aes' passphrase='oldpass' dynamic-psk='disabled'/>",
-						'</wlansvc>',
-						'</wlansvc-list></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='updobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).setWlanPassword('Main', 'newpass-secret')
-
-	const updateBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='updobj'"))
-	expect(updateBody).toContain("passphrase='newpass-secret'")
-	expect(updateBody).not.toContain("passphrase='oldpass'")
-	expect(updateBody).toContain("name='Main'")
-})
-
-test('set wlan password preserves dollar signs and ampersands in the passphrase', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><wlansvc-list>',
-						"<wlansvc id='1' name='Main' ssid='Main' encryption='wpa2'>",
-						"<wpa cipher='aes' passphrase='oldpass' dynamic-psk='disabled'/>",
-						'</wlansvc>',
-						'</wlansvc-list></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='updobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).setWlanPassword('Main', 'Pa$$w0rd&$1$2')
-
-	const updateBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='updobj'"))
-	expect(updateBody).toContain("passphrase='Pa$$w0rd&amp;$1$2'")
-	expect(updateBody).not.toContain("passphrase='oldpass'")
-})
-
-test('add wlan keeps dollar signs in the passphrase intact', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (
-				body.includes("action='getconf'") &&
-				body.includes("comp='wlansvc-standard-template'")
-			) {
-				return response(
-					[
-						'<ajax-response><wlansvc-standard-template>',
-						"<wlansvc id='99' name='default-standard-wlan' ssid='' encryption='wpa2'>",
-						"<wpa cipher='aes' passphrase='placeholder' dynamic-psk='disabled'/>",
-						'</wlansvc></wlansvc-standard-template></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='addobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).addWlan({
-		ssid: 'NewNet',
-		passphrase: 'A$$strong$1word',
-	})
-
-	const addBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='addobj'"))
-	expect(addBody).toContain("passphrase='A$$strong$1word'")
-})
-
-test('add wlan posts an addobj request derived from the standard template', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (
-				body.includes("action='getconf'") &&
-				body.includes("comp='wlansvc-standard-template'")
-			) {
-				return response(
-					[
-						'<ajax-response><wlansvc-standard-template>',
-						"<wlansvc id='99' name='default-standard-wlan' ssid='' encryption='none' authentication='open'/>",
-						'</wlansvc-standard-template></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='addobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).addWlan({
-		ssid: 'NewNet',
-		passphrase: 'super-secret',
-	})
-
-	const addBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='addobj'"))
-	expect(addBody).toContain("name='NewNet'")
-	expect(addBody).toContain("ssid='NewNet'")
-	expect(addBody).toContain("passphrase='super-secret'")
-	expect(addBody).not.toMatch(/\bid='99'/)
-})
-
-test('clone wlan duplicates source XML under a new name without the id', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><wlansvc-list>',
-						"<wlansvc id='1' name='Main' ssid='Main' encryption='wpa2'>",
-						"<wpa cipher='aes' passphrase='secret' dynamic-psk='disabled'/>",
-						'</wlansvc>',
-						'</wlansvc-list></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='addobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).cloneWlan('Main', 'Backup')
-
-	const addBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='addobj'"))
-	expect(addBody).toContain("name='Backup'")
-	expect(addBody).toContain("ssid='Backup'")
-	expect(addBody).toContain("passphrase='secret'")
-	expect(addBody).not.toMatch(/\bid='1'/)
-})
-
-test('delete wlan posts a delobj request with the resolved id', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><wlansvc-list>',
-						"<wlansvc id='42' name='Guest' ssid='Guest'/>",
-						'</wlansvc-list></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='delobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).deleteWlan('Guest')
-
-	const delBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='delobj'"))
-	expect(delBody).toContain("id='42'")
-	expect(delBody).toContain("comp='wlansvc-list'")
-})
-
-test('add wlan group posts addobj with named members resolved to ids', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><wlansvc-list>',
-						"<wlansvc id='1' name='Main' ssid='Main'/>",
-						"<wlansvc id='2' name='Guest' ssid='Guest'/>",
-						'</wlansvc-list></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='addobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).addWlanGroup({
-		name: 'House',
-		description: 'home group',
-		wlans: ['Main', 'Guest'],
-	})
-
-	const addBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='addobj'"))
-	expect(addBody).toContain("comp='wlangroup-list'")
-	expect(addBody).toContain("name='House'")
-	expect(addBody).toContain("description='home group'")
-	expect(addBody).toContain("<wlansvc id='1'/>")
-	expect(addBody).toContain("<wlansvc id='2'/>")
-})
-
-test('delete wlan group posts delobj with the resolved id', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("action='getconf'")) {
-				return response(
-					[
-						'<ajax-response><wlangroup-list>',
-						"<wlangroup id='7' name='House' description='home'/>",
-						'</wlangroup-list></ajax-response>',
-					].join(''),
-				)
-			}
-			if (body.includes("action='delobj'")) {
-				return response('<ajax-response><xmsg status="0"/></ajax-response>')
-			}
-		}
-		return null
-	})
-
-	await createAccessNetworksUnleashedAjaxClient({
-		config,
-		controller: createController(),
-	}).deleteWlanGroup('House')
-
-	const delBody = fetchMock.mock.calls
-		.map((call) => String(call[1]?.body ?? ''))
-		.find((body) => body.includes("action='delobj'"))
-	expect(delBody).toContain("id='7'")
-	expect(delBody).toContain("comp='wlangroup-list'")
-})
-
-test('list active rogues issues a stamgr cmdstat request', async () => {
-	const config = createConfig()
-	const fetchMock = installFetch(loginHandler(), (href, init) => {
+	const fetchMock = installFetch(loginHandler(), (href) => {
 		if (href.endsWith('/_cmdstat.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes('<rogue') && body.includes("comp='stamgr'")) {
-				return response(
-					'<ajax-response><rogue mac="11:22:33:44:55:66" ssid="rogue-net"/></ajax-response>',
-				)
-			}
+			return response('<ajax-response><ok/></ajax-response>')
 		}
 		return null
 	})
-	const rogues = await createAccessNetworksUnleashedAjaxClient({
+
+	const client = createAccessNetworksUnleashedAjaxClient({
 		config,
 		controller: createController(),
-	}).listActiveRogues()
-	expect(rogues).toEqual([
-		expect.objectContaining({ mac: '11:22:33:44:55:66' }),
+	})
+	const result = await client.request({
+		action: 'docmd',
+		comp: 'stamgr',
+		xmlBody: "<xcmd cmd='reset'/>",
+		updater: 'reset.42',
+	})
+
+	expect(result.updater).toBe('reset.42')
+	const cmdCall = fetchMock.mock.calls.find(([url]) =>
+		String(url).endsWith('/_cmdstat.jsp'),
+	)
+	const decoded = decodeURIComponent(
+		String(cmdCall?.[1]?.body ?? '').slice('request='.length),
+	)
+	expect(decoded).toContain("updater='reset.42'")
+	expect(decoded).toContain("action='docmd'")
+})
+
+test('request reauthenticates once on 302 for getstat actions', async () => {
+	const config = createConfig()
+	let cmdAttempts = 0
+	const fetchMock = installFetch(loginHandler(), (href) => {
+		if (href.endsWith('/_cmdstat.jsp')) {
+			cmdAttempts += 1
+			if (cmdAttempts === 1) {
+				return response(null, { status: 302 })
+			}
+			return response('<ajax-response><ok/></ajax-response>')
+		}
+		return null
+	})
+
+	const client = createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	})
+	const result = await client.request({
+		action: 'getstat',
+		comp: 'system',
+		xmlBody: '<sysinfo/>',
+	})
+
+	expect(result.parsed).toEqual({
+		'ajax-response': { ok: null },
+	})
+	const loginAttempts = fetchMock.mock.calls.filter((call) =>
+		String(call[0]).includes('username=admin'),
+	)
+	expect(loginAttempts).toHaveLength(2)
+})
+
+test('request does not retry mutating actions after a 302', async () => {
+	const config = createConfig()
+	const fetchMock = installFetch(loginHandler(), (href) => {
+		if (href.endsWith('/_cmdstat.jsp')) {
+			return response(null, { status: 302 })
+		}
+		return null
+	})
+
+	const client = createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	})
+	await expect(
+		client.request({
+			action: 'docmd',
+			comp: 'stamgr',
+			xmlBody: "<xcmd cmd='reset'/>",
+		}),
+	).rejects.toThrow('redirected during a command')
+
+	const loginAttempts = fetchMock.mock.calls.filter((call) =>
+		String(call[0]).includes('username=admin'),
+	)
+	expect(loginAttempts).toHaveLength(1)
+})
+
+test('concurrent requests share one login flow', async () => {
+	const config = createConfig()
+	const fetchMock = installFetch(loginHandler(), (href, init) => {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
+			return new Promise<Response>((resolve) => {
+				setTimeout(() => {
+					resolve(
+						response(null, {
+							status: 200,
+							url: 'https://unleashed.local/admin/wsg/login.jsp',
+						}),
+					)
+				}, 5)
+			})
+		}
+		if (href.endsWith('/_cmdstat.jsp')) {
+			return response(
+				'<ajax-response><client mac="aa:bb:cc:dd:ee:ff"/></ajax-response>',
+			)
+		}
+		return null
+	})
+
+	const client = createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	})
+	await Promise.all([
+		client.request({
+			action: 'getstat',
+			comp: 'stamgr',
+			xmlBody: "<client LEVEL='1'/>",
+		}),
+		client.request({
+			action: 'getstat',
+			comp: 'stamgr',
+			xmlBody: "<client LEVEL='1'/>",
+		}),
 	])
-	expect(
-		fetchMock.mock.calls.some((call) =>
-			String(call[1]?.body ?? '').includes("recognized='!true'"),
-		),
-	).toBe(true)
+
+	const loginAttempts = fetchMock.mock.calls.filter((call) =>
+		String(call[0]).includes('username=admin'),
+	)
+	expect(loginAttempts).toHaveLength(1)
 })
 
 test('failed login does not leave a partial session', async () => {
@@ -755,10 +319,7 @@ test('failed login does not leave a partial session', async () => {
 		if (init?.method === 'GET' && href.includes('username=admin')) {
 			if (rejectedLogin) {
 				rejectedLogin = false
-				return response(null, {
-					status: 200,
-					url: href,
-				})
+				return response(null, { status: 200, url: href })
 			}
 			return response(null, {
 				status: 302,
@@ -783,15 +344,51 @@ test('failed login does not leave a partial session', async () => {
 		throw new Error(`Unexpected fetch ${href}`)
 	})
 	globalThis.fetch = fetchMock as typeof fetch
+
 	const client = createAccessNetworksUnleashedAjaxClient({
 		config,
 		controller: createController(),
 	})
 
-	await expect(client.listClients()).rejects.toThrow('login was rejected')
-	await expect(client.listClients()).resolves.toEqual([
-		expect.objectContaining({
-			mac: 'aa:bb:cc:dd:ee:ff',
+	await expect(
+		client.request({
+			action: 'getstat',
+			comp: 'stamgr',
+			xmlBody: "<client LEVEL='1'/>",
 		}),
-	])
+	).rejects.toThrow('login was rejected')
+	const result = await client.request({
+		action: 'getstat',
+		comp: 'stamgr',
+		xmlBody: "<client LEVEL='1'/>",
+	})
+	expect(result.parsed).toEqual({
+		'ajax-response': {
+			client: { '@mac': 'aa:bb:cc:dd:ee:ff' },
+		},
+	})
+})
+
+test('request rejects xmsg error responses', async () => {
+	const config = createConfig()
+	installFetch(loginHandler(), (href) => {
+		if (href.endsWith('/_cmdstat.jsp')) {
+			return response(
+				'<ajax-response><xmsg error="1" lmsg="bad request"/></ajax-response>',
+			)
+		}
+		return null
+	})
+
+	const client = createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	})
+	await expect(
+		client.request({
+			action: 'docmd',
+			comp: 'stamgr',
+			xmlBody: '<bogus/>',
+		}),
+	).rejects.toThrow('rejected the command')
 })
