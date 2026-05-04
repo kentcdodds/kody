@@ -73,20 +73,20 @@ test('access networks unleashed adapter supports scan, adopt, credentials, and s
 				url: 'https://192.168.10.60/',
 			})
 		}
-		if (init?.method === 'HEAD' && href === 'https://192.168.10.60') {
+		if (init?.method === 'GET' && href === 'https://192.168.10.60') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://192.168.10.60/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://192.168.10.60/admin/wsg/login.jsp',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {
@@ -175,7 +175,7 @@ test('access networks unleashed adapter supports scan, adopt, credentials, and s
 
 		const loginAttempts = fetchMock.mock.calls.filter(
 			([url, init]) =>
-				init?.method === 'HEAD' && String(url).includes('username=admin'),
+				init?.method === 'GET' && String(url).includes('username=admin'),
 		)
 		expect(loginAttempts).toHaveLength(1)
 
@@ -240,20 +240,20 @@ test('access networks unleashed status errors preserve last successful authentic
 				url: 'https://192.168.10.60/',
 			})
 		}
-		if (init?.method === 'HEAD' && href === 'https://192.168.10.60') {
+		if (init?.method === 'GET' && href === 'https://192.168.10.60') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://192.168.10.60/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://192.168.10.60/admin/wsg/login.jsp',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {
@@ -363,20 +363,20 @@ test('access networks unleashed status tolerates concurrent controller removal',
 				url: 'https://192.168.10.60/',
 			})
 		}
-		if (init?.method === 'HEAD' && href === 'https://192.168.10.60') {
+		if (init?.method === 'GET' && href === 'https://192.168.10.60') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://192.168.10.60/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://192.168.10.60/admin/wsg/login.jsp',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {

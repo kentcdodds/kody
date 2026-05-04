@@ -19,6 +19,7 @@ import {
 } from './repository.ts'
 import {
 	type AccessNetworksUnleashedConfigStatus,
+	type AccessNetworksUnleashedClient,
 	type AccessNetworksUnleashedDiscoveredController,
 	type AccessNetworksUnleashedPersistedController,
 	type AccessNetworksUnleashedRecord,

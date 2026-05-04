@@ -264,7 +264,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 	async function login() {
 		const credentials = requireConfig()
 		let csrfToken: string | null = null
-		const head = await request(credentials.host, { method: 'HEAD' }, 3_000)
+		const head = await request(credentials.host, { method: 'GET' }, 3_000)
 		const location = head.headers.get('location')
 		if (!location) {
 			throw new Error(
@@ -274,18 +274,17 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		const loginUrl = new URL(location, head.url || credentials.host).toString()
 		const baseUrl = new URL('.', loginUrl).toString().replace(/\/$/, '')
 		const login = await request(loginUrl, {
-			method: 'HEAD',
+			method: 'GET',
 			headers: {
 				Accept: '*/*',
 			},
-			body: null,
 		})
 		const loginWithParams = new URL(login.url || loginUrl)
 		loginWithParams.searchParams.set('username', credentials.username)
 		loginWithParams.searchParams.set('password', credentials.password)
 		loginWithParams.searchParams.set('ok', 'Log In')
 		const loginResult = await request(loginWithParams.toString(), {
-			method: 'HEAD',
+			method: 'GET',
 		})
 		if (loginResult.status === 200) {
 			throw new Error('Access Networks Unleashed login was rejected.')

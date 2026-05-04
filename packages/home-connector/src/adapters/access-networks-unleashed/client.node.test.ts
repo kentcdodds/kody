@@ -76,14 +76,14 @@ test('unblock client preserves unrelated system ACL XML', async () => {
 	const config = createConfig()
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
-		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+		if (init?.method === 'GET' && href === 'https://unleashed.local') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://unleashed.local/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {
@@ -93,7 +93,7 @@ test('unblock client preserves unrelated system ACL XML', async () => {
 				url: href,
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://unleashed.local/admin/wsg/login.jsp',
@@ -138,14 +138,14 @@ test('post XML redirects reset session and stop after one reauthentication', asy
 	const config = createConfig()
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
-		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+		if (init?.method === 'GET' && href === 'https://unleashed.local') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://unleashed.local/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {
@@ -155,7 +155,7 @@ test('post XML redirects reset session and stop after one reauthentication', asy
 				url: href,
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://unleashed.local/admin/wsg/login.jsp',
@@ -180,14 +180,14 @@ test('mutating post XML does not retry after session redirect', async () => {
 	const config = createConfig()
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
-		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+		if (init?.method === 'GET' && href === 'https://unleashed.local') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://unleashed.local/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {
@@ -197,7 +197,7 @@ test('mutating post XML does not retry after session redirect', async () => {
 				url: href,
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://unleashed.local/admin/wsg/login.jsp',
@@ -227,14 +227,14 @@ test('concurrent reads share one login flow', async () => {
 	const config = createConfig()
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
-		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+		if (init?.method === 'GET' && href === 'https://unleashed.local') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://unleashed.local/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			return response(null, {
 				status: 302,
 				headers: {
@@ -244,7 +244,7 @@ test('concurrent reads share one login flow', async () => {
 				url: href,
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			await new Promise((resolve) => setTimeout(resolve, 5))
 			return response(null, {
 				status: 200,
@@ -277,14 +277,14 @@ test('failed login does not leave a partial session', async () => {
 	let rejectedLogin = true
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
-		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+		if (init?.method === 'GET' && href === 'https://unleashed.local') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
 				url: 'https://unleashed.local/',
 			})
 		}
-		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+		if (init?.method === 'GET' && href.includes('username=admin')) {
 			if (rejectedLogin) {
 				rejectedLogin = false
 				return response(null, {
@@ -301,7 +301,7 @@ test('failed login does not leave a partial session', async () => {
 				url: href,
 			})
 		}
-		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
 			return response(null, {
 				status: 200,
 				url: 'https://unleashed.local/admin/wsg/login.jsp',
