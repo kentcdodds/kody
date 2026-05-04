@@ -1,7 +1,10 @@
 import { type HomeConnectorConfig } from '../../config.ts'
 import { fetchAccessNetworksUnleashed } from './http.ts'
 import {
+	type AccessNetworksUnleashedAddWlanGroupInput,
+	type AccessNetworksUnleashedAddWlanInput,
 	type AccessNetworksUnleashedClient,
+	type AccessNetworksUnleashedEditWlanInput,
 	type AccessNetworksUnleashedPersistedController,
 	type AccessNetworksUnleashedRecord,
 } from './types.ts'
@@ -416,6 +419,158 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		)
 	}
 
+	async function getConfRaw(component: string) {
+		return await postXml(
+			'_conf.jsp',
+			`<ajax-request action='getconf' DECRYPT_X='true' updater='${escapeXmlAttribute(component)}.0.5' comp='${escapeXmlAttribute(component)}'/>`,
+			undefined,
+			true,
+		)
+	}
+
+	async function getWlanRawXml(name: string) {
+		const xml = await getConfRaw('wlansvc-list')
+		return extractElementByAttribute({
+			xml,
+			tagName: 'wlansvc',
+			attributeName: 'name',
+			attributeValue: name,
+		})
+	}
+
+	async function getDefaultWlanTemplateXml() {
+		const xml = await getConfRaw('wlansvc-standard-template')
+		const elementRegex = /<wlansvc(?=[\s>/])[^>]*>[\s\S]*?<\/wlansvc>|<wlansvc(?=[\s>/])[^>]*\/>/i
+		const match = elementRegex.exec(xml)
+		if (!match) {
+			throw new Error(
+				'Access Networks Unleashed default WLAN template was not returned by the controller.',
+			)
+		}
+		return match[0]
+	}
+
+	function setOrAddAttribute(elementXml: string, name: string, value: string) {
+		const escapedValue = escapeXmlAttribute(value)
+		const attrPattern = new RegExp(
+			`(\\s${name}\\s*=\\s*)(["'])(.*?)\\2`,
+			'i',
+		)
+		if (attrPattern.test(elementXml)) {
+			return elementXml.replace(attrPattern, `$1'${escapedValue}'`)
+		}
+		return elementXml.replace(/^<(\w[\w-]*)/i, `<$1 ${name}='${escapedValue}'`)
+	}
+
+	function removeRootIdAttribute(elementXml: string) {
+		const openTagMatch = /^<(\w[\w-]*)([^>]*)>/i.exec(elementXml)
+		if (!openTagMatch) return elementXml
+		const tagName = openTagMatch[1] ?? ''
+		let attributes = openTagMatch[2] ?? ''
+		attributes = attributes.replace(/\s+id\s*=\s*(["'])(.*?)\1/i, '')
+		return `<${tagName}${attributes}>${elementXml.slice(openTagMatch[0].length)}`
+	}
+
+	function getAttributeValue(elementXml: string, name: string): string | null {
+		const attrPattern = new RegExp(
+			`\\s${name}\\s*=\\s*(["'])(.*?)\\1`,
+			'i',
+		)
+		const match = attrPattern.exec(elementXml)
+		return match ? decodeXmlEntities(match[2] ?? '') : null
+	}
+
+	function applyWlanPatch(
+		elementXml: string,
+		patch: {
+			name?: string
+			ssid?: string
+			description?: string
+			passphrase?: string
+			saePassphrase?: string
+			enableType?: 0 | 1
+		},
+	) {
+		let updated = elementXml
+		if (patch.name !== undefined) {
+			updated = setOrAddAttribute(updated, 'name', patch.name)
+		}
+		if (patch.ssid !== undefined) {
+			updated = setOrAddAttribute(updated, 'ssid', patch.ssid)
+		}
+		if (patch.description !== undefined) {
+			updated = setOrAddAttribute(updated, 'description', patch.description)
+		}
+		if (patch.enableType !== undefined) {
+			updated = setOrAddAttribute(
+				updated,
+				'enable-type',
+				String(patch.enableType),
+			)
+		}
+		if (patch.passphrase !== undefined || patch.saePassphrase !== undefined) {
+			const wpaRegex = /<wpa(?=[\s>/])([^>]*)(\/?>)/i
+			const wpaMatch = wpaRegex.exec(updated)
+			if (wpaMatch) {
+				let wpaTag = wpaMatch[0]
+				if (patch.passphrase !== undefined) {
+					wpaTag = setOrAddAttribute(wpaTag, 'passphrase', patch.passphrase)
+				}
+				if (patch.saePassphrase !== undefined) {
+					wpaTag = setOrAddAttribute(
+						wpaTag,
+						'sae-passphrase',
+						patch.saePassphrase,
+					)
+				}
+				updated = updated.replace(wpaRegex, wpaTag)
+			} else {
+				const wpaAttrs: Array<string> = ["cipher='aes'", "dynamic-psk='disabled'"]
+				if (patch.passphrase !== undefined) {
+					wpaAttrs.push(
+						`passphrase='${escapeXmlAttribute(patch.passphrase)}'`,
+					)
+				}
+				if (patch.saePassphrase !== undefined) {
+					wpaAttrs.push(
+						`sae-passphrase='${escapeXmlAttribute(patch.saePassphrase)}'`,
+					)
+				}
+				const wpaTag = `<wpa ${wpaAttrs.join(' ')}/>`
+				if (/\/>$/.test(updated)) {
+					updated = updated.replace(/\/>$/, `>${wpaTag}</wlansvc>`)
+				} else {
+					updated = updated.replace(
+						/<\/wlansvc>$/,
+						`${wpaTag}</wlansvc>`,
+					)
+				}
+			}
+		}
+		return updated
+	}
+
+	async function piecewiseCmdstat(input: {
+		comp: string
+		elementXml: string
+		updater: string
+		tagNames: Array<string>
+		limit: number
+	}) {
+		const ts = Date.now()
+		const rand = Math.random().toString(36).slice(2, 10)
+		const requestId = `${input.updater}.${ts}`
+		const cleanupId = `${input.updater}.${ts}.${rand}`
+		const xml = `<ajax-request action='getstat' comp='${escapeXmlAttribute(input.comp)}' updater='${escapeXmlAttribute(`${input.updater}.${ts}.${rand}`)}'>${input.elementXml}<pieceStat pid='1' start='0' number='${input.limit}' requestId='${escapeXmlAttribute(requestId)}' cleanupId='${escapeXmlAttribute(cleanupId)}'/></ajax-request>`
+		const response = await postXml('_cmdstat.jsp', xml, undefined, true)
+		return pickFirstRecords(response, input.tagNames)
+	}
+
+	function clampLimit(limit: number | undefined, fallback: number, max: number) {
+		if (limit == null || !Number.isFinite(limit)) return fallback
+		return Math.max(1, Math.min(max, Math.trunc(limit)))
+	}
+
 	const client: AccessNetworksUnleashedClient = {
 		async getSystemInfo() {
 			const records = await cmdstat(
@@ -509,6 +664,278 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			await postXml(
 				'_conf.jsp',
 				`<ajax-request action='updobj' updater='ap-list.${Date.now()}' comp='ap-list'><ap id='${escapeXmlAttribute(String(ap['id'] ?? ''))}' IS_PARTIAL='true' led-off='${enabled ? 'false' : 'true'}' /></ajax-request>`,
+			)
+		},
+		async listBlockedClients() {
+			const xml = await getConfRaw('acl-list')
+			const acls = parseElements(xml, 'acl')
+			const systemAcl =
+				acls.find((acl) => String(acl['id'] ?? '') === '1') ?? acls[0]
+			if (!systemAcl) return []
+			const aclXml = String(systemAcl['rawXml'] ?? '')
+			return parseElements(aclXml, 'deny')
+		},
+		async listInactiveClients() {
+			return await cmdstat(
+				"<ajax-request action='getstat' comp='stamgr' enable-gzip='0'><clientlist period='0' /></ajax-request>",
+				['client'],
+			)
+		},
+		async listActiveRogues() {
+			return await cmdstat(
+				"<ajax-request action='getstat' comp='stamgr' enable-gzip='0'><rogue LEVEL='1' recognized='!true'/></ajax-request>",
+				['rogue'],
+			)
+		},
+		async listKnownRogues(limit = 300) {
+			return await piecewiseCmdstat({
+				comp: 'stamgr',
+				elementXml: `<rogue sortBy='time' sortDirection='-1' LEVEL='1' recognized='true'/>`,
+				updater: 'krogue',
+				tagNames: ['rogue'],
+				limit: clampLimit(limit, 300, 1000),
+			})
+		},
+		async listBlockedRogues(limit = 300) {
+			return await piecewiseCmdstat({
+				comp: 'stamgr',
+				elementXml: `<rogue sortBy='time' sortDirection='-1' LEVEL='1' blocked='true'/>`,
+				updater: 'brogue',
+				tagNames: ['rogue'],
+				limit: clampLimit(limit, 300, 1000),
+			})
+		},
+		async listApGroups() {
+			return await getConf('apgroup-list', ['apgroup'])
+		},
+		async listDpsks() {
+			return await getConf('dpsk-list', ['dpsk'])
+		},
+		async getMeshInfo() {
+			const meshes = await getConf('mesh-list', ['mesh'])
+			return meshes[0] ?? {}
+		},
+		async getAlarms(limit = 300) {
+			return await piecewiseCmdstat({
+				comp: 'eventd',
+				elementXml: `<alarm sortBy='time' sortDirection='-1'/>`,
+				updater: 'page',
+				tagNames: ['alarm'],
+				limit: clampLimit(limit, 300, 1000),
+			})
+		},
+		async getSyslog() {
+			const ts = Date.now()
+			const response = await postXml(
+				'_cmdstat.jsp',
+				`<ajax-request action='docmd' xcmd='get-syslog' updater='system.${ts}' comp='system'><xcmd cmd='get-syslog' type='sys'/></ajax-request>`,
+				undefined,
+				true,
+			)
+			const xmsgRecords = parseElements(response, 'xmsg')
+			const firstXmsg = xmsgRecords[0]
+			if (firstXmsg && typeof firstXmsg['res'] === 'string') {
+				return String(firstXmsg['res'])
+			}
+			const resMatch = /<res\b[^>]*>([\s\S]*?)<\/res>/i.exec(response)
+			if (resMatch && resMatch[1] !== undefined) {
+				return decodeXmlEntities(resMatch[1])
+			}
+			const resAttr =
+				firstXmsg && typeof firstXmsg['res'] !== 'undefined'
+					? firstXmsg['res']
+					: null
+			return resAttr == null ? '' : String(resAttr)
+		},
+		async getVapStats() {
+			return await cmdstat(
+				"<ajax-request action='getstat' comp='stamgr' enable-gzip='0' caller='SCI'><vap INTERVAL-STATS='no' LEVEL='1'/></ajax-request>",
+				['vap'],
+			)
+		},
+		async getWlanGroupStats() {
+			return await cmdstat(
+				"<ajax-request action='getstat' comp='stamgr' enable-gzip='0' caller='SCI'><wlangroup/></ajax-request>",
+				['wlangroup', 'wlan'],
+			)
+		},
+		async getApGroupStats() {
+			return await cmdstat(
+				"<ajax-request action='getstat' comp='stamgr' enable-gzip='0'><apgroup/></ajax-request>",
+				['group', 'apgroup'],
+			)
+		},
+		async setWlanPassword(name, passphrase, saePassphrase) {
+			const wlanXml = await getWlanRawXml(name)
+			if (!wlanXml) {
+				throw new Error(
+					`Access Networks Unleashed WLAN "${name}" was not found.`,
+				)
+			}
+			const updated = applyWlanPatch(wlanXml, {
+				passphrase,
+				saePassphrase: saePassphrase ?? passphrase,
+			})
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='updobj' updater='wlan' comp='wlansvc-list'>${updated}</ajax-request>`,
+				20_000,
+			)
+		},
+		async addWlan(input: AccessNetworksUnleashedAddWlanInput) {
+			const template = await getDefaultWlanTemplateXml()
+			const wlanName = input.name?.trim() || input.ssid
+			let updated = applyWlanPatch(template, {
+				name: wlanName,
+				ssid: input.ssid,
+				description: input.description,
+				passphrase: input.passphrase,
+				saePassphrase: input.saePassphrase ?? input.passphrase,
+			})
+			updated = removeRootIdAttribute(updated)
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='addobj' updater='wlansvc-list' comp='wlansvc-list'>${updated}</ajax-request>`,
+				20_000,
+			)
+		},
+		async editWlan(input: AccessNetworksUnleashedEditWlanInput) {
+			const wlanXml = await getWlanRawXml(input.name)
+			if (!wlanXml) {
+				throw new Error(
+					`Access Networks Unleashed WLAN "${input.name}" was not found.`,
+				)
+			}
+			const patch: Parameters<typeof applyWlanPatch>[1] = {}
+			if (input.ssid !== undefined) patch.ssid = input.ssid
+			if (input.description !== undefined) patch.description = input.description
+			if (input.passphrase !== undefined) patch.passphrase = input.passphrase
+			if (input.saePassphrase !== undefined) {
+				patch.saePassphrase = input.saePassphrase
+			} else if (input.passphrase !== undefined) {
+				patch.saePassphrase = input.passphrase
+			}
+			if (input.enabled !== undefined) {
+				patch.enableType = input.enabled ? 0 : 1
+			}
+			const updated = applyWlanPatch(wlanXml, patch)
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='updobj' updater='wlan' comp='wlansvc-list'>${updated}</ajax-request>`,
+				20_000,
+			)
+		},
+		async cloneWlan(sourceName, newName, newSsid) {
+			const sourceXml = await getWlanRawXml(sourceName)
+			if (!sourceXml) {
+				throw new Error(
+					`Access Networks Unleashed WLAN "${sourceName}" was not found.`,
+				)
+			}
+			let updated = removeRootIdAttribute(sourceXml)
+			updated = applyWlanPatch(updated, {
+				name: newName,
+				ssid: newSsid ?? newName,
+			})
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='addobj' updater='wlansvc-list' comp='wlansvc-list'>${updated}</ajax-request>`,
+				20_000,
+			)
+		},
+		async deleteWlan(name) {
+			const wlan = await findWlan(name)
+			if (!wlan) {
+				throw new Error(
+					`Access Networks Unleashed WLAN "${name}" was not found.`,
+				)
+			}
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='delobj' updater='wlansvc-list.${Date.now()}' comp='wlansvc-list'><wlansvc id='${escapeXmlAttribute(String(wlan['id'] ?? ''))}'/></ajax-request>`,
+				20_000,
+			)
+		},
+		async addWlanGroup(input: AccessNetworksUnleashedAddWlanGroupInput) {
+			const description = input.description ?? ''
+			let body = `<wlangroup name='${escapeXmlAttribute(input.name)}' description='${escapeXmlAttribute(description)}'>`
+			if (input.wlans && input.wlans.length > 0) {
+				const wlans = await getConf('wlansvc-list', ['wlansvc'])
+				const wlanByName = new Map(
+					wlans.map((wlan) => [String(wlan['name'] ?? ''), wlan] as const),
+				)
+				for (const wlanName of input.wlans) {
+					const wlan = wlanByName.get(wlanName)
+					if (!wlan) {
+						throw new Error(
+							`Access Networks Unleashed WLAN "${wlanName}" was not found.`,
+						)
+					}
+					body += `<wlansvc id='${escapeXmlAttribute(String(wlan['id'] ?? ''))}'/>`
+				}
+			}
+			body += `</wlangroup>`
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='addobj' comp='wlangroup-list' updater='wgroup'>${body}</ajax-request>`,
+				20_000,
+			)
+		},
+		async cloneWlanGroup(sourceName, newName, description) {
+			const xml = await getConfRaw('wlangroup-list')
+			const sourceXml = extractElementByAttribute({
+				xml,
+				tagName: 'wlangroup',
+				attributeName: 'name',
+				attributeValue: sourceName,
+			})
+			if (!sourceXml) {
+				throw new Error(
+					`Access Networks Unleashed WLAN group "${sourceName}" was not found.`,
+				)
+			}
+			const sourceDescription = getAttributeValue(sourceXml, 'description') ?? ''
+			const wlanIdMatches = sourceXml.matchAll(
+				/<wlansvc\b[^>]*\bid\s*=\s*(["'])(.*?)\1[^>]*\/?>/gi,
+			)
+			const childIds: Array<string> = []
+			for (const match of wlanIdMatches) {
+				if (match[2]) childIds.push(decodeXmlEntities(match[2]))
+			}
+			let body = `<wlangroup name='${escapeXmlAttribute(newName)}' description='${escapeXmlAttribute(description ?? sourceDescription)}'>`
+			for (const id of childIds) {
+				body += `<wlansvc id='${escapeXmlAttribute(id)}'/>`
+			}
+			body += `</wlangroup>`
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='addobj' comp='wlangroup-list' updater='wgroup'>${body}</ajax-request>`,
+				20_000,
+			)
+		},
+		async deleteWlanGroup(name) {
+			const xml = await getConfRaw('wlangroup-list')
+			const sourceXml = extractElementByAttribute({
+				xml,
+				tagName: 'wlangroup',
+				attributeName: 'name',
+				attributeValue: name,
+			})
+			if (!sourceXml) {
+				throw new Error(
+					`Access Networks Unleashed WLAN group "${name}" was not found.`,
+				)
+			}
+			const id = getAttributeValue(sourceXml, 'id')
+			if (!id) {
+				throw new Error(
+					`Access Networks Unleashed WLAN group "${name}" is missing an id.`,
+				)
+			}
+			await postXml(
+				'_conf.jsp',
+				`<ajax-request action='delobj' updater='wlangroup-list.${Date.now()}' comp='wlangroup-list'><wlangroup id='${escapeXmlAttribute(id)}'/></ajax-request>`,
+				20_000,
 			)
 		},
 	}

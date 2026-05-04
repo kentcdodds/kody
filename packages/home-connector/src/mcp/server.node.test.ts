@@ -711,6 +711,58 @@ function createFakeAccessNetworksUnleashedClient() {
 				},
 			]
 		},
+		async listBlockedClients() {
+			calls.push({ name: 'listBlockedClients', args: [] })
+			return [{ mac: 'aa:bb:cc:dd:ee:ff', type: 'single' }]
+		},
+		async listInactiveClients() {
+			calls.push({ name: 'listInactiveClients', args: [] })
+			return [{ mac: 'aa:bb:cc:dd:ee:ff', hostname: 'old-phone' }]
+		},
+		async listActiveRogues() {
+			calls.push({ name: 'listActiveRogues', args: [] })
+			return [{ mac: '11:22:33:44:55:66', ssid: 'Rogue Net' }]
+		},
+		async listKnownRogues(limit) {
+			calls.push({ name: 'listKnownRogues', args: [limit] })
+			return [{ mac: '11:22:33:44:55:66', recognized: true }]
+		},
+		async listBlockedRogues(limit) {
+			calls.push({ name: 'listBlockedRogues', args: [limit] })
+			return [{ mac: '11:22:33:44:55:66', blocked: true }]
+		},
+		async listApGroups() {
+			calls.push({ name: 'listApGroups', args: [] })
+			return [{ id: 1, name: 'System Default' }]
+		},
+		async listDpsks() {
+			calls.push({ name: 'listDpsks', args: [] })
+			return [{ id: '1', user: 'guest', mac: 'aa:bb:cc:dd:ee:ff' }]
+		},
+		async getMeshInfo() {
+			calls.push({ name: 'getMeshInfo', args: [] })
+			return { id: '1', name: 'Mesh-1', enabled: true }
+		},
+		async getAlarms(limit) {
+			calls.push({ name: 'getAlarms', args: [limit] })
+			return [{ id: '1', message: 'AP rebooted' }]
+		},
+		async getSyslog() {
+			calls.push({ name: 'getSyslog', args: [] })
+			return 'May 03 12:00:00 unleashed: line 1\nMay 03 12:00:01 unleashed: line 2'
+		},
+		async getVapStats() {
+			calls.push({ name: 'getVapStats', args: [] })
+			return [{ ssid: 'Main', tx_bytes: 1024 }]
+		},
+		async getWlanGroupStats() {
+			calls.push({ name: 'getWlanGroupStats', args: [] })
+			return [{ id: '1', name: 'System Default' }]
+		},
+		async getApGroupStats() {
+			calls.push({ name: 'getApGroupStats', args: [] })
+			return [{ id: '1', name: 'System Default' }]
+		},
 		async blockClient(macAddress) {
 			calls.push({ name: 'blockClient', args: [macAddress] })
 		},
@@ -719,6 +771,36 @@ function createFakeAccessNetworksUnleashedClient() {
 		},
 		async setWlanEnabled(name, enabled) {
 			calls.push({ name: 'setWlanEnabled', args: [name, enabled] })
+		},
+		async setWlanPassword(name, passphrase, saePassphrase) {
+			calls.push({
+				name: 'setWlanPassword',
+				args: [name, passphrase, saePassphrase],
+			})
+		},
+		async addWlan(input) {
+			calls.push({ name: 'addWlan', args: [input] })
+		},
+		async editWlan(input) {
+			calls.push({ name: 'editWlan', args: [input] })
+		},
+		async cloneWlan(sourceName, newName, newSsid) {
+			calls.push({ name: 'cloneWlan', args: [sourceName, newName, newSsid] })
+		},
+		async deleteWlan(name) {
+			calls.push({ name: 'deleteWlan', args: [name] })
+		},
+		async addWlanGroup(input) {
+			calls.push({ name: 'addWlanGroup', args: [input] })
+		},
+		async cloneWlanGroup(sourceName, newName, description) {
+			calls.push({
+				name: 'cloneWlanGroup',
+				args: [sourceName, newName, description],
+			})
+		},
+		async deleteWlanGroup(name) {
+			calls.push({ name: 'deleteWlanGroup', args: [name] })
 		},
 		async restartAccessPoint(macAddress) {
 			calls.push({ name: 'restartAccessPoint', args: [macAddress] })
