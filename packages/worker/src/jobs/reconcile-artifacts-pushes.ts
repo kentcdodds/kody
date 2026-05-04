@@ -10,9 +10,11 @@ export type ReconcileArtifactsPushesResult = {
 	checked: number
 	published: number
 	alreadyPublished: number
+	missingHead: number
 	checksFailed: number
 	notFastForward: number
 	errors: number
+	tokenCleanupErrors: number
 	tokensRevoked: number
 }
 
@@ -49,9 +51,11 @@ export async function reconcileArtifactsPushes(input: {
 		checked: 0,
 		published: 0,
 		alreadyPublished: 0,
+		missingHead: 0,
 		checksFailed: 0,
 		notFastForward: 0,
 		errors: 0,
+		tokenCleanupErrors: 0,
 		tokensRevoked: 0,
 	}
 	const shouldCleanupTokens = shouldRunDailyTokenCleanup(now)
@@ -60,14 +64,35 @@ export async function reconcileArtifactsPushes(input: {
 		try {
 			const head = await resolveArtifactSourceHead(input.env, source.repo_id)
 			if (shouldCleanupTokens) {
-				const cleanup = await revokeStaleArtifactsTokens(
-					input.env,
-					source.repo_id,
-					{ keepAfter: now },
-				)
-				result.tokensRevoked += cleanup.revoked
+				try {
+					const cleanup = await revokeStaleArtifactsTokens(
+						input.env,
+						source.repo_id,
+						{ keepAfter: now },
+					)
+					result.tokensRevoked += cleanup.revoked
+				} catch (cleanupError) {
+					result.tokenCleanupErrors += 1
+					console.warn('reconcile_artifacts_pushes token cleanup failed', {
+						sourceId: source.id,
+						repoId: source.repo_id,
+						error:
+							cleanupError instanceof Error
+								? cleanupError.message
+								: String(cleanupError),
+					})
+				}
 			}
-			if (!head.commit || head.commit === source.published_commit) {
+			if (!head.commit) {
+				result.missingHead += 1
+				await updateEntitySource(input.env.APP_DB, {
+					id: source.id,
+					userId: source.user_id,
+					lastExternalCheckAt: now.toISOString(),
+				})
+				continue
+			}
+			if (head.commit === source.published_commit) {
 				result.alreadyPublished += 1
 				await updateEntitySource(input.env.APP_DB, {
 					id: source.id,
