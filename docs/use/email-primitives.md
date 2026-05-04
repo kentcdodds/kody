@@ -21,7 +21,7 @@ Use the MCP `email` domain:
 ## Safety model
 
 - Any email routed to a configured Kody inbox is stored.
-- Unknown aliases are still rejected before storage.
+- Unknown aliases are rejected before storage.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
 - Outbound sending requires a verified sender identity.
@@ -38,9 +38,9 @@ Use the MCP `email` domain:
   context, and the standard capability registry subject to the usual secret and
   capability approval rules. For `email.message.received`, this means handlers
   can call capabilities such as `agent_chat_turn` and `email_reply` directly,
-  while `import { email } from 'kody:runtime'` remains available as a
+  while `import { email } from 'kody:runtime'` is available as a
   convenience helper for message lookup, attachment lookup, and replies.
-- Attachments remain metadata-first by default; raw MIME for small messages is
+- Attachments are metadata-first by default; raw MIME for small messages is
   stored so on-demand attachment lookup can reconstruct bytes locally.
 
 ## Local inbound testing

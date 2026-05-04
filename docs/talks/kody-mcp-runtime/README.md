@@ -59,7 +59,7 @@ npm run build
   heading, list, table, and blockquote tinting from `--slidev-theme-primary`.
 - **Light / dark:** `colorSchema: auto` follows `prefers-color-scheme`. Use
   Slidev’s built-in theme control; this deck disables the default keyboard
-  shortcut for toggling dark mode. Slidev still stores the preference in
+  shortcut for toggling dark mode. Slidev stores the preference in
   `localStorage` under `slidev-color-schema` (`auto` / `light` / `dark`). To
   force a single mode only, set `colorSchema` to `light` or `dark` in
   headmatter.

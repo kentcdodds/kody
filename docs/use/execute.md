@@ -69,8 +69,8 @@ module-oriented runtime model:
   `package.json#kody.services`
 - non-package jobs can also be scheduled directly with
   **`codemode.job_schedule(...)`** without creating a saved package
-- **`codemode.job_schedule_once(...)`** remains available as a convenience alias
-  for one-off schedules
+- **`codemode.job_schedule_once(...)`** provides a convenience alias for one-off
+  schedules
 - **`codemode.job_update(...)`** updates an existing scheduled job by id for
   safe mutable fields such as name, code, params, schedule, timezone,
   enabled/disabled state, or kill switch state
@@ -87,8 +87,8 @@ For common edit-and-check workflows, `repo_run_commands` accepts a
 newline-separated parsed git-command string, returns command outputs, and can
 run checks plus publish in one response. Commands are parsed by Kody; they are
 not arbitrary shell, only the documented git forms are supported, and
-`git clone` remains intentionally unsupported because Kody opens repo sessions
-for you.
+`git clone` is intentionally unsupported because Kody opens repo sessions for
+you.
 
 ## Agent turns
 
@@ -194,8 +194,8 @@ For memory mutations, the workflow is explicit and strict:
 - **`meta_memory_upsert`** creates a new memory when **`memory_id`** is omitted
   and updates an existing memory when **`memory_id`** is provided
 
-Kody retrieves related memories, but the **consuming agent** remains responsible
-for deciding what action to take.
+Kody retrieves related memories, but the **consuming agent** is responsible for
+deciding what action to take.
 
 ## MCP server instructions
 

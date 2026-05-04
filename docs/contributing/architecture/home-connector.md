@@ -141,14 +141,14 @@ The adapter does expose:
 - recent-event lookups with `show log`
 - structured WAN/failover, routing, NAT, VLAN, DNS, user, firewall/security,
   QoS, traffic, session, VPN, DHCP-server, NTP, syslog, SNMP, and
-  system/bandwidth reads from a typed SSH CLI allowlist that now prefers the
+  system/bandwidth reads from a typed SSH CLI allowlist that prefers the
   Island-documented `show system`/`show stats`, `show hardware`,
   `show running-config`, `show vpns`, `show ip sockets`, and
   `show ntp status|associations` families over unsupported guessed top-level
   subcommands
 - a structured `router_diagnose_host` workflow that combines ping, ARP,
   reservation, interface, and log data for one host
-- a broader but still typed and explicitly allowlisted high-risk write surface
+- a broader typed and explicitly allowlisted high-risk write surface
   for failover selection, DHCP reservations, reboot, interface descriptions, DNS
   servers, host blocking/unblocking, `clear dhcp-client`, `clear log`, and
   `write memory` when all write guardrails pass
@@ -182,8 +182,8 @@ SSH transport is conservative:
 The Access Networks Unleashed adapter lives under
 `packages/home-connector/src/adapters/access-networks-unleashed/` and targets
 controllers reachable from the local connector host through the Unleashed AJAX
-management interface. Unlike the original env-only integration, controllers are
-now managed locally through the connector's SQLite database:
+management interface. The connector manages controllers locally through its
+SQLite database:
 
 - `access_networks_unleashed_scan_controllers` probes local private `/24`
   networks derived from the connector host's IPv4 interfaces, unless
@@ -192,9 +192,9 @@ now managed locally through the connector's SQLite database:
   as the active controller for reads and writes
 - `access_networks_unleashed_set_credentials` stores controller credentials
   locally, encrypted with `HOME_CONNECTOR_SHARED_SECRET`
-- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=true` remains available when the
+- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=true` allows connections when the
   controller uses a self-signed LAN certificate
-- `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` can still raise the default 8s
+- `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` can raise the default 8s
   request timeout for slower controllers or networks
 
 The adapter exposes read-only tools for controller status, access point
@@ -232,7 +232,7 @@ The connector stores a local SQLite database containing:
 - Lutron credentials associated with each discovered processor
 - last Lutron authentication success/error details
 - discovered Access Networks Unleashed controller metadata
-- which Access Networks Unleashed controller is currently adopted
+- which Access Networks Unleashed controller is adopted
 - Access Networks Unleashed credentials encrypted locally with
   `HOME_CONNECTOR_SHARED_SECRET`
 - last Access Networks Unleashed authentication success/error details

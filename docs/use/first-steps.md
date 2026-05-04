@@ -18,7 +18,7 @@ connector, value, or secret reference, then run work through **execute**.
 - **Think in packages for reusable saved code.** Packages expose exports,
   declare package-owned jobs, and can optionally expose an app/UI surface. For
   scheduled work that should not become a saved package, use the built-in
-  `job_schedule` capability. `job_schedule_once` remains available as a one-off
+  `job_schedule` capability. `job_schedule_once` is the one-off
   convenience alias, `job_run_now` can trigger an existing job immediately for
   debugging or catch-up runs, and `job_update` / `job_delete` let you correct or
   remove an existing scheduled job by id.

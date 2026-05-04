@@ -14,8 +14,8 @@ This project uses the following resources:
 - Cloudflare Email Sending / Email Service Worker binding
   - `binding`: `EMAIL`
   - `wrangler` key: `send_email`
-  - Production domains still need Cloudflare-side sender/domain verification
-    before sends succeed.
+  - Production domains need Cloudflare-side sender/domain verification before
+    sends succeed.
 - Cloudflare Email Routing for inbound mail
   - Configure MX records and selected route aliases in the Cloudflare dashboard.
   - Route only aliases that should persist inbound mail to the Worker.

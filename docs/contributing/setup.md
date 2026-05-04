@@ -112,8 +112,7 @@ Quick notes for getting a local kody environment running.
     `packages/home-connector` directly.
   - For host verification, set either `ISLAND_ROUTER_KNOWN_HOSTS_PATH`
     (preferred) or `ISLAND_ROUTER_HOST_FINGERPRINT`. When neither is set, the
-    connector still works but reports a warning because SSH host verification is
-    disabled.
+    connector runs with SSH host verification disabled and reports a warning.
   - The Island router integration intentionally does not expose arbitrary
     command execution over MCP. It uses a typed allowlist of documented CLI
     commands.
@@ -251,7 +250,7 @@ Use this script to ensure a known test login exists in any deployed environment:
   - `node tools/seed-test-data.ts --email <email> --password <password>`
 - When changing DB schema/model definitions or migrations, review
   `tools/seed-test-data.ts` and update it so seeded data matches the new model
-  and remains useful for local and preview verification.
+  and stays useful for local and preview verification.
 
 ### Reset, re-migrate, then seed
 

@@ -54,5 +54,5 @@ Island CLI families instead of guessed one-off `show` commands:
   `show hardware` when available.
 
 If a router command returns Island help, usage, or unknown-command output, the
-connector now treats that as unsupported or inconclusive output instead of
-trying to parse it as structured data.
+connector treats that as unsupported or inconclusive output instead of trying
+to parse it as structured data.
