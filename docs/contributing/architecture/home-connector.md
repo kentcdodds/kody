@@ -148,8 +148,8 @@ The adapter does expose:
   subcommands
 - a structured `router_diagnose_host` workflow that combines ping, ARP,
   reservation, interface, and log data for one host
-- a broader typed and explicitly allowlisted high-risk write surface
-  for failover selection, DHCP reservations, reboot, interface descriptions, DNS
+- a broader typed and explicitly allowlisted high-risk write surface for
+  failover selection, DHCP reservations, reboot, interface descriptions, DNS
   servers, host blocking/unblocking, `clear dhcp-client`, `clear log`, and
   `write memory` when all write guardrails pass
 
@@ -192,8 +192,8 @@ SQLite database:
   as the active controller for reads and writes
 - `access_networks_unleashed_set_credentials` stores controller credentials
   locally, encrypted with `HOME_CONNECTOR_SHARED_SECRET`
-- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=true` allows connections when the
-  controller uses a self-signed LAN certificate
+- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=true` allows connections when
+  the controller uses a self-signed LAN certificate
 - `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` can raise the default 8s
   request timeout for slower controllers or networks
 

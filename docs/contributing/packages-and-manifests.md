@@ -154,8 +154,8 @@ automatic context retrieval without promoting those records to durable memory.
 - Define retrievers under `package.json#kody.retrievers`
 - Each retriever names a package export, display name, description, and one or
   more scopes: `search`, `context`
-- Package metadata is the source of truth; runtime discovery uses derived
-  KV manifest and scope indexes that are rebuilt on package refresh
+- Package metadata is the source of truth; runtime discovery uses derived KV
+  manifest and scope indexes that are rebuilt on package refresh
 - Retriever exports run read-only against the package storage bucket
 
 Example:

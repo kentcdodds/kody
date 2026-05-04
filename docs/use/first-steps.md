@@ -18,10 +18,10 @@ connector, value, or secret reference, then run work through **execute**.
 - **Think in packages for reusable saved code.** Packages expose exports,
   declare package-owned jobs, and can optionally expose an app/UI surface. For
   scheduled work that should not become a saved package, use the built-in
-  `job_schedule` capability. `job_schedule_once` is the one-off
-  convenience alias, `job_run_now` can trigger an existing job immediately for
-  debugging or catch-up runs, and `job_update` / `job_delete` let you correct or
-  remove an existing scheduled job by id.
+  `job_schedule` capability. `job_schedule_once` is the one-off convenience
+  alias, `job_run_now` can trigger an existing job immediately for debugging or
+  catch-up runs, and `job_update` / `job_delete` let you correct or remove an
+  existing scheduled job by id.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Do not paste secrets in chat.** Use saved secrets, generated UI, or the

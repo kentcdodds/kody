@@ -11,8 +11,8 @@ The first intended caller is a stable Discord Gateway proxy:
 4. Kody executes the saved package export with package context, user context,
    package storage, and normal secret/capability rules
 
-Kody is the package runtime and storage brain. The external service owns
-the socket lifecycle.
+Kody is the package runtime and storage brain. The external service owns the
+socket lifecycle.
 
 ## Endpoint
 

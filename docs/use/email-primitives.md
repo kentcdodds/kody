@@ -38,8 +38,8 @@ Use the MCP `email` domain:
   context, and the standard capability registry subject to the usual secret and
   capability approval rules. For `email.message.received`, this means handlers
   can call capabilities such as `agent_chat_turn` and `email_reply` directly,
-  while `import { email } from 'kody:runtime'` is available as a
-  convenience helper for message lookup, attachment lookup, and replies.
+  while `import { email } from 'kody:runtime'` is available as a convenience
+  helper for message lookup, attachment lookup, and replies.
 - Attachments are metadata-first by default; raw MIME for small messages is
   stored so on-demand attachment lookup can reconstruct bytes locally.
 
