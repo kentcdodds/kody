@@ -1,4 +1,3 @@
-import { compressSchemaForLlm } from '#mcp/capabilities/schema-compression.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
@@ -181,8 +180,6 @@ export type SearchEntityDetailStructured =
 			readOnly: boolean
 			idempotent: boolean
 			destructive: boolean
-			inputSchema?: unknown
-			outputSchema?: unknown
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 	  }
@@ -733,10 +730,7 @@ export function toSlimStructuredMatches(input: {
 	})
 }
 
-export function formatEntityDetailMarkdown(
-	detail: SearchEntityDetail,
-	options?: { includeSchemas?: boolean },
-) {
+export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 	if (detail.type === 'capability') {
 		const lines = [
 			`# Capability — \`${detail.spec.name}\``,
@@ -761,32 +755,6 @@ export function formatEntityDetailMarkdown(
 				: []),
 			'```',
 		]
-		const includeSchemas = options?.includeSchemas === true
-		const inputSchema = includeSchemas
-			? compressSchemaForLlm(detail.spec.inputSchema)
-			: undefined
-		const outputSchema =
-			includeSchemas && detail.spec.outputSchema != null
-				? compressSchemaForLlm(detail.spec.outputSchema, {
-						stripRootObjectType: false,
-					})
-				: undefined
-		if (includeSchemas) {
-			lines.push(
-				'',
-				'## Input schema',
-				'',
-				`- \`${JSON.stringify(inputSchema)}\``,
-			)
-		}
-		if (outputSchema !== undefined) {
-			lines.push(
-				'',
-				'## Output schema',
-				'',
-				`- \`${JSON.stringify(outputSchema)}\``,
-			)
-		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
@@ -801,8 +769,6 @@ export function formatEntityDetailMarkdown(
 				readOnly: detail.spec.readOnly,
 				idempotent: detail.spec.idempotent,
 				destructive: detail.spec.destructive,
-				...(includeSchemas ? { inputSchema } : {}),
-				...(outputSchema !== undefined ? { outputSchema } : {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,
 				...(detail.spec.outputTypeDefinition
 					? { outputTypeDefinition: detail.spec.outputTypeDefinition }

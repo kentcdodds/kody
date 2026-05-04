@@ -88,16 +88,10 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				.describe(
 					'Include TypeScript type definitions and full field lists when true. Defaults to false.',
 				),
-			includeSchemas: z
-				.boolean()
-				.optional()
-				.describe(
-					'Only used with detail: true. Include raw JSON schemas in addition to TypeScript type definitions. Defaults to false.',
-				),
 		}),
 		outputSchema,
 		async handler(
-			args: { domain?: string; detail?: boolean; includeSchemas?: boolean },
+			args: { domain?: string; detail?: boolean },
 			ctx: CapabilityContext,
 		) {
 			const { getCapabilityRegistryForContext } =
@@ -118,12 +112,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								idempotent: spec.idempotent,
 								destructive: spec.destructive,
 								requiredInputFields: spec.requiredInputFields,
-								...(args.includeSchemas === true
-									? { inputSchema: spec.inputSchema }
-									: {}),
-								...(args.includeSchemas === true && spec.outputSchema
-									? { outputSchema: spec.outputSchema }
-									: {}),
 								inputTypeDefinition: spec.inputTypeDefinition,
 								...(spec.outputTypeDefinition
 									? { outputTypeDefinition: spec.outputTypeDefinition }

@@ -87,7 +87,7 @@ function buildHomeConnectorEnv() {
 	} as unknown as Env
 }
 
-test('meta_list_capabilities includes runtime home capabilities and adds schemas only when requested', async () => {
+test('meta_list_capabilities includes runtime home capabilities with type definitions only', async () => {
 	const env = buildHomeConnectorEnv()
 
 	const result = await metaListCapabilitiesCapability.handler(
@@ -129,39 +129,6 @@ test('meta_list_capabilities includes runtime home capabilities and adds schemas
 	expect(listAppsCapability).not.toHaveProperty('outputSchema')
 	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability?.domain).toBe('home')
-
-	const resultWithSchemas = await metaListCapabilitiesCapability.handler(
-		{
-			detail: true,
-			includeSchemas: true,
-		},
-		{
-			env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				homeConnectorId: 'default',
-			}),
-		},
-	)
-
-	const homeCapabilityWithSchemas = resultWithSchemas.capabilities.find(
-		(capability) => capability.name === 'home_roku_press_key',
-	)
-	const listAppsCapabilityWithSchemas = resultWithSchemas.capabilities.find(
-		(capability) => capability.name === 'home_roku_list_apps',
-	)
-	expect(homeCapabilityWithSchemas).toMatchObject({
-		inputSchema: expect.objectContaining({ type: 'object' }),
-	})
-	expect(homeCapabilityWithSchemas?.inputTypeDefinition).toBe(
-		homeCapability?.inputTypeDefinition,
-	)
-	expect(listAppsCapabilityWithSchemas).toMatchObject({
-		outputSchema: expect.objectContaining({ type: 'object' }),
-	})
-	expect(listAppsCapabilityWithSchemas?.outputTypeDefinition).toBe(
-		listAppsCapability?.outputTypeDefinition,
-	)
 })
 
 test('meta_list_capabilities filters by domain', async () => {

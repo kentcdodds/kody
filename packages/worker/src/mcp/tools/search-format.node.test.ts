@@ -144,7 +144,7 @@ test('entity detail formatting returns stable structured details for values and 
 	})
 })
 
-test('capability entity detail keeps type definitions stable and adds schemas only when requested', () => {
+test('capability entity detail keeps type definitions stable without schema fields', () => {
 	const detail = formatEntityDetailMarkdown({
 		type: 'capability',
 		id: 'github_create_issue',
@@ -196,60 +196,6 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 				'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
 		},
 	})
-	const detailWithSchemas = formatEntityDetailMarkdown(
-		{
-			type: 'capability',
-			id: 'github_create_issue',
-			title: 'github_create_issue',
-			description: 'Create a GitHub issue.',
-			spec: {
-				name: 'github_create_issue',
-				domain: 'coding',
-				description: 'Create a GitHub issue.',
-				keywords: ['github', 'issue'],
-				readOnly: false,
-				idempotent: false,
-				destructive: false,
-				inputFields: ['owner', 'repo', 'title'],
-				requiredInputFields: ['owner', 'repo', 'title'],
-				outputFields: ['issueUrl'],
-				inputSchema: {
-					type: 'object',
-					properties: {
-						owner: {
-							type: 'string',
-							description: 'Repository owner.',
-						},
-						repo: {
-							type: 'string',
-							description: 'Repository name.',
-						},
-						title: {
-							type: 'string',
-							description: 'Issue title.',
-						},
-						body: {
-							type: 'string',
-							description: 'Optional issue body.',
-						},
-					},
-					required: ['owner', 'repo', 'title'],
-				},
-				outputSchema: {
-					type: 'object',
-					properties: {
-						issueUrl: { type: 'string' },
-					},
-					required: ['issueUrl'],
-				},
-				inputTypeDefinition:
-					'type GithubCreateIssueInput = {\n\t/** Repository owner. */\n\towner: string\n\t/** Repository name. */\n\trepo: string\n\t/** Issue title. */\n\ttitle: string\n\t/** Optional issue body. */\n\tbody?: string\n}',
-				outputTypeDefinition:
-					'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
-			},
-		},
-		{ includeSchemas: true },
-	)
 
 	expect(detail.structured).toMatchObject({
 		type: 'capability',
@@ -258,20 +204,6 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 	})
 	expect(detail.structured).not.toHaveProperty('inputSchema')
 	expect(detail.structured).not.toHaveProperty('outputSchema')
-
-	expect(detailWithSchemas.structured).toMatchObject({
-		type: 'capability',
-		inputSchema: expect.objectContaining({
-			properties: expect.objectContaining({
-				owner: expect.objectContaining({ type: 'string' }),
-			}),
-		}),
-		outputSchema: expect.objectContaining({ type: 'object' }),
-	})
-	expect(detailWithSchemas.structured).toMatchObject({
-		inputTypeDefinition: detail.structured.inputTypeDefinition,
-		outputTypeDefinition: detail.structured.outputTypeDefinition,
-	})
 })
 
 test('repo_run_commands capability detail keeps the structured capability contract', () => {
@@ -281,16 +213,13 @@ test('repo_run_commands capability detail keeps the structured capability contra
 		throw new Error('Expected repo_run_commands capability to exist')
 	}
 
-	const detail = formatEntityDetailMarkdown(
-		{
-			type: 'capability',
-			id: 'repo_run_commands',
-			title: 'repo_run_commands',
-			description: repoRunCommands.description,
-			spec: repoRunCommands,
-		},
-		{ includeSchemas: true },
-	)
+	const detail = formatEntityDetailMarkdown({
+		type: 'capability',
+		id: 'repo_run_commands',
+		title: 'repo_run_commands',
+		description: repoRunCommands.description,
+		spec: repoRunCommands,
+	})
 
 	expect(detail.structured).toMatchObject({
 		kind: 'entity',
@@ -306,27 +235,8 @@ test('repo_run_commands capability detail keeps the structured capability contra
 		destructive: expect.any(Boolean),
 		inputTypeDefinition: expect.any(String),
 	})
-	expect(detail.structured).toMatchObject({
-		inputSchema: expect.objectContaining({
-			properties: expect.objectContaining({
-				commands: expect.objectContaining({
-					type: 'string',
-				}),
-			}),
-		}),
-	})
-	expect(detail.structured).toMatchObject({
-		outputSchema: expect.objectContaining({
-			type: 'object',
-			properties: expect.objectContaining({
-				session: expect.any(Object),
-				resolved_target: expect.any(Object),
-				commands: expect.any(Object),
-				checks: expect.any(Object),
-				publish: expect.any(Object),
-			}),
-		}),
-	})
+	expect(detail.structured).not.toHaveProperty('inputSchema')
+	expect(detail.structured).not.toHaveProperty('outputSchema')
 })
 
 test('entity detail formatting includes package app, export, and job metadata', () => {

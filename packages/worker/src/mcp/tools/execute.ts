@@ -33,8 +33,8 @@ const executeTool = {
 	title: 'Execute Capabilities',
 	description: `
 Run one ephemeral ESM module string with a default export. Discover capability
-names with \`search\`; for one capability’s \`inputSchema\` / \`outputSchema\`,
-call \`search\` with \`entity: "{name}:capability"\` or use
+names with \`search\`; for one capability’s TypeScript call shape, call
+\`search\` with \`entity: "{name}:capability"\` or use
 \`meta_list_capabilities\`.
 
 Saved package surface:
