@@ -288,6 +288,15 @@ test('entity detail formatting includes package app, export, and job metadata', 
 		},
 		files: {
 			'package.json': '{}',
+			'README.md': `# Observed package
+
+Use this package to inspect observed UI state.
+
+## Usage
+
+- Open the app for quick checks.
+- Import the root entry for scripted flows.
+`,
 			'src/app.d.ts': `/**
  * Render the observed app.
  */
@@ -330,7 +339,14 @@ export declare function fetch(request: Request): Promise<Response>
 				scheduleSummary: 'Runs every 1d',
 			}),
 		],
+		readme: {
+			path: 'README.md',
+			content: expect.stringContaining('## Usage'),
+			truncated: false,
+		},
 	})
+	expect(packageDetail.markdown).toContain('## README (`README.md`)')
+	expect(packageDetail.markdown).toContain('Use this package to inspect observed UI state.')
 })
 
 test('package search formatting keeps runnable package actions in structured output', () => {
@@ -346,6 +362,12 @@ test('package search formatting keeps runnable package actions in structured out
 				description: 'Saved package for Spotify playback controls.',
 				tags: ['spotify', 'playback'],
 				hasApp: true,
+				readmeSnippet: {
+					path: 'README.md',
+					snippet:
+						'Playback controls, queue helpers, and maintenance notes for the hosted remote.',
+					truncated: false,
+				},
 			},
 		],
 	})
@@ -364,8 +386,43 @@ test('package search formatting keeps runnable package actions in structured out
 		tags: ['spotify', 'playback'],
 		hasApp: true,
 		hostedUrl: 'http://localhost/packages/spotify-playback',
+		readmeSnippet: {
+			path: 'README.md',
+			snippet:
+				'Playback controls, queue helpers, and maintenance notes for the hosted remote.',
+			truncated: false,
+		},
 	})
 	expect(packageMatch?.nextStep).toEqual(expect.any(String))
+})
+
+test('search markdown includes concise package README snippets when available', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-123',
+				kodyId: 'observed-package',
+				name: '@kody/observed-package',
+				title: '@kody/observed-package',
+				description: 'Observed package with an app surface.',
+				tags: ['observed'],
+				hasApp: false,
+				readmeSnippet: {
+					path: 'README.md',
+					snippet:
+						'Includes setup instructions, export examples, and maintenance notes.',
+					truncated: true,
+				},
+			},
+		],
+	})
+
+	expect(markdown).toContain(
+		'**README (README.md):** Includes setup instructions, export examples, and maintenance notes\\. _(truncated)_',
+	)
 })
 
 test('search formatting surfaces package retriever results', () => {

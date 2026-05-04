@@ -216,5 +216,10 @@ short for autonomous agents and CI-style helpers; the tool accepts 60 seconds to
 
 Search returns packages as the saved-entity unit.
 
-Package detail includes nested exports, nested jobs, tags, and app presence.
+Ranked package search hits may include a concise README excerpt when the saved
+package has a root README so agents can learn usage, examples, and maintenance
+notes without separately cloning the package repository.
+
+Exact package detail includes nested exports, nested jobs, tags, app presence,
+and README content when a root README exists.
 Search should not frame exports or jobs as separate top-level saved entities.
