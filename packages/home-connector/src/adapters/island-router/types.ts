@@ -1,15 +1,172 @@
-export type IslandRouterHostKind = 'ipv4' | 'ipv6' | 'mac' | 'hostname'
-
-export type IslandRouterHostIdentity = {
-	kind: IslandRouterHostKind
-	value: string
-	normalizedValue: string
-}
-
 export type IslandRouterVerificationMode =
 	| 'known-hosts'
 	| 'fingerprint'
 	| 'none'
+
+export const islandRouterReadCommandStrings = [
+	'show ip neighbors',
+	'show ip sockets',
+	'show stats',
+	'show interface <iface>',
+	'show ip interface <iface>',
+	'show log',
+	'show running-config',
+	'show running-config differences',
+	'show ip dhcp',
+	'show ip routes',
+	'show ip recommendations',
+] as const
+
+export type IslandRouterReadCommand =
+	(typeof islandRouterReadCommandStrings)[number]
+
+export type IslandRouterReadCommandCatalogEntry = {
+	command: IslandRouterReadCommand
+	readOnly: true
+	params: Array<'interfaceName' | 'query' | 'limit'>
+	riskLevel: 'low' | 'medium'
+	description: string
+	riskNotes: string
+}
+
+export const islandRouterReadCommandCatalog = [
+	{
+		command: 'show ip neighbors',
+		readOnly: true,
+		params: [],
+		riskLevel: 'low',
+		description: 'Read the IP neighbor cache.',
+		riskNotes: 'May reveal LAN device IP and MAC addresses.',
+	},
+	{
+		command: 'show ip sockets',
+		readOnly: true,
+		params: [],
+		riskLevel: 'low',
+		description: 'Read local/control-plane socket state.',
+		riskNotes:
+			'This is not a LAN client session table; it may reveal router-local listening and connected sockets.',
+	},
+	{
+		command: 'show stats',
+		readOnly: true,
+		params: [],
+		riskLevel: 'low',
+		description: 'Read system and interface statistics.',
+		riskNotes: 'May reveal interface traffic counters and rates.',
+	},
+	{
+		command: 'show interface <iface>',
+		readOnly: true,
+		params: ['interfaceName'],
+		riskLevel: 'low',
+		description: 'Read details for one named interface.',
+		riskNotes: 'May reveal interface link state and labels.',
+	},
+	{
+		command: 'show ip interface <iface>',
+		readOnly: true,
+		params: ['interfaceName'],
+		riskLevel: 'low',
+		description: 'Read IP details for one named interface.',
+		riskNotes: 'May reveal addressing and DHCP state for the interface.',
+	},
+	{
+		command: 'show log',
+		readOnly: true,
+		params: ['query', 'limit'],
+		riskLevel: 'medium',
+		description: 'Read router log output with optional Kody-side filtering.',
+		riskNotes:
+			'May reveal host identifiers, addresses, policy names, and operational history.',
+	},
+	{
+		command: 'show running-config',
+		readOnly: true,
+		params: [],
+		riskLevel: 'medium',
+		description: 'Read the live running configuration.',
+		riskNotes:
+			'May reveal complete network topology, policy, resolver, VPN, and service configuration.',
+	},
+	{
+		command: 'show running-config differences',
+		readOnly: true,
+		params: [],
+		riskLevel: 'medium',
+		description: 'Read pending differences from saved configuration.',
+		riskNotes:
+			'May reveal unsaved operational changes and sensitive configuration context.',
+	},
+	{
+		command: 'show ip dhcp',
+		readOnly: true,
+		params: [],
+		riskLevel: 'low',
+		description: 'Read documented DHCP information.',
+		riskNotes: 'May reveal DHCP leases or reservations when firmware includes them.',
+	},
+	{
+		command: 'show ip routes',
+		readOnly: true,
+		params: [],
+		riskLevel: 'low',
+		description: 'Read the IP routing table.',
+		riskNotes: 'May reveal WAN gateways and internal prefixes.',
+	},
+	{
+		command: 'show ip recommendations',
+		readOnly: true,
+		params: [],
+		riskLevel: 'low',
+		description: 'Read documented IP recommendations.',
+		riskNotes: 'May reveal router-generated network diagnostics.',
+	},
+] as const satisfies ReadonlyArray<IslandRouterReadCommandCatalogEntry>
+
+export const islandRouterWriteOperationStrings = [
+	'renew dhcp clients',
+	'clear log buffer',
+	'save running config',
+] as const
+
+export type IslandRouterWriteOperation =
+	(typeof islandRouterWriteOperationStrings)[number]
+
+export type IslandRouterWriteOperationCatalogEntry = {
+	operation: IslandRouterWriteOperation
+	command: string
+	riskLevel: 'high'
+	description: string
+	blastRadius: string
+}
+
+export const islandRouterWriteOperationCatalog = [
+	{
+		operation: 'renew dhcp clients',
+		command: 'clear dhcp-client',
+		riskLevel: 'high',
+		description: 'Request immediate renewal of DHCP-learned router addresses.',
+		blastRadius:
+			'Can briefly disrupt DHCP-learned WAN or interface addressing and may interrupt connectivity while leases renew.',
+	},
+	{
+		operation: 'clear log buffer',
+		command: 'clear log',
+		riskLevel: 'high',
+		description: 'Clear the in-memory Island router log buffer.',
+		blastRadius:
+			'Permanently removes current local diagnostics, making recent incident reconstruction harder.',
+	},
+	{
+		operation: 'save running config',
+		command: 'write memory',
+		riskLevel: 'high',
+		description: 'Persist the current running configuration to startup storage.',
+		blastRadius:
+			'Can make a bad live configuration survive reboot until manually corrected.',
+	},
+] as const satisfies ReadonlyArray<IslandRouterWriteOperationCatalogEntry>
 
 export type IslandRouterConfigStatus = {
 	configured: boolean
@@ -23,60 +180,18 @@ export type IslandRouterConfigStatus = {
 export type IslandRouterCommandId =
 	| 'show-version'
 	| 'show-clock'
-	| 'show-system'
-	| 'show-hardware'
 	| 'show-stats'
 	| 'show-running-config'
+	| 'show-running-config-differences'
 	| 'show-interface-summary'
 	| 'show-interface'
 	| 'show-ip-interface'
-	| 'show-interface-statistics'
-	| 'show-bandwidth-usage'
-	| 'show-wan'
-	| 'show-wan-failover'
-	| 'show-multi-wan'
 	| 'show-ip-routes'
-	| 'show-nat'
-	| 'show-ip-nat'
-	| 'show-sessions'
-	| 'show-vlan'
-	| 'show-dns'
-	| 'show-ip-dns'
-	| 'show-users'
-	| 'show-user'
-	| 'show-security-policy'
-	| 'show-protection'
-	| 'show-firewall'
-	| 'show-qos'
-	| 'show-traffic-policy'
-	| 'show-vpn'
-	| 'show-vpns'
-	| 'show-ipsec'
-	| 'show-gre'
 	| 'show-ip-neighbors'
 	| 'show-ip-sockets'
-	| 'show-ip-dhcp-reservations'
-	| 'show-dhcp-server'
-	| 'show-ntp'
-	| 'show-ntp-status'
-	| 'show-ntp-associations'
-	| 'show-syslog'
-	| 'show-snmp'
 	| 'show-log'
-	| 'show-log-recent'
-	| 'show-ip-host'
-	| 'show-ip-nat-translations'
 	| 'show-ip-dhcp'
-	| 'show-ip-counters'
-	| 'ping'
-	| 'force-wan-failover'
-	| 'set-dhcp-reservation'
-	| 'remove-dhcp-reservation'
-	| 'reboot'
-	| 'set-interface-description'
-	| 'set-dns-server'
-	| 'block-host'
-	| 'unblock-host'
+	| 'show-ip-recommendations'
 	| 'clear-dhcp-client'
 	| 'clear-log'
 	| 'write-memory'
@@ -91,14 +206,6 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
-			id: 'show-system'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-hardware'
-			timeoutMs?: number
-	  }
-	| {
 			id: 'show-stats'
 			timeoutMs?: number
 	  }
@@ -107,19 +214,11 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
+			id: 'show-running-config-differences'
+			timeoutMs?: number
+	  }
+	| {
 			id: 'show-interface-summary'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-wan'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-wan-failover'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-multi-wan'
 			timeoutMs?: number
 	  }
 	| {
@@ -133,83 +232,7 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
-			id: 'show-interface-statistics'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-bandwidth-usage'
-			timeoutMs?: number
-	  }
-	| {
 			id: 'show-ip-routes'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-nat'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-nat'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-sessions'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-vlan'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-dns'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-dns'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-users'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-user'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-security-policy'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-protection'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-firewall'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-qos'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-traffic-policy'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-vpn'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-vpns'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ipsec'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-gre'
 			timeoutMs?: number
 	  }
 	| {
@@ -221,111 +244,15 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
-			id: 'show-ip-dhcp-reservations'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-dhcp-server'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ntp'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ntp-status'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ntp-associations'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-syslog'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-snmp'
-			timeoutMs?: number
-	  }
-	| {
 			id: 'show-log'
-			query?: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-log-recent'
-			lineCount?: number
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-host'
-			host: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-nat-translations'
-			host?: string
 			timeoutMs?: number
 	  }
 	| {
 			id: 'show-ip-dhcp'
-			host?: string
 			timeoutMs?: number
 	  }
 	| {
-			id: 'show-ip-counters'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'ping'
-			host: string
-			timeoutMs?: number
-			allowTimeout?: boolean
-	  }
-	| {
-			id: 'force-wan-failover'
-			interfaceName: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'set-dhcp-reservation'
-			macAddress: string
-			ipAddress: string
-			hostName?: string
-			interfaceName?: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'remove-dhcp-reservation'
-			macAddress: string
-			ipAddress?: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'reboot'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'set-interface-description'
-			interfaceName: string
-			description: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'set-dns-server'
-			servers: Array<string>
-			interfaceName?: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'block-host'
-			host: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'unblock-host'
-			host: string
+			id: 'show-ip-recommendations'
 			timeoutMs?: number
 	  }
 	| {
@@ -357,8 +284,6 @@ export type IslandRouterCommandRunner = (
 ) => Promise<IslandRouterCommandResult>
 
 export type IslandRouterWriteOperationId =
-	| 'set-wan-failover'
-	| 'run-allowlisted-cli-command'
 	| 'renew-dhcp-clients'
 	| 'clear-log-buffer'
 	| 'save-running-config'
@@ -367,24 +292,9 @@ export type IslandRouterWriteOperationResult = {
 	operationId: IslandRouterWriteOperationId
 	commandId: Extract<
 		IslandRouterCommandId,
-		| 'show-version'
-		| 'show-clock'
-		| 'show-system'
-		| 'show-interface-summary'
-		| 'show-interface'
-		| 'show-ip-interface'
-		| 'force-wan-failover'
-		| 'set-dhcp-reservation'
-		| 'remove-dhcp-reservation'
-		| 'reboot'
-		| 'set-interface-description'
-		| 'set-dns-server'
-		| 'block-host'
-		| 'unblock-host'
-		| 'clear-dhcp-client'
-		| 'clear-log'
-		| 'write-memory'
+		'clear-dhcp-client' | 'clear-log' | 'write-memory'
 	>
+	catalogEntry: IslandRouterWriteOperationCatalogEntry
 	commandLines: Array<string>
 	stdout: string
 	stderr: string
@@ -440,26 +350,6 @@ export type IslandRouterRecentEvent = {
 	module: string | null
 	message: string
 	rawLine: string
-}
-
-export type IslandRouterPingReply = {
-	sequence: number | null
-	timeMs: number | null
-	rawLine: string
-}
-
-export type IslandRouterPingResult = {
-	host: string
-	addressFamily: 'auto' | 'ip' | 'ipv6'
-	reachable: boolean | null
-	timedOut: boolean
-	completed: boolean
-	transmitted: number | null
-	received: number | null
-	packetLossPercent: number | null
-	replies: Array<IslandRouterPingReply>
-	rawOutput: string
-	stderr: string
 }
 
 export type IslandRouterVersionInfo = {
@@ -795,44 +685,27 @@ export type IslandRouterBandwidthUsage = {
 	rawOutput: string
 }
 
-export type IslandRouterAllowlistedCliCommand =
-	| 'show-version'
-	| 'show-clock'
-	| 'show-interface-summary'
-	| 'show-interface'
-	| 'show-ip-interface'
-	| 'show-ip-host'
-	| 'show-ip-nat'
-	| 'show-ip-dhcp'
-	| 'show-ip-counters'
-	| 'show-log-recent'
-
-export type IslandRouterAllowlistedCliRawResult = {
-	rawOutput: string
-}
-
-export type IslandRouterAllowlistedCliCommandResult = {
-	command: IslandRouterAllowlistedCliCommand
+export type IslandRouterReadCommandResult = {
+	command: IslandRouterReadCommand
 	commandId: Extract<
 		IslandRouterCommandId,
-		| 'show-version'
-		| 'show-clock'
-		| 'show-interface-summary'
+		| 'show-ip-neighbors'
+		| 'show-ip-sockets'
+		| 'show-stats'
 		| 'show-interface'
 		| 'show-ip-interface'
-		| 'show-ip-host'
-		| 'show-ip-nat-translations'
+		| 'show-log'
+		| 'show-running-config'
+		| 'show-running-config-differences'
 		| 'show-ip-dhcp'
-		| 'show-ip-counters'
-		| 'show-log-recent'
+		| 'show-ip-routes'
+		| 'show-ip-recommendations'
 	>
+	catalogEntry: IslandRouterReadCommandCatalogEntry
 	commandLines: Array<string>
-	result:
-		| IslandRouterVersionInfo
-		| { clock: string | null }
-		| { interfaces: Array<IslandRouterInterfaceSummary> }
-		| IslandRouterInterfaceDetails
-		| IslandRouterAllowlistedCliRawResult
+	rawOutput: string
+	filteredOutput: string
+	lines: Array<string>
 	stdout: string
 	stderr: string
 	exitCode: number | null
@@ -850,17 +723,5 @@ export type IslandRouterStatus = {
 	}
 	interfaces: Array<IslandRouterInterfaceSummary>
 	neighbors: Array<IslandRouterNeighborEntry>
-	errors: Array<string>
-}
-
-export type IslandRouterHostDiagnosis = {
-	host: IslandRouterHostIdentity
-	ping: IslandRouterPingResult | null
-	arpEntry: IslandRouterNeighborEntry | null
-	dhcpLease: IslandRouterDhcpLease | null
-	interfaceSummary: IslandRouterInterfaceSummary | null
-	interfaceDetails: IslandRouterInterfaceDetails | null
-	ipInterfaceDetails: IslandRouterInterfaceDetails | null
-	recentEvents: Array<IslandRouterRecentEvent>
 	errors: Array<string>
 }

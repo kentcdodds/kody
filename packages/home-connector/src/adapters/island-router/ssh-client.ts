@@ -247,61 +247,20 @@ function assertSingleCliLine(value: string, field: string) {
 	return trimmed
 }
 
-function assertPositiveIntegerCliArgument(value: number, field: string) {
-	if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-		throw new Error(`${field} must be a positive integer.`)
-	}
-	return String(value)
-}
-
-function assertHostCliArgument(value: string, field: string) {
-	const trimmed = assertSingleCliLine(value, field)
-	if (!/^[A-Za-z0-9:.\-]+$/u.test(trimmed)) {
-		throw new Error(
-			`${field} must be a valid IP, MAC, or hostname token (letters, digits, dot, dash, colon).`,
-		)
-	}
-	return trimmed
-}
-
-function escapeCliQuery(value: string) {
-	return assertSingleCliLine(value, 'query')
-		.replaceAll('\\', '\\\\')
-		.replaceAll('"', '\\"')
-}
-
-function escapeCliValue(value: string, field: string) {
-	return assertSingleCliLine(value, field)
-		.replaceAll('\\', '\\\\')
-		.replaceAll('"', '\\"')
-}
-
 function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 	switch (request.id) {
 		case 'show-version':
 			return ['show version']
 		case 'show-clock':
 			return ['show clock']
-		case 'show-system':
-			return ['show stats']
-		case 'show-hardware':
-			return ['show hardware']
 		case 'show-stats':
 			return ['show stats']
 		case 'show-running-config':
 			return ['show running-config']
+		case 'show-running-config-differences':
+			return ['show running-config differences']
 		case 'show-interface-summary':
 			return ['show interface summary']
-		case 'show-interface-statistics':
-			return ['show stats']
-		case 'show-bandwidth-usage':
-			return ['show stats']
-		case 'show-wan':
-			return ['show running-config']
-		case 'show-wan-failover':
-			return ['show running-config']
-		case 'show-multi-wan':
-			return ['show running-config']
 		case 'show-interface':
 			return [
 				`show interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
@@ -312,146 +271,16 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 			]
 		case 'show-ip-routes':
 			return ['show ip routes']
-		case 'show-nat':
-			return ['show running-config']
-		case 'show-ip-nat':
-			return ['show running-config']
-		case 'show-sessions':
-			return ['show ip sockets']
-		case 'show-vlan':
-			return ['show running-config']
-		case 'show-dns':
-			return ['show running-config']
-		case 'show-ip-dns':
-			return ['show running-config']
-		case 'show-users':
-			return ['show users']
-		case 'show-user':
-			// Best-effort guess; public docs were not found for per-user detail output.
-			return ['show user']
-		case 'show-security-policy':
-			return ['show running-config']
-		case 'show-protection':
-			return ['show running-config']
-		case 'show-firewall':
-			return ['show running-config']
-		case 'show-qos':
-			return ['show running-config']
-		case 'show-traffic-policy':
-			return ['show running-config']
-		case 'show-vpn':
-			return ['show vpns']
-		case 'show-vpns':
-			return ['show vpns']
-		case 'show-ipsec':
-			return ['show vpns']
-		case 'show-gre':
-			return ['show vpns']
 		case 'show-ip-neighbors':
 			return ['show ip neighbors']
 		case 'show-ip-sockets':
 			return ['show ip sockets']
-		case 'show-ip-dhcp-reservations':
-			return ['show ip dhcp-reservations']
-		case 'show-dhcp-server':
-			return ['show running-config']
-		case 'show-ntp':
-			return ['show ntp status']
-		case 'show-ntp-status':
-			return ['show ntp status']
-		case 'show-ntp-associations':
-			return ['show ntp associations']
-		case 'show-syslog':
-			return ['show running-config']
-		case 'show-snmp':
-			return ['show running-config']
 		case 'show-log':
-			return request.query
-				? [`show log last where "${escapeCliQuery(request.query)}"`]
-				: ['show log last']
-		case 'show-log-recent':
-			return request.lineCount === undefined
-				? ['show log']
-				: [
-						`show log ${assertPositiveIntegerCliArgument(
-							request.lineCount,
-							'lineCount',
-						)}`,
-					]
-		case 'show-ip-host':
-			return [`show ip host ${assertHostCliArgument(request.host, 'host')}`]
-		case 'show-ip-nat-translations':
-			return request.host === undefined
-				? ['show ip nat']
-				: [
-						`show ip nat ${assertHostCliArgument(request.host, 'host')}`,
-					]
+			return ['show log']
 		case 'show-ip-dhcp':
-			return request.host === undefined
-				? ['show ip dhcp']
-				: [
-						`show ip dhcp ${assertHostCliArgument(request.host, 'host')}`,
-					]
-		case 'show-ip-counters':
-			return ['show ip counters']
-		case 'ping':
-			return [`ping ${assertSingleCliLine(request.host, 'host')}`]
-		case 'force-wan-failover':
-			// Best-effort guess; public docs only confirmed priority-based WAN selection,
-			// not an explicit "force now" command.
-			return [
-				`wan failover force ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
-			]
-		case 'set-dhcp-reservation': {
-			const command = [
-				'dhcp-server reservation',
-				assertSingleCliLine(request.macAddress, 'macAddress'),
-				assertSingleCliLine(request.ipAddress, 'ipAddress'),
-			]
-			if (request.hostName) {
-				command.push(`host-name "${escapeCliValue(request.hostName, 'hostName')}"`)
-			}
-			if (request.interfaceName) {
-				command.push(
-					`interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
-				)
-			}
-			return [command.join(' ')]
-		}
-		case 'remove-dhcp-reservation':
-			return [
-				request.ipAddress
-					? `no dhcp-server reservation ${assertSingleCliLine(request.macAddress, 'macAddress')} ${assertSingleCliLine(request.ipAddress, 'ipAddress')}`
-					: `no dhcp-server reservation ${assertSingleCliLine(request.macAddress, 'macAddress')}`,
-			]
-		case 'reboot':
-			return ['reload']
-		case 'set-interface-description':
-			return [
-				`interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
-				`description "${escapeCliValue(request.description, 'description')}"`,
-			]
-		case 'set-dns-server':
-			return request.interfaceName
-				? [
-						`interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
-						...request.servers.map(
-							(server) =>
-								`ip name-server ${assertSingleCliLine(server, 'servers')}`,
-						),
-					]
-				: request.servers.map(
-						(server) =>
-							`ip dns server ${assertSingleCliLine(server, 'servers')}`,
-					)
-		case 'block-host':
-			return [
-				`firewall block-host ${assertSingleCliLine(request.host, 'host')}`,
-			]
-		case 'unblock-host':
-			return [
-				`no firewall block-host ${assertSingleCliLine(request.host, 'host')}`,
-			]
+			return ['show ip dhcp']
+		case 'show-ip-recommendations':
+			return ['show ip recommendations']
 		case 'clear-dhcp-client':
 			return ['clear dhcp-client']
 		case 'clear-log':
@@ -537,35 +366,17 @@ export function createIslandRouterSshCommandRunner(
 			closed = true
 		})
 		let timeout: NodeJS.Timeout | null = null
-		if (request.id === 'ping' && request.allowTimeout) {
-			timeout = setTimeout(() => {
-				timedOut = true
-				child.stdin?.write('\u0003')
-				child.stdin?.write('\nexit\n')
-				child.stdin?.end()
-				setTimeout(() => {
-					if (closed) return
-					child.kill('SIGTERM')
-					setTimeout(() => {
-						if (!closed) {
-							child.kill('SIGKILL')
-						}
-					}, 1000).unref()
-				}, 1000).unref()
-			}, timeoutMs)
-		} else {
-			child.stdin?.write('exit\n')
-			child.stdin?.end()
-			timeout = setTimeout(() => {
-				timedOut = true
-				child.kill('SIGTERM')
-				setTimeout(() => {
-					if (!closed) {
-						child.kill('SIGKILL')
-					}
-				}, 1000).unref()
-			}, timeoutMs)
-		}
+		child.stdin?.write('exit\n')
+		child.stdin?.end()
+		timeout = setTimeout(() => {
+			timedOut = true
+			child.kill('SIGTERM')
+			setTimeout(() => {
+				if (!closed) {
+					child.kill('SIGKILL')
+				}
+			}, 1000).unref()
+		}, timeoutMs)
 
 		let result: Awaited<ReturnType<typeof onceProcessExit>>
 		try {

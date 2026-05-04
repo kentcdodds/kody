@@ -93,16 +93,13 @@ Quick notes for getting a local kody environment running.
     `HOME_CONNECTOR_DB_PATH`.
   - Island router SSH diagnostics are optional. Set `ISLAND_ROUTER_HOST`,
     `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` to enable the
-    typed MCP tools for router status, host diagnosis, WAN/failover state,
-    routing/NAT/session inspection, VLAN/DNS/DHCP policy inspection, VPN/NTP/
-    syslog/SNMP/system-health reads, and the other typed read-only router
-    diagnostics exposed by the home connector. The current read surface is
-    intentionally aligned to CLI families verified against live Island Pro
-    firmware: config-style reads primarily source from `show running-config`,
-    connection/state reads use commands such as `show ip neighbors`,
-    `show ip routes`, `show ip sockets`, and `show vpns`, while NTP uses
-    `show ntp status` plus `show ntp associations`, and system-health summaries
-    use `show stats` plus `show hardware`.
+    router status tool plus a compact exact-command substrate. Read commands are
+    selected from a typed allowlist of documented Island CLI command strings:
+    `show ip neighbors`, `show ip sockets`, `show stats`,
+    `show interface <iface>`, `show ip interface <iface>`, `show log`,
+    `show running-config`, `show running-config differences`, `show ip dhcp`,
+    `show ip routes`, and `show ip recommendations`. Log filtering and limits
+    are applied by Kody after `show log` returns.
   - Prefer mounting the private key read-only into the container or host
     runtime, for example
     `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro` plus
@@ -116,14 +113,12 @@ Quick notes for getting a local kody environment running.
   - The Island router integration intentionally does not expose arbitrary
     command execution over MCP. It uses a typed allowlist of documented CLI
     commands.
-  - High-risk Island router write tools are available when SSH host verification
+  - High-risk Island router write operations are available when SSH host verification
     is configured with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
-    `ISLAND_ROUTER_HOST_FINGERPRINT`. The allowlisted mutating tools include
-    targeted operational actions such as WAN failover forcing, DHCP reservation
-    changes, reboot, interface-description changes, DNS-server changes,
-    block/unblock-host actions, DHCP client renewal, log clearing, config save,
-    and a narrowly allowlisted router CLI escape hatch.
-  - These write tools exist for carefully scoped operational recovery only.
+    `ISLAND_ROUTER_HOST_FINGERPRINT`. The allowlisted mutating entries are DHCP
+    client renewal (`clear dhcp-client`), log clearing (`clear log`), and config
+    save (`write memory`).
+  - These write operations exist for carefully scoped operational recovery only.
     Their tool descriptions intentionally use strong language because mistakes
     can disrupt connectivity, erase diagnostics, or persist a bad router state
     with severe consequences. Agents must be highly certain before using them.
