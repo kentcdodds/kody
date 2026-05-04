@@ -827,15 +827,10 @@ export type IslandRouterAllowlistedCliCommand =
 	| 'show-ip-top'
 	| 'show-ip-host'
 	| 'show-ip-sessions'
-	| 'show-ip-sessions-host'
 	| 'show-ip-nat'
-	| 'show-ip-nat-host'
 	| 'show-ip-dhcp'
-	| 'show-ip-dhcp-host'
 	| 'show-ip-arp'
-	| 'show-ip-arp-host'
 	| 'show-ip-counters'
-	| 'show-log'
 	| 'show-log-recent'
 	| 'show-ip-dns-stats'
 
@@ -859,7 +854,6 @@ export type IslandRouterAllowlistedCliCommandResult = {
 		| 'show-ip-dhcp'
 		| 'show-ip-arp'
 		| 'show-ip-counters'
-		| 'show-log'
 		| 'show-log-recent'
 		| 'show-ip-dns-stats'
 	>

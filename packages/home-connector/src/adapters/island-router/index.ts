@@ -1092,46 +1092,31 @@ export function createIslandRouterAdapter(input: {
 					}
 					break
 				case 'show-ip-sessions':
-					commandRequest = { id: 'show-ip-sessions' }
-					break
-				case 'show-ip-sessions-host':
 					commandRequest = {
 						id: 'show-ip-sessions',
-						host: requireHost('host'),
+						host: request.host === undefined ? undefined : requireHost('host'),
 					}
 					break
 				case 'show-ip-nat':
-					commandRequest = { id: 'show-ip-nat-translations' }
-					break
-				case 'show-ip-nat-host':
 					commandRequest = {
 						id: 'show-ip-nat-translations',
-						host: requireHost('host'),
+						host: request.host === undefined ? undefined : requireHost('host'),
 					}
 					break
 				case 'show-ip-dhcp':
-					commandRequest = { id: 'show-ip-dhcp' }
-					break
-				case 'show-ip-dhcp-host':
 					commandRequest = {
 						id: 'show-ip-dhcp',
-						host: requireHost('host'),
+						host: request.host === undefined ? undefined : requireHost('host'),
 					}
 					break
 				case 'show-ip-arp':
-					commandRequest = { id: 'show-ip-arp' }
-					break
-				case 'show-ip-arp-host':
 					commandRequest = {
 						id: 'show-ip-arp',
-						host: requireHost('host'),
+						host: request.host === undefined ? undefined : requireHost('host'),
 					}
 					break
 				case 'show-ip-counters':
 					commandRequest = { id: 'show-ip-counters' }
-					break
-				case 'show-log':
-					commandRequest = { id: 'show-log' }
 					break
 				case 'show-log-recent':
 					commandRequest = {
@@ -1198,15 +1183,10 @@ export function createIslandRouterAdapter(input: {
 				case 'show-ip-top':
 				case 'show-ip-host':
 				case 'show-ip-sessions':
-				case 'show-ip-sessions-host':
 				case 'show-ip-nat':
-				case 'show-ip-nat-host':
 				case 'show-ip-dhcp':
-				case 'show-ip-dhcp-host':
 				case 'show-ip-arp':
-				case 'show-ip-arp-host':
 				case 'show-ip-counters':
-				case 'show-log':
 				case 'show-log-recent':
 				case 'show-ip-dns-stats':
 					parsedResult = parseIslandRouterRawOutput(

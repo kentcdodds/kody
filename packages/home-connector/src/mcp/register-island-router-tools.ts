@@ -897,15 +897,10 @@ export function registerIslandRouterHomeConnectorTools(input: {
 				'show-ip-top',
 				'show-ip-host',
 				'show-ip-sessions',
-				'show-ip-sessions-host',
 				'show-ip-nat',
-				'show-ip-nat-host',
 				'show-ip-dhcp',
-				'show-ip-dhcp-host',
 				'show-ip-arp',
-				'show-ip-arp-host',
 				'show-ip-counters',
-				'show-log',
 				'show-log-recent',
 				'show-ip-dns-stats',
 			])
@@ -924,7 +919,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 			.min(1)
 			.optional()
 			.describe(
-				'Required only for host-scoped commands such as show-ip-host, show-ip-sessions-host, show-ip-nat-host, show-ip-dhcp-host, or show-ip-arp-host. Accepts an IPv4, IPv6, MAC, or hostname.',
+				'Optional IPv4, IPv6, MAC, or hostname. Required for show-ip-host. Optional filter for show-ip-sessions, show-ip-nat, show-ip-dhcp, and show-ip-arp.',
 			),
 		limit: z
 			.number()

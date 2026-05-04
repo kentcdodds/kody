@@ -1432,7 +1432,7 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
-				command: 'show-ip-sessions-host',
+				command: 'show-ip-sessions',
 				host: '192.168.0.52',
 				acknowledgeHighRisk: true,
 				reason,
@@ -1453,7 +1453,7 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
-				command: 'show-ip-nat-host',
+				command: 'show-ip-nat',
 				host: '192.168.0.52',
 				acknowledgeHighRisk: true,
 				reason,
@@ -1474,7 +1474,7 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
-				command: 'show-ip-dhcp-host',
+				command: 'show-ip-dhcp',
 				host: '192.168.0.52',
 				acknowledgeHighRisk: true,
 				reason,
@@ -1495,7 +1495,7 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
-				command: 'show-ip-arp-host',
+				command: 'show-ip-arp',
 				host: '00:11:22:33:44:55',
 				acknowledgeHighRisk: true,
 				reason,
@@ -1506,7 +1506,7 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
-				command: 'show-ip-arp-host',
+				command: 'show-ip-arp',
 				host: '00-11-22-33-44-55',
 				acknowledgeHighRisk: true,
 				reason,
@@ -1524,16 +1524,6 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 			},
 			expectedCommandLine: 'show ip counters',
 			expectedCommandId: 'show-ip-counters',
-		},
-		{
-			input: {
-				command: 'show-log',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show log last',
-			expectedCommandId: 'show-log',
 		},
 		{
 			input: {
