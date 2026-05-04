@@ -87,6 +87,22 @@ function filterCommandLines(input: {
 	return filtered.slice(0, limit)
 }
 
+function hasRequestedLineFilter(input: { query?: string; limit?: number }) {
+	return (input.query?.trim().length ?? 0) > 0 || input.limit != null
+}
+
+function assertSupportedLineFilter(input: {
+	commandId: IslandRouterCommandId
+	supportsLineFilter?: true
+	query?: string
+	limit?: number
+}) {
+	if (input.supportsLineFilter || !hasRequestedLineFilter(input)) return
+	throw new Error(
+		`Island router command ${input.commandId} does not support query/limit filtering.`,
+	)
+}
+
 function assertWriteSafety(input: {
 	config: HomeConnectorConfig
 	commandId: IslandRouterCommandId
@@ -255,6 +271,12 @@ export function createIslandRouterAdapter(input: {
 					confirmation: request.confirmation,
 				})
 			}
+			assertSupportedLineFilter({
+				commandId: request.commandId,
+				supportsLineFilter: catalogEntry.supportsLineFilter,
+				query: request.query,
+				limit: request.limit,
+			})
 			const rendered = renderIslandRouterCommand({
 				id: request.commandId,
 				params: request.params,

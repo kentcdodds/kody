@@ -581,12 +581,34 @@ export const islandRouterCommandCatalog = [
 	}),
 ] as const satisfies ReadonlyArray<IslandRouterCommandCatalogEntry>
 
+function assertIslandRouterCommandCatalogComplete() {
+	const catalogIds = new Set(islandRouterCommandCatalog.map((entry) => entry.id))
+	const missingCatalogEntries = islandRouterCommandIds.filter(
+		(id) => !catalogIds.has(id),
+	)
+	if (missingCatalogEntries.length > 0) {
+		throw new Error(
+			`Island router command catalog is missing entries for: ${missingCatalogEntries.join(', ')}`,
+		)
+	}
+}
+
+assertIslandRouterCommandCatalogComplete()
+
 export function getIslandRouterCommandCatalogEntry(id: IslandRouterCommandId) {
 	const entry = islandRouterCommandCatalog.find((candidate) => candidate.id === id)
 	if (!entry) {
 		throw new Error(`Unsupported Island router command id: ${id}`)
 	}
 	return entry
+}
+
+function hasControlCharacter(value: string) {
+	for (const char of value) {
+		const code = char.charCodeAt(0)
+		if (code <= 0x1f || code === 0x7f) return true
+	}
+	return false
 }
 
 function normalizeStringParam(value: unknown, name: string) {
@@ -597,7 +619,7 @@ function normalizeStringParam(value: unknown, name: string) {
 	if (trimmed.length === 0) {
 		throw new Error(`${name} must not be empty.`)
 	}
-	if (/[\u0000-\u001f\u007f]/u.test(trimmed)) {
+	if (hasControlCharacter(trimmed)) {
 		throw new Error(`${name} must not contain control characters.`)
 	}
 	return trimmed

@@ -487,6 +487,18 @@ test('island router command substrate rejects aliases, bad params, and injection
 	).rejects.toThrow('does not accept parameter(s): interfaceName')
 	await expect(
 		islandRouter.runCommand({
+			commandId: 'show running-config',
+			query: 'password',
+		}),
+	).rejects.toThrow('does not support query/limit filtering')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'show running-config',
+			limit: 1,
+		}),
+	).rejects.toThrow('does not support query/limit filtering')
+	await expect(
+		islandRouter.runCommand({
 			commandId: 'show interface',
 			params: { interfaceName: 'en0; write memory' },
 		}),
