@@ -50,12 +50,6 @@ type RunWriteOperationRequest = WriteOperationRequest & {
 const islandRouterWriteAcknowledgements = {
 	runWriteOperation:
 		'I am highly certain running this guarded Island router write operation is necessary right now.',
-	renewDhcpClients:
-		'I am highly certain renewing all Island router DHCP clients is necessary right now.',
-	clearLogBuffer:
-		'I am highly certain clearing the Island router log buffer is necessary right now.',
-	saveRunningConfig:
-		'I am highly certain saving the Island router running configuration is necessary right now.',
 } as const
 
 function normalizeLimit(value: number | undefined, fallback: number, max: number) {
@@ -123,17 +117,6 @@ function assertWriteReason(reason: string, operationLabel: string) {
 		throw new Error(
 			`${operationLabel} requires a specific operator reason of at least 20 characters.`,
 		)
-	}
-}
-
-function combineSuccessfulCommandOutputs(
-	results: Array<IslandRouterCommandResult>,
-) {
-	const successful = results.filter((result) => didIslandRouterCommandSucceed(result))
-	return {
-		successful,
-		stdout: successful.map((result) => result.stdout).join('\n'),
-		commandLines: successful.flatMap((result) => result.commandLines),
 	}
 }
 
