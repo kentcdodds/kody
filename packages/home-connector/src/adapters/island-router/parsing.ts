@@ -12,7 +12,6 @@ import {
 	type IslandRouterDhcpLease,
 	type IslandRouterFailoverHealthCheck,
 	type IslandRouterFailoverStatus,
-	type IslandRouterHostIdentity,
 	type IslandRouterInterfaceDetails,
 	type IslandRouterInterfaceSummary,
 	type IslandRouterNeighborEntry,
@@ -20,8 +19,6 @@ import {
 	type IslandRouterNtpServer,
 	type IslandRouterNatRule,
 	type IslandRouterNatRules,
-	type IslandRouterPingReply,
-	type IslandRouterPingResult,
 	type IslandRouterRecentEvent,
 	type IslandRouterRouteEntry,
 	type IslandRouterRoutingTable,
@@ -66,13 +63,9 @@ const interfaceLinkStatePattern = /\b(?:up|down)\b/i
 const neighborStatePattern =
 	/\b(?:reachable|stale|delay|probe|permanent|failed|incomplete)\b/i
 const timestampPattern =
-	/^(?<timestamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?<rest>.*)$/
+	/^(?<timestamp>\d{4}[/-]\d{2}[/-]\d{2}(?:[ T-])\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?<rest>.*)$/
 const macAddressPattern = /\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b/
 const ipv4Pattern = /\b\d{1,3}(?:\.\d{1,3}){3}\b/
-const pingReplyPattern =
-	/\bicmp_seq=(?<sequence>\d+)\b.*?\btime=(?<timeMs>\d+(?:\.\d+)?)\s*ms\b/i
-const pingSummaryPattern =
-	/(?<transmitted>\d+)\s+packets transmitted,\s+(?<received>\d+)\s+packets received,\s+(?<packetLoss>\d+(?:\.\d+)?)%\s+packet loss/i
 const islandRouterVersionBannerPattern =
 	/^(?<model>.+?)\s+\((?<hardwareModel>[^)]+)\)\s+serial number\s+(?<serialNumber>\S+)\s+Version\s+(?<firmwareVersion>\S+)$/i
 const islandRouterCliFailurePattern =
@@ -663,141 +656,24 @@ export function parseIslandRouterRecentEvents(
 	return lines.map((line) => {
 		const match = timestampPattern.exec(line)
 		const rest = match?.groups?.['rest']?.trim() ?? line.trim()
+		const numericLevelMatch = rest.match(/^(?<level>\d+)\s+(?<message>.*)$/)
+		const normalizedRest =
+			numericLevelMatch?.groups?.['message']?.trim() ?? rest
 		const levelMatch = rest.match(
 			/\b(?:emerg|alert|crit|err|warning|notice|info|debug)\b/i,
 		)
-		const moduleMatch = rest.match(/\b[a-z][a-z0-9_-]+(?=:)/i)
+		const moduleMatch = normalizedRest.match(/\b[a-z][a-z0-9_-]+(?=:)/i)
 		return {
 			timestamp: match?.groups?.['timestamp']?.trim() ?? null,
-			level: levelMatch?.[0]?.toLowerCase() ?? null,
+			level:
+				numericLevelMatch?.groups?.['level'] ??
+				levelMatch?.[0]?.toLowerCase() ??
+				null,
 			module: moduleMatch?.[0] ?? null,
-			message: rest,
+			message: normalizedRest,
 			rawLine: line,
 		}
 	})
-}
-
-function parsePingReplies(lines: Array<string>) {
-	return lines.flatMap((line) => {
-		const match = pingReplyPattern.exec(line)
-		if (!match?.groups) return []
-		const sequenceRaw = match.groups['sequence'] ?? ''
-		const timeMsRaw = match.groups['timeMs'] ?? ''
-		return [
-			{
-				sequence: Number.parseInt(sequenceRaw, 10),
-				timeMs: Number.parseFloat(timeMsRaw),
-				rawLine: line,
-			} satisfies IslandRouterPingReply,
-		]
-	})
-}
-
-export function parseIslandRouterPingResult(input: {
-	host: IslandRouterHostIdentity
-	stdout: string
-	stderr: string
-	commandLines: Array<string>
-	timedOut: boolean
-}): IslandRouterPingResult {
-	const lines = sanitizeIslandRouterOutput(input.stdout, input.commandLines)
-	const replies = parsePingReplies(lines)
-	const summaryLine =
-		lines.find((line) => pingSummaryPattern.test(line)) ??
-		input.stderr.split(/\r?\n/).find((line) => pingSummaryPattern.test(line)) ??
-		''
-	const summaryMatch = pingSummaryPattern.exec(summaryLine)
-	const transmitted = summaryMatch?.groups?.['transmitted']
-		? Number.parseInt(summaryMatch.groups['transmitted'], 10)
-		: null
-	const received = summaryMatch?.groups?.['received']
-		? Number.parseInt(summaryMatch.groups['received'], 10)
-		: null
-	const packetLossPercent = summaryMatch?.groups?.['packetLoss']
-		? Number.parseFloat(summaryMatch.groups['packetLoss'])
-		: null
-	const reachable =
-		received == null ? (replies.length > 0 ? true : null) : received > 0
-
-	let addressFamily: IslandRouterPingResult['addressFamily']
-	switch (input.host.kind) {
-		case 'ipv4':
-			addressFamily = 'ip'
-			break
-		case 'ipv6':
-			addressFamily = 'ipv6'
-			break
-		case 'hostname':
-			addressFamily = 'auto'
-			break
-		case 'mac':
-			addressFamily = 'auto'
-			break
-		default: {
-			const _exhaustive: never = input.host.kind
-			throw new Error(`Unhandled host kind: ${String(_exhaustive)}`)
-		}
-	}
-
-	return {
-		host: input.host.value,
-		addressFamily,
-		reachable,
-		timedOut: input.timedOut,
-		completed: summaryMatch != null || replies.length > 0,
-		transmitted,
-		received,
-		packetLossPercent,
-		replies,
-		rawOutput: lines.join('\n'),
-		stderr: input.stderr.trim(),
-	}
-}
-
-export function findMatchingNeighbor(
-	entries: Array<IslandRouterNeighborEntry>,
-	host: IslandRouterHostIdentity,
-) {
-	return (
-		entries.find((entry) => {
-			switch (host.kind) {
-				case 'ipv4':
-				case 'ipv6':
-					return entry.ipAddress === host.normalizedValue
-				case 'mac':
-					return entry.macAddress === host.normalizedValue
-				case 'hostname':
-					return entry.rawLine.toLowerCase().includes(host.normalizedValue)
-				default: {
-					const _exhaustive: never = host.kind
-					throw new Error(`Unhandled host kind: ${String(_exhaustive)}`)
-				}
-			}
-		}) ?? null
-	)
-}
-
-export function findMatchingDhcpLease(
-	entries: Array<IslandRouterDhcpLease>,
-	host: IslandRouterHostIdentity,
-) {
-	return (
-		entries.find((entry) => {
-			switch (host.kind) {
-				case 'ipv4':
-				case 'ipv6':
-					return entry.ipAddress === host.normalizedValue
-				case 'mac':
-					return entry.macAddress === host.normalizedValue
-				case 'hostname':
-					return entry.hostName?.toLowerCase() === host.normalizedValue
-				default: {
-					const _exhaustive: never = host.kind
-					throw new Error(`Unhandled host kind: ${String(_exhaustive)}`)
-				}
-			}
-		}) ?? null
-	)
 }
 
 function extractIpv6Address(value: string) {
@@ -1989,7 +1865,7 @@ export function parseIslandRouterDhcpServerConfig(
 		const reservationLines = lines.slice(getLinesBeforeFirstTable(lines).length)
 		const reservations = parseIslandRouterDhcpReservations(
 			reservationLines.join('\n'),
-			['show ip dhcp-reservations'],
+			['show ip dhcp'],
 		)
 		return {
 			...base,

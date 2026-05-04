@@ -131,32 +131,30 @@ acknowledgements. It is designed for situations where Kody only has network
 reachability to the router from the NAS or other machine running the home
 connector.
 
-The adapter does expose:
+The adapter exposes a small command substrate:
 
-- router identity/status via `show version`, `show clock`, `show system`, and
-  `show interface summary`
-- router-side reachability checks with `ping`
-- ARP / neighbor-cache inspection with `show ip neighbors`
-- DHCP reservation inspection with `show ip dhcp-reservations`
-- recent-event lookups with `show log`
-- structured WAN/failover, routing, NAT, VLAN, DNS, user, firewall/security,
-  QoS, traffic, session, VPN, DHCP-server, NTP, syslog, SNMP, and
-  system/bandwidth reads from a typed SSH CLI allowlist that prefers the
-  Island-documented `show system`/`show stats`, `show hardware`,
-  `show running-config`, `show vpns`, `show ip sockets`, and
-  `show ntp status|associations` families over unsupported guessed top-level
-  subcommands
-- a structured `router_diagnose_host` workflow that combines ping, ARP,
-  reservation, interface, and log data for one host
-- a broader typed and explicitly allowlisted high-risk write surface for
-  failover selection, DHCP reservations, reboot, interface descriptions, DNS
-  servers, host blocking/unblocking, `clear dhcp-client`, `clear log`, and
-  `write memory` when all write guardrails pass
+- `router_get_status` for connectivity/configuration readiness plus a compact
+  status snapshot from `show version`, `show clock`, `show interface summary`,
+  and `show ip neighbors`
+- `router_run_read_command` for exact read-only Island CLI command strings from
+  the typed catalog: `show ip neighbors`, `show ip sockets`, `show stats`,
+  `show interface <iface>`, `show ip interface <iface>`, `show log`,
+  `show running-config`, `show running-config differences`, `show ip dhcp`,
+  `show ip routes`, and `show ip recommendations`
+- `router_run_write_operation` for the explicit guarded operations
+  `renew dhcp clients`, `clear log buffer`, and `save running config`, mapped to
+  `clear dhcp-client`, `clear log`, and `write memory`
+
+The adapter intentionally does not expose guessed aliases such as `show-ip-arp`,
+`show-ip-sessions`, or `show-log-recent`, nor unsupported public commands such
+as `show ip nat`, `show ip counters`, `show ip top`, or `show ip dns stats`.
+Higher-level router workflows are expected to live in packages that consume the
+command substrate.
 
 The adapter explicitly does not expose:
 
 - arbitrary shell or CLI command execution over MCP
-- arbitrary mutating router commands beyond the typed allowlist
+- arbitrary mutating router commands beyond the explicit operation catalog
 - password-based auth flows through MCP
 
 The write-capable operations are intentionally hard to use because mistakes can
@@ -164,7 +162,7 @@ have severe consequences. Agents must be highly certain before using them. The
 MCP surface requires:
 
 - SSH host verification via `known_hosts` or a pinned host fingerprint
-- typed tool-specific inputs instead of free-form CLI
+- typed operation inputs instead of free-form CLI
 - an operator reason and an exact acknowledgement phrase per operation
 - destructive tool annotations and warning-heavy descriptions
 

@@ -35,23 +35,24 @@ verify that the home connector runtime has `ISLAND_ROUTER_HOST`,
 `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` set, and prefer
 either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or `ISLAND_ROUTER_HOST_FINGERPRINT` for
 host verification. The connector never exposes arbitrary router command
-execution. It exposes a broader typed read surface (status, WAN/failover,
-routing, NAT, VLAN, DNS, users, security policy, QoS, traffic stats, sessions,
-VPN, DHCP server, NTP, syslog, SNMP, system info, and bandwidth usage) plus a
-set of high-risk, typed, allowlisted write tools. Those write tools require SSH
-host verification, explicit risk acknowledgement, and exact confirmation phrases
-because mistakes can have severe consequences.
+execution. It exposes router status, one read-only command substrate with exact
+Island CLI command strings, and one high-risk write-operation substrate. Write
+operations require SSH host verification, explicit risk acknowledgement, and an
+exact confirmation phrase because mistakes can have severe consequences.
 
-Several of the typed read tools are intentionally derived from the documented
-Island CLI families instead of guessed one-off `show` commands:
+The read command substrate accepts only this documented command catalog:
 
-- WAN, failover, NAT, VLAN, DNS, DHCP server, syslog, and SNMP reads are derived
-  from `show running-config`.
-- VPN reads are derived from `show vpns`.
-- Active-session reads are derived from `show ip sockets`.
-- NTP reads are derived from `show ntp status` and `show ntp associations`.
-- System-health and bandwidth-style summaries are derived from `show stats` plus
-  `show hardware` when available.
+- `show ip neighbors`
+- `show ip sockets` (router local/control-plane sockets, not LAN client sessions)
+- `show stats`
+- `show interface <iface>`
+- `show ip interface <iface>`
+- `show log` with optional Kody-side filtering/line limiting
+- `show running-config`
+- `show running-config differences`
+- `show ip dhcp`
+- `show ip routes`
+- `show ip recommendations`
 
 If a router command returns Island help, usage, or unknown-command output, the
 connector treats that as unsupported or inconclusive output instead of trying to
