@@ -156,14 +156,13 @@ test('request posts a fully formed ajax-request envelope to _cmdstat.jsp', async
 		String(url).endsWith('/_cmdstat.jsp'),
 	)
 	const body = String(cmdCall?.[1]?.body ?? '')
-	expect(body.startsWith('request=')).toBe(true)
-	const decoded = decodeURIComponent(body.slice('request='.length))
-	expect(decoded).toContain("action='getstat'")
-	expect(decoded).toContain("comp='system'")
-	expect(decoded).toContain('<sysinfo/>')
-	expect(decoded).toMatch(/updater='system\.\d+\.[a-z0-9]+'/)
+	expect(body.startsWith('<ajax-request')).toBe(true)
+	expect(body).toContain("action='getstat'")
+	expect(body).toContain("comp='system'")
+	expect(body).toContain('<sysinfo/>')
+	expect(body).toMatch(/updater='system\.\d+\.[a-z0-9]+'/)
 	expect(new Headers(cmdCall?.[1]?.headers).get('Content-Type')).toBe(
-		'application/x-www-form-urlencoded',
+		'text/xml',
 	)
 })
 
@@ -191,11 +190,9 @@ test('request honors a caller-supplied updater', async () => {
 	const cmdCall = fetchMock.mock.calls.find(([url]) =>
 		String(url).endsWith('/_cmdstat.jsp'),
 	)
-	const decoded = decodeURIComponent(
-		String(cmdCall?.[1]?.body ?? '').slice('request='.length),
-	)
-	expect(decoded).toContain("updater='reset.42'")
-	expect(decoded).toContain("action='docmd'")
+	const body = String(cmdCall?.[1]?.body ?? '')
+	expect(body).toContain("updater='reset.42'")
+	expect(body).toContain("action='docmd'")
 })
 
 test('request reauthenticates once on 302 for getstat actions', async () => {

@@ -220,15 +220,18 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		if (!state.baseUrl) {
 			throw new Error('Access Networks Unleashed session has no base URL.')
 		}
+		// Unleashed (and ZoneDirector) expect the AJAX envelope as the raw XML
+		// request body with `Content-Type: text/xml`. They silently return an
+		// empty body for url-encoded `request=...` form submissions.
 		const response = await rawRequest(
 			`${state.baseUrl}/_cmdstat.jsp`,
 			{
 				method: 'POST',
 				headers: {
-					'Content-Type': 'application/x-www-form-urlencoded',
+					'Content-Type': 'text/xml',
 					Accept: 'text/xml, */*',
 				},
-				body: `request=${encodeURIComponent(xml)}`,
+				body: xml,
 			},
 			allowInsecureTls,
 		)
@@ -244,7 +247,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 					'Access Networks Unleashed redirected after reauthentication.',
 				)
 			}
-			await ensureSession(allowInsecureTls)
+			await ensureSession()
 			return await postCmdstat(xml, action, allowInsecureTls, redirectCount + 1)
 		}
 		const text = await response.text()
