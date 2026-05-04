@@ -11,8 +11,8 @@ The first intended caller is a stable Discord Gateway proxy:
 4. Kody executes the saved package export with package context, user context,
    package storage, and normal secret/capability rules
 
-Kody remains the package runtime and storage brain. The external service owns
-the socket lifecycle.
+Kody is the package runtime and storage brain. The external service owns the
+socket lifecycle.
 
 ## Endpoint
 
@@ -56,12 +56,12 @@ Each token row includes:
 
 The token is not a global backdoor:
 
-- package lookup is still user-owned
+- package lookup is user-owned
 - package access is scoped by the token row
 - export access requires an explicit allowlist
 - `source` metadata is checked against the allowlist when provided
 - tokens can be revoked without deploys
-- execution still uses normal package runtime machinery
+- execution uses normal package runtime machinery
 
 ## Request body
 

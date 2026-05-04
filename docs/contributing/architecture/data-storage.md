@@ -100,16 +100,16 @@ Operational notes:
 
 - Saved packages are the user-facing repo-backed identity. They resolve through
   D1 metadata to `entity_sources.id` when a repo editing session is opened.
-- `source_id` remains the internal durable join key for repo-backed packages,
-  but most MCP callers should prefer package identity with `repo_run_commands`.
+- `source_id` is the internal durable join key for repo-backed packages, but
+  most MCP callers should prefer package identity with `repo_run_commands`.
 - Once a repo-backed package exists, the repo snapshot is the durable source of
   truth for later edits and publishes. Search and detail payloads are derived
   projections of that repo-backed package rather than a competing second source
   of truth.
 - `repo_run_commands` parses a constrained git-command string and runs it inside
-  the repo session Durable Object. It accepts only parsed git command forms,
-  not arbitrary shell syntax, and package runtime bundles are still loaded from
-  published artifacts rather than a mounted checkout.
+  the repo session Durable Object. It accepts only parsed git command forms, not
+  arbitrary shell syntax, and package runtime bundles are loaded from published
+  artifacts rather than a mounted checkout.
 
 Production note:
 
