@@ -57,7 +57,9 @@ function renderAccessNetworksUnleashedControllerList(
 						${controller.hasStoredCredentials ? 'stored locally' : 'missing'}
 					</div>
 					<div>Last seen: ${controller.lastSeenAt ?? 'unknown'}</div>
-					<div>Last auth success: ${controller.lastAuthenticatedAt ?? 'never'}</div>
+					<div>
+						Last auth success: ${controller.lastAuthenticatedAt ?? 'never'}
+					</div>
 					<div>Last auth error: ${controller.lastAuthError ?? 'none'}</div>
 				</li>`,
 		)}
@@ -147,8 +149,8 @@ function renderAccessNetworksUnleashedStatusPage(input: {
 					<h1>Access Networks Unleashed status</h1>
 					<p class="muted">
 						Scan for controllers, review adoption and auth readiness, and
-						inspect the latest discovery probe diagnostics. Live device
-						state is no longer fetched from this page; use the saved
+						inspect the latest discovery probe diagnostics. Live device state is
+						no longer fetched from this page; use the saved
 						<code>@kentcdodds/unleashed-wifi</code> Kody package, which wraps
 						the generic
 						<code>access_networks_unleashed_request</code> capability.
@@ -257,8 +259,8 @@ function renderAccessNetworksUnleashedSetupPage(input: {
 					<h1>Access Networks Unleashed setup</h1>
 					<p class="muted">
 						Use the local connector UI to adopt a discovered controller, save
-						auth information in the connector database, and verify login
-						without exposing credentials back to the browser.
+						auth information in the connector database, and verify login without
+						exposing credentials back to the browser.
 					</p>
 					<p>
 						<a href="${routes.accessNetworksUnleashedStatus.pattern}"
@@ -271,8 +273,7 @@ function renderAccessNetworksUnleashedSetupPage(input: {
 					${renderInfoRows([
 						{
 							label: 'Connector ID',
-							value:
-								input.state.connection.connectorId || 'not registered yet',
+							value: input.state.connection.connectorId || 'not registered yet',
 						},
 						{
 							label: 'Adopted controller',

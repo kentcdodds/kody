@@ -46,9 +46,8 @@ type RequestCapabilityRequest = WriteOperationRequest &
 export const accessNetworksUnleashedRequestConfirmation =
 	'I am highly certain making this raw Access Networks Unleashed AJAX request is necessary right now.'
 
-const validActions: ReadonlySet<AccessNetworksUnleashedAjaxAction> = new Set<
-	AccessNetworksUnleashedAjaxAction
->(['getstat', 'setconf', 'docmd'])
+const validActions: ReadonlySet<AccessNetworksUnleashedAjaxAction> =
+	new Set<AccessNetworksUnleashedAjaxAction>(['getstat', 'setconf', 'docmd'])
 
 function getConfigStatus(
 	config: HomeConnectorConfig,
@@ -299,8 +298,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					connectorId,
 					controllerId: controller.controllerId,
 					lastAuthenticatedAt: controller.lastAuthenticatedAt,
-					lastAuthError:
-						error instanceof Error ? error.message : String(error),
+					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}
@@ -346,8 +344,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					connectorId,
 					controllerId: adoptedController.controllerId,
 					lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
-					lastAuthError:
-						error instanceof Error ? error.message : String(error),
+					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}

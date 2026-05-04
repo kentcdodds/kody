@@ -290,8 +290,7 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 				action: args['action'] as 'getstat' | 'setconf' | 'docmd',
 				comp: String(args['comp'] ?? ''),
 				xmlBody: String(args['xmlBody'] ?? ''),
-				updater:
-					args['updater'] == null ? undefined : String(args['updater']),
+				updater: args['updater'] == null ? undefined : String(args['updater']),
 				allowInsecureTls:
 					typeof args['allowInsecureTls'] === 'boolean'
 						? args['allowInsecureTls']

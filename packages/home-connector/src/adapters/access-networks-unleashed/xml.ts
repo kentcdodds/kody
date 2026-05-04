@@ -119,9 +119,7 @@ function readNode(cursor: ParseCursor): XmlNode | null {
 		const start = cursor.index + '<![CDATA['.length
 		const end = cursor.source.indexOf(']]>', start)
 		const value =
-			end === -1
-				? cursor.source.slice(start)
-				: cursor.source.slice(start, end)
+			end === -1 ? cursor.source.slice(start) : cursor.source.slice(start, end)
 		cursor.index = end === -1 ? cursor.source.length : end + ']]>'.length
 		return { kind: 'text', value }
 	}
