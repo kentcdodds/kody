@@ -364,6 +364,7 @@ export function createIslandRouterAdapter(input: {
 				catalogEntry,
 				request,
 			})
+			assertIslandRouterConfigured(config)
 			let commandRequest: IslandRouterCommandRequest
 			switch (request.command) {
 				case 'show ip neighbors':

@@ -399,6 +399,22 @@ test('island router read command substrate rejects aliases and missing scoped pa
 	).rejects.toThrow('does not accept parameter(s): interfaceName')
 })
 
+test('island router read command substrate rejects incomplete SSH configuration', async () => {
+	using _env = withTemporaryEnv({})
+	createConfig()
+	process.env.ISLAND_ROUTER_HOST = ''
+	const islandRouter = createIslandRouterAdapter({
+		config: loadHomeConnectorConfig(),
+		commandRunner: createFakeRunner(),
+	})
+
+	await expect(
+		islandRouter.runReadCommand({
+			command: 'show ip neighbors',
+		}),
+	).rejects.toThrow('Island router SSH diagnostics are not configured')
+})
+
 test('island router guarded write operations require verification and exact acknowledgement', async () => {
 	using _env = withTemporaryEnv({})
 	const islandRouter = createIslandRouterAdapter({
