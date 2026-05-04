@@ -2,7 +2,10 @@ import { expect, test, vi } from 'vitest'
 import { loadHomeConnectorConfig } from '../../config.ts'
 import { createAppState } from '../../state.ts'
 import { createHomeConnectorStorage } from '../../storage/index.ts'
-import { createAccessNetworksUnleashedAdapter } from './index.ts'
+import {
+	accessNetworksUnleashedRequestConfirmation,
+	createAccessNetworksUnleashedAdapter,
+} from './index.ts'
 
 function createTemporaryEnv(values: Record<string, string | undefined>) {
 	const previousValues = Object.fromEntries(
@@ -54,26 +57,14 @@ function response(
 	return output
 }
 
-test('access networks unleashed adapter supports scan, adopt, credentials, and status workflow', async () => {
+const validReason =
+	'Operator needs raw AJAX access to verify a configuration change is correct.'
+
+function installLoginAndCmdstat(handler: (body: string) => Response) {
 	const previousFetch = globalThis.fetch
-	const config = createConfig()
-	const state = createAppState()
-	const storage = createHomeConnectorStorage(config)
-	const adapter = createAccessNetworksUnleashedAdapter({
-		config,
-		state,
-		storage,
-	})
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
-		if (href === 'https://192.168.10.60/') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://192.168.10.60/',
-			})
-		}
-		if (init?.method === 'GET' && href === 'https://192.168.10.60') {
+		if (href === 'https://192.168.10.60/' || href === 'https://192.168.10.60') {
 			return response(null, {
 				status: 302,
 				headers: { Location: '/admin/wsg/login.jsp' },
@@ -97,40 +88,33 @@ test('access networks unleashed adapter supports scan, adopt, credentials, and s
 			})
 		}
 		if (href.endsWith('/_cmdstat.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='system'")) {
-				return response(
-					'<ajax-response><system name="Access Networks Unleashed" version="200.15.6.212"/></ajax-response>',
-				)
-			}
-			if (body.includes('<client LEVEL=')) {
-				return response(
-					'<ajax-response><client mac="aa:bb:cc:dd:ee:ff" hostname="phone" wlan="Main"/></ajax-response>',
-				)
-			}
-			if (body.includes('<ap LEVEL=')) {
-				return response(
-					'<ajax-response><ap id="1" mac="24:79:de:ad:be:ef" name="Kitchen AP"/></ajax-response>',
-				)
-			}
-			if (body.includes('<xevent />')) {
-				return response(
-					'<ajax-response><xevent message="client associated"/></ajax-response>',
-				)
-			}
-		}
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='wlansvc-list'")) {
-				return response(
-					'<ajax-response><wlansvc-list><wlansvc id="1" name="Main" ssid="Main"/></wlansvc-list></ajax-response>',
-				)
-			}
-			return response('<ajax-response><xmsg status="0"/></ajax-response>')
+			return handler(String(init?.body ?? ''))
 		}
 		throw new Error(`Unexpected fetch ${href}`)
 	})
 	globalThis.fetch = fetchMock as typeof fetch
+	return {
+		fetchMock,
+		[Symbol.dispose]: () => {
+			globalThis.fetch = previousFetch
+		},
+	}
+}
+
+test('adapter exposes scan, adopt, set-credentials, authenticate, and request workflow', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const adapter = createAccessNetworksUnleashedAdapter({
+		config,
+		state,
+		storage,
+	})
+	using _server = installLoginAndCmdstat(() =>
+		response(
+			'<ajax-response><system name="Access Networks Unleashed" version="200.15.6.212"/></ajax-response>',
+		),
+	)
 
 	try {
 		expect(adapter.getConfigStatus()).toMatchObject({
@@ -152,76 +136,160 @@ test('access networks unleashed adapter supports scan, adopt, credentials, and s
 		expect(adopted).toMatchObject({
 			controllerId: '192.168.10.60',
 			adopted: true,
-			hasStoredCredentials: false,
 		})
 
-		const stored = adapter.setCredentials({
+		adapter.setCredentials({
 			controllerId: '192.168.10.60',
 			username: 'admin',
 			password: 'secret-password',
 		})
-		expect(stored).toMatchObject({
-			controllerId: '192.168.10.60',
-			hasStoredCredentials: true,
-		})
 
 		const authenticated = await adapter.authenticate()
-		expect(authenticated).toMatchObject({
-			controllerId: '192.168.10.60',
-			hasStoredCredentials: true,
-			lastAuthenticatedAt: expect.any(String),
-			lastAuthError: null,
+		expect(authenticated.lastAuthenticatedAt).toEqual(expect.any(String))
+		expect(authenticated.lastAuthError).toBeNull()
+
+		const result = await adapter.request({
+			action: 'getstat',
+			comp: 'system',
+			xmlBody: '<sysinfo/>',
+			acknowledgeHighRisk: true,
+			reason: validReason,
+			confirmation: accessNetworksUnleashedRequestConfirmation,
+		})
+		expect(result.action).toBe('getstat')
+		expect(result.parsed).toMatchObject({
+			'ajax-response': {
+				system: { '@name': 'Access Networks Unleashed' },
+			},
 		})
 
-		const loginAttempts = fetchMock.mock.calls.filter(
-			([url, init]) =>
-				init?.method === 'GET' && String(url).includes('username=admin'),
-		)
-		expect(loginAttempts).toHaveLength(1)
-
-		const status = await adapter.getStatus()
-		expect(status).toMatchObject({
-			config: {
-				configured: true,
-				adoptedControllerId: '192.168.10.60',
-				hasStoredCredentials: true,
-			},
-			controller: {
-				controllerId: '192.168.10.60',
-				hasStoredCredentials: true,
-			},
-			system: {
-				name: 'Access Networks Unleashed',
-			},
-			aps: [
-				{
-					name: 'Kitchen AP',
-				},
-			],
-			wlans: [
-				{
-					name: 'Main',
-				},
-			],
-			clients: [
-				{
-					hostname: 'phone',
-				},
-			],
-			events: [
-				{
-					message: 'client associated',
-				},
-			],
-		})
+		const adoptedController = adapter.getAdoptedController()
+		expect(adoptedController?.lastAuthenticatedAt).toEqual(expect.any(String))
+		expect(adoptedController?.lastAuthError).toBeNull()
 	} finally {
-		globalThis.fetch = previousFetch
 		storage.close()
 	}
 })
 
-test('access networks unleashed status errors preserve last successful authentication time', async () => {
-	const previousFetch = globalThis.fetch
+test('request rejects without acknowledgement, confirmation, or sufficient reason', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const adapter = createAccessNetworksUnleashedAdapter({
+		config,
+		state,
+		storage,
+		clientFactory: () => ({
+			async request() {
+				throw new Error('client should not be invoked when validation fails')
+			},
+		}),
+	})
+	using _server = installLoginAndCmdstat(() =>
+		response('<ajax-response><ok/></ajax-response>'),
+	)
+
+	try {
+		await adapter.scan()
+		adapter.adoptController({ controllerId: '192.168.10.60' })
+		adapter.setCredentials({
+			controllerId: '192.168.10.60',
+			username: 'admin',
+			password: 'secret-password',
+		})
+
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: false,
+				reason: validReason,
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('acknowledgeHighRisk')
+
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: 'too short',
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('at least 20 characters')
+
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: validReason,
+				confirmation: 'something else',
+			}),
+		).rejects.toThrow('confirmation must exactly equal')
+	} finally {
+		storage.close()
+	}
+})
+
+test('request rejects unknown actions and empty comp', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const adapter = createAccessNetworksUnleashedAdapter({
+		config,
+		state,
+		storage,
+		clientFactory: () => ({
+			async request() {
+				throw new Error('client should not be invoked when validation fails')
+			},
+		}),
+	})
+	using _server = installLoginAndCmdstat(() =>
+		response('<ajax-response><ok/></ajax-response>'),
+	)
+
+	try {
+		await adapter.scan()
+		adapter.adoptController({ controllerId: '192.168.10.60' })
+		adapter.setCredentials({
+			controllerId: '192.168.10.60',
+			username: 'admin',
+			password: 'secret-password',
+		})
+
+		await expect(
+			adapter.request({
+				// @ts-expect-error: invalid action by design
+				action: 'delete',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: validReason,
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('action must be one of')
+
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: '   ',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: validReason,
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('comp must not be empty')
+	} finally {
+		storage.close()
+	}
+})
+
+test('request requires an adopted controller with stored credentials', async () => {
 	const config = createConfig()
 	const state = createAppState()
 	const storage = createHomeConnectorStorage(config)
@@ -230,120 +298,24 @@ test('access networks unleashed status errors preserve last successful authentic
 		state,
 		storage,
 	})
-	let shouldFailSystemStatus = false
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const href = String(url)
-		if (href === 'https://192.168.10.60/') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://192.168.10.60/',
-			})
-		}
-		if (init?.method === 'GET' && href === 'https://192.168.10.60') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://192.168.10.60/',
-			})
-		}
-		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
-			return response(null, {
-				status: 200,
-				url: 'https://192.168.10.60/admin/wsg/login.jsp',
-			})
-		}
-		if (init?.method === 'GET' && href.includes('username=admin')) {
-			return response(null, {
-				status: 302,
-				headers: {
-					HTTP_X_CSRF_TOKEN: 'csrf-token',
-					'set-cookie': 'JSESSIONID=abc; Path=/admin',
-				},
-				url: href,
-			})
-		}
-		if (href.endsWith('/_cmdstat.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='system'")) {
-				if (shouldFailSystemStatus) {
-					throw new Error('temporary network outage')
-				}
-				return response(
-					'<ajax-response><system name="Access Networks Unleashed" version="200.15.6.212"/></ajax-response>',
-				)
-			}
-			if (body.includes('<client LEVEL=')) {
-				return response(
-					'<ajax-response><client mac="aa:bb:cc:dd:ee:ff" hostname="phone" wlan="Main"/></ajax-response>',
-				)
-			}
-			if (body.includes('<ap LEVEL=')) {
-				return response(
-					'<ajax-response><ap id="1" mac="24:79:de:ad:be:ef" name="Kitchen AP"/></ajax-response>',
-				)
-			}
-			if (body.includes('<xevent />')) {
-				return response(
-					'<ajax-response><xevent message="client associated"/></ajax-response>',
-				)
-			}
-		}
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='wlansvc-list'")) {
-				return response(
-					'<ajax-response><wlansvc-list><wlansvc id="1" name="Main" ssid="Main"/></wlansvc-list></ajax-response>',
-				)
-			}
-			return response('<ajax-response><xmsg status="0"/></ajax-response>')
-		}
-		throw new Error(`Unexpected fetch ${href}`)
-	})
-	globalThis.fetch = fetchMock as typeof fetch
 
 	try {
-		await adapter.scan()
-		adapter.adoptController({
-			controllerId: '192.168.10.60',
-		})
-		adapter.setCredentials({
-			controllerId: '192.168.10.60',
-			username: 'admin',
-			password: 'secret-password',
-		})
-
-		const authenticated = await adapter.authenticate()
-		const previousAuthTime = authenticated.lastAuthenticatedAt
-		expect(previousAuthTime).toEqual(expect.any(String))
-
-		shouldFailSystemStatus = true
-		const status = await adapter.getStatus()
-		expect(status.error).toBe('temporary network outage')
-		expect(status.controller).toMatchObject({
-			controllerId: '192.168.10.60',
-			lastAuthenticatedAt: previousAuthTime,
-			lastAuthError: 'temporary network outage',
-		})
-
-		await expect(adapter.authenticate()).rejects.toThrow(
-			'temporary network outage',
-		)
-		expect(await adapter.getStatus()).toMatchObject({
-			controller: {
-				controllerId: '192.168.10.60',
-				lastAuthenticatedAt: previousAuthTime,
-				lastAuthError: 'temporary network outage',
-			},
-		})
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: validReason,
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('No Access Networks Unleashed controller is adopted')
 	} finally {
-		globalThis.fetch = previousFetch
 		storage.close()
 	}
 })
 
-test('access networks unleashed status tolerates concurrent controller removal', async () => {
-	const previousFetch = globalThis.fetch
+test('request preserves last successful authentication on transient failure', async () => {
 	const config = createConfig()
 	const state = createAppState()
 	const storage = createHomeConnectorStorage(config)
@@ -352,107 +324,44 @@ test('access networks unleashed status tolerates concurrent controller removal',
 		state,
 		storage,
 	})
-	let removeControllerBeforeStatusReturn = false
-
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const href = String(url)
-		if (href === 'https://192.168.10.60/') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://192.168.10.60/',
-			})
+	let shouldFail = false
+	using _server = installLoginAndCmdstat(() => {
+		if (shouldFail) {
+			throw new Error('temporary network outage')
 		}
-		if (init?.method === 'GET' && href === 'https://192.168.10.60') {
-			return response(null, {
-				status: 302,
-				headers: { Location: '/admin/wsg/login.jsp' },
-				url: 'https://192.168.10.60/',
-			})
-		}
-		if (init?.method === 'GET' && href.endsWith('/admin/wsg/login.jsp')) {
-			return response(null, {
-				status: 200,
-				url: 'https://192.168.10.60/admin/wsg/login.jsp',
-			})
-		}
-		if (init?.method === 'GET' && href.includes('username=admin')) {
-			return response(null, {
-				status: 302,
-				headers: {
-					HTTP_X_CSRF_TOKEN: 'csrf-token',
-					'set-cookie': 'JSESSIONID=abc; Path=/admin',
-				},
-				url: href,
-			})
-		}
-		if (href.endsWith('/_cmdstat.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='system'")) {
-				if (removeControllerBeforeStatusReturn) {
-					adapter.removeController({
-						controllerId: '192.168.10.60',
-					})
-					removeControllerBeforeStatusReturn = false
-				}
-				return response(
-					'<ajax-response><system name="Access Networks Unleashed" version="200.15.6.212"/></ajax-response>',
-				)
-			}
-			if (body.includes('<client LEVEL=')) {
-				return response(
-					'<ajax-response><client mac="aa:bb:cc:dd:ee:ff" hostname="phone" wlan="Main"/></ajax-response>',
-				)
-			}
-			if (body.includes('<ap LEVEL=')) {
-				return response(
-					'<ajax-response><ap id="1" mac="24:79:de:ad:be:ef" name="Kitchen AP"/></ajax-response>',
-				)
-			}
-			if (body.includes('<xevent />')) {
-				return response(
-					'<ajax-response><xevent message="client associated"/></ajax-response>',
-				)
-			}
-		}
-		if (href.endsWith('/_conf.jsp')) {
-			const body = String(init?.body ?? '')
-			if (body.includes("comp='wlansvc-list'")) {
-				return response(
-					'<ajax-response><wlansvc-list><wlansvc id="1" name="Main" ssid="Main"/></wlansvc-list></ajax-response>',
-				)
-			}
-			return response('<ajax-response><xmsg status="0"/></ajax-response>')
-		}
-		throw new Error(`Unexpected fetch ${href}`)
+		return response(
+			'<ajax-response><system name="Access Networks Unleashed"/></ajax-response>',
+		)
 	})
-	globalThis.fetch = fetchMock as typeof fetch
 
 	try {
 		await adapter.scan()
-		adapter.adoptController({
-			controllerId: '192.168.10.60',
-		})
+		adapter.adoptController({ controllerId: '192.168.10.60' })
 		adapter.setCredentials({
 			controllerId: '192.168.10.60',
 			username: 'admin',
 			password: 'secret-password',
 		})
 
-		removeControllerBeforeStatusReturn = true
-		const status = await adapter.getStatus()
-		expect(status.controller).toBeNull()
-		expect(status.config).toMatchObject({
-			configured: false,
-			hasAdoptedController: false,
-			hasStoredCredentials: false,
-			missingRequirements: ['controller', 'credentials'],
-		})
-		expect(status.system).toMatchObject({
-			name: 'Access Networks Unleashed',
-		})
+		const authenticated = await adapter.authenticate()
+		const lastAuthenticatedAt = authenticated.lastAuthenticatedAt
+
+		shouldFail = true
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: validReason,
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('temporary network outage')
+
+		const adopted = adapter.getAdoptedController()
+		expect(adopted?.lastAuthenticatedAt).toBe(lastAuthenticatedAt)
+		expect(adopted?.lastAuthError).toBe('temporary network outage')
 	} finally {
-		globalThis.fetch = previousFetch
 		storage.close()
 	}
 })

@@ -1,10 +1,7 @@
 import { type HomeConnectorConfig } from '../../config.ts'
 import { type HomeConnectorState } from '../../state.ts'
 import { type HomeConnectorStorage } from '../../storage/index.ts'
-import {
-	createAccessNetworksUnleashedAjaxClient,
-	normalizeAccessNetworksUnleashedMacAddress,
-} from './client.ts'
+import { createAccessNetworksUnleashedAjaxClient } from './client.ts'
 import { scanAccessNetworksUnleashedControllers } from './discovery.ts'
 import {
 	adoptAccessNetworksUnleashedController,
@@ -18,24 +15,14 @@ import {
 	upsertDiscoveredAccessNetworksUnleashedControllers,
 } from './repository.ts'
 import {
-	type AccessNetworksUnleashedAddWlanGroupInput,
-	type AccessNetworksUnleashedAddWlanInput,
-	type AccessNetworksUnleashedConfigStatus,
+	type AccessNetworksUnleashedAjaxAction,
 	type AccessNetworksUnleashedClient,
+	type AccessNetworksUnleashedConfigStatus,
 	type AccessNetworksUnleashedDiscoveredController,
-	type AccessNetworksUnleashedEditWlanInput,
 	type AccessNetworksUnleashedPersistedController,
-	type AccessNetworksUnleashedRecord,
-	type AccessNetworksUnleashedSystemStatus,
-	type AccessNetworksUnleashedWriteOperationId,
-	type AccessNetworksUnleashedWriteOperationResult,
+	type AccessNetworksUnleashedRequestInput,
+	type AccessNetworksUnleashedRequestResult,
 } from './types.ts'
-
-type WriteOperationRequest = {
-	acknowledgeHighRisk: boolean
-	reason: string
-	confirmation: string
-}
 
 type ControllerCredentialsRequest = {
 	controllerId: string
@@ -47,87 +34,21 @@ type ControllerSelectionRequest = {
 	controllerId: string
 }
 
-type ClientWriteRequest = WriteOperationRequest & {
-	macAddress: string
+type WriteOperationRequest = {
+	acknowledgeHighRisk: boolean
+	reason: string
+	confirmation: string
 }
 
-type WlanWriteRequest = WriteOperationRequest & {
-	name: string
-}
+type RequestCapabilityRequest = WriteOperationRequest &
+	AccessNetworksUnleashedRequestInput
 
-type AccessPointWriteRequest = WriteOperationRequest & {
-	macAddress: string
-}
+export const accessNetworksUnleashedRequestConfirmation =
+	'I am highly certain making this raw Access Networks Unleashed AJAX request is necessary right now.'
 
-type SetAccessPointLedsRequest = AccessPointWriteRequest & {
-	enabled: boolean
-}
-
-type SetWlanPasswordRequest = WriteOperationRequest & {
-	name: string
-	password: string
-	saePassphrase?: string
-}
-
-type AddWlanRequest = WriteOperationRequest &
-	AccessNetworksUnleashedAddWlanInput
-
-type EditWlanRequest = WriteOperationRequest &
-	AccessNetworksUnleashedEditWlanInput
-
-type CloneWlanRequest = WriteOperationRequest & {
-	sourceName: string
-	newName: string
-	newSsid?: string
-}
-
-type AddWlanGroupRequest = WriteOperationRequest &
-	AccessNetworksUnleashedAddWlanGroupInput
-
-type CloneWlanGroupRequest = WriteOperationRequest & {
-	sourceName: string
-	newName: string
-	description?: string
-}
-
-type WlanGroupWriteRequest = WriteOperationRequest & {
-	name: string
-}
-
-const accessNetworksUnleashedWriteAcknowledgements = {
-	blockClient:
-		'I am highly certain blocking this WiFi client on Access Networks Unleashed is necessary right now.',
-	unblockClient:
-		'I am highly certain unblocking this WiFi client on Access Networks Unleashed is necessary right now.',
-	enableWlan:
-		'I am highly certain enabling this Access Networks Unleashed WLAN is necessary right now.',
-	disableWlan:
-		'I am highly certain disabling this Access Networks Unleashed WLAN is necessary right now.',
-	restartAccessPoint:
-		'I am highly certain restarting this Access Networks Unleashed access point is necessary right now.',
-	setAccessPointLeds:
-		'I am highly certain changing this Access Networks Unleashed access point LED setting is necessary right now.',
-	setWlanPassword:
-		'I am highly certain changing this Access Networks Unleashed WLAN passphrase is necessary right now.',
-	addWlan:
-		'I am highly certain adding this Access Networks Unleashed WLAN is necessary right now.',
-	editWlan:
-		'I am highly certain editing this Access Networks Unleashed WLAN is necessary right now.',
-	cloneWlan:
-		'I am highly certain cloning this Access Networks Unleashed WLAN is necessary right now.',
-	deleteWlan:
-		'I am highly certain deleting this Access Networks Unleashed WLAN is necessary right now.',
-	addWlanGroup:
-		'I am highly certain adding this Access Networks Unleashed WLAN group is necessary right now.',
-	cloneWlanGroup:
-		'I am highly certain cloning this Access Networks Unleashed WLAN group is necessary right now.',
-	deleteWlanGroup:
-		'I am highly certain deleting this Access Networks Unleashed WLAN group is necessary right now.',
-	hideAccessPointLeds:
-		'I am highly certain turning off Access Networks Unleashed access point LEDs is necessary right now.',
-	showAccessPointLeds:
-		'I am highly certain turning on Access Networks Unleashed access point LEDs is necessary right now.',
-} as const
+const validActions: ReadonlySet<AccessNetworksUnleashedAjaxAction> = new Set<
+	AccessNetworksUnleashedAjaxAction
+>(['getstat', 'setconf', 'docmd'])
 
 function getConfigStatus(
 	config: HomeConnectorConfig,
@@ -153,15 +74,6 @@ function getConfigStatus(
 	}
 }
 
-function normalizeLimit(
-	value: number | undefined,
-	fallback: number,
-	max: number,
-) {
-	if (value == null || !Number.isFinite(value)) return fallback
-	return Math.max(1, Math.min(max, Math.trunc(value)))
-}
-
 function assertNonEmpty(value: string, field: string) {
 	const trimmed = value.trim()
 	if (!trimmed) throw new Error(`${field} must not be empty.`)
@@ -173,7 +85,9 @@ function assertWriteAllowed(
 	expectedConfirmation: string,
 ) {
 	if (!request.acknowledgeHighRisk) {
-		throw new Error('acknowledgeHighRisk must be true for this WiFi mutation.')
+		throw new Error(
+			'acknowledgeHighRisk must be true for this Access Networks Unleashed request.',
+		)
 	}
 	const reason = request.reason.trim()
 	if (reason.length < 20) {
@@ -183,19 +97,6 @@ function assertWriteAllowed(
 		throw new Error(`confirmation must exactly equal: ${expectedConfirmation}`)
 	}
 	return reason
-}
-
-function writeResult(input: {
-	operation: AccessNetworksUnleashedWriteOperationId
-	target: string
-	reason: string
-}): AccessNetworksUnleashedWriteOperationResult {
-	return {
-		operation: input.operation,
-		target: input.target,
-		reason: input.reason,
-		completedAt: new Date().toISOString(),
-	}
 }
 
 export function createAccessNetworksUnleashedAdapter(input: {
@@ -213,13 +114,18 @@ export function createAccessNetworksUnleashedAdapter(input: {
 	const { config, state, storage } = input
 	const connectorId = config.homeConnectorId
 
-	async function read<T>(operation: () => Promise<T>) {
-		requireControllerWithCredentials()
-		return await operation()
-	}
-
 	function listControllers() {
 		return listAccessNetworksUnleashedPublicControllers(storage, connectorId)
+	}
+
+	function getAdoptedController() {
+		const controller = getAdoptedAccessNetworksUnleashedController(
+			storage,
+			connectorId,
+		)
+		return controller
+			? toAccessNetworksUnleashedPublicController(controller)
+			: null
 	}
 
 	function requireController(controllerId: string) {
@@ -284,7 +190,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 	}
 
 	return {
-		writeAcknowledgements: accessNetworksUnleashedWriteAcknowledgements,
+		requestConfirmation: accessNetworksUnleashedRequestConfirmation,
 		getConfigStatus() {
 			return getConfigStatus(
 				config,
@@ -295,6 +201,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			return state.accessNetworksUnleashedDiscoveryDiagnostics
 		},
 		listControllers,
+		getAdoptedController,
 		async scan() {
 			if (input.scanControllers) {
 				const result = await input.scanControllers()
@@ -365,16 +272,20 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					`Access Networks Unleashed controller "${controller.controllerId}" is missing stored credentials. Run access_networks_unleashed_set_credentials first.`,
 				)
 			}
+			cachedClient = null
+			cachedClientKey = null
+			const client =
+				input.clientFactory?.(controller) ??
+				createAccessNetworksUnleashedAjaxClient({
+					config,
+					controller,
+				})
 			try {
-				cachedClient = null
-				cachedClientKey = null
-				await (
-					input.clientFactory?.(controller) ??
-					createAccessNetworksUnleashedAjaxClient({
-						config,
-						controller,
-					})
-				).getSystemInfo()
+				await client.request({
+					action: 'getstat',
+					comp: 'system',
+					xmlBody: '<sysinfo/>',
+				})
 				updateAccessNetworksUnleashedAuthStatus({
 					storage,
 					connectorId,
@@ -388,7 +299,8 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					connectorId,
 					controllerId: controller.controllerId,
 					lastAuthenticatedAt: controller.lastAuthenticatedAt,
-					lastAuthError: error instanceof Error ? error.message : String(error),
+					lastAuthError:
+						error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}
@@ -396,50 +308,30 @@ export function createAccessNetworksUnleashedAdapter(input: {
 				requireController(controller.controllerId),
 			)
 		},
-		async getStatus(): Promise<AccessNetworksUnleashedSystemStatus> {
-			const adoptedController = getAdoptedAccessNetworksUnleashedController(
-				storage,
-				connectorId,
-			)
-			const configStatus = getConfigStatus(config, adoptedController)
-			if (!configStatus.hasAdoptedController) {
-				return {
-					config: configStatus,
-					controller: null,
-					controllers: listControllers(),
-					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
-					error: null,
-					system: {},
-					aps: [],
-					wlans: [],
-					clients: [],
-					events: [],
-				}
+		async request(
+			request: RequestCapabilityRequest,
+		): Promise<AccessNetworksUnleashedRequestResult> {
+			assertWriteAllowed(request, accessNetworksUnleashedRequestConfirmation)
+			if (!validActions.has(request.action)) {
+				throw new Error(
+					`action must be one of: ${[...validActions].join(', ')}.`,
+				)
 			}
-			if (!configStatus.hasStoredCredentials) {
-				return {
-					config: configStatus,
-					controller:
-						toAccessNetworksUnleashedPublicController(adoptedController),
-					controllers: listControllers(),
-					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
-					error: null,
-					system: {},
-					aps: [],
-					wlans: [],
-					clients: [],
-					events: [],
-				}
+			const comp = assertNonEmpty(request.comp, 'comp')
+			const xmlBody = request.xmlBody
+			if (typeof xmlBody !== 'string') {
+				throw new Error('xmlBody must be a string of inner ajax-request XML.')
 			}
+			const client = createClient()
+			const adoptedController = requireControllerWithCredentials()
 			try {
-				const client = createClient()
-				const [system, aps, wlans, clients, events] = await Promise.all([
-					client.getSystemInfo(),
-					client.listAccessPoints(),
-					client.listWlans(),
-					client.listClients(),
-					client.listEvents(25),
-				])
+				const result = await client.request({
+					action: request.action,
+					comp,
+					xmlBody,
+					updater: request.updater,
+					allowInsecureTls: request.allowInsecureTls,
+				})
 				updateAccessNetworksUnleashedAuthStatus({
 					storage,
 					connectorId,
@@ -447,396 +339,18 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					lastAuthenticatedAt: new Date().toISOString(),
 					lastAuthError: null,
 				})
-				const latestAdoptedController =
-					getAdoptedAccessNetworksUnleashedController(storage, connectorId)
-				return {
-					config: getConfigStatus(config, latestAdoptedController),
-					controller: latestAdoptedController
-						? toAccessNetworksUnleashedPublicController(latestAdoptedController)
-						: null,
-					controllers: listControllers(),
-					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
-					error: null,
-					system,
-					aps,
-					wlans,
-					clients,
-					events,
-				}
+				return result
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
 				updateAccessNetworksUnleashedAuthStatus({
 					storage,
 					connectorId,
 					controllerId: adoptedController.controllerId,
 					lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
-					lastAuthError: message,
+					lastAuthError:
+						error instanceof Error ? error.message : String(error),
 				})
-				const latestAdoptedController =
-					getAdoptedAccessNetworksUnleashedController(storage, connectorId)
-				return {
-					config: getConfigStatus(config, latestAdoptedController),
-					controller: latestAdoptedController
-						? toAccessNetworksUnleashedPublicController(latestAdoptedController)
-						: null,
-					controllers: listControllers(),
-					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
-					error: message,
-					system: {},
-					aps: [],
-					wlans: [],
-					clients: [],
-					events: [],
-				}
+				throw error
 			}
-		},
-		async getSystemInfo(): Promise<AccessNetworksUnleashedRecord> {
-			return await read(() => createClient().getSystemInfo())
-		},
-		async listAccessPoints() {
-			return await read(() => createClient().listAccessPoints())
-		},
-		async listClients() {
-			return await read(() => createClient().listClients())
-		},
-		async listWlans() {
-			return await read(() => createClient().listWlans())
-		},
-		async listEvents(limit?: number) {
-			return await read(() =>
-				createClient().listEvents(normalizeLimit(limit, 50, 300)),
-			)
-		},
-		async blockClient(request: ClientWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.blockClient,
-			)
-			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
-				request.macAddress,
-			)
-			await read(() => createClient().blockClient(macAddress))
-			return writeResult({
-				operation: 'block-client',
-				target: macAddress,
-				reason,
-			})
-		},
-		async unblockClient(request: ClientWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.unblockClient,
-			)
-			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
-				request.macAddress,
-			)
-			await read(() => createClient().unblockClient(macAddress))
-			return writeResult({
-				operation: 'unblock-client',
-				target: macAddress,
-				reason,
-			})
-		},
-		async enableWlan(request: WlanWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.enableWlan,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			await read(() => createClient().setWlanEnabled(name, true))
-			return writeResult({
-				operation: 'enable-wlan',
-				target: name,
-				reason,
-			})
-		},
-		async disableWlan(request: WlanWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.disableWlan,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			await read(() => createClient().setWlanEnabled(name, false))
-			return writeResult({
-				operation: 'disable-wlan',
-				target: name,
-				reason,
-			})
-		},
-		async restartAccessPoint(request: AccessPointWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.restartAccessPoint,
-			)
-			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
-				request.macAddress,
-			)
-			await read(() => createClient().restartAccessPoint(macAddress))
-			return writeResult({
-				operation: 'restart-ap',
-				target: macAddress,
-				reason,
-			})
-		},
-		async setAccessPointLeds(request: SetAccessPointLedsRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.setAccessPointLeds,
-			)
-			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
-				request.macAddress,
-			)
-			await read(() =>
-				createClient().setAccessPointLeds(macAddress, request.enabled),
-			)
-			return writeResult({
-				operation: 'set-ap-leds',
-				target: macAddress,
-				reason,
-			})
-		},
-		async hideAccessPointLeds(request: AccessPointWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.hideAccessPointLeds,
-			)
-			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
-				request.macAddress,
-			)
-			await read(() => createClient().setAccessPointLeds(macAddress, false))
-			return writeResult({
-				operation: 'hide-ap-leds',
-				target: macAddress,
-				reason,
-			})
-		},
-		async showAccessPointLeds(request: AccessPointWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.showAccessPointLeds,
-			)
-			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
-				request.macAddress,
-			)
-			await read(() => createClient().setAccessPointLeds(macAddress, true))
-			return writeResult({
-				operation: 'show-ap-leds',
-				target: macAddress,
-				reason,
-			})
-		},
-		async listBlockedClients() {
-			return await read(() => createClient().listBlockedClients())
-		},
-		async listInactiveClients() {
-			return await read(() => createClient().listInactiveClients())
-		},
-		async listActiveRogues() {
-			return await read(() => createClient().listActiveRogues())
-		},
-		async listKnownRogues(limit?: number) {
-			return await read(() =>
-				createClient().listKnownRogues(normalizeLimit(limit, 300, 1000)),
-			)
-		},
-		async listBlockedRogues(limit?: number) {
-			return await read(() =>
-				createClient().listBlockedRogues(normalizeLimit(limit, 300, 1000)),
-			)
-		},
-		async listApGroups() {
-			return await read(() => createClient().listApGroups())
-		},
-		async listDpsks() {
-			return await read(() => createClient().listDpsks())
-		},
-		async getMeshInfo() {
-			return await read(() => createClient().getMeshInfo())
-		},
-		async getAlarms(limit?: number) {
-			return await read(() =>
-				createClient().getAlarms(normalizeLimit(limit, 300, 1000)),
-			)
-		},
-		async getSyslog() {
-			return await read(() => createClient().getSyslog())
-		},
-		async getVapStats() {
-			return await read(() => createClient().getVapStats())
-		},
-		async getWlanGroupStats() {
-			return await read(() => createClient().getWlanGroupStats())
-		},
-		async getApGroupStats() {
-			return await read(() => createClient().getApGroupStats())
-		},
-		async setWlanPassword(request: SetWlanPasswordRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.setWlanPassword,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			const password = assertNonEmpty(request.password, 'password')
-			const saePassphrase =
-				request.saePassphrase == null
-					? undefined
-					: assertNonEmpty(request.saePassphrase, 'saePassphrase')
-			await read(() =>
-				createClient().setWlanPassword(name, password, saePassphrase),
-			)
-			return writeResult({
-				operation: 'set-wlan-password',
-				target: name,
-				reason,
-			})
-		},
-		async addWlan(request: AddWlanRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.addWlan,
-			)
-			const ssid = assertNonEmpty(request.ssid, 'ssid')
-			const passphrase = assertNonEmpty(request.passphrase, 'passphrase')
-			const name = request.name == null ? undefined : assertNonEmpty(
-				request.name,
-				'name',
-			)
-			const saePassphrase =
-				request.saePassphrase == null
-					? undefined
-					: assertNonEmpty(request.saePassphrase, 'saePassphrase')
-			const description = request.description?.trim()
-			await read(() =>
-				createClient().addWlan({
-					ssid,
-					passphrase,
-					name,
-					saePassphrase,
-					description,
-				}),
-			)
-			return writeResult({
-				operation: 'add-wlan',
-				target: name ?? ssid,
-				reason,
-			})
-		},
-		async editWlan(request: EditWlanRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.editWlan,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			const passphrase =
-				request.passphrase == null
-					? undefined
-					: assertNonEmpty(request.passphrase, 'passphrase')
-			const saePassphrase =
-				request.saePassphrase == null
-					? undefined
-					: assertNonEmpty(request.saePassphrase, 'saePassphrase')
-			const ssid =
-				request.ssid == null ? undefined : assertNonEmpty(request.ssid, 'ssid')
-			const description = request.description?.trim()
-			await read(() =>
-				createClient().editWlan({
-					name,
-					passphrase,
-					saePassphrase,
-					ssid,
-					description,
-					enabled: request.enabled,
-				}),
-			)
-			return writeResult({
-				operation: 'edit-wlan',
-				target: name,
-				reason,
-			})
-		},
-		async cloneWlan(request: CloneWlanRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.cloneWlan,
-			)
-			const sourceName = assertNonEmpty(request.sourceName, 'sourceName')
-			const newName = assertNonEmpty(request.newName, 'newName')
-			const newSsid =
-				request.newSsid == null
-					? undefined
-					: assertNonEmpty(request.newSsid, 'newSsid')
-			await read(() => createClient().cloneWlan(sourceName, newName, newSsid))
-			return writeResult({
-				operation: 'clone-wlan',
-				target: `${sourceName} -> ${newName}`,
-				reason,
-			})
-		},
-		async deleteWlan(request: WlanWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.deleteWlan,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			await read(() => createClient().deleteWlan(name))
-			return writeResult({
-				operation: 'delete-wlan',
-				target: name,
-				reason,
-			})
-		},
-		async addWlanGroup(request: AddWlanGroupRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.addWlanGroup,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			const description = request.description?.trim()
-			const wlans = request.wlans?.map((wlanName, index) =>
-				assertNonEmpty(wlanName, `wlans[${index}]`),
-			)
-			await read(() =>
-				createClient().addWlanGroup({
-					name,
-					description,
-					wlans,
-				}),
-			)
-			return writeResult({
-				operation: 'add-wlan-group',
-				target: name,
-				reason,
-			})
-		},
-		async cloneWlanGroup(request: CloneWlanGroupRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.cloneWlanGroup,
-			)
-			const sourceName = assertNonEmpty(request.sourceName, 'sourceName')
-			const newName = assertNonEmpty(request.newName, 'newName')
-			const description = request.description?.trim()
-			await read(() =>
-				createClient().cloneWlanGroup(sourceName, newName, description),
-			)
-			return writeResult({
-				operation: 'clone-wlan-group',
-				target: `${sourceName} -> ${newName}`,
-				reason,
-			})
-		},
-		async deleteWlanGroup(request: WlanGroupWriteRequest) {
-			const reason = assertWriteAllowed(
-				request,
-				accessNetworksUnleashedWriteAcknowledgements.deleteWlanGroup,
-			)
-			const name = assertNonEmpty(request.name, 'name')
-			await read(() => createClient().deleteWlanGroup(name))
-			return writeResult({
-				operation: 'delete-wlan-group',
-				target: name,
-				reason,
-			})
 		},
 	}
 }

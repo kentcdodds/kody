@@ -1,14 +1,18 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { html } from 'remix/html-template'
 import { renderDataTable, renderEmptyState } from './admin-ui.ts'
-import { formatJson, renderBanner, renderCodeBlock, renderInfoRows } from './handler-utils.ts'
+import {
+	formatJson,
+	renderBanner,
+	renderCodeBlock,
+	renderInfoRows,
+} from './handler-utils.ts'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
 import { routes } from './routes.ts'
 import {
 	type AccessNetworksUnleashedDiscoveryDiagnostics,
 	type AccessNetworksUnleashedPublicController,
-	type AccessNetworksUnleashedSystemStatus,
 } from '../src/adapters/access-networks-unleashed/types.ts'
 import { type createAccessNetworksUnleashedAdapter } from '../src/adapters/access-networks-unleashed/index.ts'
 import { captureHomeConnectorException } from '../src/sentry.ts'
@@ -34,7 +38,9 @@ function renderAccessNetworksUnleashedControllerList(
 	controllers: Array<AccessNetworksUnleashedPublicController>,
 ) {
 	if (controllers.length === 0) {
-		return renderEmptyState(`No ${label} Access Networks Unleashed controllers.`)
+		return renderEmptyState(
+			`No ${label} Access Networks Unleashed controllers.`,
+		)
 	}
 
 	return html`<ul class="list">
@@ -109,9 +115,7 @@ function renderAccessNetworksUnleashedDiscoveryDiagnostics(
 					probe.matched ? 'yes' : 'no',
 					probe.status ?? 'n/a',
 					probe.matchReason ?? 'none',
-					probe.location
-						? html`<code>${probe.location}</code>`
-						: 'none',
+					probe.location ? html`<code>${probe.location}</code>` : 'none',
 					probe.error ?? 'none',
 				]),
 				className: 'data-table-diagnostics',
@@ -126,11 +130,15 @@ function renderAccessNetworksUnleashedDiscoveryDiagnostics(
 
 function renderAccessNetworksUnleashedStatusPage(input: {
 	state: HomeConnectorState
-	status: AccessNetworksUnleashedSystemStatus
+	configStatus: ReturnType<
+		ReturnType<typeof createAccessNetworksUnleashedAdapter>['getConfigStatus']
+	>
+	controllers: Array<AccessNetworksUnleashedPublicController>
+	diagnostics: AccessNetworksUnleashedDiscoveryDiagnostics | null
 	scanMessage?: string | null
 	scanError?: string | null
 }) {
-	const { status } = input
+	const { configStatus, controllers } = input
 	return render(
 		RootLayout({
 			title: 'home connector - access networks unleashed status',
@@ -138,8 +146,12 @@ function renderAccessNetworksUnleashedStatusPage(input: {
 			body: html`<section class="card">
 					<h1>Access Networks Unleashed status</h1>
 					<p class="muted">
-						Scan for controllers, review adoption and auth readiness, and fetch
-						live controller status when an adopted controller has auth info.
+						Scan for controllers, review adoption and auth readiness, and
+						inspect the latest discovery probe diagnostics. Live device
+						state is no longer fetched from this page; use the saved
+						<code>@kentcdodds/unleashed-wifi</code> Kody package, which wraps
+						the generic
+						<code>access_networks_unleashed_request</code> capability.
 					</p>
 					<p>
 						<a href="${routes.accessNetworksUnleashedSetup.pattern}"
@@ -155,27 +167,29 @@ function renderAccessNetworksUnleashedStatusPage(input: {
 					${renderInfoRows([
 						{
 							label: 'Worker connection',
-							value: input.state.connection.connected ? 'connected' : 'disconnected',
+							value: input.state.connection.connected
+								? 'connected'
+								: 'disconnected',
 						},
 						{
 							label: 'Adopted controller',
-							value: status.config.adoptedControllerId ?? 'none',
+							value: configStatus.adoptedControllerId ?? 'none',
 						},
 						{
 							label: 'Auth info stored',
-							value: status.config.hasStoredCredentials ? 'yes' : 'no',
+							value: configStatus.hasStoredCredentials ? 'yes' : 'no',
 						},
 						{
 							label: 'Known controllers',
-							value: status.controllers.length,
+							value: controllers.length,
 						},
 						{
 							label: 'Last auth success',
-							value: status.config.lastAuthenticatedAt ?? 'never',
+							value: configStatus.lastAuthenticatedAt ?? 'never',
 						},
 						{
 							label: 'Last auth error',
-							value: status.config.lastAuthError ?? 'none',
+							value: configStatus.lastAuthError ?? 'none',
 						},
 					])}
 				</section>
@@ -185,69 +199,35 @@ function renderAccessNetworksUnleashedStatusPage(input: {
 				${input.scanError
 					? renderBanner({ tone: 'error', message: input.scanError })
 					: ''}
-				${status.error
-					? renderBanner({
-							tone: 'error',
-							message: `Live controller read failed: ${status.error}`,
-						})
-					: ''}
 				<section class="card">
 					<h2>Configuration readiness</h2>
 					${renderInfoRows([
 						{
 							label: 'Configured',
-							value: status.config.configured ? 'yes' : 'no',
+							value: configStatus.configured ? 'yes' : 'no',
 						},
 						{
 							label: 'Missing requirements',
 							value:
-								status.config.missingRequirements.length > 0
-									? status.config.missingRequirements.join(', ')
+								configStatus.missingRequirements.length > 0
+									? configStatus.missingRequirements.join(', ')
 									: 'none',
 						},
 						{
 							label: 'Allow insecure TLS',
-							value: status.config.allowInsecureTls ? 'yes' : 'no',
+							value: configStatus.allowInsecureTls ? 'yes' : 'no',
 						},
 						{
 							label: 'Controller host',
-							value: status.config.host ?? 'none',
+							value: configStatus.host ?? 'none',
 						},
 					])}
 				</section>
 				<section class="card">
 					<h2>Known controllers</h2>
-					${renderAccessNetworksUnleashedControllerList(
-						'known',
-						status.controllers,
-					)}
+					${renderAccessNetworksUnleashedControllerList('known', controllers)}
 				</section>
-				<section class="card">
-					<h2>Live controller summary</h2>
-					${status.controller
-						? renderInfoRows([
-								{ label: 'Controller', value: status.controller.name },
-								{
-									label: 'System keys',
-									value: Object.keys(status.system).length,
-								},
-								{ label: 'Access points', value: status.aps.length },
-								{ label: 'WLANs', value: status.wlans.length },
-								{ label: 'Clients', value: status.clients.length },
-								{ label: 'Events', value: status.events.length },
-							])
-						: html`<p class="muted">
-								No adopted controller yet. Scan, adopt a controller, and save
-								auth information from the setup page.
-							</p>`}
-				</section>
-				${Object.keys(status.system).length > 0
-					? html`<section class="card">
-							<h2>Raw system info</h2>
-							${renderCodeBlock(formatJson(status.system))}
-						</section>`
-					: ''}
-				${renderAccessNetworksUnleashedDiscoveryDiagnostics(status.diagnostics)}`,
+				${renderAccessNetworksUnleashedDiscoveryDiagnostics(input.diagnostics)}`,
 		}),
 	)
 }
@@ -262,7 +242,9 @@ function renderAccessNetworksUnleashedSetupPage(input: {
 	banner: Banner
 }) {
 	const { controllers, configStatus } = input
-	const adoptableControllers = controllers.filter((controller) => !controller.adopted)
+	const adoptableControllers = controllers.filter(
+		(controller) => !controller.adopted,
+	)
 	const controllersWithAuth = controllers.filter(
 		(controller) => controller.hasStoredCredentials,
 	)
@@ -283,13 +265,14 @@ function renderAccessNetworksUnleashedSetupPage(input: {
 							>Access Networks Unleashed status</a
 						>
 						<span class="muted">
-							— run scans and inspect live controller state
+							— run scans and inspect controller readiness
 						</span>
 					</p>
 					${renderInfoRows([
 						{
 							label: 'Connector ID',
-							value: input.state.connection.connectorId || 'not registered yet',
+							value:
+								input.state.connection.connectorId || 'not registered yet',
 						},
 						{
 							label: 'Adopted controller',
@@ -315,16 +298,14 @@ function renderAccessNetworksUnleashedSetupPage(input: {
 				${input.banner ? renderBanner(input.banner) : ''}
 				<section class="card">
 					<h2>Known controllers</h2>
-					${renderAccessNetworksUnleashedControllerList(
-						'known',
-						controllers,
-					)}
+					${renderAccessNetworksUnleashedControllerList('known', controllers)}
 				</section>
 				<section class="card">
 					<h2>Adopt controller</h2>
 					<p class="muted">
-						Adoption selects which controller the connector should use for live
-						reads and write operations.
+						Adoption selects which controller the connector should use for the
+						generic
+						<code>access_networks_unleashed_request</code> capability.
 					</p>
 					${adoptableControllers.length === 0
 						? renderEmptyState(
@@ -441,17 +422,28 @@ function renderAccessNetworksUnleashedSetupPage(input: {
 
 export function createAccessNetworksUnleashedStatusHandler(
 	state: HomeConnectorState,
-	accessNetworksUnleashed: ReturnType<typeof createAccessNetworksUnleashedAdapter>,
+	accessNetworksUnleashed: ReturnType<
+		typeof createAccessNetworksUnleashedAdapter
+	>,
 ) {
+	function renderPage(banner?: { scanMessage?: string; scanError?: string }) {
+		return renderAccessNetworksUnleashedStatusPage({
+			state,
+			configStatus: accessNetworksUnleashed.getConfigStatus(),
+			controllers: accessNetworksUnleashed.listControllers(),
+			diagnostics: accessNetworksUnleashed.getDiscoveryDiagnostics(),
+			scanMessage: banner?.scanMessage,
+			scanError: banner?.scanError,
+		})
+	}
+
 	return {
 		middleware: [],
 		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
 					const controllers = await accessNetworksUnleashed.scan()
-					return renderAccessNetworksUnleashedStatusPage({
-						state,
-						status: await accessNetworksUnleashed.getStatus(),
+					return renderPage({
 						scanMessage: `Scan complete. Discovered ${controllers.length} Access Networks Unleashed controller(s).`,
 					})
 				} catch (error) {
@@ -466,9 +458,7 @@ export function createAccessNetworksUnleashedStatusHandler(
 							},
 						},
 					})
-					return renderAccessNetworksUnleashedStatusPage({
-						state,
-						status: await accessNetworksUnleashed.getStatus(),
+					return renderPage({
 						scanError:
 							error instanceof Error
 								? `Scan failed: ${error.message}`
@@ -477,10 +467,7 @@ export function createAccessNetworksUnleashedStatusHandler(
 				}
 			}
 
-			return renderAccessNetworksUnleashedStatusPage({
-				state,
-				status: await accessNetworksUnleashed.getStatus(),
-			})
+			return renderPage()
 		},
 	} satisfies BuildAction<
 		typeof routes.accessNetworksUnleashedStatus.method,
@@ -490,7 +477,9 @@ export function createAccessNetworksUnleashedStatusHandler(
 
 export function createAccessNetworksUnleashedSetupHandler(
 	state: HomeConnectorState,
-	accessNetworksUnleashed: ReturnType<typeof createAccessNetworksUnleashedAdapter>,
+	accessNetworksUnleashed: ReturnType<
+		typeof createAccessNetworksUnleashedAdapter
+	>,
 ) {
 	function renderPage(banner: Banner = null) {
 		return renderAccessNetworksUnleashedSetupPage({
@@ -526,7 +515,9 @@ export function createAccessNetworksUnleashedSetupHandler(
 
 					if (intent === 'save-credentials') {
 						if (!controllerId) {
-							throw new Error('Choose a controller before saving auth information.')
+							throw new Error(
+								'Choose a controller before saving auth information.',
+							)
 						}
 						const username = String(form.get('username') ?? '')
 						const password = String(form.get('password') ?? '')
