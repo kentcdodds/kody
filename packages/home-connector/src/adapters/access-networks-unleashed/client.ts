@@ -450,16 +450,24 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		return match[0]
 	}
 
+	function escapeReplacementString(value: string) {
+		return value.replace(/\$/g, '$$$$')
+	}
+
 	function setOrAddAttribute(elementXml: string, name: string, value: string) {
 		const escapedValue = escapeXmlAttribute(value)
+		const replacementSafeValue = escapeReplacementString(escapedValue)
 		const attrPattern = new RegExp(
 			`(\\s${name}\\s*=\\s*)(["'])(.*?)\\2`,
 			'i',
 		)
 		if (attrPattern.test(elementXml)) {
-			return elementXml.replace(attrPattern, `$1'${escapedValue}'`)
+			return elementXml.replace(attrPattern, `$1'${replacementSafeValue}'`)
 		}
-		return elementXml.replace(/^<(\w[\w-]*)/i, `<$1 ${name}='${escapedValue}'`)
+		return elementXml.replace(
+			/^<(\w[\w-]*)/i,
+			`<$1 ${name}='${replacementSafeValue}'`,
+		)
 	}
 
 	function removeRootIdAttribute(elementXml: string) {
@@ -523,7 +531,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 						patch.saePassphrase,
 					)
 				}
-				updated = updated.replace(wpaRegex, wpaTag)
+				updated = updated.replace(wpaRegex, escapeReplacementString(wpaTag))
 			} else {
 				const wpaAttrs: Array<string> = ["cipher='aes'", "dynamic-psk='disabled'"]
 				if (patch.passphrase !== undefined) {
@@ -537,12 +545,16 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 					)
 				}
 				const wpaTag = `<wpa ${wpaAttrs.join(' ')}/>`
+				const wpaTagReplacement = escapeReplacementString(wpaTag)
 				if (/\/>$/.test(updated)) {
-					updated = updated.replace(/\/>$/, `>${wpaTag}</wlansvc>`)
+					updated = updated.replace(
+						/\/>$/,
+						`>${wpaTagReplacement}</wlansvc>`,
+					)
 				} else {
 					updated = updated.replace(
 						/<\/wlansvc>$/,
-						`${wpaTag}</wlansvc>`,
+						`${wpaTagReplacement}</wlansvc>`,
 					)
 				}
 			}
@@ -669,8 +681,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		async listBlockedClients() {
 			const xml = await getConfRaw('acl-list')
 			const acls = parseElements(xml, 'acl')
-			const systemAcl =
-				acls.find((acl) => String(acl['id'] ?? '') === '1') ?? acls[0]
+			const systemAcl = acls.find((acl) => String(acl['id'] ?? '') === '1')
 			if (!systemAcl) return []
 			const aclXml = String(systemAcl['rawXml'] ?? '')
 			return parseElements(aclXml, 'deny')

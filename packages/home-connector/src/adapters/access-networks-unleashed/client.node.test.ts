@@ -372,6 +372,33 @@ test('get syslog extracts text from xmsg/res body', async () => {
 	expect(syslog).toContain('line2')
 })
 
+test('list blocked clients ignores ACLs whose id is not 1', async () => {
+	const config = createConfig()
+	installFetch(loginHandler(), (href, init) => {
+		if (href.endsWith('/_conf.jsp')) {
+			const body = String(init?.body ?? '')
+			if (body.includes("comp='acl-list'")) {
+				return response(
+					[
+						'<ajax-response><acl-list>',
+						"<acl id='2' name='Custom' default-mode='deny'>",
+						"<deny mac='aa:bb:cc:dd:ee:ff' type='single'/>",
+						'</acl>',
+						'</acl-list></ajax-response>',
+					].join(''),
+				)
+			}
+		}
+		return null
+	})
+
+	const blocked = await createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	}).listBlockedClients()
+	expect(blocked).toEqual([])
+})
+
 test('set wlan password posts an updated wlansvc with a new passphrase', async () => {
 	const config = createConfig()
 	const fetchMock = installFetch(loginHandler(), (href, init) => {
@@ -406,6 +433,80 @@ test('set wlan password posts an updated wlansvc with a new passphrase', async (
 	expect(updateBody).toContain("passphrase='newpass-secret'")
 	expect(updateBody).not.toContain("passphrase='oldpass'")
 	expect(updateBody).toContain("name='Main'")
+})
+
+test('set wlan password preserves dollar signs and ampersands in the passphrase', async () => {
+	const config = createConfig()
+	const fetchMock = installFetch(loginHandler(), (href, init) => {
+		if (href.endsWith('/_conf.jsp')) {
+			const body = String(init?.body ?? '')
+			if (body.includes("action='getconf'")) {
+				return response(
+					[
+						'<ajax-response><wlansvc-list>',
+						"<wlansvc id='1' name='Main' ssid='Main' encryption='wpa2'>",
+						"<wpa cipher='aes' passphrase='oldpass' dynamic-psk='disabled'/>",
+						'</wlansvc>',
+						'</wlansvc-list></ajax-response>',
+					].join(''),
+				)
+			}
+			if (body.includes("action='updobj'")) {
+				return response('<ajax-response><xmsg status="0"/></ajax-response>')
+			}
+		}
+		return null
+	})
+
+	await createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	}).setWlanPassword('Main', 'Pa$$w0rd&$1$2')
+
+	const updateBody = fetchMock.mock.calls
+		.map((call) => String(call[1]?.body ?? ''))
+		.find((body) => body.includes("action='updobj'"))
+	expect(updateBody).toContain("passphrase='Pa$$w0rd&amp;$1$2'")
+	expect(updateBody).not.toContain("passphrase='oldpass'")
+})
+
+test('add wlan keeps dollar signs in the passphrase intact', async () => {
+	const config = createConfig()
+	const fetchMock = installFetch(loginHandler(), (href, init) => {
+		if (href.endsWith('/_conf.jsp')) {
+			const body = String(init?.body ?? '')
+			if (
+				body.includes("action='getconf'") &&
+				body.includes("comp='wlansvc-standard-template'")
+			) {
+				return response(
+					[
+						'<ajax-response><wlansvc-standard-template>',
+						"<wlansvc id='99' name='default-standard-wlan' ssid='' encryption='wpa2'>",
+						"<wpa cipher='aes' passphrase='placeholder' dynamic-psk='disabled'/>",
+						'</wlansvc></wlansvc-standard-template></ajax-response>',
+					].join(''),
+				)
+			}
+			if (body.includes("action='addobj'")) {
+				return response('<ajax-response><xmsg status="0"/></ajax-response>')
+			}
+		}
+		return null
+	})
+
+	await createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	}).addWlan({
+		ssid: 'NewNet',
+		passphrase: 'A$$strong$1word',
+	})
+
+	const addBody = fetchMock.mock.calls
+		.map((call) => String(call[1]?.body ?? ''))
+		.find((body) => body.includes("action='addobj'"))
+	expect(addBody).toContain("passphrase='A$$strong$1word'")
 })
 
 test('add wlan posts an addobj request derived from the standard template', async () => {
