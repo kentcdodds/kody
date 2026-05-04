@@ -247,6 +247,23 @@ function assertSingleCliLine(value: string, field: string) {
 	return trimmed
 }
 
+function assertPositiveIntegerCliArgument(value: number, field: string) {
+	if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+		throw new Error(`${field} must be a positive integer.`)
+	}
+	return String(value)
+}
+
+function assertHostCliArgument(value: string, field: string) {
+	const trimmed = assertSingleCliLine(value, field)
+	if (!/^[A-Za-z0-9:.\-]+$/u.test(trimmed)) {
+		throw new Error(
+			`${field} must be a valid IP, MAC, or hostname token (letters, digits, dot, dash, colon).`,
+		)
+	}
+	return trimmed
+}
+
 function escapeCliQuery(value: string) {
 	return assertSingleCliLine(value, 'query')
 		.replaceAll('\\', '\\\\')
@@ -352,6 +369,57 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 			return request.query
 				? [`show log last where "${escapeCliQuery(request.query)}"`]
 				: ['show log last']
+		case 'show-log-recent':
+			return request.lineCount === undefined
+				? ['show log']
+				: [
+						`show log ${assertPositiveIntegerCliArgument(
+							request.lineCount,
+							'lineCount',
+						)}`,
+					]
+		case 'show-ip-top':
+			return request.limit === undefined
+				? ['show ip top']
+				: [
+						`show ip top ${assertPositiveIntegerCliArgument(
+							request.limit,
+							'limit',
+						)}`,
+					]
+		case 'show-ip-host':
+			return [`show ip host ${assertHostCliArgument(request.host, 'host')}`]
+		case 'show-ip-sessions':
+			return request.host === undefined
+				? ['show ip sessions']
+				: [
+						`show ip sessions ${assertHostCliArgument(
+							request.host,
+							'host',
+						)}`,
+					]
+		case 'show-ip-nat-translations':
+			return request.host === undefined
+				? ['show ip nat']
+				: [
+						`show ip nat ${assertHostCliArgument(request.host, 'host')}`,
+					]
+		case 'show-ip-dhcp':
+			return request.host === undefined
+				? ['show ip dhcp']
+				: [
+						`show ip dhcp ${assertHostCliArgument(request.host, 'host')}`,
+					]
+		case 'show-ip-arp':
+			return request.host === undefined
+				? ['show ip arp']
+				: [
+						`show ip arp ${assertHostCliArgument(request.host, 'host')}`,
+					]
+		case 'show-ip-counters':
+			return ['show ip counters']
+		case 'show-ip-dns-stats':
+			return ['show ip dns']
 		case 'ping':
 			return [`ping ${assertSingleCliLine(request.host, 'host')}`]
 		case 'force-wan-failover':

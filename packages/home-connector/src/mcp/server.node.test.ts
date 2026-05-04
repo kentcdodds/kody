@@ -483,6 +483,138 @@ function createIslandRouterRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
+			case 'show-log-recent':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.lineCount === undefined
+							? 'show log'
+							: `show log ${request.lineCount}`,
+					],
+					stdout: '2026-05-02 15:50:00 info net: link state change',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-top':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.limit === undefined
+							? 'show ip top'
+							: `show ip top ${request.limit}`,
+					],
+					stdout: 'IP Address    Bytes In  Bytes Out',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-host':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`show ip host ${request.host}`,
+					],
+					stdout: `Host stats for ${request.host}`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-sessions':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip sessions'
+							: `show ip sessions ${request.host}`,
+					],
+					stdout: 'Active sessions',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-nat-translations':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip nat'
+							: `show ip nat ${request.host}`,
+					],
+					stdout: 'NAT translations',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-dhcp':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip dhcp'
+							: `show ip dhcp ${request.host}`,
+					],
+					stdout: 'DHCP leases',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-arp':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.host === undefined
+							? 'show ip arp'
+							: `show ip arp ${request.host}`,
+					],
+					stdout: 'ARP table',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-counters':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip counters'],
+					stdout: 'IP counters',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-dns-stats':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip dns'],
+					stdout: 'DNS stats',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
 			case 'show-interface':
 				return {
 					id: request.id,
