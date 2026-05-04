@@ -150,6 +150,67 @@ Use:
 - `package_get` and `package_list` to inspect saved packages
 - `repo_run_commands` to edit, check, and publish repo-backed package source
   after it exists using parsed, git-only command forms rather than shell
+- `package_get_git_remote` and `package_publish_external_push` when you want a
+  normal git client to clone, edit, push, and then ask Kody to reconcile the
+  pushed Artifacts HEAD
+
+## Edit a saved package via direct git push
+
+Saved package source is backed by a Cloudflare Artifacts git repository. You can
+edit it with a normal git client without round-tripping each file change through
+`package_save` or `repo_run_commands`.
+
+1. Mint a short-lived remote credential:
+
+   ```json
+   {
+   	"package_id": "pkg_123",
+   	"scope": "write",
+   	"ttl_seconds": 1800
+   }
+   ```
+
+   Call `package_get_git_remote` with either `package_id` or `kody_id`. The
+   result includes the plain remote URL, an authenticated one-line clone URL, an
+   `Authorization: Bearer ...` extra header, and setup commands that use
+   `git -c http.extraHeader=...` so the token does not need to be saved in shell
+   history or `.git/config`.
+
+2. Clone and edit:
+
+   ```bash
+   git -c http.extraHeader='Authorization: Bearer art_v1_...' clone \
+   	https://<account>.artifacts.cloudflare.net/git/default/<repo>.git \
+   	my-package
+   cd my-package
+   # edit files
+   git add .
+   git commit -m "fix: update package behavior"
+   git -c http.extraHeader='Authorization: Bearer art_v1_...' push origin HEAD:<defaultBranch>
+   ```
+
+   Use the default branch returned by `package_get_git_remote` for
+   `<defaultBranch>`.
+
+3. Publish the pushed Artifacts HEAD:
+
+   ```json
+   {
+   	"package_id": "pkg_123"
+   }
+   ```
+
+   Call `package_publish_external_push`. Kody checks the pushed tree server-side
+   before recording the new published version, writing the published source
+   snapshot, rebuilding package bundle artifacts, and refreshing search
+   projections. If the pushed HEAD is already current, the tool returns
+   `already_published`. If checks fail, it returns `checks_failed` with the
+   failed check entries and leaves the underlying storage state unchanged.
+
+Choose the narrowest token scope that fits the task. Use `read` for inspection
+or local diffing, and `write` only when the git client needs to push. Keep TTLs
+short for autonomous agents and CI-style helpers; the tool accepts 60 seconds to
+24 hours and defaults to 30 minutes.
 
 ## Search and discovery
 

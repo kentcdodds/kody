@@ -59,6 +59,9 @@
 	"observability": {
 		"enabled": true,
 	},
+	"triggers": {
+		"crons": ["*/5 * * * *"],
+	},
 	"env": {
 		"production": {
 			"ai": {

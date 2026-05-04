@@ -44,6 +44,7 @@ import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
+import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
 	connectorSessionKey,
@@ -359,6 +360,18 @@ const workerHandler = {
 		ctx: ExecutionContext,
 	) {
 		await handleInboundEmail(message, env, ctx)
+	},
+	async scheduled(
+		controller: ScheduledController,
+		env: Env,
+		_ctx: ExecutionContext,
+	) {
+		const baseUrl = env.APP_BASE_URL ?? 'https://kody.local'
+		await reconcileArtifactsPushes({
+			env,
+			baseUrl,
+			now: new Date(controller.scheduledTime),
+		})
 	},
 } satisfies ExportedHandler<Env>
 

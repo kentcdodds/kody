@@ -2,6 +2,8 @@ import {
 	CloudflareApiError,
 	createCloudflareRestClient,
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
+import git from 'isomorphic-git'
+import http from 'isomorphic-git/http/web'
 import { type EntityKind } from './types.ts'
 
 export type ArtifactToken = {
@@ -9,6 +11,13 @@ export type ArtifactToken = {
 	plaintext: string
 	scope: string
 	expiresAt: string
+}
+
+export type ArtifactStoredToken = {
+	id: string
+	scope: string
+	expiresAt: string
+	createdAt?: string | null
 }
 
 export type ArtifactBootstrapAccess = {
@@ -34,6 +43,8 @@ export type ArtifactRepoInfo = {
 export type ArtifactRepoHandle = {
 	info(): Promise<ArtifactRepoInfo | null>
 	createToken(scope?: 'write' | 'read', ttl?: number): Promise<ArtifactToken>
+	listTokens?(): Promise<Array<ArtifactStoredToken>>
+	revokeToken?(idOrPlaintext: string): Promise<void>
 	fork(target: { name: string; readOnly?: boolean }): Promise<{
 		id: string
 		name: string
@@ -152,6 +163,13 @@ type ArtifactRestCreateTokenResult = {
 	expires_at: string
 }
 
+type ArtifactRestStoredToken = {
+	id: string
+	scope: string
+	expires_at: string
+	created_at?: string | null
+}
+
 type ArtifactRestForkRepoResult = ArtifactRestCreateRepoResult & {
 	objects?: number
 }
@@ -199,6 +217,29 @@ function createArtifactsRestBinding(env: Env) {
 				scope: result.scope,
 				expiresAt: result.expires_at,
 			}
+		},
+		listTokens: async () => {
+			const envelope = await requestArtifactsEnvelope<
+				Array<ArtifactRestStoredToken>
+			>(client, {
+				method: 'GET',
+				path: `${basePath}/tokens`,
+				query: {
+					repo: name,
+				},
+			})
+			return (envelope.result ?? []).map((token) => ({
+				id: token.id,
+				scope: token.scope,
+				expiresAt: token.expires_at,
+				createdAt: token.created_at ?? null,
+			}))
+		},
+		revokeToken: async (idOrPlaintext) => {
+			await requestArtifactsEnvelope(client, {
+				method: 'DELETE',
+				path: `${basePath}/tokens/${encodeURIComponent(idOrPlaintext)}`,
+			})
 		},
 		fork: async (target) => {
 			const result = await requestArtifactsApi<ArtifactRestForkRepoResult>(
@@ -459,6 +500,48 @@ export function buildAuthenticatedArtifactsRemote(input: {
 	return remoteUrl.toString()
 }
 
+export async function listArtifactServerRefs(input: {
+	remote: string
+	token: string
+	prefix?: string
+}) {
+	const auth = buildArtifactsGitAuth({ token: input.token })
+	return git.listServerRefs({
+		http,
+		url: input.remote,
+		prefix: input.prefix,
+		symrefs: true,
+		onAuth() {
+			return auth
+		},
+	})
+}
+
+export async function resolveArtifactDefaultBranchHead(input: {
+	repo: ArtifactRepoHandle
+}) {
+	const info = await input.repo.info()
+	if (!info?.remote) {
+		throw new Error('Artifact repo remote URL is unavailable.')
+	}
+	const token = await input.repo.createToken('read', 300)
+	const refName = `refs/heads/${info.defaultBranch || 'main'}`
+	const refs = await listArtifactServerRefs({
+		remote: info.remote,
+		token: token.plaintext,
+		prefix: refName,
+	})
+	const branchRef = refs.find((ref) => ref.ref === refName)
+	if (!branchRef?.oid) {
+		return null
+	}
+	return {
+		remote: info.remote,
+		defaultBranch: info.defaultBranch || 'main',
+		commit: branchRef.oid,
+	}
+}
+
 export function isLoopbackHostname(hostname: string) {
 	return (
 		hostname === 'localhost' ||
@@ -548,4 +631,13 @@ export async function resolveSessionRepo(
 		)
 	}
 	return result.repo
+}
+
+export async function resolveArtifactSourceHead(env: Env, repoId: string) {
+	const repo = await resolveArtifactSourceRepo(env, repoId)
+	const ref = await resolveArtifactDefaultBranchHead({ repo })
+	return {
+		branch: ref?.defaultBranch ?? 'main',
+		commit: ref?.commit ?? null,
+	}
 }

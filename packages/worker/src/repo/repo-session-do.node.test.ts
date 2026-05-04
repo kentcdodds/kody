@@ -92,6 +92,12 @@ const mockModule = vi.hoisted(() => {
 		updateEntitySource: vi.fn(async () => undefined),
 		resolveSessionRepo: vi.fn(),
 		resolveArtifactSourceRepo: vi.fn(),
+		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
+			defaultBranch: 'main',
+			commit: 'commit-published-new',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		})),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
 		runRepoChecks: vi.fn(async () => ({
 			ok: true,
@@ -182,6 +188,8 @@ vi.mock('./artifacts.ts', async () => {
 			mockModule.resolveSessionRepo(...args),
 		resolveArtifactSourceRepo: (...args: Array<unknown>) =>
 			mockModule.resolveArtifactSourceRepo(...args),
+		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
+			mockModule.resolveArtifactDefaultBranchHead(...args),
 	}
 })
 
@@ -891,6 +899,29 @@ test('readWithRetry distinguishes null from other falsy values', async () => {
 	const eventualResult = await readWithRetry(eventualRead, [0, 0, 0])
 	expect(eventualResult).toBe('ok')
 	expect(eventualRead).toHaveBeenCalledTimes(3)
+})
+
+test('publishFromExternalRef rejects stale expected HEAD values', async () => {
+	setCommonSessionFixtures()
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+		defaultBranch: 'main',
+		commit: 'commit-new',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.publishFromExternalRef({
+			sessionId: 'external-publish-source-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-stale',
+			expectedHead: 'commit-stale',
+		}),
+	).rejects.toThrow(
+		'Artifacts HEAD changed from "commit-stale" to "commit-new" before publish.',
+	)
 })
 
 test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
