@@ -199,6 +199,26 @@ function createIslandRouterRunner() {
 					['write memory'],
 					'Running configuration saved.',
 				)
+			case 'reserve-dhcp-address':
+				return createResult(
+					request,
+					[
+						'configure terminal',
+						`ip dhcp-reserve ${request.ipAddress} ${request.macAddress}`,
+						'exit',
+					],
+					'DHCP reservation added.',
+				)
+			case 'remove-dhcp-reservation':
+				return createResult(
+					request,
+					[
+						'configure terminal',
+						`no ip dhcp-reserve ${request.ipAddress} ${request.macAddress}`,
+						'exit',
+					],
+					'DHCP reservation removed.',
+				)
 			default: {
 				const _exhaustive: never = request
 				throw new Error(
