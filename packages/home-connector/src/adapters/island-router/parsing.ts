@@ -390,6 +390,45 @@ function findTextTableRows(
 	)
 }
 
+function getTextTableLines(
+	lines: Array<string>,
+	requiredHeaders: Array<string>,
+): Array<string> {
+	for (let index = 0; index < lines.length - 1; index += 1) {
+		const headerLine = lines[index] ?? ''
+		const headers = splitTableColumns(headerLine).map(normalizeHeaderKey)
+		const next = lines[index + 1] ?? ''
+		if (
+			headers.length < 2 ||
+			!/^-{3,}(?:\s+-{3,})*$/.test(next.trim()) ||
+			!requiredHeaders.every((header) => headers.includes(header))
+		) {
+			continue
+		}
+
+		const tableLines = [headerLine, next]
+		for (let rowIndex = index + 2; rowIndex < lines.length; rowIndex += 1) {
+			const line = lines[rowIndex] ?? ''
+			const columns = splitTableColumns(line)
+			const upcomingLine = lines[rowIndex + 1] ?? ''
+			if (
+				columns.length >= 2 &&
+				!/^-{3,}(?:\s+-{3,})*$/.test(line.trim()) &&
+				/^-{3,}(?:\s+-{3,})*$/.test(upcomingLine.trim())
+			) {
+				break
+			}
+			if (!line.trim()) {
+				break
+			}
+			tableLines.push(line)
+		}
+		return tableLines
+	}
+
+	return []
+}
+
 function parseKeyValueLines(lines: Array<string>) {
 	return lines.flatMap((line) => {
 		const match = /^(?<key>[^:]+):\s*(?<value>.+)$/.exec(line)
@@ -1861,8 +1900,14 @@ export function parseIslandRouterDhcpServerConfig(
 ): IslandRouterDhcpServerConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
 	if (commandLinesContain(commandLines, 'show running-config')) {
-		const base = parseRunningConfigDhcpServer(getLinesBeforeFirstTable(lines))
-		const reservationLines = lines.slice(getLinesBeforeFirstTable(lines).length)
+		const runningConfigLines = getLinesBeforeFirstTable(lines)
+		const base = parseRunningConfigDhcpServer(runningConfigLines)
+		const dhcpLines = lines.slice(runningConfigLines.length)
+		const reservationLines = getTextTableLines(dhcpLines, [
+			'ip_address',
+			'mac_address',
+			'interface',
+		])
 		const reservations = parseIslandRouterDhcpReservations(
 			reservationLines.join('\n'),
 			['show ip dhcp'],

@@ -140,6 +140,35 @@ function getWriteOperationCatalogEntry(operation: IslandRouterWriteOperation) {
 	return entry
 }
 
+function assertReadCommandParams(input: {
+	catalogEntry: IslandRouterReadCommandCatalogEntry
+	request: RunReadCommandRequest
+}) {
+	const receivedParams = [
+		{
+			name: 'interfaceName',
+			value: input.request.interfaceName,
+		},
+		{
+			name: 'query',
+			value: input.request.query,
+		},
+		{
+			name: 'limit',
+			value: input.request.limit,
+		},
+	] as const
+	const unsupportedParams = receivedParams.flatMap((param) =>
+		param.value == null || input.catalogEntry.params.includes(param.name)
+			? []
+			: [param.name],
+	)
+	if (unsupportedParams.length === 0) return
+	throw new Error(
+		`${input.catalogEntry.command} does not accept parameter(s): ${unsupportedParams.join(', ')}.`,
+	)
+}
+
 function filterCommandLines(input: {
 	lines: Array<string>
 	query?: string
@@ -331,6 +360,10 @@ export function createIslandRouterAdapter(input: {
 		): Promise<IslandRouterReadCommandResult> {
 			const catalogEntry = getReadCommandCatalogEntry(request.command)
 			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
+			assertReadCommandParams({
+				catalogEntry,
+				request,
+			})
 			let commandRequest: IslandRouterCommandRequest
 			switch (request.command) {
 				case 'show ip neighbors':

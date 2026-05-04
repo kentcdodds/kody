@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { loadHomeConnectorConfig } from '../../config.ts'
 import { createIslandRouterAdapter } from './index.ts'
 import {
+	parseIslandRouterDhcpServerConfig,
 	parseIslandRouterDhcpReservations,
 	parseIslandRouterInterfaceSummaries,
 	parseIslandRouterRecentEvents,
@@ -181,6 +182,11 @@ function createFakeRunner() {
 					request,
 					['show ip dhcp'],
 					[
+						'IP Address    MAC Address        Host Name  Type',
+						'------------  -----------------  ---------  -------',
+						'192.168.0.88  aa:bb:cc:dd:ee:ff  laptop     dynamic',
+						'',
+						'Reservations',
 						'IP Address    MAC Address        Host Name  Interface',
 						'------------  -----------------  ---------  ---------',
 						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
@@ -379,6 +385,18 @@ test('island router read command substrate rejects aliases and missing scoped pa
 			command: 'show interface <iface>',
 		}),
 	).rejects.toThrow('interfaceName')
+	await expect(
+		islandRouter.runReadCommand({
+			command: 'show ip neighbors',
+			query: '192.168.0.52',
+		}),
+	).rejects.toThrow('does not accept parameter(s): query')
+	await expect(
+		islandRouter.runReadCommand({
+			command: 'show ip routes',
+			interfaceName: 'en0',
+		}),
+	).rejects.toThrow('does not accept parameter(s): interfaceName')
 })
 
 test('island router guarded write operations require verification and exact acknowledgement', async () => {
@@ -496,6 +514,32 @@ test('parsers handle documented Island command output shapes used by status and 
 		['show ip dhcp'],
 	)
 	expect(dhcpEntries).toEqual([
+		expect.objectContaining({
+			ipAddress: '192.168.0.52',
+			macAddress: '00:11:22:33:44:55',
+			hostName: 'nas-box',
+			interfaceName: 'en0',
+		}),
+	])
+
+	const dhcpServerConfig = parseIslandRouterDhcpServerConfig(
+		[
+			'ip dhcp-reserve 192.168.0.99 11:22:33:44:55:66',
+			'interface en0',
+			'ip address 192.168.0.1/24',
+			'ip dhcp-server on',
+			'IP Address    MAC Address        Host Name  Type',
+			'------------  -----------------  ---------  -------',
+			'192.168.0.88  aa:bb:cc:dd:ee:ff  laptop     dynamic',
+			'',
+			'Reservations',
+			'IP Address    MAC Address        Host Name  Interface',
+			'------------  -----------------  ---------  ---------',
+			'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+		].join('\n'),
+		['show running-config', 'show ip dhcp'],
+	)
+	expect(dhcpServerConfig.reservations).toEqual([
 		expect.objectContaining({
 			ipAddress: '192.168.0.52',
 			macAddress: '00:11:22:33:44:55',
