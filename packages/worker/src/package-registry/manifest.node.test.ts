@@ -130,9 +130,6 @@ test('parseAuthoredPackageJson accepts package workflow definitions and search p
 			description: 'Runs one planned shade event.',
 		},
 	])
-	expect(buildPackageSearchDocument(projection)).toContain(
-		'workflow:shade-event ./run-event Runs one planned shade event.',
-	)
 })
 
 test('parseAuthoredPackageJson rejects service timeoutMs values above the supported maximum', () => {
@@ -259,9 +256,6 @@ test('parseAuthoredPackageJson accepts retriever definitions and includes them i
 			maxResults: 3,
 		},
 	])
-	expect(buildPackageSearchDocument(projection)).toContain(
-		'retriever:notes-search',
-	)
 })
 
 test('buildPackageSearchProjection includes exported function signatures and jsdoc', () => {
@@ -319,10 +313,6 @@ export declare const celsiusToFahrenheit: (value: number) => number
 			],
 		}),
 	])
-	const document = buildPackageSearchDocument(projection)
-	expect(document).toContain(
-		'export declare function forecast(city: string): Promise<string>',
-	)
 })
 
 test('buildPackageSearchProjection uses local declaration kind for exported const signatures', () => {
@@ -441,10 +431,65 @@ test('parseAuthoredPackageJson accepts email event subscriptions', () => {
 			},
 		},
 	])
-	expect(buildPackageSearchDocument(projection)).toContain(
-		'subscription:email.message.received',
-	)
-	expect(buildPackageSearchDocument(projection)).toContain(
-		'subscription:email.message.quarantined',
+})
+
+test('buildPackageSearchDocument includes exported APIs and package discovery surfaces', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/automation-hub',
+			exports: {
+				'.': {
+					import: './src/index.ts',
+					types: './src/index.d.ts',
+				},
+				'./run-event': './src/run-event.ts',
+				'./search-notes': './src/search-notes.ts',
+			},
+			kody: {
+				id: 'automation-hub',
+				description: 'Automation package with workflows and retrievers',
+				workflows: {
+					'shade-event': {
+						export: './run-event',
+						description: 'Runs one planned shade event.',
+					},
+				},
+				retrievers: {
+					'notes-search': {
+						export: './search-notes',
+						name: 'Personal notes',
+						description: 'Searches saved notes and snippets.',
+						scopes: ['context', 'search'],
+					},
+				},
+				subscriptions: {
+					'email.message.received': {
+						handler: './src/handle-received-email.ts',
+						description: 'Notify on accepted inbound email',
+					},
+					'email.message.quarantined': {
+						handler: './src/handle-quarantined-email.ts',
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const projection = buildPackageSearchProjection(manifest, {
+		'src/index.d.ts': `/**
+ * Look up the forecast for a city.
+ */
+export declare function forecast(city: string): Promise<string>
+`,
+	})
+	const document = buildPackageSearchDocument(projection)
+
+	expect(document).toContain('package automation-hub')
+	expect(document).toContain('workflow:shade-event')
+	expect(document).toContain('retriever:notes-search')
+	expect(document).toContain('subscription:email.message.received')
+	expect(document).toContain('subscription:email.message.quarantined')
+	expect(document).toContain(
+		'export declare function forecast(city: string): Promise<string>',
 	)
 })

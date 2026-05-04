@@ -1,5 +1,5 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
@@ -22,10 +22,6 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 
 const { registerExecuteTool } = await import('./execute.ts')
 
-beforeEach(() => {
-	vi.clearAllMocks()
-})
-
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
 function mockPerformanceSequence(...values: Array<number>) {
@@ -38,6 +34,7 @@ function mockPerformanceSequence(...values: Array<number>) {
 }
 
 async function getExecuteHandler() {
+	vi.clearAllMocks()
 	const registerTool = vi.fn()
 
 	await registerExecuteTool({
@@ -78,10 +75,6 @@ async function getExecuteHandler() {
 		isError: boolean
 	}>
 }
-
-test('registers execute tool', async () => {
-	await getExecuteHandler()
-})
 
 test('execute tool passes through raw MCP content blocks in success responses', async () => {
 	const handler = await getExecuteHandler()
