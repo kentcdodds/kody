@@ -175,7 +175,8 @@ export async function listEntitySourcesForExternalReconcile(
 	const { results } = await db
 		.prepare(
 			`SELECT * FROM entity_sources
-			WHERE last_external_check_at IS NULL OR last_external_check_at < ?
+			WHERE entity_kind = 'package'
+				AND (last_external_check_at IS NULL OR last_external_check_at < ?)
 			ORDER BY COALESCE(last_external_check_at, created_at) ASC
 			LIMIT ?`,
 		)
