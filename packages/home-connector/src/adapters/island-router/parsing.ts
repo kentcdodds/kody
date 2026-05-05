@@ -123,8 +123,9 @@ function isPromptOnlyLine(line: string) {
 }
 
 function splitSanitizedStdoutLines(stdout: string) {
+	const escapeCharacter = String.fromCharCode(27)
 	return stdout
-		.replaceAll(/\u001b\[[0-9;]*m/g, '')
+		.replaceAll(new RegExp(`${escapeCharacter}\\[[0-9;]*m`, 'g'), '')
 		.split(/\r?\n/)
 		.map((line) => line.replace(/\r/g, ''))
 }
@@ -969,7 +970,6 @@ function parseRunningConfigFailover(
 		const rightPriority = right.failoverPriority ?? Number.POSITIVE_INFINITY
 		return leftPriority - rightPriority
 	})
-	const preferredInterfaceName = wans[0]?.interfaceName ?? null
 	const policy =
 		globals
 			.find((line) => /^ip load-sharing /i.test(line))

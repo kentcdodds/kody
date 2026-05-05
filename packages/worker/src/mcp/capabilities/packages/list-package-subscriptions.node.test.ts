@@ -18,6 +18,7 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 const { listPackageSubscriptionsCapability } =
 	await import('./list-package-subscriptions.ts')
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
 	mockModule.listSavedPackagesByUserId.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()

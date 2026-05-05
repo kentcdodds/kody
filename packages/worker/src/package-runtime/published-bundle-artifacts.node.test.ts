@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as PublishedBundleArtifactRepo from '#worker/repo/published-bundle-artifacts-repo.ts'
+import type * as PublishedRuntimeArtifacts from './published-runtime-artifacts.ts'
 import { rebuildPublishedPackageArtifacts } from './published-bundle-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -15,9 +17,9 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 }))
 
 vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/repo/published-bundle-artifacts-repo.ts')
-	>('#worker/repo/published-bundle-artifacts-repo.ts')
+	const actual = await vi.importActual<typeof PublishedBundleArtifactRepo>(
+		'#worker/repo/published-bundle-artifacts-repo.ts',
+	)
 	return {
 		...actual,
 		getPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
@@ -30,9 +32,9 @@ vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
 })
 
 vi.mock('./published-runtime-artifacts.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('./published-runtime-artifacts.ts')
-	>('./published-runtime-artifacts.ts')
+	const actual = await vi.importActual<typeof PublishedRuntimeArtifacts>(
+		'./published-runtime-artifacts.ts',
+	)
 	return {
 		...actual,
 		writePublishedBundleArtifact: (...args: Array<unknown>) =>

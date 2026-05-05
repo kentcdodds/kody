@@ -43,6 +43,7 @@ function createSnapshotFromFiles(files: Map<string, string>): MockSnapshot {
 	}
 }
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()

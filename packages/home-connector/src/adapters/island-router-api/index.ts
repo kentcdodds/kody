@@ -67,7 +67,12 @@ export function validateIslandRouterApiPath(path: string) {
 	} catch {
 		throw new Error('Island Router API path must be URI-decodable.')
 	}
-	if (/[\u0000-\u001f\u007f]/.test(parsedPath)) {
+	if (
+		[...parsedPath].some((character) => {
+			const codePoint = character.codePointAt(0) ?? 0
+			return codePoint <= 0x1f || codePoint === 0x7f
+		})
+	) {
 		throw new Error(
 			'Island Router API path must not contain control characters.',
 		)

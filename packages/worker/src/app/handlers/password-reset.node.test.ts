@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
+import type * as AuditLog from '#app/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createRecord: vi.fn(async () => undefined),
@@ -22,7 +23,7 @@ vi.mock('#worker/db.ts', () => ({
 }))
 
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
 		getRequestIp: () => null,
@@ -39,6 +40,7 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 const { createPasswordResetRequestHandler } =
 	await import('./password-reset.ts')
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite clears shared hoisted mocks between tests.
 beforeEach(() => {
 	vi.clearAllMocks()
 })

@@ -14,6 +14,7 @@ const sentryMock = vi.hoisted(() => ({
 
 vi.mock('@sentry/node', () => sentryMock)
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this reset protects following tests when Sentry is enabled.
 afterEach(() => {
 	sentryMock.isEnabled.mockReturnValue(false)
 })

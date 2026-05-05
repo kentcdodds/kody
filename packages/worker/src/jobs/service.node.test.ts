@@ -46,6 +46,7 @@ vi.mock('./manager-client.ts', () => ({
 		jobManagerMockModule.getJobManagerDebugState(...args),
 }))
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite restores global spies across many integration-style tests.
 afterEach(() => {
 	vi.restoreAllMocks()
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()

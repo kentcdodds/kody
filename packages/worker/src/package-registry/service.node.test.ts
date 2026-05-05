@@ -129,6 +129,7 @@ function createProjection() {
 	}
 }
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
 	for (const value of Object.values(mockModule)) {
 		value.mockReset()

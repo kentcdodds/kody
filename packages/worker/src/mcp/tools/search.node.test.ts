@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
+import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import {
 	buildSavedPackageSearchRows,
 	loadDownHomeConnectorStatus,
@@ -27,9 +28,9 @@ const sourceMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/package-registry/source.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/package-registry/source.ts')
-	>('#worker/package-registry/source.ts')
+	const actual = await vi.importActual<typeof PackageRegistrySource>(
+		'#worker/package-registry/source.ts',
+	)
 	return {
 		...actual,
 		loadPackageManifestBySourceId: (...args: Array<unknown>) =>

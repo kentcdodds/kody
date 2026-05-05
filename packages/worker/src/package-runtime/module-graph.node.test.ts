@@ -40,6 +40,7 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 const { buildKodyAppBundle, createPublishedPackageAppBundleCacheKey } =
 	await import('./module-graph.ts')
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
 	mockModule.createWorker.mockReset()
 	mockModule.getSavedPackageByName.mockReset()

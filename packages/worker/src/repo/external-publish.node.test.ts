@@ -33,7 +33,6 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 }))
 
 const { publishFromExternalRef } = await import('./external-publish.ts')
-const { finalizePublishedEntitySource } = await import('./external-publish.ts')
 
 function source(overrides: Record<string, unknown> = {}) {
 	return {
@@ -60,6 +59,7 @@ function workspace() {
 	}
 }
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite shares a large mocked repository surface.
 beforeEach(() => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.updateEntitySource.mockClear()

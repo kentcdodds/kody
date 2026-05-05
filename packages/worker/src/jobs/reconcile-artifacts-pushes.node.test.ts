@@ -54,6 +54,7 @@ function source(overrides: Record<string, unknown> = {}) {
 	}
 }
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
 	mockModule.listEntitySourcesForExternalReconcile.mockReset()
 	mockModule.updateEntitySource.mockClear()

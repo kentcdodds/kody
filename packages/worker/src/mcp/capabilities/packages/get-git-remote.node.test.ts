@@ -92,6 +92,7 @@ function mockPackageSource(sourceUserId = 'user-1') {
 	return { createToken }
 }
 
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
 	for (const fn of Object.values(mockModule)) {
 		fn.mockReset()
