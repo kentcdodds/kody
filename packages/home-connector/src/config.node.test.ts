@@ -152,27 +152,29 @@ test('derived Venstar autoscan CIDRs collapse narrower private ranges to one /24
 	).toEqual(['192.168.4.0/24'])
 })
 
-test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {
-	using _env = createTemporaryEnv({
-		...requiredConfigEnv,
-		HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
-		HOME_CONNECTOR_DB_PATH: undefined,
-	})
+test('connector data path drives the default db path unless HOME_CONNECTOR_DB_PATH overrides it', () => {
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
+			HOME_CONNECTOR_DB_PATH: undefined,
+		})
 
-	const config = loadHomeConnectorConfig()
-	expect(config.dataPath).toBe('/tmp/kody-home-connector')
-	expect(config.dbPath).toBe('/tmp/kody-home-connector/home-connector.sqlite')
-})
+		const config = loadHomeConnectorConfig()
+		expect(config.dataPath).toBe('/tmp/kody-home-connector')
+		expect(config.dbPath).toBe('/tmp/kody-home-connector/home-connector.sqlite')
+	}
 
-test('HOME_CONNECTOR_DB_PATH overrides the default sqlite location', () => {
-	using _env = createTemporaryEnv({
-		...requiredConfigEnv,
-		HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
-		HOME_CONNECTOR_DB_PATH: '/tmp/custom-home-connector.sqlite',
-	})
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
+			HOME_CONNECTOR_DB_PATH: '/tmp/custom-home-connector.sqlite',
+		})
 
-	const config = loadHomeConnectorConfig()
-	expect(config.dbPath).toBe('/tmp/custom-home-connector.sqlite')
+		const config = loadHomeConnectorConfig()
+		expect(config.dbPath).toBe('/tmp/custom-home-connector.sqlite')
+	}
 })
 
 test('island router SSH env vars are loaded with defaults', () => {
@@ -225,33 +227,36 @@ test('island router SSH env vars honor explicit port, fingerprint, and timeout',
 	})
 })
 
-test('Access Networks Unleashed insecure TLS is opt-in', () => {
-	using _env = createTemporaryEnv({
-		...requiredConfigEnv,
-		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.1.0/24',
-		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: undefined,
-	})
+test('Access Networks Unleashed TLS and timeout env vars honor safe defaults and explicit overrides', () => {
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.1.0/24',
+			ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: undefined,
+			ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS: undefined,
+		})
 
-	expect(loadHomeConnectorConfig()).toMatchObject({
-		accessNetworksUnleashedScanCidrs: ['192.168.1.0/24'],
-		accessNetworksUnleashedAllowInsecureTls: false,
-		accessNetworksUnleashedRequestTimeoutMs: 8000,
-	})
-})
+		expect(loadHomeConnectorConfig()).toMatchObject({
+			accessNetworksUnleashedScanCidrs: ['192.168.1.0/24'],
+			accessNetworksUnleashedAllowInsecureTls: false,
+			accessNetworksUnleashedRequestTimeoutMs: 8000,
+		})
+	}
 
-test('Access Networks Unleashed insecure TLS honors explicit true', () => {
-	using _env = createTemporaryEnv({
-		...requiredConfigEnv,
-		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.50.0/24,10.0.0.8/32',
-		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
-		ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS: '12000',
-	})
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.50.0/24,10.0.0.8/32',
+			ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
+			ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS: '12000',
+		})
 
-	expect(loadHomeConnectorConfig()).toMatchObject({
-		accessNetworksUnleashedScanCidrs: ['192.168.50.0/24', '10.0.0.8/32'],
-		accessNetworksUnleashedAllowInsecureTls: true,
-		accessNetworksUnleashedRequestTimeoutMs: 12000,
-	})
+		expect(loadHomeConnectorConfig()).toMatchObject({
+			accessNetworksUnleashedScanCidrs: ['192.168.50.0/24', '10.0.0.8/32'],
+			accessNetworksUnleashedAllowInsecureTls: true,
+			accessNetworksUnleashedRequestTimeoutMs: 12000,
+		})
+	}
 })
 
 test('Island Router API env vars are loaded with safe defaults and explicit overrides', () => {

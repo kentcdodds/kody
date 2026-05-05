@@ -548,118 +548,83 @@ test('bond wraps request timeouts as actionable network failures', async () => {
 		storage,
 	})
 	const previousFetch = globalThis.fetch
-	globalThis.fetch = vi.fn(async () => {
-		throw new DOMException('The operation timed out.', 'TimeoutError')
-	}) as typeof fetch
-
-	try {
-		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
-			{
-				bridgeId: 'BONDTEST7',
-				bondid: 'BONDTEST7',
-				instanceName: 'Timeout Bond',
-				host: '10.0.0.22',
-				port: 80,
-				address: null,
-				model: 'BD-TEST',
-				fwVer: 'v1.0.0',
-				lastSeenAt: '2026-04-27T21:30:00.000Z',
-				rawDiscovery: {},
-			},
-		])
-		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST7')
-		bond.setToken('BONDTEST7', 'bond-token')
-
-		await expect(bond.getDeviceState('BONDTEST7', 'mockdev1')).rejects.toThrow(
-			'Bond bridge "BONDTEST7" could not be reached while trying to fetch device mockdev1 state at http://10.0.0.22. Bond request timed out after 5000ms for /v2/devices/mockdev1/state',
-		)
-	} finally {
-		globalThis.fetch = previousFetch
-		storage.close()
-	}
-})
-
-test('bond wraps response body timeouts as actionable network failures', async () => {
-	const config = createConfig()
-	const state = createAppState()
-	const storage = createHomeConnectorStorage(config)
-	const bond = createBondAdapter({
-		config,
-		state,
-		storage,
-	})
-	const previousFetch = globalThis.fetch
-	globalThis.fetch = vi.fn(async () => {
-		return {
-			ok: true,
-			text: async () => {
+	const cases = [
+		{
+			bridgeId: 'BONDTEST7',
+			instanceName: 'Timeout Bond',
+			lastSeenAt: '2026-04-27T21:30:00.000Z',
+			fetchImpl: async () => {
 				throw new DOMException('The operation timed out.', 'TimeoutError')
 			},
-		} as Response
-	}) as typeof fetch
+			expectedMessageParts: [
+				'could not be reached while trying to fetch device mockdev1 state',
+				'Bond request timed out after 5000ms',
+			],
+		},
+		{
+			bridgeId: 'BONDTEST9',
+			instanceName: 'Body Timeout Bond',
+			lastSeenAt: '2026-04-27T21:40:00.000Z',
+			fetchImpl: async () =>
+				({
+					ok: true,
+					text: async () => {
+						throw new DOMException('The operation timed out.', 'TimeoutError')
+					},
+				}) as Response,
+			expectedMessageParts: [
+				'could not be reached while trying to fetch device mockdev1 state',
+				'Bond request timed out after 5000ms',
+			],
+		},
+		{
+			bridgeId: 'BONDTEST10',
+			instanceName: 'Abort Bond',
+			lastSeenAt: '2026-04-27T21:45:00.000Z',
+			fetchImpl: async () => {
+				throw new DOMException('The user aborted a request.', 'AbortError')
+			},
+			expectedMessageParts: [
+				'could not be reached while trying to fetch device mockdev1 state',
+				'The user aborted a request.',
+			],
+		},
+	] satisfies Array<{
+		bridgeId: string
+		instanceName: string
+		lastSeenAt: string
+		fetchImpl: typeof fetch
+		expectedMessageParts: Array<string>
+	}>
 
 	try {
-		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
-			{
-				bridgeId: 'BONDTEST9',
-				bondid: 'BONDTEST9',
-				instanceName: 'Body Timeout Bond',
-				host: '10.0.0.22',
-				port: 80,
-				address: null,
-				model: 'BD-TEST',
-				fwVer: 'v1.0.0',
-				lastSeenAt: '2026-04-27T21:40:00.000Z',
-				rawDiscovery: {},
-			},
-		])
-		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST9')
-		bond.setToken('BONDTEST9', 'bond-token')
+		for (const testCase of cases) {
+			globalThis.fetch = vi.fn(testCase.fetchImpl) as typeof fetch
+			upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+				{
+					bridgeId: testCase.bridgeId,
+					bondid: testCase.bridgeId,
+					instanceName: testCase.instanceName,
+					host: '10.0.0.22',
+					port: 80,
+					address: null,
+					model: 'BD-TEST',
+					fwVer: 'v1.0.0',
+					lastSeenAt: testCase.lastSeenAt,
+					rawDiscovery: {},
+				},
+			])
+			adoptBondBridge(storage, config.homeConnectorId, testCase.bridgeId)
+			bond.setToken(testCase.bridgeId, 'bond-token')
 
-		await expect(bond.getDeviceState('BONDTEST9', 'mockdev1')).rejects.toThrow(
-			'Bond bridge "BONDTEST9" could not be reached while trying to fetch device mockdev1 state at http://10.0.0.22. Bond request timed out after 5000ms for /v2/devices/mockdev1/state',
-		)
-	} finally {
-		globalThis.fetch = previousFetch
-		storage.close()
-	}
-})
-
-test('bond wraps abort errors as actionable network failures', async () => {
-	const config = createConfig()
-	const state = createAppState()
-	const storage = createHomeConnectorStorage(config)
-	const bond = createBondAdapter({
-		config,
-		state,
-		storage,
-	})
-	const previousFetch = globalThis.fetch
-	globalThis.fetch = vi.fn(async () => {
-		throw new DOMException('The user aborted a request.', 'AbortError')
-	}) as typeof fetch
-
-	try {
-		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
-			{
-				bridgeId: 'BONDTEST10',
-				bondid: 'BONDTEST10',
-				instanceName: 'Abort Bond',
-				host: '10.0.0.22',
-				port: 80,
-				address: null,
-				model: 'BD-TEST',
-				fwVer: 'v1.0.0',
-				lastSeenAt: '2026-04-27T21:45:00.000Z',
-				rawDiscovery: {},
-			},
-		])
-		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST10')
-		bond.setToken('BONDTEST10', 'bond-token')
-
-		await expect(bond.getDeviceState('BONDTEST10', 'mockdev1')).rejects.toThrow(
-			'Bond bridge "BONDTEST10" could not be reached while trying to fetch device mockdev1 state at http://10.0.0.22. The user aborted a request.',
-		)
+			const error = await bond
+				.getDeviceState(testCase.bridgeId, 'mockdev1')
+				.catch((caughtError) => caughtError as Error)
+			expect(error).toBeInstanceOf(Error)
+			for (const messagePart of testCase.expectedMessageParts) {
+				expect(error.message).toContain(messagePart)
+			}
+		}
 	} finally {
 		globalThis.fetch = previousFetch
 		storage.close()

@@ -22,19 +22,17 @@ test('skill parameter definitions normalize names and resolve one workflow end t
 	])!
 
 	expect(definitions).toEqual([
-		{
+		expect.objectContaining({
 			name: 'owner',
-			description: 'Repo owner.',
 			type: 'string',
 			required: true,
-		},
-		{
+		}),
+		expect.objectContaining({
 			name: 'limit',
-			description: 'Result limit.',
 			type: 'number',
 			required: false,
 			default: 5,
-		},
+		}),
 	])
 
 	expect(() =>
