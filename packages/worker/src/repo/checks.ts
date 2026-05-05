@@ -2,6 +2,8 @@ import {
 	getPackageAppEntryPath,
 	listPackageServices,
 	listPackageSubscriptions,
+	listPackageRetrievers,
+	listPackageWorkflows,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
@@ -9,6 +11,7 @@ import {
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import {
 	buildKodyAppBundle,
+	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
@@ -255,36 +258,44 @@ declare const storage: {
 `.trim()
 }
 
-type PackageTypecheckTarget = {
+type PackageBundleTarget = {
 	path: string
-	includeStorage: boolean
-	bundleKind: 'app' | 'module'
+	bundleKind: 'app' | 'callable' | 'importable'
 }
 
-function collectPackageTypecheckTargets(
+type PackageCallableTypecheckTarget = {
+	path: string
+	includeStorage: boolean
+}
+
+function buildBundleTargetKey(target: PackageBundleTarget) {
+	return `${target.path}:${target.bundleKind}`
+}
+
+function compareBundleTargets(
+	left: PackageBundleTarget,
+	right: PackageBundleTarget,
+) {
+	return buildBundleTargetKey(left).localeCompare(buildBundleTargetKey(right))
+}
+
+function collectPackageBundleTargets(
 	manifest: AuthoredPackageJson,
-): Array<PackageTypecheckTarget> {
-	const targets = new Map<string, PackageTypecheckTarget>()
+): Array<PackageBundleTarget> {
+	const targets = new Map<string, PackageBundleTarget>()
 	const remember = (
 		path: string,
-		includeStorage: boolean,
-		bundleKind: PackageTypecheckTarget['bundleKind'],
+		bundleKind: PackageBundleTarget['bundleKind'],
 	) => {
 		const normalizedPath = normalizePackageWorkspacePath(path)
-		const existing = targets.get(normalizedPath)
-		if (existing) {
-			existing.includeStorage = existing.includeStorage || includeStorage
-			return
-		}
-		targets.set(normalizedPath, {
+		targets.set(buildBundleTargetKey({ path: normalizedPath, bundleKind }), {
 			path: normalizedPath,
-			includeStorage,
 			bundleKind,
 		})
 	}
 	const appEntryPath = getPackageAppEntryPath(manifest)
 	if (appEntryPath) {
-		remember(appEntryPath, false, 'app')
+		remember(appEntryPath, 'app')
 	}
 	for (const exportName of Object.keys(manifest.exports)) {
 		remember(
@@ -292,18 +303,82 @@ function collectPackageTypecheckTargets(
 				manifest,
 				exportName,
 			}),
-			false,
-			'module',
+			'importable',
 		)
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
-		remember(job.entry, true, 'module')
+		remember(job.entry, 'callable')
 	}
 	for (const service of listPackageServices(manifest)) {
-		remember(service.entry, true, 'module')
+		remember(service.entry, 'callable')
 	}
 	for (const subscription of listPackageSubscriptions(manifest)) {
-		remember(subscription.handler, true, 'module')
+		remember(subscription.handler, 'callable')
+	}
+	for (const workflow of listPackageWorkflows(manifest)) {
+		remember(
+			resolvePackageExportPath({
+				manifest,
+				exportName: workflow.exportName,
+			}),
+			'callable',
+		)
+	}
+	for (const retriever of listPackageRetrievers(manifest)) {
+		remember(
+			resolvePackageExportPath({
+				manifest,
+				exportName: retriever.exportName,
+			}),
+			'callable',
+		)
+	}
+	return Array.from(targets.values()).sort(compareBundleTargets)
+}
+
+function collectPackageCallableTypecheckTargets(
+	manifest: AuthoredPackageJson,
+): Array<PackageCallableTypecheckTarget> {
+	const targets = new Map<string, PackageCallableTypecheckTarget>()
+	const remember = (path: string, includeStorage: boolean) => {
+		const normalizedPath = normalizePackageWorkspacePath(path)
+		const existing = targets.get(normalizedPath)
+		if (existing) {
+			// Preserve the widest runtime global surface when one file is reused.
+			existing.includeStorage = existing.includeStorage || includeStorage
+			return
+		}
+		targets.set(normalizedPath, {
+			path: normalizedPath,
+			includeStorage,
+		})
+	}
+	for (const job of Object.values(manifest.kody.jobs ?? {})) {
+		remember(job.entry, true)
+	}
+	for (const service of listPackageServices(manifest)) {
+		remember(service.entry, true)
+	}
+	for (const subscription of listPackageSubscriptions(manifest)) {
+		remember(subscription.handler, true)
+	}
+	for (const workflow of listPackageWorkflows(manifest)) {
+		remember(
+			resolvePackageExportPath({
+				manifest,
+				exportName: workflow.exportName,
+			}),
+			true,
+		)
+	}
+	for (const retriever of listPackageRetrievers(manifest)) {
+		remember(
+			resolvePackageExportPath({
+				manifest,
+				exportName: retriever.exportName,
+			}),
+			true,
+		)
 	}
 	return Array.from(targets.values())
 }
@@ -331,7 +406,7 @@ async function validatePackageBundles(input: {
 	baseUrl: string
 	userId: string
 	sourceFiles: Record<string, string>
-	entryPoints: Array<PackageTypecheckTarget>
+	entryPoints: Array<PackageBundleTarget>
 }) {
 	const failures: Array<string> = []
 	for (const target of input.entryPoints) {
@@ -345,7 +420,7 @@ async function validatePackageBundles(input: {
 					entryPoint: target.path,
 					cacheKey: null,
 				})
-			} else {
+			} else if (target.bundleKind === 'callable') {
 				await buildKodyModuleBundle({
 					env: input.env,
 					baseUrl: input.baseUrl,
@@ -353,6 +428,17 @@ async function validatePackageBundles(input: {
 					sourceFiles: input.sourceFiles,
 					entryPoint: target.path,
 				})
+			} else if (target.bundleKind === 'importable') {
+				await buildKodyImportableModuleBundle({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceFiles: input.sourceFiles,
+					entryPoint: target.path,
+				})
+			} else {
+				const exhaustive: never = target.bundleKind
+				throw new Error(`Unsupported package bundle target kind: ${exhaustive}`)
 			}
 		} catch (error) {
 			failures.push(
@@ -364,13 +450,13 @@ async function validatePackageBundles(input: {
 		ok: failures.length === 0,
 		message:
 			failures.length === 0
-				? `Bundled ${input.entryPoints.length} package runtime entrypoint(s) successfully.`
+				? `Bundled ${input.entryPoints.length} package target(s) successfully.`
 				: failures.join('\n'),
 	}
 }
 
 function getPackageTypecheckDiagnostics(input: {
-	targets: Array<PackageTypecheckTarget>
+	targets: Array<PackageCallableTypecheckTarget>
 	languageService: {
 		getSemanticDiagnostics(path: string): Array<{
 			messageText: unknown
@@ -483,7 +569,6 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		targets: input.entryPoints.map((entryPoint) => ({
 			path: entryPoint.path,
 			includeStorage: entryPoint.includeStorage === true,
-			bundleKind: 'module',
 		})),
 		languageService,
 		fileSystem,
@@ -502,14 +587,14 @@ function formatBundleCheckMessage(input: {
 	targetCount: number
 }) {
 	if (input.missingEntryPoints.length > 0) {
-		return `Package runtime entrypoint(s) missing from the repo session snapshot: ${input.missingEntryPoints
+		return `Package bundle target(s) missing from the repo session snapshot: ${input.missingEntryPoints
 			.map((path) => `"${path}"`)
 			.join(', ')}.`
 	}
 	if (input.targetCount === 0) {
-		return 'Package defines no app entry, exports, jobs, or services to bundle.'
+		return 'Package defines no app entry, exports, jobs, services, subscriptions, workflows, or retrievers to bundle.'
 	}
-	return `Resolved ${input.targetCount} package runtime entrypoint(s) for bundling.`
+	return `Resolved ${input.targetCount} package target(s) for bundling.`
 }
 
 export async function runRepoChecks(input: {
@@ -577,10 +662,23 @@ export async function runRepoChecks(input: {
 						}: ${declaredDependencies.map((dependency) => `"${dependency}"`).join(', ')}.`,
 	})
 
-	const entryPoints = collectPackageTypecheckTargets(manifest)
-	const missingEntryPoints = entryPoints
-		.map((target) => target.path)
-		.filter((path) => snapshot.read(path) == null)
+	const bundleTargets = collectPackageBundleTargets(manifest)
+	const callableTypecheckTargets =
+		collectPackageCallableTypecheckTargets(manifest)
+	const missingBundleTargets = [
+		...new Set(
+			bundleTargets
+				.map((target) => target.path)
+				.filter((path) => snapshot.read(path) == null),
+		),
+	]
+	const missingCallableTypecheckTargets = [
+		...new Set(
+			callableTypecheckTargets
+				.map((target) => target.path)
+				.filter((path) => snapshot.read(path) == null),
+		),
+	]
 	const bundleContext =
 		input.env && input.userId
 			? {
@@ -590,25 +688,25 @@ export async function runRepoChecks(input: {
 				}
 			: null
 	const bundleCheckResult =
-		missingEntryPoints.length > 0
+		missingBundleTargets.length > 0
 			? {
 					ok: false,
 					message: formatBundleCheckMessage({
-						missingEntryPoints,
-						targetCount: entryPoints.length,
+						missingEntryPoints: missingBundleTargets,
+						targetCount: bundleTargets.length,
 					}),
 				}
 			: bundleContext
 				? await validatePackageBundles({
 						...bundleContext,
 						sourceFiles: createSourceFilesRecord(snapshotFiles),
-						entryPoints,
+						entryPoints: bundleTargets,
 					})
 				: {
 						ok: true,
 						message: formatBundleCheckMessage({
-							missingEntryPoints,
-							targetCount: entryPoints.length,
+							missingEntryPoints: missingBundleTargets,
+							targetCount: bundleTargets.length,
 						}),
 					}
 	results.push({
@@ -617,13 +715,31 @@ export async function runRepoChecks(input: {
 		message: bundleCheckResult.message,
 	})
 
-	if (missingEntryPoints.length > 0) {
+	if (missingCallableTypecheckTargets.length > 0) {
 		results.push({
 			kind: 'typecheck',
 			ok: false,
-			message: `Typecheck skipped because package runtime entrypoint(s) are missing from the repo session snapshot: ${missingEntryPoints
+			message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
 				.map((path) => `"${path}"`)
 				.join(', ')}.`,
+		})
+		results.push({
+			kind: 'lint',
+			ok: true,
+			message: 'Lint placeholder passed for this phase.',
+		})
+		return {
+			ok: results.every((result) => result.ok),
+			results,
+			manifest,
+		}
+	}
+
+	if (callableTypecheckTargets.length === 0) {
+		results.push({
+			kind: 'typecheck',
+			ok: true,
+			message: 'No callable package runtime entrypoint(s) to typecheck.',
 		})
 		results.push({
 			kind: 'lint',
@@ -659,7 +775,7 @@ export async function runRepoChecks(input: {
 		},
 	)
 	const diagnostics = getPackageTypecheckDiagnostics({
-		targets: entryPoints,
+		targets: callableTypecheckTargets,
 		languageService,
 		fileSystem,
 	})
@@ -667,7 +783,7 @@ export async function runRepoChecks(input: {
 		kind: 'typecheck',
 		ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
 		message: diagnostics.every((entry) => entry.diagnostics.length === 0)
-			? `No semantic diagnostics for ${entryPoints.length} package runtime entrypoint(s).`
+			? `No semantic diagnostics for ${callableTypecheckTargets.length} callable package runtime entrypoint(s).`
 			: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
 	})
 

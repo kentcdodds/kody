@@ -214,6 +214,14 @@ export default __kodyPackageModule.default;
 `.trim()
 }
 
+function createImportableEntrypointSource(input: { modulePath: string }) {
+	return `
+export * from ${JSON.stringify(input.modulePath)};
+import * as userModule from ${JSON.stringify(input.modulePath)};
+export default userModule;
+`.trim()
+}
+
 function encodePathKey(value: string) {
 	return Array.from(new TextEncoder().encode(value), (byte) =>
 		byte.toString(16).padStart(2, '0'),
@@ -537,6 +545,45 @@ export async function buildKodyModuleBundle(input: {
 	assertBundleHasNoUnresolvedBareImports({
 		modules: bundle.modules as WorkerLoaderModules,
 		bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+	})
+	return {
+		mainModule: bundle.mainModule,
+		modules: bundle.modules as WorkerLoaderModules,
+		dependencies: [...dependencies.values()],
+	}
+}
+
+export async function buildKodyImportableModuleBundle(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceFiles: Record<string, string>
+	entryPoint: string
+}) {
+	const { files, dependencies } = await prepareKodyGraphFiles({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceFiles: input.sourceFiles,
+	})
+	const normalizedEntrypoint = joinPath(
+		rootSourcePrefix,
+		normalizePackageWorkspacePath(input.entryPoint),
+	)
+	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_import_entry__.js')
+	files[bootstrapPath] = createImportableEntrypointSource({
+		modulePath: createRelativeImportSpecifier(
+			bootstrapPath,
+			normalizedEntrypoint,
+		),
+	})
+	const bundle = await createWorkerBundle({
+		files,
+		entryPoint: bootstrapPath,
+	})
+	assertBundleHasNoUnresolvedBareImports({
+		modules: bundle.modules as WorkerLoaderModules,
+		bundleLabel: `Saved package import "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
 	})
 	return {
 		mainModule: bundle.mainModule,
