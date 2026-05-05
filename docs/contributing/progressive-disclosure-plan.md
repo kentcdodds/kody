@@ -21,8 +21,8 @@ The intended result:
 
 - Do not replace tool schemas. Argument and output shapes still belong in
   `inputSchema` and `outputSchema`.
-- Do not implement user-controlled memory. Disclosure facts are product
-  guidance owned by Kody; memory remains user-specific state retrieved with
+- Do not implement user-controlled memory. Disclosure facts are product guidance
+  owned by Kody; memory remains user-specific state retrieved with
   `memoryContext`.
 - Do not make the first version adaptive with an LLM. Triggering should be
   deterministic and testable.
@@ -80,21 +80,21 @@ strings.
 
 Recommended fields:
 
-| Field | Purpose |
-| --- | --- |
-| `id` | Stable lower-dot identifier, grouped by surface (`execute.*`, `search.*`). |
-| `version` | Increment when content or trigger semantics materially change. |
-| `title` | Human-readable label for review, logs, and tests. |
-| `status` | `active`, `draft`, or `retired`. Only `active` facts emit. |
-| `audience` | Usually `mcp-agent`; leaves room for future UI/admin audiences. |
-| `tools` | Tool names most associated with the fact. |
-| `domains` | Optional capability domains such as `secrets`, `packages`, or `home`. |
-| `entityTypes` | Optional search result types such as `secret`, `connector`, `value`. |
-| `triggers` | Deterministic trigger rules. See below. |
-| `priority` | Ordering when multiple facts match; lower numbers can emit first. |
-| `dedupeScope` | `conversation` by default; `call` only for facts that should repeat. |
-| `docs` | Repo docs for deeper reading. |
-| body | Short markdown, written as text suitable for direct MCP response inclusion. |
+| Field         | Purpose                                                                     |
+| ------------- | --------------------------------------------------------------------------- |
+| `id`          | Stable lower-dot identifier, grouped by surface (`execute.*`, `search.*`).  |
+| `version`     | Increment when content or trigger semantics materially change.              |
+| `title`       | Human-readable label for review, logs, and tests.                           |
+| `status`      | `active`, `draft`, or `retired`. Only `active` facts emit.                  |
+| `audience`    | Usually `mcp-agent`; leaves room for future UI/admin audiences.             |
+| `tools`       | Tool names most associated with the fact.                                   |
+| `domains`     | Optional capability domains such as `secrets`, `packages`, or `home`.       |
+| `entityTypes` | Optional search result types such as `secret`, `connector`, `value`.        |
+| `triggers`    | Deterministic trigger rules. See below.                                     |
+| `priority`    | Ordering when multiple facts match; lower numbers can emit first.           |
+| `dedupeScope` | `conversation` by default; `call` only for facts that should repeat.        |
+| `docs`        | Repo docs for deeper reading.                                               |
+| body          | Short markdown, written as text suitable for direct MCP response inclusion. |
 
 Authoring rules:
 
@@ -102,8 +102,8 @@ Authoring rules:
 - Prefer one or two short paragraphs or bullets.
 - Include copy-pasteable syntax only when it is directly useful at that moment.
 - Link to usage docs for exhaustive rules.
-- Avoid embedding secrets, user-specific values, or deployment-specific hostnames
-  in fact bodies.
+- Avoid embedding secrets, user-specific values, or deployment-specific
+  hostnames in fact bodies.
 - Retire facts instead of deleting them immediately when a ledger may still
   reference an old id/version.
 
@@ -151,8 +151,8 @@ fact next:
    shape, result metadata, structured error, search matches, caller context, and
    capability metadata already loaded for the call.
 2. Match active facts against that context.
-3. Remove facts already disclosed for the same `conversationId` at the same
-   `id` and `version`.
+3. Remove facts already disclosed for the same `conversationId` at the same `id`
+   and `version`.
 4. Sort by `priority`, then by `id`.
 5. Emit a small bounded number of facts. Start with one or two facts per
    response; include an overflow hint only if more matched.
@@ -199,24 +199,24 @@ Suggested in-memory/state shape:
 
 ```ts
 type DisclosureLedgerState = {
-  schemaVersion: 1
-  ledgers: Record<
-    string,
-    {
-      firstSeenAt: string
-      lastSeenAt: string
-      disclosures: Record<
-        string,
-        {
-          factVersion: number
-          contentHash: string
-          disclosedAt: string
-          trigger: string
-          tool: string
-        }
-      >
-    }
-  >
+	schemaVersion: 1
+	ledgers: Record<
+		string,
+		{
+			firstSeenAt: string
+			lastSeenAt: string
+			disclosures: Record<
+				string,
+				{
+					factVersion: number
+					contentHash: string
+					disclosedAt: string
+					trigger: string
+					tool: string
+				}
+			>
+		}
+	>
 }
 ```
 
@@ -229,8 +229,8 @@ Ledger key details:
 - Treat a missing caller-provided `conversationId` as a new generated
   conversation. If the agent ignores the returned id, Kody cannot reliably
   suppress repeats.
-- Keep ledger state separate from user memory and do not expose it through memory
-  capabilities.
+- Keep ledger state separate from user memory and do not expose it through
+  memory capabilities.
 
 Pruning:
 
@@ -509,8 +509,8 @@ Review checklist:
    error-based triggers while keeping docs links intact.
 5. Static-text reduction: trim server instructions and tool descriptions only
    after telemetry and tests show the pilot disclosures fire correctly.
-6. Proactive search disclosures: add result-type and domain triggers for secrets,
-   values, connectors, packages, and home capabilities.
+6. Proactive search disclosures: add result-type and domain triggers for
+   secrets, values, connectors, packages, and home capabilities.
 7. Hybrid readiness: if deployments need customization, add DB overrides on top
    of source defaults with validation and stale-override safeguards.
 8. Ongoing gardening: treat disclosure facts like docs and tool schemas; update
