@@ -97,7 +97,6 @@
     "packages/shared",
     "packages/home-connector",
     "packages/worker",
-    "packages/mock-servers/*",
-    "docs/talks/*"
+    "packages/mock-servers/*"
   ]
 }

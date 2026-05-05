@@ -34,8 +34,7 @@
 		"yarn.lock",
 		"pnpm-lock.yaml",
 		"**/worker-configuration.d.ts",
-		"packages/worker/public/client-entry.js",
-		"docs/talks/**/slides.md"
+		"packages/worker/public/client-entry.js"
 	],
 	"overrides": [
 		{
