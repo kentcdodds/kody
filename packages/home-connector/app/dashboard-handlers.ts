@@ -21,6 +21,8 @@ import {
 	type IslandRouterConfigStatus,
 	type IslandRouterStatus,
 } from '../src/adapters/island-router/types.ts'
+import { type createIslandRouterApiAdapter } from '../src/adapters/island-router-api/index.ts'
+import { type IslandRouterApiStatus } from '../src/adapters/island-router-api/types.ts'
 import { type createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
@@ -37,12 +39,15 @@ import {
 type DashboardDependencies = {
 	state: HomeConnectorState
 	config: HomeConnectorConfig
-	accessNetworksUnleashed: ReturnType<typeof createAccessNetworksUnleashedAdapter>
+	accessNetworksUnleashed: ReturnType<
+		typeof createAccessNetworksUnleashedAdapter
+	>
 	lutron: ReturnType<typeof createLutronAdapter>
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>
 	sonos: ReturnType<typeof createSonosAdapter>
 	bond: ReturnType<typeof createBondAdapter>
 	islandRouter: ReturnType<typeof createIslandRouterAdapter>
+	islandRouterApi: ReturnType<typeof createIslandRouterApiAdapter>
 	jellyfish: ReturnType<typeof createJellyfishAdapter>
 	venstar: ReturnType<typeof createVenstarAdapter>
 }
@@ -109,6 +114,11 @@ type DashboardSnapshot = {
 		tone: StatusTone
 		statusLabel: string
 		errors: Array<string>
+	}
+	islandRouterApi: {
+		status: IslandRouterApiStatus
+		tone: StatusTone
+		statusLabel: string
 	}
 	totals: {
 		managedEndpoints: number
@@ -196,6 +206,18 @@ function getIslandRouterStatusLabel(input: {
 	return 'Healthy'
 }
 
+function getIslandRouterApiTone(status: IslandRouterApiStatus): StatusTone {
+	if (status.configured) return 'good'
+	if (status.hasStoredPin) return 'warn'
+	return 'warn'
+}
+
+function getIslandRouterApiStatusLabel(status: IslandRouterApiStatus) {
+	if (status.configured) return 'PIN configured'
+	if (status.hasStoredPin) return 'PIN stored but not usable'
+	return 'Needs PIN'
+}
+
 async function loadDashboardSnapshot(
 	deps: DashboardDependencies,
 	input: LoadDashboardSnapshotInput = {},
@@ -229,6 +251,7 @@ async function loadDashboardSnapshot(
 		connected: islandRouterStatus.connected,
 		errorCount: islandRouterStatus.errors.length,
 	})
+	const islandRouterApiStatus = deps.islandRouterApi.getStatus()
 
 	return {
 		connectionTone: getConnectionTone(deps.state),
@@ -300,6 +323,11 @@ async function loadDashboardSnapshot(
 				errorCount: islandRouterStatus.errors.length,
 			}),
 			errors: islandRouterStatus.errors,
+		},
+		islandRouterApi: {
+			status: islandRouterApiStatus,
+			tone: getIslandRouterApiTone(islandRouterApiStatus),
+			statusLabel: getIslandRouterApiStatusLabel(islandRouterApiStatus),
 		},
 		totals: {
 			managedEndpoints:
@@ -654,6 +682,16 @@ function renderDrillDownActions(snapshot: DashboardSnapshot) {
 				tone: snapshot.islandRouter.tone,
 			},
 		})}
+		${renderActionCard({
+			href: routes.islandRouterApiStatus.pattern,
+			title: 'Island Router API proxy',
+			description:
+				'Review HTTP API proxy readiness and manage the encrypted local PIN used for Island startup authentication.',
+			badge: {
+				label: snapshot.islandRouterApi.statusLabel,
+				tone: snapshot.islandRouterApi.tone,
+			},
+		})}
 	</div>`
 }
 
@@ -684,6 +722,15 @@ function renderDiagnosticsHighlights(snapshot: DashboardSnapshot) {
 			label: 'Island router errors',
 			tone: 'bad',
 			detail: snapshot.islandRouter.errors[0] ?? 'Router errors present.',
+		})
+	}
+	if (!snapshot.islandRouterApi.status.configured) {
+		highlights.push({
+			label: 'Island Router API PIN',
+			tone: 'warn',
+			detail: snapshot.islandRouterApi.status.hasStoredPin
+				? 'A PIN is stored, but the API proxy still needs shared-secret readiness.'
+				: 'Store the Island Router PIN before using Island Router API proxy tools.',
 		})
 	}
 	if (snapshot.bond.adopted > snapshot.bond.withToken) {
@@ -750,6 +797,10 @@ export function createDashboardHandler(deps: DashboardDependencies) {
 									href: routes.islandRouterStatus.pattern,
 									label: 'Island router',
 								},
+								{
+									href: routes.islandRouterApiSetup.pattern,
+									label: 'Island API PIN',
+								},
 							],
 						})}
 						<div class="metric-grid">
@@ -783,6 +834,14 @@ export function createDashboardHandler(deps: DashboardDependencies) {
 									snapshot.islandRouter.versionModel ??
 									'Island router model not available yet.',
 								tone: snapshot.islandRouter.tone,
+							})}
+							${renderMetricCard({
+								label: 'Island API proxy',
+								value: snapshot.islandRouterApi.statusLabel,
+								detail: snapshot.islandRouterApi.status.hasStoredPin
+									? 'Encrypted PIN is stored locally.'
+									: 'PIN needs to be stored locally.',
+								tone: snapshot.islandRouterApi.tone,
 							})}
 						</div>
 						${renderConnectionSummary(deps.state, snapshot)}
@@ -1109,6 +1168,24 @@ export function createDiagnosticsHandler(deps: DashboardDependencies) {
 						{
 							href: `${routes.islandRouterStatus.pattern}?host=192.168.1.10`,
 							label: 'Host diagnosis example',
+						},
+					],
+				},
+				{
+					name: 'Island Router API',
+					status: snapshot.islandRouterApi.statusLabel,
+					tone: snapshot.islandRouterApi.tone,
+					details: snapshot.islandRouterApi.status.hasStoredPin
+						? `Proxy target ${snapshot.islandRouterApi.status.baseUrl}.`
+						: 'No Island Router API PIN is stored locally.',
+					links: [
+						{
+							href: routes.islandRouterApiStatus.pattern,
+							label: 'API status',
+						},
+						{
+							href: routes.islandRouterApiSetup.pattern,
+							label: 'API setup',
 						},
 					],
 				},

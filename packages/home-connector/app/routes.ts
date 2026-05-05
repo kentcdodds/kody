@@ -5,6 +5,8 @@ export const routes = route({
 	systemStatus: '/system-status',
 	diagnostics: '/diagnostics',
 	islandRouterStatus: '/island-router/status',
+	islandRouterApiStatus: '/island-router-api/status',
+	islandRouterApiSetup: '/island-router-api/setup',
 	health: '/health',
 	rokuStatus: '/roku/status',
 	rokuSetup: '/roku/setup',

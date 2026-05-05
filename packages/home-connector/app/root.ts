@@ -36,6 +36,12 @@ const navigationSections: Array<{
 				description: 'SSH readiness, interfaces, neighbors, and host diagnosis',
 			},
 			{
+				href: routes.islandRouterApiStatus.pattern,
+				label: 'Island Router API',
+				description: 'HTTP API PIN storage and proxy readiness',
+				matchPaths: [routes.islandRouterApiSetup.pattern],
+			},
+			{
 				href: routes.health.pattern,
 				label: 'Health JSON',
 				description: 'Machine-readable local health endpoint',

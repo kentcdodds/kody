@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
 import { createBondAdapter } from '../src/adapters/bond/index.ts'
 import { createAccessNetworksUnleashedAdapter } from '../src/adapters/access-networks-unleashed/index.ts'
+import { createIslandRouterApiAdapter } from '../src/adapters/island-router-api/index.ts'
 import { createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 import { createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
@@ -32,6 +33,9 @@ function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 		islandRouterKnownHostsPath: null,
 		islandRouterHostFingerprint: null,
 		islandRouterCommandTimeoutMs: 8000,
+		islandRouterApiBaseUrl: 'https://my.islandrouter.com',
+		islandRouterApiRequestTimeoutMs: 8000,
+		islandRouterApiAllowInsecureTls: false,
 		rokuDiscoveryUrl: 'http://roku.mock.local/discovery',
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
@@ -92,6 +96,10 @@ function createAdapters(config: HomeConnectorConfig) {
 		islandRouter: createIslandRouterAdapter({
 			config,
 		}),
+		islandRouterApi: createIslandRouterApiAdapter({
+			config,
+			storage,
+		}),
 		jellyfish: createJellyfishAdapter({
 			config,
 			state,
@@ -118,6 +126,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -133,6 +142,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -166,6 +176,7 @@ test('venstar status scan shows discovered thermostats', async () => {
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -179,6 +190,7 @@ test('venstar status scan shows discovered thermostats', async () => {
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -216,6 +228,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -229,6 +242,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -285,6 +299,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -299,6 +314,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -356,6 +372,7 @@ test('access networks unleashed setup can adopt a controller and save auth infor
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -380,6 +397,7 @@ test('access networks unleashed setup can adopt a controller and save auth infor
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -435,7 +453,7 @@ test('access networks unleashed setup can adopt a controller and save auth infor
 	}
 })
 
-test('health route returns ok json', async () => {
+test('island router api setup can save and clear the local pin', async () => {
 	const config = createConfig()
 	const {
 		state,
@@ -446,6 +464,7 @@ test('health route returns ok json', async () => {
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -459,6 +478,102 @@ test('health route returns ok json', async () => {
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
+			jellyfish,
+			venstar,
+		)
+
+		const setupResponse = await router.fetch(
+			'http://example.test/island-router-api/setup',
+		)
+		expect(setupResponse.status).toBe(200)
+		const setupHtml = await setupResponse.text()
+		expect(setupHtml).toContain('Island Router API setup')
+		expect(setupHtml).toContain('No Island Router API PIN is stored locally.')
+
+		const saveResponse = await router.fetch(
+			'http://example.test/island-router-api/setup',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					intent: 'set-pin',
+					pin: '123456',
+				}).toString(),
+			},
+		)
+		expect(saveResponse.status).toBe(200)
+		const saveHtml = await saveResponse.text()
+		expect(saveHtml).toContain('Saved Island Router API PIN.')
+		expect(saveHtml).toContain('PIN stored')
+		expect(saveHtml).toContain('yes')
+		expect(saveHtml).not.toContain('123456')
+		expect(islandRouterApi.getStatus()).toMatchObject({
+			configured: true,
+			hasStoredPin: true,
+		})
+
+		const statusResponse = await router.fetch(
+			'http://example.test/island-router-api/status',
+		)
+		expect(statusResponse.status).toBe(200)
+		const statusHtml = await statusResponse.text()
+		expect(statusHtml).toContain('Island Router API status')
+		expect(statusHtml).toContain('https://my.islandrouter.com')
+
+		const clearResponse = await router.fetch(
+			'http://example.test/island-router-api/setup',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					intent: 'clear-pin',
+				}).toString(),
+			},
+		)
+		expect(clearResponse.status).toBe(200)
+		expect(await clearResponse.text()).toContain(
+			'Cleared Island Router API PIN.',
+		)
+		expect(islandRouterApi.getStatus()).toMatchObject({
+			configured: false,
+			hasStoredPin: false,
+		})
+	} finally {
+		storage.close()
+	}
+})
+
+test('health route returns ok json', async () => {
+	const config = createConfig()
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		accessNetworksUnleashed,
+		islandRouter,
+		islandRouterApi,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			accessNetworksUnleashed,
+			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -485,6 +600,7 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -503,6 +619,7 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -547,6 +664,7 @@ test('dashboard starts Venstar and router reads in parallel', async () => {
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -584,6 +702,7 @@ test('dashboard starts Venstar and router reads in parallel', async () => {
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)
@@ -612,6 +731,7 @@ test('island router status route renders configuration details and host diagnosi
 		bond,
 		accessNetworksUnleashed,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 	} = createAdapters(config)
@@ -625,6 +745,7 @@ test('island router status route renders configuration details and host diagnosi
 			bond,
 			accessNetworksUnleashed,
 			islandRouter,
+			islandRouterApi,
 			jellyfish,
 			venstar,
 		)

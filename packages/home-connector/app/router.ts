@@ -13,6 +13,10 @@ import {
 	createSamsungTvStatusHandler,
 } from './handlers.ts'
 import {
+	createIslandRouterApiSetupHandler,
+	createIslandRouterApiStatusHandler,
+} from './island-router-api-handlers.ts'
+import {
 	createDashboardHandler,
 	createDiagnosticsHandler,
 	createIslandRouterStatusHandler,
@@ -44,6 +48,7 @@ import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { type HomeConnectorState } from '../src/state.ts'
+import { type createIslandRouterApiAdapter } from '../src/adapters/island-router-api/index.ts'
 import { type createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 
 export function createHomeConnectorRouter(
@@ -53,8 +58,11 @@ export function createHomeConnectorRouter(
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
 	bond: ReturnType<typeof createBondAdapter>,
-	accessNetworksUnleashed: ReturnType<typeof createAccessNetworksUnleashedAdapter>,
+	accessNetworksUnleashed: ReturnType<
+		typeof createAccessNetworksUnleashedAdapter
+	>,
 	islandRouter: ReturnType<typeof createIslandRouterAdapter>,
+	islandRouterApi: ReturnType<typeof createIslandRouterApiAdapter>,
 	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
 ) {
@@ -73,6 +81,7 @@ export function createHomeConnectorRouter(
 				sonos,
 				bond,
 				islandRouter,
+				islandRouterApi,
 				jellyfish,
 				venstar,
 			}),
@@ -85,6 +94,7 @@ export function createHomeConnectorRouter(
 				sonos,
 				bond,
 				islandRouter,
+				islandRouterApi,
 				jellyfish,
 				venstar,
 			}),
@@ -97,6 +107,7 @@ export function createHomeConnectorRouter(
 				sonos,
 				bond,
 				islandRouter,
+				islandRouterApi,
 				jellyfish,
 				venstar,
 			}),
@@ -109,10 +120,19 @@ export function createHomeConnectorRouter(
 				sonos,
 				bond,
 				islandRouter,
+				islandRouterApi,
 				jellyfish,
 				venstar,
 			}),
 			health: createHealthHandler(state),
+			islandRouterApiStatus: createIslandRouterApiStatusHandler(
+				state,
+				islandRouterApi,
+			),
+			islandRouterApiSetup: createIslandRouterApiSetupHandler(
+				state,
+				islandRouterApi,
+			),
 			accessNetworksUnleashedStatus: createAccessNetworksUnleashedStatusHandler(
 				state,
 				accessNetworksUnleashed,

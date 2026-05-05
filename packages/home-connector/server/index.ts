@@ -106,6 +106,7 @@ async function main() {
 		connector.bond,
 		connector.accessNetworksUnleashed,
 		connector.islandRouter,
+		connector.islandRouterApi,
 		connector.jellyfish,
 		connector.venstar,
 	)
