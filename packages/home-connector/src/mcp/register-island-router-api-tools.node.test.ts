@@ -120,6 +120,7 @@ test('registers Island Router API proxy tools and handlers call the adapter', as
 			method: 'POST',
 			path: '/api/filters',
 			acknowledgeHighRisk: true,
+			reason: 'Create the test filter requested by the operator.',
 			confirmation: islandRouterApiWriteConfirmation,
 		}),
 	])

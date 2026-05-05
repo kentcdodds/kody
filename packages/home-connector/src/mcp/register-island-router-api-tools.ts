@@ -118,6 +118,7 @@ export function registerIslandRouterApiHomeConnectorTools(input: {
 		path: z
 			.string()
 			.min(1)
+			.regex(/^\/api\//, 'path must begin with /api/.')
 			.describe('Island Router API path. Must begin with /api/.'),
 		query: z
 			.record(z.string(), z.unknown())
@@ -161,9 +162,13 @@ Proxies an authenticated JSON HTTP request from the home connector host to my.is
 			},
 		},
 		async (args) => {
+			const path = String(args['path'] ?? '')
+			if (!path.startsWith('/api/')) {
+				throw new Error('path must begin with /api/.')
+			}
 			const result = await islandRouterApi.request({
 				method: args['method'] as 'GET' | 'POST' | 'PUT' | 'DELETE',
-				path: String(args['path'] ?? ''),
+				path,
 				query:
 					args['query'] && typeof args['query'] === 'object'
 						? (args['query'] as Record<string, unknown>)

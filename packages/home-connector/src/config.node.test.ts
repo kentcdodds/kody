@@ -284,6 +284,17 @@ test('Island Router API env vars are loaded with safe defaults and explicit over
 			islandRouterApiAllowInsecureTls: true,
 		})
 	}
+
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			ISLAND_ROUTER_API_BASE_URL: undefined,
+			ISLAND_ROUTER_API_REQUEST_TIMEOUT_MS: '500',
+			ISLAND_ROUTER_API_ALLOW_INSECURE_TLS: undefined,
+		})
+
+		expect(loadHomeConnectorConfig().islandRouterApiRequestTimeoutMs).toBe(8000)
+	}
 })
 
 test('invalid island router port falls back to default 22', () => {

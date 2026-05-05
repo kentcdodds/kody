@@ -123,6 +123,9 @@ test('HOTP computation matches RFC 4226 vectors', () => {
 	expect(computeIslandRouterHotp({ secret, counter: 0 })).toBe('755224')
 	expect(computeIslandRouterHotp({ secret, counter: 1 })).toBe('287082')
 	expect(computeIslandRouterHotp({ secret, counter: 9 })).toBe('520489')
+	expect(() => computeIslandRouterHotp({ secret: ' ', counter: 0 })).toThrow(
+		'Invalid base32 secret',
+	)
 })
 
 test('auth handshake sends startup, PIN OTP exchange, and bearer request', async () => {
@@ -333,6 +336,9 @@ test('request rejects invalid paths and high-risk writes without acknowledgement
 		).rejects.toThrow('begin with /api/')
 		await expect(
 			adapter.request({ method: 'GET', path: '/api/filters\nbad' }),
+		).rejects.toThrow('control characters')
+		await expect(
+			adapter.request({ method: 'GET', path: '/api/filters%0Abad' }),
 		).rejects.toThrow('control characters')
 		await expect(
 			adapter.request({ method: 'GET', path: '/api/%2e%2e/filters' }),

@@ -4,6 +4,9 @@ const base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 
 export function decodeBase32(value: string) {
 	const normalized = value.toUpperCase().replaceAll(/\s|=/g, '')
+	if (normalized.length === 0) {
+		throw new Error('Invalid base32 secret.')
+	}
 	let bits = 0
 	let bitCount = 0
 	const bytes: Array<number> = []

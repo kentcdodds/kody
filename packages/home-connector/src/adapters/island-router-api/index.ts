@@ -67,7 +67,7 @@ export function validateIslandRouterApiPath(path: string) {
 	} catch {
 		throw new Error('Island Router API path must be URI-decodable.')
 	}
-	if (/[\u0000-\u001f\u007f]/.test(path)) {
+	if (/[\u0000-\u001f\u007f]/.test(parsedPath)) {
 		throw new Error('Island Router API path must not contain control characters.')
 	}
 	if (!path.startsWith('/')) {
@@ -298,14 +298,14 @@ export function createIslandRouterApiAdapter(input: {
 		const payload = await parseJsonResponse(response)
 		if (!response.ok) {
 			tokens = null
-				updateIslandRouterApiAuthStatus({
-					storage,
-					connectorId,
-					lastAuthenticatedAt:
-						getIslandRouterApiAuthStatus(storage, connectorId)
-							?.lastAuthenticatedAt ?? null,
-					lastAuthError: `Island Router token refresh failed with HTTP ${response.status}.`,
-				})
+			updateIslandRouterApiAuthStatus({
+				storage,
+				connectorId,
+				lastAuthenticatedAt:
+					getIslandRouterApiAuthStatus(storage, connectorId)
+						?.lastAuthenticatedAt ?? null,
+				lastAuthError: `Island Router token refresh failed with HTTP ${response.status}.`,
+			})
 			return await authenticate()
 		}
 		tokens = getTokenData(payload)

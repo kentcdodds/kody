@@ -99,6 +99,7 @@ export function saveIslandRouterApiPin(input: {
 				) VALUES (?, ?, ?, ?, ?)
 				ON CONFLICT(connector_id) DO UPDATE SET
 					pin = excluded.pin,
+					last_authenticated_at = NULL,
 					last_auth_error = NULL,
 					updated_at = excluded.updated_at
 			`,

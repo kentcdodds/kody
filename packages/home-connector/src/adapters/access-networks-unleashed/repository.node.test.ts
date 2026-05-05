@@ -33,8 +33,6 @@ function createConfigBase(dbPath: string) {
 		accessNetworksUnleashedScanCidrs: ['192.168.1.10/32'],
 		accessNetworksUnleashedAllowInsecureTls: true,
 		accessNetworksUnleashedRequestTimeoutMs: 8_000,
-		islandRouterApiBaseUrl: 'https://my.islandrouter.com',
-		islandRouterApiRequestTimeoutMs: 8_000,
 		islandRouterHost: null,
 		islandRouterPort: 22,
 		islandRouterUsername: null,

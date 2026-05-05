@@ -28,6 +28,8 @@ function createConfig(scanCidrs: Array<string>): HomeConnectorConfig {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
+		bondRequestPaceMs: 500,
+		bondCircuitBreakerCooldownMs: 60_000,
 		jellyfishDiscoveryUrl: null,
 		venstarScanCidrs: scanCidrs,
 		jellyfishScanCidrs: ['192.168.10.93/32'],
