@@ -195,7 +195,10 @@ test('search tool returns compact query markdown while preserving structured aux
 		suppressedCount: 0,
 		retrievalQuery: 'search docs',
 		retrieverResults: [],
-		retrieverWarnings: ['Memory retriever warning should remain structured.'],
+		retrieverWarnings: [
+			'First memory retriever warning should remain structured.',
+			'Second memory retriever warning should remain structured.',
+		],
 	})
 	const handler = await getSearchHandler()
 
@@ -213,6 +216,9 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(text).not.toContain('Verbose memory subject')
 	expect(text).not.toContain('## Recommended next step')
 	expect(text).not.toContain('## Warnings')
+	expect(text).toContain(
+		'2 search notice(s) available in the structured result.',
+	)
 
 	const result = response.structuredContent.result as {
 		warnings: Array<string>
@@ -220,7 +226,10 @@ test('search tool returns compact query markdown while preserving structured aux
 		memories?: { surfaced: Array<{ id: string }> }
 	}
 	expect(result.warnings).toContain(
-		'Memory retriever warning should remain structured.',
+		'First memory retriever warning should remain structured.',
+	)
+	expect(result.warnings).toContain(
+		'Second memory retriever warning should remain structured.',
 	)
 	expect(result.guidance).toContain('search_docs:capability')
 	expect(result.memories?.surfaced).toEqual([

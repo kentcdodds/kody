@@ -401,7 +401,10 @@ test('package search formatting keeps runnable package actions in structured out
 test('search markdown keeps broad query results compact', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
-		warnings: ['Saved package metadata fallback warning with long details.'],
+		warnings: [
+			'Saved package metadata fallback warning with long details.',
+			'Package retrievers are temporarily unavailable.',
+		],
 		guidance:
 			'Inspect package detail with `search({ entity: "observed-package:package" })` to review exports, then import the right entry.',
 		memories: {
@@ -454,7 +457,9 @@ test('search markdown keeps broad query results compact', () => {
 	expect(markdown).toContain(
 		'2. **connector** `github` — GitHub OAuth connector config\\. Entity: `github:connector`',
 	)
-	expect(markdown).toContain('1 search notice(s) available')
+	expect(markdown).toContain(
+		'2 search notice(s) available in the structured result.',
+	)
 	expect(markdown).not.toContain('## Recommended next step')
 	expect(markdown).not.toContain('Inspect package detail')
 	expect(markdown).not.toContain('## Relevant memories')
@@ -463,6 +468,42 @@ test('search markdown keeps broad query results compact', () => {
 	expect(markdown).not.toContain('Token URL')
 	expect(markdown).not.toContain('github-access-token')
 	expect(markdown).not.toContain('**How to run matches:**')
+})
+
+test('search markdown only suggests entity detail for entity-backed hits', () => {
+	const entityMarkdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'capability',
+				name: 'search_docs',
+				description: 'Search docs capability',
+			},
+		],
+	})
+	expect(entityMarkdown).toContain(
+		'For full detail on entity-backed hits, call `search` with `entity: "{id}:{type}"`.',
+	)
+
+	const retrieverMarkdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'retriever_result',
+				id: 'note-1',
+				title: 'Toaster oven wattage',
+				summary: 'The toaster oven is 1800 watts.',
+				score: 0.92,
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal notes',
+			},
+		],
+	})
+	expect(retrieverMarkdown).not.toContain('entity: "{id}:{type}"')
 })
 
 test('search formatting surfaces package retriever results', () => {

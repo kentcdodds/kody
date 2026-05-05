@@ -478,6 +478,7 @@ export function parseEntityRef(entity: string): {
 export function formatSearchMarkdown(input: {
 	matches: Array<SearchMatch>
 	warnings: Array<string>
+	warningCount?: number
 	baseUrl: string
 	includePreamble?: boolean
 	guidance?: string
@@ -492,9 +493,12 @@ export function formatSearchMarkdown(input: {
 	}
 }) {
 	const lines: Array<string> = ['# Search results', '']
-	if (input.includePreamble ?? true) {
+	const hasEntityBackedMatch = input.matches.some(
+		(match) => match.type !== 'retriever_result',
+	)
+	if ((input.includePreamble ?? true) && hasEntityBackedMatch) {
 		lines.push(
-			'For full detail on one hit, call `search` with `entity: "{id}:{type}"`.',
+			'For full detail on entity-backed hits, call `search` with `entity: "{id}:{type}"`.',
 			'',
 		)
 	}
@@ -509,10 +513,11 @@ export function formatSearchMarkdown(input: {
 		})
 	}
 
-	if (input.warnings.length > 0) {
+	const warningCount = input.warningCount ?? input.warnings.length
+	if (warningCount > 0) {
 		lines.push(
 			'',
-			`> ${String(input.warnings.length)} search notice(s) available in the structured result.`,
+			`> ${String(warningCount)} search notice(s) available in the structured result.`,
 		)
 	}
 

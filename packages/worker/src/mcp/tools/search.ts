@@ -1841,6 +1841,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						formatSearchMarkdown({
 							matches: value.matches,
 							warnings: value.warnings,
+							warningCount: structuredWarnings.length,
 							baseUrl,
 							includePreamble,
 						}),
