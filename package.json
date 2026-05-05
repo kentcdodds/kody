@@ -57,7 +57,6 @@
     "prepare": "husky",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects",
-    "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev",
     "audit:prod": "npm audit --omit=dev"
   },
   "devDependencies": {

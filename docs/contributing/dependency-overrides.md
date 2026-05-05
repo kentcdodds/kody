@@ -54,6 +54,6 @@ Resolves a moderate advisory in postcss <8.5.10:
 - [GHSA-qx2v-qp2m-jg93](https://github.com/advisories/GHSA-qx2v-qp2m-jg93) — XSS
   via unescaped `</style>` in CSS stringify output
 
-PostCSS is pulled transitively by Vite (via `vitest` in devDependencies and the
-Slidev talk tooling). The upper bound `<9.0.0` keeps the override within the
-same major version to avoid breaking changes.
+PostCSS is pulled transitively by Vite (via `vitest` in devDependencies). The
+upper bound `<9.0.0` keeps the override within the same major version to avoid
+breaking changes.
