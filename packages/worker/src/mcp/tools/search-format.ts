@@ -477,7 +477,7 @@ export function parseEntityRef(entity: string): {
 
 export function formatSearchMarkdown(input: {
 	matches: Array<SearchMatch>
-	warnings: Array<string>
+	warnings?: Array<string>
 	warningCount?: number
 	includePreamble?: boolean
 }) {
@@ -502,7 +502,7 @@ export function formatSearchMarkdown(input: {
 		})
 	}
 
-	const warningCount = input.warningCount ?? input.warnings.length
+	const warningCount = input.warningCount ?? input.warnings?.length ?? 0
 	if (warningCount > 0) {
 		lines.push(
 			'',

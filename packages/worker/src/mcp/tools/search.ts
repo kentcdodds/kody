@@ -1715,17 +1715,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					warnings.push(...memoryToolContext.retrieverWarnings)
 				}
 				const structuredWarnings = [...warnings]
-				const conciseWarnings =
-					warnings.length > 0
-						? [
-								`${warnings.length} auxiliary search warning(s) available in structuredContent.result.warnings.`,
-							]
-						: []
 
 				const payload: {
 					matches: Array<SearchMatch>
 					offline: boolean
-					warnings: Array<string>
 					homeConnectorStatus?: {
 						connectorKind: string
 						connectorId: string
@@ -1743,7 +1736,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				} = {
 					matches: outcome.result.matches,
 					offline: outcome.result.offline,
-					warnings: conciseWarnings,
 					...(normalizedRemoteConnectorStatuses
 						? {
 								remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
@@ -1787,7 +1779,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					(value) =>
 						formatSearchMarkdown({
 							matches: value.matches,
-							warnings: value.warnings,
 							warningCount: structuredWarnings.length,
 							includePreamble,
 						}),
