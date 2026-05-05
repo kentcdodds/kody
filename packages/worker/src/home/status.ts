@@ -172,14 +172,16 @@ export async function getRemoteConnectorStatus(
 
 export async function getHomeConnectorStatus(
 	env: Env,
-	connectorId: string | null,
+	connector: string | RemoteConnectorRef | null,
 ): Promise<HomeConnectorStatus> {
-	if (!connectorId) {
+	if (!connector) {
 		return createUnavailableStatus()
 	}
 
-	return getRemoteConnectorStatus(env, {
-		kind: 'home',
-		instanceId: connectorId,
-	})
+	const ref =
+		typeof connector === 'string'
+			? { kind: 'home', instanceId: connector }
+			: { ...connector, kind: 'home' }
+
+	return getRemoteConnectorStatus(env, ref)
 }

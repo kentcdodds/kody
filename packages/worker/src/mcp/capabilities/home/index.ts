@@ -164,18 +164,19 @@ export async function synthesizeRemoteToolDomain(
 ): Promise<SynthesizedRemoteConnectorDomain | null> {
 	if (!isRemoteConnectorTrusted(ref)) return null
 
+	const trustedRefs = allRefs.filter(isRemoteConnectorTrusted)
 	const client = createRemoteConnectorMcpClient(env, ref.kind, ref.instanceId)
 	const snapshot = await client.getSnapshot()
 	if (!snapshot || snapshot.tools.length === 0) return null
 
 	const domainId = remoteConnectorDomainId(ref)
-	const capabilityPrefix = remoteConnectorCapabilityPrefix(ref, allRefs)
+	const capabilityPrefix = remoteConnectorCapabilityPrefix(ref, trustedRefs)
 	const k = ref.kind.trim().toLowerCase()
 	const isOnlyBuiltinHomeDomain =
 		k === 'home' &&
-		allRefs.length === 1 &&
-		allRefs[0]?.kind === 'home' &&
-		allRefs[0]?.instanceId.trim() === 'default'
+		trustedRefs.length === 1 &&
+		trustedRefs[0]?.kind === 'home' &&
+		trustedRefs[0]?.instanceId.trim() === 'default'
 
 	const domainIdForCapabilities: CapabilityDomain = isOnlyBuiltinHomeDomain
 		? 'home'

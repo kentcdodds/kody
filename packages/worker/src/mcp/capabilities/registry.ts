@@ -33,10 +33,13 @@ export async function getCapabilityRegistryForContext(input: {
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
+	const trustedRefs = refs.filter((ref) => ref.trusted)
 	const synthesizedDomains: Array<SynthesizedRemoteConnectorDomain['domain']> =
 		[]
 	const settled = await Promise.allSettled(
-		refs.map((ref) => synthesizeRemoteToolDomain(input.env, ref, refs)),
+		trustedRefs.map((ref) =>
+			synthesizeRemoteToolDomain(input.env, ref, trustedRefs),
+		),
 	)
 	for (const [index, outcome] of settled.entries()) {
 		if (outcome.status === 'fulfilled' && outcome.value) {
@@ -44,7 +47,7 @@ export async function getCapabilityRegistryForContext(input: {
 			continue
 		}
 		if (outcome.status === 'rejected') {
-			const ref = refs[index]
+			const ref = trustedRefs[index]
 			console.error(
 				`[getCapabilityRegistryForContext] synthesizeRemoteToolDomain failed for ${ref?.kind ?? '?'}:${ref?.instanceId ?? '?'}`,
 				outcome.reason,

@@ -74,3 +74,34 @@ test('synthesizes distinct capability names for trusted generic connectors', asy
 		},
 	})
 })
+
+test('keeps legacy home naming when only executable connector is home default', async () => {
+	const ref = { kind: 'home', instanceId: 'default', trusted: true }
+	const untrustedRef = { kind: 'github', instanceId: 'work', trusted: false }
+	const snapshot: HomeConnectorSnapshot = {
+		connectorId: 'default',
+		connectedAt: '2026-05-05T00:00:00.000Z',
+		lastSeenAt: '2026-05-05T00:00:01.000Z',
+		tools: [
+			{
+				name: 'roku_press_key',
+				description: 'Press a Roku key.',
+				inputSchema: { type: 'object', properties: {} },
+			},
+		],
+	}
+
+	const domain = await synthesizeRemoteToolDomain(
+		createEnvWithSnapshot(snapshot),
+		ref,
+		[ref, untrustedRef],
+	)
+
+	expect(domain?.domain.name).toBe('home')
+	expect(domain?.domain.capabilities).toEqual([
+		expect.objectContaining({
+			name: 'home_roku_press_key',
+			domain: 'home',
+		}),
+	])
+})
