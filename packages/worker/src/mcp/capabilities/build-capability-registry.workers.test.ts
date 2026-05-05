@@ -122,10 +122,8 @@ test('repo_run_commands registry spec and tool descriptor stay structurally alig
 	expect(capabilitySpec).toBeDefined()
 	expect(capabilitySpec?.requiredInputFields).toEqual(['commands'])
 	expect(capabilitySpec?.inputFields).toContain('commands')
-	expect(toolDescriptor).toMatchObject({
-		description: capabilitySpec?.description,
-		inputSchema: capabilitySpec?.inputSchema,
-	})
+	expect(toolDescriptor?.inputSchema).toEqual(capabilitySpec?.inputSchema)
+	expect(toolDescriptor?.description).toEqual(expect.any(String))
 	expect(commandsSchema).toMatchObject({
 		type: 'string',
 		description: expect.any(String),

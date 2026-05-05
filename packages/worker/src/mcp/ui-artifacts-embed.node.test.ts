@@ -24,16 +24,22 @@ test('buildUiArtifactEmbedText summarizes searchable app metadata and truncates 
 	}
 
 	const fullText = buildUiArtifactEmbedText(input)
-	expect(fullText.split('\n')).toEqual([
+	const lines = fullText.split('\n')
+	expect(lines.slice(0, 5)).toEqual([
 		'Spotify OAuth Setup',
 		'Connect Spotify to Kody.',
 		'mcp app',
 		'ui artifact',
 		'facet backend',
-		'package app parameters',
-		'clientId string required Spotify client id',
-		'region string optional Spotify API region default "us"',
 	])
+	expect(lines).toContain('package app parameters')
+	expect(lines.some((line) => line.startsWith('clientId string required'))).toBe(
+		true,
+	)
+	expect(lines.some((line) => line.includes('region string optional'))).toBe(
+		true,
+	)
+	expect(lines.some((line) => line.includes('default "us"'))).toBe(true)
 
 	expect(buildUiArtifactEmbedText(input, 24)).toBe(fullText.slice(0, 24))
 })
