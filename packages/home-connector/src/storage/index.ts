@@ -214,6 +214,14 @@ function initializeSchema(db: SqliteDatabase) {
 				ON DELETE CASCADE
 		);
 
+		CREATE TABLE IF NOT EXISTS island_router_api_credentials (
+			connector_id TEXT NOT NULL PRIMARY KEY,
+			pin TEXT NOT NULL,
+			last_authenticated_at TEXT,
+			last_auth_error TEXT,
+			updated_at TEXT NOT NULL
+		);
+
 		CREATE TABLE IF NOT EXISTS sonos_players (
 			connector_id TEXT NOT NULL,
 			player_id TEXT NOT NULL,

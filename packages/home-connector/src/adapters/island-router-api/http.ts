@@ -1,18 +1,19 @@
 import { fetchWithOptionalInsecureTls } from '../../http/fetch-with-insecure-tls.ts'
 
-type FetchAccessNetworksUnleashedInput = {
+type IslandRouterApiFetch = typeof fetch
+
+type FetchIslandRouterApiInput = {
 	url: string
 	init?: RequestInit
 	timeoutMs: number
 	allowInsecureTls: boolean
+	fetchImpl?: IslandRouterApiFetch
 }
 
-export async function fetchAccessNetworksUnleashed(
-	input: FetchAccessNetworksUnleashedInput,
-) {
+export async function fetchIslandRouterApi(input: FetchIslandRouterApiInput) {
 	return await fetchWithOptionalInsecureTls({
 		...input,
 		stringBodyErrorMessage:
-			'Access Networks Unleashed requests must use string bodies.',
+			'Island Router API requests must use string bodies.',
 	})
 }

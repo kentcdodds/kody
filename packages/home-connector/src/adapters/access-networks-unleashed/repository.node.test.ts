@@ -40,6 +40,9 @@ function createConfigBase(dbPath: string) {
 		islandRouterKnownHostsPath: null,
 		islandRouterHostFingerprint: null,
 		islandRouterCommandTimeoutMs: 8_000,
+		islandRouterApiBaseUrl: 'https://my.islandrouter.com',
+		islandRouterApiRequestTimeoutMs: 8_000,
+		islandRouterApiAllowInsecureTls: false,
 		rokuDiscoveryUrl: 'http://roku.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
@@ -137,6 +140,7 @@ test('sqlite storage persists Unleashed controllers and encrypted credentials', 
 			.get('default', '192.168.1.11') as { password: string } | undefined
 		expect(rawPasswordRow?.password).toMatch(/^enc:v1:/)
 		expect(rawPasswordRow?.password).not.toContain('admin-pass')
+		expect(rawPasswordRow?.password?.split(':')).toHaveLength(5)
 
 		removeAccessNetworksUnleashedController({
 			storage,
