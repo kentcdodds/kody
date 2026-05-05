@@ -1777,8 +1777,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					matches: Array<SearchMatch>
 					offline: boolean
 					warnings: Array<string>
-					guidance?: string
-					memories?: SearchResultStructuredContent['memories']
 					homeConnectorStatus?: {
 						connectorKind: string
 						connectorId: string
