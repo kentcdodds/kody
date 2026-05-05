@@ -2,6 +2,7 @@ import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
 } from '#worker/package-registry/source.ts'
+import { createWorker } from '@cloudflare/worker-bundler'
 import {
 	normalizePackageWorkspacePath,
 	normalizePackageExportKey,
@@ -45,10 +46,6 @@ async function createWorkerBundle(input: {
 	files: Record<string, string>
 	entryPoint: string
 }) {
-	// Load the experimental worker bundler lazily so node-unit paths that only
-	// import saved-package runtime helpers do not eagerly evaluate the esbuild
-	// WASM bundle.
-	const { createWorker } = await import('@cloudflare/worker-bundler')
 	return await createWorker(input)
 }
 
