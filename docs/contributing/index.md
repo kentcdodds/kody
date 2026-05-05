@@ -15,6 +15,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Adding capabilities](./adding-capabilities.md)
 - [Architecture](./architecture/index.md)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
+- [Progressive disclosure plan](./progressive-disclosure-plan.md) for MCP
+  contextual facts
 - Talk slide decks (Slidev): [`docs/talks/`](../talks/README.md) — from the repo
   root run `npm run dev:talks`
 
