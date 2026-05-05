@@ -1,6 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
 import { invariant } from '@epic-web/invariant'
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
@@ -8,15 +7,14 @@ import { z } from 'zod'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { createHomeMcpClient } from '#worker/home/client.ts'
 import {
-	formatHomeConnectorUnavailableMessage,
-	getHomeConnectorStatus,
-} from '#worker/home/status.ts'
-import { type HomeToolDescriptor } from '#worker/home/types.ts'
+	createHomeToolErrorResult,
+	createHomeToolSummaryText,
+	resolveHomeBridgeRef,
+} from '#worker/home/mcp-bridge.ts'
 import {
 	parseMcpCallerContext,
 	type McpServerProps,
 } from '#worker/mcp/context.ts'
-import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
 export type HomeMcpState = {}
 export type HomeMcpProps = McpServerProps
@@ -41,57 +39,6 @@ type HomeMcpBridge = {
 	getEnv(): Env
 	requireDomain(): string
 	getHomeClient(): Promise<ReturnType<typeof createHomeMcpClient>>
-}
-
-function resolveHomeBridgeInstanceId(
-	callerContext: McpServerProps,
-): string | null {
-	const refs = normalizeRemoteConnectorRefs(callerContext)
-	const home = refs.find((r) => r.kind === 'home')
-	return home?.instanceId ?? null
-}
-
-async function createHomeToolErrorResult(
-	agent: HomeMcpBridge,
-	error: unknown,
-): Promise<CallToolResult> {
-	const callerContext = agent.getCallerContext()
-	const homeInstanceId = resolveHomeBridgeInstanceId(callerContext)
-	const status = await getHomeConnectorStatus(agent.getEnv(), homeInstanceId)
-	const fallbackMessage =
-		error instanceof Error ? error.message : 'Unknown home connector error.'
-	const message =
-		status.state === 'connected'
-			? `Home connector request failed: ${fallbackMessage}`
-			: formatHomeConnectorUnavailableMessage(status)
-
-	return {
-		content: [
-			{
-				type: 'text',
-				text: message,
-			},
-		],
-		structuredContent: {
-			error: message,
-			homeConnectorStatus: status,
-		},
-		isError: true,
-	}
-}
-
-function createHomeToolSummaryText(tools: Array<HomeToolDescriptor>) {
-	if (tools.length === 0) {
-		return 'No home connector tools are available.'
-	}
-
-	return tools
-		.map((tool) => {
-			const title = tool.title?.trim() || tool.name
-			const description = tool.description?.trim() || 'No description.'
-			return `- ${title} (\`${tool.name}\`): ${description}`
-		})
-		.join('\n')
 }
 
 async function registerBridgeTools(agent: HomeMcpBridge) {
@@ -183,14 +130,19 @@ class HomeMCPBase extends McpAgent<Env, HomeMcpState, HomeMcpProps> {
 	}
 
 	async getHomeClient() {
-		const homeInstanceId = resolveHomeBridgeInstanceId(this.getCallerContext())
-		if (!homeInstanceId) {
+		const homeRef = resolveHomeBridgeRef(this.getCallerContext())
+		if (!homeRef) {
 			throw new Error(
 				'No home connector is associated with this MCP caller context.',
 			)
 		}
+		if (!homeRef.trusted) {
+			throw new Error(
+				'Home connector is not trusted for capability execution in this session.',
+			)
+		}
 
-		return createHomeMcpClient(this.env, homeInstanceId)
+		return createHomeMcpClient(this.env, homeRef.instanceId)
 	}
 }
 
