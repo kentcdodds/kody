@@ -479,18 +479,7 @@ export function formatSearchMarkdown(input: {
 	matches: Array<SearchMatch>
 	warnings: Array<string>
 	warningCount?: number
-	baseUrl: string
 	includePreamble?: boolean
-	guidance?: string
-	memories?: {
-		surfaced: Array<{
-			category: string | null
-			subject: string
-			summary: string
-		}>
-		suppressedCount: number
-		retrieverResults?: Array<PackageRetrieverSurfaceResult>
-	}
 }) {
 	const lines: Array<string> = ['# Search results', '']
 	const hasEntityBackedMatch = input.matches.some(

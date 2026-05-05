@@ -1789,7 +1789,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							matches: value.matches,
 							warnings: value.warnings,
 							warningCount: structuredWarnings.length,
-							baseUrl,
 							includePreamble,
 						}),
 					(value, count) => ({

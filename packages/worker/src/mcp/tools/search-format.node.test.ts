@@ -400,23 +400,10 @@ test('package search formatting keeps runnable package actions in structured out
 
 test('search markdown keeps broad query results compact', () => {
 	const markdown = formatSearchMarkdown({
-		baseUrl: 'http://localhost',
 		warnings: [
 			'Saved package metadata fallback warning with long details.',
 			'Package retrievers are temporarily unavailable.',
 		],
-		guidance:
-			'Inspect package detail with `search({ entity: "observed-package:package" })` to review exports, then import the right entry.',
-		memories: {
-			surfaced: [
-				{
-					category: 'preference',
-					subject: 'Long-term preference',
-					summary: 'Verbose remembered context that should not appear inline.',
-				},
-			],
-			suppressedCount: 0,
-		},
 		matches: [
 			{
 				type: 'package',
@@ -472,7 +459,6 @@ test('search markdown keeps broad query results compact', () => {
 
 test('search markdown only suggests entity detail for entity-backed hits', () => {
 	const entityMarkdown = formatSearchMarkdown({
-		baseUrl: 'http://localhost',
 		warnings: [],
 		matches: [
 			{
@@ -487,7 +473,6 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 	)
 
 	const retrieverMarkdown = formatSearchMarkdown({
-		baseUrl: 'http://localhost',
 		warnings: [],
 		matches: [
 			{
@@ -508,7 +493,6 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 
 test('search formatting surfaces package retriever results', () => {
 	const markdown = formatSearchMarkdown({
-		baseUrl: 'http://localhost',
 		warnings: [],
 		matches: [
 			{
