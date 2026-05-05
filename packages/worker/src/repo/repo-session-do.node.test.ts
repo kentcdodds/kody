@@ -924,6 +924,46 @@ test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	)
 })
 
+test('publishFromExternalRef checks fast-forward ancestry through shell git adapter', async () => {
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-old',
+		manifest_path: 'package.json',
+		source_root: '/',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+	})
+	mockModule.git.log.mockResolvedValueOnce([
+		{ oid: 'commit-new' },
+		{ oid: 'commit-old' },
+	])
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.publishFromExternalRef({
+		sessionId: 'external-publish-source-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+	})
+
+	expect(result.status).toBe('published')
+	expect(mockModule.git.log).toHaveBeenCalledWith({
+		dir: '/session',
+		ref: 'commit-new',
+		depth: Number.POSITIVE_INFINITY,
+	})
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-new',
+		}),
+	)
+})
+
 test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
 	// Guards against a regression where the cache, populated by openSession,
 	// would shadow fresh D1 reads and hide updates such as rebaseSession

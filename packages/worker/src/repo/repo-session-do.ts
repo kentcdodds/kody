@@ -7,7 +7,6 @@ import {
 } from '@cloudflare/shell'
 import { applyPatch, formatPatch, parsePatch } from 'diff'
 import { createGit } from '@cloudflare/shell/git'
-import * as git from 'isomorphic-git'
 import {
 	deleteRepoSession,
 	getRepoSessionById,
@@ -457,15 +456,14 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (input.ancestor === input.descendant) {
 			return true
 		}
-		return git.isDescendent({
-			fs: this.fileSystem as unknown as Parameters<
-				typeof git.isDescendent
-			>[0]['fs'],
+		// Repo command parsing rejects negative depths; use a positive infinite
+		// depth here to request the complete ancestry chain from the git adapter.
+		const commits = await this.git.log({
 			dir: repoSessionWorkspacePrefix,
-			oid: input.descendant,
-			ancestor: input.ancestor,
-			depth: -1,
+			ref: input.descendant,
+			depth: Number.POSITIVE_INFINITY,
 		})
+		return commits.some((commit) => commit.oid === input.ancestor)
 	}
 
 	private async writeCheckStatus(status: RepoSessionCheckStatus) {
