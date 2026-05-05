@@ -456,10 +456,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (input.ancestor === input.descendant) {
 			return true
 		}
+		// Repo command parsing rejects negative depths; use a positive infinite
+		// depth here to request the complete ancestry chain from the git adapter.
 		const commits = await this.git.log({
 			dir: repoSessionWorkspacePrefix,
 			ref: input.descendant,
-			depth: -1,
+			depth: Number.POSITIVE_INFINITY,
 		})
 		return commits.some((commit) => commit.oid === input.ancestor)
 	}

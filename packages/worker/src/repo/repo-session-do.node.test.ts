@@ -954,7 +954,7 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 	expect(mockModule.git.log).toHaveBeenCalledWith({
 		dir: '/session',
 		ref: 'commit-new',
-		depth: -1,
+		depth: Number.POSITIVE_INFINITY,
 	})
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
