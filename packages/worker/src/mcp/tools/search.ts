@@ -35,7 +35,6 @@ import {
 	buildPackageSearchProjection,
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
-import { buildPackageReadmeSnippet } from '#worker/package-registry/package-readme.ts'
 import {
 	loadPackageManifestBySourceId,
 	loadPackageSourceBySourceId,
@@ -1470,56 +1469,6 @@ async function resolveEntityDetail(input: {
 	}
 }
 
-export async function enrichSearchMatchesWithPackageReadmes(input: {
-	env: Env
-	baseUrl: string
-	userId: string | null
-	matches: Array<SearchMatch>
-}): Promise<Array<SearchMatch>> {
-	if (!input.userId) {
-		return input.matches
-	}
-	return await Promise.all(
-		input.matches.map(async (match) => {
-			if (match.type !== 'package') {
-				return match
-			}
-			try {
-				const record = await getSavedPackageByKodyId(input.env.APP_DB, {
-					userId: input.userId!,
-					kodyId: match.kodyId,
-				})
-				if (!record) {
-					return match
-				}
-				const loaded = await loadPackageSourceBySourceId({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.userId!,
-					sourceId: record.sourceId,
-				})
-				return {
-					...match,
-					readmeSnippet: buildPackageReadmeSnippet({
-						files: loaded.files,
-					}),
-				} satisfies SearchMatch
-			} catch (cause) {
-				Sentry.captureException(cause, {
-					tags: {
-						scope: 'search.enrichPackageReadmeSnippet',
-					},
-					extra: {
-						kodyId: match.kodyId,
-						packageId: match.packageId,
-					},
-				})
-				return match
-			}
-		}),
-	)
-}
-
 export async function registerSearchTool(agent: McpRegistrationAgent) {
 	agent.server.registerTool(
 		searchTool.name,
@@ -1765,7 +1714,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				if (memoryToolContext) {
 					warnings.push(...memoryToolContext.retrieverWarnings)
 				}
-				const structuredWarnings = warnings
+				const structuredWarnings = [...warnings]
 				const conciseWarnings =
 					warnings.length > 0
 						? [
