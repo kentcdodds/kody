@@ -254,6 +254,38 @@ test('Access Networks Unleashed insecure TLS honors explicit true', () => {
 	})
 })
 
+test('Island Router API env vars are loaded with safe defaults and explicit overrides', () => {
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			ISLAND_ROUTER_API_BASE_URL: undefined,
+			ISLAND_ROUTER_API_REQUEST_TIMEOUT_MS: undefined,
+			ISLAND_ROUTER_API_ALLOW_INSECURE_TLS: undefined,
+		})
+
+		expect(loadHomeConnectorConfig()).toMatchObject({
+			islandRouterApiBaseUrl: 'https://my.islandrouter.com',
+			islandRouterApiRequestTimeoutMs: 8000,
+			islandRouterApiAllowInsecureTls: false,
+		})
+	}
+
+	{
+		using _env = createTemporaryEnv({
+			...requiredConfigEnv,
+			ISLAND_ROUTER_API_BASE_URL: ' https://router.example.local/// ',
+			ISLAND_ROUTER_API_REQUEST_TIMEOUT_MS: '12000',
+			ISLAND_ROUTER_API_ALLOW_INSECURE_TLS: 'true',
+		})
+
+		expect(loadHomeConnectorConfig()).toMatchObject({
+			islandRouterApiBaseUrl: 'https://router.example.local',
+			islandRouterApiRequestTimeoutMs: 12000,
+			islandRouterApiAllowInsecureTls: true,
+		})
+	}
+})
+
 test('invalid island router port falls back to default 22', () => {
 	using _env = createTemporaryEnv({
 		...requiredConfigEnv,

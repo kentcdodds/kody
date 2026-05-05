@@ -23,6 +23,9 @@ export type HomeConnectorConfig = {
 	islandRouterKnownHostsPath: string | null
 	islandRouterHostFingerprint: string | null
 	islandRouterCommandTimeoutMs: number
+	islandRouterApiBaseUrl: string
+	islandRouterApiRequestTimeoutMs: number
+	islandRouterApiAllowInsecureTls: boolean
 	rokuDiscoveryUrl: string
 	samsungTvDiscoveryUrl: string
 	lutronDiscoveryUrl: string
@@ -50,7 +53,11 @@ export type HomeConnectorConfig = {
 }
 
 function trimTrailingSlash(value: string) {
-	return value.endsWith('/') ? value.slice(0, -1) : value
+	let trimmed = value
+	while (trimmed.endsWith('/')) {
+		trimmed = trimmed.slice(0, -1)
+	}
+	return trimmed
 }
 
 function createWorkerSessionUrl(
@@ -229,6 +236,10 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		process.env.ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS ?? '8000',
 		10,
 	)
+	const islandRouterApiRequestTimeoutMs = Number.parseInt(
+		process.env.ISLAND_ROUTER_API_REQUEST_TIMEOUT_MS ?? '8000',
+		10,
+	)
 	const homeConnectorId = process.env.HOME_CONNECTOR_ID?.trim() || 'default'
 	const workerBaseUrl =
 		process.env.WORKER_BASE_URL?.trim() || 'http://localhost:3742'
@@ -288,6 +299,17 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			islandRouterCommandTimeoutMs >= 1000
 				? islandRouterCommandTimeoutMs
 				: 8000,
+		islandRouterApiBaseUrl: trimTrailingSlash(
+			process.env.ISLAND_ROUTER_API_BASE_URL?.trim() ||
+				'https://my.islandrouter.com',
+		),
+		islandRouterApiRequestTimeoutMs:
+			Number.isFinite(islandRouterApiRequestTimeoutMs) &&
+			islandRouterApiRequestTimeoutMs >= 1000
+				? islandRouterApiRequestTimeoutMs
+				: 8000,
+		islandRouterApiAllowInsecureTls:
+			process.env.ISLAND_ROUTER_API_ALLOW_INSECURE_TLS === 'true',
 		rokuDiscoveryUrl:
 			process.env.ROKU_DISCOVERY_URL?.trim() || 'ssdp://239.255.255.250:1900',
 		samsungTvDiscoveryUrl:

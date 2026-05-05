@@ -1,5 +1,6 @@
 import { createAccessNetworksUnleashedAdapter } from './adapters/access-networks-unleashed/index.ts'
 import { createBondAdapter } from './adapters/bond/index.ts'
+import { createIslandRouterApiAdapter } from './adapters/island-router-api/index.ts'
 import { createIslandRouterAdapter } from './adapters/island-router/index.ts'
 import { createJellyfishAdapter } from './adapters/jellyfish/index.ts'
 import { createLutronAdapter } from './adapters/lutron/index.ts'
@@ -45,6 +46,10 @@ export function createHomeConnectorApp() {
 	const islandRouter = createIslandRouterAdapter({
 		config,
 	})
+	const islandRouterApi = createIslandRouterApiAdapter({
+		config,
+		storage,
+	})
 	const jellyfish = createJellyfishAdapter({
 		config,
 		state,
@@ -64,6 +69,7 @@ export function createHomeConnectorApp() {
 		sonos,
 		bond,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 		accessNetworksUnleashed,
@@ -83,6 +89,7 @@ export function createHomeConnectorApp() {
 		sonos,
 		bond,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 		accessNetworksUnleashed,

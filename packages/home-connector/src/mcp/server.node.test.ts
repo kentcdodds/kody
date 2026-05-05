@@ -3,6 +3,7 @@ import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
 import { createAccessNetworksUnleashedAdapter } from '../adapters/access-networks-unleashed/index.ts'
 import { type AccessNetworksUnleashedClient } from '../adapters/access-networks-unleashed/types.ts'
 import { createBondAdapter } from '../adapters/bond/index.ts'
+import { createIslandRouterApiAdapter } from '../adapters/island-router-api/index.ts'
 import { renderIslandRouterCommand } from '../adapters/island-router/command-catalog.ts'
 import { type IslandRouterCommandRequest } from '../adapters/island-router/types.ts'
 import { createIslandRouterAdapter } from '../adapters/island-router/index.ts'
@@ -38,6 +39,8 @@ function createConfig() {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
+	process.env.ISLAND_ROUTER_API_BASE_URL = 'https://my.islandrouter.com/'
+	process.env.ISLAND_ROUTER_API_REQUEST_TIMEOUT_MS = '5000'
 	process.env.ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS = '192.168.10.88/32'
 	return loadHomeConnectorConfig()
 }
@@ -394,6 +397,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		username: 'admin',
 		password: 'password',
 	})
+	const islandRouterApi = createIslandRouterApiAdapter({
+		config,
+		storage,
+		fetchImpl: async () => new Response('{}'),
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -402,6 +410,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		sonos,
 		bond,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 		accessNetworksUnleashed,
@@ -441,6 +450,18 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_get_status')).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_run_command')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'island_router_api_get_status'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'island_router_api_set_pin')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'island_router_api_clear_pin'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'island_router_api_request'),
+		).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_run_read_command')).toBe(
 			false,
 		)
@@ -583,6 +604,18 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			accessNetworksCredentialProperties?.password?.['x-kody-secret'],
 		).toBe(true)
+		const islandRouterApiPinTool = tools.find(
+			(tool) => tool.name === 'island_router_api_set_pin',
+		)
+		if (!islandRouterApiPinTool) {
+			throw new Error('Expected island_router_api_set_pin tool to be defined')
+		}
+		const islandRouterApiPinProperties = (
+			islandRouterApiPinTool.inputSchema as {
+				properties?: Record<string, Record<string, unknown>>
+			}
+		).properties
+		expect(islandRouterApiPinProperties?.pin?.['x-kody-secret']).toBe(true)
 
 		const result = await mcp.callTool('samsung_list_devices')
 		expect(result.structuredContent).toMatchObject({
@@ -878,6 +911,11 @@ test('mcp server exposes island router write tools when host verification is con
 		state,
 		storage,
 	})
+	const islandRouterApi = createIslandRouterApiAdapter({
+		config,
+		storage,
+		fetchImpl: async () => new Response('{}'),
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -886,6 +924,7 @@ test('mcp server exposes island router write tools when host verification is con
 		sonos,
 		bond,
 		islandRouter,
+		islandRouterApi,
 		jellyfish,
 		venstar,
 		accessNetworksUnleashed,

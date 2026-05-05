@@ -165,6 +165,43 @@ The adapter explicitly does not expose:
 - arbitrary mutating router commands beyond the explicit command catalog
 - password-based auth flows through MCP
 
+## Island Router HTTP API proxy integration
+
+The Island Router HTTP API proxy adapter lives under
+`packages/home-connector/src/adapters/island-router-api/` alongside the SSH
+diagnostics adapter. It lets the Worker drive `my.islandrouter.com` through the
+home connector WebSocket when the connector host is inside the user's LAN and can
+resolve `my.islandrouter.com` through the router's intercepting DNS. It will not
+work from a host outside that LAN path.
+
+The adapter stores the user's Island PIN locally in SQLite, encrypted with
+`HOME_CONNECTOR_SHARED_SECRET`. The PIN is supplied through
+`island_router_api_set_pin`; it is not read from env. Access, refresh, and
+session JWTs are cached in memory only. Each session starts with the Island
+`POST /api/startup` challenge, computes the HOTP value from the returned base32
+secret and offset, then posts the saved PIN plus OTP. Subsequent proxied calls
+use the access token and retry once after `POST /api/refresh` on `401`.
+
+Configuration:
+
+- `ISLAND_ROUTER_API_BASE_URL` defaults to `https://my.islandrouter.com`
+- `ISLAND_ROUTER_API_REQUEST_TIMEOUT_MS` defaults to `8000` with a minimum of
+  `1000`
+- `ISLAND_ROUTER_API_ALLOW_INSECURE_TLS=true` allows self-signed LAN TLS for this
+  adapter only
+
+The MCP surface is intentionally generic:
+
+- `island_router_api_get_status`
+- `island_router_api_set_pin`
+- `island_router_api_clear_pin`
+- `island_router_api_request`
+
+`island_router_api_request` accepts `GET`, `POST`, `PUT`, and `DELETE` for paths
+under `/api/`. Non-GET calls require `acknowledgeHighRisk: true`, an operator
+reason of at least 20 characters, and the exact confirmation phrase. Higher-level typed utilities are
+expected to live in packages that wrap this generic proxy.
+
 Write-risk catalog entries are intentionally hard to use because mistakes can
 have severe consequences. Agents must be highly certain before using them. The
 MCP surface requires:
