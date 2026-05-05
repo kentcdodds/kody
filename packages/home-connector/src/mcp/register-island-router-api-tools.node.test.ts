@@ -124,4 +124,25 @@ test('registers Island Router API proxy tools and handlers call the adapter', as
 			confirmation: islandRouterApiWriteConfirmation,
 		}),
 	])
+	expect(
+		await tools.get('island_router_api_request')?.handler({
+			method: 'GET',
+			path: '/filters',
+		}),
+	).toMatchObject({
+		isError: true,
+		content: [
+			{
+				type: 'text',
+				text: 'Island Router API path must begin with /api/.',
+			},
+		],
+		structuredContent: {
+			error: {
+				code: 'island_router_api_invalid_path',
+				message: 'Island Router API path must begin with /api/.',
+			},
+		},
+	})
+	expect(calls).toHaveLength(1)
 })

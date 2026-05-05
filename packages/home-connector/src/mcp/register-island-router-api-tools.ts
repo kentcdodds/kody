@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
 	islandRouterApiWriteConfirmation,
 	type createIslandRouterApiAdapter,
+	validateIslandRouterApiPath,
 } from '../adapters/island-router-api/index.ts'
 import {
 	buildToolInputSchema,
@@ -38,6 +39,29 @@ function structuredTextResult(
 			},
 		],
 		structuredContent,
+	}
+}
+
+function structuredErrorResult(
+	code: string,
+	message: string,
+	structuredContent: Record<string, unknown> = {},
+): CallToolResult {
+	return {
+		isError: true,
+		content: [
+			{
+				type: 'text',
+				text: message,
+			},
+		],
+		structuredContent: {
+			error: {
+				code,
+				message,
+				...structuredContent,
+			},
+		},
 	}
 }
 
@@ -163,8 +187,13 @@ Proxies an authenticated JSON HTTP request from the home connector host to my.is
 		},
 		async (args) => {
 			const path = String(args['path'] ?? '')
-			if (!path.startsWith('/api/')) {
-				throw new Error('path must begin with /api/.')
+			try {
+				validateIslandRouterApiPath(path)
+			} catch (error) {
+				return structuredErrorResult(
+					'island_router_api_invalid_path',
+					error instanceof Error ? error.message : String(error),
+				)
 			}
 			const result = await islandRouterApi.request({
 				method: args['method'] as 'GET' | 'POST' | 'PUT' | 'DELETE',
