@@ -42,13 +42,6 @@ const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
 
-async function createWorkerBundle(input: {
-	files: Record<string, string>
-	entryPoint: string
-}) {
-	return await createWorker(input)
-}
-
 function joinPath(...parts: Array<string>) {
 	return parts
 		.join('/')
@@ -534,7 +527,7 @@ export async function buildKodyModuleBundle(input: {
 		),
 		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
-	const bundle = await createWorkerBundle({
+	const bundle = await createWorker({
 		files,
 		entryPoint: bootstrapPath,
 	})
@@ -573,7 +566,7 @@ export async function buildKodyImportableModuleBundle(input: {
 			normalizedEntrypoint,
 		),
 	})
-	const bundle = await createWorkerBundle({
+	const bundle = await createWorker({
 		files,
 		entryPoint: bootstrapPath,
 	})
@@ -660,7 +653,7 @@ export async function buildKodyAppBundle(input: {
 				normalizedEntrypoint,
 			),
 		})
-		const bundle = await createWorkerBundle({
+		const bundle = await createWorker({
 			files,
 			entryPoint: bootstrapPath,
 		})
