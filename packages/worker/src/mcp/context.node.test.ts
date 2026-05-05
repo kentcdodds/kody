@@ -45,3 +45,18 @@ test('parseMcpCallerContext validates caller context shape', () => {
 	expect(parsed.remoteConnectors ?? null).toBeNull()
 	expect(parsed.repoContext ?? null).toBeNull()
 })
+
+test('parseMcpCallerContext accepts remote connector trust flag', () => {
+	const parsed = parseMcpCallerContext({
+		baseUrl: 'https://example.com',
+		remoteConnectors: [
+			{ kind: 'generic', instanceId: 'alpha', trusted: true },
+			{ kind: 'other', instanceId: 'beta' },
+		],
+	})
+
+	expect(parsed.remoteConnectors).toEqual([
+		{ kind: 'generic', instanceId: 'alpha', trusted: true },
+		{ kind: 'other', instanceId: 'beta' },
+	])
+})

@@ -7,6 +7,7 @@ import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-conne
 const connectorStatusSchema = z.object({
 	connector_kind: z.string(),
 	connector_instance_id: z.string(),
+	trusted: z.boolean(),
 	status: z.enum(['connected', 'disconnected', 'unavailable', 'error']),
 	connected: z.boolean(),
 	connected_at: z.string().nullable(),
@@ -48,6 +49,7 @@ export const metaListRemoteConnectorStatusCapability = defineDomainCapability(
 					return {
 						connector_kind: s.connectorKind,
 						connector_instance_id: s.connectorId ?? ref.instanceId,
+						trusted: s.trusted,
 						status: s.state,
 						connected: s.connected,
 						connected_at: s.connectedAt,

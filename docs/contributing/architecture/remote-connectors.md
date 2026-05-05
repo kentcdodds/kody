@@ -95,14 +95,42 @@ External connector authors only need the **WebSocket**.
 For capabilities to be synthesized from a connector, the MCP session must list
 that connector:
 
-- **`remoteConnectors`:** optional array of `{ kind, instanceId }`. When present
-  (including empty), it fully defines the set of remote connectors for that
-  session.
+- **`remoteConnectors`:** optional array of `{ kind, instanceId, trusted? }`.
+  When present (including empty), it fully defines the set of remote connectors
+  for that session.
 - **`homeConnectorId`:** when `remoteConnectors` is omitted, a non-null value
   maps to `{ kind: "home", instanceId: homeConnectorId }`.
 
 Source: `packages/shared/src/chat.ts`,
 `packages/shared/src/remote-connectors.ts`.
+
+## Discovery, status, and execution trust
+
+There are three separate gates:
+
+1. **Wire authentication:** the connector process must connect to the expected
+   WebSocket URL and pass the shared secret for its `{ kind, instanceId }`.
+2. **Session attachment:** the MCP caller context must include the connector
+   reference. If the caller does not attach it, the Worker does not poll or
+   report that connector for the session.
+3. **Capability execution trust:** attached connectors are only synthesized into
+   executable `search` / `execute` capabilities when their effective
+   **`trusted`** flag is true.
+
+Trust defaults are intentionally conservative:
+
+- `homeConnectorId` and attached `kind: "home"` refs are trusted by default for
+  backward compatibility with the shipped home connector.
+- Non-home connector kinds default to **untrusted**. They can still be attached
+  and reported by `meta_list_remote_connector_status`, but their tools are not
+  surfaced as executable capabilities until the caller marks that ref
+  `trusted: true`.
+
+This is not a full third-party authorization model. It is a session-level
+declaration that the caller is willing to let Kody invoke tools discovered from
+that remote MCP process. Shared secrets authenticate the socket; the `trusted`
+flag decides whether discovered tools are executable through Kody's capability
+registry.
 
 ## Capability naming (search / execute)
 
@@ -125,8 +153,8 @@ Source: `packages/shared/src/chat.ts`,
 4. **Heartbeats** if the service stays connected for a long time.
 5. **Operator config:** Worker `REMOTE_CONNECTOR_SECRETS` and/or
    `HOME_CONNECTOR_SHARED_SECRET` for `home`; MCP clients must pass
-   **`remoteConnectors`** / **`homeConnectorId`** so the registry merges your
-   domain.
+   **`remoteConnectors`** / **`homeConnectorId`**. Non-home refs must also set
+   `trusted: true` before Kody synthesizes executable capabilities.
 
 ## Reference implementation
 

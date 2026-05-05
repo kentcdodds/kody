@@ -7,7 +7,7 @@ test('normalizeRemoteConnectorRefs maps homeConnectorId when remoteConnectors un
 			homeConnectorId: 'living-room',
 			remoteConnectors: undefined,
 		}),
-	).toEqual([{ kind: 'home', instanceId: 'living-room' }])
+	).toEqual([{ kind: 'home', instanceId: 'living-room', trusted: true }])
 })
 
 test('normalizeRemoteConnectorRefs uses remoteConnectors when provided', () => {
@@ -16,12 +16,14 @@ test('normalizeRemoteConnectorRefs uses remoteConnectors when provided', () => {
 			homeConnectorId: 'ignored',
 			remoteConnectors: [
 				{ kind: 'Home', instanceId: '  a  ' },
-				{ kind: 'custom', instanceId: 'x' },
+				{ kind: 'custom', instanceId: 'x', trusted: true },
+				{ kind: 'other', instanceId: 'y' },
 			],
 		}),
 	).toEqual([
-		{ kind: 'home', instanceId: 'a' },
-		{ kind: 'custom', instanceId: 'x' },
+		{ kind: 'home', instanceId: 'a', trusted: true },
+		{ kind: 'custom', instanceId: 'x', trusted: true },
+		{ kind: 'other', instanceId: 'y', trusted: false },
 	])
 })
 

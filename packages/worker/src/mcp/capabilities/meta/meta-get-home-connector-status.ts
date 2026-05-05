@@ -8,6 +8,7 @@ const outputSchema = z.object({
 	status: z.enum(['connected', 'disconnected', 'unavailable', 'error']),
 	connected: z.boolean(),
 	connector_id: z.string().nullable(),
+	trusted: z.boolean(),
 	connected_at: z.string().nullable(),
 	last_seen_at: z.string().nullable(),
 	tool_count: z.number().int().nonnegative(),
@@ -39,14 +40,12 @@ export const metaGetHomeConnectorStatusCapability = defineDomainCapability(
 		async handler(_args, ctx) {
 			const refs = normalizeRemoteConnectorRefs(ctx.callerContext)
 			const homeRef = refs.find((r) => r.kind === 'home')
-			const status = await getHomeConnectorStatus(
-				ctx.env,
-				homeRef?.instanceId ?? null,
-			)
+			const status = await getHomeConnectorStatus(ctx.env, homeRef ?? null)
 			return {
 				status: status.state,
 				connected: status.connected,
 				connector_id: status.connectorId,
+				trusted: status.trusted,
 				connected_at: status.connectedAt,
 				last_seen_at: status.lastSeenAt,
 				tool_count: status.toolCount,

@@ -22,7 +22,12 @@ export function createMcpCallerContext(input: {
 		baseUrl: input.baseUrl,
 		user: input.user ?? null,
 		homeConnectorId: input.homeConnectorId ?? null,
-		remoteConnectors: input.remoteConnectors ?? null,
+		remoteConnectors:
+			input.remoteConnectors?.map((ref) => ({
+				kind: ref.kind,
+				instanceId: ref.instanceId,
+				trusted: ref.trusted,
+			})) ?? null,
 		storageContext: input.storageContext ?? null,
 		repoContext: input.repoContext ?? null,
 	}

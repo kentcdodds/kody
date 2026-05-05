@@ -1,4 +1,7 @@
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import {
+	isRemoteConnectorTrusted,
+	type RemoteConnectorRef,
+} from '@kody-internal/shared/remote-connectors.ts'
 import { defineCapability } from '#mcp/capabilities/define-capability.ts'
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
@@ -159,18 +162,21 @@ export async function synthesizeRemoteToolDomain(
 	ref: RemoteConnectorRef,
 	allRefs: ReadonlyArray<RemoteConnectorRef>,
 ): Promise<SynthesizedRemoteConnectorDomain | null> {
+	if (!isRemoteConnectorTrusted(ref)) return null
+
+	const trustedRefs = allRefs.filter(isRemoteConnectorTrusted)
 	const client = createRemoteConnectorMcpClient(env, ref.kind, ref.instanceId)
 	const snapshot = await client.getSnapshot()
 	if (!snapshot || snapshot.tools.length === 0) return null
 
 	const domainId = remoteConnectorDomainId(ref)
-	const capabilityPrefix = remoteConnectorCapabilityPrefix(ref, allRefs)
+	const capabilityPrefix = remoteConnectorCapabilityPrefix(ref, trustedRefs)
 	const k = ref.kind.trim().toLowerCase()
 	const isOnlyBuiltinHomeDomain =
 		k === 'home' &&
-		allRefs.length === 1 &&
-		allRefs[0]?.kind === 'home' &&
-		allRefs[0]?.instanceId.trim() === 'default'
+		trustedRefs.length === 1 &&
+		trustedRefs[0]?.kind === 'home' &&
+		trustedRefs[0]?.instanceId.trim() === 'default'
 
 	const domainIdForCapabilities: CapabilityDomain = isOnlyBuiltinHomeDomain
 		? 'home'

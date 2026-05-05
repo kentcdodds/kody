@@ -1,4 +1,7 @@
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import {
+	isRemoteConnectorTrusted,
+	type RemoteConnectorRef,
+} from '@kody-internal/shared/remote-connectors.ts'
 import { createRemoteConnectorMcpClient } from './client.ts'
 import { type HomeConnectorSnapshot } from './types.ts'
 
@@ -6,6 +9,7 @@ export type HomeConnectorStatus = {
 	state: 'connected' | 'disconnected' | 'unavailable' | 'error'
 	connectorKind: string
 	connectorId: string | null
+	trusted: boolean
 	connected: boolean
 	connectedAt: string | null
 	lastSeenAt: string | null
@@ -24,22 +28,29 @@ function connectorLabel(kind: string, connectorId: string) {
 
 function createConnectedStatus(
 	snapshot: HomeConnectorSnapshot,
-	kind: string,
+	ref: RemoteConnectorRef,
 ): HomeConnectorStatus {
 	const resolvedKind =
-		(snapshot.connectorKind ?? kind).trim().toLowerCase() || 'home'
+		(snapshot.connectorKind ?? ref.kind).trim().toLowerCase() || 'home'
 	const toolCount = snapshot.tools.length
 	const label = connectorLabel(resolvedKind, snapshot.connectorId)
+	const trusted = isRemoteConnectorTrusted({
+		...ref,
+		kind: resolvedKind,
+	})
 	return {
 		state: 'connected',
 		connectorKind: resolvedKind,
 		connectorId: snapshot.connectorId,
+		trusted,
 		connected: true,
 		connectedAt: snapshot.connectedAt,
 		lastSeenAt: snapshot.lastSeenAt,
 		toolCount,
 		message:
-			toolCount > 0
+			!trusted && toolCount > 0
+				? `The ${label} is connected and exposing ${toolCount} tool${toolCount === 1 ? '' : 's'}, but it is not trusted for capability execution in this session.`
+				: toolCount > 0
 				? `The ${label} is connected and exposing ${toolCount} tool${toolCount === 1 ? '' : 's'}.`
 				: `The ${label} is connected, but it has not exposed any tools yet.`,
 		error: null,
@@ -55,6 +66,7 @@ function createDisconnectedStatus(
 		state: 'disconnected',
 		connectorKind: k,
 		connectorId: ref.instanceId,
+		trusted: isRemoteConnectorTrusted(ref),
 		connected: false,
 		connectedAt: null,
 		lastSeenAt: null,
@@ -69,6 +81,7 @@ function createUnavailableStatus(): HomeConnectorStatus {
 		state: 'unavailable',
 		connectorKind: 'home',
 		connectorId: null,
+		trusted: true,
 		connected: false,
 		connectedAt: null,
 		lastSeenAt: null,
@@ -89,6 +102,7 @@ function createErrorStatus(
 		state: 'error',
 		connectorKind: k,
 		connectorId: ref.instanceId,
+		trusted: isRemoteConnectorTrusted(ref),
 		connected: false,
 		connectedAt: null,
 		lastSeenAt: null,
@@ -110,6 +124,9 @@ export function formatRemoteConnectorUnavailableMessage(
 	const isHome = status.connectorKind === 'home'
 	switch (status.state) {
 		case 'connected':
+			if (!status.trusted) {
+				return `${status.message} Ask the user whether this connector should be trusted before searching or using its capabilities.`
+			}
 			if (status.toolCount > 0) {
 				return status.message
 			}
@@ -147,7 +164,7 @@ export async function getRemoteConnectorStatus(
 		if (!snapshot) {
 			return createDisconnectedStatus(ref)
 		}
-		return createConnectedStatus(snapshot, ref.kind)
+		return createConnectedStatus(snapshot, ref)
 	} catch (error) {
 		return createErrorStatus(ref, error)
 	}
@@ -155,14 +172,16 @@ export async function getRemoteConnectorStatus(
 
 export async function getHomeConnectorStatus(
 	env: Env,
-	connectorId: string | null,
+	connector: string | RemoteConnectorRef | null,
 ): Promise<HomeConnectorStatus> {
-	if (!connectorId) {
+	if (!connector) {
 		return createUnavailableStatus()
 	}
 
-	return getRemoteConnectorStatus(env, {
-		kind: 'home',
-		instanceId: connectorId,
-	})
+	const ref =
+		typeof connector === 'string'
+			? { kind: 'home', instanceId: connector }
+			: { ...connector, kind: 'home' }
+
+	return getRemoteConnectorStatus(env, ref)
 }

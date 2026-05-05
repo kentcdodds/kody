@@ -32,6 +32,16 @@ const remoteConnectorInstanceIdFieldSchema = createSchema<unknown, string>(
 	},
 )
 
+const remoteConnectorTrustedFieldSchema = createSchema<
+	unknown,
+	boolean | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (value === null) return { value: undefined }
+	if (typeof value !== 'boolean') return fail('Expected boolean', context.path)
+	return { value }
+})
+
 export const aiModeValues = ['mock', 'remote'] as const
 export type AiMode = (typeof aiModeValues)[number]
 
@@ -63,6 +73,7 @@ export const mcpRepoContextSchema = object({
 const remoteConnectorRefSchema = object({
 	kind: remoteConnectorKindFieldSchema,
 	instanceId: remoteConnectorInstanceIdFieldSchema,
+	trusted: optional(remoteConnectorTrustedFieldSchema),
 })
 
 export const mcpCallerContextSchema = object({
