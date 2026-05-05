@@ -77,8 +77,8 @@ stored value, the client calls a separate reveal endpoint:
 
 - `POST /account/secrets/reveal` with JSON body `{ secretId, password }`
 - Requires an active `kody_session` cookie (same as all account endpoints)
-- Requires the user's current password for reauthentication (verified via
-  PBKDF2 through `@kody-internal/shared/password-hash.ts`)
+- Requires the user's current password for reauthentication (verified via PBKDF2
+  through `@kody-internal/shared/password-hash.ts`)
 - On success, returns `{ ok: true, value }` with `Cache-Control: no-store`
 - On failure (wrong password), returns 401 and writes an audit log entry with
   `action: 'secret_reveal'`, `result: 'failure'`

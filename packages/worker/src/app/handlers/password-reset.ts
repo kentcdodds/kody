@@ -60,10 +60,7 @@ async function hashResetToken(token: string) {
 	return toHex(new Uint8Array(digest))
 }
 
-function logMissingEmailConfig(payload: {
-	to: string
-	subject: string
-}) {
+function logMissingEmailConfig(payload: { to: string; subject: string }) {
 	console.warn(
 		'password-reset-email-sender-unconfigured',
 		JSON.stringify({

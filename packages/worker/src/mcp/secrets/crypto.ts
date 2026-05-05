@@ -80,7 +80,10 @@ export async function encryptSecretValue(
 	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	value: string,
 ) {
-	const key = await deriveEncryptionKey(env.SECRET_STORE_KEY, secretStorePurpose)
+	const key = await deriveEncryptionKey(
+		env.SECRET_STORE_KEY,
+		secretStorePurpose,
+	)
 	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
 	const ciphertext = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv },

@@ -453,9 +453,9 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'island_router_api_get_status'),
 		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'island_router_api_set_pin')).toBe(
-			true,
-		)
+		expect(
+			tools.some((tool) => tool.name === 'island_router_api_set_pin'),
+		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'island_router_api_clear_pin'),
 		).toBe(true)
@@ -495,9 +495,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			),
 		).toBe(true)
 		expect(
-			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_request',
-			),
+			tools.some((tool) => tool.name === 'access_networks_unleashed_request'),
 		).toBe(true)
 		expect(
 			tools.some(
@@ -506,7 +504,8 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		).toBe(true)
 		expect(
 			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_authenticate_controller',
+				(tool) =>
+					tool.name === 'access_networks_unleashed_authenticate_controller',
 			),
 		).toBe(true)
 		const removedToolNames = [

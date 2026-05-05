@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest'
 import { parseForwardableEmailMessage } from './parser.ts'
 
-function createMessage(raw: string, to = 'support@example.com'): ForwardableEmailMessage {
+function createMessage(
+	raw: string,
+	to = 'support@example.com',
+): ForwardableEmailMessage {
 	const headers = new Headers()
 	for (const line of raw.split(/\r?\n/)) {
 		if (!line) break
@@ -57,7 +60,9 @@ test('parseForwardableEmailMessage extracts headers, bodies, and attachment meta
 		messageId: '<message@example.com>',
 		textBody: expect.stringContaining('Plain body'),
 	})
-	expect(parsed.to.map((entry) => entry.address)).toContain('support@example.com')
+	expect(parsed.to.map((entry) => entry.address)).toContain(
+		'support@example.com',
+	)
 	expect(parsed.attachments).toEqual([
 		expect.objectContaining({
 			filename: 'note.txt',

@@ -38,13 +38,13 @@ test('decryption fails when SECRET_STORE_KEY is wrong', async () => {
 
 test('general-purpose encrypt/decrypt with purpose uses COOKIE_SECRET', async () => {
 	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: primaryKey }
-	const encrypted = await encryptStringWithPurpose(
+	const encrypted = await encryptStringWithPurpose(env, 'test-purpose', 'hello')
+	const { decryptStringWithPurpose } = await import('./crypto.ts')
+	const decrypted = await decryptStringWithPurpose(
 		env,
 		'test-purpose',
-		'hello',
+		encrypted,
 	)
-	const { decryptStringWithPurpose } = await import('./crypto.ts')
-	const decrypted = await decryptStringWithPurpose(env, 'test-purpose', encrypted)
 	expect(decrypted).toBe('hello')
 })
 

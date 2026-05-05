@@ -77,9 +77,7 @@ function clean(value: unknown) {
 	return String(value ?? '').trim()
 }
 
-function toSystemPrompt(
-	system: AgentTurnSystemPrompt,
-): CacheAwareSystemPrompt {
+function toSystemPrompt(system: AgentTurnSystemPrompt): CacheAwareSystemPrompt {
 	if (typeof system === 'string') {
 		return system
 	}

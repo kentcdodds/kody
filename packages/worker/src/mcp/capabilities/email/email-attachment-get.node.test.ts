@@ -9,7 +9,8 @@ vi.mock('#worker/email/repo.ts', () => ({
 		mockModule.getEmailAttachmentById(...args),
 }))
 
-const { emailAttachmentGetCapability } = await import('./email-attachment-get.ts')
+const { emailAttachmentGetCapability } =
+	await import('./email-attachment-get.ts')
 const { createMcpCallerContext } = await import('#mcp/context.ts')
 
 test('emailAttachmentGetCapability returns attachment content from repo helper', async () => {

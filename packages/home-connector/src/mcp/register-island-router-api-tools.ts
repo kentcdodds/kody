@@ -179,7 +179,9 @@ Proxies an authenticated JSON HTTP request from the home connector host to my.is
 				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
 				reason: args['reason'] == null ? undefined : String(args['reason']),
 				confirmation:
-					args['confirmation'] == null ? undefined : String(args['confirmation']),
+					args['confirmation'] == null
+						? undefined
+						: String(args['confirmation']),
 			})
 			return structuredTextResult(
 				`Island Router API ${result.method} ${result.path} returned HTTP ${String(result.status)}.`,

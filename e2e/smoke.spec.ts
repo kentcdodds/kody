@@ -25,8 +25,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		}),
 	).toBeVisible()
 	await expect(page.getByRole('link', { name: 'Chat' })).toBeVisible()
-	await expect(page.getByRole('link', { name: primaryTestUser.email })).toHaveAttribute(
-		'href',
-		'/account/secrets',
-	)
+	await expect(
+		page.getByRole('link', { name: primaryTestUser.email }),
+	).toHaveAttribute('href', '/account/secrets')
 })

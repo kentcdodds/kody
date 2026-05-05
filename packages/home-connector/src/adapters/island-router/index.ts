@@ -36,7 +36,11 @@ type RunCommandRequest = {
 	confirmation?: string
 }
 
-function normalizeLimit(value: number | undefined, fallback: number, max: number) {
+function normalizeLimit(
+	value: number | undefined,
+	fallback: number,
+	max: number,
+) {
 	if (value == null || !Number.isFinite(value)) return fallback
 	return Math.max(1, Math.min(max, Math.trunc(value)))
 }
@@ -298,14 +302,13 @@ export function createIslandRouterAdapter(input: {
 				result.commandLines,
 			).rawOutput
 			const lines = rawOutput.length === 0 ? [] : rawOutput.split('\n')
-			const filteredLines =
-				catalogEntry.supportsLineFilter
-					? filterCommandLines({
-							lines,
-							query: request.query,
-							limit: request.limit,
-						})
-					: lines
+			const filteredLines = catalogEntry.supportsLineFilter
+				? filterCommandLines({
+						lines,
+						query: request.query,
+						limit: request.limit,
+					})
+				: lines
 			return {
 				commandId: result.id,
 				catalogEntry,

@@ -29,7 +29,9 @@ test('connect secret shows editable name and scope and saves the edited name', a
 		.fill(secretValue)
 	await page.getByRole('button', { name: 'Review' }).click()
 
-	const reviewConfirmation = page.getByLabel('I confirm these details are correct.')
+	const reviewConfirmation = page.getByLabel(
+		'I confirm these details are correct.',
+	)
 	await expect(reviewConfirmation).toBeVisible()
 	await expect(page.getByText(packageId)).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Save secret' })).toBeDisabled()

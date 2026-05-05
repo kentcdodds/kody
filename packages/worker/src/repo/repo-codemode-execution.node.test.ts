@@ -9,9 +9,7 @@ vi.mock('@cloudflare/worker-bundler', () => ({
 	createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
 }))
 
-import {
-	buildRepoCodemodeBundle,
-} from './repo-codemode-execution.ts'
+import { buildRepoCodemodeBundle } from './repo-codemode-execution.ts'
 
 test('buildRepoCodemodeBundle emits an extensionless synthetic ESM re-export for TypeScript entrypoints', async () => {
 	mockModule.createWorker.mockReset()

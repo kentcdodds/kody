@@ -763,12 +763,14 @@ test('bond serializes bridge requests and applies configured pacing', async () =
 		await secondPromise
 
 		expect(fetchStarts).toEqual([0, 260])
-		expect(bond.getReliabilityStatus({ bridgeId: 'BONDTEST11' })).toMatchObject({
-			recentRequestLogs: [
-				{ operation: 'fetch device mockdev2 state', status: 'success' },
-				{ operation: 'fetch device mockdev1 state', status: 'success' },
-			],
-		})
+		expect(bond.getReliabilityStatus({ bridgeId: 'BONDTEST11' })).toMatchObject(
+			{
+				recentRequestLogs: [
+					{ operation: 'fetch device mockdev2 state', status: 'success' },
+					{ operation: 'fetch device mockdev1 state', status: 'success' },
+				],
+			},
+		)
 	} finally {
 		vi.useRealTimers()
 		globalThis.fetch = previousFetch

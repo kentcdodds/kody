@@ -119,14 +119,14 @@ Quick notes for getting a local kody environment running.
     verification is configured with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
     `ISLAND_ROUTER_HOST_FINGERPRINT`. They require a specific operator reason
     and the exact connector confirmation phrase.
-  - No write command silently runs `write memory`. Catalog metadata tells callers
-    when a running-config change needs a separate explicit `write memory` command
-    to persist.
-  - These write-risk commands exist for carefully scoped operational recovery and
-    maintenance only. Their tool descriptions intentionally use strong language
-    because mistakes can disrupt connectivity, erase diagnostics, expose
-    services, or persist a bad router state with severe consequences. Agents must
-    be highly certain before using them.
+  - No write command silently runs `write memory`. Catalog metadata tells
+    callers when a running-config change needs a separate explicit
+    `write memory` command to persist.
+  - These write-risk commands exist for carefully scoped operational recovery
+    and maintenance only. Their tool descriptions intentionally use strong
+    language because mistakes can disrupt connectivity, erase diagnostics,
+    expose services, or persist a bad router state with severe consequences.
+    Agents must be highly certain before using them.
   - Local operational routes live at `/health`, `/roku/status`, `/roku/setup`,
     `/lutron/status`, `/lutron/setup`, `/samsung-tv/status`, and
     `/samsung-tv/setup`.

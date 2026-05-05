@@ -36,7 +36,8 @@ vi.mock('workers-ai-provider', () => ({
 		mockModule.createWorkersAI(...args),
 }))
 
-const { createAiRuntime, streamRemoteToolLoop } = await import('./ai-runtime.ts')
+const { createAiRuntime, streamRemoteToolLoop } =
+	await import('./ai-runtime.ts')
 
 test('remote ai runtime sets a multi-step stop condition for tool continuation', async () => {
 	const runtime = createAiRuntime({

@@ -6,7 +6,9 @@ async function extractCreatePackageAppWorkerSource() {
 		new URL('./package-app.ts', import.meta.url),
 		'utf8',
 	)
-	const start = sourceText.indexOf('function createWorkflowsProxy(runtimeBridge) {')
+	const start = sourceText.indexOf(
+		'function createWorkflowsProxy(runtimeBridge) {',
+	)
 	const end = sourceText.indexOf(
 		'\nfunction createAuthenticatedFetchHelper',
 		start,

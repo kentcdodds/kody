@@ -362,8 +362,7 @@ export function createWorkerConnector(input: {
 								...createSocketEventContext({
 									config: input.config,
 									connectionAttempt,
-									consecutiveReconnects:
-										previousConsecutiveReconnects,
+									consecutiveReconnects: previousConsecutiveReconnects,
 								}),
 								acknowledgedConnectorId: value.connectorId,
 							},
@@ -376,8 +375,7 @@ export function createWorkerConnector(input: {
 								data: createSocketEventContext({
 									config: input.config,
 									connectionAttempt,
-									consecutiveReconnects:
-										previousConsecutiveReconnects,
+									consecutiveReconnects: previousConsecutiveReconnects,
 								}),
 							})
 							socket.send(
@@ -445,10 +443,7 @@ export function createWorkerConnector(input: {
 						...createSocketPayloadPreview(event.data),
 					},
 				})
-				console.error(
-					'Home connector websocket message handling failed',
-					error,
-				)
+				console.error('Home connector websocket message handling failed', error)
 			}
 		})
 

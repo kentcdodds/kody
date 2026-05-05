@@ -88,8 +88,7 @@ function mapSenderIdentityRow(
 		displayName:
 			row['display_name'] == null ? null : String(row['display_name']),
 		status: String(row['status']) as EmailSenderIdentityRecord['status'],
-		verifiedAt:
-			row['verified_at'] == null ? null : String(row['verified_at']),
+		verifiedAt: row['verified_at'] == null ? null : String(row['verified_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -129,12 +128,12 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 			row['from_address'] == null ? null : String(row['from_address']),
 		envelopeFrom:
 			row['envelope_from'] == null ? null : String(row['envelope_from']),
-		toAddresses: parseJsonArray(String(row['to_addresses_json'] ?? '[]')).filter(
-			(value): value is string => typeof value === 'string',
-		),
-		ccAddresses: parseJsonArray(String(row['cc_addresses_json'] ?? '[]')).filter(
-			(value): value is string => typeof value === 'string',
-		),
+		toAddresses: parseJsonArray(
+			String(row['to_addresses_json'] ?? '[]'),
+		).filter((value): value is string => typeof value === 'string'),
+		ccAddresses: parseJsonArray(
+			String(row['cc_addresses_json'] ?? '[]'),
+		).filter((value): value is string => typeof value === 'string'),
 		bccAddresses: parseJsonArray(
 			String(row['bcc_addresses_json'] ?? '[]'),
 		).filter((value): value is string => typeof value === 'string'),
@@ -162,16 +161,13 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 		htmlBody: row['html_body'] == null ? null : String(row['html_body']),
 		rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']),
-		processingStatus: String(
-			row['processing_status'],
-		) as EmailProcessingStatus,
+		processingStatus: String(row['processing_status']) as EmailProcessingStatus,
 		providerMessageId:
 			row['provider_message_id'] == null
 				? null
 				: String(row['provider_message_id']),
 		error: row['error'] == null ? null : String(row['error']),
-		receivedAt:
-			row['received_at'] == null ? null : String(row['received_at']),
+		receivedAt: row['received_at'] == null ? null : String(row['received_at']),
 		sentAt: row['sent_at'] == null ? null : String(row['sent_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
@@ -186,8 +182,7 @@ function mapAttachmentRow(row: Record<string, unknown>): EmailAttachmentRecord {
 		contentType:
 			row['content_type'] == null ? null : String(row['content_type']),
 		contentId: row['content_id'] == null ? null : String(row['content_id']),
-		disposition:
-			row['disposition'] == null ? null : String(row['disposition']),
+		disposition: row['disposition'] == null ? null : String(row['disposition']),
 		size: Number(row['size'] ?? 0),
 		storageKind: String(row['storage_kind']),
 		storageKey: row['storage_key'] == null ? null : String(row['storage_key']),
@@ -1002,4 +997,3 @@ export async function insertEmailDeliveryEvent(input: {
 		)
 		.run()
 }
-

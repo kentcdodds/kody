@@ -335,7 +335,9 @@ test('island router adapter returns status with parsed interface speed and duple
 
 test('island router command catalog covers documented command metadata', () => {
 	const catalogIds = islandRouterCommandCatalog.map((entry) => entry.id)
-	expect(catalogIds).toEqual(new Set(catalogIds).size === catalogIds.length ? catalogIds : [])
+	expect(catalogIds).toEqual(
+		new Set(catalogIds).size === catalogIds.length ? catalogIds : [],
+	)
 	expect(catalogIds).toEqual(
 		expect.arrayContaining([
 			'show clock',
@@ -674,7 +676,9 @@ test('island router write command rendering uses catalog contexts without automa
 		ipAddress: '192.168.0.52',
 		macAddress: '00:11:22:33:44:55',
 	})
-	expect(dhcpReservation.catalogEntry.persistence.requiresWriteMemory).toBe(true)
+	expect(dhcpReservation.catalogEntry.persistence.requiresWriteMemory).toBe(
+		true,
+	)
 	expect(dhcpReservation.commandLines).not.toContain('write memory')
 
 	const interfaceDescription = await islandRouter.runCommand({

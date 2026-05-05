@@ -22,9 +22,9 @@ Commands are parsed, not shell-executed. Unsupported syntax returns a
 line-specific parse error with examples so agents can correct the command
 string.
 
-Only git commands are accepted. Non-git commands and shell syntax such as
-pipes, command substitution, `&&`, or tools like `npm`, `cat`, and `sed` are
-not supported.
+Only git commands are accepted. Non-git commands and shell syntax such as pipes,
+command substitution, `&&`, or tools like `npm`, `cat`, and `sed` are not
+supported.
 
 Supported commands:
 

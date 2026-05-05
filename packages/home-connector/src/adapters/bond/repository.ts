@@ -432,12 +432,9 @@ export function listRecentBondRequestLogs(input: {
 		finishedAt: String(row['finished_at']),
 		durationMs: Number(row['duration_ms']),
 		baseUrlsTried: parseBondRequestBaseUrls(row['base_urls_tried_json']),
-		errorName:
-			typeof row['error_name'] === 'string' ? row['error_name'] : null,
+		errorName: typeof row['error_name'] === 'string' ? row['error_name'] : null,
 		errorMessage:
-			typeof row['error_message'] === 'string'
-				? row['error_message']
-				: null,
+			typeof row['error_message'] === 'string' ? row['error_message'] : null,
 		networkFailure: Boolean(row['network_failure']),
 	}))
 }

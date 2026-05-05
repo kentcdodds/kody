@@ -167,19 +167,20 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 		attachments,
 	})
 	return await Promise.all(
-		subscriptions.map(async ({ savedPackage }) =>
-			await invokePackageSubscription({
-				env: input.env as Env,
-				baseUrl,
-				savedPackage,
-				topic: inboundEmailReceiptTopic,
-				params: eventPayload as Record<string, unknown>,
-				idempotencyKey: buildSubscriptionIdempotencyKey({
-					messageId: input.message.id,
-					packageId: savedPackage.id,
+		subscriptions.map(
+			async ({ savedPackage }) =>
+				await invokePackageSubscription({
+					env: input.env as Env,
+					baseUrl,
+					savedPackage,
+					topic: inboundEmailReceiptTopic,
+					params: eventPayload as Record<string, unknown>,
+					idempotencyKey: buildSubscriptionIdempotencyKey({
+						messageId: input.message.id,
+						packageId: savedPackage.id,
+					}),
+					source: 'email',
 				}),
-				source: 'email',
-			}),
 		),
 	)
 }

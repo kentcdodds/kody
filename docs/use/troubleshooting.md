@@ -46,7 +46,8 @@ The command catalog includes read entries such as:
 - `show ip interface`, `show ip neighbors`, `show ip sockets`
 - `show ip dhcp-reservations`, `show ip routes`, `show ip recommendations`
 - `show log` and `show syslog` with optional Kody-side filtering/line limiting
-- `show running-config`, `show running-config differences`, `show startup-config`
+- `show running-config`, `show running-config differences`,
+  `show startup-config`
 - `show ntp`, `show users`, `show vpns`, `show stats`, and `ping`
 
 Write-risk catalog entries require SSH host verification, a specific operator

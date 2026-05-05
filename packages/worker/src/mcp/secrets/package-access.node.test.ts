@@ -36,7 +36,11 @@ test('resolvePackageMountedSecret rejects calls without package appId context', 
 			alias: 'discordBotToken',
 			callerContext: {
 				baseUrl: 'https://example.com',
-				user: { userId: 'user-1', email: 'user@example.com', displayName: 'User' },
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User',
+				},
 				homeConnectorId: null,
 				remoteConnectors: null,
 				repoContext: null,
@@ -60,7 +64,11 @@ test('resolvePackageMountedSecret rejects mismatched package appId context', asy
 			alias: 'discordBotToken',
 			callerContext: {
 				baseUrl: 'https://example.com',
-				user: { userId: 'user-1', email: 'user@example.com', displayName: 'User' },
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User',
+				},
 				homeConnectorId: null,
 				remoteConnectors: null,
 				repoContext: null,
@@ -115,7 +123,11 @@ test('resolvePackageMountedSecret resolves mounted secret when package appId mat
 			alias: 'discordBotToken',
 			callerContext: {
 				baseUrl: 'https://example.com',
-				user: { userId: 'user-1', email: 'user@example.com', displayName: 'User' },
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User',
+				},
 				homeConnectorId: null,
 				remoteConnectors: null,
 				repoContext: null,
@@ -171,7 +183,9 @@ test('package access helpers treat missing approvals consistently', () => {
 	)
 	expect(
 		isPackageSecretAccessUnavailableError(
-			new PackageSecretMountError('Package "discord-gateway" does not declare secret mount "discordBotToken".'),
+			new PackageSecretMountError(
+				'Package "discord-gateway" does not declare secret mount "discordBotToken".',
+			),
 		),
 	).toBe(true)
 })

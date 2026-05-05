@@ -28,10 +28,10 @@ to become.
 ## OAuth connector host allowlist
 
 The `createAuthenticatedFetch` helper (and its sandboxed prelude equivalent)
-attaches a materialized OAuth bearer token to outbound requests. At that
-point, the outbound token is not a `{{secret:…}}` placeholder, so the fetch
-gateway's host-allowlist check cannot inspect it. To prevent token
-exfiltration to arbitrary hosts:
+attaches a materialized OAuth bearer token to outbound requests. At that point,
+the outbound token is not a `{{secret:…}}` placeholder, so the fetch gateway's
+host-allowlist check cannot inspect it. To prevent token exfiltration to
+arbitrary hosts:
 
 - Before attaching the `Authorization` header, the helper resolves the
   connector's allowed host set from `requiredHosts` plus the host of

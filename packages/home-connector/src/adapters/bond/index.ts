@@ -481,8 +481,7 @@ export function createBondAdapter(input: {
 		error?: unknown
 	}) {
 		const finishedAtMs = Date.now()
-		const error =
-			inputLog.error instanceof Error ? inputLog.error : undefined
+		const error = inputLog.error instanceof Error ? inputLog.error : undefined
 		insertBondRequestLog(input.storage, {
 			connectorId,
 			bridgeId: inputLog.bridge.bridgeId,
@@ -494,9 +493,7 @@ export function createBondAdapter(input: {
 			baseUrlsTried: inputLog.baseUrlsTried,
 			errorName: error?.name ?? null,
 			errorMessage:
-				inputLog.error == null
-					? null
-					: formatBondFailureReason(inputLog.error),
+				inputLog.error == null ? null : formatBondFailureReason(inputLog.error),
 			networkFailure: isBondNetworkFailure(inputLog.error),
 		})
 		pruneRequestLogs(inputLog.bridge.bridgeId)
@@ -593,8 +590,7 @@ export function createBondAdapter(input: {
 		} catch (error) {
 			if (
 				isBondNetworkFailure(error) &&
-				(!(error instanceof Error) ||
-					error.name !== 'BondCircuitBreakerError')
+				(!(error instanceof Error) || error.name !== 'BondCircuitBreakerError')
 			) {
 				const cooldownUntil = Date.now() + circuitBreakerCooldownMs
 				queueState.cooldownUntil = Math.max(
@@ -824,10 +820,12 @@ export function createBondAdapter(input: {
 				connection,
 			)
 		},
-		getReliabilityStatus(inputStatus: {
-			bridgeId?: string
-			limit?: number
-		} = {}) {
+		getReliabilityStatus(
+			inputStatus: {
+				bridgeId?: string
+				limit?: number
+			} = {},
+		) {
 			const bridge = resolveBridge(inputStatus.bridgeId)
 			const queueState = getQueueState(bridge.bridgeId)
 			syncPersistedCooldown(bridge, queueState)

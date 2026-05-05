@@ -5,10 +5,10 @@ saved-secret confidentiality.
 
 ## Key inventory
 
-| Secret | Purpose | Impact of rotation |
-| --- | --- | --- |
-| `COOKIE_SECRET` | Signs auth session cookies (Remix `createCookie`) | Invalidates all active browser sessions; users must re-authenticate. |
-| `SECRET_STORE_KEY` | Derives the AES-GCM KEK for saved secrets in D1 | Bricks all saved secrets encrypted under the old key unless a re-encryption migration runs. |
+| Secret             | Purpose                                           | Impact of rotation                                                                          |
+| ------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `COOKIE_SECRET`    | Signs auth session cookies (Remix `createCookie`) | Invalidates all active browser sessions; users must re-authenticate.                        |
+| `SECRET_STORE_KEY` | Derives the AES-GCM KEK for saved secrets in D1   | Bricks all saved secrets encrypted under the old key unless a re-encryption migration runs. |
 
 ## Separate cookie and secret-store keys
 

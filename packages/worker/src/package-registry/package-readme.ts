@@ -82,7 +82,8 @@ function sortReadmeCandidates(paths: Array<string>) {
 function findRootReadmeFile(files: Record<string, string>) {
 	const matches = Object.keys(files).filter(
 		(path) =>
-			!path.includes('/') && rootReadmeFileNamePattern.test(path.trim().toLowerCase()),
+			!path.includes('/') &&
+			rootReadmeFileNamePattern.test(path.trim().toLowerCase()),
 	)
 	const [firstMatch] = sortReadmeCandidates(matches)
 	if (!firstMatch) {

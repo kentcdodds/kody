@@ -582,7 +582,9 @@ export const islandRouterCommandCatalog = [
 ] as const satisfies ReadonlyArray<IslandRouterCommandCatalogEntry>
 
 function assertIslandRouterCommandCatalogComplete() {
-	const catalogIds = new Set(islandRouterCommandCatalog.map((entry) => entry.id))
+	const catalogIds = new Set(
+		islandRouterCommandCatalog.map((entry) => entry.id),
+	)
 	const missingCatalogEntries = islandRouterCommandIds.filter(
 		(id) => !catalogIds.has(id),
 	)
@@ -596,7 +598,9 @@ function assertIslandRouterCommandCatalogComplete() {
 assertIslandRouterCommandCatalogComplete()
 
 export function getIslandRouterCommandCatalogEntry(id: IslandRouterCommandId) {
-	const entry = islandRouterCommandCatalog.find((candidate) => candidate.id === id)
+	const entry = islandRouterCommandCatalog.find(
+		(candidate) => candidate.id === id,
+	)
 	if (!entry) {
 		throw new Error(`Unsupported Island router command id: ${id}`)
 	}
@@ -676,10 +680,7 @@ function normalizePort(value: unknown, name: string) {
 	return String(port)
 }
 
-function normalizeEnumParam(
-	value: unknown,
-	param: IslandRouterCommandParam,
-) {
+function normalizeEnumParam(value: unknown, param: IslandRouterCommandParam) {
 	const trimmed = normalizeStringParam(value, param.name)
 	const values = param.values ?? []
 	if (!values.includes(trimmed)) {
@@ -740,21 +741,28 @@ function renderTemplate(
 	normalizedParams: Record<string, string>,
 	paramDefinitions: ReadonlyArray<IslandRouterCommandParam>,
 ) {
-	const paramsByName = new Map(paramDefinitions.map((param) => [param.name, param]))
-	return template.replaceAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g, (_, name: string) => {
-		const value = normalizedParams[name]
-		if (value == null) {
-			throw new Error(`Missing rendered Island router command parameter: ${name}`)
-		}
-		const param = paramsByName.get(name)
-		if (param?.validator === 'quotedText') {
-			return `"${value}"`
-		}
-		if (param?.renderAsBracketedHost && value.includes(':')) {
-			return `[${value}]`
-		}
-		return value
-	})
+	const paramsByName = new Map(
+		paramDefinitions.map((param) => [param.name, param]),
+	)
+	return template.replaceAll(
+		/\{([a-zA-Z][a-zA-Z0-9]*)\}/g,
+		(_, name: string) => {
+			const value = normalizedParams[name]
+			if (value == null) {
+				throw new Error(
+					`Missing rendered Island router command parameter: ${name}`,
+				)
+			}
+			const param = paramsByName.get(name)
+			if (param?.validator === 'quotedText') {
+				return `"${value}"`
+			}
+			if (param?.renderAsBracketedHost && value.includes(':')) {
+				return `[${value}]`
+			}
+			return value
+		},
+	)
 }
 
 export function renderIslandRouterCommand(input: {
@@ -781,7 +789,11 @@ export function renderIslandRouterCommand(input: {
 		normalizedParams[param.name] = normalizeParam(params[param.name], param)
 	}
 
-	const command = renderTemplate(entry.cliTemplate, normalizedParams, entry.params)
+	const command = renderTemplate(
+		entry.cliTemplate,
+		normalizedParams,
+		entry.params,
+	)
 	switch (entry.context.mode) {
 		case 'exec':
 			return {

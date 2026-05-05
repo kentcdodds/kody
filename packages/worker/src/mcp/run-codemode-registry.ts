@@ -588,7 +588,9 @@ export async function runCodemodeWithRegistry(
 	const emailHelperPrelude = options?.emailTools
 		? createEmailHelperPrelude()
 		: ''
-	const workflowsHelperPrelude = workflowTools ? createWorkflowsHelperPrelude() : ''
+	const workflowsHelperPrelude = workflowTools
+		? createWorkflowsHelperPrelude()
+		: ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
@@ -748,7 +750,9 @@ export async function runBundledModuleWithRegistry(
 	const emailHelperPrelude = options?.emailTools
 		? createEmailHelperPrelude()
 		: ''
-	const workflowsHelperPrelude = workflowTools ? createWorkflowsHelperPrelude() : ''
+	const workflowsHelperPrelude = workflowTools
+		? createWorkflowsHelperPrelude()
+		: ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}

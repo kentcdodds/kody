@@ -221,5 +221,5 @@ package has a root README so agents can learn usage, examples, and maintenance
 notes without separately cloning the package repository.
 
 Exact package detail includes nested exports, nested jobs, tags, app presence,
-and README content when a root README exists.
-Search should not frame exports or jobs as separate top-level saved entities.
+and README content when a root README exists. Search should not frame exports or
+jobs as separate top-level saved entities.

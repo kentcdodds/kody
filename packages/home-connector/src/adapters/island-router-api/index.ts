@@ -68,7 +68,9 @@ export function validateIslandRouterApiPath(path: string) {
 		throw new Error('Island Router API path must be URI-decodable.')
 	}
 	if (/[\u0000-\u001f\u007f]/.test(parsedPath)) {
-		throw new Error('Island Router API path must not contain control characters.')
+		throw new Error(
+			'Island Router API path must not contain control characters.',
+		)
 	}
 	if (!path.startsWith('/')) {
 		throw new Error('Island Router API path must start with /.')
@@ -92,12 +94,18 @@ export function validateIslandRouterApiPath(path: string) {
 function normalizeMethod(method: string) {
 	const normalized = method.toUpperCase()
 	if (!supportedMethods.has(normalized as IslandRouterApiMethod)) {
-		throw new Error('Island Router API method must be GET, POST, PUT, or DELETE.')
+		throw new Error(
+			'Island Router API method must be GET, POST, PUT, or DELETE.',
+		)
 	}
 	return normalized as IslandRouterApiMethod
 }
 
-function buildUrl(baseUrl: string, path: string, query?: Record<string, unknown>) {
+function buildUrl(
+	baseUrl: string,
+	path: string,
+	query?: Record<string, unknown>,
+) {
 	const url = new URL(path, `${baseUrl}/`)
 	for (const [key, value] of Object.entries(query ?? {})) {
 		if (value == null) continue
@@ -150,7 +158,9 @@ function getStartupData(payload: unknown) {
 function getTokenData(payload: unknown): IslandRouterApiAuthTokens {
 	const data = isRecord(payload) ? payload['data'] : null
 	if (!isRecord(data)) {
-		throw new Error('Island Router authentication response did not include data.')
+		throw new Error(
+			'Island Router authentication response did not include data.',
+		)
 	}
 	const session = data['session']
 	const access = data['access']
@@ -160,7 +170,9 @@ function getTokenData(payload: unknown): IslandRouterApiAuthTokens {
 		typeof access !== 'string' ||
 		typeof refresh !== 'string'
 	) {
-		throw new Error('Island Router authentication response did not include JWTs.')
+		throw new Error(
+			'Island Router authentication response did not include JWTs.',
+		)
 	}
 	return { session, access, refresh }
 }
@@ -331,7 +343,11 @@ export function createIslandRouterApiAdapter(input: {
 				? config.islandRouterApiRequestTimeoutMs
 				: Math.max(1000, requestInput.timeoutMs)
 		const authTokens = tokens ?? (await authenticate())
-		const url = buildUrl(config.islandRouterApiBaseUrl, path, requestInput.query)
+		const url = buildUrl(
+			config.islandRouterApiBaseUrl,
+			path,
+			requestInput.query,
+		)
 		const init: RequestInit = {
 			method,
 			headers: {

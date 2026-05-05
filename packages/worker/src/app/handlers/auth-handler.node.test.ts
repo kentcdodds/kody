@@ -241,5 +241,7 @@ test('auth handler issues the right session cookies for signup and login flows',
 		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
 		'https://example.com/auth',
 	)
-	expect(secureCookieResponse.headers.get('Set-Cookie') ?? '').toContain('Secure')
+	expect(secureCookieResponse.headers.get('Set-Cookie') ?? '').toContain(
+		'Secure',
+	)
 })

@@ -4,7 +4,11 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { sendOutboundEmail } from '#worker/email/outbound.ts'
 import { getEmailMessageById } from '#worker/email/repo.ts'
-import { emailMessageSummarySchema, stringArray, toMessageSummary } from './shared.ts'
+import {
+	emailMessageSummarySchema,
+	stringArray,
+	toMessageSummary,
+} from './shared.ts'
 
 export const emailReplyCapability = defineDomainCapability(
 	capabilityDomainNames.email,
@@ -35,12 +39,14 @@ export const emailReplyCapability = defineDomainCapability(
 				userId: user.userId,
 				messageId: args.message_id,
 			})
-			if (!original) throw new Error(`Email message not found: ${args.message_id}`)
+			if (!original)
+				throw new Error(`Email message not found: ${args.message_id}`)
 			const fromAddress =
 				stringArray(original.replyToAddresses)[0] ??
 				original.fromAddress ??
 				original.envelopeFrom
-			if (!fromAddress) throw new Error('Original message has no reply address.')
+			if (!fromAddress)
+				throw new Error('Original message has no reply address.')
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,

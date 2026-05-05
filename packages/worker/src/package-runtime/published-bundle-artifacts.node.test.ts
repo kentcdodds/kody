@@ -15,10 +15,9 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 }))
 
 vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
-	const actual =
-		await vi.importActual<
-			typeof import('#worker/repo/published-bundle-artifacts-repo.ts')
-		>('#worker/repo/published-bundle-artifacts-repo.ts')
+	const actual = await vi.importActual<
+		typeof import('#worker/repo/published-bundle-artifacts-repo.ts')
+	>('#worker/repo/published-bundle-artifacts-repo.ts')
 	return {
 		...actual,
 		getPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
@@ -31,10 +30,9 @@ vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
 })
 
 vi.mock('./published-runtime-artifacts.ts', async () => {
-	const actual =
-		await vi.importActual<typeof import('./published-runtime-artifacts.ts')>(
-			'./published-runtime-artifacts.ts',
-		)
+	const actual = await vi.importActual<
+		typeof import('./published-runtime-artifacts.ts')
+	>('./published-runtime-artifacts.ts')
 	return {
 		...actual,
 		writePublishedBundleArtifact: (...args: Array<unknown>) =>
@@ -53,14 +51,16 @@ test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', 
 	mockModule.insertPublishedBundleArtifactRow.mockResolvedValue(undefined)
 
 	const buildAppBundle = vi.fn()
-	const buildModuleBundle = vi.fn(async ({ entryPoint }: { entryPoint: string }) => ({
-		mainModule: `dist/${entryPoint.replaceAll('/', '_')}.js`,
-		modules: {
-			[`dist/${entryPoint.replaceAll('/', '_')}.js`]:
-				'export default async function run() { return "ok" }',
-		},
-		dependencies: [],
-	}))
+	const buildModuleBundle = vi.fn(
+		async ({ entryPoint }: { entryPoint: string }) => ({
+			mainModule: `dist/${entryPoint.replaceAll('/', '_')}.js`,
+			modules: {
+				[`dist/${entryPoint.replaceAll('/', '_')}.js`]:
+					'export default async function run() { return "ok" }',
+			},
+			dependencies: [],
+		}),
+	)
 
 	await rebuildPublishedPackageArtifacts({
 		env: {

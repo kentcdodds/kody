@@ -45,7 +45,9 @@ test('document helpers preserve structure while rewriting only supported urls', 
 	expect(injectedIntoExistingHead).toMatch(
 		/<html\b[^>]*lang="en"[^>]*class="demo"[^>]*>/,
 	)
-	expect(injectedIntoExistingHead).toMatch(/<head\b[^>]*data-shell="true"[^>]*>/)
+	expect(injectedIntoExistingHead).toMatch(
+		/<head\b[^>]*data-shell="true"[^>]*>/,
+	)
 	expect(injectedIntoExistingHead).toContain('<title>Demo</title>')
 	expect(injectedIntoExistingHead).toContain(
 		'<meta name="viewport" content="width=device-width, initial-scale=1" />',

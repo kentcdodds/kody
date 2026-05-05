@@ -1,11 +1,7 @@
 export const emailDirectionValues = ['inbound', 'outbound'] as const
 export type EmailDirection = (typeof emailDirectionValues)[number]
 
-export const emailProcessingStatusValues = [
-	'stored',
-	'sent',
-	'failed',
-] as const
+export const emailProcessingStatusValues = ['stored', 'sent', 'failed'] as const
 export type EmailProcessingStatus = (typeof emailProcessingStatusValues)[number]
 
 export const emailDeliveryEventTypeValues = [
@@ -16,7 +12,8 @@ export const emailDeliveryEventTypeValues = [
 	'sent',
 	'failed',
 ] as const
-export type EmailDeliveryEventType = (typeof emailDeliveryEventTypeValues)[number]
+export type EmailDeliveryEventType =
+	(typeof emailDeliveryEventTypeValues)[number]
 
 export type EmailMailbox = {
 	name: string | null

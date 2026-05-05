@@ -1320,7 +1320,7 @@ test('runBundledModuleWithRegistry injects workflow helper when custom workflow 
 			async execute(wrapped, providers) {
 				expect(wrapped).toContain('const workflows = {')
 				expect(wrapped).toContain(
-					'workflows: typeof workflows === \'undefined\' ? null : workflows',
+					"workflows: typeof workflows === 'undefined' ? null : workflows",
 				)
 				providerFns = (
 					providers[0] as {

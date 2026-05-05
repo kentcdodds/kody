@@ -51,11 +51,16 @@ test('preserves JSON Schema descriptions as type comments', () => {
 	})
 
 	expect(typeDefinition).toContain('/** Input for creating an issue. */')
-	expect(typeDefinition).toContain('\t/** Repository owner. */\n\towner: string')
 	expect(typeDefinition).toContain(
-		['\t/**', '\t * Repository name.', '\t * May include dashes.', '\t */'].join(
-			'\n',
-		),
+		'\t/** Repository owner. */\n\towner: string',
+	)
+	expect(typeDefinition).toContain(
+		[
+			'\t/**',
+			'\t * Repository name.',
+			'\t * May include dashes.',
+			'\t */',
+		].join('\n'),
 	)
 	expect(typeDefinition).toContain(
 		'\t/** Issue body with a closing marker * / inside. */',

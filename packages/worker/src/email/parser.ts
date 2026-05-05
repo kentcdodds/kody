@@ -18,7 +18,11 @@ export const maxInlineRawMimeBytes = 512 * 1024
 function flattenPostalAddresses(
 	addresses: PostalAddress | Array<PostalAddress> | undefined,
 ): Array<EmailMailbox> {
-	const input = Array.isArray(addresses) ? addresses : addresses ? [addresses] : []
+	const input = Array.isArray(addresses)
+		? addresses
+		: addresses
+			? [addresses]
+			: []
 	const out: Array<EmailMailbox> = []
 	for (const address of input) {
 		if ('group' in address && Array.isArray(address.group)) {
@@ -32,7 +36,8 @@ function flattenPostalAddresses(
 		}
 		if (!address.address) continue
 		const normalized = normalizeEmailAddress(address.address)
-		if (normalized) out.push({ name: address.name || null, address: normalized })
+		if (normalized)
+			out.push({ name: address.name || null, address: normalized })
 	}
 	return out
 }
@@ -140,7 +145,9 @@ export async function parseForwardableEmailMessage(
 	])
 	const ccAddresses = dedupeMailboxes(flattenPostalAddresses(parsed.cc))
 	const bccAddresses = dedupeMailboxes(flattenPostalAddresses(parsed.bcc))
-	const replyToAddresses = dedupeMailboxes(flattenPostalAddresses(parsed.replyTo))
+	const replyToAddresses = dedupeMailboxes(
+		flattenPostalAddresses(parsed.replyTo),
+	)
 	const subject = parsed.subject ?? getHeader(message.headers, 'Subject')
 	const messageIdHeader =
 		parsed.messageId ?? getPostalHeader(parsed.headers, 'message-id')
@@ -163,7 +170,8 @@ export async function parseForwardableEmailMessage(
 			getHeader(message.headers, 'Authentication-Results') ??
 			getHeader(message.headers, 'ARC-Authentication-Results'),
 		textBody: parsed.text || null,
-		htmlBody: typeof parsed.html === 'string' && parsed.html ? parsed.html : null,
+		htmlBody:
+			typeof parsed.html === 'string' && parsed.html ? parsed.html : null,
 		rawMime,
 		rawSize: message.rawSize,
 		attachments: toAttachmentMetadata(parsed.attachments),
@@ -173,4 +181,3 @@ export async function parseForwardableEmailMessage(
 		}),
 	}
 }
-

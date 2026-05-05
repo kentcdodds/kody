@@ -12,5 +12,4 @@ access, validation, auth, sessions, file uploads, server setup, UI components,
 hydration, navigation, or tests.
 
 `npx remix@next new <app>` copies this skill from the Remix CLI bootstrap
-template. The CLI does not expose a standalone `remix skills install`
-command.
+template. The CLI does not expose a standalone `remix skills install` command.

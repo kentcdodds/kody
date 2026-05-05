@@ -30,7 +30,10 @@ export const emailInboxCreateCapability = defineDomainCapability(
 		outputSchema: emailInboxCreateOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const address = requireNormalizedEmailAddress(args.address, 'Inbox address')
+			const address = requireNormalizedEmailAddress(
+				args.address,
+				'Inbox address',
+			)
 			const replyToken = createReplyToken()
 			const { inbox, address: alias } = await createEmailInboxWithAddress({
 				db: ctx.env.APP_DB,
@@ -47,14 +50,16 @@ export const emailInboxCreateCapability = defineDomainCapability(
 				name: inbox.name,
 				description: inbox.description,
 				enabled: inbox.enabled,
-				addresses: [{
-					id: alias.id,
-					address: alias.address,
-					reply_token_hash: alias.replyTokenHash,
-					reply_token: replyToken,
-					enabled: alias.enabled,
-					created_at: alias.createdAt,
-				}],
+				addresses: [
+					{
+						id: alias.id,
+						address: alias.address,
+						reply_token_hash: alias.replyTokenHash,
+						reply_token: replyToken,
+						enabled: alias.enabled,
+						created_at: alias.createdAt,
+					},
+				],
 				created_at: inbox.createdAt,
 				updated_at: inbox.updatedAt,
 			}
