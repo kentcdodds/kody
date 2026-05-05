@@ -35,7 +35,6 @@ import {
 	buildPackageSearchProjection,
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
-import { buildPackageReadmeSnippet } from '#worker/package-registry/package-readme.ts'
 import {
 	loadPackageManifestBySourceId,
 	loadPackageSourceBySourceId,
@@ -1141,9 +1140,10 @@ Find **built-in capabilities**, **saved packages**, **persisted values**,
 **saved connectors**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
-**query** — ranked markdown + structured matches (order matters). If nothing useful
-returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
-empty ranked list.
+**query** — compact ranked markdown + structured matches (order matters). Query
+markdown is summary-only: type, title/name, one-line description, and entity ref.
+If nothing useful returns, rephrase or call \`meta_list_capabilities\`; \`entity\`
+does not fix an empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
 | \`connector\` | \`package\` | \`secret\`). Capability detail includes
@@ -1469,56 +1469,6 @@ async function resolveEntityDetail(input: {
 	}
 }
 
-export async function enrichSearchMatchesWithPackageReadmes(input: {
-	env: Env
-	baseUrl: string
-	userId: string | null
-	matches: Array<SearchMatch>
-}): Promise<Array<SearchMatch>> {
-	if (!input.userId) {
-		return input.matches
-	}
-	return await Promise.all(
-		input.matches.map(async (match) => {
-			if (match.type !== 'package') {
-				return match
-			}
-			try {
-				const record = await getSavedPackageByKodyId(input.env.APP_DB, {
-					userId: input.userId!,
-					kodyId: match.kodyId,
-				})
-				if (!record) {
-					return match
-				}
-				const loaded = await loadPackageSourceBySourceId({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.userId!,
-					sourceId: record.sourceId,
-				})
-				return {
-					...match,
-					readmeSnippet: buildPackageReadmeSnippet({
-						files: loaded.files,
-					}),
-				} satisfies SearchMatch
-			} catch (cause) {
-				Sentry.captureException(cause, {
-					tags: {
-						scope: 'search.enrichPackageReadmeSnippet',
-					},
-					extra: {
-						kodyId: match.kodyId,
-						packageId: match.packageId,
-					},
-				})
-				return match
-			}
-		}),
-	)
-}
-
 export async function registerSearchTool(agent: McpRegistrationAgent) {
 	agent.server.registerTool(
 		searchTool.name,
@@ -1684,15 +1634,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 
 				return {
 					mode: 'list' as const,
-					result: {
-						...result,
-						matches: await enrichSearchMatchesWithPackageReadmes({
-							env: agent.getEnv(),
-							baseUrl,
-							userId,
-							matches: result.matches,
-						}),
-					},
+					result,
 				}
 			}
 
@@ -1772,13 +1714,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				if (memoryToolContext) {
 					warnings.push(...memoryToolContext.retrieverWarnings)
 				}
+				const structuredWarnings = [...warnings]
 
 				const payload: {
 					matches: Array<SearchMatch>
 					offline: boolean
-					warnings: Array<string>
-					guidance?: string
-					memories?: SearchResultStructuredContent['memories']
 					homeConnectorStatus?: {
 						connectorKind: string
 						connectorId: string
@@ -1796,17 +1736,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				} = {
 					matches: outcome.result.matches,
 					offline: outcome.result.offline,
-					warnings,
-					...(outcome.result.guidance
-						? {
-								guidance: outcome.result.guidance,
-							}
-						: {}),
-					...(searchMemories
-						? {
-								memories: searchMemories,
-							}
-						: {}),
 					...(normalizedRemoteConnectorStatuses
 						? {
 								remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
@@ -1850,10 +1779,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					(value) =>
 						formatSearchMarkdown({
 							matches: value.matches,
-							warnings: value.warnings,
-							guidance: value.guidance,
-							memories: value.memories,
-							baseUrl,
+							warningCount: structuredWarnings.length,
 							includePreamble,
 						}),
 					(value, count) => ({
@@ -1872,10 +1798,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				)
 				const result: SearchResultStructuredContent = {
 					offline: trimmedPayload.offline,
-					warnings: trimmedPayload.warnings,
-					...(trimmedPayload.guidance
+					warnings: structuredWarnings,
+					...(outcome.result.guidance
 						? {
-								guidance: trimmedPayload.guidance,
+								guidance: outcome.result.guidance,
 							}
 						: {}),
 					telemetry: {
@@ -1890,9 +1816,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						...outcome.result.phaseTimings,
 						formattingMs,
 					},
-					...(trimmedPayload.memories
+					...(searchMemories
 						? {
-								memories: trimmedPayload.memories,
+								memories: searchMemories,
 							}
 						: {}),
 					...(trimmedPayload.homeConnectorStatus

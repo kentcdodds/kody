@@ -420,6 +420,18 @@ function buildSecretUsage(name: string) {
 		: '(secret placeholder unavailable for this name)'
 }
 
+function formatOneLineSummary(value: string, maxLength = 180) {
+	const summary = value.replace(/\s+/g, ' ').trim()
+	if (summary.length <= maxLength) return summary
+	return `${summary.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`
+}
+
+function formatOneLineSentence(value: string) {
+	const summary = formatOneLineSummary(value)
+	if (!summary) return 'No description.'
+	return /[.!?]$/.test(summary) ? summary : `${summary}.`
+}
+
 function formatPackageSchedule(
 	schedule: PackageJobSchedule,
 	timezone?: string,
@@ -465,185 +477,65 @@ export function parseEntityRef(entity: string): {
 
 export function formatSearchMarkdown(input: {
 	matches: Array<SearchMatch>
-	warnings: Array<string>
-	baseUrl: string
+	warnings?: Array<string>
+	warningCount?: number
 	includePreamble?: boolean
-	guidance?: string
-	memories?: {
-		surfaced: Array<{
-			category: string | null
-			subject: string
-			summary: string
-		}>
-		suppressedCount: number
-		retrieverResults?: Array<PackageRetrieverSurfaceResult>
-	}
 }) {
 	const lines: Array<string> = ['# Search results', '']
-	if (input.includePreamble ?? true) {
+	const hasEntityBackedMatch = input.matches.some(
+		(match) => match.type !== 'retriever_result',
+	)
+	if ((input.includePreamble ?? true) && hasEntityBackedMatch) {
 		lines.push(
-			'For full detail on one hit, call `search` with `entity: "{id}:{type}"` (example: `kody_official_guide:capability`).',
+			'For full detail on entity-backed hits, call `search` with `entity: "{id}:{type}"`.',
 			'',
-			'**How to run matches:**',
-			'',
-			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
-			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
-			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved packages — import from `kody:@scope/package-name/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app`',
-			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
-	}
-
-	if (input.warnings.length > 0) {
-		lines.push('', '## Warnings', '')
-		for (const warning of input.warnings) {
-			lines.push(`- ${warning}`)
-		}
-	}
-
-	if (input.memories && input.memories.surfaced.length > 0) {
-		lines.push('', '## Relevant memories', '')
-		for (const memory of input.memories.surfaced) {
-			const categorySuffix = memory.category ? ` (${memory.category})` : ''
-			lines.push(`- **${memory.subject}**${categorySuffix}: ${memory.summary}`)
-		}
-		if (input.memories.suppressedCount > 0) {
-			lines.push(
-				`- ${String(input.memories.suppressedCount)} additional memory item(s) were suppressed for this conversation.`,
-			)
-		}
-	}
-	if (input.memories?.retrieverResults?.length) {
-		lines.push('', '## Relevant retriever results', '')
-		for (const result of input.memories.retrieverResults) {
-			lines.push(
-				`- **${escapeMarkdownText(result.title)}** — ${escapeMarkdownText(result.summary)} (${formatMarkdownInlineCode(`${result.kodyId}/${result.retrieverKey}`)})`,
-			)
-		}
-	}
-
-	if (input.guidance?.trim()) {
-		lines.push('', '## Recommended next step', '', input.guidance.trim())
-	}
-
-	for (const match of input.matches) {
-		lines.push('', ...formatMatchBlock(match, input.baseUrl))
 	}
 
 	if (input.matches.length === 0) {
 		lines.push(
-			'',
 			'> **No matches.** Rephrase `query` or call `meta_list_capabilities` for the full capability registry. `entity` looks up a known id — it does not improve an empty ranked list.',
 		)
+	} else {
+		input.matches.forEach((match, index) => {
+			lines.push(formatMatchListItem(match, index))
+		})
 	}
 
-	if (
-		input.matches.length > 0 &&
-		input.matches.every((match) => match.type !== 'secret')
-	) {
+	const warningCount = input.warningCount ?? input.warnings?.length ?? 0
+	if (warningCount > 0) {
 		lines.push(
 			'',
-			'> **Note:** This page does not include any matching user secret references. If you need credential metadata, use `codemode.secret_list` inside `execute` or save secrets via generated UI.',
+			`> ${String(warningCount)} search notice(s) available in the structured result.`,
 		)
 	}
 
 	return lines.join('\n').trim()
 }
 
-function formatMatchBlock(match: SearchMatch, baseUrl: string) {
+function formatMatchListItem(match: SearchMatch, index: number) {
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')
-		return [
-			`## Capability — \`${match.name}\``,
-			'',
-			'description' in match ? match.description : '',
-			'',
-			`**Entity:** \`${entityRef}\``,
-			`**Run:** \`${buildCapabilityUsage(match.name)}\``,
-		]
+		return `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.name)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
 	if (match.type === 'package') {
-		const hostedUrl = match.hasApp
-			? buildPackageHostedUrl(baseUrl, match.kodyId)
-			: null
 		const entityRef = buildEntityRef(match.kodyId, 'package')
-		const rootImportUsage = buildPackageRootImportUsage(match.name)
-		const openGeneratedUiUsage = match.hasApp
-			? buildPackageAppUsage(match.kodyId)
-			: null
-		return [
-			`## Package — ${match.title} (\`${match.kodyId}\`)`,
-			'',
-			match.description,
-			'',
-			`**Entity:** \`${entityRef}\``,
-			`**Package ID:** \`${match.packageId}\``,
-			...(openGeneratedUiUsage
-				? [`**Open app:** \`${openGeneratedUiUsage}\``]
-				: []),
-			`**Import:** \`${rootImportUsage}\``,
-			`**Tags:** ${match.tags.length > 0 ? match.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
-			`**Has app:** ${match.hasApp ? 'yes' : 'no'}`,
-			...(hostedUrl ? [`**Hosted URL:** \`${hostedUrl}\``] : []),
-			...(match.readmeSnippet
-				? [
-						`**README (${match.readmeSnippet.path}):** ${escapeMarkdownText(match.readmeSnippet.snippet)}${match.readmeSnippet.truncated ? ' _(truncated)_' : ''}`,
-					]
-				: []),
-		]
+		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
 	if (match.type === 'value') {
 		const entityRef = buildEntityRef(match.valueId, 'value')
-		return [
-			`## Value — \`${match.name}\` (\`${match.scope}\` scope)`,
-			'',
-			match.description,
-			'',
-			`**Entity:** \`${entityRef}\``,
-			`**Read:** \`${buildValueUsage(match.name, match.scope)}\``,
-		]
+		return `${String(index + 1)}. **value** ${formatMarkdownInlineCode(match.name)} (${formatMarkdownInlineCode(match.scope)} scope) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
 	if (match.type === 'connector') {
 		const entityRef = buildEntityRef(match.connectorName, 'connector')
-		return [
-			`## Connector — \`${match.connectorName}\``,
-			'',
-			match.description,
-			'',
-			`**Entity:** \`${entityRef}\``,
-			`**Read:** \`${buildConnectorUsage(match.connectorName)}\``,
-			`**Flow:** \`${match.flow}\``,
-			`**Token URL:** \`${match.tokenUrl}\``,
-			`**API base URL:** ${match.apiBaseUrl ? `\`${match.apiBaseUrl}\`` : 'none'}`,
-			`**Required hosts:** ${formatList(match.requiredHosts)}`,
-			`**Client ID value:** \`${match.clientIdValueName}\``,
-			`**Client secret secret:** ${match.clientSecretSecretName ? `\`${match.clientSecretSecretName}\`` : 'none'}`,
-			`**Access token secret:** \`${match.accessTokenSecretName}\``,
-			`**Refresh token secret:** ${match.refreshTokenSecretName ? `\`${match.refreshTokenSecretName}\`` : 'none'}`,
-		]
+		return `${String(index + 1)}. **connector** ${formatMarkdownInlineCode(match.connectorName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
 	if (match.type === 'retriever_result') {
 		const source = match.source ?? `${match.kodyId}/${match.retrieverKey}`
-		return [
-			`## Retrieved context — ${escapeMarkdownText(match.title)}`,
-			'',
-			escapeMarkdownText(match.summary),
-			...(match.details ? ['', escapeMarkdownText(match.details)] : []),
-			'',
-			`**Source:** ${formatMarkdownInlineCode(source)}`,
-			`**Package:** ${formatMarkdownInlineCode(match.kodyId)}`,
-			`**Retriever:** ${formatMarkdownInlineCode(match.retrieverName)}`,
-			...(match.url ? [`**URL:** ${formatMarkdownInlineCode(match.url)}`] : []),
-		]
+		return `${String(index + 1)}. **retriever result** ${escapeMarkdownText(match.title)} — ${escapeMarkdownText(formatOneLineSentence(match.summary))} Source: ${formatMarkdownInlineCode(source)}`
 	}
-	return [
-		`## Secret — \`${match.name}\``,
-		'',
-		match.description,
-		'',
-		`**Entity:** \`${buildEntityRef(match.name, 'secret')}\``,
-		`**Usage:** \`${buildSecretUsage(match.name)}\``,
-	]
+	const entityRef = buildEntityRef(match.name, 'secret')
+	return `${String(index + 1)}. **secret** ${formatMarkdownInlineCode(match.name)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 }
 
 export function toSlimStructuredMatches(input: {

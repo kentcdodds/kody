@@ -93,8 +93,13 @@ async function getSearchHandler() {
 		query?: string
 		entity?: string
 		limit?: number
+		maxResponseSize?: number
 		conversationId?: string
 	}) => Promise<{
+		content: Array<{
+			type: 'text'
+			text: string
+		}>
 		structuredContent: {
 			conversationId: string
 			timing: {
@@ -126,9 +131,9 @@ test('search tool reports timing metadata across success and error flows', async
 			endedAt: expect.any(String),
 		},
 	})
-	expect(successResponse.structuredContent.timing.durationMs).toBeGreaterThanOrEqual(
-		0,
-	)
+	expect(
+		successResponse.structuredContent.timing.durationMs,
+	).toBeGreaterThanOrEqual(0)
 
 	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
 	const validationErrorResponse = await handler({
@@ -169,4 +174,65 @@ test('search tool reports timing metadata across success and error flows', async
 	expect(
 		handledErrorResponse.structuredContent.timing.durationMs,
 	).toBeGreaterThanOrEqual(0)
+})
+
+test('search tool returns compact query markdown while preserving structured auxiliary detail', async () => {
+	vi.clearAllMocks()
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce({
+		memories: [
+			{
+				id: 'memory-1',
+				category: 'preference',
+				status: 'active',
+				subject: 'Verbose memory subject',
+				summary:
+					'This memory summary is intentionally long and should not be rendered into broad search markdown.',
+				details: 'Long memory details should stay out of the text response.',
+				tags: ['search'],
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+		],
+		suppressedCount: 0,
+		retrievalQuery: 'search docs',
+		retrieverResults: [],
+		retrieverWarnings: [
+			'First memory retriever warning should remain structured.',
+			'Second memory retriever warning should remain structured.',
+		],
+	})
+	const handler = await getSearchHandler()
+
+	const response = await handler({
+		query: 'search docs',
+		conversationId: 'conv-compact-search',
+	})
+	const text = response.content.map((item) => item.text).join('\n')
+
+	expect(response.isError).toBeUndefined()
+	expect(text).toContain('# Search results')
+	expect(text).toContain('1. **capability** `search_docs`')
+	expect(text).toContain('Entity: `search_docs:capability`')
+	expect(text).not.toContain('## Relevant memories')
+	expect(text).not.toContain('Verbose memory subject')
+	expect(text).not.toContain('## Recommended next step')
+	expect(text).not.toContain('## Warnings')
+	expect(text).toContain(
+		'2 search notice(s) available in the structured result.',
+	)
+
+	const result = response.structuredContent.result as {
+		warnings: Array<string>
+		guidance?: string
+		memories?: { surfaced: Array<{ id: string }> }
+	}
+	expect(result.warnings).toContain(
+		'First memory retriever warning should remain structured.',
+	)
+	expect(result.warnings).toContain(
+		'Second memory retriever warning should remain structured.',
+	)
+	expect(result.guidance).toContain('search_docs:capability')
+	expect(result.memories?.surfaced).toEqual([
+		expect.objectContaining({ id: 'memory-1' }),
+	])
 })
