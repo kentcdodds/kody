@@ -1184,7 +1184,7 @@ type SearchRowsAndRegistry = OptionalSearchRowsResult & {
 }
 
 function shouldIncludeRemoteConnectorStatus(status: HomeConnectorStatus) {
-	return status.state !== 'connected' || status.toolCount === 0
+	return !status.trusted || status.state !== 'connected' || status.toolCount === 0
 }
 
 function serializeRemoteConnectorStatus(status: HomeConnectorStatus): {
@@ -1193,6 +1193,7 @@ function serializeRemoteConnectorStatus(status: HomeConnectorStatus): {
 	state: string
 	connected: boolean
 	toolCount: number
+	trusted: boolean
 } {
 	return {
 		connectorKind: status.connectorKind,
@@ -1200,6 +1201,7 @@ function serializeRemoteConnectorStatus(status: HomeConnectorStatus): {
 		state: status.state,
 		connected: status.connected,
 		toolCount: status.toolCount,
+		trusted: status.trusted,
 	}
 }
 
@@ -1725,6 +1727,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						state: string
 						connected: boolean
 						toolCount: number
+						trusted: boolean
 					}
 					remoteConnectorStatuses?: Array<{
 						connectorKind: string
@@ -1732,6 +1735,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						state: string
 						connected: boolean
 						toolCount: number
+						trusted: boolean
 					}>
 				} = {
 					matches: outcome.result.matches,

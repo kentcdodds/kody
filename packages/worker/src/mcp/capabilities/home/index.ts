@@ -1,4 +1,7 @@
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import {
+	isRemoteConnectorTrusted,
+	type RemoteConnectorRef,
+} from '@kody-internal/shared/remote-connectors.ts'
 import { defineCapability } from '#mcp/capabilities/define-capability.ts'
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
@@ -159,6 +162,8 @@ export async function synthesizeRemoteToolDomain(
 	ref: RemoteConnectorRef,
 	allRefs: ReadonlyArray<RemoteConnectorRef>,
 ): Promise<SynthesizedRemoteConnectorDomain | null> {
+	if (!isRemoteConnectorTrusted(ref)) return null
+
 	const client = createRemoteConnectorMcpClient(env, ref.kind, ref.instanceId)
 	const snapshot = await client.getSnapshot()
 	if (!snapshot || snapshot.tools.length === 0) return null

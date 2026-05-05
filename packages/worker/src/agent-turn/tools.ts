@@ -166,6 +166,7 @@ export async function createAgentTurnToolSet(input: {
 						state: status.state,
 						connected: status.connected,
 						toolCount: status.toolCount,
+						trusted: status.trusted,
 					})),
 					matches: toSlimStructuredMatches({
 						matches: result.matches,

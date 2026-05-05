@@ -88,6 +88,7 @@ export type SearchResultStructuredContent = {
 		state: string
 		connected: boolean
 		toolCount: number
+		trusted: boolean
 	}>
 }
 
