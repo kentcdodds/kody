@@ -195,7 +195,9 @@ test('final inline-source cleanup keeps D1 projections without legacy source sto
 	expect(listColumns(db, 'jobs')).not.toContain('code')
 
 	expect(() =>
-		db.prepare('SELECT COUNT(*) AS count FROM legacy_inline_sources_archive').get(),
+		db
+			.prepare('SELECT COUNT(*) AS count FROM legacy_inline_sources_archive')
+			.get(),
 	).toThrow(/no such table: legacy_inline_sources_archive/)
 
 	expect(

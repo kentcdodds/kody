@@ -91,8 +91,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 
 ## Repo-backed source and Artifacts
 
-Repo-backed saved packages, apps, skills, and jobs use Cloudflare Artifacts repos
-plus D1 `entity_sources` / `repo_sessions` rows.
+Repo-backed saved packages, apps, skills, and jobs use Cloudflare Artifacts
+repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 - Primary code lives under `packages/worker/src/repo/`.
 - `entity_sources` stores the durable mapping from
