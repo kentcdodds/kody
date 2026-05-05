@@ -344,6 +344,7 @@ function collectPackageCallableTypecheckTargets(
 		const normalizedPath = normalizePackageWorkspacePath(path)
 		const existing = targets.get(normalizedPath)
 		if (existing) {
+			// Preserve the widest runtime global surface when one file is reused.
 			existing.includeStorage = existing.includeStorage || includeStorage
 			return
 		}
@@ -427,7 +428,7 @@ async function validatePackageBundles(input: {
 					sourceFiles: input.sourceFiles,
 					entryPoint: target.path,
 				})
-			} else {
+			} else if (target.bundleKind === 'importable') {
 				await buildKodyImportableModuleBundle({
 					env: input.env,
 					baseUrl: input.baseUrl,
@@ -435,6 +436,9 @@ async function validatePackageBundles(input: {
 					sourceFiles: input.sourceFiles,
 					entryPoint: target.path,
 				})
+			} else {
+				const exhaustive: never = target.bundleKind
+				throw new Error(`Unsupported package bundle target kind: ${exhaustive}`)
 			}
 		} catch (error) {
 			failures.push(
@@ -588,7 +592,7 @@ function formatBundleCheckMessage(input: {
 			.join(', ')}.`
 	}
 	if (input.targetCount === 0) {
-		return 'Package defines no app entry, exports, jobs, or services to bundle.'
+		return 'Package defines no app entry, exports, jobs, services, subscriptions, workflows, or retrievers to bundle.'
 	}
 	return `Resolved ${input.targetCount} package target(s) for bundling.`
 }
