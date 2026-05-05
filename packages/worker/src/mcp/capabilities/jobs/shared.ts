@@ -53,7 +53,7 @@ export const scheduledJobInputBaseSchema = {
 		.string()
 		.min(1)
 		.describe(
-			'ES module source for the job entrypoint. It must default export the function Kody should run later.',
+			'ES module source for the job entrypoint. It must default export the function Kody should run later; legacy async-arrow snippets are not supported.',
 		),
 	params: z
 		.record(z.string(), z.unknown())
@@ -245,7 +245,7 @@ export const jobUpdateInputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Optional replacement ES module source. It must still default export the job entrypoint.',
+				'Optional replacement ES module source. It must still default export the job entrypoint; legacy async-arrow snippets are not supported.',
 			),
 		params: z
 			.record(z.string(), z.unknown())

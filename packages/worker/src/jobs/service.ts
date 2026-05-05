@@ -40,6 +40,7 @@ import {
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
+import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import {
 	getManifestEntrypointPath,
 	parseRepoManifest,
@@ -102,7 +103,7 @@ function normalizeJobCode(code: string) {
 	if (!trimmed) {
 		throw new Error('Jobs require non-empty code.')
 	}
-	if (!/\bexport\s+default\b/.test(trimmed)) {
+	if (!hasTopLevelDefaultExport(trimmed)) {
 		throw new Error(repoBackedModuleEntrypointExportErrorMessage)
 	}
 	return trimmed

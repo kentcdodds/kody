@@ -72,8 +72,9 @@ module-oriented runtime model:
 - **`codemode.job_schedule_once(...)`** provides a convenience alias for one-off
   schedules
 - **`codemode.job_update(...)`** updates an existing scheduled job by id for
-  safe mutable fields such as name, code, params, schedule, timezone,
-  enabled/disabled state, or kill switch state
+  safe mutable fields such as name, ES module code with a default-exported
+  function, params, schedule, timezone, enabled/disabled state, or kill switch
+  state
 - **`codemode.job_delete(...)`** removes an existing scheduled job by id for the
   signed-in user
 - **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and

@@ -35,7 +35,7 @@ Paths must:
 Adapt this into a package export or use it directly in `execute`.
 
 ```javascript
-;async () => {
+export default async () => {
 	const ORIGIN = 'https://developers.cloudflare.com'
 	const MARKDOWN_ACCEPT = 'text/markdown, text/plain;q=0.9, text/html;q=0.8'
 	const PREFIXES = [

@@ -1,5 +1,4 @@
 import { type RepoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
-import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 import { type RepoSessionTreeResult } from './types.ts'
 
@@ -9,29 +8,10 @@ export const repoCodemodeModuleTypecheckHarnessPath =
 export const repoBackedModuleEntrypointExportErrorMessage =
 	'Repo-backed job and skill entrypoints must default export a function so Kody can invoke them with execute semantics.'
 
-const syntheticRepoEntrypointPath = '.__kody_repo_user_entry__.ts'
-const repoCodemodeBundleCacheLimit = 50
 const repoCodemodeSourceReadConcurrency = 8
 const repoCodemodeSourceMaxFiles = 250
 const repoCodemodeSourceMaxBytes = 2 * 1024 * 1024
 const repoCodemodeImportExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
-const repoCodemodeBundleCache = new Map<
-	string,
-	Promise<{
-		mainModule: string
-		modules: WorkerLoaderModules
-	}>
->()
-
-function enforceRepoCodemodeBundleCacheLimit() {
-	while (repoCodemodeBundleCache.size > repoCodemodeBundleCacheLimit) {
-		const oldestKey = repoCodemodeBundleCache.keys().next().value
-		if (oldestKey === undefined) {
-			break
-		}
-		repoCodemodeBundleCache.delete(oldestKey)
-	}
-}
 
 function stripTrailingSlashes(value: string) {
 	return value.replace(/\/+$/, '')
@@ -69,11 +49,6 @@ function collectTreeFilePaths(node: RepoSessionTreeResult): Array<string> {
 
 export function getRepoSourceRelativePath(path: string, sourceRoot: string) {
 	return toRelativeSourcePath(path, sourceRoot)
-}
-
-function buildSyntheticEntrypointSource(input: { entryPoint: string }) {
-	return `export { default } from ${createRelativeImportSpecifier(input.entryPoint)};
-`
 }
 
 export async function loadRepoSourceFilesFromSession(input: {
@@ -140,99 +115,6 @@ export async function loadRepoSourceFilesFromSession(input: {
 		throw new Error(limitError)
 	}
 	return Object.fromEntries(files)
-}
-
-export async function buildRepoCodemodeBundle(input: {
-	sourceFiles: Record<string, string>
-	entryPoint: string
-	entryPointSource: string
-	sourceRoot?: string | null
-	cacheKey?: string | null
-}): Promise<{
-	mainModule: string
-	modules: WorkerLoaderModules
-}> {
-	const buildBundle = async () => {
-		const { createWorker } = await import('@cloudflare/worker-bundler')
-		const bundle = await createWorker({
-			files: {
-				...input.sourceFiles,
-				[syntheticRepoEntrypointPath]: buildSyntheticEntrypointSource({
-					entryPoint: toRelativeSourcePath(
-						input.entryPoint,
-						input.sourceRoot ?? '/',
-					),
-				}),
-			},
-			entryPoint: syntheticRepoEntrypointPath,
-		})
-		return {
-			mainModule: bundle.mainModule,
-			modules: bundle.modules,
-		}
-	}
-	const cacheKey = input.cacheKey?.trim() || null
-	if (!cacheKey) {
-		return buildBundle()
-	}
-	const cached = repoCodemodeBundleCache.get(cacheKey)
-	if (cached) {
-		return cached
-	}
-	const pending = buildBundle().catch((error) => {
-		repoCodemodeBundleCache.delete(cacheKey)
-		throw error
-	})
-	repoCodemodeBundleCache.set(cacheKey, pending)
-	enforceRepoCodemodeBundleCacheLimit()
-	return pending
-}
-
-export function createRepoCodemodeWrapper(input: {
-	mainModule: string
-	includeStorage?: boolean
-}) {
-	const storagePrelude =
-		input.includeStorage === true
-			? 'globalThis.storage = storage;'
-			: 'delete globalThis.storage;'
-	return `async (params) => {
-  const __previousGlobals = {
-    codemode: globalThis.codemode,
-    refreshAccessToken: globalThis.refreshAccessToken,
-    createAuthenticatedFetch: globalThis.createAuthenticatedFetch,
-    agentChatTurnStream: globalThis.agentChatTurnStream,
-    params: globalThis.params,
-    storage: globalThis.storage,
-  };
-  try {
-    globalThis.codemode = codemode;
-    globalThis.refreshAccessToken = refreshAccessToken;
-    globalThis.createAuthenticatedFetch = createAuthenticatedFetch;
-    globalThis.agentChatTurnStream = agentChatTurnStream;
-    globalThis.params = params;
-    ${storagePrelude}
-    const __repoModule = await import(${JSON.stringify(`./${input.mainModule}`)});
-    const __repoEntrypoint = __repoModule?.default;
-    if (typeof __repoEntrypoint !== 'function') {
-      throw new Error(${JSON.stringify(repoBackedModuleEntrypointExportErrorMessage)});
-    }
-    return await __repoEntrypoint(params);
-  } finally {
-    if (__previousGlobals.codemode === undefined) delete globalThis.codemode;
-    else globalThis.codemode = __previousGlobals.codemode;
-    if (__previousGlobals.refreshAccessToken === undefined) delete globalThis.refreshAccessToken;
-    else globalThis.refreshAccessToken = __previousGlobals.refreshAccessToken;
-    if (__previousGlobals.createAuthenticatedFetch === undefined) delete globalThis.createAuthenticatedFetch;
-    else globalThis.createAuthenticatedFetch = __previousGlobals.createAuthenticatedFetch;
-    if (__previousGlobals.agentChatTurnStream === undefined) delete globalThis.agentChatTurnStream;
-    else globalThis.agentChatTurnStream = __previousGlobals.agentChatTurnStream;
-    if (__previousGlobals.params === undefined) delete globalThis.params;
-    else globalThis.params = __previousGlobals.params;
-    if (__previousGlobals.storage === undefined) delete globalThis.storage;
-    else globalThis.storage = __previousGlobals.storage;
-  }
-}`
 }
 
 export function createRepoCodemodeModuleTypecheckHarness(input: {
