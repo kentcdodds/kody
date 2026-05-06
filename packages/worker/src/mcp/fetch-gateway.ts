@@ -40,20 +40,18 @@ export class CodemodeFetchGateway extends WorkerEntrypoint<
 
 export async function expandSecretPlaceholders(input: {
 	request: Request
-	props: FetchGatewayProps
+	props: Partial<FetchGatewayProps> | null | undefined
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 }) {
 	const headers = new Headers(input.request.headers)
 	const requestBody = await readRequestBody(input.request)
+	const props = input.props ?? {}
 	const resolvedSecrets: Array<{
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
 	}> = []
 	const replacements = new Map<string, string>()
-	const baseUrl = input.props.baseUrl.trim()
-	if (!baseUrl) {
-		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
-	}
+	const baseUrl = normalizeFetchGatewayBaseUrl(props.baseUrl)
 	const referencedSecrets = dedupeReferencedSecrets([
 		...collectReferencedSecrets([
 			input.request.url,
@@ -63,15 +61,20 @@ export async function expandSecretPlaceholders(input: {
 	])
 	const hasReferencedSecrets = referencedSecrets.length > 0
 	if (hasReferencedSecrets) {
-		ensureFetchAllowed(input.props)
+		ensureFetchAllowed(props)
+		if (!baseUrl) {
+			throw new Error(
+				'Fetch gateway requires a non-empty baseUrl in props when expanding secret placeholders.',
+			)
+		}
 	}
 	for (const referenced of referencedSecrets) {
 		const resolved = await resolveSecret({
 			env: input.env,
-			userId: input.props.userId!,
+			userId: props.userId!,
 			name: referenced.name,
 			scope: referenced.scope,
-			storageContext: input.props.storageContext,
+			storageContext: props.storageContext ?? null,
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(createMissingSecretMessage(referenced.name))
@@ -96,7 +99,8 @@ export async function expandSecretPlaceholders(input: {
 		}
 		const normalizedHost = normalizeHost(requestedHost)
 		const missingApprovals = await collectHostApprovalEntries({
-			props: input.props,
+			baseUrl,
+			props,
 			requestedHost,
 			normalizedHost,
 			resolvedSecrets,
@@ -144,7 +148,10 @@ export async function expandSecretPlaceholders(input: {
  * Codemode / sandboxed fetch may emit path-only URLs (e.g. `/`, `/core/log`).
  * Workers `Request` requires an absolute URL string; resolve against the app origin.
  */
-function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
+function resolveRequestUrlForFetchGateway(
+	url: string,
+	baseUrl: string | null,
+) {
 	const trimmed = url.trim()
 	if (!trimmed) {
 		throw new Error('Fetch gateway received an empty request URL.')
@@ -152,6 +159,11 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 	try {
 		return new URL(trimmed).toString()
 	} catch {
+		if (!baseUrl) {
+			throw new Error(
+				`Fetch gateway could not resolve request URL "${trimmed}" without a baseUrl.`,
+			)
+		}
 		try {
 			return new URL(trimmed, baseUrl).toString()
 		} catch {
@@ -162,8 +174,14 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 	}
 }
 
+function normalizeFetchGatewayBaseUrl(baseUrl: string | null | undefined) {
+	const trimmed = baseUrl?.trim() ?? ''
+	return trimmed || null
+}
+
 async function collectHostApprovalEntries(input: {
-	props: FetchGatewayProps
+	baseUrl: string
+	props: Partial<FetchGatewayProps>
 	requestedHost: string
 	normalizedHost: string
 	resolvedSecrets: Array<{
@@ -178,11 +196,11 @@ async function collectHostApprovalEntries(input: {
 				resolved.allowedHosts.includes(input.normalizedHost)
 			if (allowedForHost) return null
 			const approvalUrl = buildSecretHostApprovalUrl({
-				baseUrl: input.props.baseUrl,
+				baseUrl: input.baseUrl,
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
 				requestedHost: input.requestedHost,
-				storageContext: input.props.storageContext,
+				storageContext: input.props.storageContext ?? null,
 			})
 			return {
 				secretName: referenced.name,
@@ -204,7 +222,7 @@ function readRequestedHost(url: string) {
 	}
 }
 
-function ensureFetchAllowed(props: FetchGatewayProps) {
+function ensureFetchAllowed(props: Partial<FetchGatewayProps>) {
 	if (!props.userId) {
 		throw new Error(fetchSecretAuthRequiredMessage)
 	}
