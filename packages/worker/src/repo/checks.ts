@@ -8,8 +8,6 @@ import {
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
-import { createFileSystemSnapshot } from '@cloudflare/worker-bundler'
-import { createTypescriptLanguageService } from '@cloudflare/worker-bundler/typescript'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import {
 	buildKodyAppBundle,
@@ -48,6 +46,23 @@ const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
 const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
 const repoChecksSyntheticTsconfigExtendsPath =
 	'./.__kody_repo_tsconfig_base__.json'
+
+async function loadWorkerBundlerSnapshotTools() {
+	// Keep the experimental bundler out of the Worker's top-level deploy graph.
+	const { createFileSystemSnapshot } =
+		await import('@cloudflare/worker-bundler')
+	return {
+		createFileSystemSnapshot,
+	}
+}
+
+async function loadWorkerBundlerTypescriptTools() {
+	const { createTypescriptLanguageService } =
+		await import('@cloudflare/worker-bundler/typescript')
+	return {
+		createTypescriptLanguageService,
+	}
+}
 
 type RepoChecksFileSystem = {
 	read(path: string): string | null
@@ -533,6 +548,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 	ok: boolean
 	message: string
 }> {
+	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
 			for (const [path, content] of Object.entries(input.sourceFiles)) {
@@ -575,6 +591,8 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
+	const { createTypescriptLanguageService } =
+		await loadWorkerBundlerTypescriptTools()
 	const { fileSystem, languageService } = await createTypescriptLanguageService(
 		{
 			fileSystem: typecheckFileSystem,
@@ -653,6 +671,7 @@ export async function runRepoChecks(input: {
 		}
 		return collected
 	})()
+	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
 			for (const [path, content] of snapshotFiles) {
@@ -806,6 +825,8 @@ export async function runRepoChecks(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
+	const { createTypescriptLanguageService } =
+		await loadWorkerBundlerTypescriptTools()
 	const { fileSystem, languageService } = await createTypescriptLanguageService(
 		{
 			fileSystem: typecheckFileSystem,
