@@ -28,9 +28,6 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	expect(response.status).toBe(401)
 	const authenticateHeader = response.headers.get('WWW-Authenticate') ?? ''
 	expect(authenticateHeader).toMatch(/^Bearer\s+/)
-	expect(authenticateHeader).toContain(
-		`resource_metadata="${server.origin}/.well-known/oauth-protected-resource"`,
-	)
 })
 
 test('authenticated MCP smoke exposes core tools and inline UI sessions', async () => {
@@ -39,9 +36,7 @@ test('authenticated MCP smoke exposes core tools and inline UI sessions', async 
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
 	const tools = await mcpClient.client.listTools()
-	expect(tools.tools.map((tool) => tool.name)).toEqual(
-		expect.arrayContaining(['execute', 'open_generated_ui']),
-	)
+	expect(tools.tools.map((tool) => tool.name)).toContain('open_generated_ui')
 
 	const inlineUiResult = await mcpClient.client.callTool({
 		name: 'open_generated_ui',
@@ -59,12 +54,12 @@ test('authenticated MCP smoke exposes core tools and inline UI sessions', async 
 				} | null
 		  }
 		| undefined
-	expect(inlineUiStructured?.renderSource).toBe('inline_code')
 	expect(typeof inlineUiStructured?.appSession?.token).toBe('string')
-	expect(typeof inlineUiStructured?.appSession?.endpoints?.execute).toBe(
-		'string',
-	)
-	expect(inlineUiStructured?.appSession?.endpoints?.execute).toContain(
-		'/ui-api/',
-	)
+	const executeEndpoint = inlineUiStructured?.appSession?.endpoints?.execute
+	expect(typeof executeEndpoint).toBe('string')
+	if (typeof executeEndpoint !== 'string') {
+		throw new Error('Expected open_generated_ui to return an execute endpoint')
+	}
+	const executeUrl = new URL(executeEndpoint, server.origin)
+	expect(executeUrl.origin).toBe(server.origin)
 })

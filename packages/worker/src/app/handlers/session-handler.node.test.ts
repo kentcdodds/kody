@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { RequestContext } from 'remix/fetch-router'
 import {
 	createAuthCookie,
@@ -34,46 +34,40 @@ async function withMockedNow<T>(now: number, callback: () => Promise<T>) {
 	}
 }
 
-beforeAll(() => {
+test('session handler only renews remembered sessions after the renewal window', async () => {
 	setAuthSessionSecret(testCookieSecret)
-})
-
-test('session handler renews remembered sessions after two weeks', async () => {
 	const now = Date.UTC(2026, 1, 1)
-	const cookie = await createAuthCookie(
-		rememberedSession,
-		false,
-		now - 1000 * 60 * 60 * 24 * 15,
-	)
+	const scenarios = [
+		{
+			ageDays: 15,
+			expectSetCookie: true,
+		},
+		{
+			ageDays: 13,
+			expectSetCookie: false,
+		},
+	] as const
 
-	const response = await withMockedNow(now, () =>
-		session.handler(createSessionRequestContext(cookie)),
-	)
+	for (const scenario of scenarios) {
+		const cookie = await createAuthCookie(
+			rememberedSession,
+			false,
+			now - 1000 * 60 * 60 * 24 * scenario.ageDays,
+		)
 
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Set-Cookie')).toContain('Max-Age=2592000')
-	await expect(response.json()).resolves.toEqual({
-		ok: true,
-		session: { email: rememberedSession.email },
-	})
-})
+		const response = await withMockedNow(now, () =>
+			session.handler(createSessionRequestContext(cookie)),
+		)
 
-test('session handler keeps remembered sessions unchanged before renewal window', async () => {
-	const now = Date.UTC(2026, 1, 1)
-	const cookie = await createAuthCookie(
-		rememberedSession,
-		false,
-		now - 1000 * 60 * 60 * 24 * 13,
-	)
-
-	const response = await withMockedNow(now, () =>
-		session.handler(createSessionRequestContext(cookie)),
-	)
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Set-Cookie')).toBeNull()
-	await expect(response.json()).resolves.toEqual({
-		ok: true,
-		session: { email: rememberedSession.email },
-	})
+		expect(response.status).toBe(200)
+		expect(await response.json()).toEqual({
+			ok: true,
+			session: { email: rememberedSession.email },
+		})
+		if (scenario.expectSetCookie) {
+			expect(response.headers.get('Set-Cookie')).toContain('Max-Age=2592000')
+		} else {
+			expect(response.headers.get('Set-Cookie')).toBeNull()
+		}
+	}
 })

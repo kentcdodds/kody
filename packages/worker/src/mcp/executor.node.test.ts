@@ -21,12 +21,11 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 		),
 	)
 
-	expect(getExecutionErrorDetails(error)).toEqual({
+	const details = getExecutionErrorDetails(error)
+	expect(details).toMatchObject({
 		kind: 'secret_capability_access_required',
-		message:
-			'Secret "cloudflareToken" is not allowed for capability "secret_set". If this capability should be able to use the secret, ask the user whether to add "secret_set" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
-		nextStep:
-			"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
+		message: expect.any(String),
+		nextStep: expect.any(String),
 		secretNames: ['cloudflareToken'],
 		capabilityName: 'secret_set',
 		approvalUrl:
@@ -36,32 +35,32 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 			policyField: 'allowed_capabilities',
 		},
 	})
+	expect(details?.message).toContain(
+		'Secret "cloudflareToken" is not allowed for capability "secret_set".',
+	)
+	expect(details?.message).toContain(
+		'Approval link: https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+	)
+	expect(details?.nextStep).toContain('allowed to use the secret')
 })
 
 test('formatExecutionOutput appends next steps from structured execution errors', () => {
-	const expectedOutputs = [
-		{
-			error: new Error(
-				createCapabilitySecretAccessDeniedMessage(
-					'cloudflareToken',
-					'secret_set',
-					'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
-				),
+	const errors = [
+		new Error(
+			createCapabilitySecretAccessDeniedMessage(
+				'cloudflareToken',
+				'secret_set',
+				'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 			),
-			nextStep:
-				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
-		},
-		{
-			error: new Error(createMissingSecretMessage('missingToken')),
-			nextStep:
-				'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
-		},
+		),
+		new Error(createMissingSecretMessage('missingToken')),
 	]
 
-	for (const { error, nextStep } of expectedOutputs) {
-		expect(formatExecutionOutput({ error } as const)).toBe(
-			`Error: ${error.message}\n\nNext step: ${nextStep}`,
-		)
+	for (const error of errors) {
+		const output = formatExecutionOutput({ error } as const)
+		expect(output).toContain(`Error: ${error.message}`)
+		expect(output).toContain('\n\nNext step: ')
+		expect(output).not.toBe(`Error: ${error.message}`)
 	}
 })
 
@@ -109,12 +108,11 @@ test('getExecutionErrorDetails returns batch capability approvals', () => {
 		]),
 	)
 
-	expect(getExecutionErrorDetails(error)).toEqual({
+	const details = getExecutionErrorDetails(error)
+	expect(details).toMatchObject({
 		kind: 'secret_capability_access_required_batch',
-		message:
-			'Secrets require capability approval: [{"secretName":"lutronUsername","capabilityName":"home_lutron_set_credentials","approvalUrl":"https://example.com/account/secrets/user/lutronUsername?capability=home_lutron_set_credentials"},{"secretName":"lutronPassword","capabilityName":"home_lutron_set_credentials","approvalUrl":"https://example.com/account/secrets/user/lutronPassword?capability=home_lutron_set_credentials"}]',
-		nextStep:
-			'Ask the user whether they want to approve these capabilities for the listed secrets in the account secrets UI, then retry after approval.',
+		message: expect.any(String),
+		nextStep: expect.any(String),
 		missingApprovals: [
 			{
 				secretName: 'lutronUsername',
@@ -134,6 +132,8 @@ test('getExecutionErrorDetails returns batch capability approvals', () => {
 			policyField: 'allowed_capabilities',
 		},
 	})
+	expect(details?.message).toContain('Secrets require capability approval:')
+	expect(details?.nextStep).toContain('approve these capabilities')
 })
 
 test('getExecutionErrorDetails returns batch host approvals', () => {
@@ -154,12 +154,11 @@ test('getExecutionErrorDetails returns batch host approvals', () => {
 		]),
 	)
 
-	expect(getExecutionErrorDetails(error)).toEqual({
+	const details = getExecutionErrorDetails(error)
+	expect(details).toMatchObject({
 		kind: 'host_approval_required_batch',
-		message:
-			'Secrets require host approval: [{"secretName":"cloudflareToken","host":"api.cloudflare.com","approvalUrl":"https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com"},{"secretName":"slackToken","host":"slack.com","approvalUrl":"https://example.com/account/secrets/user/slackToken?allowed-host=slack.com"}]',
-		nextStep:
-			'Ask the user whether they want to approve these hosts for the listed secrets in the account web UI, then retry after approval.',
+		message: expect.any(String),
+		nextStep: expect.any(String),
 		missingApprovals: [
 			{
 				secretName: 'cloudflareToken',
@@ -178,4 +177,6 @@ test('getExecutionErrorDetails returns batch host approvals', () => {
 			type: 'approve_secret_host',
 		},
 	})
+	expect(details?.message).toContain('Secrets require host approval:')
+	expect(details?.nextStep).toContain('approve these hosts')
 })

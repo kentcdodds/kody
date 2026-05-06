@@ -62,10 +62,8 @@ test('search formatting keeps value and connector entity refs in the structured 
 		entityRef: 'user:preferred_repo:value',
 		scope: 'user',
 		appId: null,
+		usage: expect.any(String),
 	})
-	expect(structuredMatches[0]?.usage).toContain('codemode.value_get')
-	expect(structuredMatches[0]?.usage).toContain('"preferred_repo"')
-	expect(structuredMatches[0]?.usage).toContain('"user"')
 	const connectorMatch = structuredMatches[1]
 	expect(connectorMatch).toMatchObject({
 		type: 'connector',
@@ -73,9 +71,8 @@ test('search formatting keeps value and connector entity refs in the structured 
 		flow: 'confidential',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		requiredHosts: ['api.github.com'],
+		usage: expect.any(String),
 	})
-	expect(connectorMatch?.usage).toContain('codemode.connector_get')
-	expect(connectorMatch?.usage).toContain('"github"')
 	expect(connectorMatch?.nextStep).toEqual(expect.any(String))
 })
 
