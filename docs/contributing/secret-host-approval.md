@@ -25,9 +25,8 @@ secrets experience, such as `/account/secrets` and the focused approval route at
 
 ## What agents should assume
 
-Agents should assume all newly created secrets start with an empty host
-allowlist unless the user has already approved one or more hosts in the admin
-UI.
+Agents should assume a secret starts with an empty host allowlist unless the
+user has already approved one or more hosts in the admin UI.
 
 Saving or updating a secret value does not authorize sending that secret to any
 host or passing it into any capability.

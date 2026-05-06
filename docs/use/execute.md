@@ -147,7 +147,7 @@ For follow-up email workflows, structure prompts in this order:
    tool-use guidance
 2. **Stable normalized thread context next** - summarize or normalize the
    earlier thread so repeated quoted content stays stable
-3. **Current latest email last** - put the newest inbound email content after
+3. **Newest inbound email last** - put the newest inbound email content after
    the cached prefix so only the changing tail invalidates less cached work
 
 Prefer normalizing long quoted threads before passing them into the agent turn
