@@ -131,6 +131,48 @@ test('fetch gateway expands placeholders in form-urlencoded bodies', async () =>
 	}
 })
 
+test('fetch gateway allows absolute placeholder-free requests without props', async () => {
+	const request = new Request('https://api.example.com/status', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ ok: true }),
+	})
+
+	const transformed = await expandSecretPlaceholders({
+		request,
+		props: undefined,
+		env,
+	})
+
+	expect(transformed.url).toBe('https://api.example.com/status')
+	expect(await transformed.text()).toBe(JSON.stringify({ ok: true }))
+})
+
+test('fetch gateway still requires baseUrl for path-only requests', async () => {
+	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
+	const request = {
+		url: '/',
+		method: 'GET',
+		headers: new Headers(),
+		redirect: 'follow',
+		credentials: 'same-origin',
+		mode: 'cors',
+		cache: 'default',
+		integrity: '',
+		keepalive: false,
+		signal: undefined,
+		text: async () => '',
+	} as unknown as Request
+
+	await expect(
+		expandSecretPlaceholders({ request, props: undefined, env }),
+	).rejects.toThrow(
+		'Fetch gateway could not resolve request URL "/" without a baseUrl.',
+	)
+})
+
 test('fetch gateway resolves path-only URLs against baseUrl', async () => {
 	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
 	const request = {

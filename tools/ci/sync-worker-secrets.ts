@@ -16,6 +16,7 @@ export type CliOptions = {
 	generateCookieSecret: boolean
 	includeEmpty: boolean
 	emptyAsSpace: boolean
+	putIndividually: boolean
 }
 
 function fail(message: string): never {
@@ -33,6 +34,7 @@ function parseArgs(argv: Array<string>): CliOptions {
 		generateCookieSecret: false,
 		includeEmpty: false,
 		emptyAsSpace: false,
+		putIndividually: false,
 	}
 
 	for (let index = 0; index < argv.length; index += 1) {
@@ -92,6 +94,10 @@ function parseArgs(argv: Array<string>): CliOptions {
 			}
 			case '--empty-as-space': {
 				options.emptyAsSpace = true
+				break
+			}
+			case '--put-individually': {
+				options.putIndividually = true
 				break
 			}
 			default: {
@@ -234,6 +240,50 @@ function toDotenv(secrets: ReadonlyMap<string, string>) {
 	return `${lines.join('\n')}\n`
 }
 
+export function buildWranglerSecretPutArgs(
+	options: Pick<CliOptions, 'config' | 'env' | 'name'>,
+	key: string,
+) {
+	const wranglerBin = resolveLocalBinary('wrangler')
+	const args = [wranglerBin, 'secret', 'put', key]
+	if (options.env !== undefined) {
+		args.push('--env', options.env)
+	}
+	if (options.name) {
+		args.push('--name', options.name)
+	}
+	if (options.config) {
+		args.push('--config', options.config)
+	}
+	return args
+}
+
+async function runWranglerSecretPut(
+	options: CliOptions,
+	key: string,
+	value: string,
+) {
+	const args = buildWranglerSecretPutArgs(options, key)
+	const spawnEnv = buildSpawnEnv(options)
+	const [command, ...commandArgs] = args
+	if (!command) {
+		fail('Could not resolve wrangler command for secret sync.')
+	}
+
+	const proc = spawn(command, commandArgs, {
+		stdio: ['pipe', 'inherit', 'inherit'],
+		env: spawnEnv,
+	})
+	proc.stdin.end(value)
+	const exitCode = await new Promise<number | null>((resolve, reject) => {
+		proc.once('error', reject)
+		proc.once('exit', (code: number | null) => resolve(code))
+	})
+	if (exitCode !== 0) {
+		process.exit(exitCode ?? 1)
+	}
+}
+
 async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 	const wranglerBin = resolveLocalBinary('wrangler')
 	const args = [wranglerBin, 'secret', 'bulk']
@@ -286,11 +336,17 @@ async function main() {
 		fail('No secrets to sync (empty input).')
 	}
 	const dotenvText = toDotenv(secrets)
-	await runWranglerSecretBulk(options, dotenvText)
+	if (options.putIndividually) {
+		for (const [key, value] of secrets) {
+			await runWranglerSecretPut(options, key, value)
+		}
+	} else {
+		await runWranglerSecretBulk(options, dotenvText)
+	}
 	const envLabel =
 		options.env && options.env.length > 0 ? options.env : 'default'
 	console.log(
-		`Synced ${secrets.size} secret(s) via bulk upload (${envLabel}${options.name ? `, ${options.name}` : ''}).`,
+		`Synced ${secrets.size} secret(s) via ${options.putIndividually ? 'individual uploads' : 'bulk upload'} (${envLabel}${options.name ? `, ${options.name}` : ''}).`,
 	)
 }
 

@@ -40,6 +40,10 @@ Cloudflare's API token UI changes over time, but the shape is stable:
 Recommended baseline permissions for this template (deploy + existing D1/KV):
 
 - `Workers Scripts:Edit` (deploy, update, delete preview Workers)
+- `Workers Tail:Read` and Durable Object binding access if the token UI exposes
+  those separately; deploys that bind Durable Objects fail with Cloudflare
+  error `10023` (`durable object bindings require durable object bind
+  permission`) without Durable Object binding access
 - `Workers KV Storage:Edit` (OAuth/session KV)
 - `D1:Edit` (migrations, database operations)
 

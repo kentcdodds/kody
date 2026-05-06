@@ -112,9 +112,9 @@ from `packages/worker/.env`.
 
 Configure these GitHub Actions secrets and variables for workflows:
 
-- `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
-  account; also reused for remote AI and Cloudflare API workflows that run with
-  account secrets + package workflows)
+- `CLOUDFLARE_API_TOKEN` (Workers deploy + Durable Objects bind + D1 edit
+  access on the correct account; also reused for remote AI and Cloudflare API
+  workflows that run with account secrets + package workflows)
 - `COOKIE_SECRET` (same format as local)
 - `SECRET_STORE_KEY` (same format as local; required for deploys)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
@@ -144,10 +144,14 @@ How to get/set each value:
 
 - `CLOUDFLARE_API_TOKEN`
   - In Cloudflare Dashboard, create an API Token with permissions to deploy
-    Workers and edit D1 on the target account. This is the same token to reuse
-    for remote AI and Cloudflare API workflows that run with account secrets +
-    skills; when you do, also include the product permissions needed for those
-    APIs.
+    Workers, bind Durable Objects, edit D1, and edit KV on the target account.
+    This is the same token to reuse for remote AI and Cloudflare API workflows
+    that run with account secrets + skills; when you do, also include the
+    product permissions needed for those APIs.
+  - Preview and production Workers both bind Durable Objects. If the token is
+    missing the Durable Objects binding permission, Wrangler fails deploys with
+    Cloudflare error `10023` and text like
+    `durable object bindings require durable object bind permission`.
   - In GitHub: `Settings` → `Secrets and variables` → `Actions` →
     `New repository secret`.
 - `COOKIE_SECRET`
@@ -232,4 +236,5 @@ How to get/set each value:
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
 service named `<app-name>-pr-<number>-mock-<service>`. The same
-`CLOUDFLARE_API_TOKEN` must be able to create/update and delete those Workers.
+`CLOUDFLARE_API_TOKEN` must be able to create/update/delete those Workers and
+bind their Durable Objects.
