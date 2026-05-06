@@ -677,7 +677,9 @@ test('runRepoChecks rejects named-only callable package entrypoints', async () =
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: false,
-				message: expect.stringContaining('Missing default export in: "src/job.ts"'),
+				message: expect.stringContaining(
+					'Missing default export in: "src/job.ts"',
+				),
 			}),
 		]),
 	)
@@ -691,9 +693,8 @@ test('published package entrypoint typecheck rejects legacy async-arrow job entr
 	const snapshot = createSnapshotFromFiles(files)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 
-	const { typecheckPackageEntrypointsFromSourceFiles } = await import(
-		'./checks.ts'
-	)
+	const { typecheckPackageEntrypointsFromSourceFiles } =
+		await import('./checks.ts')
 	const result = await typecheckPackageEntrypointsFromSourceFiles({
 		sourceFiles: Object.fromEntries(files),
 		entryPoints: [{ path: 'src/job.ts', includeStorage: true }],

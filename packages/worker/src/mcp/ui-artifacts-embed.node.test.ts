@@ -33,9 +33,9 @@ test('buildUiArtifactEmbedText summarizes searchable app metadata and truncates 
 		'facet backend',
 	])
 	expect(lines).toContain('package app parameters')
-	expect(lines.some((line) => line.startsWith('clientId string required'))).toBe(
-		true,
-	)
+	expect(
+		lines.some((line) => line.startsWith('clientId string required')),
+	).toBe(true)
 	expect(lines.some((line) => line.includes('region string optional'))).toBe(
 		true,
 	)
