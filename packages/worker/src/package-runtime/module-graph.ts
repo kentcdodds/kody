@@ -2,7 +2,6 @@ import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
 } from '#worker/package-registry/source.ts'
-import { createWorker } from '@cloudflare/worker-bundler'
 import {
 	normalizePackageWorkspacePath,
 	normalizePackageExportKey,
@@ -41,6 +40,15 @@ const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
+
+async function createWorkerBundle(input: {
+	files: Record<string, string>
+	entryPoint: string
+}) {
+	// Keep the experimental bundler out of the Worker's top-level deploy graph.
+	const { createWorker } = await import('@cloudflare/worker-bundler')
+	return await createWorker(input)
+}
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -527,7 +535,7 @@ export async function buildKodyModuleBundle(input: {
 		),
 		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
-	const bundle = await createWorker({
+	const bundle = await createWorkerBundle({
 		files,
 		entryPoint: bootstrapPath,
 	})
@@ -566,7 +574,7 @@ export async function buildKodyImportableModuleBundle(input: {
 			normalizedEntrypoint,
 		),
 	})
-	const bundle = await createWorker({
+	const bundle = await createWorkerBundle({
 		files,
 		entryPoint: bootstrapPath,
 	})
@@ -653,7 +661,7 @@ export async function buildKodyAppBundle(input: {
 				normalizedEntrypoint,
 			),
 		})
-		const bundle = await createWorker({
+		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
 		})
