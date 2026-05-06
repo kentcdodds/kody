@@ -11,6 +11,7 @@
   "dependencies": {
     "@kody-internal/shared": "file:../shared",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@remix-run/node-fetch-server": "^0.13.1",
     "@sentry/node": "^10.45.0",
     "dns-equal": "^1.0.0",
     "dns-txt": "^2.0.2",

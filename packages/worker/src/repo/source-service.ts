@@ -8,7 +8,6 @@ import {
 import {
 	getEntitySourceByEntity,
 	insertEntitySource,
-	updateEntitySource,
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
 
@@ -131,7 +130,7 @@ function missingPersistenceRequirements(input: {
 	return missing
 }
 
-export async function createArtifactsRepoIfMissing(
+async function createArtifactsRepoIfMissing(
 	env: Env,
 	repoId: string,
 	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
@@ -156,21 +155,4 @@ export async function createArtifactsRepoIfMissing(
 		token: created.token,
 		expiresAt: created.expiresAt,
 	}
-}
-
-export async function setEntityPublishedCommit(input: {
-	db: D1Database
-	userId: string
-	sourceId: string
-	publishedCommit: string | null
-	indexedCommit?: string | null
-}) {
-	return updateEntitySource(input.db, {
-		id: input.sourceId,
-		userId: input.userId,
-		publishedCommit: input.publishedCommit,
-		...(input.indexedCommit !== undefined
-			? { indexedCommit: input.indexedCommit }
-			: {}),
-	})
 }
