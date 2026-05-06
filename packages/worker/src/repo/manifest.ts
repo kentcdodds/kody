@@ -31,7 +31,7 @@ export function parseRepoManifest(input: {
 	return result.data
 }
 
-export function buildSearchProjectionFromManifest(
+function buildSearchProjectionFromManifest(
 	manifest: RepoManifest,
 ): SearchProjection {
 	return {
@@ -42,13 +42,13 @@ export function buildSearchProjectionFromManifest(
 	}
 }
 
-export function getManifestSourceRoot(manifest: RepoManifest) {
+function getManifestSourceRoot(manifest: RepoManifest) {
 	const sourceRoot = manifest.sourceRoot?.trim()
 	if (!sourceRoot) return '/'
 	return sourceRoot.startsWith('/') ? sourceRoot : `/${sourceRoot}`
 }
 
-export function getManifestPath(manifest: RepoManifest) {
+function getManifestPath(manifest: RepoManifest) {
 	const manifestPath = manifest.manifestPath?.trim()
 	return manifestPath && manifestPath.length > 0
 		? manifestPath

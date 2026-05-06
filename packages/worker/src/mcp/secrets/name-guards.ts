@@ -1,6 +1,6 @@
-export const skillRunnerSecretNamePrefix = 'skill-runner-token:'
+const skillRunnerSecretNamePrefix = 'skill-runner-token:'
 
-export function parseSkillRunnerSecretClientName(secretName: string) {
+function parseSkillRunnerSecretClientName(secretName: string) {
 	if (!secretName.startsWith(skillRunnerSecretNamePrefix)) return null
 	const clientName = secretName.slice(skillRunnerSecretNamePrefix.length).trim()
 	return clientName || null
