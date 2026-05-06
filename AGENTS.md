@@ -10,8 +10,6 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 
 - Contributor documentation map:
   [docs/contributing/index.md](./docs/contributing/index.md)
-- Talk slide decks (Slidev): [docs/talks/README.md](./docs/talks/README.md)
-  (`npm run dev:talks`)
 - Documentation principles (usage vs contributing, MCP text, gardening):
   [docs/contributing/documentation.md](./docs/contributing/documentation.md)
 - Commit-time formatting, linting, and typechecking are enforced by Husky +
