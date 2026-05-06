@@ -167,7 +167,9 @@ test('fetch gateway still requires baseUrl for path-only requests', async () => 
 
 	await expect(
 		expandSecretPlaceholders({ request, props: undefined, env }),
-	).rejects.toThrow('Fetch gateway requires a non-empty baseUrl in props.')
+	).rejects.toThrow(
+		'Fetch gateway could not resolve request URL "/" without a baseUrl.',
+	)
 })
 
 test('fetch gateway resolves path-only URLs against baseUrl', async () => {
