@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { buildSpawnEnv, buildWranglerSecretPutArgs } from './sync-worker-secrets'
+import {
+	buildSpawnEnv,
+	buildWranglerSecretPutArgs,
+} from './sync-worker-secrets'
 
 const baseOptions = {
 	env: undefined,

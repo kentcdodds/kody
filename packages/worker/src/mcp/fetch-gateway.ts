@@ -87,9 +87,15 @@ export async function expandSecretPlaceholders(input: {
 	}
 	let requestedHost = ''
 	if (hasReferencedSecrets) {
+		const secretApprovalBaseUrl = baseUrl
+		if (!secretApprovalBaseUrl) {
+			throw new Error(
+				'Fetch gateway requires a non-empty baseUrl in props when expanding secret placeholders.',
+			)
+		}
 		const nextUrl = resolveRequestUrlForFetchGateway(
 			replaceSecretPlaceholders(input.request.url, replacements),
-			baseUrl,
+			secretApprovalBaseUrl,
 		)
 		requestedHost = readRequestedHost(nextUrl)
 		if (!requestedHost) {
@@ -99,7 +105,7 @@ export async function expandSecretPlaceholders(input: {
 		}
 		const normalizedHost = normalizeHost(requestedHost)
 		const missingApprovals = await collectHostApprovalEntries({
-			baseUrl,
+			baseUrl: secretApprovalBaseUrl,
 			props,
 			requestedHost,
 			normalizedHost,
@@ -148,10 +154,7 @@ export async function expandSecretPlaceholders(input: {
  * Codemode / sandboxed fetch may emit path-only URLs (e.g. `/`, `/core/log`).
  * Workers `Request` requires an absolute URL string; resolve against the app origin.
  */
-function resolveRequestUrlForFetchGateway(
-	url: string,
-	baseUrl: string | null,
-) {
+function resolveRequestUrlForFetchGateway(url: string, baseUrl: string | null) {
 	const trimmed = url.trim()
 	if (!trimmed) {
 		throw new Error('Fetch gateway received an empty request URL.')

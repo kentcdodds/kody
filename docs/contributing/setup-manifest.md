@@ -112,9 +112,9 @@ from `packages/worker/.env`.
 
 Configure these GitHub Actions secrets and variables for workflows:
 
-- `CLOUDFLARE_API_TOKEN` (Workers deploy + Durable Objects bind + D1 edit
-  access on the correct account; also reused for remote AI and Cloudflare API
-  workflows that run with account secrets + package workflows)
+- `CLOUDFLARE_API_TOKEN` (Workers deploy + Durable Objects bind + D1 edit access
+  on the correct account; also reused for remote AI and Cloudflare API workflows
+  that run with account secrets + package workflows)
 - `COOKIE_SECRET` (same format as local)
 - `SECRET_STORE_KEY` (same format as local; required for deploys)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
