@@ -378,7 +378,9 @@ async function ensureProductionResources(options: CliOptions) {
 
 	// Emit GitHub Actions-friendly outputs (stdout only).
 	console.log(`wrangler_config=${generatedConfigPath}`)
-	console.log(`production_worker_name=${defaultProductionWorkerName(bindings.workerName)}`)
+	console.log(
+		`production_worker_name=${defaultProductionWorkerName(bindings.workerName)}`,
+	)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
 	console.log(`oauth_kv_title=${oauthKv.title}`)

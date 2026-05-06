@@ -113,7 +113,8 @@ jobs:
       - name: 🔐 Sync Cloudflare Secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PRODUCTION_WORKER_NAME: ${{ steps.resources.outputs.production_worker_name }}
+          PRODUCTION_WORKER_NAME:
+            ${{ steps.resources.outputs.production_worker_name }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
           SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
