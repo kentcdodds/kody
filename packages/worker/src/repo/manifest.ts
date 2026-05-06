@@ -1,9 +1,5 @@
 import { z } from 'zod'
-import {
-	repoManifestSchema,
-	type RepoManifest,
-	type SearchProjection,
-} from './types.ts'
+import { repoManifestSchema, type RepoManifest } from './types.ts'
 
 const defaultManifestPath = 'kody.json'
 
@@ -29,30 +25,6 @@ export function parseRepoManifest(input: {
 		)
 	}
 	return result.data
-}
-
-function buildSearchProjectionFromManifest(
-	manifest: RepoManifest,
-): SearchProjection {
-	return {
-		title: manifest.title,
-		description: manifest.description,
-		keywords: [...(manifest.keywords ?? [])],
-		searchText: manifest.searchText?.trim() || null,
-	}
-}
-
-function getManifestSourceRoot(manifest: RepoManifest) {
-	const sourceRoot = manifest.sourceRoot?.trim()
-	if (!sourceRoot) return '/'
-	return sourceRoot.startsWith('/') ? sourceRoot : `/${sourceRoot}`
-}
-
-function getManifestPath(manifest: RepoManifest) {
-	const manifestPath = manifest.manifestPath?.trim()
-	return manifestPath && manifestPath.length > 0
-		? manifestPath
-		: defaultManifestPath
 }
 
 export function normalizeRepoWorkspacePath(path: string) {
