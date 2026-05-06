@@ -11,8 +11,12 @@ Current schema is defined by migrations in `packages/worker/migrations/`:
 - `users`: login identity and password hash
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `chat_threads`: per-user chat thread records and relational metadata
-- `jobs`: unified persisted job definitions, caller context, schedule state, and
-  run observability counters/history
+- `jobs`: persisted job metadata, caller context, schedule state, repo source
+  pointers, and run observability counters/history
+- `entity_sources`: durable mapping from user-facing entities to Artifacts repos
+  and their latest published commit
+- `saved_packages`: package metadata/search projection derived from published
+  `package.json` source
 
 App access pattern:
 
@@ -85,9 +89,9 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `STORAGE_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)
 
-## Repo-backed packages and Artifacts
+## Repo-backed source and Artifacts
 
-Repo-backed saved packages and repo editing sessions use Cloudflare Artifacts
+Repo-backed saved packages, apps, skills, and jobs use Cloudflare Artifacts
 repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 - Primary code lives under `packages/worker/src/repo/`.
@@ -95,6 +99,24 @@ repos plus D1 `entity_sources` / `repo_sessions` rows.
   `(user_id, entity_kind, entity_id)` to the repo identity and last published
   commit.
 - `repo_sessions` stores mutable editing forks for repo session Durable Objects.
+- Published source snapshots and bundle artifacts are stored in
+  `BUNDLE_ARTIFACTS_KV` and keyed by `source_id` plus `published_commit`.
+
+Canonical source contract:
+
+- Published repo source is the only canonical source for saved packages, apps,
+  skills, and jobs.
+- D1 keeps metadata and projections only. It does not store canonical app HTML,
+  app backend code, skill code, or job code.
+- App rows keep display metadata, parameters, visibility, `has_server_code`, and
+  `source_id`.
+- Job rows keep scheduling/execution metadata, params, storage id, caller
+  context, repo check policy, `source_id`, and the published commit last synced
+  into the job projection.
+- Skill rows keep display/search metadata, parameters, capability annotations,
+  collection metadata, and `source_id`.
+- Projection updates are made from published repo state by the publish/reindex
+  paths; stale D1 inline source fields are not a fallback.
 
 Operational notes:
 
@@ -102,9 +124,9 @@ Operational notes:
   D1 metadata to `entity_sources.id` when a repo editing session is opened.
 - `source_id` is the internal durable join key for repo-backed packages, but
   most MCP callers should prefer package identity with `repo_run_commands`.
-- Once a repo-backed package exists, the repo snapshot is the durable source of
+- Once repo-backed source exists, the repo snapshot is the durable source of
   truth for later edits and publishes. Search and detail payloads are derived
-  projections of that repo-backed package rather than a competing second source
+  projections of that repo-backed source rather than a competing second source
   of truth.
 - `repo_run_commands` parses a constrained git-command string and runs it inside
   the repo session Durable Object. It accepts only parsed git command forms, not
