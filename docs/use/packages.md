@@ -44,7 +44,8 @@ For predictable package resolution, saved packages must use a scoped
 ### npm dependencies
 
 Saved packages may declare runtime npm dependencies in `package.json`
-`dependencies`.
+`dependencies` and import them directly when they are compatible with the
+Cloudflare Workers runtime.
 
 - Kody bundles those dependencies for package exports, package apps, package
   services, package-owned jobs, and package subscription handlers.
@@ -58,6 +59,12 @@ Saved packages may declare runtime npm dependencies in `package.json`
 
 Do not rely on `devDependencies` for saved package runtime code. Only
 `dependencies` are treated as part of the runtime package surface.
+
+See Cloudflare's
+[Node.js compatibility](https://developers.cloudflare.com/workers/runtime-apis/nodejs/)
+for runtime details. Useful starting points include `p-retry`, `mailparser`,
+`remark` / `mdast-util-to-markdown`, and `googleapis`; this list is not
+exhaustive.
 
 ## Package exports
 

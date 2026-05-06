@@ -2,7 +2,10 @@ import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
+	defaultExecutionResponseLimitBytes,
 	extractRawContent,
+	formatLimitedExecutionOutput,
+	limitExecutionResultValue,
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
@@ -32,10 +35,9 @@ const executeTool = {
 	name: 'execute',
 	title: 'Execute Capabilities',
 	description: `
-Run one ephemeral ESM module string with a default export. Discover capability
-names with \`search\`; for one capability’s TypeScript call shape, call
-\`search\` with \`entity: "{name}:capability"\` or use
-\`meta_list_capabilities\`.
+Run one ephemeral ESM module string with a default export. Imports may be arbitrary npm packages compatible with the Cloudflare Workers runtime (e.g. \`p-retry\`, \`mailparser\`, \`remark\`); prefer existing packages over rewriting helpers. Discover capability names with \`search\`; for one capability’s TypeScript call shape, call \`search\` with \`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
+
+Projection rule: you write the code -- if a call returns a large response, project the fields you need before returning. Never return raw API responses; extract a slim shape (e.g. \`{ id, subject, snippet }\`) or a summary.
 
 Saved package surface:
 - \`package_save\`, \`package_get\`, \`package_list\`, \`package_delete\`
@@ -47,7 +49,7 @@ Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.
 - \`import { codemode } from 'kody:runtime'\` for builtin capabilities.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`.
-- \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth connectors.
+- \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth connectors. Connector \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`connector_list\` first when the task involves a provider that may have multiple accounts connected.
 - \`import { agentChatTurnStream } from 'kody:runtime'\` for streamed agent turns.
 - \`params\` is passed to the module default export; if a shared helper needs it, \`import { params } from 'kody:runtime'\`.
 - \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.
@@ -95,7 +97,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				code: z
 					.string()
 					.describe(
-						'Single ESM module string with imports/exports and a default export to execute.',
+						'Single ESM module string with imports/exports and a default export to execute. Imports may be arbitrary npm packages compatible with the Cloudflare Workers runtime; prefer packages over rewriting helpers.',
 					),
 				params: z
 					.record(z.string(), z.unknown())
@@ -116,6 +118,17 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.describe(
 						'Optional write access toggle for bound storage. Defaults to false for ad hoc execute calls.',
 					),
+				responseLimit: z
+					.number()
+					.int()
+					.min(1)
+					.optional()
+					.describe(
+						`Soft cap on the size of the value returned from your default export. Defaults to ~100 KB. Returns over the cap are truncated and the response includes a note. You write the code -- if you only need a few fields, project before returning. Examples:
+// bad: messages.list().then(j => j) -- returns full Gmail payloads
+// good: messages.list().then(j => j.messages.map(m => ({id: m.id, snippet: m.snippet})))
+// good: aggregate().then(rows => ({count: rows.length, sample: rows.slice(0, 3)}))`,
+					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
 			},
@@ -126,6 +139,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			params,
 			storageId,
 			writable,
+			responseLimit,
 			conversationId,
 			memoryContext,
 		}: {
@@ -133,6 +147,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			params?: Record<string, unknown>
 			storageId?: string
 			writable?: boolean
+			responseLimit?: number
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
@@ -222,6 +237,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						conversationId: resolvedConversationId,
 						timing,
 						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
+						returnedBytes: 0,
 						error: errorMessage,
 						errorDetails,
 						logs: result.logs ?? [],
@@ -243,13 +259,19 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				sandboxError: false,
 				context: activeStorageId ? { storageId: activeStorageId } : undefined,
 			})
-			const rawContent = extractRawContent(result.result)
+			const limitedResult = limitExecutionResultValue(
+				result.result,
+				responseLimit ?? defaultExecutionResponseLimitBytes,
+			)
+			const rawContent = limitedResult.truncated
+				? null
+				: extractRawContent(limitedResult.value)
 			return {
 				content: prependToolMetadataContent(resolvedConversationId, [
 					...(rawContent ?? [
 						{
 							type: 'text',
-							text: formatExecutionOutput(result),
+							text: formatLimitedExecutionOutput(limitedResult),
 						},
 					]),
 					...formatSurfacedMemoriesMarkdown(surfacedMemories),
@@ -258,7 +280,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					conversationId: resolvedConversationId,
 					timing,
 					...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
-					result: rawContent ? null : result.result,
+					returnedBytes: limitedResult.returnedBytes,
+					...(limitedResult.truncated
+						? {
+								truncated: true,
+								note: limitedResult.note,
+							}
+						: {}),
+					result: rawContent ? null : limitedResult.value,
 					logs: result.logs ?? [],
 					...buildMemoryStructuredContent(surfacedMemories),
 				},

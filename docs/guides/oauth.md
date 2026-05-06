@@ -54,6 +54,13 @@ with `allowedHosts` when needed.
 Client ID, access token, and refresh token names are derived from a normalized
 slug of `provider`.
 
+## Connector naming convention
+
+Prefer connector names like `<provider>-<purpose>` when multiple accounts may
+exist: `google` for the primary account, `google-business` for a business
+account, or `google-youtube-brand` for a brand identity. Agents should call
+`connector_list` up front when a provider may have multiple accounts connected.
+
 ## Not the same as MCP OAuth
 
 `/connect/oauth` is for outbound provider OAuth.

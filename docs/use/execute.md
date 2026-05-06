@@ -42,6 +42,16 @@ the module's **default export**.
 
 Top-level `await` is acceptable when needed.
 
+## npm packages on Workers
+
+**execute** and saved packages may import npm packages directly when they are
+compatible with the Cloudflare Workers runtime. Prefer existing packages over
+rewriting helpers; useful starting points include `p-retry`, `mailparser`,
+`remark` / `mdast-util-to-markdown`, and `googleapis`.
+
+For runtime details, see Cloudflare's
+[Node.js compatibility](https://developers.cloudflare.com/workers/runtime-apis/nodejs/).
+
 ## Chaining
 
 Prefer **one execute** when the plan is clear: import what you need, call
@@ -214,6 +224,11 @@ The sandbox exposes global **`fetch`** plus secret placeholders in approved
 contexts. OAuth helpers are imported from **`kody:runtime`**:
 
 **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
+
+Connector names should usually follow `<provider>-<purpose>` when multiple
+accounts may exist, such as `google`, `google-business`, or
+`google-youtube-brand`. Call **`connector_list`** up front when a provider may
+have multiple accounts connected.
 
 See [Secrets, values, and host approval](./secrets-and-values.md) for
 placeholders, host approval, and **`codemode.secret_list`** / **`secret_set`**.

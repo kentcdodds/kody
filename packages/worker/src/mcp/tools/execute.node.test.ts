@@ -58,12 +58,16 @@ async function getExecuteHandler() {
 		code: string
 		storageId?: string
 		writable?: boolean
+		responseLimit?: number
 		conversationId?: string
 	}) => Promise<{
 		content: Array<ContentBlock>
 		structuredContent: {
 			conversationId: string
 			storage?: { id: string }
+			returnedBytes: number
+			truncated?: boolean
+			note?: string
 			timing: {
 				startedAt: string
 				endedAt: string
@@ -96,6 +100,9 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 		},
 		logs: [{ level: 'info', message: 'captured screenshot' }],
 	})
+	const returnedBytes = new TextEncoder().encode(
+		JSON.stringify({ __mcpContent: rawContent }),
+	).byteLength
 
 	const response = await handler({
 		code: 'async () => ({ __mcpContent: [] })',
@@ -117,6 +124,7 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 			endedAt: expect.any(String),
 			durationMs: 42,
 		},
+		returnedBytes,
 		result: null,
 		logs: [{ level: 'info', message: 'captured screenshot' }],
 	})
@@ -153,6 +161,7 @@ test('execute tool keeps serializing normal success results as text', async () =
 			endedAt: expect.any(String),
 			durationMs: 9,
 		},
+		returnedBytes: 11,
 		result: { ok: true },
 		logs: [],
 	})
@@ -200,7 +209,81 @@ test('execute tool binds storage id and writable flag when provided', async () =
 			endedAt: expect.any(String),
 			durationMs: 7,
 		},
+		returnedBytes: 11,
 		result: { ok: true },
+		logs: [],
+	})
+})
+
+test('execute tool truncates returned strings over responseLimit', async () => {
+	const handler = await getExecuteHandler()
+	mockPerformanceSequence(20, 25)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: 'hello world',
+		logs: [],
+	})
+
+	const response = await handler({
+		code: 'async () => "hello world"',
+		responseLimit: 5,
+		conversationId: 'conv-truncated-string',
+	})
+
+	expect(response.isError).toBe(false)
+	expect(response.content).toEqual([
+		{
+			type: 'text',
+			text: 'conversationId: conv-truncated-string',
+		},
+		{
+			type: 'text',
+			text: 'hello\n\n--- TRUNCATED ---\nReturned value was 11 bytes, exceeding responseLimit 5 bytes; output was truncated. Project fields before returning.',
+		},
+	])
+	expect(response.structuredContent).toEqual({
+		conversationId: 'conv-truncated-string',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 5,
+		},
+		returnedBytes: 11,
+		truncated: true,
+		note: 'Returned value was 11 bytes, exceeding responseLimit 5 bytes; output was truncated. Project fields before returning.',
+		result: 'hello',
+		logs: [],
+	})
+})
+
+test('execute tool replaces non-string returns over responseLimit with a sentinel', async () => {
+	const handler = await getExecuteHandler()
+	mockPerformanceSequence(30, 40)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { rows: [{ id: 'message-1', payload: 'abcdef' }] },
+		logs: [],
+	})
+
+	const response = await handler({
+		code: 'async () => ({ rows: [{ id: "message-1", payload: "abcdef" }] })',
+		responseLimit: 10,
+		conversationId: 'conv-truncated-object',
+	})
+
+	expect(response.isError).toBe(false)
+	expect(response.structuredContent).toEqual({
+		conversationId: 'conv-truncated-object',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 10,
+		},
+		returnedBytes: 48,
+		truncated: true,
+		note: 'Returned value was 48 bytes, exceeding responseLimit 10 bytes; output was truncated. Project fields before returning.',
+		result: {
+			truncated: true,
+			type: 'object',
+		},
 		logs: [],
 	})
 })
@@ -228,6 +311,7 @@ test('execute tool includes timing metadata in error responses', async () => {
 				durationMs: 15,
 			},
 			error: 'Boom',
+			returnedBytes: 0,
 			logs: [{ level: 'error', message: 'failed' }],
 		}),
 	)

@@ -16,9 +16,7 @@ import {
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
-const charsPerToken = 4
-const maxTokens = 6_000
-const maxChars = maxTokens * charsPerToken
+export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
 
 export function createExecuteExecutor(input: {
@@ -281,7 +279,7 @@ export function formatExecutionOutput(result: ExecuteResult) {
 		if (!details) return `Error: ${errorText}`
 		return `Error: ${errorText}\n\nNext step: ${details.nextStep}`
 	}
-	return truncateExecutionResult(result.result)
+	return stringifyExecutionValueForOutput(result.result)
 }
 
 export function extractRawContent(value: unknown): Array<ContentBlock> | null {
@@ -309,15 +307,73 @@ function extractFirstUrl(message: string) {
 	return null
 }
 
-function truncateExecutionResult(value: unknown) {
-	const text =
+export function limitExecutionResultValue(
+	value: unknown,
+	responseLimitBytes: number,
+) {
+	const serialized = stringifyExecutionValueForBytes(value)
+	const returnedBytes = getUtf8ByteLength(serialized)
+
+	if (returnedBytes <= responseLimitBytes) {
+		return {
+			value,
+			returnedBytes,
+			truncated: false,
+		} as const
+	}
+
+	const note = `Returned value was ${returnedBytes.toLocaleString()} bytes, exceeding responseLimit ${responseLimitBytes.toLocaleString()} bytes; output was truncated. Project fields before returning.`
+	const truncatedValue =
 		typeof value === 'string'
-			? value
-			: (JSON.stringify(value, null, 2) ?? 'undefined')
+			? truncateUtf8String(value, responseLimitBytes)
+			: {
+					truncated: true,
+					type: describeExecutionValue(value),
+				}
 
-	if (text.length <= maxChars) return text
+	return {
+		value: truncatedValue,
+		returnedBytes,
+		truncated: true,
+		note,
+	} as const
+}
 
-	return `${text.slice(0, maxChars)}\n\n--- TRUNCATED ---\nResponse was ~${Math.ceil(
-		text.length / charsPerToken,
-	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Use more specific queries to reduce response size.`
+export function getExecutionReturnedBytes(value: unknown) {
+	return getUtf8ByteLength(stringifyExecutionValueForBytes(value))
+}
+
+export function formatLimitedExecutionOutput(input: {
+	value: unknown
+	truncated: boolean
+	note?: string
+}) {
+	const text = stringifyExecutionValueForOutput(input.value)
+	if (!input.truncated) return text
+	return `${text}\n\n--- TRUNCATED ---\n${input.note}`
+}
+
+function stringifyExecutionValueForBytes(value: unknown) {
+	if (typeof value === 'string') return value
+	return JSON.stringify(value) ?? 'undefined'
+}
+
+function stringifyExecutionValueForOutput(value: unknown) {
+	if (typeof value === 'string') return value
+	return JSON.stringify(value, null, 2) ?? 'undefined'
+}
+
+function truncateUtf8String(value: string, maxBytes: number) {
+	const encoded = new TextEncoder().encode(value)
+	return new TextDecoder().decode(encoded.slice(0, maxBytes))
+}
+
+function getUtf8ByteLength(value: string) {
+	return new TextEncoder().encode(value).byteLength
+}
+
+function describeExecutionValue(value: unknown) {
+	if (value === null) return 'null'
+	if (Array.isArray(value)) return 'array'
+	return typeof value
 }
