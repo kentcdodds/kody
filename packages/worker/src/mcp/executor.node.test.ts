@@ -10,6 +10,7 @@ import {
 	extractRawContent,
 	formatExecutionOutput,
 	getExecutionErrorDetails,
+	limitExecutionResultValue,
 } from './executor.ts'
 
 test('getExecutionErrorDetails returns concrete guidance for capability access denial', () => {
@@ -88,6 +89,25 @@ test('extractRawContent returns null for non-sentinel values', () => {
 	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
 	expect(extractRawContent('plain text')).toBeNull()
 	expect(extractRawContent(null)).toBeNull()
+})
+
+test('limitExecutionResultValue truncates strings on UTF-8 codepoint boundaries', () => {
+	const oneByteLimit = limitExecutionResultValue('éabc', 1)
+	expect(oneByteLimit).toMatchObject({
+		value: '',
+		returnedBytes: 5,
+		truncated: true,
+	})
+
+	const threeByteLimit = limitExecutionResultValue('éabc', 3)
+	expect(threeByteLimit).toMatchObject({
+		value: 'éa',
+		returnedBytes: 5,
+		truncated: true,
+	})
+	expect(
+		new TextEncoder().encode(String(threeByteLimit.value)).byteLength,
+	).toBe(3)
 })
 
 test('getExecutionErrorDetails returns batch capability approvals', () => {

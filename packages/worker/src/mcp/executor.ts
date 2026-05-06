@@ -339,10 +339,6 @@ export function limitExecutionResultValue(
 	} as const
 }
 
-export function getExecutionReturnedBytes(value: unknown) {
-	return getUtf8ByteLength(stringifyExecutionValueForBytes(value))
-}
-
 export function formatLimitedExecutionOutput(input: {
 	value: unknown
 	truncated: boolean
@@ -364,8 +360,16 @@ function stringifyExecutionValueForOutput(value: unknown) {
 }
 
 function truncateUtf8String(value: string, maxBytes: number) {
-	const encoded = new TextEncoder().encode(value)
-	return new TextDecoder().decode(encoded.slice(0, maxBytes))
+	const encoder = new TextEncoder()
+	let usedBytes = 0
+	let result = ''
+	for (const character of value) {
+		const characterBytes = encoder.encode(character).byteLength
+		if (usedBytes + characterBytes > maxBytes) break
+		result += character
+		usedBytes += characterBytes
+	}
+	return result
 }
 
 function getUtf8ByteLength(value: string) {
