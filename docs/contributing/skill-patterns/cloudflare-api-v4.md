@@ -30,7 +30,7 @@ description appropriately. When the code can mutate Cloudflare resources, treat
 it as destructive in your surrounding workflow and review path.
 
 ```javascript
-;async () => {
+export default async () => {
 	const path = '/client/v4/user/tokens/verify'
 	const url = `https://api.cloudflare.com${path}`
 	const res = await fetch(url, {

@@ -1,44 +1,8 @@
 import { type UiArtifactParameterInput } from '@kody-internal/shared/ui-artifact-parameters.ts'
-import { type SkillParameterInput } from '#mcp/skills/skill-parameters.ts'
 import { type JobView } from '#worker/jobs/types.ts'
 
 function stringifyManifest(value: unknown) {
 	return `${JSON.stringify(value, null, 2)}\n`
-}
-
-export function buildSkillSourceFiles(input: {
-	title: string
-	description: string
-	keywords: Array<string>
-	searchText?: string | null
-	collection?: string | null
-	readOnly: boolean
-	idempotent: boolean
-	destructive: boolean
-	usesCapabilities?: Array<string> | null
-	parameters?: Array<SkillParameterInput> | null
-	code: string
-}) {
-	const manifest = {
-		version: 1 as const,
-		kind: 'skill' as const,
-		title: input.title,
-		description: input.description,
-		keywords: input.keywords,
-		searchText: input.searchText ?? undefined,
-		sourceRoot: '/',
-		entrypoint: 'src/skill.ts',
-		collection: input.collection ?? undefined,
-		readOnly: input.readOnly,
-		idempotent: input.idempotent,
-		destructive: input.destructive,
-		usesCapabilities: input.usesCapabilities ?? undefined,
-		parameters: input.parameters ?? undefined,
-	}
-	return {
-		'kody.json': stringifyManifest(manifest),
-		'src/skill.ts': `${input.code.trim()}\n`,
-	}
 }
 
 export function buildJobSourceFiles(input: {

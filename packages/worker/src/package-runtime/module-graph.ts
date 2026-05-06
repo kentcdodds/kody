@@ -163,14 +163,13 @@ function createExecuteEntrypointSource(input: {
 	paramsJson: string
 }) {
 	return `
-import userModule from ${JSON.stringify(input.modulePath)};
+import userEntrypoint from ${JSON.stringify(input.modulePath)};
 
 export default async function __kodyExecuteEntrypoint() {
-	const entrypoint = userModule?.default ?? userModule;
-	if (typeof entrypoint !== 'function') {
+	if (typeof userEntrypoint !== 'function') {
 		throw new Error('Kody execute modules must default export a function.');
 	}
-	return await entrypoint(${input.paramsJson});
+	return await userEntrypoint(${input.paramsJson});
 }
 `.trim()
 }

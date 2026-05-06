@@ -154,7 +154,7 @@ test('runRepoChecks normalizes leading slashes in package job entrypoints', asyn
 			}),
 		],
 		['src/index.ts', 'export const ready = true\n'],
-		['src/job.ts', 'async () => ({ ok: true })\n'],
+		['src/job.ts', 'export default async () => ({ ok: true })\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
@@ -237,7 +237,7 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 			}),
 		],
 		['/session/src/index.ts', 'export const ready = true\n'],
-		['/session/src/job.ts', 'async () => ({ ok: true })\n'],
+		['/session/src/job.ts', 'export default async () => ({ ok: true })\n'],
 	])
 	let snapshotFiles = new Map<string, string>()
 	const snapshot = createSnapshotFromFiles(snapshotFiles)
@@ -315,7 +315,7 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 		['src/index.ts', 'export const ready = true\n'],
 		[
 			'src/job.ts',
-			`async (params) => {
+			`export default async (params) => {
   await codemode.value_get({ name: 'projectId' })
   await storage.get('count')
   return params
@@ -520,7 +520,7 @@ test('runRepoChecks still reports unknown globals for package-owned jobs', async
 			}),
 		],
 		['src/index.ts', 'export const ready = true\n'],
-		['src/job.ts', 'async () => totallyMissingThing()\n'],
+		['src/job.ts', 'export default async () => totallyMissingThing()\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
@@ -578,6 +578,134 @@ test('runRepoChecks still reports unknown globals for package-owned jobs', async
 			}),
 		]),
 	)
+})
+
+test('runRepoChecks rejects legacy async-arrow package job entrypoints', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/legacy-job',
+				kodyId: 'legacy-job',
+				description: 'Uses a legacy snippet entrypoint',
+				jobs: {
+					legacy: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+		['src/job.ts', 'async () => ({ ok: true })\n'],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'typecheck',
+				ok: false,
+				message: expect.stringContaining(
+					'Repo-backed job and skill entrypoints must default export a function',
+				),
+			}),
+		]),
+	)
+	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()
+})
+
+test('runRepoChecks rejects named-only callable package entrypoints', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/named-only-job',
+				kodyId: 'named-only-job',
+				description: 'Uses a named export for a callable entrypoint',
+				jobs: {
+					named: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+		['src/job.ts', 'export const run = async () => ({ ok: true })\n'],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'typecheck',
+				ok: false,
+				message: expect.stringContaining('Missing default export in: "src/job.ts"'),
+			}),
+		]),
+	)
+	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()
+})
+
+test('published package entrypoint typecheck rejects legacy async-arrow job entrypoints', async () => {
+	const files = new Map<string, string>([
+		['src/job.ts', 'async () => ({ ok: true })\n'],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const { typecheckPackageEntrypointsFromSourceFiles } = await import(
+		'./checks.ts'
+	)
+	const result = await typecheckPackageEntrypointsFromSourceFiles({
+		sourceFiles: Object.fromEntries(files),
+		entryPoints: [{ path: 'src/job.ts', includeStorage: true }],
+	})
+
+	expect(result).toEqual({
+		ok: false,
+		message: expect.stringContaining(
+			'Repo-backed job and skill entrypoints must default export a function',
+		),
+	})
+	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()
 })
 
 test('runRepoChecks typechecks ESM package job entrypoints', async () => {

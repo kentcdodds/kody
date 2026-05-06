@@ -14,11 +14,13 @@ import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
-import { normalizeRepoWorkspacePath } from './manifest.ts'
+import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import {
 	createRepoCodemodeModuleTypecheckHarness,
+	repoBackedModuleEntrypointExportErrorMessage,
 	repoCodemodeModuleTypecheckHarnessPath,
 } from './repo-codemode-execution.ts'
+import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 export type RepoCheckKind =
 	| 'manifest'
@@ -515,6 +517,30 @@ function formatPackageTypecheckDiagnostics(
 	)
 }
 
+function collectEntrypointsMissingDefaultExport(
+	input: {
+		snapshot: { read(path: string): string | null }
+		targets: Array<{ path: string }>
+	},
+) {
+	return [
+		...new Set(
+			input.targets
+				.map((target) => target.path)
+				.filter((path) => {
+					const source = input.snapshot.read(path)
+					return source != null && !hasTopLevelDefaultExport(source)
+				}),
+		),
+	]
+}
+
+function formatMissingDefaultExportMessage(paths: Array<string>) {
+	return `${repoBackedModuleEntrypointExportErrorMessage} Missing default export in: ${paths
+		.map((path) => `"${path}"`)
+		.join(', ')}.`
+}
+
 export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 	sourceFiles: Record<string, string>
 	entryPoints: Array<{
@@ -542,6 +568,16 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 			message: `Typecheck skipped because package runtime entrypoint(s) are missing from the published source snapshot: ${missingEntryPoints
 				.map((path) => `"${path}"`)
 				.join(', ')}.`,
+		}
+	}
+	const missingDefaultExports = collectEntrypointsMissingDefaultExport({
+		snapshot,
+		targets: input.entryPoints,
+	})
+	if (missingDefaultExports.length > 0) {
+		return {
+			ok: false,
+			message: formatMissingDefaultExportMessage(missingDefaultExports),
 		}
 	}
 	const typecheckFileSystem = createRepoChecksFileSystem({
@@ -722,6 +758,30 @@ export async function runRepoChecks(input: {
 			message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
 				.map((path) => `"${path}"`)
 				.join(', ')}.`,
+		})
+		results.push({
+			kind: 'lint',
+			ok: true,
+			message: 'Lint placeholder passed for this phase.',
+		})
+		return {
+			ok: results.every((result) => result.ok),
+			results,
+			manifest,
+		}
+	}
+
+	const callableTargetsMissingDefaultExport = collectEntrypointsMissingDefaultExport({
+		snapshot,
+		targets: callableTypecheckTargets,
+	})
+	if (callableTargetsMissingDefaultExport.length > 0) {
+		results.push({
+			kind: 'typecheck',
+			ok: false,
+			message: formatMissingDefaultExportMessage(
+				callableTargetsMissingDefaultExport,
+			),
 		})
 		results.push({
 			kind: 'lint',

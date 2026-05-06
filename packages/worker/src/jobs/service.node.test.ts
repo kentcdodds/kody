@@ -1308,6 +1308,31 @@ test('updateJob rejects empty replacement code', async () => {
 	).rejects.toThrow('Jobs require non-empty code.')
 })
 
+test('createJob rejects legacy async-arrow snippet code', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+
+	await expect(
+		createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Legacy snippet job',
+				code: 'async () => ({ ok: true })',
+				schedule: {
+					type: 'interval',
+					every: '15m',
+				},
+			},
+		}),
+	).rejects.toThrow(
+		'Repo-backed job and skill entrypoints must default export a function',
+	)
+})
+
 test('inspectJobsForUser returns persisted job fields with alarm debug state', async () => {
 	const env = {
 		APP_DB: createDatabase(),
