@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { buildSpawnEnv } from './sync-worker-secrets'
+import { buildSpawnEnv, buildWranglerSecretPutArgs } from './sync-worker-secrets'
 
 const baseOptions = {
 	env: undefined,
@@ -12,6 +12,7 @@ const baseOptions = {
 	generateCookieSecret: false,
 	includeEmpty: false,
 	emptyAsSpace: false,
+	putIndividually: false,
 }
 
 test('buildSpawnEnv removes empty optional vars', () => {
@@ -44,4 +45,46 @@ test('buildSpawnEnv keeps optional vars when set', () => {
 
 	expect(spawnEnv.CLOUDFLARE_API_BASE_URL).toBe('https://api.cloudflare.com')
 	expect(spawnEnv.PATH).toBe('/usr/bin')
+})
+
+test('buildWranglerSecretPutArgs targets a worker by name without env config', () => {
+	const args = buildWranglerSecretPutArgs(
+		{
+			...baseOptions,
+			name: 'kody-production',
+		},
+		'COOKIE_SECRET',
+	)
+
+	expect(args.slice(1)).toEqual([
+		'secret',
+		'put',
+		'COOKIE_SECRET',
+		'--name',
+		'kody-production',
+	])
+})
+
+test('buildWranglerSecretPutArgs includes env and config when provided', () => {
+	const args = buildWranglerSecretPutArgs(
+		{
+			...baseOptions,
+			config: 'packages/worker/wrangler.jsonc',
+			env: 'preview',
+			name: 'kody-preview',
+		},
+		'COOKIE_SECRET',
+	)
+
+	expect(args.slice(1)).toEqual([
+		'secret',
+		'put',
+		'COOKIE_SECRET',
+		'--env',
+		'preview',
+		'--name',
+		'kody-preview',
+		'--config',
+		'packages/worker/wrangler.jsonc',
+	])
 })
