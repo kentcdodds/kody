@@ -873,6 +873,9 @@ test('job inspection capabilities expose due-now state, history, and alarm statu
 			sourceId: 'source-123',
 			publishedCommit: null,
 			storageId: 'job:job-123',
+			params: {
+				bridgeId: 'ZPGI01117',
+			},
 			schedule: {
 				type: 'once',
 				runAt: '2026-04-20T18:30:00.000Z',
@@ -958,6 +961,9 @@ test('job inspection capabilities expose due-now state, history, and alarm statu
 		expect(getResult.job).toMatchObject({
 			id: 'job-123',
 			source_id: 'source-123',
+			params: {
+				bridgeId: 'ZPGI01117',
+			},
 			due_now: true,
 			last_run_status: 'error',
 			last_run_error: 'Timed out',

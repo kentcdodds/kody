@@ -1498,6 +1498,45 @@ test('getJobInspection returns one job and out-of-sync alarm details', async () 
 	})
 })
 
+test('getJobInspection returns persisted params after a job update', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Bridge job',
+			code: 'export default async (params) => ({ bridgeId: params.bridgeId })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+
+	const updated = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			params: {
+				bridgeId: 'ZPGI01117',
+			},
+		},
+	})
+	const inspected = await getJobInspection({
+		env,
+		userId: callerContext.user.userId,
+		jobId: created.id,
+	})
+
+	expect(updated.params).toEqual({ bridgeId: 'ZPGI01117' })
+	expect(inspected.job.params).toEqual({ bridgeId: 'ZPGI01117' })
+})
+
 test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	const db = createDatabase()
 	const env = {
@@ -2235,6 +2274,145 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {
 		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce rebuilds stale published job bundles after the source commit changes', async () => {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	await insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-stale-bundle',
+		entityKind: 'job',
+		entityId: 'job-stale-bundle',
+		publishedCommit: 'commit-1',
+		manifestPath: 'kody.json',
+		kv: bundleKv,
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Stale bundle job',
+				description: 'Runs stale bundle test',
+				keywords: ['job'],
+				searchText: 'Runs stale bundle test',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ version: "old" })',
+		},
+	})
+	const { persistPublishedBundleArtifact } =
+		await import('#worker/package-runtime/published-bundle-artifacts.ts')
+	const source = await (
+		await import('#worker/repo/entity-sources.ts')
+	).getEntitySourceById(db, 'source-stale-bundle')
+	if (!source) {
+		throw new Error('Expected source row.')
+	}
+	await persistPublishedBundleArtifact({
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+		userId: 'user-123',
+		source,
+		kind: 'job',
+		artifactName: 'job-stale-bundle',
+		entryPoint: 'src/job.ts',
+		mainModule: 'dist/bundled-entry.js',
+		modules: {
+			'dist/bundled-entry.js':
+				'export default async () => ({ version: "old-bundle" })',
+		},
+		dependencies: [],
+		packageContext: null,
+	})
+	await insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-stale-bundle',
+		entityKind: 'job',
+		entityId: 'job-stale-bundle',
+		publishedCommit: 'commit-2',
+		manifestPath: 'kody.json',
+		kv: bundleKv,
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Stale bundle job',
+				description: 'Runs stale bundle test',
+				keywords: ['job'],
+				searchText: 'Runs stale bundle test',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts':
+				'export default async () => { console.log("canary"); return { version: "new" } }',
+		},
+	})
+	const env = {
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-stale-bundle',
+		userId: callerContext.user.userId,
+		name: 'Stale bundle job',
+		sourceId: 'source-stale-bundle',
+		publishedCommit: 'commit-2',
+		storageId: 'job:job-stale-bundle',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, version: 'new' },
+			logs: ['canary'],
+		})
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: { ok: true, version: 'new' },
+			logs: ['canary'],
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+		const executedBundle = executeSpy.mock.calls[0]?.[2]
+		const executedModules = Object.values(executedBundle?.modules ?? {}).join(
+			'\n',
+		)
+		expect(executedModules).toContain('userEntrypoint')
+		expect(executedModules).not.toContain('old-bundle')
+	} finally {
 		executeSpy.mockRestore()
 	}
 })

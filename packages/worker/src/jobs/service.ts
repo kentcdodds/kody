@@ -220,6 +220,19 @@ async function persistPublishedJobBundleArtifact(input: {
 	return artifact
 }
 
+function isPublishedJobBundleCurrent(input: {
+	artifact: PublishedBundleArtifact | null
+	rowPublishedCommit?: string | null
+	currentPublishedCommit: string | null
+}) {
+	return (
+		input.currentPublishedCommit != null &&
+		input.artifact?.publishedCommit === input.currentPublishedCommit &&
+		(input.rowPublishedCommit == null ||
+			input.rowPublishedCommit === input.currentPublishedCommit)
+	)
+}
+
 async function ensurePublishedBundleArtifactForJob(input: {
 	env: Env
 	job: JobRecord
@@ -291,7 +304,14 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		artifactName,
 		entryPoint,
 	})
-	if (artifact?.artifact) {
+	if (
+		artifact?.artifact &&
+		isPublishedJobBundleCurrent({
+			artifact: artifact.artifact,
+			rowPublishedCommit: artifact.row?.publishedCommit,
+			currentPublishedCommit: source.published_commit,
+		})
+	) {
 		logJobSchedulerEvent({
 			event: 'job_bundle_cache_hit',
 			userId: input.callerContext.user.userId,
@@ -918,12 +938,15 @@ export async function updateJob(input: {
 		updated.publishedCommit = syncedPublishedCommit
 	}
 	const nextCallerContextJson = serializeCallerContext(callerContext)
-	await updateJobRow({
+	const didUpdate = await updateJobRow({
 		db: input.env.APP_DB,
 		userId: callerContext.user.userId,
 		job: updated,
 		callerContextJson: nextCallerContextJson,
 	})
+	if (!didUpdate) {
+		throw new Error(`Job "${updated.id}" could not be updated.`)
+	}
 	await upsertJobVector(input.env, {
 		jobId: updated.id,
 		userId: callerContext.user.userId,
@@ -1092,7 +1115,14 @@ async function runRepoBackedJob(input: {
 			artifactName,
 			entryPoint,
 		})
-		if (loadedArtifact?.artifact) {
+		if (
+			loadedArtifact?.artifact &&
+			isPublishedJobBundleCurrent({
+				artifact: loadedArtifact.artifact,
+				rowPublishedCommit: loadedArtifact.row?.publishedCommit,
+				currentPublishedCommit: source.published_commit,
+			})
+		) {
 			return await executePublishedJobArtifact({
 				env: input.env,
 				job: input.job,
@@ -1142,7 +1172,14 @@ async function runRepoBackedJob(input: {
 		artifactName,
 		entryPoint,
 	})
-	if (loadedArtifact?.artifact) {
+	if (
+		loadedArtifact?.artifact &&
+		isPublishedJobBundleCurrent({
+			artifact: loadedArtifact.artifact,
+			rowPublishedCommit: loadedArtifact.row?.publishedCommit,
+			currentPublishedCommit: source.published_commit,
+		})
+	) {
 		return await executePublishedJobArtifact({
 			env: input.env,
 			job: input.job,
