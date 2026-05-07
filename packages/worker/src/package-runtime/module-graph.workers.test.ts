@@ -75,3 +75,56 @@ test(
 		})
 	},
 )
+
+test('saved package execution passes input as the default export argument', async () => {
+	const packageJson = JSON.stringify({
+		name: '@kentcdodds/input-package',
+		exports: {
+			'.': './src/index.ts',
+		},
+		kody: {
+			id: 'input-package',
+			description: 'Exercises explicit input arguments',
+		},
+	})
+	const bundle = await buildKodyModuleBundle({
+		env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-workers-test',
+		sourceFiles: {
+			'package.json': packageJson,
+			'src/index.ts': [
+				'export default async function main(input = {}) {',
+				'\treturn { room: input.room, missing: input.missing ?? "defaulted" }',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'src/index.ts',
+	})
+
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-workers-test',
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+		},
+		{ room: 'office' },
+		{
+			skipCapabilityRegistry: true,
+		},
+	)
+
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		room: 'office',
+		missing: 'defaulted',
+	})
+})

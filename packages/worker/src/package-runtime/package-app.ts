@@ -420,7 +420,7 @@ function createPackageAppEnv(env, userModule) {
 	return runtimeEnv;
 }
 
-function createRuntime(runtimeBridge, params, packageContext) {
+function createRuntime(runtimeBridge, packageContext) {
 	const packageId = packageContext?.packageId ?? '';
 	const packageSecrets =
 		packageId.length > 0
@@ -439,7 +439,6 @@ function createRuntime(runtimeBridge, params, packageContext) {
 				}
 	return {
 		codemode: createCodemodeProxy(runtimeBridge),
-		params,
 		storage: createStorageProxy(runtimeBridge, packageId),
 		refreshAccessToken: async (providerName) =>
 			await runtimeBridge.refreshAccessToken(providerName),
@@ -493,7 +492,6 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 		const previousRuntime = globalThis.__kodyRuntime;
 		globalThis.__kodyRuntime = createRuntime(
 			this.env.${packageAppRuntimeBindingName},
-			this.env.__kodyRuntimeParams ?? null,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
@@ -520,7 +518,6 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 		const previousRuntime = globalThis.__kodyRuntime;
 		globalThis.__kodyRuntime = createRuntime(
 			this.env.${packageAppRuntimeBindingName},
-			this.env.__kodyRuntimeParams ?? null,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
@@ -917,7 +914,6 @@ export async function buildPackageAppWorker(input: {
 		sourceRoot: string
 	}
 	sourceFiles: Record<string, string>
-	params?: Record<string, unknown>
 	runtime: {
 		callerContext: ReturnType<typeof createMcpCallerContext>
 	}
@@ -1022,7 +1018,6 @@ export async function buildPackageAppWorker(input: {
 						sourceId: input.savedPackage.sourceId,
 					},
 				}),
-				__kodyRuntimeParams: input.params ?? null,
 				__kodyPackageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,

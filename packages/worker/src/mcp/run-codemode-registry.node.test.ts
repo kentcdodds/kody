@@ -152,10 +152,69 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 	buildKodyModuleBundle: vi.fn(async () => ({
 		mainModule: 'entry.js',
 		modules: {
-			'entry.js': 'export default async function run() { return null }',
+			'entry.js': 'export default async function main(input = {}) { return input }',
 		},
 	})),
 }))
+
+test('runBundledModuleWithRegistry passes params as an explicit entrypoint argument', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped) {
+				expect(wrapped).toContain(
+					'return await __kodyEntrypoint({"room":"office"});',
+				)
+				expect(wrapped).not.toContain('params:')
+				return {
+					result: { room: 'office' },
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js':
+						'export default async function main(input = {}) { return input }',
+				},
+			},
+			{ room: 'office' },
+			{
+				skipCapabilityRegistry: true,
+			},
+		)
+
+		expect(result.result).toEqual({ room: 'office' })
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
 	let toolArguments: Record<string, unknown> | null = null

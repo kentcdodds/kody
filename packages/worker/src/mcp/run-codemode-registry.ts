@@ -647,7 +647,6 @@ export async function runModuleWithRegistry(
 			'entry.ts': code,
 		},
 		entryPoint: 'entry.ts',
-		params,
 	})
 	return runBundledModuleWithRegistry(
 		env,
@@ -753,6 +752,9 @@ export async function runBundledModuleWithRegistry(
 	const workflowsHelperPrelude = workflowTools
 		? createWorkflowsHelperPrelude()
 		: ''
+	const entrypointInputJson = JSON.stringify(params)
+	const entrypointInputSource =
+		entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
@@ -763,7 +765,6 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
   const __previousRuntime = globalThis.__kodyRuntime;
   globalThis.__kodyRuntime = {
     codemode,
-    params: ${JSON.stringify(params ?? null)},
     storage: typeof storage === 'undefined' ? undefined : storage,
     refreshAccessToken,
     createAuthenticatedFetch,
@@ -781,7 +782,7 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
     if (typeof __kodyEntrypoint !== 'function') {
       throw new Error('Kody execute modules must default export a function.');
     }
-    return await __kodyEntrypoint();
+    return await __kodyEntrypoint(${entrypointInputSource});
   } finally {
     if (__previousRuntime === undefined) {
       delete globalThis.__kodyRuntime;

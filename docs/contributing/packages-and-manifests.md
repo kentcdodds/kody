@@ -177,10 +177,10 @@ Example:
 }
 ```
 
-Retriever exports receive `params` with `query`, `scope`, `memoryContext`,
-`limit`, and `conversationId`, and return `{ "results": [...] }` where each
-result has `id`, `title`, `summary`, optional `details`, optional `score`,
-optional `source`, optional `url`, and optional `metadata`.
+Retriever exports receive their first function argument with `query`, `scope`,
+`memoryContext`, `limit`, and `conversationId`, and return `{ "results": [...] }`
+where each result has `id`, `title`, `summary`, optional `details`, optional
+`score`, optional `source`, optional `url`, and optional `metadata`.
 
 The runtime validates retriever output before surfacing it. A retriever may
 return at most 20 results; payloads with more than 20 results are rejected.

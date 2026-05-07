@@ -140,7 +140,6 @@ function createRuntimeModuleSource() {
 const runtime = globalThis.__kodyRuntime ?? {};
 
 export const codemode = runtime.codemode;
-export const params = runtime.params;
 export const storage = runtime.storage;
 export const refreshAccessToken = runtime.refreshAccessToken;
 export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
@@ -158,16 +157,15 @@ export default runtime;
 
 function createExecuteEntrypointSource(input: {
 	modulePath: string
-	paramsJson: string
 }) {
 	return `
 import userEntrypoint from ${JSON.stringify(input.modulePath)};
 
-export default async function __kodyExecuteEntrypoint() {
+export default async function __kodyExecuteEntrypoint(input) {
 	if (typeof userEntrypoint !== 'function') {
 		throw new Error('Kody execute modules must default export a function.');
 	}
-	return await userEntrypoint(${input.paramsJson});
+	return await userEntrypoint(input);
 }
 `.trim()
 }
@@ -515,7 +513,6 @@ export async function buildKodyModuleBundle(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
-	params?: Record<string, unknown>
 }) {
 	const { files, dependencies } = await prepareKodyGraphFiles({
 		env: input.env,
@@ -533,7 +530,6 @@ export async function buildKodyModuleBundle(input: {
 			bootstrapPath,
 			normalizedEntrypoint,
 		),
-		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
 	const bundle = await createWorkerBundle({
 		files,

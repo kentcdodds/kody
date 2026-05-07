@@ -5,7 +5,8 @@ block. When you need to return a non-text block - most commonly an `image` for
 screenshots or charts - return an object with a `__mcpContent` array instead:
 
 ```js
-export default async function run() {
+export default async function main(input = {}) {
+	void input
 	// ... fetch or generate image data ...
 	return {
 		__mcpContent: [

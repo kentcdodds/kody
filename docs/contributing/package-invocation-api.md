@@ -79,7 +79,7 @@ The token is not a global backdoor:
 
 Fields:
 
-- `params` — JSON object passed to the package export as runtime params
+- `params` — JSON object passed as the first argument to the package export
 - `idempotencyKey` — required stable key for replay protection
 - `source` — optional source label for auditing and token scoping; when present,
   it must match the token's `sources_json` allowlist

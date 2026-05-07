@@ -51,7 +51,7 @@ Sandbox surface:
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`.
 - \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth connectors. Connector \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`connector_list\` first when the task involves a provider that may have multiple accounts connected.
 - \`import { agentChatTurnStream } from 'kody:runtime'\` for streamed agent turns.
-- \`params\` is passed to the module default export; if a shared helper needs it, \`import { params } from 'kody:runtime'\`.
+- Optional \`params\` are passed as the first argument to the module default export. Prefer \`export default async function main(input = {}) { ... }\`; pass \`input\` to shared helpers explicitly.
 - \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.
 - \`fetch(...)\` is the host-provided network global; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` work in URL, headers, or body on approved hosts only.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
@@ -69,7 +69,8 @@ Example:
 
 \`import { codemode } from 'kody:runtime'
 
-export default async function run() {
+export default async function main(input = {}) {
+  void input;
   return await codemode.kody_official_guide({
     guide: 'integration_bootstrap',
   });
@@ -103,7 +104,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.record(z.string(), z.unknown())
 					.optional()
 					.describe(
-						'Optional JSON params passed to the module default export at execution time.',
+						'Optional JSON params passed as the first argument to the module default export at execution time.',
 					),
 				storageId: z
 					.string()

@@ -53,13 +53,13 @@ export const scheduledJobInputBaseSchema = {
 		.string()
 		.min(1)
 		.describe(
-			'ES module source for the job entrypoint. It must default export the function Kody should run later; legacy async-arrow snippets are not supported.',
+			'ES module source for the job entrypoint. It must default export the function Kody should run later, preferably as `export default async function main(input = {}) { ... }`; legacy async-arrow snippets are not supported.',
 		),
 	params: z
 		.record(z.string(), z.unknown())
 		.optional()
 		.describe(
-			'Optional JSON params passed to the job entrypoint when it runs.',
+			'Optional JSON params passed as the first argument to the job entrypoint when it runs.',
 		),
 	timezone: z
 		.string()
@@ -245,14 +245,14 @@ export const jobUpdateInputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Optional replacement ES module source. It must still default export the job entrypoint; legacy async-arrow snippets are not supported.',
+				'Optional replacement ES module source. It must still default export the job entrypoint, preferably as `export default async function main(input = {}) { ... }`; legacy async-arrow snippets are not supported.',
 			),
 		params: z
 			.record(z.string(), z.unknown())
 			.nullable()
 			.optional()
 			.describe(
-				'Optional replacement params object. Pass null to clear existing params.',
+				'Optional replacement params object passed as the first argument to the job entrypoint. Pass null to clear existing params.',
 			),
 		schedule: scheduledJobScheduleSchema
 			.optional()

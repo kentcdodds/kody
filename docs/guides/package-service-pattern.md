@@ -116,7 +116,8 @@ async function openSocket(session: unknown) {
 	})
 }
 
-export default async function run() {
+export default async function main(input = {}) {
+	void input
 	const session = (await storage.get('session-state')) ?? null
 	const socket = await openSocket(session)
 

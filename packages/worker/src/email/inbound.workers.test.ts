@@ -521,12 +521,11 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 const runtime = globalThis.__kodyRuntime ?? {};
 export const codemode = runtime.codemode;
 export const email = runtime.email ?? null;
-export const params = runtime.params ?? null;
 `.trim(),
 			'dist/subscription.js': `
-import { codemode, email, params } from '../.__kody_virtual__/runtime.js'
+import { codemode, email } from '../.__kody_virtual__/runtime.js'
 
-export default async function run() {
+export default async function main(input = {}) {
   const agentResult = await codemode.agent_chat_turn({
     sessionId: 'email-subscription-session',
     system: 'Write a short acknowledgement for this inbound email.',
@@ -537,8 +536,8 @@ export default async function run() {
       },
     ],
   })
-  const result = await email.getMessage(params.message.id)
-  const firstAttachment = Array.isArray(params.attachments) ? params.attachments[0] : null
+  const result = await email.getMessage(input.message.id)
+  const firstAttachment = Array.isArray(input.attachments) ? input.attachments[0] : null
   const attachment = firstAttachment?.id
     ? await email.getAttachment(firstAttachment.id)
     : null
@@ -546,7 +545,7 @@ export default async function run() {
     ? atob(attachment.content_base64)
     : null
   const reply = await email.reply({
-    message_id: params.message.id,
+    message_id: input.message.id,
     from: ${JSON.stringify(replyFrom)},
     text: agentResult?.result?.assistantText ?? 'Fallback reply',
   })

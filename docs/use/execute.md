@@ -6,8 +6,17 @@ function Kody should invoke.
 
 ## Shape of the code
 
-Author code as one module string. Import runtime APIs from **`kody:runtime`**
-and export a default function. These helpers are runtime exports:
+Author code as one module string. Export a default function that receives the
+execute/job/package input as its first argument:
+
+```ts
+export default async function main(input = {}) {
+	// Use input directly, or pass it to shared helpers.
+}
+```
+
+Import runtime APIs from **`kody:runtime`** when you need Kody helpers. These
+helpers are runtime exports:
 
 - use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
 - use
@@ -17,8 +26,6 @@ and export a default function. These helpers are runtime exports:
   bound to a storage id
 - use **`import { agentChatTurnStream } from 'kody:runtime'`** for streamed
   agent turns
-- use **`import { params } from 'kody:runtime'`** when shared helpers need the
-  active execute or job params instead of receiving them as a function argument
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
@@ -38,7 +45,8 @@ and export a default function. These helpers are runtime exports:
   saved package export by full package name
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
-the module's **default export**.
+the module's **default export** as the first function argument. Shared helpers
+should receive that input through normal function arguments.
 
 Top-level `await` is acceptable when needed.
 
