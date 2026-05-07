@@ -47,36 +47,77 @@ function createWorkflowBinding(options?: {
 	}
 }
 
-test('createPackageWorkflowInstanceId is stable and scoped to package workflow inputs', async () => {
+function createStatefulWorkflowBinding() {
+	const instances = new Map<string, WorkflowInstanceCreateOptions>()
+	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
+		if (instances.has(input.id)) {
+			throw new Error('Workflow instance already exists')
+		}
+		instances.set(input.id, input)
+		return {
+			id: input.id,
+			status: async () => ({ status: 'queued' }),
+		}
+	})
+	const get = vi.fn(async (id: string) => {
+		if (!instances.has(id)) {
+			throw new Error('workflow instance does not exist')
+		}
+		return {
+			id,
+			status: async () => ({ status: 'waiting' }),
+		}
+	})
+	return {
+		workflow: { get, create } as unknown as Workflow,
+		get,
+		create,
+		instances,
+	}
+}
+
+test('createPackageWorkflowInstanceId is stable and scoped to scheduled package workflow inputs', async () => {
 	const first = await createPackageWorkflowInstanceId({
 		userId: 'user-1',
 		packageId: 'pkg-1',
 		workflowName: 'shade-event',
 		idempotencyKey: 'event-2026-05-03T10:00:00Z',
+		runAt: '2026-05-03T10:00:00.000Z',
 	})
 	const second = await createPackageWorkflowInstanceId({
 		idempotencyKey: 'event-2026-05-03T10:00:00Z',
 		workflowName: 'shade-event',
 		packageId: 'pkg-1',
 		userId: 'user-1',
+		runAt: '2026-05-03T10:00:00.000Z',
 	})
 	const withWhitespace = await createPackageWorkflowInstanceId({
 		userId: ' user-1 ',
 		packageId: ' pkg-1 ',
 		workflowName: ' shade-event ',
 		idempotencyKey: ' event-2026-05-03T10:00:00Z ',
+		runAt: '2026-05-03T10:00:00.000Z',
 	})
 	const differentPackage = await createPackageWorkflowInstanceId({
 		userId: 'user-1',
 		packageId: 'pkg-2',
 		workflowName: 'shade-event',
 		idempotencyKey: 'event-2026-05-03T10:00:00Z',
+		runAt: '2026-05-03T10:00:00.000Z',
+	})
+	const differentRunAt = await createPackageWorkflowInstanceId({
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		workflowName: 'shade-event',
+		idempotencyKey: 'event-2026-05-03T10:00:00Z',
+		runAt: '2026-05-04T10:00:00.000Z',
 	})
 
 	expect(first).toBe(second)
 	expect(first).toBe(withWhitespace)
 	expect(first).toMatch(/^pkgwf-[A-Za-z0-9_-]{43}$/)
 	expect(differentPackage).not.toBe(first)
+	expect(differentRunAt).not.toBe(first)
 })
 
 test('createPackageWorkflowPayload keeps only safe routing metadata and small params', () => {
@@ -176,6 +217,49 @@ test('createPackageWorkflowInstance creates deterministic instance and returns e
 		id: created.id,
 		status: 'waiting',
 	})
+})
+
+test('createPackageWorkflowInstance creates a new instance for a recurring daily workflow run', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const yesterday = await createPackageWorkflowInstance({
+		workflow: binding.workflow,
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+		workflowName: 'shade-event',
+		exportName: './workflow-run-event',
+		runAt: '2026-05-06T12:00:00.000Z',
+		idempotencyKey: 'morning-shades-up',
+		params: { roomId: 'primary-bedroom', action: 'open' },
+	})
+	const today = await createPackageWorkflowInstance({
+		workflow: binding.workflow,
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+		workflowName: 'shade-event',
+		exportName: './workflow-run-event',
+		runAt: '2026-05-07T12:00:00.000Z',
+		idempotencyKey: 'morning-shades-up',
+		params: { roomId: 'primary-bedroom', action: 'open' },
+	})
+
+	expect(yesterday.id).not.toBe(today.id)
+	expect(binding.create).toHaveBeenCalledTimes(2)
+	expect(
+		[...binding.instances.values()].map((instance) => instance.params),
+	).toEqual([
+		expect.objectContaining({
+			runAt: '2026-05-06T12:00:00.000Z',
+			planDate: '2026-05-06',
+		}),
+		expect.objectContaining({
+			runAt: '2026-05-07T12:00:00.000Z',
+			planDate: '2026-05-07',
+		}),
+	])
 })
 
 test('createPackageWorkflowInstance returns existing instance after duplicate create race', async () => {

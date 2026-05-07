@@ -140,11 +140,12 @@ payloads in workflow params or metadata. The package export should look up
 current secrets/configuration from normal package runtime helpers when it runs.
 
 Workflow instance ids are deterministic for
-`(userId, packageId, workflowName, idempotencyKey)`, so repeated planners can
-safely attempt to create the same instance without duplicating it. The host
-workflow sleeps until `runAt`, then invokes the saved package export through the
-same package execution path used by package invocations. Workflow instances are
-not search results and are not saved as a new top-level Kody entity.
+`(userId, packageId, workflowName, idempotencyKey, runAt)`, so repeated planners
+can safely attempt to create the same scheduled instance without duplicating it.
+The host workflow sleeps until `runAt`, then invokes the saved package export
+through the same package execution path used by package invocations. Workflow
+instances are not search results and are not saved as a new top-level Kody
+entity.
 
 ## Package-owned retrievers
 
@@ -178,9 +179,10 @@ Example:
 ```
 
 Retriever exports receive their first function argument with `query`, `scope`,
-`memoryContext`, `limit`, and `conversationId`, and return `{ "results": [...] }`
-where each result has `id`, `title`, `summary`, optional `details`, optional
-`score`, optional `source`, optional `url`, and optional `metadata`.
+`memoryContext`, `limit`, and `conversationId`, and return
+`{ "results": [...] }` where each result has `id`, `title`, `summary`, optional
+`details`, optional `score`, optional `source`, optional `url`, and optional
+`metadata`.
 
 The runtime validates retriever output before surfacing it. A retriever may
 return at most 20 results; payloads with more than 20 results are rejected.

@@ -169,6 +169,7 @@ export async function createPackageWorkflowInstanceId(input: {
 	packageId: string
 	workflowName: string
 	idempotencyKey: string
+	runAt: string | Date
 }) {
 	const canonical = canonicalJsonStringify({
 		userId: normalizeNonEmptyString(input.userId, 'userId'),
@@ -178,6 +179,7 @@ export async function createPackageWorkflowInstanceId(input: {
 			input.idempotencyKey,
 			'idempotencyKey',
 		),
+		runAt: normalizeRunAt(input.runAt),
 	})
 	return `pkgwf-${(await sha256Base64Url(canonical)).slice(0, 43)}`
 }
