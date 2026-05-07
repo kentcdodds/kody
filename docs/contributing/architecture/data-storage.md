@@ -179,12 +179,12 @@ Artifacts tokens.
 
 Production note:
 
-- Released `wrangler` `4.83.0` warns that the documented Artifacts Worker
-  binding config is unexpected, and production deploy logs show no
-  `env.ARTIFACTS` binding in the deployed Worker binding summary.
-- Because of that deploy-time gap, repo source code uses the documented
-  Artifacts REST API as the single integration path for create/get/token/fork
-  operations.
+- Production deploys warn that the documented Artifacts Worker binding config
+  is unexpected, and deploy logs show no `env.ARTIFACTS` binding in the
+  deployed Worker binding summary.
+- Because that binding is absent in production, repo source code uses the
+  documented Artifacts REST API as the single integration path for
+  create/get/token/fork operations.
 - `packages/worker/src/repo/artifacts.ts` builds that REST client from
   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and optional
   `CLOUDFLARE_API_BASE_URL` / `ARTIFACTS_NAMESPACE`, which also makes local dev

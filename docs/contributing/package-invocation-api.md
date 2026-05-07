@@ -3,7 +3,7 @@
 Use this API when a trusted external service should invoke a saved package
 export inside Kody without going through the interactive MCP transport.
 
-The first intended caller is a stable Discord Gateway proxy:
+A stable Discord Gateway proxy is a representative caller:
 
 1. the external proxy owns the long-lived Discord websocket
 2. the proxy normalizes gateway events
@@ -67,13 +67,13 @@ The token is not a global backdoor:
 
 ```json
 {
-	"params": {
-		"messageId": "123",
-		"content": "hello"
-	},
-	"idempotencyKey": "discord:message-create:123",
-	"source": "discord-gateway",
-	"topic": "discord.message.created"
+  "params": {
+    "messageId": "123",
+    "content": "hello"
+  },
+  "idempotencyKey": "discord:message-create:123",
+  "source": "discord-gateway",
+  "topic": "discord.message.created"
 }
 ```
 
@@ -112,22 +112,22 @@ Success:
 
 ```json
 {
-	"ok": true,
-	"package": {
-		"id": "pkg_123",
-		"kodyId": "discord-gateway"
-	},
-	"exportName": "./dispatch-message-created",
-	"source": "discord-gateway",
-	"topic": "discord.message.created",
-	"idempotency": {
-		"key": "discord:message-create:123",
-		"replayed": false
-	},
-	"result": {
-		"reply": "handled"
-	},
-	"logs": []
+  "ok": true,
+  "package": {
+    "id": "pkg_123",
+    "kodyId": "discord-gateway"
+  },
+  "exportName": "./dispatch-message-created",
+  "source": "discord-gateway",
+  "topic": "discord.message.created",
+  "idempotency": {
+    "key": "discord:message-create:123",
+    "replayed": false
+  },
+  "result": {
+    "reply": "handled"
+  },
+  "logs": []
 }
 ```
 
@@ -137,11 +137,11 @@ Failures return:
 
 ```json
 {
-	"ok": false,
-	"error": {
-		"code": "package_not_found",
-		"message": "Saved package \"discord-gateway\" was not found for this user."
-	}
+  "ok": false,
+  "error": {
+    "code": "package_not_found",
+    "message": "Saved package \"discord-gateway\" was not found for this user."
+  }
 }
 ```
 

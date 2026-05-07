@@ -6,8 +6,9 @@ over that socket. The Worker’s `HomeConnectorSession` Durable Object (binding
 name `HOME_CONNECTOR_SESSION`) holds one live session per **session key** and
 proxies HTTP `fetch` from Worker code to JSON-RPC on the socket.
 
-The first shipped connector is **`packages/home-connector`** (`kind: home`).
-Additional kinds use the same protocol and routing pattern described below.
+The in-repo connector implementation is **`packages/home-connector`** (`kind:
+home`). Additional kinds use the same protocol and routing pattern described
+below.
 
 ## URLs and session keys
 
@@ -140,8 +141,8 @@ Source: `packages/shared/src/chat.ts`,
 
 ## Related docs
 
-- [Home Connector](./home-connector.md) — the shipped `home` implementation
-  (Roku, Lutron, Samsung TV, Sonos).
+- [Home Connector](./home-connector.md) — the `home` implementation in this
+  repo (Roku, Lutron, Samsung TV, Sonos).
 - [Request lifecycle](./request-lifecycle.md) — where connector routes sit in
   the Worker.
 - [Environment variables](../environment-variables.md#remote-connector-secrets)

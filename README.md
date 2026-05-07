@@ -23,8 +23,8 @@ project favors a compact MCP surface with powerful `search` and Code Mode
 `execute` flows over a large static tool catalog.
 
 This project is intentionally single-user and is scoped to `me@kentcdodds.com`.
-The repo is based on the [epicflare](https://github.com/epicweb-dev/epicflare)
-starter.
+The repo follows several
+[epicflare](https://github.com/epicweb-dev/epicflare) starter conventions.
 
 The repo is organized as an Nx monorepo, with shared modules in
 `packages/shared` (`@kody-internal/shared`), the main app worker under

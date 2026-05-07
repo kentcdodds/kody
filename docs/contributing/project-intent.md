@@ -21,9 +21,8 @@ This repository is:
 - The foundation for a personal assistant rather than a general-purpose SaaS
   product.
 
-Some existing docs and code reflect this project's starter/template lineage.
-When those conflict with the guidance here, treat this document as the project's
-intent.
+Some existing docs and code use starter-oriented conventions. When those
+conflict with the guidance here, treat this document as the project's intent.
 
 ## Who this is for
 
