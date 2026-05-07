@@ -337,10 +337,18 @@ function buildSearchableEntityDescriptors(input: {
 					exportDetail.subpath,
 					exportDetail.description ?? '',
 					exportDetail.typeDefinition ?? '',
+					...(exportDetail.referencedTypes ?? []).flatMap((referencedType) => [
+						referencedType.name,
+						referencedType.definition,
+					]),
 					...(exportDetail.functions ?? []).flatMap((fn) => [
 						fn.name,
 						fn.description ?? '',
 						fn.typeDefinition ?? '',
+						...(fn.referencedTypes ?? []).flatMap((referencedType) => [
+							referencedType.name,
+							referencedType.definition,
+						]),
 					]),
 				]),
 				...entry.projection.jobs.map((job) => job.name),
@@ -699,10 +707,20 @@ function buildPackageCandidates(input: {
 						exportDetail.typesPath ?? '',
 						exportDetail.description ?? '',
 						exportDetail.typeDefinition ?? '',
+						...(exportDetail.referencedTypes ?? []).flatMap(
+							(referencedType) => [
+								referencedType.name,
+								referencedType.definition,
+							],
+						),
 						...(exportDetail.functions ?? []).flatMap((fn) => [
 							fn.name,
 							fn.description ?? '',
 							fn.typeDefinition ?? '',
+							...(fn.referencedTypes ?? []).flatMap((referencedType) => [
+								referencedType.name,
+								referencedType.definition,
+							]),
 						]),
 					]),
 					...jobs.flatMap((job) => [

@@ -196,6 +196,13 @@ export type PackageExportFunctionProjection = {
 	name: string
 	description: string | null
 	typeDefinition: string | null
+	referencedTypes: Array<PackageReferencedTypeProjection>
+}
+
+export type PackageReferencedTypeProjection = {
+	name: string
+	kind: 'type' | 'interface' | 'enum'
+	definition: string
 }
 
 export type PackageExportProjection = {
@@ -205,6 +212,7 @@ export type PackageExportProjection = {
 	description: string | null
 	typeDefinition: string | null
 	functions: Array<PackageExportFunctionProjection>
+	referencedTypes: Array<PackageReferencedTypeProjection>
 }
 
 export type PackageSearchProjection = {
@@ -242,6 +250,85 @@ export type PackageSearchProjection = {
 	}>
 	retrievers: Array<PackageRetrieverManifestEntry>
 }
+
+type LocalTypeDeclaration = PackageReferencedTypeProjection & {
+	node: ModuleAstNode
+}
+
+const maxReferencedTypesPerExport = 8
+const maxReferencedTypeCharsPerExport = 12_000
+const maxReferencedTypeDepth = 2
+const builtinTypeNames = new Set([
+	'AbortController',
+	'AbortSignal',
+	'Array',
+	'ArrayBuffer',
+	'Awaited',
+	'Blob',
+	'Boolean',
+	'CallableFunction',
+	'Capitalize',
+	'ConstructorParameters',
+	'Date',
+	'Error',
+	'Event',
+	'EventTarget',
+	'Exclude',
+	'Extract',
+	'File',
+	'FormData',
+	'Function',
+	'Headers',
+	'InstanceType',
+	'Intl',
+	'JSON',
+	'Lowercase',
+	'Map',
+	'Math',
+	'NonNullable',
+	'Number',
+	'Object',
+	'Omit',
+	'OmitThisParameter',
+	'Parameters',
+	'Partial',
+	'Pick',
+	'Promise',
+	'Readonly',
+	'ReadonlyArray',
+	'Record',
+	'RegExp',
+	'Request',
+	'Required',
+	'Response',
+	'ReturnType',
+	'Set',
+	'String',
+	'ThisParameterType',
+	'ThisType',
+	'TransformStream',
+	'URL',
+	'URLSearchParams',
+	'Uncapitalize',
+	'Uppercase',
+	'WeakMap',
+	'WeakSet',
+	'WritableStream',
+	'any',
+	'bigint',
+	'boolean',
+	'false',
+	'never',
+	'null',
+	'number',
+	'object',
+	'string',
+	'symbol',
+	'true',
+	'undefined',
+	'unknown',
+	'void',
+])
 
 function getNodeStart(node: unknown) {
 	if (!node || typeof node !== 'object') return null
@@ -292,6 +379,214 @@ function readLeadingJsDoc(source: string, start: number) {
 function readIdentifierName(node: unknown) {
 	const name = (node as { name?: unknown }).name
 	return typeof name === 'string' && name.trim() ? name : null
+}
+
+function getTypeDeclarationKind(
+	node: ModuleAstNode | undefined,
+): PackageReferencedTypeProjection['kind'] | null {
+	if (!node) return null
+	if (node.type === 'TSTypeAliasDeclaration') return 'type'
+	if (node.type === 'TSInterfaceDeclaration') return 'interface'
+	if (node.type === 'TSEnumDeclaration') return 'enum'
+	return null
+}
+
+function collectLocalTypeDeclarations(
+	source: string,
+	body: Array<ModuleAstNode>,
+) {
+	const declarations = new Map<string, LocalTypeDeclaration>()
+	for (const statement of body) {
+		const declaration =
+			statement.type === 'ExportNamedDeclaration'
+				? ((statement as { declaration?: unknown }).declaration as
+						| ModuleAstNode
+						| undefined)
+				: statement
+		const kind = getTypeDeclarationKind(declaration)
+		if (!kind || !declaration) continue
+		const name = readIdentifierName((declaration as { id?: unknown }).id)
+		if (!name || builtinTypeNames.has(name) || declarations.has(name)) continue
+		const definitionNode =
+			statement.type === 'ExportNamedDeclaration' ? statement : declaration
+		const start = getNodeStart(definitionNode)
+		const end = getNodeEnd(definitionNode)
+		if (start == null || end == null) continue
+		const definition = source
+			.slice(start, end)
+			.trim()
+			.replace(/\s*;\s*$/, '')
+		if (!definition) continue
+		declarations.set(name, {
+			name,
+			kind,
+			definition,
+			node: declaration,
+		})
+	}
+	return declarations
+}
+
+function readTypeReferenceName(node: unknown): string | null {
+	if (!node || typeof node !== 'object') return null
+	if (getNodeType(node) !== 'Identifier') return null
+	return readIdentifierName(node)
+}
+
+function pushUniqueTypeName(names: Array<string>, name: string | null) {
+	if (!name || builtinTypeNames.has(name) || names.includes(name)) return
+	names.push(name)
+}
+
+function collectTypeReferenceNamesFromNodes(nodes: Array<unknown>) {
+	const names: Array<string> = []
+	const seen = new Set<object>()
+	function visit(node: unknown) {
+		if (!node || typeof node !== 'object') return
+		if (seen.has(node)) return
+		seen.add(node)
+		const type = getNodeType(node)
+		if (type === 'TSTypeReference') {
+			pushUniqueTypeName(
+				names,
+				readTypeReferenceName((node as { typeName?: unknown }).typeName),
+			)
+		}
+		if (type === 'TSExpressionWithTypeArguments') {
+			pushUniqueTypeName(
+				names,
+				readTypeReferenceName((node as { expression?: unknown }).expression),
+			)
+		}
+		for (const [key, value] of Object.entries(node)) {
+			if (
+				key === 'loc' ||
+				key === 'start' ||
+				key === 'end' ||
+				key === 'leadingComments' ||
+				key === 'trailingComments' ||
+				key === 'innerComments' ||
+				key === 'extra'
+			) {
+				continue
+			}
+			if (Array.isArray(value)) {
+				for (const item of value) visit(item)
+				continue
+			}
+			visit(value)
+		}
+	}
+	for (const node of nodes) visit(node)
+	return names
+}
+
+function getFunctionReferenceNodes(node: unknown) {
+	const functionNode = node as {
+		params?: unknown
+		returnType?: unknown
+		typeParameters?: unknown
+	}
+	const params = Array.isArray(functionNode.params) ? functionNode.params : []
+	return [
+		functionNode.typeParameters,
+		...params.map(
+			(param) => (param as { typeAnnotation?: unknown }).typeAnnotation,
+		),
+		functionNode.returnType,
+	]
+}
+
+function getVariableFunctionReferenceNodes(declarator: ModuleAstNode) {
+	const id = (declarator as { id?: unknown }).id
+	const typeAnnotation = (id as { typeAnnotation?: unknown } | undefined)
+		?.typeAnnotation
+	if (typeAnnotation) return [typeAnnotation]
+	const init = (declarator as { init?: unknown }).init
+	if (
+		getNodeType(init) !== 'ArrowFunctionExpression' &&
+		getNodeType(init) !== 'FunctionExpression'
+	) {
+		return []
+	}
+	return getFunctionReferenceNodes(init)
+}
+
+function collectReferencedTypes(input: {
+	typeNames: Array<string>
+	localTypes: Map<string, LocalTypeDeclaration>
+}) {
+	const referencedTypes: Array<PackageReferencedTypeProjection> = []
+	const seen = new Set<string>()
+	const queued = new Set<string>()
+	const queue: Array<{ name: string; depth: number }> = []
+	let totalChars = 0
+	function enqueue(name: string, depth: number) {
+		if (
+			builtinTypeNames.has(name) ||
+			queued.has(name) ||
+			seen.has(name) ||
+			!input.localTypes.has(name)
+		) {
+			return
+		}
+		queued.add(name)
+		queue.push({ name, depth })
+	}
+	for (const name of input.typeNames) enqueue(name, 0)
+	while (
+		queue.length > 0 &&
+		referencedTypes.length < maxReferencedTypesPerExport
+	) {
+		const next = queue.shift()
+		if (!next) break
+		const declaration = input.localTypes.get(next.name)
+		if (!declaration || seen.has(next.name)) continue
+		const nextChars = totalChars + declaration.definition.length
+		if (
+			nextChars > maxReferencedTypeCharsPerExport &&
+			referencedTypes.length > 0
+		) {
+			break
+		}
+		seen.add(next.name)
+		totalChars = nextChars
+		referencedTypes.push({
+			name: declaration.name,
+			kind: declaration.kind,
+			definition: declaration.definition,
+		})
+		if (next.depth >= maxReferencedTypeDepth) continue
+		for (const nestedName of collectTypeReferenceNamesFromNodes([
+			declaration.node,
+		])) {
+			enqueue(nestedName, next.depth + 1)
+		}
+	}
+	return referencedTypes
+}
+
+function mergeReferencedTypes(
+	typeGroups: Array<Array<PackageReferencedTypeProjection>>,
+) {
+	const referencedTypes: Array<PackageReferencedTypeProjection> = []
+	const seen = new Set<string>()
+	let totalChars = 0
+	for (const type of typeGroups.flat()) {
+		if (seen.has(type.name)) continue
+		const nextChars = totalChars + type.definition.length
+		if (
+			nextChars > maxReferencedTypeCharsPerExport &&
+			referencedTypes.length > 0
+		) {
+			break
+		}
+		seen.add(type.name)
+		totalChars = nextChars
+		referencedTypes.push(type)
+		if (referencedTypes.length >= maxReferencedTypesPerExport) break
+	}
+	return referencedTypes
 }
 
 function getFunctionSignature(input: {
@@ -395,15 +690,14 @@ function getVariableDeclarationExportKind(
 		: 'export'
 }
 
-function collectExportedFunctionsFromSource(
-	source: string,
-): Array<PackageExportFunctionProjection> {
+function collectExportedFunctionsFromSource(source: string) {
 	let body: Array<ModuleAstNode>
 	try {
 		body = getProgramBody(parseModuleSource(source))
 	} catch {
 		return []
 	}
+	const localTypes = collectLocalTypeDeclarations(source, body)
 	const functions: Array<PackageExportFunctionProjection> = []
 	for (const statement of body) {
 		if (statement.type === 'ExportDefaultDeclaration') {
@@ -411,6 +705,11 @@ function collectExportedFunctionsFromSource(
 				.declaration as ModuleAstNode | undefined
 			if (isFunctionDeclaration(declaration)) {
 				const declarationStart = getNodeStart(declaration)
+				const typeDefinition = getFunctionSignature({
+					source,
+					node: declaration,
+					exportKeyword: 'export default',
+				})
 				functions.push({
 					name: 'default',
 					description:
@@ -420,11 +719,15 @@ function collectExportedFunctionsFromSource(
 						(getNodeStart(statement) == null
 							? null
 							: readLeadingJsDoc(source, getNodeStart(statement) ?? 0)),
-					typeDefinition: getFunctionSignature({
-						source,
-						node: declaration,
-						exportKeyword: 'export default',
-					}),
+					typeDefinition,
+					referencedTypes: typeDefinition
+						? collectReferencedTypes({
+								typeNames: collectTypeReferenceNamesFromNodes(
+									getFunctionReferenceNodes(declaration),
+								),
+								localTypes,
+							})
+						: [],
 				})
 			}
 			continue
@@ -439,14 +742,23 @@ function collectExportedFunctionsFromSource(
 		if (isFunctionDeclaration(declaration)) {
 			const name = readIdentifierName((declaration as { id?: unknown }).id)
 			if (!name) continue
+			const typeDefinition = getFunctionSignature({
+				source,
+				node: declaration,
+				exportKeyword: 'export',
+			})
 			functions.push({
 				name,
 				description,
-				typeDefinition: getFunctionSignature({
-					source,
-					node: declaration,
-					exportKeyword: 'export',
-				}),
+				typeDefinition,
+				referencedTypes: typeDefinition
+					? collectReferencedTypes({
+							typeNames: collectTypeReferenceNamesFromNodes(
+								getFunctionReferenceNodes(declaration),
+							),
+							localTypes,
+						})
+					: [],
 			})
 			continue
 		}
@@ -462,14 +774,23 @@ function collectExportedFunctionsFromSource(
 		)) {
 			const name = readIdentifierName((declarator as { id?: unknown }).id)
 			if (!name) continue
+			const typeDefinition = getVariableFunctionSignature({
+				source,
+				declarator,
+				exportKind,
+			})
 			functions.push({
 				name,
 				description,
-				typeDefinition: getVariableFunctionSignature({
-					source,
-					declarator,
-					exportKind,
-				}),
+				typeDefinition,
+				referencedTypes: typeDefinition
+					? collectReferencedTypes({
+							typeNames: collectTypeReferenceNamesFromNodes(
+								getVariableFunctionReferenceNodes(declarator),
+							),
+							localTypes,
+						})
+					: [],
 			})
 		}
 	}
@@ -503,6 +824,9 @@ function summarizePackageExport(input: {
 		typeDefinition:
 			functions.length === 1 ? (firstFunction?.typeDefinition ?? null) : null,
 		functions,
+		referencedTypes: mergeReferencedTypes(
+			functions.map((fn) => fn.referencedTypes),
+		),
 	}
 }
 
@@ -600,6 +924,9 @@ export function buildPackageSearchDocument(
 		const functions = Array.isArray(exportDetail.functions)
 			? exportDetail.functions
 			: []
+		const referencedTypes = Array.isArray(exportDetail.referencedTypes)
+			? exportDetail.referencedTypes
+			: []
 		const values = [
 			typeof exportDetail.subpath === 'string' ? exportDetail.subpath : '',
 			typeof exportDetail.runtimeTarget === 'string'
@@ -617,6 +944,7 @@ export function buildPackageSearchDocument(
 				typeof fn.description === 'string' ? fn.description : '',
 				typeof fn.typeDefinition === 'string' ? fn.typeDefinition : '',
 			]),
+			...referencedTypes.flatMap((type) => [type.name, type.definition]),
 		]
 		return [...values.filter((value) => value.length > 0)].join(' ')
 	})

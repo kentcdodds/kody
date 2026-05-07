@@ -8,7 +8,10 @@ import {
 	type PackageJobSchedule,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
-import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
+import {
+	buildPackageSearchProjection,
+	type PackageReferencedTypeProjection,
+} from '#worker/package-registry/manifest.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
 	escapeMarkdownText,
@@ -215,7 +218,9 @@ export type SearchEntityDetailStructured =
 					name: string
 					description: string | null
 					typeDefinition: string | null
+					referencedTypes: Array<PackageReferencedTypeProjection>
 				}>
+				referencedTypes: Array<PackageReferencedTypeProjection>
 				typesSource: string | null
 			}>
 			jobs: Array<{
@@ -708,10 +713,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				detail.record.name,
 				exportDetail.subpath,
 			),
-			typesSource:
-				exportDetail.typesPath == null
-					? null
-					: (detail.files[exportDetail.typesPath] ?? null),
+			typesSource: null,
 		}))
 		const jobs = Object.entries(detail.manifest.kody.jobs ?? {}).map(
 			([jobName, job]) => ({
@@ -778,12 +780,17 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 						)
 					}
 				}
-				if (exportDetail.typesSource) {
-					lines.push('', '  Type definitions:', '', '  ```ts')
-					lines.push(
-						...exportDetail.typesSource.split('\n').map((line) => `  ${line}`),
-					)
-					lines.push('  ```')
+				if (exportDetail.referencedTypes.length > 0) {
+					lines.push('  - Referenced types:', '    ```ts')
+					exportDetail.referencedTypes.forEach((referencedType, index) => {
+						if (index > 0) lines.push('    ')
+						lines.push(
+							...referencedType.definition
+								.split('\n')
+								.map((line) => `    ${line}`),
+						)
+					})
+					lines.push('    ```')
 				}
 			}
 		}
