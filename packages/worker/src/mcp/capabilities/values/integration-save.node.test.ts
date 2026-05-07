@@ -116,6 +116,78 @@ test('parseIntegrationConfig keeps older rows readable when apiBaseUrl is missin
 	})
 })
 
+test('integration_save creates a new integration record', async () => {
+	const testDb = createValueTestDb()
+
+	const result = await integrationSaveCapability.handler(
+		{
+			name: 'spotify',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			apiBaseUrl: 'https://api.spotify.com/v1',
+			flow: 'pkce',
+			clientIdValueName: 'spotify-client-id',
+			clientSecretSecretName: null,
+			accessTokenSecretName: 'spotifyAccessToken',
+			refreshTokenSecretName: 'spotifyRefreshToken',
+			requiredHosts: ['api.spotify.com'],
+		},
+		{
+			env: { APP_DB: testDb.db } as unknown as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+		},
+	)
+
+	expect(result.integration).toMatchObject({
+		name: 'spotify',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		flow: 'pkce',
+		clientIdValueName: 'spotify-client-id',
+		accessTokenSecretName: 'spotifyAccessToken',
+		refreshTokenSecretName: 'spotifyRefreshToken',
+		requiredHosts: ['api.spotify.com'],
+	})
+	expect(
+		JSON.parse(testDb.entries.get('_integration:spotify') ?? '{}'),
+	).toMatchObject({
+		name: 'spotify',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		flow: 'pkce',
+		clientIdValueName: 'spotify-client-id',
+		accessTokenSecretName: 'spotifyAccessToken',
+		refreshTokenSecretName: 'spotifyRefreshToken',
+		requiredHosts: ['api.spotify.com'],
+	})
+})
+
+test('integration_save reports missing fields for new integration records', async () => {
+	const testDb = createValueTestDb()
+
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: 'spotify',
+				flow: 'pkce',
+				clientIdValueName: 'spotify-client-id',
+			},
+			{
+				env: { APP_DB: testDb.db } as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					user: { userId: 'user-123' },
+				}),
+			},
+		),
+	).rejects.toThrow(
+		'Cannot create integration "spotify": missing or invalid required fields',
+	)
+	expect(testDb.entries.has('_integration:spotify')).toBe(false)
+})
+
 test('integration_save upserts an existing integration record', async () => {
 	const testDb = createValueTestDb()
 	testDb.entries.set(

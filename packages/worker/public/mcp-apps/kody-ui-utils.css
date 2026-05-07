@@ -7,10 +7,10 @@
     sans-serif;
   --font-mono:
     ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
+    "SFMono-Regular",
+    "Menlo",
+    "Monaco",
+    "Consolas",
     monospace;
   --spacing-1: 0.25rem;
   --spacing-2: 0.5rem;

@@ -63,19 +63,7 @@ export const integrationSaveCapability = defineDomainCapability(
 						)
 			const integration = existingIntegration
 				? mergeIntegrationConfig(existingIntegration, args)
-				: normalizeIntegrationConfig(
-						integrationConfigSchema.parse({
-							name: args.name,
-							tokenUrl: args.tokenUrl,
-							apiBaseUrl: args.apiBaseUrl ?? null,
-							flow: args.flow,
-							clientIdValueName: args.clientIdValueName,
-							clientSecretSecretName: args.clientSecretSecretName ?? null,
-							accessTokenSecretName: args.accessTokenSecretName,
-							refreshTokenSecretName: args.refreshTokenSecretName ?? null,
-							requiredHosts: args.requiredHosts,
-						}),
-					)
+				: createNewIntegrationConfig(args)
 			const value = await saveValue({
 				env: ctx.env,
 				userId: user.userId,
@@ -95,3 +83,29 @@ export const integrationSaveCapability = defineDomainCapability(
 		},
 	},
 )
+
+function createNewIntegrationConfig(args: z.infer<typeof inputSchema>) {
+	const parsed = integrationConfigSchema.safeParse({
+		name: args.name,
+		tokenUrl: args.tokenUrl,
+		apiBaseUrl: args.apiBaseUrl ?? null,
+		flow: args.flow,
+		clientIdValueName: args.clientIdValueName,
+		clientSecretSecretName: args.clientSecretSecretName ?? null,
+		accessTokenSecretName: args.accessTokenSecretName,
+		refreshTokenSecretName: args.refreshTokenSecretName ?? null,
+		requiredHosts: args.requiredHosts,
+	})
+	if (!parsed.success) {
+		const details = parsed.error.issues
+			.map((issue) => {
+				const field = issue.path.join('.') || 'input'
+				return `${field}: ${issue.message}`
+			})
+			.join(', ')
+		throw new Error(
+			`Cannot create integration "${args.name}": missing or invalid required fields — ${details}`,
+		)
+	}
+	return normalizeIntegrationConfig(parsed.data)
+}
