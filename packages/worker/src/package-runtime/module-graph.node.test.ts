@@ -694,6 +694,96 @@ test('buildKodyModuleBundle requires a published artifact before importing saved
 	)
 })
 
+test('buildKodyModuleBundle resolves transitive imports back to the root package source during rebuilds', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('root-cycle'))
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/journaling',
+			kodyId: 'journaling',
+			sourceId: 'journaling-source',
+		}),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'journaling-source',
+			published_commit: 'journaling-commit',
+		},
+		manifest: {
+			name: '@kentcdodds/journaling',
+			exports: {
+				'./upsert-for-thread': './src/upsert-for-thread.ts',
+			},
+			kody: {
+				id: 'journaling',
+				description: 'Journaling package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/journaling',
+				exports: {
+					'./upsert-for-thread': './src/upsert-for-thread.ts',
+				},
+				kody: {
+					id: 'journaling',
+					description: 'Journaling package',
+				},
+			}),
+			'src/upsert-for-thread.ts':
+				'import ensureState from "kody:@kentcdodds/personal-history/state-ensure"\nexport default ensureState\n',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await expect(
+		buildKodyModuleBundle({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/personal-history',
+					exports: {
+						'.': './src/index.ts',
+						'./state-ensure': './src/state-ensure.ts',
+					},
+					dependencies: {
+						jsonrepair: '3.13.1',
+					},
+					kody: {
+						id: 'personal-history',
+						description: 'Personal history package',
+					},
+				}),
+				'src/index.ts':
+					'import upsert from "kody:@kentcdodds/journaling/upsert-for-thread"\nexport default upsert\n',
+				'src/state-ensure.ts':
+					'export default async function ensureState() { return { ok: true } }\n',
+			},
+			entryPoint: 'src/index.ts',
+		}),
+	).resolves.toEqual({
+		mainModule: 'dist/root-cycle.js',
+		modules: {
+			'dist/root-cycle.js':
+				'export default { async fetch() { return new Response("root-cycle") } }',
+		},
+		dependencies: [
+			{
+				sourceId: 'journaling-source',
+				publishedCommit: 'journaling-commit',
+				kodyId: 'journaling',
+				packageName: '@kentcdodds/journaling',
+			},
+		],
+	})
+})
+
 test('buildKodyModuleBundle keeps dependencies for scoped packages with the same leaf', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf'))
 	mockModule.getSavedPackageByName.mockImplementation(

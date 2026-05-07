@@ -5,8 +5,10 @@ import {
 import {
 	normalizePackageWorkspacePath,
 	normalizePackageExportKey,
+	parseAuthoredPackageJson,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
+import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	createPublishedPackageCacheKey,
@@ -90,6 +92,10 @@ type RewriteState = {
 	baseUrl: string
 	userId: string
 	files: Record<string, string>
+	rootPackage: {
+		manifest: AuthoredPackageJson
+		prefix: string
+	} | null
 	proxies: Map<string, string>
 	packages: Map<
 		string,
@@ -230,6 +236,19 @@ function createPackageProxyPathSegment(specifier: string) {
 	return encodePathKey(
 		`${parsed.packageName}#${normalizePackageExportKey(parsed.exportName)}`,
 	)
+}
+
+function readRootPackage(sourceFiles: Record<string, string>) {
+	const packageJson = sourceFiles[packageManifestPath]
+	if (!packageJson) return null
+	try {
+		return {
+			manifest: parseAuthoredPackageJson({ content: packageJson }),
+			prefix: rootSourcePrefix,
+		}
+	} catch {
+		return null
+	}
 }
 
 function isBundlerRootConfigPath(path: string) {
@@ -440,26 +459,38 @@ async function ensurePackageProxy(
 	const existing = state.proxies.get(specifier)
 	if (existing) return existing
 	const parsed = parseKodyPackageSpecifier(specifier)
-	const loaded = await ensurePackageLoaded(state, specifier)
 	const absoluteExportPath =
-		(await maybeEnsurePublishedArtifactTarget({
-			state,
-			specifier,
-			loaded,
-		})) ??
-		(() => {
-			assertPublishedSourceCanRebuildWithoutInstallingDeps({
-				sourceFiles: loaded.files,
-				bundleLabel: `Saved package export "${normalizePackageExportKey(
-					parsed.exportName,
-				)}"`,
-			})
-			const exportPath = resolvePackageExportPath({
-				manifest: loaded.manifest,
-				exportName: parsed.exportName,
-			})
-			return joinPath(loaded.prefix, exportPath)
-		})()
+		parsed.packageName === state.rootPackage?.manifest.name
+			? joinPath(
+					state.rootPackage.prefix,
+					resolvePackageExportPath({
+						manifest: state.rootPackage.manifest,
+						exportName: parsed.exportName,
+					}),
+				)
+			: await (async () => {
+					const loaded = await ensurePackageLoaded(state, specifier)
+					return (
+						(await maybeEnsurePublishedArtifactTarget({
+							state,
+							specifier,
+							loaded,
+						})) ??
+						(() => {
+							assertPublishedSourceCanRebuildWithoutInstallingDeps({
+								sourceFiles: loaded.files,
+								bundleLabel: `Saved package export "${normalizePackageExportKey(
+									parsed.exportName,
+								)}"`,
+							})
+							const exportPath = resolvePackageExportPath({
+								manifest: loaded.manifest,
+								exportName: parsed.exportName,
+							})
+							return joinPath(loaded.prefix, exportPath)
+						})()
+					)
+				})()
 	const proxyPath = joinPath(
 		packageImportProxyPrefix,
 		`${createPackageProxyPathSegment(specifier)}.js`,
@@ -603,6 +634,7 @@ async function prepareKodyGraphFiles(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		files,
+		rootPackage: readRootPackage(input.sourceFiles),
 		proxies: new Map(),
 		packages: new Map(),
 		dependencies: new Map(),
