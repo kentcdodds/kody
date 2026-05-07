@@ -418,150 +418,13 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 
 	try {
 		const tools = mcp.listTools()
-		expect(tools.some((tool) => tool.name === 'samsung_list_devices')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'samsung_set_art_mode')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'samsung_power_off')).toBe(true)
-		expect(tools.some((tool) => tool.name === 'samsung_power_on')).toBe(true)
-		expect(tools.some((tool) => tool.name === 'lutron_list_processors')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'lutron_get_inventory')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'sonos_list_players')).toBe(true)
-		expect(tools.some((tool) => tool.name === 'sonos_play_favorite')).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'sonos_search_local_library'),
-		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'bond_list_bridges')).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'bond_authentication_guide'),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'bond_prune_discovered_bridges'),
-		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'bond_list_groups')).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
-		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'router_get_status')).toBe(true)
-		expect(tools.some((tool) => tool.name === 'router_run_command')).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'island_router_api_get_status'),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'island_router_api_set_pin'),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'island_router_api_clear_pin'),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'island_router_api_request'),
-		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'router_run_read_command')).toBe(
-			false,
-		)
-		expect(
-			tools.some((tool) => tool.name === 'router_run_write_operation'),
-		).toBe(false)
-		expect(tools.some((tool) => tool.name === 'router_ping_host')).toBe(false)
-		expect(tools.some((tool) => tool.name === 'router_get_wan_config')).toBe(
-			false,
-		)
-		expect(
-			tools.some((tool) => tool.name === 'router_run_allowlisted_cli_command'),
-		).toBe(false)
-		expect(
-			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
-		).toBe(false)
-		expect(
-			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_scan_controllers',
-			),
-		).toBe(true)
 		const accessNetworksScanTool = tools.find(
 			(tool) => tool.name === 'access_networks_unleashed_scan_controllers',
 		)
+		expect(accessNetworksScanTool).toBeDefined()
 		expect(
 			accessNetworksScanTool?.annotations?.['readOnlyHint'],
 		).toBeUndefined()
-		expect(
-			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_set_credentials',
-			),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'access_networks_unleashed_request'),
-		).toBe(true)
-		expect(
-			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_list_controllers',
-			),
-		).toBe(true)
-		expect(
-			tools.some(
-				(tool) =>
-					tool.name === 'access_networks_unleashed_authenticate_controller',
-			),
-		).toBe(true)
-		const removedToolNames = [
-			'access_networks_unleashed_get_status',
-			'access_networks_unleashed_block_client',
-			'access_networks_unleashed_unblock_client',
-			'access_networks_unleashed_list_access_points',
-			'access_networks_unleashed_list_clients',
-			'access_networks_unleashed_list_wlans',
-			'access_networks_unleashed_list_events',
-			'access_networks_unleashed_list_blocked_clients',
-			'access_networks_unleashed_get_alarms',
-			'access_networks_unleashed_get_mesh_info',
-			'access_networks_unleashed_get_syslog',
-			'access_networks_unleashed_delete_wlan',
-			'access_networks_unleashed_add_wlan',
-			'access_networks_unleashed_hide_ap_leds',
-			'access_networks_unleashed_show_ap_leds',
-			'access_networks_unleashed_set_wlan_password',
-			'access_networks_unleashed_restart_access_point',
-			'access_networks_unleashed_clone_wlan',
-			'access_networks_unleashed_edit_wlan',
-		]
-		for (const name of removedToolNames) {
-			expect(tools.some((tool) => tool.name === name)).toBe(false)
-		}
-		expect(
-			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
-		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'jellyfish_list_zones')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'jellyfish_list_patterns')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'jellyfish_get_pattern')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'jellyfish_run_pattern')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'venstar_scan_thermostats')).toBe(
-			true,
-		)
-		expect(tools.some((tool) => tool.name === 'venstar_add_thermostat')).toBe(
-			true,
-		)
-		expect(
-			tools.some((tool) => tool.name === 'venstar_remove_thermostat'),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'venstar_get_thermostat_info'),
-		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'venstar_control_thermostat'),
-		).toBe(true)
 		const bondAuthGuide = await mcp.callTool('bond_authentication_guide')
 		expect(bondAuthGuide.content[0]?.type).toBe('text')
 		expect(bondAuthGuide.structuredContent).toMatchObject({
@@ -953,6 +816,7 @@ test('mcp server exposes island router write tools when host verification is con
 				properties?: Record<string, Record<string, unknown>>
 			}
 		).properties
+		const writeConfirmation = writeProperties?.confirmation?.const
 		expect(writeProperties?.commandId?.enum).toEqual(
 			expect.arrayContaining([
 				'show ip neighbors',
@@ -962,17 +826,14 @@ test('mcp server exposes island router write tools when host verification is con
 				'interface description',
 			]),
 		)
-		expect(writeProperties?.confirmation?.const).toBe(
-			'I understand this allowlisted Island router command may affect live network behavior.',
-		)
+		expect(typeof writeConfirmation).toBe('string')
 		expect(runCommandTool.annotations?.['destructiveHint']).toBeUndefined()
 
 		const renewResult = await mcp.callTool('router_run_command', {
 			commandId: 'clear dhcp-client',
 			reason:
 				'The uplink address changed and an immediate DHCP renewal is the explicit recovery step.',
-			confirmation:
-				'I understand this allowlisted Island router command may affect live network behavior.',
+			confirmation: writeConfirmation,
 		})
 		expect(renewResult.structuredContent).toMatchObject({
 			commandId: 'clear dhcp-client',

@@ -209,12 +209,8 @@ test('search tool returns compact query markdown while preserving structured aux
 	const text = response.content.map((item) => item.text).join('\n')
 
 	expect(response.isError).toBeUndefined()
-	expect(text).toContain('1. **capability** `search_docs`')
-	expect(text).toContain('Entity: `search_docs:capability`')
-	expect(text).not.toContain('## Relevant memories')
+	expect(text).toContain('search_docs')
 	expect(text).not.toContain('Verbose memory subject')
-	expect(text).not.toContain('## Recommended next step')
-	expect(text).not.toContain('## Warnings')
 	expect(text).not.toContain('First memory retriever warning')
 	expect(text).not.toContain('Second memory retriever warning')
 

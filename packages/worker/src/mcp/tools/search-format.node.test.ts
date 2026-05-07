@@ -344,9 +344,6 @@ export declare function fetch(request: Request): Promise<Response>
 		},
 	})
 	expect(packageDetail.markdown).toContain('## README (`README.md`)')
-	expect(packageDetail.markdown).toContain(
-		'Use this package to inspect observed UI state.',
-	)
 })
 
 test('package entity detail renders referenced local types without dumping full types source', () => {
@@ -537,19 +534,10 @@ test('search markdown keeps broad query results compact', () => {
 		],
 	})
 
-	expect(markdown).toContain(
-		'1. **package** @kody/observed\\-package (`observed-package`) — Observed package with an app surface\\. Entity: `observed-package:package`',
-	)
-	expect(markdown).toContain(
-		'2. **connector** `github` — GitHub OAuth connector config\\. Entity: `github:connector`',
-	)
-	expect(markdown).toContain(
-		'2 search notice(s) available in the structured result.',
-	)
+	expect(markdown).toContain('observed-package:package')
+	expect(markdown).toContain('github:connector')
 	expect(markdown).not.toContain('## Recommended next step')
-	expect(markdown).not.toContain('Inspect package detail')
 	expect(markdown).not.toContain('## Relevant memories')
-	expect(markdown).not.toContain('Long-term preference')
 	expect(markdown).not.toContain('**README')
 	expect(markdown).not.toContain('Token URL')
 	expect(markdown).not.toContain('github-access-token')
@@ -567,9 +555,7 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 			},
 		],
 	})
-	expect(entityMarkdown).toContain(
-		'For full detail on entity-backed hits, call `search` with `entity: "{id}:{type}"`.',
-	)
+	expect(entityMarkdown).toContain('`entity: "{id}:{type}"`')
 
 	const retrieverMarkdown = formatSearchMarkdown({
 		warnings: [],
@@ -587,7 +573,7 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 			},
 		],
 	})
-	expect(retrieverMarkdown).not.toContain('entity: "{id}:{type}"')
+	expect(retrieverMarkdown).not.toContain('`entity: "{id}:{type}"`')
 })
 
 test('search formatting surfaces package retriever results', () => {

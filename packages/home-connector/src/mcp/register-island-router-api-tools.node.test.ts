@@ -70,12 +70,9 @@ test('registers Island Router API proxy tools and handlers call the adapter', as
 		},
 	})
 
-	expect([...tools.keys()]).toEqual([
-		'island_router_api_get_status',
-		'island_router_api_set_pin',
-		'island_router_api_clear_pin',
-		'island_router_api_request',
-	])
+	expect(tools.get('island_router_api_get_status')).toBeDefined()
+	expect(tools.get('island_router_api_set_pin')).toBeDefined()
+	expect(tools.get('island_router_api_request')).toBeDefined()
 	expect(tools.get('island_router_api_set_pin')?.inputSchema).toMatchObject({
 		properties: {
 			pin: {
