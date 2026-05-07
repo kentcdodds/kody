@@ -485,7 +485,10 @@ function collectTypeReferenceNamesFromNodes(nodes: Array<unknown>) {
 	return names
 }
 
-function getFunctionReferenceNodes(node: unknown) {
+function getFunctionReferenceNodes(
+	node: unknown,
+	options: { includeTypeParameters?: boolean } = {},
+) {
 	const functionNode = node as {
 		params?: unknown
 		returnType?: unknown
@@ -493,7 +496,9 @@ function getFunctionReferenceNodes(node: unknown) {
 	}
 	const params = Array.isArray(functionNode.params) ? functionNode.params : []
 	return [
-		functionNode.typeParameters,
+		...((options.includeTypeParameters ?? true)
+			? [functionNode.typeParameters]
+			: []),
 		...params.map(
 			(param) => (param as { typeAnnotation?: unknown }).typeAnnotation,
 		),
@@ -513,7 +518,7 @@ function getVariableFunctionReferenceNodes(declarator: ModuleAstNode) {
 	) {
 		return []
 	}
-	return getFunctionReferenceNodes(init)
+	return getFunctionReferenceNodes(init, { includeTypeParameters: false })
 }
 
 function collectReferencedTypes(input: {
@@ -547,11 +552,9 @@ function collectReferencedTypes(input: {
 		const declaration = input.localTypes.get(next.name)
 		if (!declaration || seen.has(next.name)) continue
 		const nextChars = totalChars + declaration.definition.length
-		if (
-			nextChars > maxReferencedTypeCharsPerExport &&
-			referencedTypes.length > 0
-		) {
-			break
+		if (nextChars > maxReferencedTypeCharsPerExport) {
+			if (maxReferencedTypeCharsPerExport - totalChars <= 0) break
+			continue
 		}
 		seen.add(next.name)
 		totalChars = nextChars
@@ -579,11 +582,9 @@ function mergeReferencedTypes(
 	for (const type of typeGroups.flat()) {
 		if (seen.has(type.name)) continue
 		const nextChars = totalChars + type.definition.length
-		if (
-			nextChars > maxReferencedTypeCharsPerExport &&
-			referencedTypes.length > 0
-		) {
-			break
+		if (nextChars > maxReferencedTypeCharsPerExport) {
+			if (maxReferencedTypeCharsPerExport - totalChars <= 0) break
+			continue
 		}
 		seen.add(type.name)
 		totalChars = nextChars

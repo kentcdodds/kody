@@ -437,17 +437,29 @@ test('buildPackageSearchProjection uses local declaration kind for exported cons
 	})
 
 	const projection = buildPackageSearchProjection(manifest, {
-		'src/index.ts': `/**
+		'src/index.ts': `type GenericBound = {
+	value: string
+}
+
+type RenderedInput = {
+	value: string
+}
+
+/**
  * Package version metadata.
  */
 export declare const VERSION: string
 
 export declare const typed: (value: string) => string
 
+export declare const typedGeneric: <T extends RenderedInput>(input: T) => string
+
 /**
  * Runtime formatter.
  */
 export const format = (value: string): string => value.trim()
+
+export const genericFormat = <T extends GenericBound>(input: T): string => input.value
 `,
 	})
 
@@ -459,10 +471,79 @@ export const format = (value: string): string => value.trim()
 			referencedTypes: [],
 		},
 		{
+			name: 'typedGeneric',
+			description: null,
+			typeDefinition:
+				'export declare const typedGeneric: <T extends RenderedInput>(input: T) => string',
+			referencedTypes: [
+				{
+					name: 'RenderedInput',
+					kind: 'type',
+					definition: `type RenderedInput = {
+	value: string
+}`,
+				},
+			],
+		},
+		{
 			name: 'format',
 			description: 'Runtime formatter.',
 			typeDefinition: 'export function format(value: string): string',
 			referencedTypes: [],
+		},
+		{
+			name: 'genericFormat',
+			description: null,
+			typeDefinition: 'export function genericFormat(input: T): string',
+			referencedTypes: [],
+		},
+	])
+	expect(
+		projection.exports[0]?.referencedTypes.map((type) => type.name),
+	).toEqual(['RenderedInput'])
+})
+
+test('buildPackageSearchProjection skips referenced types that exceed the size budget', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/large-type-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'large-type-tools',
+				description: 'Large type tools package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const oversizedFields = Array.from(
+		{ length: 1_500 },
+		(_, index) => `	field${index}: string`,
+	).join('\n')
+
+	const projection = buildPackageSearchProjection(manifest, {
+		'src/index.ts': `type HugeInput = {
+${oversizedFields}
+}
+
+type SmallInput = {
+	value: string
+}
+
+export function run(huge: HugeInput, small: SmallInput): string {
+	return small.value
+}
+`,
+	})
+
+	expect(projection.exports[0]?.referencedTypes).toEqual([
+		{
+			name: 'SmallInput',
+			kind: 'type',
+			definition: `type SmallInput = {
+	value: string
+}`,
 		},
 	])
 })
