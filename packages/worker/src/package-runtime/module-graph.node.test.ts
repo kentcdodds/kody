@@ -106,6 +106,11 @@ async function createTemporaryModuleGraph(files: Record<string, string>) {
 		await mkdir(dirname(destination), { recursive: true })
 		await writeFile(destination, source, 'utf8')
 	}
+	await writeFile(
+		join(root, 'package.json'),
+		JSON.stringify({ type: 'module' }),
+		'utf8',
+	)
 	return {
 		async importModule(modulePath: string) {
 			const moduleUrl = pathToFileURL(join(root, modulePath))
