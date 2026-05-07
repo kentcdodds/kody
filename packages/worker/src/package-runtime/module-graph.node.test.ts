@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
@@ -92,6 +96,25 @@ function createBundleInput(input?: {
 		},
 		entryPoint: input?.entryPoint ?? 'app.js',
 		cacheKey: input?.cacheKey,
+	}
+}
+
+async function createTemporaryModuleGraph(files: Record<string, string>) {
+	const root = await mkdtemp(join(tmpdir(), 'kody-module-graph-'))
+	for (const [filePath, source] of Object.entries(files)) {
+		const destination = join(root, filePath)
+		await mkdir(dirname(destination), { recursive: true })
+		await writeFile(destination, source, 'utf8')
+	}
+	return {
+		async importModule(modulePath: string) {
+			const moduleUrl = pathToFileURL(join(root, modulePath))
+			moduleUrl.searchParams.set('cache', crypto.randomUUID())
+			return await import(moduleUrl.href)
+		},
+		async cleanup() {
+			await rm(root, { recursive: true, force: true })
+		},
 	}
 }
 
@@ -467,6 +490,159 @@ test('buildKodyModuleBundle prefers published importable export artifacts for sa
 	)
 	expect(proxyEntry?.[1]).toContain('.__published_bundle__')
 	expect(proxyEntry?.[1]).not.toContain('src/html.ts')
+})
+
+test('buildKodyModuleBundle imports published importable defaults as callable default exports', async () => {
+	mockModule.createWorker.mockImplementation(
+		async (input: { files: Record<string, string>; entryPoint: string }) => ({
+			mainModule: input.entryPoint,
+			modules: input.files,
+			dependencies: [],
+		}),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'./callable': './src/callable.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'./callable': './src/callable.js',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+				},
+			}),
+			'src/callable.js': [
+				'export const marker = "provider"',
+				'export default function callable(input = {}) {',
+				'\treturn { ok: true, value: input.value }',
+				'}',
+			].join('\n'),
+		},
+	})
+
+	const { buildKodyImportableModuleBundle, buildKodyModuleBundle } =
+		await import('./module-graph.ts')
+	const importableBundle = await buildKodyImportableModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'./callable': './src/callable.js',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+				},
+			}),
+			'src/callable.js': [
+				'export const marker = "provider"',
+				'export default function callable(input = {}) {',
+				'\treturn { ok: true, value: input.value }',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'src/callable.js',
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { kind: string }) =>
+			input.kind === 'importable-module'
+				? {
+						row: {
+							id: 'artifact-1',
+						},
+						artifact: {
+							version: 1,
+							kind: 'importable-module',
+							artifactName: './callable',
+							sourceId: 'source-1',
+							publishedCommit: 'commit-1',
+							entryPoint: 'src/callable.js',
+							mainModule: importableBundle.mainModule,
+							modules: importableBundle.modules,
+							dependencies: [],
+							packageContext: {
+								packageId: 'pkg-1',
+								kodyId: 'example-package',
+								sourceId: 'source-1',
+							},
+							serviceContext: null,
+							createdAt: '2026-05-01T00:00:00.000Z',
+						},
+					}
+				: null,
+	)
+
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': [
+				'import callable from "kody:@kentcdodds/example-package/callable"',
+				'export default callable',
+			].join('\n'),
+		},
+		entryPoint: 'index.js',
+	})
+
+	const consumerCall = mockModule.createWorker.mock.calls.at(-1)?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const proxyEntry = Object.entries(consumerCall?.files ?? {}).find(([path]) =>
+		path.includes('__kody_virtual__/imports/'),
+	)
+	expect(proxyEntry).toBeDefined()
+	const moduleGraph = await createTemporaryModuleGraph(
+		consumerCall?.files ?? {},
+	)
+	try {
+		const proxyModule = await moduleGraph.importModule(proxyEntry?.[0] ?? '')
+		expect(proxyModule.marker).toBe('provider')
+		expect(typeof proxyModule.default).toBe('function')
+		expect(proxyModule.default({ value: 'from-published-artifact' })).toEqual({
+			ok: true,
+			value: 'from-published-artifact',
+		})
+	} finally {
+		await moduleGraph.cleanup()
+	}
 })
 
 test('buildKodyModuleBundle keeps distinct proxy and artifact paths for exports whose names only differ by punctuation', async () => {

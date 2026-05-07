@@ -163,9 +163,7 @@ export default runtime;
 `.trim()
 }
 
-function createExecuteEntrypointSource(input: {
-	modulePath: string
-}) {
+function createExecuteEntrypointSource(input: { modulePath: string }) {
 	return `
 import userEntrypoint from ${JSON.stringify(input.modulePath)};
 
@@ -221,7 +219,7 @@ function createImportableEntrypointSource(input: { modulePath: string }) {
 	return `
 export * from ${JSON.stringify(input.modulePath)};
 import * as userModule from ${JSON.stringify(input.modulePath)};
-export default userModule;
+export default userModule.default;
 `.trim()
 }
 
