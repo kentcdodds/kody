@@ -36,7 +36,9 @@ export const packageExportSurfaceSchema = z.object({
 	types_path: z
 		.string()
 		.nullable()
-		.describe('Package-relative types source path for this export, when declared.'),
+		.describe(
+			'Package-relative types source path for this export, when declared.',
+		),
 	description: z
 		.string()
 		.nullable()
@@ -44,7 +46,9 @@ export const packageExportSurfaceSchema = z.object({
 	type_definition: z
 		.string()
 		.nullable()
-		.describe('Primary export type signature parsed from source when available.'),
+		.describe(
+			'Primary export type signature parsed from source when available.',
+		),
 })
 
 export const packageDetailSchema = packageSummarySchema.extend({

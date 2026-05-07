@@ -114,4 +114,3 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 		sourceId: 'source-1',
 	})
 })
-

@@ -8,8 +8,10 @@ import {
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
-import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	type AuthoredPackageJson,
+	type SavedPackageRecord,
+} from '#worker/package-registry/types.ts'
 import {
 	createPublishedPackageCacheKey,
 	createPublishedPackagePromiseCache,
