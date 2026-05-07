@@ -429,7 +429,11 @@ function collectLocalTypeDeclarations(
 
 function readTypeReferenceName(node: unknown): string | null {
 	if (!node || typeof node !== 'object') return null
-	if (getNodeType(node) !== 'Identifier') return null
+	const type = getNodeType(node)
+	if (type === 'TSQualifiedName') {
+		return readTypeReferenceName((node as { left?: unknown }).left)
+	}
+	if (type !== 'Identifier') return null
 	return readIdentifierName(node)
 }
 
