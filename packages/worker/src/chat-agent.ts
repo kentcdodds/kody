@@ -8,7 +8,7 @@ import {
 import { type Connection, type ConnectionContext } from 'agents'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createChatThreadsStore } from '#app/chat-threads.ts'
-import { createMcpCallerContext } from './mcp/context.ts'
+import { createChatMcpCallerContext } from './chat-agent-mcp-context.ts'
 import { createAiRuntime, type AiRuntimeResult } from './ai-runtime.ts'
 import { buildSentryOptions } from './sentry-options.ts'
 
@@ -126,7 +126,7 @@ class ChatAgentBase extends AIChatAgent<Env> {
 	private runtimeContext: {
 		appUserId: number
 		baseUrl: string
-		user: ReturnType<typeof createMcpCallerContext>['user']
+		user: ReturnType<typeof createChatMcpCallerContext>['user']
 	} | null = null
 
 	private getRuntimeContext() {
@@ -265,7 +265,7 @@ class ChatAgentBase extends AIChatAgent<Env> {
 		}
 		this.persistRuntimeContext()
 		await this.addMcpServer('kody', this.env.MCP_OBJECT, {
-			props: createMcpCallerContext({
+			props: createChatMcpCallerContext({
 				baseUrl,
 				user: user.mcpUser,
 			}),

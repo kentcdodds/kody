@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { createMcpCallerContext } from '#mcp/context.ts'
+import {
+	createDefaultMcpCallerContext,
+	createMcpCallerContext,
+} from '#mcp/context.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 
 const runtimeRokuTools = [
@@ -87,6 +90,39 @@ function buildRemoteConnectorEnv() {
 	} as unknown as Env
 }
 
+function buildHomeRemoteConnectorEnv() {
+	return {
+		REMOTE_CONNECTOR_SESSION: {
+			idFromName(name: string) {
+				return name
+			},
+			get() {
+				return {
+					getSnapshot() {
+						return Promise.resolve({
+							connectorId: 'default',
+							connectorKind: 'home',
+							connectedAt: '2026-05-07T00:00:00.000Z',
+							lastSeenAt: '2026-05-07T00:00:01.000Z',
+							tools: [
+								{
+									name: 'home_status',
+									title: 'Home Status',
+									description: 'Read the current home connector status.',
+									inputSchema: {
+										type: 'object',
+										properties: {},
+									},
+								},
+							],
+						})
+					},
+				}
+			},
+		},
+	} as unknown as Env
+}
+
 test('meta_list_capabilities includes runtime remote connector capabilities with type definitions only', async () => {
 	const env = buildRemoteConnectorEnv()
 
@@ -129,6 +165,26 @@ test('meta_list_capabilities includes runtime remote connector capabilities with
 	expect(listAppsCapability).not.toHaveProperty('outputSchema')
 	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability?.domain).toBe('remote:roku:default')
+})
+
+test('meta_list_capabilities includes capabilities from the default home remote connector', async () => {
+	const result = await metaListCapabilitiesCapability.handler(
+		{
+			detail: true,
+		},
+		{
+			env: buildHomeRemoteConnectorEnv(),
+			callerContext: createDefaultMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+			}),
+		},
+	)
+
+	const homeStatusCapability = result.capabilities.find(
+		(capability) => capability.name === 'home_default_home_status',
+	)
+	expect(homeStatusCapability).not.toBeUndefined()
+	expect(homeStatusCapability?.domain).toBe('remote:home:default')
 })
 
 test('meta_list_capabilities filters by domain', async () => {

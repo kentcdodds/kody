@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest'
-import { createMcpCallerContext, parseMcpCallerContext } from './context.ts'
+import {
+	createDefaultMcpCallerContext,
+	createMcpCallerContext,
+	getDefaultMcpRemoteConnectorRefs,
+	parseMcpCallerContext,
+} from './context.ts'
 
 test('createMcpCallerContext normalizes missing user to null', () => {
 	expect(
@@ -13,6 +18,43 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 		storageContext: null,
 		user: null,
 	})
+})
+
+test('createDefaultMcpCallerContext attaches the default home remote connector', () => {
+	expect(
+		createDefaultMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+		}),
+	).toMatchObject({
+		baseUrl: 'https://heykody.dev',
+		remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+		user: null,
+	})
+})
+
+test('createDefaultMcpCallerContext preserves explicit remote connector refs', () => {
+	expect(
+		createDefaultMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			remoteConnectors: [{ kind: 'lights', instanceId: 'living-room' }],
+		}).remoteConnectors,
+	).toEqual([{ kind: 'lights', instanceId: 'living-room' }])
+
+	expect(
+		createDefaultMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			remoteConnectors: null,
+		}).remoteConnectors,
+	).toBeNull()
+})
+
+test('getDefaultMcpRemoteConnectorRefs returns a fresh ref list', () => {
+	const first = getDefaultMcpRemoteConnectorRefs()
+	const second = getDefaultMcpRemoteConnectorRefs()
+
+	expect(first).toEqual([{ kind: 'home', instanceId: 'default' }])
+	expect(first).not.toBe(second)
+	expect(first[0]).not.toBe(second[0])
 })
 
 test('parseMcpCallerContext validates caller context shape', () => {

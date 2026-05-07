@@ -3,7 +3,10 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
+import {
+	createDefaultMcpCallerContext,
+	type McpServerProps,
+} from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 
 export const mcpResourcePath = '/mcp'
@@ -110,7 +113,7 @@ export async function handleMcpRequest({
 	}
 
 	const context = ctx as OAuthExecutionContext
-	const props: OAuthContextProps = createMcpCallerContext({
+	const props: OAuthContextProps = createDefaultMcpCallerContext({
 		baseUrl: origin,
 		user: tokenSummary.grant.props ?? null,
 	})

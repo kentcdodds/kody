@@ -10,13 +10,21 @@ import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors
 
 export type McpServerProps = McpCallerContext
 
-export function createMcpCallerContext(input: {
+type CreateMcpCallerContextInput = {
 	baseUrl: string
 	user?: McpUserContext | null
 	remoteConnectors?: Array<RemoteConnectorRef> | null
 	storageContext?: McpStorageContext | null
 	repoContext?: McpRepoContext | null
-}): McpCallerContext {
+}
+
+const defaultMcpRemoteConnectorRefs = [
+	{ kind: 'home', instanceId: 'default' },
+] satisfies Array<RemoteConnectorRef>
+
+export function createMcpCallerContext(
+	input: CreateMcpCallerContextInput,
+): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
 		user: input.user ?? null,
@@ -24,6 +32,22 @@ export function createMcpCallerContext(input: {
 		storageContext: input.storageContext ?? null,
 		repoContext: input.repoContext ?? null,
 	}
+}
+
+export function getDefaultMcpRemoteConnectorRefs(): Array<RemoteConnectorRef> {
+	return defaultMcpRemoteConnectorRefs.map((ref) => ({ ...ref }))
+}
+
+export function createDefaultMcpCallerContext(
+	input: CreateMcpCallerContextInput,
+): McpCallerContext {
+	return createMcpCallerContext({
+		...input,
+		remoteConnectors:
+			input.remoteConnectors === undefined
+				? getDefaultMcpRemoteConnectorRefs()
+				: input.remoteConnectors,
+	})
 }
 
 export function parseMcpCallerContext(value: unknown): McpCallerContext {
