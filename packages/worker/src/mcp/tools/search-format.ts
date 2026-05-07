@@ -3,6 +3,7 @@ import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
+import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import {
 	type AuthoredPackageJson,
 	type PackageJobSchedule,
@@ -377,13 +378,6 @@ export type SearchMatch =
 
 function buildPackageHostedUrl(baseUrl: string, kodyId: string) {
 	return `${baseUrl.replace(/\/+$/, '')}/packages/${encodeURIComponent(kodyId)}`
-}
-
-function buildPackageImportSpecifier(packageName: string, exportName: string) {
-	if (exportName === '.') {
-		return `kody:${packageName}`
-	}
-	return `kody:${packageName}/${exportName.replace(/^\.\//, '')}`
 }
 
 function buildEntityRef(id: string, type: SearchEntityType) {

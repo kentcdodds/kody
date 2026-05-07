@@ -3,16 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
+import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { packageDetailSchema } from './shared.ts'
-
-function buildPackageImportSpecifier(packageName: string, exportName: string) {
-	if (exportName === '.') {
-		return `kody:${packageName}`
-	}
-	return `kody:${packageName}/${exportName.replace(/^\.\//, '')}`
-}
 
 export const getPackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
