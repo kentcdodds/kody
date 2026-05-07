@@ -782,6 +782,11 @@ test('buildKodyModuleBundle resolves transitive imports back to the root package
 			},
 		],
 	})
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
+		{},
+		{ userId: 'user-1', name: '@kentcdodds/journaling' },
+	)
 })
 
 test('buildKodyModuleBundle keeps dependencies for scoped packages with the same leaf', async () => {

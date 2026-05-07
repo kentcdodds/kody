@@ -48,7 +48,7 @@ export const getPackageCapability = defineDomainCapability(
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
-				exports: projection.exports.map((exportDetail) => ({
+				exports: (projection.exports ?? []).map((exportDetail) => ({
 					subpath: exportDetail.subpath,
 					import_specifier: buildPackageImportSpecifier(
 						saved.name,
