@@ -32,6 +32,10 @@ const taskLexicon = {
 		'stop',
 		'run',
 		'launch',
+		'enable',
+		'disable',
+		'block',
+		'unblock',
 		'set',
 		'turn',
 		'skip',
@@ -61,6 +65,8 @@ const taskLexicon = {
 		'inspect',
 		'view',
 		'current',
+		'latest',
+		'summary',
 	],
 	learn: [
 		'what',
@@ -84,6 +90,9 @@ const taskLexicon = {
 		'broken',
 		'troubleshoot',
 		'diagnose',
+		'trace',
+		'traces',
+		'triage',
 	],
 } as const
 

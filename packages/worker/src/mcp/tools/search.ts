@@ -36,9 +36,10 @@ import {
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
 import {
-	loadPackageManifestBySourceId,
-	loadPackageSourceBySourceId,
-} from '#worker/package-registry/source.ts'
+	buildPackageReadmeSnippet,
+	type PackageReadmeSnippet,
+} from '#worker/package-registry/package-readme.ts'
+import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
@@ -83,6 +84,7 @@ const defaultMaxResponseSize = 4_000
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
 	projection: PackageSearchProjection
+	readmeSnippet?: PackageReadmeSnippet | null
 }
 
 export type OptionalSearchRowsResult = {
@@ -104,6 +106,7 @@ export type SearchScoreComponents = {
 	actionMatch: number
 	taskAffinity: number
 	appAvailability: number
+	wrapperWorkflow: number
 	constraint: number
 	final: number
 }
@@ -210,7 +213,7 @@ export async function buildSavedPackageSearchRows(input: {
 	const rows = await Promise.all(
 		input.records.map(async (record) => {
 			try {
-				const loaded = await loadPackageManifestBySourceId({
+				const loaded = await loadPackageSourceBySourceId({
 					env: input.env,
 					baseUrl: input.baseUrl,
 					userId: input.userId,
@@ -218,7 +221,14 @@ export async function buildSavedPackageSearchRows(input: {
 				})
 				return {
 					record,
-					projection: buildPackageSearchProjection(loaded.manifest),
+					projection: buildPackageSearchProjection(
+						loaded.manifest,
+						loaded.files,
+					),
+					readmeSnippet: buildPackageReadmeSnippet({
+						files: loaded.files,
+						maxChars: 1_000,
+					}),
 				}
 			} catch (cause) {
 				Sentry.captureException(cause, {
@@ -333,6 +343,18 @@ function buildSearchableEntityDescriptors(input: {
 	}
 
 	for (const entry of input.optionalRows.packageRows) {
+		const services = Array.isArray(entry.projection.services)
+			? entry.projection.services
+			: []
+		const workflows = Array.isArray(entry.projection.workflows)
+			? entry.projection.workflows
+			: []
+		const subscriptions = Array.isArray(entry.projection.subscriptions)
+			? entry.projection.subscriptions
+			: []
+		const retrievers = Array.isArray(entry.projection.retrievers)
+			? entry.projection.retrievers
+			: []
 		descriptors.push({
 			type: 'package',
 			id: entry.record.kodyId,
@@ -357,11 +379,28 @@ function buildSearchableEntityDescriptors(input: {
 					]),
 				]),
 				...entry.projection.jobs.map((job) => job.name),
-				...entry.projection.retrievers.flatMap((retriever) => [
+				...services.flatMap((service) => [
+					service.name,
+					service.entry,
+					service.mode,
+					service.autoStart ? 'auto-start' : 'manual-start',
+				]),
+				...workflows.flatMap((workflow) => [
+					workflow.name,
+					workflow.exportName,
+					workflow.description ?? '',
+				]),
+				...subscriptions.flatMap((subscription) => [
+					subscription.topic,
+					subscription.handler,
+					subscription.description ?? '',
+				]),
+				...retrievers.flatMap((retriever) => [
 					retriever.key,
 					retriever.name,
 					retriever.description,
 				]),
+				entry.readmeSnippet?.snippet ?? '',
 				...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 			],
 		})
@@ -471,6 +510,7 @@ function buildCandidateBaseScore(input: {
 		actionMatch: 0,
 		taskAffinity: 0,
 		appAvailability: 0,
+		wrapperWorkflow: 0,
 		constraint: 0,
 		final:
 			input.vector === undefined
@@ -519,12 +559,127 @@ function scoreConstraintBoost(
 	return score
 }
 
+const wrapperWorkflowTokenSignals = new Set([
+	'wrap',
+	'wrapper',
+	'wrappers',
+	'wraps',
+	'wrapping',
+	'safe',
+	'safer',
+	'safety',
+	'guardrail',
+	'guardrails',
+	'confirmation',
+	'confirm',
+	'confirmed',
+	'workflow',
+	'workflows',
+	'orchestrate',
+	'orchestrates',
+	'orchestration',
+	'automation',
+	'automations',
+	'helper',
+	'helpers',
+])
+
+const wrapperWorkflowPhraseSignals = [
+	'package first',
+	'high level',
+	'higher level',
+	'safe wrapper',
+	'workflow glue',
+] as const
+
+const packageSurfaceTokenSignals = new Set([
+	'app',
+	'ui',
+	'service',
+	'services',
+	'workflow',
+	'workflows',
+	'subscription',
+	'subscriptions',
+	'retriever',
+	'retrievers',
+	'job',
+	'jobs',
+])
+
+function scorePackageWrapperWorkflowBoost(
+	candidate: SearchCandidate,
+	intent: SearchIntent,
+) {
+	if (candidate.type !== 'package') return 0
+	if (intent.meaningfulTokens.length === 0) return 0
+
+	const fieldText = candidate.searchFields.join('\n')
+	const fieldTokens = new Set(extractSearchTokens(fieldText))
+	const normalizedFieldText = normalizeSearchText(fieldText)
+	const matchedQueryTerms = intent.meaningfulTokens.filter((token) =>
+		fieldTokens.has(token),
+	)
+	const queryCoverage =
+		matchedQueryTerms.length / Math.max(1, intent.meaningfulTokens.length)
+	const actionTermCount = intent.actions.flatMap(
+		(action) => action.matchedTerms,
+	).length
+	const actionCoverage = scoreMatchedTerms(
+		candidate.searchFields,
+		intent.actions.flatMap((action) => action.matchedTerms),
+	)
+
+	const wrapperSignalCount = [...wrapperWorkflowTokenSignals].filter((token) =>
+		fieldTokens.has(token),
+	).length
+	const wrapperPhraseCount = wrapperWorkflowPhraseSignals.filter((phrase) =>
+		normalizedFieldText.includes(phrase),
+	).length
+	const surfaceSignalCount = [...packageSurfaceTokenSignals].filter((token) =>
+		fieldTokens.has(token),
+	).length
+	const hasPackageSurface =
+		surfaceSignalCount > 0 ||
+		('hasApp' in candidate.match && candidate.match.hasApp)
+
+	if (wrapperSignalCount + wrapperPhraseCount === 0 && !hasPackageSurface) {
+		return 0
+	}
+	if (queryCoverage < 0.2 && (actionTermCount === 0 || actionCoverage <= 0)) {
+		return 0
+	}
+
+	const taskWeight =
+		intent.task.name === 'learn'
+			? 0.25
+			: intent.task.name === 'unknown'
+				? 0.75
+				: 1
+	const confidenceWeight = Math.min(
+		1,
+		Math.max(0.35, intent.confidence, intent.task.confidence),
+	)
+	let boost = 0
+	if (wrapperSignalCount > 0) boost += 0.14
+	if (wrapperPhraseCount > 0) boost += 0.1
+	if (hasPackageSurface) boost += 0.1
+	if ('hasApp' in candidate.match && candidate.match.hasApp) boost += 0.04
+	boost += Math.min(0.1, queryCoverage * 0.16)
+	boost += Math.min(0.08, actionCoverage * 0.1)
+	return Math.min(0.42, boost) * confidenceWeight * taskWeight
+}
+
 function scoreTaskAffinity(
 	candidate: SearchCandidate,
 	intent: SearchIntent,
 ): Pick<
 	SearchScoreComponents,
-	'taskAffinity' | 'actionMatch' | 'appAvailability' | 'constraint'
+	| 'taskAffinity'
+	| 'actionMatch'
+	| 'appAvailability'
+	| 'wrapperWorkflow'
+	| 'constraint'
 > {
 	const taskConfidenceWeight = Math.min(
 		1,
@@ -571,6 +726,12 @@ function scoreTaskAffinity(
 			break
 		case 'debug':
 			if (candidate.type === 'connector') taskAffinity += 0.16
+			if (candidate.type === 'package') {
+				taskAffinity += 0.1
+				if ('hasApp' in candidate.match && candidate.match.hasApp) {
+					appAvailability += 0.08
+				}
+			}
 			if (candidate.type === 'capability') taskAffinity += 0.06
 			if (candidate.type === 'value') taskAffinity += 0.04
 			break
@@ -582,6 +743,7 @@ function scoreTaskAffinity(
 		taskAffinity: taskAffinity * taskConfidenceWeight,
 		actionMatch,
 		appAvailability,
+		wrapperWorkflow: scorePackageWrapperWorkflowBoost(candidate, intent),
 		constraint,
 	}
 }
@@ -611,6 +773,7 @@ function rerankCandidates(input: {
 			taskSignals.actionMatch +
 			taskSignals.taskAffinity +
 			taskSignals.appAvailability +
+			taskSignals.wrapperWorkflow +
 			taskSignals.constraint
 
 		return {
@@ -621,6 +784,7 @@ function rerankCandidates(input: {
 				actionMatch: taskSignals.actionMatch,
 				taskAffinity: taskSignals.taskAffinity,
 				appAvailability: taskSignals.appAvailability,
+				wrapperWorkflow: taskSignals.wrapperWorkflow,
 				constraint: taskSignals.constraint,
 				final,
 			},
@@ -680,7 +844,22 @@ function buildPackageCandidates(input: {
 			const retrievers = Array.isArray(entry.projection.retrievers)
 				? entry.projection.retrievers
 				: []
-			const document = buildPackageSearchDocument(entry.projection)
+			const services = Array.isArray(entry.projection.services)
+				? entry.projection.services
+				: []
+			const workflows = Array.isArray(entry.projection.workflows)
+				? entry.projection.workflows
+				: []
+			const subscriptions = Array.isArray(entry.projection.subscriptions)
+				? entry.projection.subscriptions
+				: []
+			const readmeSnippet = entry.readmeSnippet?.snippet ?? ''
+			const document = [
+				buildPackageSearchDocument(entry.projection),
+				readmeSnippet,
+			]
+				.filter((value) => value.trim().length > 0)
+				.join('\n')
 			const lexical = lexicalScore(input.query, document)
 			const vector = cosineSimilarity(
 				input.queryEmbedding,
@@ -696,6 +875,7 @@ function buildPackageCandidates(input: {
 					description: entry.record.description,
 					tags: entry.record.tags,
 					hasApp: entry.record.hasApp,
+					readmeSnippet: entry.readmeSnippet ?? null,
 				},
 				type: 'package' as const,
 				id: entry.record.kodyId,
@@ -726,6 +906,23 @@ function buildPackageCandidates(input: {
 						job.schedule,
 						job.enabled ? 'enabled' : 'disabled',
 					]),
+					...services.flatMap((service) => [
+						service.name,
+						service.entry,
+						service.mode,
+						service.autoStart ? 'auto-start' : 'manual-start',
+						service.timeoutMs != null ? `timeout-ms:${service.timeoutMs}` : '',
+					]),
+					...workflows.flatMap((workflow) => [
+						workflow.name,
+						workflow.exportName,
+						workflow.description ?? '',
+					]),
+					...subscriptions.flatMap((subscription) => [
+						subscription.topic,
+						subscription.handler,
+						subscription.description ?? '',
+					]),
 					...retrievers.flatMap((retriever) => [
 						retriever.key,
 						retriever.name,
@@ -734,6 +931,7 @@ function buildPackageCandidates(input: {
 						...retriever.scopes,
 					]),
 					...(entry.projection.appEntry ? [entry.projection.appEntry] : []),
+					readmeSnippet,
 					...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 				],
 				scoreComponents: buildCandidateBaseScore({

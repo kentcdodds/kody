@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	buildSavedPackageSearchRows,
 	loadDownHomeConnectorStatus,
@@ -20,11 +21,12 @@ function createPackageExportProjection(subpath: string) {
 		description: null,
 		typeDefinition: null,
 		functions: [],
+		referencedTypes: [],
 	}
 }
 
 const sourceMocks = vi.hoisted(() => ({
-	loadPackageManifestBySourceId: vi.fn(),
+	loadPackageSourceBySourceId: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/source.ts', async () => {
@@ -33,8 +35,8 @@ vi.mock('#worker/package-registry/source.ts', async () => {
 	)
 	return {
 		...actual,
-		loadPackageManifestBySourceId: (...args: Array<unknown>) =>
-			sourceMocks.loadPackageManifestBySourceId(...args),
+		loadPackageSourceBySourceId: (...args: Array<unknown>) =>
+			sourceMocks.loadPackageSourceBySourceId(...args),
 	}
 })
 
@@ -510,7 +512,323 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 	})
 })
 
+test('searchUnified prefers safer package wrappers over raw low-level capabilities', async () => {
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'home_access_networks',
+			description: 'Home access network operations',
+			capabilities: [
+				{
+					name: 'home_access_networks_unleashed_request',
+					domain: 'home_access_networks',
+					description:
+						'Raw Unleashed API request for WLAN client disable and block operations. Requires params and an operator reason.',
+					keywords: [
+						'wifi',
+						'wlan',
+						'client',
+						'disable',
+						'block',
+						'unleashed',
+						'params',
+						'reason',
+						'raw',
+						'request',
+					],
+					readOnly: false,
+					idempotent: false,
+					destructive: true,
+					inputSchema: {
+						type: 'object',
+						properties: {
+							params: { type: 'object' },
+							reason: { type: 'string' },
+						},
+					},
+					handler: async () => null,
+				},
+			],
+		},
+	])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'wifi disable wlan block client unleashed params reason',
+		limit: 3,
+		registry,
+		optionalRows: {
+			packageRows: [
+				{
+					record: {
+						id: 'unleashed-wifi-pkg',
+						userId: 'user-1',
+						name: '@kentcdodds/unleashed-wifi',
+						kodyId: 'unleashed-wifi',
+						description:
+							'Safer package-first Wi-Fi workflows for Unleashed client controls.',
+						tags: ['wifi', 'unleashed', 'network'],
+						searchText:
+							'Safe wrapper around home_access_networks_unleashed_request for WLAN client disable block operations with confirmation and operator reason.',
+						sourceId: 'source-unleashed-wifi',
+						hasApp: false,
+						createdAt: '2026-04-20T00:00:00.000Z',
+						updatedAt: '2026-04-20T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kentcdodds/unleashed-wifi',
+						kodyId: 'unleashed-wifi',
+						description:
+							'Safer package-first Wi-Fi workflows for Unleashed client controls.',
+						tags: ['wifi', 'unleashed', 'network'],
+						searchText:
+							'Safe wrapper around home_access_networks_unleashed_request for WLAN client disable block operations with confirmation and operator reason.',
+						hasApp: false,
+						appEntry: null,
+						exports: [
+							{
+								subpath: './block-client',
+								runtimeTarget: 'src/block-client.ts',
+								typesPath: 'src/block-client.d.ts',
+								description:
+									'High-level wrapper that renders safe XML payloads for blocking Wi-Fi clients.',
+								typeDefinition:
+									'export declare function blockWifiClient(params: BlockClientParams): Promise<void>',
+								functions: [
+									{
+										name: 'blockWifiClient',
+										description:
+											'Disable or block an Unleashed WLAN client after confirmation.',
+										typeDefinition:
+											'export declare function blockWifiClient(params: BlockClientParams): Promise<void>',
+										referencedTypes: [],
+									},
+								],
+								referencedTypes: [
+									{
+										name: 'BlockClientParams',
+										kind: 'interface',
+										definition:
+											'interface BlockClientParams { clientMac: string; wlan: string; reason: string }',
+									},
+								],
+							},
+						],
+						jobs: [],
+						services: [],
+						workflows: [],
+						subscriptions: [],
+						retrievers: [],
+					},
+				},
+			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'unleashed-wifi',
+	})
+	expect(result.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'capability',
+				name: 'home_access_networks_unleashed_request',
+			}),
+		]),
+	)
+})
+
+test('searchUnified preserves exact capability matches without a relevant wrapper', async () => {
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'meta',
+			description: 'Meta capabilities',
+			capabilities: [
+				{
+					name: 'meta_memory_verify',
+					domain: 'meta',
+					description:
+						'Verify related long-term memories before updating memory storage.',
+					keywords: ['memory', 'verify', 'storage'],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {
+							query: { type: 'string' },
+						},
+					},
+					handler: async () => null,
+				},
+			],
+		},
+	])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'meta_memory_verify memory storage',
+		limit: 3,
+		registry,
+		optionalRows: {
+			packageRows: [
+				{
+					record: {
+						id: 'notes-pkg',
+						userId: 'user-1',
+						name: '@kentcdodds/notes-dashboard',
+						kodyId: 'notes-dashboard',
+						description: 'Personal notes dashboard.',
+						tags: ['notes'],
+						searchText: 'notes reminders dashboard',
+						sourceId: 'source-notes',
+						hasApp: true,
+						createdAt: '2026-04-20T00:00:00.000Z',
+						updatedAt: '2026-04-20T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kentcdodds/notes-dashboard',
+						kodyId: 'notes-dashboard',
+						description: 'Personal notes dashboard.',
+						tags: ['notes'],
+						searchText: 'notes reminders dashboard',
+						hasApp: true,
+						appEntry: 'src/app.ts',
+						exports: [],
+						jobs: [],
+						services: [],
+						workflows: [],
+						subscriptions: [],
+						retrievers: [],
+					},
+				},
+			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'capability',
+		name: 'meta_memory_verify',
+	})
+})
+
+test('buildSavedPackageSearchRows hydrates README and export JSDoc search signals', async () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/email-received-subscriber',
+			exports: {
+				'./trace-processor': {
+					import: './src/trace-processor.ts',
+					types: './src/trace-processor.d.ts',
+				},
+			},
+			kody: {
+				id: 'email-received-subscriber',
+				description: 'Email received subscriber package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const files = {
+		'package.json': '{}',
+		'README.md':
+			'# Email received subscriber\n\nPackage-first trace and debug workflow for failed email processor service storage automation.',
+		'src/trace-processor.d.ts': `/**
+ * Trace failed email processor service storage writes.
+ */
+export declare function traceProcessorFailure(messageId: string): Promise<void>
+`,
+	}
+	sourceMocks.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		source: { id: 'source-email' },
+		manifest,
+		files,
+	})
+
+	const rows = await buildSavedPackageSearchRows({
+		env: {} as Env,
+		baseUrl: 'http://localhost',
+		userId: 'user-123',
+		records: [
+			{
+				id: 'email-pkg',
+				userId: 'user-123',
+				name: '@kentcdodds/email-received-subscriber',
+				kodyId: 'email-received-subscriber',
+				description: 'Email received subscriber package',
+				tags: ['email'],
+				searchText: null,
+				sourceId: 'source-email',
+				hasApp: false,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+		],
+	})
+
+	expect(rows.warnings).toEqual([])
+	expect(rows.rows[0]).toMatchObject({
+		readmeSnippet: {
+			path: 'README.md',
+			snippet: expect.stringContaining('trace and debug workflow'),
+			truncated: false,
+		},
+		projection: {
+			exports: [
+				expect.objectContaining({
+					description: 'Trace failed email processor service storage writes.',
+				}),
+			],
+		},
+	})
+
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'email',
+			description: 'Email and storage primitives',
+			capabilities: [
+				{
+					name: 'email_storage_query',
+					domain: 'email',
+					description:
+						'Low-level email service storage query for processor records.',
+					keywords: ['email', 'storage', 'service', 'processor', 'failed'],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					handler: async () => null,
+				},
+			],
+		},
+	])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'email trace failed processor service storage',
+		limit: 3,
+		registry,
+		optionalRows: {
+			packageRows: rows.rows,
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'email-received-subscriber',
+	})
+})
+
 test('buildSavedPackageSearchRows falls back when package source resolution fails', async () => {
+	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
+		new Error('missing-source'),
+	)
 	const result = await buildSavedPackageSearchRows({
 		env: {} as Env,
 		baseUrl: 'http://localhost',
