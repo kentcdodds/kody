@@ -5,24 +5,24 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { listValues } from '#mcp/values/service.ts'
 import {
-	connectorConfigSchema,
-	parseConnectorConfig,
-	parseConnectorValueName,
-	parseConnectorJson,
-} from './connector-shared.ts'
+	integrationConfigSchema,
+	parseIntegrationConfig,
+	parseIntegrationValueName,
+	parseIntegrationJson,
+} from './integration-shared.ts'
 
 const inputSchema = z.object({})
 
 const outputSchema = z.object({
-	connectors: z.array(connectorConfigSchema),
+	integrations: z.array(integrationConfigSchema),
 })
 
-export const connectorListCapability = defineDomainCapability(
+export const integrationListCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'connector_list',
-		description: 'List saved OAuth connector configurations.',
-		keywords: ['connector', 'oauth', 'config', 'registry', 'list', 'value'],
+		name: 'integration_list',
+		description: 'List saved OAuth integration configurations.',
+		keywords: ['integration', 'oauth', 'config', 'registry', 'list', 'value'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -40,19 +40,19 @@ export const connectorListCapability = defineDomainCapability(
 					storageId: ctx.callerContext.storageContext?.storageId ?? null,
 				},
 			})
-			const connectors = values
+			const integrations = values
 				.map((value) => {
-					const connectorName = parseConnectorValueName(value.name)
-					if (!connectorName) return null
-					return parseConnectorConfig(
-						parseConnectorJson(value.value),
-						connectorName,
+					const integrationName = parseIntegrationValueName(value.name)
+					if (!integrationName) return null
+					return parseIntegrationConfig(
+						parseIntegrationJson(value.value),
+						integrationName,
 					)
 				})
-				.filter((entry): entry is z.infer<typeof connectorConfigSchema> =>
+				.filter((entry): entry is z.infer<typeof integrationConfigSchema> =>
 					Boolean(entry),
 				)
-			return { connectors }
+			return { integrations }
 		},
 	},
 )

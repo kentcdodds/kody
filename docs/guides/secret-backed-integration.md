@@ -1,7 +1,7 @@
 # Secret-backed integration recipe
 
 Use this guide after `integration_bootstrap` when the integration uses one or
-more saved secrets instead of an OAuth connector.
+more saved secrets instead of an OAuth integration.
 
 This is the default path for many automation-oriented integrations:
 

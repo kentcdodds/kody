@@ -25,7 +25,7 @@ import {
 import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
 import { saveValue } from '#mcp/values/service.ts'
 
-const connectSecretConnectorBindingPrefix = '_connector-secret:'
+const connectSecretIntegrationBindingPrefix = '_integration-secret:'
 
 export function createConnectSecretHandler(_env: Env) {
 	return {
@@ -120,7 +120,7 @@ export function createConnectSecretApiHandler(env: Env) {
 			const sessionToken = readString(body, 'sessionToken')
 			const value = readOptionalString(body, 'value')
 			const description = readOptionalString(body, 'description') ?? ''
-			const connector = readOptionalString(body, 'connector')
+			const integration = readOptionalString(body, 'integration')
 			const requestedAllowedHosts =
 				readOptionalStringArray(body, 'allowedHosts') ?? []
 			const requestedAllowedCapabilities =
@@ -245,7 +245,7 @@ export function createConnectSecretApiHandler(env: Env) {
 						storageContext,
 					})
 				}
-				if (connector) {
+				if (integration) {
 					const resolved = await resolveSecret({
 						env,
 						userId: user.mcpUser.userId,
@@ -271,14 +271,14 @@ export function createConnectSecretApiHandler(env: Env) {
 					await saveValue({
 						env,
 						userId: user.mcpUser.userId,
-						name: buildConnectSecretConnectorBindingValueName(connector),
+						name: buildConnectSecretIntegrationBindingValueName(integration),
 						value: JSON.stringify({
 							secretName: name,
 							allowedHosts,
 							allowedCapabilities,
 							allowedPackages,
 						}),
-						description: `Connector secret binding for ${connector}`,
+						description: `Integration secret binding for ${integration}`,
 						scope,
 						storageContext,
 					})
@@ -291,7 +291,7 @@ export function createConnectSecretApiHandler(env: Env) {
 						error:
 							error instanceof Error
 								? error.message
-								: 'Unable to update connector configuration.',
+								: 'Unable to update integration configuration.',
 					},
 					400,
 				)
@@ -354,8 +354,8 @@ function readScope(body: object): SecretScope | null {
 		: null
 }
 
-function buildConnectSecretConnectorBindingValueName(connector: string) {
-	return `${connectSecretConnectorBindingPrefix}${connector}`
+function buildConnectSecretIntegrationBindingValueName(integration: string) {
+	return `${connectSecretIntegrationBindingPrefix}${integration}`
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

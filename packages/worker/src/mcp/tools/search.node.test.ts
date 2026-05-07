@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
-import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
+import { buildIntegrationValueName } from '#mcp/capabilities/values/integration-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
@@ -117,7 +117,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				ttlMs: null,
 			},
 			{
-				name: buildConnectorValueName('github'),
+				name: buildIntegrationValueName('github'),
 				scope: 'user',
 				value: JSON.stringify({
 					tokenUrl: 'https://delta.example/token',
@@ -129,7 +129,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 					refreshTokenSecretName: 'github-refresh-token',
 					requiredHosts: ['epsilon.example'],
 				}),
-				description: 'alpha beta gamma connector',
+				description: 'alpha beta gamma integration',
 				appId: null,
 				createdAt: '2026-04-20T00:00:00.000Z',
 				updatedAt: '2026-04-20T00:00:00.000Z',
@@ -164,8 +164,8 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				name: 'preferred-alpha',
 			}),
 			expect.objectContaining({
-				type: 'connector',
-				connectorName: 'github',
+				type: 'integration',
+				integrationName: 'github',
 				tokenUrl: 'https://delta.example/token',
 				clientIdValueName: 'github-client-id',
 				clientSecretSecretName: 'github-client-secret',
@@ -419,7 +419,7 @@ test('optional search rows preserve package fallback warnings', async () => {
 	expect(result.warnings).toEqual(['fallback warning'])
 })
 
-test('searchUnified ranks related packages and connectors for operate queries', async () => {
+test('searchUnified ranks related packages and integrations for operate queries', async () => {
 	const registry = buildCapabilityRegistry([])
 	const optionalRows = {
 		packageRows: [
@@ -464,7 +464,7 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 		userSecretRows: [],
 		userValueRows: [
 			{
-				name: buildConnectorValueName('spotify'),
+				name: buildIntegrationValueName('spotify'),
 				scope: 'user',
 				value: JSON.stringify({
 					tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -476,7 +476,7 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 					refreshTokenSecretName: 'spotify-refresh-token',
 					requiredHosts: ['api.spotify.com'],
 				}),
-				description: 'Spotify playback and music OAuth connector config',
+				description: 'Spotify playback and music OAuth integration config',
 				appId: null,
 				createdAt: '2026-04-20T00:00:00.000Z',
 				updatedAt: '2026-04-20T00:00:00.000Z',
@@ -501,8 +501,8 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 				kodyId: 'spotify',
 			}),
 			expect.objectContaining({
-				type: 'connector',
-				connectorName: 'spotify',
+				type: 'integration',
+				integrationName: 'spotify',
 			}),
 		]),
 	)
@@ -864,7 +864,7 @@ test('buildSavedPackageSearchRows falls back when package source resolution fail
 	expect(result.warnings).toHaveLength(1)
 })
 
-test('search guidance does not pair unrelated package and connector matches', async () => {
+test('search guidance does not pair unrelated package and integration matches', async () => {
 	const registry = buildCapabilityRegistry([])
 	const result = await searchUnified({
 		env: {} as Env,
@@ -906,7 +906,7 @@ test('search guidance does not pair unrelated package and connector matches', as
 			userSecretRows: [],
 			userValueRows: [
 				{
-					name: buildConnectorValueName('github'),
+					name: buildIntegrationValueName('github'),
 					scope: 'user',
 					value: JSON.stringify({
 						tokenUrl: 'https://github.com/login/oauth/access_token',
@@ -918,7 +918,7 @@ test('search guidance does not pair unrelated package and connector matches', as
 						refreshTokenSecretName: 'github-refresh-token',
 						requiredHosts: ['api.github.com'],
 					}),
-					description: 'GitHub OAuth connector config',
+					description: 'GitHub OAuth integration config',
 					appId: null,
 					createdAt: '2026-04-20T00:00:00.000Z',
 					updatedAt: '2026-04-20T00:00:00.000Z',

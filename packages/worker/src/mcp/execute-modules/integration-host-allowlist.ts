@@ -2,48 +2,48 @@ function normalizeHost(host: string) {
 	return host.trim().toLowerCase()
 }
 
-type ConnectorAllowlistInput = {
+type IntegrationAllowlistInput = {
 	apiBaseUrl?: string | null
 	requiredHosts?: Array<string>
 }
 
 /**
- * Thrown when an outbound request targets a host not in the connector's
+ * Thrown when an outbound request targets a host not in the integration's
  * allowlist (`requiredHosts` + `apiBaseUrl` host). This prevents OAuth tokens
  * from being sent to arbitrary attacker-controlled hosts.
  */
-export class ConnectorHostNotAllowedError extends Error {
-	override name = 'ConnectorHostNotAllowedError'
-	connectorName: string
+export class IntegrationHostNotAllowedError extends Error {
+	override name = 'IntegrationHostNotAllowedError'
+	integrationName: string
 	disallowedHost: string
 
-	constructor(connectorName: string, disallowedHost: string) {
+	constructor(integrationName: string, disallowedHost: string) {
 		super(
-			`Connector "${connectorName}" does not allow requests to host "${disallowedHost}". ` +
-				`The host must be listed in the connector's requiredHosts or match its apiBaseUrl.`,
+			`Integration "${integrationName}" does not allow requests to host "${disallowedHost}". ` +
+				`The host must be listed in the integration's requiredHosts or match its apiBaseUrl.`,
 		)
-		this.connectorName = connectorName
+		this.integrationName = integrationName
 		this.disallowedHost = disallowedHost
 	}
 }
 
 /**
- * Returns the set of normalized allowed hosts for a connector definition.
+ * Returns the set of normalized allowed hosts for an integration definition.
  * Includes all `requiredHosts` entries plus the host derived from `apiBaseUrl`.
  */
-export function getConnectorAllowedHosts(
-	connector: ConnectorAllowlistInput,
+export function getIntegrationAllowedHosts(
+	integration: IntegrationAllowlistInput,
 ): Array<string> {
 	const hosts = new Set<string>()
-	if (connector.requiredHosts) {
-		for (const host of connector.requiredHosts) {
+	if (integration.requiredHosts) {
+		for (const host of integration.requiredHosts) {
 			const normalized = normalizeHost(host)
 			if (normalized) hosts.add(normalized)
 		}
 	}
-	if (connector.apiBaseUrl) {
+	if (integration.apiBaseUrl) {
 		try {
-			const apiHost = normalizeHost(new URL(connector.apiBaseUrl).hostname)
+			const apiHost = normalizeHost(new URL(integration.apiBaseUrl).hostname)
 			if (apiHost) hosts.add(apiHost)
 		} catch {
 			// apiBaseUrl is not a valid URL; skip
@@ -53,14 +53,14 @@ export function getConnectorAllowedHosts(
 }
 
 /**
- * Asserts that the given URL targets a host allowed by the connector.
- * Throws `ConnectorHostNotAllowedError` if the host is not in the allowlist.
+ * Asserts that the given URL targets a host allowed by the integration.
+ * Throws `IntegrationHostNotAllowedError` if the host is not in the allowlist.
  *
  * Call this **before** attaching any credentials to the outbound request.
  */
-export function assertConnectorHostAllowed(
-	connectorName: string,
-	connector: ConnectorAllowlistInput,
+export function assertIntegrationHostAllowed(
+	integrationName: string,
+	integration: IntegrationAllowlistInput,
 	url: string | URL | Request,
 ): void {
 	const resolvedUrl = resolveUrlString(url)
@@ -75,16 +75,16 @@ export function assertConnectorHostAllowed(
 
 	if (!requestHost) return
 
-	const allowedHosts = getConnectorAllowedHosts(connector)
+	const allowedHosts = getIntegrationAllowedHosts(integration)
 	if (allowedHosts.length === 0) {
 		throw new Error(
-			`Connector "${connectorName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). ` +
+			`Integration "${integrationName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). ` +
 				`Cannot attach credentials without a host allowlist.`,
 		)
 	}
 
 	if (!allowedHosts.includes(requestHost)) {
-		throw new ConnectorHostNotAllowedError(connectorName, requestHost)
+		throw new IntegrationHostNotAllowedError(integrationName, requestHost)
 	}
 }
 

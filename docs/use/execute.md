@@ -21,7 +21,7 @@ helpers are runtime exports:
 - use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
 - use
   **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
-  for connector OAuth helpers
+  for integration OAuth helpers
 - use **`import { storage } from 'kody:runtime'`** when the execute call is
   bound to a storage id
 - use **`import { agentChatTurnStream } from 'kody:runtime'`** for streamed
@@ -233,9 +233,9 @@ contexts. OAuth helpers are imported from **`kody:runtime`**:
 
 **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
 
-Connector names should usually follow `<provider>-<purpose>` when multiple
+Integration names should usually follow `<provider>-<purpose>` when multiple
 accounts may exist, such as `google`, `google-business`, or
-`google-youtube-brand`. Call **`connector_list`** up front when a provider may
+`google-youtube-brand`. Call **`integration_list`** up front when a provider may
 have multiple accounts connected.
 
 See [Secrets, values, and host approval](./secrets-and-values.md) for

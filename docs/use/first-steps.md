@@ -2,7 +2,7 @@
 
 Kody exposes **search**, **execute**, and **open generated UI** as the main
 tools. The agent should **search first** to find the right capability, package,
-connector, value, or secret reference, then run work through **execute**.
+integration, value, or secret reference, then run work through **execute**.
 
 ## Habits that help
 

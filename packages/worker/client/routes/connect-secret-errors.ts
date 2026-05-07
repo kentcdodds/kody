@@ -1,4 +1,4 @@
-export function formatConnectorConfigFailureMessage(
+export function formatIntegrationConfigFailureMessage(
 	error: unknown,
 	options: {
 		secretRolledBack: boolean
@@ -8,11 +8,11 @@ export function formatConnectorConfigFailureMessage(
 	const message =
 		error instanceof Error
 			? error.message
-			: 'Unable to update connector config.'
+			: 'Unable to update integration config.'
 	if (options.updatedSecretRetained) {
-		return `Connector configuration failed after the secret was updated. ${message}`
+		return `Integration configuration failed after the secret was updated. ${message}`
 	}
 	return options.secretRolledBack
-		? `Connector configuration failed and the secret was rolled back. ${message}`
-		: `Connector configuration failed after the secret was saved. ${message}`
+		? `Integration configuration failed and the secret was rolled back. ${message}`
+		: `Integration configuration failed after the secret was saved. ${message}`
 }

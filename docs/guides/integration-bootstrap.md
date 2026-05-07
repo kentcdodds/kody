@@ -12,7 +12,7 @@ apps that depend on it.
 
 Use this workflow when the requested result depends on any of the following:
 
-- an OAuth connector
+- an OAuth integration
 - a saved secret such as an API key or PAT
 - host approvals for outbound API calls
 - a saved package or package app that assumes authenticated API access already
@@ -23,7 +23,7 @@ Use this workflow when the requested result depends on any of the following:
 Do **not** save or present an auth-dependent package or package app as complete
 until:
 
-1. the required connector or secret exists
+1. the required integration or secret exists
 2. the user has finished any required connect flow
 3. a minimal authenticated smoke test succeeds end-to-end
 
@@ -41,12 +41,12 @@ If those conditions are not met, stop and fix the integration first.
      `guide: "generated_ui_oauth"` only when you deliberately need the package
      app callback flow.
 2. Inspect current integration state before building downstream artifacts.
-   - Use `search` to look for saved connectors and secret references for the
+   - Use `search` to look for saved integrations and secret references for the
      integration.
    - When you need one item’s full metadata, inspect it with
-     `search({ entity: "{id}:connector" })` or
+     `search({ entity: "{id}:integration" })` or
      `search({ entity: "{id}:secret" })`.
-3. If the required connector or secret is missing, **stop**.
+3. If the required integration or secret is missing, **stop**.
    - Surface the exact `/connect/oauth` or `/connect/secret` URL in chat.
    - Wait for the user to confirm they completed the connect flow.
    - Do not save a downstream auth-dependent package or package app until
@@ -60,14 +60,14 @@ If those conditions are not met, stop and fix the integration first.
    - Use the real auth path the final integration will use.
    - Prefer a cheap read-only request such as `GET /me`, `GET /viewer`, or a
      similarly small account/profile endpoint.
-   - Confirm the connector or secret name, token refresh behavior, and allowed
+   - Confirm the integration or secret name, token refresh behavior, and allowed
      hosts all work end-to-end.
 5. Only after the smoke test succeeds should you build or save the dependent
    package or package app.
-   - If the connector or tokens already exist and the smoke test passes, proceed
-     directly to package construction.
-   - Do not spend extra time exploring the local repo when the connector state,
-     secret names, allowed hosts, and provider contract are already clear
+   - If the integration or tokens already exist and the smoke test passes,
+     proceed directly to package construction.
+   - Do not spend extra time exploring the local repo when the integration
+     state, secret names, allowed hosts, and provider contract are already clear
      enough.
    - For the default package-app structure after bootstrap, load
      `kody_official_guide` with `guide: "integration_backed_app"`.
@@ -79,11 +79,12 @@ If those conditions are not met, stop and fix the integration first.
 The smoke test should prove the same auth wiring the final package or package
 app will depend on:
 
-- the expected connector or secret exists
+- the expected integration or secret exists
 - the request reaches the intended API host
 - the request is authenticated successfully
 - any required host approvals are in place
-- the agent is using the correct secret names, connector name, and API base URL
+- the agent is using the correct secret names, integration name, and API base
+  URL
 
 ## Important exceptions
 
@@ -94,7 +95,7 @@ Even in that case:
 
 - the package app should be treated as the **setup** surface, not the finished
   downstream integration
-- any later package or package app that depends on the resulting connector or
+- any later package or package app that depends on the resulting integration or
   tokens should wait until the post-connect smoke test passes
 
 ## Recommended phrasing in chat
@@ -112,7 +113,7 @@ When setup is incomplete, tell the user what must happen next in concrete terms:
 Avoid these common mistakes:
 
 - building a polished UI first and only discovering later that auth is missing
-- saving a package app that assumes a non-existent secret or connector
+- saving a package app that assumes a non-existent secret or integration
 - treating a rendered app as success when the first authenticated API call fails
 - using `generated_ui_oauth` by default instead of the standard `/connect/oauth`
   path

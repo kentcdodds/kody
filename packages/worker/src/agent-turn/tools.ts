@@ -53,7 +53,7 @@ export async function createAgentTurnToolSet(input: {
 	return {
 		search: tool({
 			description:
-				'Search Kody capabilities, saved packages, values, connectors, and secret references using a natural language query.',
+				'Search Kody capabilities, saved packages, values, integrations, and secret references using a natural language query.',
 			inputSchema: z.object({
 				query: z.string().min(1),
 				limit: z.number().int().min(1).max(50).optional(),

@@ -8,18 +8,18 @@ import {
 	toSlimStructuredMatches,
 } from './search-format.ts'
 
-test('parseEntityRef accepts value and connector entity types', () => {
+test('parseEntityRef accepts value and integration entity types', () => {
 	expect(parseEntityRef('user:preferred_repo:value')).toEqual({
 		id: 'user:preferred_repo',
 		type: 'value',
 	})
-	expect(parseEntityRef('github:connector')).toEqual({
+	expect(parseEntityRef('github:integration')).toEqual({
 		id: 'github',
-		type: 'connector',
+		type: 'integration',
 	})
 })
 
-test('search formatting keeps value and connector entity refs in the structured contract', () => {
+test('search formatting keeps value and integration entity refs in the structured contract', () => {
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
@@ -37,10 +37,10 @@ test('search formatting keeps value and connector entity refs in the structured 
 				fusedScore: 1,
 			},
 			{
-				type: 'connector',
-				connectorName: 'github',
+				type: 'integration',
+				integrationName: 'github',
 				title: 'github',
-				description: 'GitHub OAuth connector config',
+				description: 'GitHub OAuth integration config',
 				flow: 'confidential',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
@@ -49,7 +49,7 @@ test('search formatting keeps value and connector entity refs in the structured 
 				accessTokenSecretName: 'github_access_token',
 				refreshTokenSecretName: 'github_refresh_token',
 				requiredHosts: ['api.github.com'],
-				usage: 'Read with connector_get: {"name":"github"}.',
+				usage: 'Read with integration_get: {"name":"github"}.',
 				fusedScore: 0.9,
 			},
 		],
@@ -64,19 +64,19 @@ test('search formatting keeps value and connector entity refs in the structured 
 		appId: null,
 		usage: expect.any(String),
 	})
-	const connectorMatch = structuredMatches[1]
-	expect(connectorMatch).toMatchObject({
-		type: 'connector',
-		entityRef: 'github:connector',
+	const integrationMatch = structuredMatches[1]
+	expect(integrationMatch).toMatchObject({
+		type: 'integration',
+		entityRef: 'github:integration',
 		flow: 'confidential',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		requiredHosts: ['api.github.com'],
 		usage: expect.any(String),
 	})
-	expect(connectorMatch?.nextStep).toEqual(expect.any(String))
+	expect(integrationMatch?.nextStep).toEqual(expect.any(String))
 })
 
-test('entity detail formatting returns stable structured details for values and connectors', () => {
+test('entity detail formatting returns stable structured details for values and integrations', () => {
 	const valueDetail = formatEntityDetailMarkdown({
 		type: 'value',
 		id: 'user:preferred_repo',
@@ -100,16 +100,16 @@ test('entity detail formatting returns stable structured details for values and 
 		value: 'kentcdodds/kody',
 	})
 
-	const connectorDetail = formatEntityDetailMarkdown({
-		type: 'connector',
+	const integrationDetail = formatEntityDetailMarkdown({
+		type: 'integration',
 		id: 'github',
 		title: 'github',
-		description: 'GitHub OAuth connector config',
+		description: 'GitHub OAuth integration config',
 		row: {
-			name: '_connector:github',
+			name: '_integration:github',
 			scope: 'user',
 			value: '{}',
-			description: 'GitHub OAuth connector config',
+			description: 'GitHub OAuth integration config',
 			appId: null,
 			createdAt: '2026-03-20T00:00:00.000Z',
 			updatedAt: '2026-03-20T00:00:00.000Z',
@@ -127,9 +127,9 @@ test('entity detail formatting returns stable structured details for values and 
 			requiredHosts: ['api.github.com'],
 		},
 	})
-	expect(connectorDetail.structured).toMatchObject({
-		type: 'connector',
-		entityRef: 'github:connector',
+	expect(integrationDetail.structured).toMatchObject({
+		type: 'integration',
+		entityRef: 'github:integration',
 		flow: 'confidential',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		apiBaseUrl: 'https://api.github.com',
@@ -518,10 +518,10 @@ test('search markdown keeps broad query results compact', () => {
 				},
 			},
 			{
-				type: 'connector',
-				connectorName: 'github',
+				type: 'integration',
+				integrationName: 'github',
 				title: 'github',
-				description: 'GitHub OAuth connector config',
+				description: 'GitHub OAuth integration config',
 				flow: 'confidential',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
@@ -535,7 +535,7 @@ test('search markdown keeps broad query results compact', () => {
 	})
 
 	expect(markdown).toContain('observed-package:package')
-	expect(markdown).toContain('github:connector')
+	expect(markdown).toContain('github:integration')
 	expect(markdown).not.toContain('## Recommended next step')
 	expect(markdown).not.toContain('## Relevant memories')
 	expect(markdown).not.toContain('**README')
@@ -638,7 +638,7 @@ test('search formatting surfaces package retriever results', () => {
 })
 
 test('usage helpers escape dynamic identifiers in generated snippets', () => {
-	const [valueMatch, connectorMatch] = toSlimStructuredMatches({
+	const [valueMatch, integrationMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
 			{
@@ -650,10 +650,10 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 				appId: null,
 			},
 			{
-				type: 'connector',
-				connectorName: 'conn"name',
+				type: 'integration',
+				integrationName: 'conn"name',
 				title: 'conn"name',
-				description: 'Connector with quotes in its name.',
+				description: 'Integration with quotes in its name.',
 				flow: 'confidential',
 				tokenUrl: 'https://example.com/token',
 				apiBaseUrl: 'https://example.com/api',
@@ -671,9 +671,9 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 		usage:
 			'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
 	})
-	expect(connectorMatch).toMatchObject({
-		type: 'connector',
-		usage: 'codemode.connector_get({ name: "conn\\"name" })',
+	expect(integrationMatch).toMatchObject({
+		type: 'integration',
+		usage: 'codemode.integration_get({ name: "conn\\"name" })',
 	})
 })
 

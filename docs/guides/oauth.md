@@ -4,7 +4,7 @@ Read this guide first for third-party OAuth (GitHub, Linear, Spotify, and
 similar providers).
 
 This guide covers the standard hosted OAuth path. Use it before building a
-package or package app that depends on the resulting connector or tokens.
+package or package app that depends on the resulting integration or tokens.
 
 ## Default path: `/connect/oauth`
 
@@ -54,12 +54,13 @@ with `allowedHosts` when needed.
 Client ID, access token, and refresh token names are derived from a normalized
 slug of `provider`.
 
-## Connector naming convention
+## Integration naming convention
 
-Prefer connector names like `<provider>-<purpose>` when multiple accounts may
+Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for the primary account, `google-business` for a business
 account, or `google-youtube-brand` for a brand identity. Agents should call
-`connector_list` up front when a provider may have multiple accounts connected.
+`integration_list` up front when a provider may have multiple accounts
+connected.
 
 ## Not the same as MCP OAuth
 

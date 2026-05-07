@@ -20,7 +20,7 @@ import {
 	normalizeAllowedHosts,
 	normalizeAllowedPackages,
 } from './secret-normalization.ts'
-import { formatConnectorConfigFailureMessage } from './connect-secret-errors.ts'
+import { formatIntegrationConfigFailureMessage } from './connect-secret-errors.ts'
 
 type StorageScope = 'app' | 'session' | 'user'
 type ViewStep =
@@ -54,7 +54,7 @@ type ConnectSecretParams = {
 	scope: StorageScope
 	dashboardUrl: string
 	instructions: string
-	connector: string
+	integration: string
 }
 
 type ConnectSecretState = {
@@ -125,7 +125,7 @@ function parseConnectSecretParams(): ConnectSecretParams {
 	const description = params.get('description')?.trim() ?? ''
 	const instructions = params.get('instructions')?.trim() ?? ''
 	const dashboardUrl = params.get('dashboardUrl')?.trim() ?? ''
-	const connector = params.get('connector')?.trim() ?? ''
+	const integration = params.get('integration')?.trim() ?? ''
 	const scope = parseScope(params.get('scope'))
 	const allowedHosts = parseCommaList(params.get('allowedHosts'), (value) =>
 		value.toLowerCase(),
@@ -145,7 +145,7 @@ function parseConnectSecretParams(): ConnectSecretParams {
 		scope,
 		dashboardUrl,
 		instructions,
-		connector,
+		integration,
 	}
 }
 
@@ -293,7 +293,7 @@ async function saveSecretValue(
 	}
 }
 
-async function updateConnectorConfig(
+async function updateIntegrationConfig(
 	params: ConnectSecretParams,
 	session: ConnectSecretSession,
 	input: {
@@ -302,7 +302,7 @@ async function updateConnectorConfig(
 		allowedPackages: Array<string>
 	},
 ) {
-	if (!params.connector) return
+	if (!params.integration) return
 	const response = await fetch('/connect/secret.json', {
 		method: 'POST',
 		headers: {
@@ -314,7 +314,7 @@ async function updateConnectorConfig(
 			name: params.name,
 			scope: params.scope,
 			sessionToken: session.token,
-			connector: params.connector,
+			integration: params.integration,
 			allowedHosts: input.allowedHosts,
 			allowedCapabilities: input.allowedCapabilities,
 			allowedPackages: input.allowedPackages,
@@ -325,7 +325,7 @@ async function updateConnectorConfig(
 		error?: string
 	}
 	if (!response.ok || !payload?.ok) {
-		throw new Error(payload?.error || 'Unable to update connector config.')
+		throw new Error(payload?.error || 'Unable to update integration config.')
 	}
 }
 
@@ -475,7 +475,7 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		try {
-			await updateConnectorConfig(currentParams, session, {
+			await updateIntegrationConfig(currentParams, session, {
 				allowedHosts: normalizedAllowedHosts,
 				allowedCapabilities: normalizedAllowedCapabilities,
 				allowedPackages: normalizedAllowedPackages,
@@ -483,7 +483,7 @@ export function ConnectSecretRoute(handle: Handle) {
 			setState({ step: 'success' })
 		} catch (error) {
 			const secretWasNewlyCreated = targetExistingSecret == null
-			if (currentParams.connector && secretWasNewlyCreated) {
+			if (currentParams.integration && secretWasNewlyCreated) {
 				try {
 					await rollbackSecretValue(currentParams, session)
 				} catch (rollbackError) {
@@ -494,22 +494,22 @@ export function ConnectSecretRoute(handle: Handle) {
 					const originalMessage =
 						error instanceof Error
 							? error.message
-							: 'Unable to update connector config.'
+							: 'Unable to update integration config.'
 					setState({
 						step: 'error',
-						error: `Connector configuration failed and rollback did not complete. ${originalMessage} ${rollbackMessage}`,
+						error: `Integration configuration failed and rollback did not complete. ${originalMessage} ${rollbackMessage}`,
 					})
 					return
 				}
 			}
 			setState({
 				step: 'error',
-				error: formatConnectorConfigFailureMessage(error, {
+				error: formatIntegrationConfigFailureMessage(error, {
 					secretRolledBack: Boolean(
-						currentParams.connector && secretWasNewlyCreated,
+						currentParams.integration && secretWasNewlyCreated,
 					),
 					updatedSecretRetained: Boolean(
-						currentParams.connector && !secretWasNewlyCreated,
+						currentParams.integration && !secretWasNewlyCreated,
 					),
 				}),
 			})

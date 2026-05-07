@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { connectorSaveCapability } from './connector-save.ts'
+import { integrationSaveCapability } from './integration-save.ts'
 import {
-	connectorConfigSchema,
-	mergeConnectorConfig,
-	parseConnectorConfig,
-} from './connector-shared.ts'
+	integrationConfigSchema,
+	mergeIntegrationConfig,
+	parseIntegrationConfig,
+} from './integration-shared.ts'
 
 function createValueTestDb() {
 	const entries = new Map<string, string>()
@@ -43,7 +43,7 @@ function createValueTestDb() {
 									: ({
 											bucket_id: 'bucket-1',
 											name,
-											description: `OAuth connector config for ${name}`,
+											description: `OAuth integration config for ${name}`,
 											value,
 											created_at: '2026-03-29T00:00:00.000Z',
 											updated_at: '2026-03-29T00:00:00.000Z',
@@ -69,8 +69,8 @@ function createValueTestDb() {
 	return { db, entries }
 }
 
-test('mergeConnectorConfig applies patch fields and preserves existing fields', () => {
-	const current = connectorConfigSchema.parse({
+test('mergeIntegrationConfig applies patch fields and preserves existing fields', () => {
+	const current = integrationConfigSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		apiBaseUrl: 'https://api.spotify.com/v1',
@@ -82,7 +82,7 @@ test('mergeConnectorConfig applies patch fields and preserves existing fields', 
 		requiredHosts: ['accounts.spotify.com', 'api.spotify.com'],
 	})
 
-	const merged = mergeConnectorConfig(current, {
+	const merged = mergeIntegrationConfig(current, {
 		name: 'spotify',
 		apiBaseUrl: 'https://api.spotify.com/v2/',
 		requiredHosts: ['api.spotify.com'],
@@ -95,8 +95,8 @@ test('mergeConnectorConfig applies patch fields and preserves existing fields', 
 	})
 })
 
-test('parseConnectorConfig keeps older rows readable when apiBaseUrl is missing', () => {
-	const parsed = parseConnectorConfig(
+test('parseIntegrationConfig keeps older rows readable when apiBaseUrl is missing', () => {
+	const parsed = parseIntegrationConfig(
 		{
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -116,10 +116,10 @@ test('parseConnectorConfig keeps older rows readable when apiBaseUrl is missing'
 	})
 })
 
-test('connector_save upserts an existing connector record', async () => {
+test('integration_save upserts an existing integration record', async () => {
 	const testDb = createValueTestDb()
 	testDb.entries.set(
-		'_connector:spotify',
+		'_integration:spotify',
 		JSON.stringify({
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -133,7 +133,7 @@ test('connector_save upserts an existing connector record', async () => {
 		}),
 	)
 
-	const result = await connectorSaveCapability.handler(
+	const result = await integrationSaveCapability.handler(
 		{
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -154,13 +154,13 @@ test('connector_save upserts an existing connector record', async () => {
 		},
 	)
 
-	expect(result.connector).toMatchObject({
+	expect(result.integration).toMatchObject({
 		name: 'spotify',
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],
 	})
 	expect(
-		JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}'),
+		JSON.parse(testDb.entries.get('_integration:spotify') ?? '{}'),
 	).toMatchObject({
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],

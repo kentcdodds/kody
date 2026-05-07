@@ -27,7 +27,7 @@ type SandboxHelpers = {
 	) => Promise<AsyncIterable<unknown>>
 }
 
-const spotifyConnector = {
+const spotifyIntegration = {
 	name: 'spotify',
 	tokenUrl: 'https://accounts.spotify.test/api/token',
 	apiBaseUrl: 'https://api.spotify.test/v1',
@@ -42,10 +42,10 @@ const spotifyConnector = {
 function createCodemode(payload: Record<string, unknown>) {
 	const secretSetCalls: Array<SecretSetCall> = []
 	const codemode = {
-		async connector_get(args: CapabilityArgs) {
+		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
-			return { connector: spotifyConnector }
+			return { integration: spotifyIntegration }
 		},
 		async value_get(args: CapabilityArgs) {
 			const name = args.name
@@ -112,7 +112,7 @@ function createCodemode(payload: Record<string, unknown>) {
 	) => {
 		const request = new Request(input, init)
 		fetchCalls.push(request)
-		if (request.url === spotifyConnector.tokenUrl) {
+		if (request.url === spotifyIntegration.tokenUrl) {
 			return new Response(JSON.stringify(payload), {
 				status: 200,
 				headers: { 'content-type': 'application/json' },
@@ -248,7 +248,7 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 
 test('getExecuteHelperCapabilityNames includes secret_set for refresh persistence', () => {
 	expect(getExecuteHelperCapabilityNames()).toEqual([
-		'connector_get',
+		'integration_get',
 		'value_get',
 		'secret_set',
 		'agent_turn_start',

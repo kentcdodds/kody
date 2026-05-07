@@ -5,26 +5,26 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getValue } from '#mcp/values/service.ts'
 import {
-	buildConnectorValueName,
-	connectorConfigSchema,
-	parseConnectorConfig,
-	parseConnectorJson,
-} from './connector-shared.ts'
+	buildIntegrationValueName,
+	integrationConfigSchema,
+	parseIntegrationConfig,
+	parseIntegrationJson,
+} from './integration-shared.ts'
 
 const inputSchema = z.object({
-	name: z.string().min(1).describe('Connector name to read.'),
+	name: z.string().min(1).describe('Integration name to read.'),
 })
 
 const outputSchema = z.object({
-	connector: connectorConfigSchema.nullable(),
+	integration: integrationConfigSchema.nullable(),
 })
 
-export const connectorGetCapability = defineDomainCapability(
+export const integrationGetCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'connector_get',
-		description: 'Read an OAuth connector configuration by name.',
-		keywords: ['connector', 'oauth', 'config', 'registry', 'read', 'value'],
+		name: 'integration_get',
+		description: 'Read an OAuth integration configuration by name.',
+		keywords: ['integration', 'oauth', 'config', 'registry', 'read', 'value'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -35,7 +35,7 @@ export const connectorGetCapability = defineDomainCapability(
 			const value = await getValue({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildConnectorValueName(args.name),
+				name: buildIntegrationValueName(args.name),
 				scope: 'user',
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
@@ -44,14 +44,14 @@ export const connectorGetCapability = defineDomainCapability(
 				},
 			})
 			if (!value) {
-				return { connector: null }
+				return { integration: null }
 			}
-			const parsed = parseConnectorConfig(
-				parseConnectorJson(value.value),
+			const parsed = parseIntegrationConfig(
+				parseIntegrationJson(value.value),
 				args.name,
 			)
 			return {
-				connector: parsed,
+				integration: parsed,
 			}
 		},
 	},

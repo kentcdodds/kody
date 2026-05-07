@@ -64,7 +64,7 @@ type ConnectOauthConfig = {
 	allowedHosts: Array<string>
 }
 
-type StoredConnectorConfig = {
+type StoredIntegrationConfig = {
 	name: string
 	tokenUrl: string
 	apiBaseUrl: string | null
@@ -109,8 +109,8 @@ export function ConnectOauthRoute(handle: Handle) {
 	let statusTone: StatusTone = 'info'
 	let currentStep: 'setup' | 'connect' | 'callback' | 'success' = 'setup'
 	let config: ConnectOauthConfig | null = null
-	let existingConnectorConfig: StoredConnectorConfig | null = null
-	let existingConnectorValueName: string | null = null
+	let existingIntegrationConfig: StoredIntegrationConfig | null = null
+	let existingIntegrationValueName: string | null = null
 	let accessTokenSaved = false
 	let refreshTokenSaved = false
 	let hasConfigError = false
@@ -376,26 +376,26 @@ export function ConnectOauthRoute(handle: Handle) {
 		return payload.secrets
 	}
 
-	const readExistingConnectorConfig = async (
+	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
 	) => {
-		for (const valueName of getConnectorValueCandidates(
+		for (const valueName of getIntegrationValueCandidates(
 			queryConfig.provider,
 			queryConfig.providerKey,
 		)) {
 			const raw = await readValue(valueName)
 			if (!raw) continue
-			const parsed = parseStoredConnectorConfig(raw, queryConfig.provider)
+			const parsed = parseStoredIntegrationConfig(raw, queryConfig.provider)
 			if (parsed) {
 				return {
 					valueName,
-					connector: parsed,
+					integration: parsed,
 				}
 			}
 		}
 		return {
 			valueName: null,
-			connector: null,
+			integration: null,
 		}
 	}
 
@@ -423,8 +423,8 @@ export function ConnectOauthRoute(handle: Handle) {
 		})
 		if (setupStatus.isReady) {
 			setStatus(
-				existingConnectorConfig
-					? 'Loaded your existing connector config and client credentials. Ready to connect.'
+				existingIntegrationConfig
+					? 'Loaded your existing integration config and client credentials. Ready to connect.'
 					: 'Loaded your existing OAuth client configuration. Ready to connect.',
 			)
 			setStep('connect')
@@ -432,8 +432,8 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 		const missingDetails = formatMissingSetupFields(setupStatus.missingFields)
 		setStatus(
-			existingConnectorConfig
-				? `Loaded your existing connector config. ${missingDetails}`
+			existingIntegrationConfig
+				? `Loaded your existing integration config. ${missingDetails}`
 				: missingDetails,
 		)
 		setStep('setup')
@@ -731,16 +731,16 @@ export function ConnectOauthRoute(handle: Handle) {
 		)
 	}
 
-	const renderExistingConnectorConfig = () => {
-		if (!existingConnectorConfig) return null
+	const renderExistingIntegrationConfig = () => {
+		if (!existingIntegrationConfig) return null
 		return (
 			<section mix={css(cardCss)}>
-				<h2 mix={css(cardTitleCss)}>Existing connector config</h2>
+				<h2 mix={css(cardTitleCss)}>Existing integration config</h2>
 				<p mix={css(descriptionCss)}>
 					Loaded from{' '}
 					<code>
-						{existingConnectorValueName ??
-							buildConnectorValueName(config?.provider ?? '')}
+						{existingIntegrationValueName ??
+							buildIntegrationValueName(config?.provider ?? '')}
 					</code>
 					.
 				</p>
@@ -748,45 +748,45 @@ export function ConnectOauthRoute(handle: Handle) {
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Flow</span>
 						<span mix={css(detailValueCss)}>
-							{existingConnectorConfig.flow}
+							{existingIntegrationConfig.flow}
 						</span>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Token URL</span>
-						<code>{existingConnectorConfig.tokenUrl}</code>
+						<code>{existingIntegrationConfig.tokenUrl}</code>
 					</div>
-					{existingConnectorConfig.apiBaseUrl ? (
+					{existingIntegrationConfig.apiBaseUrl ? (
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>API base URL</span>
-							<code>{existingConnectorConfig.apiBaseUrl}</code>
+							<code>{existingIntegrationConfig.apiBaseUrl}</code>
 						</div>
 					) : null}
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Client ID value</span>
-						<code>{existingConnectorConfig.clientIdValueName}</code>
+						<code>{existingIntegrationConfig.clientIdValueName}</code>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Client secret secret</span>
 						<code>
-							{existingConnectorConfig.clientSecretSecretName ?? 'Not used'}
+							{existingIntegrationConfig.clientSecretSecretName ?? 'Not used'}
 						</code>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Access token secret</span>
-						<code>{existingConnectorConfig.accessTokenSecretName}</code>
+						<code>{existingIntegrationConfig.accessTokenSecretName}</code>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Refresh token secret</span>
 						<code>
-							{existingConnectorConfig.refreshTokenSecretName ?? 'Not used'}
+							{existingIntegrationConfig.refreshTokenSecretName ?? 'Not used'}
 						</code>
 					</div>
 				</div>
 				<div mix={css(insetCardCss)}>
 					<strong mix={css(sectionTitleCss)}>Required hosts</strong>
-					{existingConnectorConfig.requiredHosts.length > 0 ? (
+					{existingIntegrationConfig.requiredHosts.length > 0 ? (
 						<ul mix={css(listCss)}>
-							{existingConnectorConfig.requiredHosts.map((host) => (
+							{existingIntegrationConfig.requiredHosts.map((host) => (
 								<li key={host}>{host}</li>
 							))}
 						</ul>
@@ -810,8 +810,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				(queryConfig
 					? mergeConnectOauthConfig({
 							queryConfig,
-							storedConnector: (await readExistingConnectorConfig(queryConfig))
-								.connector,
+							storedIntegration: (
+								await readExistingIntegrationConfig(queryConfig)
+							).integration,
 						})
 					: null)
 			if (!nextConfig) {
@@ -830,12 +831,12 @@ export function ConnectOauthRoute(handle: Handle) {
 			setStatus('Missing required OAuth configuration parameters.', 'error')
 			return
 		}
-		const existingConnector = await readExistingConnectorConfig(queryConfig)
-		existingConnectorConfig = existingConnector.connector
-		existingConnectorValueName = existingConnector.valueName
+		const existingIntegration = await readExistingIntegrationConfig(queryConfig)
+		existingIntegrationConfig = existingIntegration.integration
+		existingIntegrationValueName = existingIntegration.valueName
 		const nextConfig = mergeConnectOauthConfig({
 			queryConfig,
-			storedConnector: existingConnector.connector,
+			storedIntegration: existingIntegration.integration,
 		})
 		if (!nextConfig) {
 			hasConfigError = true
@@ -915,11 +916,11 @@ export function ConnectOauthRoute(handle: Handle) {
 						</a>
 					) : null}
 				</section>
-				{renderExistingConnectorConfig()}
+				{renderExistingIntegrationConfig()}
 				{currentStep === 'setup' ? (
 					<section mix={css(cardCss)}>
 						<h2 mix={css(cardTitleCss)}>
-							1. {existingConnectorConfig ? 'Review' : 'Save'} OAuth client
+							1. {existingIntegrationConfig ? 'Review' : 'Save'} OAuth client
 							configuration
 						</h2>
 						{renderProviderInstructions()}
@@ -1024,7 +1025,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.text })}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
-						{existingConnectorConfig ? (
+						{existingIntegrationConfig ? (
 							<p mix={css(descriptionCss)}>
 								Using stored client ID <code>{config.clientIdValueName}</code>
 								{config.flow === 'confidential' && hasStoredClientSecret
@@ -1136,11 +1137,11 @@ export function normalizeHosts(hosts: Array<string>) {
 	).sort()
 }
 
-export function buildConnectorValueName(provider: string) {
-	return `_connector:${provider}`
+export function buildIntegrationValueName(provider: string) {
+	return `_integration:${provider}`
 }
 
-export function getConnectorValueCandidates(
+export function getIntegrationValueCandidates(
 	provider: string,
 	providerKey: string,
 ) {
@@ -1148,15 +1149,15 @@ export function getConnectorValueCandidates(
 		new Set(
 			[provider.trim(), providerKey.trim()]
 				.filter((value) => value.length > 0)
-				.map((value) => buildConnectorValueName(value)),
+				.map((value) => buildIntegrationValueName(value)),
 		),
 	)
 }
 
-export function parseStoredConnectorConfig(
+export function parseStoredIntegrationConfig(
 	raw: string,
 	fallbackProvider: string | null,
-): StoredConnectorConfig | null {
+): StoredIntegrationConfig | null {
 	try {
 		const parsed = JSON.parse(raw) as Record<string, unknown>
 		const name =
@@ -1213,24 +1214,25 @@ export function parseStoredConnectorConfig(
 
 export function mergeConnectOauthConfig(input: {
 	queryConfig: ConnectOauthQueryConfig
-	storedConnector: StoredConnectorConfig | null
+	storedIntegration: StoredIntegrationConfig | null
 }): ConnectOauthConfig | null {
 	const provider =
-		input.storedConnector?.name.trim() || input.queryConfig.provider.trim()
+		input.storedIntegration?.name.trim() || input.queryConfig.provider.trim()
 	const providerKey = normalizeProviderKey(
 		provider || input.queryConfig.providerKey,
 	)
 	const authorizeHost = safeParseHost(input.queryConfig.authorizeUrl)
-	const tokenUrl = input.storedConnector?.tokenUrl ?? input.queryConfig.tokenUrl
+	const tokenUrl =
+		input.storedIntegration?.tokenUrl ?? input.queryConfig.tokenUrl
 	const tokenHost = tokenUrl ? safeParseHost(tokenUrl) : null
 	if (!provider || !authorizeHost || !tokenUrl || !tokenHost || !providerKey) {
 		return null
 	}
-	const flow = input.storedConnector?.flow ?? input.queryConfig.flow ?? 'pkce'
+	const flow = input.storedIntegration?.flow ?? input.queryConfig.flow ?? 'pkce'
 	const allowedHosts = normalizeHosts([
 		tokenHost,
 		...input.queryConfig.allowedHosts,
-		...(input.storedConnector?.requiredHosts ?? []),
+		...(input.storedIntegration?.requiredHosts ?? []),
 	])
 	if (allowedHosts.length === 0) return null
 	return {
@@ -1241,7 +1243,7 @@ export function mergeConnectOauthConfig(input: {
 		authorizeUrl: input.queryConfig.authorizeUrl,
 		tokenUrl,
 		apiBaseUrl:
-			input.storedConnector?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
+			input.storedIntegration?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
 		scopes: input.queryConfig.scopes,
 		flow,
 		scopeSeparator: input.queryConfig.scopeSeparator,
@@ -1249,17 +1251,17 @@ export function mergeConnectOauthConfig(input: {
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
 		clientIdValueName:
-			input.storedConnector?.clientIdValueName ?? `${providerKey}-client-id`,
+			input.storedIntegration?.clientIdValueName ?? `${providerKey}-client-id`,
 		clientSecretSecretName:
 			flow === 'confidential'
-				? (input.storedConnector?.clientSecretSecretName ??
+				? (input.storedIntegration?.clientSecretSecretName ??
 					`${providerKey}ClientSecret`)
 				: null,
 		accessTokenSecretName:
-			input.storedConnector?.accessTokenSecretName ??
+			input.storedIntegration?.accessTokenSecretName ??
 			`${providerKey}AccessToken`,
 		refreshTokenSecretName:
-			input.storedConnector?.refreshTokenSecretName ??
+			input.storedIntegration?.refreshTokenSecretName ??
 			`${providerKey}RefreshToken`,
 		allowedHosts,
 	}

@@ -1,14 +1,14 @@
 import { expect, test } from 'vitest'
 import {
-	buildConnectorValueName,
-	getConnectorValueCandidates,
+	buildIntegrationValueName,
+	getIntegrationValueCandidates,
 	mergeConnectOauthConfig,
-	parseStoredConnectorConfig,
+	parseStoredIntegrationConfig,
 	summarizeStoredSetupState,
 } from './connect-oauth.tsx'
 
-test('parseStoredConnectorConfig returns normalized connector config', () => {
-	const parsed = parseStoredConnectorConfig(
+test('parseStoredIntegrationConfig returns normalized integration config', () => {
+	const parsed = parseStoredIntegrationConfig(
 		JSON.stringify({
 			name: 'GitHub',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
@@ -36,18 +36,18 @@ test('parseStoredConnectorConfig returns normalized connector config', () => {
 	})
 })
 
-test('getConnectorValueCandidates prefers provider and normalized key without duplicates', () => {
-	expect(getConnectorValueCandidates('GitHub', 'github')).toEqual([
-		buildConnectorValueName('GitHub'),
-		buildConnectorValueName('github'),
+test('getIntegrationValueCandidates prefers provider and normalized key without duplicates', () => {
+	expect(getIntegrationValueCandidates('GitHub', 'github')).toEqual([
+		buildIntegrationValueName('GitHub'),
+		buildIntegrationValueName('github'),
 	])
 
-	expect(getConnectorValueCandidates('github', 'github')).toEqual([
-		buildConnectorValueName('github'),
+	expect(getIntegrationValueCandidates('github', 'github')).toEqual([
+		buildIntegrationValueName('github'),
 	])
 })
 
-test('mergeConnectOauthConfig prefers stored connector metadata for saved providers', () => {
+test('mergeConnectOauthConfig prefers stored integration metadata for saved providers', () => {
 	const config = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'github',
@@ -64,7 +64,7 @@ test('mergeConnectOauthConfig prefers stored connector metadata for saved provid
 			dashboardUrl: 'https://github.com/settings/developers',
 			allowedHosts: ['github.com'],
 		},
-		storedConnector: {
+		storedIntegration: {
 			name: 'GitHub',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			apiBaseUrl: 'https://api.github.com',
@@ -99,7 +99,7 @@ test('mergeConnectOauthConfig prefers stored connector metadata for saved provid
 	})
 })
 
-test('mergeConnectOauthConfig falls back to derived names when no connector exists', () => {
+test('mergeConnectOauthConfig falls back to derived names when no integration exists', () => {
 	const config = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'spotify',
@@ -116,7 +116,7 @@ test('mergeConnectOauthConfig falls back to derived names when no connector exis
 			dashboardUrl: null,
 			allowedHosts: ['accounts.spotify.com'],
 		},
-		storedConnector: null,
+		storedIntegration: null,
 	})
 
 	expect(config).toMatchObject({

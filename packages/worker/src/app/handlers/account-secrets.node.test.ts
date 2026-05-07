@@ -175,7 +175,7 @@ test('connect oauth returns direct host approval links for saved token secrets',
 					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=github.com',
 			},
 		],
-		connectorName: 'GitHub',
+		integrationName: 'GitHub',
 	})
 	expect(mockModule.buildSecretHostApprovalUrl).toHaveBeenCalledTimes(4)
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
@@ -249,7 +249,7 @@ test('connect oauth omits direct host approval links when hosts are already appr
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
 		hostApprovalLinks: [],
-		connectorName: 'Tesla',
+		integrationName: 'Tesla',
 	})
 	expect(payload.allowedHosts).toEqual(
 		expect.arrayContaining([

@@ -2,10 +2,10 @@ import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
-	parseConnectorConfig,
-	parseConnectorJson,
-	parseConnectorValueName,
-} from '#mcp/capabilities/values/connector-shared.ts'
+	parseIntegrationConfig,
+	parseIntegrationJson,
+	parseIntegrationValueName,
+} from '#mcp/capabilities/values/integration-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
 	blendLexicalAndVectorScore,
@@ -266,13 +266,13 @@ function buildPackageRelationTokens(
 	)
 }
 
-function buildConnectorSearchDocument(input: {
-	connectorName: string
+function buildIntegrationSearchDocument(input: {
+	integrationName: string
 	description: string
-	config: NonNullable<ReturnType<typeof parseConnectorConfig>>
+	config: NonNullable<ReturnType<typeof parseIntegrationConfig>>
 }): string {
 	return [
-		input.connectorName,
+		input.integrationName,
 		input.description,
 		input.config.tokenUrl,
 		input.config.apiBaseUrl ?? '',
@@ -288,26 +288,28 @@ function buildRecommendedNextStep(
 ): string | undefined {
 	const [topMatch] = input.matches
 	const topPackage = input.matches.find((match) => match.type === 'package')
-	const topConnector = input.matches.find((match) => match.type === 'connector')
+	const topIntegration = input.matches.find(
+		(match) => match.type === 'integration',
+	)
 	const packageRelationTokens = topPackage
 		? buildPackageRelationTokens(topPackage)
 		: null
-	const connectorMatchesPackage =
+	const integrationMatchesPackage =
 		topPackage &&
-		topConnector &&
-		(packageRelationTokens?.has(topConnector.connectorName.toLowerCase()) ??
+		topIntegration &&
+		(packageRelationTokens?.has(topIntegration.integrationName.toLowerCase()) ??
 			false)
 
-	if (connectorMatchesPackage && input.intent.task.name === 'operate') {
-		return `Found saved package \`${topPackage.kodyId}\` and connector \`${topConnector.connectorName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the connector detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
+	if (integrationMatchesPackage && input.intent.task.name === 'operate') {
+		return `Found saved package \`${topPackage.kodyId}\` and integration \`${topIntegration.integrationName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the integration detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
 	}
 	if (topMatch?.type === 'package') {
 		return topMatch.hasApp
 			? `Open the saved app with \`open_generated_ui({ kody_id: "${topMatch.kodyId}" })\` or inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports and jobs.`
 			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`kody:@${topMatch.kodyId}\` or a subpath export.`
 	}
-	if (topMatch?.type === 'connector') {
-		return `Inspect connector detail with \`search({ entity: "${topMatch.connectorName}:connector" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
+	if (topMatch?.type === 'integration') {
+		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'capability') {
 		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`codemode.${topMatch.name}(args)\`.`
@@ -407,18 +409,18 @@ function buildSearchableEntityDescriptors(input: {
 	}
 
 	for (const row of input.optionalRows.userValueRows) {
-		const connectorName = parseConnectorValueName(row.name)
-		if (connectorName) {
-			const config = parseConnectorConfig(
-				parseConnectorJson(row.value),
-				connectorName,
+		const integrationName = parseIntegrationValueName(row.name)
+		if (integrationName) {
+			const config = parseIntegrationConfig(
+				parseIntegrationJson(row.value),
+				integrationName,
 			)
 			if (!config) continue
 			descriptors.push({
-				type: 'connector',
-				id: connectorName,
-				title: connectorName,
-				primaryAliases: [connectorName],
+				type: 'integration',
+				id: integrationName,
+				title: integrationName,
+				primaryAliases: [integrationName],
 				secondaryAliases: [
 					row.description,
 					config.apiBaseUrl ?? '',
@@ -706,16 +708,16 @@ function scoreTaskAffinity(
 					appAvailability += 0.12
 				}
 			}
-			if (candidate.type === 'connector') taskAffinity += 0.08
+			if (candidate.type === 'integration') taskAffinity += 0.08
 			if (candidate.type === 'capability') taskAffinity -= 0.04
 			break
 		case 'setup':
-			if (candidate.type === 'connector') taskAffinity += 0.18
+			if (candidate.type === 'integration') taskAffinity += 0.18
 			if (candidate.type === 'value') taskAffinity += 0.06
 			if (candidate.type === 'capability') taskAffinity += 0.05
 			break
 		case 'inspect':
-			if (candidate.type === 'value' || candidate.type === 'connector') {
+			if (candidate.type === 'value' || candidate.type === 'integration') {
 				taskAffinity += 0.12
 			}
 			if (candidate.type === 'package') taskAffinity += 0.05
@@ -725,7 +727,7 @@ function scoreTaskAffinity(
 			if (candidate.type === 'package') taskAffinity -= 0.02
 			break
 		case 'debug':
-			if (candidate.type === 'connector') taskAffinity += 0.16
+			if (candidate.type === 'integration') taskAffinity += 0.16
 			if (candidate.type === 'package') {
 				taskAffinity += 0.1
 				if ('hasApp' in candidate.match && candidate.match.hasApp) {
@@ -991,7 +993,7 @@ function buildValueCandidates(input: {
 }): Array<SearchCandidate> {
 	return input.rows
 		.flatMap((row) => {
-			if (parseConnectorValueName(row.name)) return []
+			if (parseIntegrationValueName(row.name)) return []
 			const lexical = lexicalScore(
 				input.query,
 				[row.name, row.description, row.scope, row.value].join('\n'),
@@ -1019,25 +1021,25 @@ function buildValueCandidates(input: {
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
 
-function buildConnectorCandidates(input: {
+function buildIntegrationCandidates(input: {
 	query: string
 	rows: Array<ValueMetadata>
 	queryEmbedding: ReadonlyArray<number>
 }): Array<SearchCandidate> {
 	return input.rows
 		.flatMap((row) => {
-			const connectorName = parseConnectorValueName(row.name)
-			if (!connectorName) return []
-			const config = parseConnectorConfig(
-				parseConnectorJson(row.value),
-				connectorName,
+			const integrationName = parseIntegrationValueName(row.name)
+			if (!integrationName) return []
+			const config = parseIntegrationConfig(
+				parseIntegrationJson(row.value),
+				integrationName,
 			)
 			if (!config) return []
-			const document = buildConnectorSearchDocument({
-				connectorName,
+			const document = buildIntegrationSearchDocument({
+				integrationName,
 				description:
 					row.description.trim() ||
-					`Saved OAuth connector configuration (${config.flow} flow).`,
+					`Saved OAuth integration configuration (${config.flow} flow).`,
 				config,
 			})
 			const lexical = lexicalScore(input.query, document)
@@ -1048,12 +1050,12 @@ function buildConnectorCandidates(input: {
 			return [
 				{
 					match: {
-						type: 'connector' as const,
-						connectorName,
-						title: connectorName,
+						type: 'integration' as const,
+						integrationName,
+						title: integrationName,
 						description:
 							row.description.trim() ||
-							`Saved OAuth connector configuration (${config.flow} flow).`,
+							`Saved OAuth integration configuration (${config.flow} flow).`,
 						flow: config.flow,
 						tokenUrl: config.tokenUrl,
 						apiBaseUrl: config.apiBaseUrl ?? null,
@@ -1063,11 +1065,11 @@ function buildConnectorCandidates(input: {
 						accessTokenSecretName: config.accessTokenSecretName,
 						refreshTokenSecretName: config.refreshTokenSecretName ?? null,
 					},
-					type: 'connector' as const,
-					id: connectorName,
-					title: connectorName,
+					type: 'integration' as const,
+					id: integrationName,
+					title: integrationName,
 					searchFields: [
-						connectorName,
+						integrationName,
 						row.description,
 						config.flow,
 						config.apiBaseUrl ?? '',
@@ -1213,7 +1215,7 @@ export async function searchUnified(input: {
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.userValueRows,
 		}),
-		...buildConnectorCandidates({
+		...buildIntegrationCandidates({
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.userValueRows,
 			queryEmbedding,
@@ -1347,10 +1349,10 @@ function applyMaxResponseSize<TPayload>(
 
 const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities, Packages, Values, Connectors, and Secrets',
+	title: 'Search Capabilities, Packages, Values, Integrations, and Secrets',
 	description: `
 Find **built-in capabilities**, **saved packages**, **persisted values**,
-**saved connectors**, and **user secret references** (metadata only)
+**saved integrations**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
 **query** — compact ranked markdown + structured matches (order matters). Query
@@ -1359,15 +1361,15 @@ If nothing useful returns, rephrase or call \`meta_list_capabilities\`; \`entity
 does not fix an empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
-| \`connector\` | \`package\` | \`secret\`). Capability detail includes
+| \`integration\` | \`package\` | \`secret\`). Capability detail includes
 TypeScript call-shape definitions by default.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
 Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
 Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
-Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
-use \`codemode.connector_get\` / \`codemode.connector_list\`.
+Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Integrations
+use \`codemode.integration_get\` / \`codemode.integration_list\`.
 
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_list_remote_connector_status\` (remote connectors).
@@ -1375,11 +1377,11 @@ If results look incomplete: \`meta_list_capabilities\` (full registry) or
 Optional **limit** (default 15) and **maxResponseSize** trim low-ranked results.
 Example arguments:
 - \`{ "query": "saved github automation package", "limit": 10 }\`
-- \`{ "query": "preferred org value or saved connector", "limit": 10 }\`
+- \`{ "query": "preferred org value or saved integration", "limit": 10 }\`
 - \`{ "query": "package with worker app ui", "limit": 10 }\`
 - \`{ "entity": "kody_official_guide:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
-- \`{ "entity": "github:connector" }\`
+- \`{ "entity": "github:integration" }\`
 - To open a saved package app: \`open_generated_ui({ "kody_id": "<kody-id>" })\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
@@ -1545,15 +1547,15 @@ async function loadSearchRowsAndRegistry(input: {
 	}
 }
 
-function findConnectorDetail(
+function findIntegrationDetail(
 	rows: Array<ValueMetadata>,
-	connectorName: string,
+	integrationName: string,
 ) {
 	for (const row of rows) {
-		if (parseConnectorValueName(row.name) !== connectorName) continue
-		const config = parseConnectorConfig(
-			parseConnectorJson(row.value),
-			connectorName,
+		if (parseIntegrationValueName(row.name) !== integrationName) continue
+		const config = parseIntegrationConfig(
+			parseIntegrationJson(row.value),
+			integrationName,
 		)
 		if (!config) continue
 		return { row, config }
@@ -1632,23 +1634,23 @@ async function resolveEntityDetail(input: {
 		}
 	}
 
-	if (ref.type === 'connector') {
-		const connector = findConnectorDetail(
+	if (ref.type === 'integration') {
+		const integration = findIntegrationDetail(
 			input.searchRows.userValueRows,
 			ref.id,
 		)
-		if (!connector) {
-			throw new Error('Saved connector not found for this user.')
+		if (!integration) {
+			throw new Error('Saved integration not found for this user.')
 		}
 		return {
-			type: 'connector' as const,
-			id: connector.config.name,
-			title: connector.config.name,
+			type: 'integration' as const,
+			id: integration.config.name,
+			title: integration.config.name,
 			description:
-				connector.row.description.trim() ||
-				`Saved OAuth connector configuration (${connector.config.flow} flow).`,
-			row: connector.row,
-			config: connector.config,
+				integration.row.description.trim() ||
+				`Saved OAuth integration configuration (${integration.config.flow} flow).`,
+			row: integration.row,
+			config: integration.config,
 		}
 	}
 
@@ -1684,7 +1686,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						'Optional exact entity reference in the format "{id}:{type}" where type is capability, package, secret, value, or connector.',
+						'Optional exact entity reference in the format "{id}:{type}" where type is capability, package, secret, value, or integration.',
 					),
 				limit: z
 					.number()

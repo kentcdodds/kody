@@ -24,7 +24,7 @@ Do **not** ask the user to paste secrets into chat.
 
 Provide the user a URL like:
 
-`https://heykody.dev/connect/secret?name=linearApiKey&description=Linear%20API%20key&allowedHosts=api.linear.app&scope=user&dashboardUrl=https://linear.app/settings/api&instructions=Go%20to%20Linear%20Settings%20%E2%86%92%20API%20%E2%86%92%20Personal%20API%20Keys%20%E2%86%92%20Create%20key&allowedCapabilities=linear_issue_list,linear_issue_create&allowedPackages=pkg_123&connector=linear`
+`https://heykody.dev/connect/secret?name=linearApiKey&description=Linear%20API%20key&allowedHosts=api.linear.app&scope=user&dashboardUrl=https://linear.app/settings/api&instructions=Go%20to%20Linear%20Settings%20%E2%86%92%20API%20%E2%86%92%20Personal%20API%20Keys%20%E2%86%92%20Create%20key&allowedCapabilities=linear_issue_list,linear_issue_create&allowedPackages=pkg_123&integration=linear`
 
 ## Query params
 
@@ -39,7 +39,7 @@ Provide the user a URL like:
 | `appId`               | no       | Required when `scope=app`. Use the saved package id that owns the package app or package-owned secret scope.               |
 | `dashboardUrl`        | no       | Provider settings link for creating the key.                                                                               |
 | `instructions`        | no       | Step-by-step instructions shown on the page.                                                                               |
-| `connector`           | no       | Writes `_connector-secret:{connector}` secret-binding metadata on save.                                                    |
+| `integration`         | no       | Writes `_integration-secret:{integration}` secret-binding metadata on save.                                                |
 
 ## Approval policy reminders
 

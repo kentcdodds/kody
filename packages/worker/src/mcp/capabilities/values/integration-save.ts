@@ -5,29 +5,29 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
-	buildConnectorValueName,
-	connectorConfigSchema,
-	connectorSaveSchema,
-	mergeConnectorConfig,
-	normalizeConnectorConfig,
-	parseConnectorConfig,
-	parseConnectorJson,
-} from './connector-shared.ts'
+	buildIntegrationValueName,
+	integrationConfigSchema,
+	integrationSaveSchema,
+	mergeIntegrationConfig,
+	normalizeIntegrationConfig,
+	parseIntegrationConfig,
+	parseIntegrationJson,
+} from './integration-shared.ts'
 
-const inputSchema = connectorSaveSchema
+const inputSchema = integrationSaveSchema
 
 const outputSchema = z.object({
-	connector: connectorConfigSchema,
+	integration: integrationConfigSchema,
 })
 
-export const connectorSaveCapability = defineDomainCapability(
+export const integrationSaveCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'connector_save',
+		name: 'integration_save',
 		description:
-			'Create or update an OAuth connector configuration for the signed-in user. Stored as a user-scoped value with a _connector: prefix.',
+			'Create or update an OAuth integration configuration for the signed-in user. Stored as a user-scoped value with a _integration: prefix.',
 		keywords: [
-			'connector',
+			'integration',
 			'oauth',
 			'config',
 			'registry',
@@ -50,18 +50,21 @@ export const connectorSaveCapability = defineDomainCapability(
 			const existing = await getValue({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildConnectorValueName(args.name),
+				name: buildIntegrationValueName(args.name),
 				scope: 'user',
 				storageContext,
 			})
-			const existingConnector =
+			const existingIntegration =
 				existing == null
 					? null
-					: parseConnectorConfig(parseConnectorJson(existing.value), args.name)
-			const connector = existingConnector
-				? mergeConnectorConfig(existingConnector, args)
-				: normalizeConnectorConfig(
-						connectorConfigSchema.parse({
+					: parseIntegrationConfig(
+							parseIntegrationJson(existing.value),
+							args.name,
+						)
+			const integration = existingIntegration
+				? mergeIntegrationConfig(existingIntegration, args)
+				: normalizeIntegrationConfig(
+						integrationConfigSchema.parse({
 							name: args.name,
 							tokenUrl: args.tokenUrl,
 							apiBaseUrl: args.apiBaseUrl ?? null,
@@ -76,18 +79,18 @@ export const connectorSaveCapability = defineDomainCapability(
 			const value = await saveValue({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildConnectorValueName(connector.name),
-				value: JSON.stringify(connector),
+				name: buildIntegrationValueName(integration.name),
+				value: JSON.stringify(integration),
 				scope: 'user',
-				description: `OAuth connector config for ${connector.name}`,
+				description: `OAuth integration config for ${integration.name}`,
 				storageContext,
 			})
-			const parsed = parseConnectorConfig(
-				parseConnectorJson(value.value),
-				connector.name,
+			const parsed = parseIntegrationConfig(
+				parseIntegrationJson(value.value),
+				integration.name,
 			)
 			return {
-				connector: parsed ?? connector,
+				integration: parsed ?? integration,
 			}
 		},
 	},

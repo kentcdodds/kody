@@ -29,9 +29,9 @@ import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
-	buildConnectorValueName,
-	normalizeConnectorConfig,
-} from '#mcp/capabilities/values/connector-shared.ts'
+	buildIntegrationValueName,
+	normalizeIntegrationConfig,
+} from '#mcp/capabilities/values/integration-shared.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
 
@@ -362,7 +362,7 @@ async function handleConnectOauthAction(input: {
 		refreshSaved = true
 	}
 
-	const connectorName = await saveConnectorConfig({
+	const integrationName = await saveIntegrationConfig({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 		provider,
@@ -404,7 +404,7 @@ async function handleConnectOauthAction(input: {
 		refreshTokenSaved: refreshSaved,
 		allowedHosts,
 		hostApprovalLinks,
-		connectorName,
+		integrationName,
 	})
 }
 
@@ -551,7 +551,7 @@ async function handleOAuthExchangeAction(input: {
 	return jsonResponse(payload as Record<string, unknown>, response.status)
 }
 
-async function saveConnectorConfig(input: {
+async function saveIntegrationConfig(input: {
 	env: Env
 	userId: string
 	provider: string
@@ -569,7 +569,7 @@ async function saveConnectorConfig(input: {
 	if (!providerKey) {
 		throw new Error('Provider must contain letters or numbers.')
 	}
-	const connector = normalizeConnectorConfig({
+	const integration = normalizeIntegrationConfig({
 		name: input.provider,
 		tokenUrl: input.tokenUrl,
 		apiBaseUrl: input.apiBaseUrl,
@@ -588,13 +588,13 @@ async function saveConnectorConfig(input: {
 	await saveValue({
 		env: input.env,
 		userId: input.userId,
-		name: buildConnectorValueName(connector.name),
-		value: JSON.stringify(connector),
+		name: buildIntegrationValueName(integration.name),
+		value: JSON.stringify(integration),
 		scope: 'user',
-		description: `OAuth connector config for ${connector.name}`,
+		description: `OAuth integration config for ${integration.name}`,
 		storageContext: { sessionId: null, appId: null },
 	})
-	return connector.name
+	return integration.name
 }
 
 function readTokenField(

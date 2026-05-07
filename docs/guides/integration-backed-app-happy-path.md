@@ -1,18 +1,18 @@
 # Integration-backed package app happy path
 
 Use this guide after `integration_bootstrap` proves the integration already
-works, or when connector and secret state are already clear enough to verify
+works, or when integration and secret state are already clear enough to verify
 quickly.
 
 ## Recommended sequence
 
-1. Discover connector and secret state.
-   - Use `search` to inspect saved connectors and secret references.
-   - Read full connector metadata only when you need the exact names, hosts, or
-     API base URL.
-2. Verify the required connector exists.
-   - Confirm the connector name, token secret names, and API base URL match the
-     app you are about to build.
+1. Discover integration and secret state.
+   - Use `search` to inspect saved integrations and secret references.
+   - Read full integration metadata only when you need the exact names, hosts,
+     or API base URL.
+2. Verify the required integration exists.
+   - Confirm the integration name, token secret names, and API base URL match
+     the app you are about to build.
 3. Run one cheap authenticated smoke test in `execute`.
    - Prefer a small read-only request such as `GET /me`, `GET /viewer`, or
      `GET /v1/me`.
@@ -34,14 +34,14 @@ For non-trivial or integration-backed package apps, prefer this split:
   `package.json#kody.app.entry`
 - package exports: reusable modules and callable default exports declared in
   `package.json.exports`
-- internal backend modules / Durable Objects / facets: connector lookups,
+- internal backend modules / Durable Objects / facets: integration lookups,
   provider API calls, persistence, validation, and mutations
 - inline HTML/code renders: acceptable for quick prototypes or one-off
   experiments, not the default package app pattern
 
 ## Avoid this detour
 
-If the connector state, secret names, allowed hosts, and provider contract are
+If the integration state, secret names, allowed hosts, and provider contract are
 already clear enough, do **not** spend extra time spelunking the local repo
 before building the app.
 

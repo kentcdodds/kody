@@ -1,5 +1,5 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
-import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
+import { type IntegrationConfig } from '#mcp/capabilities/values/integration-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
@@ -24,13 +24,13 @@ export type SearchEntityType =
 	| 'package'
 	| 'secret'
 	| 'value'
-	| 'connector'
+	| 'integration'
 
 type SearchMatchType =
 	| 'capability'
 	| 'package'
 	| 'value'
-	| 'connector'
+	| 'integration'
 	| 'secret'
 	| 'retriever_result'
 
@@ -138,7 +138,7 @@ export type SlimSearchMatch =
 			appId: string | null
 	  }
 	| {
-			type: 'connector'
+			type: 'integration'
 			id: string
 			entityRef: string
 			name: string
@@ -267,13 +267,13 @@ export type SearchEntityDetailStructured =
 	  }
 	| {
 			kind: 'entity'
-			type: 'connector'
+			type: 'integration'
 			id: string
 			entityRef: string
 			title: string
 			description: string
 			usage: string
-			flow: ConnectorConfig['flow']
+			flow: IntegrationConfig['flow']
 			tokenUrl: string
 			apiBaseUrl: string | null
 			clientIdValueName: string
@@ -316,12 +316,12 @@ export type SearchEntityDetail =
 			row: ValueMetadata
 	  }
 	| {
-			type: 'connector'
+			type: 'integration'
 			id: string
 			title: string
 			description: string
 			row: ValueMetadata
-			config: ConnectorConfig
+			config: IntegrationConfig
 	  }
 
 export type SearchMatch =
@@ -354,8 +354,8 @@ export type SearchMatch =
 			appId: string | null
 	  }
 	| {
-			type: 'connector'
-			connectorName: string
+			type: 'integration'
+			integrationName: string
 			title: string
 			description: string
 			flow: string
@@ -404,8 +404,8 @@ function buildValueUsage(name: string, scope: string) {
 	return `codemode.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
 }
 
-function buildConnectorUsage(name: string) {
-	return `codemode.connector_get({ name: ${JSON.stringify(name)} })`
+function buildIntegrationUsage(name: string) {
+	return `codemode.integration_get({ name: ${JSON.stringify(name)} })`
 }
 
 function buildSecretUsage(name: string) {
@@ -447,7 +447,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or connector.',
+			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or integration.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
@@ -457,10 +457,10 @@ export function parseEntityRef(entity: string): {
 		type !== 'package' &&
 		type !== 'secret' &&
 		type !== 'value' &&
-		type !== 'connector'
+		type !== 'integration'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, package, secret, value, or connector.',
+			'Entity type must be one of: capability, package, secret, value, or integration.',
 		)
 	}
 	if (!id) {
@@ -520,9 +520,9 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 		const entityRef = buildEntityRef(match.valueId, 'value')
 		return `${String(index + 1)}. **value** ${formatMarkdownInlineCode(match.name)} (${formatMarkdownInlineCode(match.scope)} scope) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
-	if (match.type === 'connector') {
-		const entityRef = buildEntityRef(match.connectorName, 'connector')
-		return `${String(index + 1)}. **connector** ${formatMarkdownInlineCode(match.connectorName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+	if (match.type === 'integration') {
+		const entityRef = buildEntityRef(match.integrationName, 'integration')
+		return `${String(index + 1)}. **integration** ${formatMarkdownInlineCode(match.integrationName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 	}
 	if (match.type === 'retriever_result') {
 		const source = match.source ?? `${match.kodyId}/${match.retrieverKey}`
@@ -597,15 +597,15 @@ export function toSlimStructuredMatches(input: {
 				appId: match.appId,
 			}
 		}
-		if (match.type === 'connector') {
+		if (match.type === 'integration') {
 			return {
-				type: 'connector',
-				id: match.connectorName,
-				entityRef: buildEntityRef(match.connectorName, 'connector'),
-				name: match.connectorName,
+				type: 'integration',
+				id: match.integrationName,
+				entityRef: buildEntityRef(match.integrationName, 'integration'),
+				name: match.integrationName,
 				title: match.title,
 				description: match.description,
-				usage: buildConnectorUsage(match.connectorName),
+				usage: buildIntegrationUsage(match.integrationName),
 				flow: match.flow,
 				tokenUrl: match.tokenUrl,
 				apiBaseUrl: match.apiBaseUrl,
@@ -614,7 +614,7 @@ export function toSlimStructuredMatches(input: {
 				clientSecretSecretName: match.clientSecretSecretName,
 				accessTokenSecretName: match.accessTokenSecretName,
 				refreshTokenSecretName: match.refreshTokenSecretName,
-				nextStep: `Inspect connector detail with search({ entity: "${match.connectorName}:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
+				nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
 			}
 		}
 		if (match.type === 'retriever_result') {
@@ -881,25 +881,25 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		}
 	}
 
-	if (detail.type === 'connector') {
+	if (detail.type === 'integration') {
 		const requiredHosts = detail.config.requiredHosts ?? []
 		const lines = [
-			`# Connector — \`${detail.config.name}\``,
+			`# Integration — \`${detail.config.name}\``,
 			'',
 			detail.description,
 			'',
 			'## Summary',
 			'',
-			`- Entity: \`${buildEntityRef(detail.id, 'connector')}\``,
+			`- Entity: \`${buildEntityRef(detail.id, 'integration')}\``,
 			`- Flow: \`${detail.config.flow}\``,
 			`- Token URL: \`${detail.config.tokenUrl}\``,
 			`- API base URL: ${detail.config.apiBaseUrl ? `\`${detail.config.apiBaseUrl}\`` : 'none'}`,
 			`- Required hosts: ${requiredHosts.length > 0 ? requiredHosts.map((host) => `\`${host}\``).join(', ') : 'none'}`,
 			'',
-			'## Read this connector',
+			'## Read this integration',
 			'',
-			`- \`${buildConnectorUsage(detail.config.name)}\``,
-			'- `codemode.connector_list({})`',
+			`- \`${buildIntegrationUsage(detail.config.name)}\``,
+			'- `codemode.integration_list({})`',
 			'',
 			'## Related stored names',
 			'',
@@ -912,12 +912,12 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			markdown: lines.join('\n'),
 			structured: {
 				kind: 'entity',
-				type: 'connector',
+				type: 'integration',
 				id: detail.id,
-				entityRef: buildEntityRef(detail.id, 'connector'),
+				entityRef: buildEntityRef(detail.id, 'integration'),
 				title: detail.title,
 				description: detail.description,
-				usage: buildConnectorUsage(detail.config.name),
+				usage: buildIntegrationUsage(detail.config.name),
 				flow: detail.config.flow,
 				tokenUrl: detail.config.tokenUrl,
 				apiBaseUrl: detail.config.apiBaseUrl ?? null,

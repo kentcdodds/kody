@@ -4,22 +4,22 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { deleteValue } from '#mcp/values/service.ts'
-import { buildConnectorValueName } from './connector-shared.ts'
+import { buildIntegrationValueName } from './integration-shared.ts'
 
 const inputSchema = z.object({
-	name: z.string().min(1).describe('Connector name to delete.'),
+	name: z.string().min(1).describe('Integration name to delete.'),
 })
 
 const outputSchema = z.object({
 	deleted: z.boolean(),
 })
 
-export const connectorDeleteCapability = defineDomainCapability(
+export const integrationDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'connector_delete',
-		description: 'Delete a saved OAuth connector configuration by name.',
-		keywords: ['connector', 'oauth', 'config', 'registry', 'delete', 'value'],
+		name: 'integration_delete',
+		description: 'Delete a saved OAuth integration configuration by name.',
+		keywords: ['integration', 'oauth', 'config', 'registry', 'delete', 'value'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
@@ -30,7 +30,7 @@ export const connectorDeleteCapability = defineDomainCapability(
 			const deleted = await deleteValue({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildConnectorValueName(args.name),
+				name: buildIntegrationValueName(args.name),
 				scope: 'user',
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,

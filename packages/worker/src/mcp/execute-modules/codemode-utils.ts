@@ -1,9 +1,9 @@
 import {
-	assertConnectorHostAllowed,
-	ConnectorHostNotAllowedError,
-} from './connector-host-allowlist.ts'
+	assertIntegrationHostAllowed,
+	IntegrationHostNotAllowedError,
+} from './integration-host-allowlist.ts'
 
-export { ConnectorHostNotAllowedError }
+export { IntegrationHostNotAllowedError }
 
 type CapabilityResult = unknown
 
@@ -14,7 +14,7 @@ export type CodemodeNamespace = Record<
 	(args: CapabilityArgs) => Promise<CapabilityResult>
 >
 
-type ConnectorConfig = {
+type IntegrationConfig = {
 	name: string
 	tokenUrl: string
 	apiBaseUrl?: string | null
@@ -26,8 +26,8 @@ type ConnectorConfig = {
 	requiredHosts?: Array<string>
 }
 
-type ConnectorGetResult = {
-	connector: ConnectorConfig | null
+type IntegrationGetResult = {
+	integration: IntegrationConfig | null
 }
 
 type ValueGetResult = {
@@ -44,7 +44,7 @@ type ValueGetResult = {
 export type ExecuteRequestInput = string | URL | Request
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
-	'connector_get',
+	'integration_get',
 	'value_get',
 	'secret_set',
 	'agent_turn_start',
@@ -54,21 +54,21 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 
 /**
  * @internal
- * Refreshes and returns the raw OAuth access token for the named connector.
+ * Refreshes and returns the raw OAuth access token for the named integration.
  *
  * **Security boundary**: The returned value is a materialized credential. Once
  * in caller hands, the fetch gateway's host-allowlist check is bypassed because
  * the gateway can only inspect secret *placeholders*. Callers that forward this
- * token in outbound requests MUST enforce the connector's host allowlist
- * themselves (see `assertConnectorHostAllowed`). Prefer
+ * token in outbound requests MUST enforce the integration's host allowlist
+ * themselves (see `assertIntegrationHostAllowed`). Prefer
  * `createAuthenticatedFetch` which performs this enforcement automatically.
  */
 export async function refreshAccessToken(
 	codemode: CodemodeNamespace,
 	providerName: string,
 ): Promise<string> {
-	const connector = await readConnectorConfig(codemode, providerName)
-	return refreshAccessTokenWithConnector(codemode, providerName, connector)
+	const integration = await readIntegrationConfig(codemode, providerName)
+	return refreshAccessTokenWithIntegration(codemode, providerName, integration)
 }
 
 export async function createAuthenticatedFetch(
@@ -77,16 +77,16 @@ export async function createAuthenticatedFetch(
 ): Promise<
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
-	const connector = await readConnectorConfig(codemode, providerName)
-	const accessToken = await refreshAccessTokenWithConnector(
+	const integration = await readIntegrationConfig(codemode, providerName)
+	const accessToken = await refreshAccessTokenWithIntegration(
 		codemode,
 		providerName,
-		connector,
+		integration,
 	)
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
-		const resolvedUrl = resolveRequestUrl(input, connector)
-		assertConnectorHostAllowed(providerName, connector, resolvedUrl)
+		const resolvedUrl = resolveRequestUrl(input, integration)
+		assertIntegrationHostAllowed(providerName, integration, resolvedUrl)
 
 		const request = new Request(resolvedUrl, init)
 		const headers = new Headers(request.headers)
@@ -100,38 +100,40 @@ export async function createAuthenticatedFetch(
 	}
 }
 
-async function readConnectorConfig(
+async function readIntegrationConfig(
 	codemode: CodemodeNamespace,
 	providerName: string,
 ) {
-	const connectorGet = codemode.connector_get
-	if (typeof connectorGet !== 'function') {
-		throw new Error('codemode.connector_get is not available in this sandbox.')
+	const integrationGet = codemode.integration_get
+	if (typeof integrationGet !== 'function') {
+		throw new Error(
+			'codemode.integration_get is not available in this sandbox.',
+		)
 	}
-	const result = (await connectorGet({
+	const result = (await integrationGet({
 		name: providerName,
-	})) as ConnectorGetResult
-	const connector = result?.connector ?? null
-	if (!connector) {
-		throw new Error(`Connector "${providerName}" was not found.`)
+	})) as IntegrationGetResult
+	const integration = result?.integration ?? null
+	if (!integration) {
+		throw new Error(`Integration "${providerName}" was not found.`)
 	}
-	return connector
+	return integration
 }
 
 async function readClientId(
 	codemode: CodemodeNamespace,
-	connector: ConnectorConfig,
+	integration: IntegrationConfig,
 ) {
 	const valueGet = codemode.value_get
 	if (typeof valueGet !== 'function') {
 		throw new Error('codemode.value_get is not available in this sandbox.')
 	}
 	const value = (await valueGet({
-		name: connector.clientIdValueName,
+		name: integration.clientIdValueName,
 	})) as ValueGetResult
 	if (!value?.value) {
 		throw new Error(
-			`Client ID value "${connector.clientIdValueName}" was not found.`,
+			`Client ID value "${integration.clientIdValueName}" was not found.`,
 		)
 	}
 	return value.value
@@ -151,7 +153,7 @@ async function persistSecret(
 	const normalizedSecretName = secretName.trim()
 	if (!normalizedSecretName) {
 		throw new Error(
-			`Connector "${providerName}" does not define an ${secretKind} secret name.`,
+			`Integration "${providerName}" does not define an ${secretKind} secret name.`,
 		)
 	}
 	await secretSet({
@@ -161,16 +163,17 @@ async function persistSecret(
 	})
 }
 
-async function refreshAccessTokenWithConnector(
+async function refreshAccessTokenWithIntegration(
 	codemode: CodemodeNamespace,
 	providerName: string,
-	connector: ConnectorConfig,
+	integration: IntegrationConfig,
 ) {
-	const clientId = await readClientId(codemode, connector)
-	const refreshTokenSecretName = connector.refreshTokenSecretName?.trim() ?? ''
+	const clientId = await readClientId(codemode, integration)
+	const refreshTokenSecretName =
+		integration.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
 		throw new Error(
-			`Connector "${providerName}" does not define a refresh token secret name.`,
+			`Integration "${providerName}" does not define a refresh token secret name.`,
 		)
 	}
 
@@ -182,12 +185,12 @@ async function refreshAccessTokenWithConnector(
 	)
 	params.set('client_id', clientId)
 
-	if (connector.flow === 'confidential') {
+	if (integration.flow === 'confidential') {
 		const clientSecretSecretName =
-			connector.clientSecretSecretName?.trim() ?? ''
+			integration.clientSecretSecretName?.trim() ?? ''
 		if (!clientSecretSecretName) {
 			throw new Error(
-				`Connector "${providerName}" uses confidential flow but does not define a client secret secret name.`,
+				`Integration "${providerName}" uses confidential flow but does not define a client secret secret name.`,
 			)
 		}
 		params.set(
@@ -196,7 +199,7 @@ async function refreshAccessTokenWithConnector(
 		)
 	}
 
-	const response = await fetch(connector.tokenUrl, {
+	const response = await fetch(integration.tokenUrl, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -211,12 +214,12 @@ async function refreshAccessTokenWithConnector(
 
 	if (!response.ok) {
 		throw new Error(
-			`Token refresh failed for connector "${providerName}" with HTTP ${response.status}.`,
+			`Token refresh failed for integration "${providerName}" with HTTP ${response.status}.`,
 		)
 	}
 	if (!payload || typeof payload.access_token !== 'string') {
 		throw new Error(
-			`Token refresh for connector "${providerName}" did not return an access_token.`,
+			`Token refresh for integration "${providerName}" did not return an access_token.`,
 		)
 	}
 
@@ -235,7 +238,7 @@ async function refreshAccessTokenWithConnector(
 	await persistSecret(
 		codemode,
 		providerName,
-		connector.accessTokenSecretName,
+		integration.accessTokenSecretName,
 		'access token',
 		payload.access_token,
 	)
@@ -252,17 +255,17 @@ function buildSecretPlaceholder(
 
 function resolveRequestUrl(
 	input: ExecuteRequestInput,
-	connector: ConnectorConfig,
+	integration: IntegrationConfig,
 ) {
 	if (typeof input === 'string' && input.startsWith('/')) {
-		return resolveRelativeUrl(input, connector)
+		return resolveRelativeUrl(input, integration)
 	}
 	if (input instanceof URL) return input
 	if (typeof input === 'string') return input
 	if (input instanceof Request) {
-		const relativePath = getRelativePathFromRequest(input, connector)
+		const relativePath = getRelativePathFromRequest(input, integration)
 		if (relativePath) {
-			return new Request(resolveRelativeUrl(relativePath, connector), input)
+			return new Request(resolveRelativeUrl(relativePath, integration), input)
 		}
 	}
 	return input
@@ -270,10 +273,10 @@ function resolveRequestUrl(
 
 function getRelativePathFromRequest(
 	input: Request,
-	connector: ConnectorConfig,
+	integration: IntegrationConfig,
 ): string | null {
 	const requestUrl = new URL(input.url)
-	const normalizedBase = getNormalizedApiBaseUrl(connector)
+	const normalizedBase = getNormalizedApiBaseUrl(integration)
 	if (normalizedBase && requestUrl.href.startsWith(normalizedBase)) {
 		return null
 	}
@@ -294,18 +297,18 @@ function getRuntimeOrigin() {
 	return typeof origin === 'string' && origin.length > 0 ? origin : null
 }
 
-function getNormalizedApiBaseUrl(connector: ConnectorConfig) {
-	if (!connector.apiBaseUrl) return null
-	return connector.apiBaseUrl.endsWith('/')
-		? connector.apiBaseUrl.slice(0, -1)
-		: connector.apiBaseUrl
+function getNormalizedApiBaseUrl(integration: IntegrationConfig) {
+	if (!integration.apiBaseUrl) return null
+	return integration.apiBaseUrl.endsWith('/')
+		? integration.apiBaseUrl.slice(0, -1)
+		: integration.apiBaseUrl
 }
 
-function resolveRelativeUrl(pathname: string, connector: ConnectorConfig) {
-	const normalizedBase = getNormalizedApiBaseUrl(connector)
+function resolveRelativeUrl(pathname: string, integration: IntegrationConfig) {
+	const normalizedBase = getNormalizedApiBaseUrl(integration)
 	if (!normalizedBase) {
 		throw new Error(
-			`Connector "${connector.name}" does not define apiBaseUrl for relative requests.`,
+			`Integration "${integration.name}" does not define apiBaseUrl for relative requests.`,
 		)
 	}
 	return new URL(`${normalizedBase}${pathname}`)
@@ -317,34 +320,34 @@ export function getExecuteHelperCapabilityNames() {
 
 export function createExecuteHelperPrelude() {
 	return `
-class ConnectorHostNotAllowedError extends Error {
-  constructor(connectorName, disallowedHost) {
+class IntegrationHostNotAllowedError extends Error {
+  constructor(integrationName, disallowedHost) {
     super(
-      \`Connector "\${connectorName}" does not allow requests to host "\${disallowedHost}". \` +
-        \`The host must be listed in the connector's requiredHosts or match its apiBaseUrl.\`
+      \`Integration "\${integrationName}" does not allow requests to host "\${disallowedHost}". \` +
+        \`The host must be listed in the integration's requiredHosts or match its apiBaseUrl.\`
     );
-    this.name = 'ConnectorHostNotAllowedError';
-    this.connectorName = connectorName;
+    this.name = 'IntegrationHostNotAllowedError';
+    this.integrationName = integrationName;
     this.disallowedHost = disallowedHost;
   }
 }
-const __kodyGetConnectorAllowedHosts = (connector) => {
+const __kodyGetIntegrationAllowedHosts = (integration) => {
   const hosts = new Set();
-  if (connector.requiredHosts) {
-    for (const host of connector.requiredHosts) {
+  if (integration.requiredHosts) {
+    for (const host of integration.requiredHosts) {
       const normalized = host.trim().toLowerCase();
       if (normalized) hosts.add(normalized);
     }
   }
-  if (connector.apiBaseUrl) {
+  if (integration.apiBaseUrl) {
     try {
-      const apiHost = new URL(connector.apiBaseUrl).hostname.trim().toLowerCase();
+      const apiHost = new URL(integration.apiBaseUrl).hostname.trim().toLowerCase();
       if (apiHost) hosts.add(apiHost);
     } catch {}
   }
   return Array.from(hosts);
 };
-const __kodyAssertConnectorHostAllowed = (connectorName, connector, url) => {
+const __kodyAssertIntegrationHostAllowed = (integrationName, integration, url) => {
   let resolvedUrl;
   if (typeof url === 'string') {
     if (url.startsWith('//')) {
@@ -368,40 +371,40 @@ const __kodyAssertConnectorHostAllowed = (connectorName, connector, url) => {
     return;
   }
   if (!requestHost) return;
-  const allowedHosts = __kodyGetConnectorAllowedHosts(connector);
+  const allowedHosts = __kodyGetIntegrationAllowedHosts(integration);
   if (allowedHosts.length === 0) {
     throw new Error(
-      \`Connector "\${connectorName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). \` +
+      \`Integration "\${integrationName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). \` +
         \`Cannot attach credentials without a host allowlist.\`
     );
   }
   if (!allowedHosts.includes(requestHost)) {
-    throw new ConnectorHostNotAllowedError(connectorName, requestHost);
+    throw new IntegrationHostNotAllowedError(integrationName, requestHost);
   }
 };
 const __kodyBuildSecretPlaceholder = (name, scope) =>
   \`{{secret:\${name}|scope=\${scope}}}\`;
-const __kodyReadConnectorConfig = async (providerName) => {
-  const connectorGet = codemode.connector_get;
-  if (typeof connectorGet !== 'function') {
-    throw new Error('codemode.connector_get is not available in this sandbox.');
+const __kodyReadIntegrationConfig = async (providerName) => {
+  const integrationGet = codemode.integration_get;
+  if (typeof integrationGet !== 'function') {
+    throw new Error('codemode.integration_get is not available in this sandbox.');
   }
-  const result = await connectorGet({ name: providerName });
-  const connector = result?.connector ?? null;
-  if (!connector) {
-    throw new Error(\`Connector "\${providerName}" was not found.\`);
+  const result = await integrationGet({ name: providerName });
+  const integration = result?.integration ?? null;
+  if (!integration) {
+    throw new Error(\`Integration "\${providerName}" was not found.\`);
   }
-  return connector;
+  return integration;
 };
-const __kodyReadClientId = async (connector) => {
+const __kodyReadClientId = async (integration) => {
   const valueGet = codemode.value_get;
   if (typeof valueGet !== 'function') {
     throw new Error('codemode.value_get is not available in this sandbox.');
   }
-  const value = await valueGet({ name: connector.clientIdValueName });
+  const value = await valueGet({ name: integration.clientIdValueName });
   if (!value?.value) {
     throw new Error(
-      \`Client ID value "\${connector.clientIdValueName}" was not found.\`,
+      \`Client ID value "\${integration.clientIdValueName}" was not found.\`,
     );
   }
   return value.value;
@@ -419,7 +422,7 @@ const __kodyPersistSecret = async (
   const normalizedSecretName = secretName.trim();
   if (!normalizedSecretName) {
     throw new Error(
-      \`Connector "\${providerName}" does not define an \${secretKind} secret name.\`,
+      \`Integration "\${providerName}" does not define an \${secretKind} secret name.\`,
     );
   }
   await secretSet({
@@ -428,28 +431,28 @@ const __kodyPersistSecret = async (
     scope: 'user',
   });
 };
-const __kodyGetNormalizedApiBaseUrl = (connector) => {
-  if (!connector.apiBaseUrl) return null;
-  return connector.apiBaseUrl.endsWith('/')
-    ? connector.apiBaseUrl.slice(0, -1)
-    : connector.apiBaseUrl;
+const __kodyGetNormalizedApiBaseUrl = (integration) => {
+  if (!integration.apiBaseUrl) return null;
+  return integration.apiBaseUrl.endsWith('/')
+    ? integration.apiBaseUrl.slice(0, -1)
+    : integration.apiBaseUrl;
 };
 const __kodyGetRuntimeOrigin = () => {
   const origin = globalThis.location?.origin ?? null;
   return typeof origin === 'string' && origin.length > 0 ? origin : null;
 };
-const __kodyResolveRelativeUrl = (pathname, connector) => {
-  const normalizedBase = __kodyGetNormalizedApiBaseUrl(connector);
+const __kodyResolveRelativeUrl = (pathname, integration) => {
+  const normalizedBase = __kodyGetNormalizedApiBaseUrl(integration);
   if (!normalizedBase) {
     throw new Error(
-      \`Connector "\${connector.name}" does not define apiBaseUrl for relative requests.\`,
+      \`Integration "\${integration.name}" does not define apiBaseUrl for relative requests.\`,
     );
   }
   return new URL(\`\${normalizedBase}\${pathname}\`);
 };
-const __kodyGetRelativePathFromRequest = (input, connector) => {
+const __kodyGetRelativePathFromRequest = (input, integration) => {
   const requestUrl = new URL(input.url);
-  const normalizedBase = __kodyGetNormalizedApiBaseUrl(connector);
+  const normalizedBase = __kodyGetNormalizedApiBaseUrl(integration);
   if (normalizedBase && requestUrl.href.startsWith(normalizedBase)) {
     return null;
   }
@@ -459,27 +462,27 @@ const __kodyGetRelativePathFromRequest = (input, connector) => {
   }
   return \`\${requestUrl.pathname}\${requestUrl.search}\${requestUrl.hash}\`;
 };
-const __kodyResolveRequestUrl = (input, connector) => {
+const __kodyResolveRequestUrl = (input, integration) => {
   if (typeof input === 'string' && input.startsWith('/')) {
-    return __kodyResolveRelativeUrl(input, connector);
+    return __kodyResolveRelativeUrl(input, integration);
   }
   if (input instanceof URL) return input;
   if (typeof input === 'string') return input;
   if (input instanceof Request) {
-    const relativePath = __kodyGetRelativePathFromRequest(input, connector);
+    const relativePath = __kodyGetRelativePathFromRequest(input, integration);
     if (relativePath) {
-      return new Request(__kodyResolveRelativeUrl(relativePath, connector), input);
+      return new Request(__kodyResolveRelativeUrl(relativePath, integration), input);
     }
   }
   return input;
 };
 const __kodyRefreshAccessToken = async (providerName) => {
-  const connector = await __kodyReadConnectorConfig(providerName);
-  const clientId = await __kodyReadClientId(connector);
-  const refreshTokenSecretName = connector.refreshTokenSecretName?.trim() ?? '';
+  const integration = await __kodyReadIntegrationConfig(providerName);
+  const clientId = await __kodyReadClientId(integration);
+  const refreshTokenSecretName = integration.refreshTokenSecretName?.trim() ?? '';
   if (!refreshTokenSecretName) {
     throw new Error(
-      \`Connector "\${providerName}" does not define a refresh token secret name.\`,
+      \`Integration "\${providerName}" does not define a refresh token secret name.\`,
     );
   }
   const params = new URLSearchParams();
@@ -489,11 +492,11 @@ const __kodyRefreshAccessToken = async (providerName) => {
     __kodyBuildSecretPlaceholder(refreshTokenSecretName, 'user'),
   );
   params.set('client_id', clientId);
-  if (connector.flow === 'confidential') {
-    const clientSecretSecretName = connector.clientSecretSecretName?.trim() ?? '';
+  if (integration.flow === 'confidential') {
+    const clientSecretSecretName = integration.clientSecretSecretName?.trim() ?? '';
     if (!clientSecretSecretName) {
       throw new Error(
-        \`Connector "\${providerName}" uses confidential flow but does not define a client secret secret name.\`,
+        \`Integration "\${providerName}" uses confidential flow but does not define a client secret secret name.\`,
       );
     }
     params.set(
@@ -501,7 +504,7 @@ const __kodyRefreshAccessToken = async (providerName) => {
       __kodyBuildSecretPlaceholder(clientSecretSecretName, 'user'),
     );
   }
-  const response = await fetch(connector.tokenUrl, {
+  const response = await fetch(integration.tokenUrl, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -512,12 +515,12 @@ const __kodyRefreshAccessToken = async (providerName) => {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(
-      \`Token refresh failed for connector "\${providerName}" with HTTP \${response.status}.\`,
+      \`Token refresh failed for integration "\${providerName}" with HTTP \${response.status}.\`,
     );
   }
   if (!payload || typeof payload.access_token !== 'string') {
     throw new Error(
-      \`Token refresh for connector "\${providerName}" did not return an access_token.\`,
+      \`Token refresh for integration "\${providerName}" did not return an access_token.\`,
     );
   }
   if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
@@ -530,18 +533,18 @@ const __kodyRefreshAccessToken = async (providerName) => {
   }
   await __kodyPersistSecret(
     providerName,
-    connector.accessTokenSecretName,
+    integration.accessTokenSecretName,
     'access token',
     payload.access_token,
   );
   return payload.access_token;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
-  const connector = await __kodyReadConnectorConfig(providerName);
+  const integration = await __kodyReadIntegrationConfig(providerName);
   const accessToken = await __kodyRefreshAccessToken(providerName);
   return async (input, init) => {
-    const resolvedUrl = __kodyResolveRequestUrl(input, connector);
-    __kodyAssertConnectorHostAllowed(providerName, connector, resolvedUrl);
+    const resolvedUrl = __kodyResolveRequestUrl(input, integration);
+    __kodyAssertIntegrationHostAllowed(providerName, integration, resolvedUrl);
     const request = new Request(resolvedUrl, init);
     const headers = new Headers(request.headers);
     headers.set('Authorization', \`Bearer \${accessToken}\`);

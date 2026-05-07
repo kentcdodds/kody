@@ -20,7 +20,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'integration-bootstrap.md',
 		title: 'Integration bootstrap guide',
 		summary:
-			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect connector/secret state, stop for setup, then run an authenticated smoke test.',
+			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect integration/secret state, stop for setup, then run an authenticated smoke test.',
 	},
 	secret_backed_integration: {
 		file: 'secret-backed-integration.md',
@@ -32,7 +32,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'integration-backed-app-happy-path.md',
 		title: 'Integration-backed package app happy path',
 		summary:
-			'After connector/secret verification and a cheap smoke test, proceed directly to a package app rooted in package.json and package-owned code; avoid unnecessary repo spelunking.',
+			'After integration/secret verification and a cheap smoke test, proceed directly to a package app rooted in package.json and package-owned code; avoid unnecessary repo spelunking.',
 	},
 	oauth: {
 		file: 'oauth.md',
@@ -158,7 +158,7 @@ const allKeywords = [
 		'account id plus token',
 		'integration backed app',
 		'third-party integration',
-		'connector_list',
+		'integration_list',
 		'secret_list',
 		'smoke test',
 		'package app',

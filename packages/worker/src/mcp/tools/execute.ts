@@ -49,7 +49,7 @@ Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.
 - \`import { codemode } from 'kody:runtime'\` for builtin capabilities.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`.
-- \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth connectors. Connector \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`connector_list\` first when the task involves a provider that may have multiple accounts connected.
+- \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth integrations. Integration \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`integration_list\` first when the task involves a provider that may have multiple accounts connected.
 - \`import { agentChatTurnStream } from 'kody:runtime'\` for streamed agent turns.
 - Optional \`params\` are passed as the first argument to the module default export. Prefer \`export default async function main(input = {}) { ... }\`; pass \`input\` to shared helpers explicitly.
 - \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.

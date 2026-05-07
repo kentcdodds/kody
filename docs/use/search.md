@@ -1,7 +1,7 @@
 # Search
 
 The **search** tool finds **built-in capabilities**, **saved packages**,
-**persisted values**, **saved connectors**, and **user secret references**
+**persisted values**, **saved integrations**, and **user secret references**
 (metadata only, not secret values).
 
 ## Queries and ranking
@@ -28,15 +28,15 @@ response must stay small.
 To get **full markdown and call shapes for one hit** (for example a capability’s
 `inputTypeDefinition` / `outputTypeDefinition`), call **search** again with
 **`entity`** set to `"{id}:{type}"` where **`type`** is `capability`, `value`,
-`connector`, `package`, or `secret`.
+`integration`, `package`, or `secret`.
 
 Examples:
 
 - `kody_official_guide:capability`
 - `user:preferred_org:value`
-- `github:connector`
+- `github:integration`
 - `my-package:package`
-- `spotify:connector`
+- `spotify:integration`
 - `spotify-access-token:secret`
 
 There is **no separate `detail` flag** on search. Deeper inspection of one
@@ -59,15 +59,15 @@ for an empty ranked list.
 Saved **packages** require a signed-in MCP user. Capabilities and built-in
 behavior work without user-scoped data.
 
-Package and connector query hits stay summary-only. Exact package detail
+Package and integration query hits stay summary-only. Exact package detail
 (`entity: "my-package:package"`) includes package app, export, job, retriever,
-and README metadata. Exact connector detail (`entity: "github:connector"`)
+and README metadata. Exact integration detail (`entity: "github:integration"`)
 includes operational details such as token URL, API base URL, required hosts,
 and related stored value/secret names.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 
-Use **search** as the default way to discover whether a connector or secret
+Use **search** as the default way to discover whether an integration or secret
 already exists before switching to **execute**. Runtime code inside **execute**
 can call **`codemode.secret_list(...)`** when it needs secret metadata, but
 **search** is the primary discovery path.

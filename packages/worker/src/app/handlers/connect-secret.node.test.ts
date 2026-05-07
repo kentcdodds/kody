@@ -216,7 +216,7 @@ test('connect secret POST rejects app scope when session is not app-scoped', asy
 				name: 'linearApiKey',
 				scope: 'app',
 				sessionToken: 'generated-token',
-				connector: 'linear',
+				integration: 'linear',
 				allowedCapabilities: ['linear_issue_list'],
 			}),
 		}),
@@ -230,7 +230,7 @@ test('connect secret POST rejects app scope when session is not app-scoped', asy
 	})
 })
 
-test('connect secret POST stores connector binding under dedicated prefix', async () => {
+test('connect secret POST stores integration binding under dedicated prefix', async () => {
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
 		allowedHosts: ['api.linear.app'],
@@ -247,7 +247,7 @@ test('connect secret POST stores connector binding under dedicated prefix', asyn
 				name: 'linearApiKey',
 				scope: 'user',
 				sessionToken: 'generated-token',
-				connector: 'linear',
+				integration: 'linear',
 			}),
 		}),
 		params: {},
@@ -257,26 +257,26 @@ test('connect secret POST stores connector binding under dedicated prefix', asyn
 	await expect(readJson(response)).resolves.toEqual({ ok: true })
 	expect(mockModule.saveValue).toHaveBeenCalledWith(
 		expect.objectContaining({
-			name: '_connector-secret:linear',
+			name: '_integration-secret:linear',
 			value: JSON.stringify({
 				secretName: 'linearApiKey',
 				allowedHosts: ['api.linear.app'],
 				allowedCapabilities: ['linear_issue_list'],
 				allowedPackages: ['package-123'],
 			}),
-			description: 'Connector secret binding for linear',
+			description: 'Integration secret binding for linear',
 			scope: 'user',
 			storageContext: { sessionId: 'session-1', appId: null },
 		}),
 	)
 	expect(mockModule.saveValue).not.toHaveBeenCalledWith(
 		expect.objectContaining({
-			name: '_connector:linear',
+			name: '_integration:linear',
 		}),
 	)
 })
 
-test('connect secret POST clears connector binding packages when explicitly empty', async () => {
+test('connect secret POST clears integration binding packages when explicitly empty', async () => {
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
 		allowedHosts: ['api.linear.app'],
@@ -293,7 +293,7 @@ test('connect secret POST clears connector binding packages when explicitly empt
 				name: 'linearApiKey',
 				scope: 'user',
 				sessionToken: 'generated-token',
-				connector: 'linear',
+				integration: 'linear',
 				allowedPackages: [],
 			}),
 		}),
@@ -304,7 +304,7 @@ test('connect secret POST clears connector binding packages when explicitly empt
 	await expect(readJson(response)).resolves.toEqual({ ok: true })
 	expect(mockModule.saveValue).toHaveBeenCalledWith(
 		expect.objectContaining({
-			name: '_connector-secret:linear',
+			name: '_integration-secret:linear',
 			value: JSON.stringify({
 				secretName: 'linearApiKey',
 				allowedHosts: ['api.linear.app'],

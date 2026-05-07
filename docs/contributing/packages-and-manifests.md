@@ -135,7 +135,7 @@ await workflows.create({
 Kody stores Cloudflare Workflow instance payloads as package-routing metadata:
 `userId`, package id, `kody.id`, source id, workflow name, export name,
 idempotency key, `runAt`/plan date, and small non-secret params. Do not place
-secrets, OAuth tokens, full connector configuration, or full device action
+secrets, OAuth tokens, full integration configuration, or full device action
 payloads in workflow params or metadata. The package export should look up
 current secrets/configuration from normal package runtime helpers when it runs.
 
