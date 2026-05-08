@@ -7,15 +7,36 @@ import {
 
 const textEncoder = new TextEncoder()
 
+function padToLength(buffer: Uint8Array, length: number) {
+	if (buffer.length === length) return buffer
+	const padded = new Uint8Array(length)
+	padded.set(buffer)
+	return padded
+}
+
 function timingSafeStringEquals(left: string, right: string) {
 	const leftBytes = textEncoder.encode(left)
 	const rightBytes = textEncoder.encode(right)
-	let diff = leftBytes.length ^ rightBytes.length
 	const length = Math.max(leftBytes.length, rightBytes.length)
-	for (let index = 0; index < length; index += 1) {
-		diff |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0)
+	const leftPadded = padToLength(leftBytes, length)
+	const rightPadded = padToLength(rightBytes, length)
+	const subtle = crypto.subtle as SubtleCrypto & {
+		timingSafeEqual?: (
+			a: ArrayBuffer | ArrayBufferView,
+			b: ArrayBuffer | ArrayBufferView,
+		) => boolean
 	}
-	return diff === 0
+	const isEqual =
+		typeof subtle.timingSafeEqual === 'function'
+			? subtle.timingSafeEqual(leftPadded, rightPadded)
+			: (() => {
+					let result = 0
+					for (let index = 0; index < length; index += 1) {
+						result |= (leftPadded[index] ?? 0) ^ (rightPadded[index] ?? 0)
+					}
+					return result === 0
+				})()
+	return isEqual && leftBytes.length === rightBytes.length
 }
 
 function parseSecretsMapFromEnv(value: unknown): Record<string, string> | null {
