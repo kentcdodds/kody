@@ -509,21 +509,6 @@ function createWorkflowCreateResult(input: {
 	}
 }
 
-function createPackageWorkflowCreateResult(input: {
-	summary: { id: string; status?: string }
-	payload: PackageWorkflowPayload
-}): PackageWorkflowCreateResult {
-	const { version: _version, ...payloadWithoutVersion } = input.payload
-	return createWorkflowCreateResult({
-		summary: input.summary,
-		payload: {
-			version: 2,
-			sourceType: 'package',
-			...payloadWithoutVersion,
-		},
-	})
-}
-
 function createWorkflowCreateResultFromRow(
 	row: WorkflowRunInspection,
 ): PackageWorkflowCreateResult {
@@ -726,54 +711,6 @@ async function updateWorkflowRunStatus(input: {
 	})
 }
 
-export async function createPackageWorkflowInstance(input: {
-	workflow: Workflow<PackageWorkflowPayload> | undefined
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
-	workflowName: string
-	exportName: string
-	runAt: string | Date
-	idempotencyKey: string
-	params?: PackageWorkflowParams | null
-	planDate?: string | null
-}): Promise<PackageWorkflowCreateResult> {
-	if (!input.workflow) {
-		throw new Error('Missing PACKAGE_WORKFLOWS binding.')
-	}
-	const payload = createPackageWorkflowPayload(input)
-	const id = await createPackageWorkflowInstanceId(payload)
-	const existing = await getExistingWorkflowInstance(input.workflow, id)
-	if (existing) {
-		return createPackageWorkflowCreateResult({ summary: existing, payload })
-	}
-	let instance: WorkflowInstance
-	try {
-		instance = await input.workflow.create({
-			id,
-			params: payload,
-			retention: {
-				successRetention: '30 days',
-				errorRetention: '30 days',
-			},
-		})
-	} catch (error) {
-		if (isDuplicateWorkflowInstanceError(error)) {
-			const concurrent = await getExistingWorkflowInstance(input.workflow, id)
-			if (concurrent) {
-				return createPackageWorkflowCreateResult({
-					summary: concurrent,
-					payload,
-				})
-			}
-		}
-		throw error
-	}
-	const summary = await readWorkflowInstanceSummary(instance)
-	return createPackageWorkflowCreateResult({ summary, payload })
-}
-
 function assertWorkflowCreateBodyShape(body: PackageWorkflowCreateInput): {
 	code: string | null
 	exportName: string | null
@@ -943,49 +880,6 @@ export async function createDynamicCallableWorkflow(input: {
 		})
 	}
 	return createWorkflowCreateResult({ summary, payload })
-}
-
-export async function createPackageWorkflow(input: {
-	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'PACKAGE_WORKFLOWS'>
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
-	body: PackageWorkflowCreateInput
-}) {
-	if (input.env.DYNAMIC_CALLABLE_WORKFLOWS && input.env.APP_DB) {
-		return await createDynamicCallableWorkflow({
-			env: input.env,
-			userId: input.userId,
-			packageContext: {
-				packageId: input.packageId,
-				kodyId: input.kodyId,
-				sourceId: input.sourceId,
-			},
-			body: input.body,
-		})
-	}
-	if (
-		!('exportName' in input.body) ||
-		typeof input.body.exportName !== 'string'
-	) {
-		throw new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.')
-	}
-	return await createPackageWorkflowInstance({
-		workflow: input.env.PACKAGE_WORKFLOWS,
-		userId: input.userId,
-		packageId: input.packageId,
-		kodyId: input.kodyId,
-		sourceId: input.sourceId,
-		workflowName: normalizeOptionalWorkflowName(
-			input.body.workflowName,
-			input.body.exportName,
-		),
-		exportName: input.body.exportName,
-		runAt: input.body.runAt,
-		idempotencyKey: input.body.idempotencyKey,
-		params: input.body.params,
-	})
 }
 
 export async function listWorkflowRunsForUser(input: {

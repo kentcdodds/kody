@@ -3,7 +3,6 @@ import {
 	listPackageServices,
 	listPackageSubscriptions,
 	listPackageRetrievers,
-	listPackageWorkflows,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
@@ -316,15 +315,6 @@ function collectPackageBundleTargets(
 	for (const subscription of listPackageSubscriptions(manifest)) {
 		remember(subscription.handler, 'callable')
 	}
-	for (const workflow of listPackageWorkflows(manifest)) {
-		remember(
-			resolvePackageExportPath({
-				manifest,
-				exportName: workflow.exportName,
-			}),
-			'callable',
-		)
-	}
 	for (const retriever of listPackageRetrievers(manifest)) {
 		remember(
 			resolvePackageExportPath({
@@ -362,15 +352,6 @@ function collectPackageCallableTypecheckTargets(
 	}
 	for (const subscription of listPackageSubscriptions(manifest)) {
 		remember(subscription.handler, true)
-	}
-	for (const workflow of listPackageWorkflows(manifest)) {
-		remember(
-			resolvePackageExportPath({
-				manifest,
-				exportName: workflow.exportName,
-			}),
-			true,
-		)
 	}
 	for (const retriever of listPackageRetrievers(manifest)) {
 		remember(
@@ -625,7 +606,7 @@ function formatBundleCheckMessage(input: {
 			.join(', ')}.`
 	}
 	if (input.targetCount === 0) {
-		return 'Package defines no app entry, exports, jobs, services, subscriptions, workflows, or retrievers to bundle.'
+		return 'Package defines no app entry, exports, jobs, services, subscriptions, or retrievers to bundle.'
 	}
 	return `Resolved ${input.targetCount} package target(s) for bundling.`
 }

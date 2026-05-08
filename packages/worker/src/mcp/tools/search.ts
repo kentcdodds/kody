@@ -192,7 +192,6 @@ function buildFallbackPackageSearchProjection(
 		exports: [],
 		jobs: [],
 		services: [],
-		workflows: [],
 		subscriptions: [],
 		retrievers: [],
 	}
@@ -348,9 +347,6 @@ function buildSearchableEntityDescriptors(input: {
 		const services = Array.isArray(entry.projection.services)
 			? entry.projection.services
 			: []
-		const workflows = Array.isArray(entry.projection.workflows)
-			? entry.projection.workflows
-			: []
 		const subscriptions = Array.isArray(entry.projection.subscriptions)
 			? entry.projection.subscriptions
 			: []
@@ -386,11 +382,6 @@ function buildSearchableEntityDescriptors(input: {
 					service.entry,
 					service.mode,
 					service.autoStart ? 'auto-start' : 'manual-start',
-				]),
-				...workflows.flatMap((workflow) => [
-					workflow.name,
-					workflow.exportName,
-					workflow.description ?? '',
 				]),
 				...subscriptions.flatMap((subscription) => [
 					subscription.topic,
@@ -849,9 +840,6 @@ function buildPackageCandidates(input: {
 			const services = Array.isArray(entry.projection.services)
 				? entry.projection.services
 				: []
-			const workflows = Array.isArray(entry.projection.workflows)
-				? entry.projection.workflows
-				: []
 			const subscriptions = Array.isArray(entry.projection.subscriptions)
 				? entry.projection.subscriptions
 				: []
@@ -914,11 +902,6 @@ function buildPackageCandidates(input: {
 						service.mode,
 						service.autoStart ? 'auto-start' : 'manual-start',
 						service.timeoutMs != null ? `timeout-ms:${service.timeoutMs}` : '',
-					]),
-					...workflows.flatMap((workflow) => [
-						workflow.name,
-						workflow.exportName,
-						workflow.description ?? '',
 					]),
 					...subscriptions.flatMap((subscription) => [
 						subscription.topic,

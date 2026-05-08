@@ -60,7 +60,8 @@ export default async function main() {
 }
 ```
 
-Saved package jobs and subscriptions that already call `workflows.create` do not
-need to change. New code should use the hub-backed `workflows.create` API above;
-older package workflow declarations remain functional during the compatibility
-window.
+Saved package jobs and subscriptions call the same `workflows.create` helper.
+Manifests no longer declare workflow entrypoints under `kody.workflows`; the hub
+resolves any package export by name at runtime, so calling
+`workflows.create({ exportName: './workflow-run-event' })` from a package
+runtime context is enough.

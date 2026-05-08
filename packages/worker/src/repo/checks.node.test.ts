@@ -95,7 +95,6 @@ function createPackageManifest(input: {
 		{ handler: string; description?: string; filters?: Record<string, unknown> }
 	>
 	services?: Record<string, { entry: string }>
-	workflows?: Record<string, { export: string; description?: string }>
 	retrievers?: Record<
 		string,
 		{
@@ -125,7 +124,6 @@ function createPackageManifest(input: {
 			jobs: input.jobs,
 			subscriptions: input.subscriptions,
 			services: input.services,
-			workflows: input.workflows,
 			retrievers: input.retrievers,
 		},
 	})
@@ -384,7 +382,6 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 					'.': './src/index.ts',
 					'./helper': './src/helper.ts',
 					'./job': './src/job.ts',
-					'./workflow': './src/workflow.ts',
 					'./search': './src/search.ts',
 					'./subscription': './src/subscription.ts',
 				},
@@ -400,12 +397,6 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 				subscriptions: {
 					'email.message.received': {
 						handler: './src/subscription.ts',
-					},
-				},
-				workflows: {
-					refresh: {
-						export: './workflow',
-						description: 'Refreshes derived data.',
 					},
 				},
 				retrievers: {
@@ -432,7 +423,6 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 }
 `,
 		],
-		['src/workflow.ts', 'export default async (params) => params\n'],
 		['src/search.ts', 'export default async (params) => ({ results: [] })\n'],
 		['src/subscription.ts', 'export default async (event) => event\n'],
 	])
@@ -470,7 +460,7 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 				kind: 'typecheck',
 				ok: true,
 				message:
-					'No semantic diagnostics for 4 callable package runtime entrypoint(s).',
+					'No semantic diagnostics for 3 callable package runtime entrypoint(s).',
 			}),
 		]),
 	)
@@ -481,10 +471,6 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
 		expect.stringContaining('import userEntrypoint from "./src/job"'),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/workflow"'),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',

@@ -62,7 +62,10 @@ token and then attaches it to an outbound request.
   [`../adding-capabilities.md`](../adding-capabilities.md)).
 - Workflow runtime hub:
   `packages/worker/src/package-runtime/package-workflows.ts` defines the shared
-  `DynamicCallableWorkflow` Cloudflare Workflow and the legacy
-  `PackageWorkflowEntrypoint`. Runtime injection is wired through
+  `DynamicCallableWorkflow` Cloudflare Workflow used by every runtime context.
+  Runtime injection is wired through
   `packages/worker/src/mcp/run-codemode-registry.ts` for bundled code and
-  `packages/worker/src/package-runtime/package-app.ts` for package apps.
+  `packages/worker/src/package-runtime/package-app.ts` for package apps. The
+  legacy `PackageWorkflowEntrypoint` class is still registered in
+  `wrangler.jsonc` so any in-flight Workflow Durable Objects from previous
+  deploys can drain naturally; new workflow instances always go through the hub.

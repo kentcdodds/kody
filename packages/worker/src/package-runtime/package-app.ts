@@ -22,7 +22,10 @@ import {
 } from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
-import { createPackageWorkflow } from './package-workflows.ts'
+import {
+	createDynamicCallableWorkflow,
+	type PackageWorkflowCreateInput,
+} from './package-workflows.ts'
 import {
 	listSavedPackageServices,
 	normalizePackageServiceStatus,
@@ -899,13 +902,15 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async workflowCreate(input: unknown) {
-		return await createPackageWorkflow({
+		return await createDynamicCallableWorkflow({
 			env: this.env,
 			userId: this.ctx.props.userId,
-			packageId: this.ctx.props.packageId,
-			kodyId: this.ctx.props.kodyId,
-			sourceId: this.ctx.props.sourceId,
-			body: input as Parameters<typeof createPackageWorkflow>[0]['body'],
+			packageContext: {
+				packageId: this.ctx.props.packageId,
+				kodyId: this.ctx.props.kodyId,
+				sourceId: this.ctx.props.sourceId,
+			},
+			body: input as PackageWorkflowCreateInput,
 		})
 	}
 }

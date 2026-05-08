@@ -69,8 +69,8 @@ Saved packages may also declare long-lived package services under
 ## Workflow runtime
 
 All server-side Kody runtime contexts expose `workflows` from `kody:runtime`.
-The helper routes to the shared `DynamicCallableWorkflow` binding rather than
-context-specific Workflow classes.
+The helper routes every call to the shared `DynamicCallableWorkflow` binding;
+there is no context-specific Workflow class anymore.
 
 - `workflows.create({ code, runAt, idempotencyKey, params })` queues an inline
   ESM module and later executes it through the same module loader used by
@@ -80,9 +80,11 @@ context-specific Workflow classes.
   `packageId` from `packageContext`; ad hoc contexts must pass it explicitly.
 - The hub verifies saved-package ownership before queuing export-backed
   workflows and records recent workflow rows for `workflow_list`.
-- Package-specific Workflow declarations remain bound through
-  `PackageWorkflowEntrypoint` during the compatibility window, but new runtime
-  calls should target the hub-backed `workflows.create`.
+- Manifests no longer accept `kody.workflows`; `package_save` rejects the field
+  with a clear migration error. The legacy `PackageWorkflowEntrypoint`
+  Cloudflare Workflow class is still registered so in-flight Workflow Durable
+  Objects from prior deploys can drain naturally, but no new runtime path
+  creates instances on it.
 
 ## App server flow
 

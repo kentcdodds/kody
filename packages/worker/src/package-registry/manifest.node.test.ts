@@ -91,41 +91,29 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 	})
 })
 
-test('parseAuthoredPackageJson accepts package workflow definitions and search projection includes them', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/shade-automation',
-			exports: {
-				'./run-event': './src/run-event.ts',
-			},
-			kody: {
-				id: 'shade-automation',
-				description: 'Shade automation package',
-				workflows: {
-					'shade-event': {
-						export: './run-event',
-						description: 'Runs one planned shade event.',
+test('parseAuthoredPackageJson rejects legacy kody.workflows declarations with a clear migration error', () => {
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/shade-automation',
+				exports: {
+					'./run-event': './src/run-event.ts',
+				},
+				kody: {
+					id: 'shade-automation',
+					description: 'Shade automation package',
+					workflows: {
+						'shade-event': {
+							export: './run-event',
+						},
 					},
 				},
-			},
+			}),
+			manifestPath: 'package.json',
 		}),
-		manifestPath: 'package.json',
-	})
-	const projection = buildPackageSearchProjection(manifest)
-
-	expect(manifest.kody.workflows).toEqual({
-		'shade-event': {
-			export: './run-event',
-			description: 'Runs one planned shade event.',
-		},
-	})
-	expect(projection.workflows).toEqual([
-		{
-			name: 'shade-event',
-			exportName: './run-event',
-			description: 'Runs one planned shade event.',
-		},
-	])
+	).toThrow(
+		'kody.workflows is no longer supported; use workflows.create({ packageId, exportName }) from any runtime context.',
+	)
 })
 
 test('parseAuthoredPackageJson rejects service timeoutMs values above the supported maximum', () => {
@@ -636,13 +624,7 @@ test('buildPackageSearchDocument includes exported APIs and package discovery su
 			},
 			kody: {
 				id: 'automation-hub',
-				description: 'Automation package with workflows and retrievers',
-				workflows: {
-					'shade-event': {
-						export: './run-event',
-						description: 'Runs one planned shade event.',
-					},
-				},
+				description: 'Automation package with retrievers and subscriptions',
 				retrievers: {
 					'notes-search': {
 						export: './search-notes',
@@ -674,8 +656,8 @@ export declare function forecast(city: string): Promise<string>
 	const document = buildPackageSearchDocument(projection)
 
 	expect(document).toContain('package automation-hub')
-	expect(document).toContain('workflow:shade-event')
 	expect(document).toContain('retriever:notes-search')
+	expect(document).not.toContain('workflow:')
 	expect(document).toContain('subscription:email.message.received')
 	expect(document).toContain('subscription:email.message.quarantined')
 	expect(document).toContain(

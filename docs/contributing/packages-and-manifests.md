@@ -19,7 +19,6 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.tags` — search tags
 - `kody.app` — optional hosted package app config
 - `kody.jobs` — optional package-owned schedules
-- `kody.workflows` — optional package-owned durable workflow declarations
 - `kody.retrievers` — optional package-owned search/context retrievers
 
 The package manifest is `package.json`.
@@ -99,53 +98,47 @@ Jobs are not their own top-level saved primitive.
 
 ## Package-owned workflows
 
-Workflows belong to packages.
+Packages no longer declare workflow entrypoints in `package.json#kody`. The
+shared `DynamicCallableWorkflow` hub resolves workflow targets at runtime, so
+any package export is callable as a workflow without a manifest declaration.
 
-Use `package.json#kody.workflows` to name durable workflow entrypoints that
-package code can schedule through `kody:runtime`:
-
-```json
-{
-	"kody": {
-		"workflows": {
-			"shade-event": {
-				"export": "./run-event",
-				"description": "Runs one planned shade event."
-			}
-		}
-	}
-}
-```
-
-Runtime code calls `workflows.create(...)` with routing metadata and small
+Runtime code calls `workflows.create(...)` with the package export plus small
 parameters:
 
 ```ts
 import { workflows } from 'kody:runtime'
 
 await workflows.create({
-	workflowName: 'shade-event',
-	exportName: './run-event',
+	exportName: './workflow-run-event',
 	runAt: '2026-05-03T12:00:00.000Z',
 	idempotencyKey: 'shade-event:2026-05-03T12:00:00.000Z:office',
 	params: { eventId: 'event-123', roomId: 'office' },
 })
 ```
 
-Kody stores Cloudflare Workflow instance payloads as package-routing metadata:
-`userId`, package id, `kody.id`, source id, workflow name, export name,
-idempotency key, `runAt`/plan date, and small non-secret params. Do not place
-secrets, OAuth tokens, full integration configuration, or full device action
-payloads in workflow params or metadata. The package export should look up
-current secrets/configuration from normal package runtime helpers when it runs.
+In package runtime contexts (package jobs, subscription handlers, services,
+package apps), `packageId` is resolved from `packageContext`. Outside package
+runtime (`execute`, ad hoc jobs), pass `packageId` explicitly. See
+[Workflows](../use/workflows.md) for the full runtime reference, including the
+inline `code` shape.
 
-Workflow instance ids are deterministic for
-`(userId, packageId, workflowName, idempotencyKey, runAt)`, so repeated planners
+Kody stores workflow payloads as routing metadata (`userId`, package id,
+`kody.id`, source id, workflow name, export name, idempotency key, `runAt`/plan
+date, and small non-secret params). Do not place secrets, OAuth tokens, full
+integration configuration, or full device action payloads in workflow params or
+metadata. The package export should look up current secrets/configuration from
+normal package runtime helpers when it runs.
+
+Workflow instances dedupe per `(userId, idempotencyKey)`, so repeated planners
 can safely attempt to create the same scheduled instance without duplicating it.
-The host workflow sleeps until `runAt`, then invokes the saved package export
+The hub workflow sleeps until `runAt`, then invokes the saved package export
 through the same package execution path used by package invocations. Workflow
 instances are not search results and are not saved as a new top-level Kody
 entity.
+
+Publishing a package that still declares a `kody.workflows` block fails with a
+clear migration error; remove the block and call `workflows.create` from runtime
+code instead.
 
 ## Package-owned retrievers
 
