@@ -136,9 +136,13 @@ through the same package execution path used by package invocations. Workflow
 instances are not search results and are not saved as a new top-level Kody
 entity.
 
-Publishing a package that still declares a `kody.workflows` block fails with a
-clear migration error; remove the block and call `workflows.create` from runtime
-code instead.
+Publishing a package that still declares a `kody.workflows` block fails fast
+with:
+
+> Invalid package.json: `kody.workflows` is no longer supported; use
+> `workflows.create({ packageId, exportName })` from any runtime context.
+
+Remove the block and call `workflows.create` from runtime code instead.
 
 ## Package-owned retrievers
 
