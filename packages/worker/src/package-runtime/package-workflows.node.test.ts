@@ -641,7 +641,7 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 		expect.objectContaining({
 			id: created.id,
 			sourceType: 'inline',
-			status: 'waiting',
+			status: 'queued',
 			idempotencyKey: 'inline-key',
 		}),
 	])

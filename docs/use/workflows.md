@@ -31,10 +31,16 @@ Both shapes require:
 - `idempotencyKey`: caller-chosen dedupe key
 - `params`: optional JSON object passed to the workflow body
 
-Calling `create` again with the same idempotency inputs returns the existing
-workflow instead of starting a duplicate. Kody enforces a per-user concurrent
-workflow limit (default: 100); if the cap is reached, `workflows.create` returns
-a clear quota error.
+Calling `create` again with the same dedupe fields returns the existing workflow
+instead of starting a duplicate. For inline code, repeat the same signed-in
+user, source type (`code`), workflow name (or the default `inline-code`),
+`idempotencyKey`, and `runAt`. For package exports, repeat the same signed-in
+user, package, workflow name (or export name fallback), `idempotencyKey`, and
+`runAt`. For example, retrying `code` with `idempotencyKey: "execute-smoke-123"`
+and `runAt: "2026-05-08T18:00:00.000Z"` returns the same workflow only when
+those dedupe fields are repeated. Kody enforces a per-user concurrent workflow
+limit (default: 100); if the cap is reached, `workflows.create` returns a clear
+quota error.
 
 Use `workflow_list` to inspect recent workflow runs and statuses.
 
@@ -47,7 +53,7 @@ export default async function main() {
 	return await workflows.create({
 		packageId: 'pkg_123',
 		exportName: './workflow-run-event',
-		runAt: '2026-05-08T18:00:00.000Z',
+		runAt: new Date(Date.now() + 60_000).toISOString(),
 		idempotencyKey: 'morning-shades-up',
 		params: { roomId: 'office' },
 	})

@@ -14,7 +14,19 @@ const workflowRunSchema = z.object({
 	idempotency_key: z.string(),
 	run_at: z.string(),
 	plan_date: z.string().nullable(),
-	status: z.string().nullable(),
+	status: z
+		.enum([
+			'queued',
+			'running',
+			'paused',
+			'waiting',
+			'waitingForPause',
+			'unknown',
+			'complete',
+			'errored',
+			'terminated',
+		])
+		.nullable(),
 	created_at: z.string(),
 	updated_at: z.string(),
 	completed_at: z.string().nullable(),

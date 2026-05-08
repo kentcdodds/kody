@@ -292,19 +292,18 @@ function createWorkflowsProxy(runtimeBridge) {
 			if ((exportName ? 1 : 0) + (code ? 1 : 0) !== 1) {
 				throw new Error('workflows.create requires exactly one of exportName or code.');
 			}
-			return await runtimeBridge.workflowCreate({
-				...input,
-				...(normalizeOptionalString(input, 'workflowName')
-					? { workflowName: normalizeOptionalString(input, 'workflowName') }
-					: {}),
-				...(exportName ? { exportName } : {}),
-				...(code ? { code } : {}),
-				...(normalizeOptionalString(input, 'packageId')
-					? { packageId: normalizeOptionalString(input, 'packageId') }
-					: {}),
+			const workflowName = normalizeOptionalString(input, 'workflowName');
+			const packageId = normalizeOptionalString(input, 'packageId');
+			const payload = {
 				runAt: normalizeRunAt(input),
 				idempotencyKey: normalizeRequiredString(input, 'idempotencyKey'),
-			});
+				...(input.params === undefined ? {} : { params: input.params }),
+				...(workflowName ? { workflowName } : {}),
+				...(packageId ? { packageId } : {}),
+				...(exportName ? { exportName } : {}),
+				...(code ? { code } : {}),
+			};
+			return await runtimeBridge.workflowCreate(payload);
 		},
 	};
 }

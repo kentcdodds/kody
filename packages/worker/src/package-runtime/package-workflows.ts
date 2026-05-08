@@ -61,6 +61,17 @@ export type PackageWorkflowCreateResult = {
 	status?: string
 }
 
+type WorkflowRunStatus =
+	| 'queued'
+	| 'running'
+	| 'paused'
+	| 'waiting'
+	| 'waitingForPause'
+	| 'unknown'
+	| 'complete'
+	| 'errored'
+	| 'terminated'
+
 export type DynamicCallableWorkflowPayload =
 	| {
 			version: 2
@@ -100,7 +111,7 @@ export type WorkflowRunInspection = {
 	idempotencyKey: string
 	runAt: string
 	planDate: string | null
-	status: string | null
+	status: WorkflowRunStatus | null
 	createdAt: string
 	updatedAt: string
 	completedAt: string | null
@@ -136,14 +147,27 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 const packageWorkflowTokenId = 'internal:package-workflows'
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
 const defaultConcurrentWorkflowLimit = 100
-const activeWorkflowStatuses = new Set([
+const workflowStatusRefreshTtlMs = 30_000
+const activeWorkflowStatusValues = [
 	'queued',
 	'running',
 	'paused',
 	'waiting',
 	'waitingForPause',
 	'unknown',
-])
+] as const satisfies ReadonlyArray<WorkflowRunStatus>
+const terminalWorkflowStatusValues = [
+	'complete',
+	'errored',
+	'terminated',
+] as const satisfies ReadonlyArray<WorkflowRunStatus>
+const knownWorkflowStatusValues = [
+	...activeWorkflowStatusValues,
+	...terminalWorkflowStatusValues,
+] as const
+const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
+const terminalWorkflowStatuses = new Set<string>(terminalWorkflowStatusValues)
+const knownWorkflowStatuses = new Set<string>(knownWorkflowStatusValues)
 
 function toBase64Url(bytes: ArrayBuffer) {
 	let binary = ''
@@ -528,9 +552,7 @@ async function createDynamicCallableWorkflowInstanceId(
 }
 
 function getConcurrentWorkflowLimit(env: Env) {
-	const raw = (env as unknown as Record<string, unknown>)[
-		'WORKFLOW_CONCURRENT_LIMIT'
-	]
+	const raw = env.WORKFLOW_CONCURRENT_LIMIT
 	if (typeof raw !== 'string') return defaultConcurrentWorkflowLimit
 	const parsed = Number.parseInt(raw, 10)
 	return Number.isFinite(parsed) && parsed > 0
@@ -541,11 +563,19 @@ function getConcurrentWorkflowLimit(env: Env) {
 function mapWorkflowRunRow(
 	row: Record<string, unknown>,
 ): WorkflowRunInspection {
+	const rawSourceType = row['source_type']
+	if (rawSourceType !== 'inline' && rawSourceType !== 'package') {
+		throw new Error(`Unknown workflow source_type "${String(rawSourceType)}".`)
+	}
+	const rawStatus = row['status']
+	const status =
+		typeof rawStatus === 'string' && knownWorkflowStatuses.has(rawStatus)
+			? (rawStatus as WorkflowRunStatus)
+			: null
 	return {
 		id: String(row['id']),
 		userId: String(row['user_id']),
-		sourceType:
-			row['source_type'] === 'inline' ? 'inline' : ('package' as const),
+		sourceType: rawSourceType,
 		packageId: typeof row['package_id'] === 'string' ? row['package_id'] : null,
 		kodyId: typeof row['kody_id'] === 'string' ? row['kody_id'] : null,
 		sourceId: typeof row['source_id'] === 'string' ? row['source_id'] : null,
@@ -555,7 +585,7 @@ function mapWorkflowRunRow(
 		idempotencyKey: String(row['idempotency_key']),
 		runAt: String(row['run_at']),
 		planDate: typeof row['plan_date'] === 'string' ? row['plan_date'] : null,
-		status: typeof row['status'] === 'string' ? row['status'] : null,
+		status,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 		completedAt:
@@ -568,14 +598,15 @@ async function countActiveWorkflowRuns(input: {
 	db: D1Database
 	userId: string
 }) {
+	const placeholders = activeWorkflowStatusValues.map(() => '?').join(', ')
 	const result = await input.db
 		.prepare(
 			`SELECT COUNT(*) AS count
 			FROM workflow_runs
 			WHERE user_id = ?
-				AND status IN ('queued', 'running', 'paused', 'waiting', 'waitingForPause', 'unknown')`,
+				AND status IN (${placeholders})`,
 		)
-		.bind(input.userId)
+		.bind(input.userId, ...activeWorkflowStatusValues)
 		.first<{ count: number }>()
 	return Number(result?.count ?? 0)
 }
@@ -614,8 +645,8 @@ async function recordWorkflowRun(input: {
 			ON CONFLICT(id) DO UPDATE SET
 				status = excluded.status,
 				updated_at = excluded.updated_at,
-				completed_at = excluded.completed_at,
-				last_error = excluded.last_error`,
+				completed_at = COALESCE(excluded.completed_at, workflow_runs.completed_at),
+				last_error = COALESCE(excluded.last_error, workflow_runs.last_error)`,
 		)
 		.bind(
 			input.id,
@@ -903,27 +934,56 @@ export async function listWorkflowRunsForUser(input: {
 		.bind(input.userId, limit)
 		.all<Record<string, unknown>>()
 	const rows = (result.results ?? []).map(mapWorkflowRunRow)
+	const updateStatements: Array<D1PreparedStatement> = []
+	const now = new Date()
 	await Promise.all(
 		rows.map(async (row) => {
 			if (!input.env.DYNAMIC_CALLABLE_WORKFLOWS) return
 			if (!row.status || !activeWorkflowStatuses.has(row.status)) return
+			const updatedAtMs = new Date(row.updatedAt).getTime()
+			if (
+				Number.isFinite(updatedAtMs) &&
+				now.getTime() - updatedAtMs < workflowStatusRefreshTtlMs
+			) {
+				return
+			}
 			const instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(
 				row.id,
 			).catch(() => null)
 			if (!instance) return
 			const summary = await readWorkflowInstanceSummary(instance)
-			if (!summary.status || summary.status === row.status) return
-			row.status = summary.status
-			row.updatedAt = new Date().toISOString()
-			await input.env.APP_DB.prepare(
-				`UPDATE workflow_runs
-				SET status = ?, updated_at = ?
-				WHERE id = ? AND user_id = ?`,
+			if (!summary.status || !knownWorkflowStatuses.has(summary.status)) return
+			if (summary.status === row.status) return
+			row.status = summary.status as WorkflowRunStatus
+			row.updatedAt = now.toISOString()
+			if (terminalWorkflowStatuses.has(row.status) && !row.completedAt) {
+				row.completedAt = row.updatedAt
+			}
+			updateStatements.push(
+				input.env.APP_DB.prepare(
+					`UPDATE workflow_runs
+					SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at)
+					WHERE id = ? AND user_id = ?`,
+				).bind(
+					row.status,
+					row.updatedAt,
+					row.completedAt,
+					row.id,
+					input.userId,
+				),
 			)
-				.bind(row.status, row.updatedAt, row.id, input.userId)
-				.run()
 		}),
 	)
+	if (updateStatements.length > 0) {
+		const dbWithBatch = input.env.APP_DB as D1Database & {
+			batch?: D1Database['batch']
+		}
+		if (dbWithBatch.batch) {
+			await dbWithBatch.batch(updateStatements)
+		} else {
+			await Promise.all(updateStatements.map((statement) => statement.run()))
+		}
+	}
 	return rows
 }
 
@@ -940,12 +1000,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		if (runAt.getTime() > Date.now()) {
 			await step.sleepUntil('wait until dynamic workflow runAt', runAt)
 		}
-		await updateWorkflowRunStatus({
-			env: this.env,
-			id: event.instanceId,
-			payload,
-			status: 'running',
-		})
 		const typedStep = step as unknown as {
 			do(
 				name: string,
@@ -953,6 +1007,19 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				callback: () => Promise<JsonValue>,
 			): Promise<JsonValue>
 		}
+		await typedStep.do(
+			'mark workflow running',
+			workflowStepDoConfig,
+			async () => {
+				await updateWorkflowRunStatus({
+					env: this.env,
+					id: event.instanceId,
+					payload,
+					status: 'running',
+				})
+				return { ok: true }
+			},
+		)
 		try {
 			const result = await typedStep.do(
 				payload.sourceType === 'package'
