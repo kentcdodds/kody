@@ -149,6 +149,14 @@ kill-switch state, params, or ES module code with a default-exported function,
 `job_delete` removes an existing scheduled job by id, and `job_run_now` can
 trigger an existing scheduled job immediately for debugging or ad hoc runs.
 
+When `job_update` receives a replacement `code` string, Kody publishes a new
+commit on the job's repo-backed source and the next run uses the new module.
+That is usually the easiest way to change the source of a non-package job, since
+there is no `package_get_git_remote` equivalent for non-package job sources. For
+multi-file edits, open the job's `source_id` with `repo_run_commands` instead.
+Job code must default export a function that receives the job `params` as its
+first argument; `kody:runtime` does not export `params`.
+
 ## Save and edit packages
 
 Use:

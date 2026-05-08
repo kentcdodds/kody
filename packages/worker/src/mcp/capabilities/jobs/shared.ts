@@ -53,7 +53,7 @@ export const scheduledJobInputBaseSchema = {
 		.string()
 		.min(1)
 		.describe(
-			'ES module source for the job entrypoint. It must default export the function Kody should run later, preferably as `export default async function main(input = {}) { ... }`; legacy async-arrow snippets are not supported.',
+			'ES module source for the job entrypoint. It must default export the function Kody should run later, preferably as `export default async function main(input = {}) { ... }`; legacy async-arrow snippets are not supported. The default export receives the job `params` object as its first argument at run time; there is no `params` export from `kody:runtime`, so do not import params and instead read them from the function argument.',
 		),
 	params: z
 		.record(z.string(), z.unknown())
@@ -246,7 +246,7 @@ export const jobUpdateInputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Optional replacement ES module source. It must still default export the job entrypoint, preferably as `export default async function main(input = {}) { ... }`; legacy async-arrow snippets are not supported.',
+				"Optional replacement ES module source. Providing this publishes a new commit on the job's repo-backed source, replacing the previously published job module. It must still default export the job entrypoint, preferably as `export default async function main(input = {}) { ... }`; legacy async-arrow snippets are not supported. The default export receives `params` as its first argument; there is no `params` export from `kody:runtime`.",
 			),
 		params: z
 			.record(z.string(), z.unknown())

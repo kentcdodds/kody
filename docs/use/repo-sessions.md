@@ -7,9 +7,29 @@ publishes.
 Use the repo capabilities when you want to inspect or modify package source
 directly.
 
-## Preferred workflow
+## When to use repo sessions vs. a local git remote
 
-For package edits, use **`repo_run_commands`**.
+There are two supported ways to edit repo-backed source:
+
+- **Repo sessions** (`repo_open_session`, `repo_run_commands`, and the
+  lower-level `repo_*` capabilities). Use these when you are a tool-only agent
+  without a real filesystem, or when you only need to apply small parsed git
+  workflows. Repo sessions also work for repo-backed scheduled jobs (open by
+  `source_id`), not just saved packages.
+- **A short-lived authenticated git remote** via `package_get_git_remote` plus
+  `package_publish_external_push`. Use this when you have local filesystem and
+  git access and want to clone the repo into a temp directory, edit normally,
+  and push the resulting HEAD back. This path is **saved-package-only**; there
+  is no equivalent helper for non-package repo-backed job source.
+
+For one-file edits to a non-package repo-backed scheduled job, the simplest path
+is usually neither of these: pass a replacement `code` string to
+**`job_update`**, which republishes the job module on its repo-backed source
+without opening a session.
+
+## Preferred workflow for repo sessions
+
+For package edits via repo sessions, use **`repo_run_commands`**.
 
 It combines the usual sequence into one capability:
 
@@ -45,6 +65,24 @@ Supported commands:
 
 `git clone` is intentionally unsupported because repo sessions are opened and
 cloned by Kody.
+
+### `git apply` patch format
+
+`git apply` only accepts heredoc form, and the heredoc body must be a standard
+unified diff. Each file patch must include:
+
+- a `--- a/<path>` line and a `+++ b/<path>` line (use `/dev/null` on either
+  side to create or delete a file)
+- one or more `@@ -<old>,<n> +<new>,<n> @@` hunk markers
+- normal context (` `), removal (`-`), and addition (`+`) lines inside each hunk
+
+Multiple file patches can be stacked back-to-back inside a single heredoc; do
+not separate them with `diff --git` lines or per-file `git apply` invocations.
+Patches are applied with the standard `diff` library, so the heredoc must match
+exactly what an upstream `git diff` would produce. If you only need to edit one
+file, prefer copying the new full file body and writing a clean unified diff
+against the current contents (read it first with `repo_read_file` when in doubt)
+rather than approximating context lines.
 
 ## Opening by package identity
 
