@@ -1337,8 +1337,8 @@ export function AccountSecretsRoute(handle: Handle) {
 												>
 													<div
 														mix={css({
-															display: 'flex',
-															justifyContent: 'space-between',
+															display: 'grid',
+															gridTemplateColumns: 'minmax(0, 1fr) auto',
 															gap: spacing.md,
 															alignItems: 'baseline',
 															minWidth: 0,
@@ -1348,7 +1348,6 @@ export function AccountSecretsRoute(handle: Handle) {
 															mix={css({
 																...truncatedTextCss,
 																display: 'block',
-																flex: '1 1 auto',
 															})}
 														>
 															{secret.name}
@@ -1357,7 +1356,6 @@ export function AccountSecretsRoute(handle: Handle) {
 															mix={css({
 																fontSize: typography.fontSize.xs,
 																color: colors.textMuted,
-																flex: '0 0 auto',
 															})}
 														>
 															{formatRelativeTtl(secret.ttlMs)}
