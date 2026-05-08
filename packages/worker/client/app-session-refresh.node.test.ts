@@ -72,7 +72,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, false)
 
 	const authenticatedUi = await renderToString(render())
-	expect(authenticatedUi).toContain('href="/account/secrets"')
+	expect(authenticatedUi).toContain('href="/account"')
 	expect(authenticatedUi).toContain(sessionEmail)
 	expect(authenticatedUi).toContain('<form method="post" action="/logout"')
 
@@ -81,7 +81,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, true)
 
 	const uiAfterAbort = await renderToString(render())
-	expect(uiAfterAbort).toContain('href="/account/secrets"')
+	expect(uiAfterAbort).toContain('href="/account"')
 	expect(uiAfterAbort).toContain(sessionEmail)
 	expect(uiAfterAbort).toContain('<form method="post" action="/logout"')
 })

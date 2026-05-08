@@ -986,15 +986,32 @@ export function AccountSecretsRoute(handle: Handle) {
 							and package apps.
 						</p>
 					</div>
-					<button
-						type="button"
-						mix={[
-							on('click', () => navigate(buildNewSecretHref())),
-							css(primaryButtonCss),
-						]}
+					<div
+						mix={css({
+							display: 'flex',
+							gap: spacing.sm,
+							flexWrap: 'wrap',
+						})}
 					>
-						New secret
-					</button>
+						<a
+							href="/account/remote-connectors"
+							mix={css({
+								...secondaryButtonCss,
+								textDecoration: 'none',
+							})}
+						>
+							Remote connectors
+						</a>
+						<button
+							type="button"
+							mix={[
+								on('click', () => navigate(buildNewSecretHref())),
+								css(primaryButtonCss),
+							]}
+						>
+							New secret
+						</button>
+					</div>
 				</header>
 
 				{approvalCard ? (
