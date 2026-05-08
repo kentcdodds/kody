@@ -248,13 +248,16 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 	function readEditorStateFromForm(form: HTMLFormElement) {
 		const formData = new FormData(form)
+		const enabled = formData.get('enabled') === 'on'
 		return {
 			...editorState,
 			kind: String(formData.get('kind') ?? '').trim(),
 			instanceId: String(formData.get('instanceId') ?? '').trim(),
 			sharedSecret: String(formData.get('sharedSecret') ?? ''),
-			enabled: formData.get('enabled') === 'on',
-			attached: formData.get('attached') === 'on',
+			enabled,
+			attached: enabled
+				? formData.get('attached') === 'on'
+				: editorState.attached,
 		} satisfies EditorState
 	}
 

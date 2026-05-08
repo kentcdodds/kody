@@ -5,6 +5,19 @@ import {
 	normalizeRemoteConnectorKind,
 } from './settings-service.ts'
 
+const textEncoder = new TextEncoder()
+
+function timingSafeStringEquals(left: string, right: string) {
+	const leftBytes = textEncoder.encode(left)
+	const rightBytes = textEncoder.encode(right)
+	let diff = leftBytes.length ^ rightBytes.length
+	const length = Math.max(leftBytes.length, rightBytes.length)
+	for (let index = 0; index < length; index += 1) {
+		diff |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0)
+	}
+	return diff === 0
+}
+
 function parseSecretsMapFromEnv(value: unknown): Record<string, string> | null {
 	if (!value) return null
 	if (typeof value === 'object' && !Array.isArray(value)) {
@@ -106,7 +119,11 @@ export async function remoteConnectorSharedSecretMatches(input: {
 	env: Env
 }): Promise<boolean> {
 	const storedSecrets = await listStoredSharedSecrets(input)
-	if (storedSecrets.some((secret) => input.sharedSecret === secret)) {
+	if (
+		storedSecrets.some((secret) =>
+			timingSafeStringEquals(input.sharedSecret, secret),
+		)
+	) {
 		return true
 	}
 	const fallbackSecret = resolveRemoteConnectorSharedSecretFromEnv(
@@ -114,7 +131,10 @@ export async function remoteConnectorSharedSecretMatches(input: {
 		input.instanceId,
 		input.env,
 	)
-	return Boolean(fallbackSecret && input.sharedSecret === fallbackSecret)
+	return Boolean(
+		fallbackSecret &&
+		timingSafeStringEquals(input.sharedSecret, fallbackSecret),
+	)
 }
 
 export async function hasRemoteConnectorSharedSecret(input: {
