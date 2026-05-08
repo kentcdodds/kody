@@ -140,11 +140,13 @@ export async function remoteConnectorSharedSecretMatches(input: {
 	env: Env
 }): Promise<boolean> {
 	const storedSecrets = await listStoredSharedSecrets(input)
-	if (
-		storedSecrets.some((secret) =>
-			timingSafeStringEquals(input.sharedSecret, secret),
-		)
-	) {
+	let storedSecretMatches = false
+	for (const secret of storedSecrets) {
+		if (timingSafeStringEquals(input.sharedSecret, secret)) {
+			storedSecretMatches = true
+		}
+	}
+	if (storedSecretMatches) {
 		return true
 	}
 	const fallbackSecret = resolveRemoteConnectorSharedSecretFromEnv(

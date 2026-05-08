@@ -69,6 +69,9 @@ function createState(
 				put: vi.fn(async (key: string, value: unknown) => {
 					persistedEntries.set(key, value)
 				}),
+				delete: vi.fn(async (key: string) => {
+					persistedEntries.delete(key)
+				}),
 			},
 			getWebSockets: vi.fn(() => webSockets),
 			acceptWebSocket: vi.fn(),
@@ -151,6 +154,7 @@ test('constructor migrates legacy persisted state key', async () => {
 			connectorKind: 'lights',
 		},
 	})
+	expect(persistedEntries.has('home-connector-session-state')).toBe(false)
 })
 
 test('snapshot returns null when persisted connector has no live websocket', async () => {

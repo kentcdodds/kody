@@ -236,6 +236,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			)
 			if (stored) {
 				await this.ctx.storage.put(stateStorageKey, stored)
+				await this.ctx.storage.delete(legacyStateStorageKey)
 			}
 		}
 		if (!stored) return
