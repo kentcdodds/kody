@@ -33,7 +33,7 @@ import {
 } from '#worker/module-source.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
-	createPackageWorkflow,
+	createDynamicCallableWorkflow,
 	type PackageWorkflowCreateInput,
 } from '#worker/package-runtime/package-workflows.ts'
 import {
@@ -126,26 +126,18 @@ export function createWorkflowTools(input: {
 	env: Env
 	callerContext: McpCallerContext
 	packageContext: PackageContextOptions
-}): PackageWorkflowTools | undefined {
+}): PackageWorkflowTools {
 	const packageContext = input.packageContext
-	if (!packageContext) return undefined
 	return {
 		create: async (body) => {
 			const userId = input.callerContext.user?.userId
 			if (!userId) {
-				throw new Error('Package workflows require an authenticated user.')
+				throw new Error('workflows.create requires an authenticated user.')
 			}
-			if (!packageContext.sourceId) {
-				throw new Error(
-					'Package workflows require a sourceId in package context.',
-				)
-			}
-			return await createPackageWorkflow({
+			return await createDynamicCallableWorkflow({
 				env: input.env,
 				userId,
-				packageId: packageContext.packageId,
-				kodyId: packageContext.kodyId,
-				sourceId: packageContext.sourceId,
+				packageContext,
 				body,
 			})
 		},

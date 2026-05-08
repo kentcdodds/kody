@@ -66,6 +66,24 @@ Saved packages may also declare long-lived package services under
   package app realtime sessions, but they own their own durable storage bucket
   and lifecycle.
 
+## Workflow runtime
+
+All server-side Kody runtime contexts expose `workflows` from `kody:runtime`.
+The helper routes to the shared `DynamicCallableWorkflow` binding rather than
+context-specific Workflow classes.
+
+- `workflows.create({ code, runAt, idempotencyKey, params })` queues an inline
+  ESM module and later executes it through the same module loader used by
+  `execute`.
+- `workflows.create({ exportName, packageId?, runAt, idempotencyKey, params })`
+  queues a saved-package export invocation. Package runtime contexts resolve
+  `packageId` from `packageContext`; ad hoc contexts must pass it explicitly.
+- The hub verifies saved-package ownership before queuing export-backed
+  workflows and records recent workflow rows for `workflow_list`.
+- Package-specific Workflow declarations remain bound through
+  `PackageWorkflowEntrypoint` during the compatibility window, but new runtime
+  calls should target the hub-backed `workflows.create`.
+
 ## App server flow
 
 `packages/worker/src/app/handler.ts` validates environment variables and

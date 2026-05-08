@@ -38,7 +38,17 @@ test('package app workflows proxy validates required workflow input fields', asy
 		'workflows.create requires a workflow input object.',
 	)
 	await expect(workflows.create({})).rejects.toThrow(
-		'workflows.create requires a non-empty workflowName.',
+		'workflows.create requires exactly one of exportName or code.',
+	)
+	await expect(
+		workflows.create({
+			exportName: './run-event',
+			code: 'export default async function main() {}',
+			runAt: '2026-05-03T12:00:00.000Z',
+			idempotencyKey: 'event-key',
+		}),
+	).rejects.toThrow(
+		'workflows.create requires exactly one of exportName or code.',
 	)
 	await expect(
 		workflows.create({
@@ -60,6 +70,26 @@ test('package app workflows proxy validates required workflow input fields', asy
 	).rejects.toThrow(
 		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
 	)
+})
+
+test('package app workflows proxy forwards inline code workflow input', async () => {
+	const workflows = await createWorkflowsProxyForTest({
+		workflowCreate: async (input: unknown) => input,
+	})
+	const code = 'export default async function main() { return { ok: true } }'
+	const result = await workflows.create({
+		code,
+		runAt: '2026-05-03T12:00:00.000Z',
+		idempotencyKey: 'event-key',
+		params: { eventId: 'event-1' },
+	})
+
+	expect(result).toEqual({
+		code,
+		runAt: new Date('2026-05-03T12:00:00.000Z'),
+		idempotencyKey: 'event-key',
+		params: { eventId: 'event-1' },
+	})
 })
 
 test('package app workflows proxy forwards validated input to runtime bridge', async () => {

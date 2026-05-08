@@ -34,6 +34,7 @@ declare namespace Cloudflare {
 		REPO_SESSION: DurableObjectNamespace<import("./src/index").RepoSession>;
 		PACKAGE_REALTIME_SESSION: DurableObjectNamespace<import("./src/index").PackageRealtimeSession>;
 		PACKAGE_SERVICE_INSTANCE: DurableObjectNamespace<import("./src/index").PackageServiceInstance>;
+		DYNAMIC_CALLABLE_WORKFLOWS: Workflow<Parameters<import("./src/index").DynamicCallableWorkflow['run']>[0]['payload']>;
 		PACKAGE_WORKFLOWS: Workflow<Parameters<import("./src/index").PackageWorkflowEntrypoint['run']>[0]['payload']>;
 	}
 }

@@ -7,6 +7,7 @@ const mockModule = vi.hoisted(() => ({
 	deleteJob: vi.fn(),
 	getJobInspection: vi.fn(),
 	inspectJobsForUser: vi.fn(),
+	listWorkflowRunsForUser: vi.fn(),
 	runJobNowViaManager: vi.fn(),
 	updateJob: vi.fn(),
 }))
@@ -26,6 +27,11 @@ vi.mock('#worker/jobs/manager-client.ts', () => ({
 		mockModule.runJobNowViaManager(...args),
 }))
 
+vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
+	listWorkflowRunsForUser: (...args: Array<unknown>) =>
+		mockModule.listWorkflowRunsForUser(...args),
+}))
+
 const { jobScheduleCapability } = await import('./job-schedule.ts')
 const { jobScheduleOnceCapability } = await import('./job-schedule-once.ts')
 const { jobDeleteCapability } = await import('./job-delete.ts')
@@ -33,12 +39,14 @@ const { jobGetCapability } = await import('./job-get.ts')
 const { jobListCapability } = await import('./job-list.ts')
 const { jobRunNowCapability } = await import('./job-run-now.ts')
 const { jobUpdateCapability } = await import('./job-update.ts')
+const { workflowListCapability } = await import('./workflow-list.ts')
 
 function resetMocks() {
 	mockModule.createJob.mockReset()
 	mockModule.deleteJob.mockReset()
 	mockModule.getJobInspection.mockReset()
 	mockModule.inspectJobsForUser.mockReset()
+	mockModule.listWorkflowRunsForUser.mockReset()
 	mockModule.runJobNowViaManager.mockReset()
 	mockModule.updateJob.mockReset()
 }
@@ -132,8 +140,74 @@ test('jobs domain exposes scheduling, inspection, mutation, and run-now capabili
 			'job_update',
 			'job_delete',
 			'job_run_now',
+			'workflow_list',
 		]),
 	)
+})
+
+test('workflow_list returns recent workflow runs for the current user', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	mockModule.listWorkflowRunsForUser.mockResolvedValue([
+		{
+			id: 'dynwf-123',
+			userId: 'user-123',
+			sourceType: 'inline',
+			packageId: null,
+			kodyId: null,
+			sourceId: null,
+			workflowName: 'inline-code',
+			exportName: null,
+			idempotencyKey: 'execute-smoke',
+			runAt: '2026-05-03T12:00:00.000Z',
+			planDate: '2026-05-03',
+			status: 'complete',
+			createdAt: '2026-05-03T11:59:00.000Z',
+			updatedAt: '2026-05-03T12:00:01.000Z',
+			completedAt: '2026-05-03T12:00:01.000Z',
+			lastError: null,
+		},
+	])
+
+	const result = await workflowListCapability.handler(
+		{ limit: 5 },
+		{ env, callerContext },
+	)
+
+	expect(mockModule.listWorkflowRunsForUser).toHaveBeenCalledWith({
+		env,
+		userId: 'user-123',
+		limit: 5,
+	})
+	expect(result).toEqual({
+		workflows: [
+			{
+				id: 'dynwf-123',
+				source_type: 'inline',
+				package_id: null,
+				kody_id: null,
+				source_id: null,
+				workflow_name: 'inline-code',
+				export_name: null,
+				idempotency_key: 'execute-smoke',
+				run_at: '2026-05-03T12:00:00.000Z',
+				plan_date: '2026-05-03',
+				status: 'complete',
+				created_at: '2026-05-03T11:59:00.000Z',
+				updated_at: '2026-05-03T12:00:01.000Z',
+				completed_at: '2026-05-03T12:00:01.000Z',
+				last_error: null,
+			},
+		],
+	})
 })
 
 test('job_update updates safe mutable fields on an existing job', async () => {

@@ -26,6 +26,9 @@ helpers are runtime exports:
   bound to a storage id
 - use **`import { agentChatTurnStream } from 'kody:runtime'`** for streamed
   agent turns
+- use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
+  Workflows from execute calls, ad hoc jobs, package jobs, package
+  subscriptions, and package services. See [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service

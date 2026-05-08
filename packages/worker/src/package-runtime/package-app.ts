@@ -256,13 +256,13 @@ function createPackageSecretsProxy(runtimeBridge) {
 function createWorkflowsProxy(runtimeBridge) {
 	const isoRunAtPattern =
 		/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/;
-	const normalizeRequiredString = (input, fieldName) => {
+	const normalizeOptionalString = (input, fieldName) => {
 		const value = input?.[fieldName];
-		if (typeof value !== 'string' || !value.trim()) {
-			throw new Error(
-				'workflows.create requires a non-empty ' + fieldName + '.',
-			);
-		}
+		return typeof value === 'string' && value.trim() ? value : null;
+	};
+	const normalizeRequiredString = (input, fieldName) => {
+		const value = normalizeOptionalString(input, fieldName);
+		if (!value) throw new Error('workflows.create requires a non-empty ' + fieldName + '.');
 		return value;
 	};
 	const normalizeRunAt = (input) => {
@@ -287,10 +287,21 @@ function createWorkflowsProxy(runtimeBridge) {
 			if (!input || typeof input !== 'object' || Array.isArray(input)) {
 				throw new Error('workflows.create requires a workflow input object.');
 			}
+			const exportName = normalizeOptionalString(input, 'exportName');
+			const code = normalizeOptionalString(input, 'code');
+			if ((exportName ? 1 : 0) + (code ? 1 : 0) !== 1) {
+				throw new Error('workflows.create requires exactly one of exportName or code.');
+			}
 			return await runtimeBridge.workflowCreate({
 				...input,
-				workflowName: normalizeRequiredString(input, 'workflowName'),
-				exportName: normalizeRequiredString(input, 'exportName'),
+				...(normalizeOptionalString(input, 'workflowName')
+					? { workflowName: normalizeOptionalString(input, 'workflowName') }
+					: {}),
+				...(exportName ? { exportName } : {}),
+				...(code ? { code } : {}),
+				...(normalizeOptionalString(input, 'packageId')
+					? { packageId: normalizeOptionalString(input, 'packageId') }
+					: {}),
 				runAt: normalizeRunAt(input),
 				idempotencyKey: normalizeRequiredString(input, 'idempotencyKey'),
 			});

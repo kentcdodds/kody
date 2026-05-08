@@ -6,17 +6,34 @@ import {
 } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
+import {
+	getSavedPackageById,
+	getSavedPackageByKodyId,
+} from '#worker/package-registry/repo.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 
 export type PackageWorkflowParams = Record<string, unknown>
 
-export type PackageWorkflowCreateInput = {
-	workflowName: string
-	exportName: string
+type WorkflowCreateBaseInput = {
+	workflowName?: string
 	runAt: string | Date
 	idempotencyKey: string
 	params?: PackageWorkflowParams
 }
+
+export type PackageWorkflowCreateInput = WorkflowCreateBaseInput &
+	(
+		| {
+				exportName: string
+				packageId?: string
+				code?: never
+		  }
+		| {
+				code: string
+				exportName?: never
+				packageId?: never
+		  }
+	)
 
 export type PackageWorkflowPayload = {
 	version: 1
@@ -36,10 +53,58 @@ export type PackageWorkflowCreateResult = {
 	ok: true
 	id: string
 	workflow_name: string
-	export_name: string
+	source_type: 'package' | 'inline'
+	package_id?: string | null
+	export_name?: string | null
 	run_at: string
 	plan_date: string | null
 	status?: string
+}
+
+export type DynamicCallableWorkflowPayload =
+	| {
+			version: 2
+			sourceType: 'package'
+			userId: string
+			packageId: string
+			kodyId: string
+			sourceId: string
+			workflowName: string
+			exportName: string
+			idempotencyKey: string
+			runAt: string
+			planDate: string | null
+			params?: PackageWorkflowParams
+	  }
+	| {
+			version: 2
+			sourceType: 'inline'
+			userId: string
+			workflowName: string
+			code: string
+			idempotencyKey: string
+			runAt: string
+			planDate: string | null
+			params?: PackageWorkflowParams
+	  }
+
+export type WorkflowRunInspection = {
+	id: string
+	userId: string
+	sourceType: 'package' | 'inline'
+	packageId: string | null
+	kodyId: string | null
+	sourceId: string | null
+	workflowName: string
+	exportName: string | null
+	idempotencyKey: string
+	runAt: string
+	planDate: string | null
+	status: string | null
+	createdAt: string
+	updatedAt: string
+	completedAt: string | null
+	lastError: string | null
 }
 
 type JsonValue =
@@ -70,6 +135,15 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 
 const packageWorkflowTokenId = 'internal:package-workflows'
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
+const defaultConcurrentWorkflowLimit = 100
+const activeWorkflowStatuses = new Set([
+	'queued',
+	'running',
+	'paused',
+	'waiting',
+	'waitingForPause',
+	'unknown',
+])
 
 function toBase64Url(bytes: ArrayBuffer) {
 	let binary = ''
@@ -127,6 +201,13 @@ function normalizeWorkflowExportName(exportName: string) {
 	const trimmed = normalizeNonEmptyString(exportName, 'exportName')
 	if (trimmed === '.' || trimmed === './') return '.'
 	return trimmed.startsWith('./') ? trimmed : `./${trimmed}`
+}
+
+function normalizeOptionalWorkflowName(
+	workflowName: string | undefined,
+	fallback: string,
+) {
+	return workflowName?.trim() || fallback
 }
 
 function normalizeRunAt(runAt: string | Date) {
@@ -220,6 +301,63 @@ export function createPackageWorkflowPayload(input: {
 	}
 }
 
+function createInlineWorkflowPayload(input: {
+	userId: string
+	workflowName?: string
+	code: string
+	idempotencyKey: string
+	runAt: string | Date
+	params?: PackageWorkflowParams | null
+	planDate?: string | null
+}): DynamicCallableWorkflowPayload {
+	const runAt = normalizeRunAt(input.runAt)
+	const params = normalizePackageWorkflowParams(input.params)
+	return {
+		version: 2,
+		sourceType: 'inline',
+		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		workflowName: normalizeOptionalWorkflowName(
+			input.workflowName,
+			'inline-code',
+		),
+		code: normalizeNonEmptyString(input.code, 'code'),
+		idempotencyKey: normalizeNonEmptyString(
+			input.idempotencyKey,
+			'idempotencyKey',
+		),
+		runAt,
+		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
+		...(params === undefined ? {} : { params }),
+	}
+}
+
+function createDynamicPackageWorkflowPayload(input: {
+	userId: string
+	packageId: string
+	kodyId: string
+	sourceId: string
+	workflowName?: string
+	exportName: string
+	idempotencyKey: string
+	runAt: string | Date
+	params?: PackageWorkflowParams | null
+	planDate?: string | null
+}): DynamicCallableWorkflowPayload {
+	const legacyPayload = createPackageWorkflowPayload({
+		...input,
+		workflowName: normalizeOptionalWorkflowName(
+			input.workflowName,
+			input.exportName,
+		),
+	})
+	const { version: _version, ...payloadWithoutVersion } = legacyPayload
+	return {
+		version: 2,
+		sourceType: 'package',
+		...payloadWithoutVersion,
+	}
+}
+
 function validatePackageWorkflowPayload(
 	input: unknown,
 ): PackageWorkflowPayload {
@@ -243,6 +381,53 @@ function validatePackageWorkflowPayload(
 		planDate:
 			typeof record['planDate'] === 'string' ? record['planDate'] : null,
 	})
+}
+
+function validateDynamicCallableWorkflowPayload(
+	input: unknown,
+): DynamicCallableWorkflowPayload {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new Error('Dynamic callable workflow payload must be an object.')
+	}
+	const record = input as Record<string, unknown>
+	const sourceType = record['sourceType']
+	const params = normalizePackageWorkflowParams(
+		record['params'] as PackageWorkflowParams | null | undefined,
+	)
+	if (sourceType === 'inline') {
+		return createInlineWorkflowPayload({
+			userId: String(record['userId'] ?? ''),
+			workflowName:
+				typeof record['workflowName'] === 'string'
+					? record['workflowName']
+					: undefined,
+			code: String(record['code'] ?? ''),
+			idempotencyKey: String(record['idempotencyKey'] ?? ''),
+			runAt: String(record['runAt'] ?? ''),
+			params,
+			planDate:
+				typeof record['planDate'] === 'string' ? record['planDate'] : null,
+		})
+	}
+	if (sourceType === 'package') {
+		return createDynamicPackageWorkflowPayload({
+			userId: String(record['userId'] ?? ''),
+			packageId: String(record['packageId'] ?? ''),
+			kodyId: String(record['kodyId'] ?? ''),
+			sourceId: String(record['sourceId'] ?? ''),
+			workflowName:
+				typeof record['workflowName'] === 'string'
+					? record['workflowName']
+					: undefined,
+			exportName: String(record['exportName'] ?? ''),
+			idempotencyKey: String(record['idempotencyKey'] ?? ''),
+			runAt: String(record['runAt'] ?? ''),
+			params,
+			planDate:
+				typeof record['planDate'] === 'string' ? record['planDate'] : null,
+		})
+	}
+	throw new Error('Dynamic callable workflow payload sourceType is invalid.')
 }
 
 async function readWorkflowInstanceSummary(
@@ -280,19 +465,196 @@ function isDuplicateWorkflowInstanceError(error: unknown) {
 	)
 }
 
-function createPackageWorkflowCreateResult(input: {
+function createWorkflowCreateResult(input: {
 	summary: { id: string; status?: string }
-	payload: PackageWorkflowPayload
+	payload: DynamicCallableWorkflowPayload
 }): PackageWorkflowCreateResult {
 	return {
 		ok: true,
 		id: input.summary.id,
 		workflow_name: input.payload.workflowName,
-		export_name: input.payload.exportName,
+		source_type: input.payload.sourceType,
+		package_id:
+			input.payload.sourceType === 'package' ? input.payload.packageId : null,
+		export_name:
+			input.payload.sourceType === 'package' ? input.payload.exportName : null,
 		run_at: input.payload.runAt,
 		plan_date: input.payload.planDate,
 		status: input.summary.status,
 	}
+}
+
+function createPackageWorkflowCreateResult(input: {
+	summary: { id: string; status?: string }
+	payload: PackageWorkflowPayload
+}): PackageWorkflowCreateResult {
+	const { version: _version, ...payloadWithoutVersion } = input.payload
+	return createWorkflowCreateResult({
+		summary: input.summary,
+		payload: {
+			version: 2,
+			sourceType: 'package',
+			...payloadWithoutVersion,
+		},
+	})
+}
+
+async function createInlineWorkflowInstanceId(input: {
+	userId: string
+	workflowName: string
+	idempotencyKey: string
+	runAt: string | Date
+}) {
+	const canonical = canonicalJsonStringify({
+		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		sourceType: 'inline',
+		workflowName: normalizeNonEmptyString(input.workflowName, 'workflowName'),
+		idempotencyKey: normalizeNonEmptyString(
+			input.idempotencyKey,
+			'idempotencyKey',
+		),
+		runAt: normalizeRunAt(input.runAt),
+	})
+	return `dynwf-${(await sha256Base64Url(canonical)).slice(0, 43)}`
+}
+
+async function createDynamicCallableWorkflowInstanceId(
+	payload: DynamicCallableWorkflowPayload,
+) {
+	if (payload.sourceType === 'package') {
+		return await createPackageWorkflowInstanceId(payload)
+	}
+	return await createInlineWorkflowInstanceId(payload)
+}
+
+function getConcurrentWorkflowLimit(env: Env) {
+	const raw = (env as unknown as Record<string, unknown>)[
+		'WORKFLOW_CONCURRENT_LIMIT'
+	]
+	if (typeof raw !== 'string') return defaultConcurrentWorkflowLimit
+	const parsed = Number.parseInt(raw, 10)
+	return Number.isFinite(parsed) && parsed > 0
+		? parsed
+		: defaultConcurrentWorkflowLimit
+}
+
+function mapWorkflowRunRow(
+	row: Record<string, unknown>,
+): WorkflowRunInspection {
+	return {
+		id: String(row['id']),
+		userId: String(row['user_id']),
+		sourceType:
+			row['source_type'] === 'inline' ? 'inline' : ('package' as const),
+		packageId: typeof row['package_id'] === 'string' ? row['package_id'] : null,
+		kodyId: typeof row['kody_id'] === 'string' ? row['kody_id'] : null,
+		sourceId: typeof row['source_id'] === 'string' ? row['source_id'] : null,
+		workflowName: String(row['workflow_name']),
+		exportName:
+			typeof row['export_name'] === 'string' ? row['export_name'] : null,
+		idempotencyKey: String(row['idempotency_key']),
+		runAt: String(row['run_at']),
+		planDate: typeof row['plan_date'] === 'string' ? row['plan_date'] : null,
+		status: typeof row['status'] === 'string' ? row['status'] : null,
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+		completedAt:
+			typeof row['completed_at'] === 'string' ? row['completed_at'] : null,
+		lastError: typeof row['last_error'] === 'string' ? row['last_error'] : null,
+	}
+}
+
+async function countActiveWorkflowRuns(input: {
+	db: D1Database
+	userId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`SELECT COUNT(*) AS count
+			FROM workflow_runs
+			WHERE user_id = ?
+				AND status IN ('queued', 'running', 'paused', 'waiting', 'waitingForPause', 'unknown')`,
+		)
+		.bind(input.userId)
+		.first<{ count: number }>()
+	return Number(result?.count ?? 0)
+}
+
+async function recordWorkflowRun(input: {
+	db: D1Database
+	id: string
+	payload: DynamicCallableWorkflowPayload
+	status: string | null
+	now?: string
+	lastError?: string | null
+	completedAt?: string | null
+}) {
+	const now = input.now ?? new Date().toISOString()
+	await input.db
+		.prepare(
+			`INSERT INTO workflow_runs (
+				id,
+				user_id,
+				source_type,
+				package_id,
+				kody_id,
+				source_id,
+				workflow_name,
+				export_name,
+				idempotency_key,
+				run_at,
+				plan_date,
+				status,
+				created_at,
+				updated_at,
+				completed_at,
+				last_error
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				status = excluded.status,
+				updated_at = excluded.updated_at,
+				completed_at = excluded.completed_at,
+				last_error = excluded.last_error`,
+		)
+		.bind(
+			input.id,
+			input.payload.userId,
+			input.payload.sourceType,
+			input.payload.sourceType === 'package' ? input.payload.packageId : null,
+			input.payload.sourceType === 'package' ? input.payload.kodyId : null,
+			input.payload.sourceType === 'package' ? input.payload.sourceId : null,
+			input.payload.workflowName,
+			input.payload.sourceType === 'package' ? input.payload.exportName : null,
+			input.payload.idempotencyKey,
+			input.payload.runAt,
+			input.payload.planDate,
+			input.status,
+			now,
+			now,
+			input.completedAt ?? null,
+			input.lastError ?? null,
+		)
+		.run()
+}
+
+async function updateWorkflowRunStatus(input: {
+	env: Env
+	id: string
+	payload: DynamicCallableWorkflowPayload
+	status: string
+	lastError?: string | null
+	completedAt?: string | null
+}) {
+	if (!input.env.APP_DB) return
+	await recordWorkflowRun({
+		db: input.env.APP_DB,
+		id: input.id,
+		payload: input.payload,
+		status: input.status,
+		lastError: input.lastError,
+		completedAt: input.completedAt,
+	})
 }
 
 export async function createPackageWorkflowInstance(input: {
@@ -343,26 +705,351 @@ export async function createPackageWorkflowInstance(input: {
 	return createPackageWorkflowCreateResult({ summary, payload })
 }
 
+async function resolveWorkflowPayload(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	packageContext?: {
+		packageId: string
+		kodyId: string
+		sourceId?: string | null
+	} | null
+	body: PackageWorkflowCreateInput
+}): Promise<DynamicCallableWorkflowPayload> {
+	if ('code' in input.body && typeof input.body.code === 'string') {
+		return createInlineWorkflowPayload({
+			userId: input.userId,
+			workflowName: input.body.workflowName,
+			code: input.body.code,
+			idempotencyKey: input.body.idempotencyKey,
+			runAt: input.body.runAt,
+			params: input.body.params,
+		})
+	}
+	if (
+		!('exportName' in input.body) ||
+		typeof input.body.exportName !== 'string'
+	) {
+		throw new Error('workflows.create requires either exportName or code.')
+	}
+	const packageIdOrKodyId =
+		input.body.packageId?.trim() || input.packageContext?.packageId?.trim()
+	if (!packageIdOrKodyId) {
+		throw new Error(
+			'workflows.create requires packageId when exportName is used outside package runtime context.',
+		)
+	}
+	const savedPackage =
+		(await getSavedPackageById(input.env.APP_DB, {
+			userId: input.userId,
+			packageId: packageIdOrKodyId,
+		})) ??
+		(await getSavedPackageByKodyId(input.env.APP_DB, {
+			userId: input.userId,
+			kodyId: packageIdOrKodyId,
+		}))
+	if (!savedPackage) {
+		throw new Error(
+			`Package "${packageIdOrKodyId}" was not found or is not owned by the current user.`,
+		)
+	}
+	return createDynamicPackageWorkflowPayload({
+		userId: input.userId,
+		packageId: savedPackage.id,
+		kodyId: savedPackage.kodyId,
+		sourceId: savedPackage.sourceId,
+		workflowName: input.body.workflowName,
+		exportName: input.body.exportName,
+		idempotencyKey: input.body.idempotencyKey,
+		runAt: input.body.runAt,
+		params: input.body.params,
+	})
+}
+
+export async function createDynamicCallableWorkflow(input: {
+	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS'>
+	userId: string
+	packageContext?: {
+		packageId: string
+		kodyId: string
+		sourceId?: string | null
+	} | null
+	body: PackageWorkflowCreateInput
+}): Promise<PackageWorkflowCreateResult> {
+	if (!input.env.DYNAMIC_CALLABLE_WORKFLOWS) {
+		throw new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.')
+	}
+	const payload = await resolveWorkflowPayload(input)
+	const id = await createDynamicCallableWorkflowInstanceId(payload)
+	const existing = await getExistingWorkflowInstance(
+		input.env.DYNAMIC_CALLABLE_WORKFLOWS,
+		id,
+	)
+	if (existing) {
+		if (input.env.APP_DB) {
+			await recordWorkflowRun({
+				db: input.env.APP_DB,
+				id,
+				payload,
+				status: existing.status ?? null,
+			})
+		}
+		return createWorkflowCreateResult({ summary: existing, payload })
+	}
+	if (input.env.APP_DB) {
+		const activeCount = await countActiveWorkflowRuns({
+			db: input.env.APP_DB,
+			userId: payload.userId,
+		})
+		const limit = getConcurrentWorkflowLimit(input.env as Env)
+		if (activeCount >= limit) {
+			throw new Error(
+				`workflows.create would exceed the per-user concurrent workflow limit (${limit}). Wait for existing workflows to finish or cancel them before creating more.`,
+			)
+		}
+	}
+	let instance: WorkflowInstance
+	try {
+		instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.create({
+			id,
+			params: payload,
+			retention: {
+				successRetention: '30 days',
+				errorRetention: '30 days',
+			},
+		})
+	} catch (error) {
+		if (isDuplicateWorkflowInstanceError(error)) {
+			const concurrent = await getExistingWorkflowInstance(
+				input.env.DYNAMIC_CALLABLE_WORKFLOWS,
+				id,
+			)
+			if (concurrent) {
+				return createWorkflowCreateResult({
+					summary: concurrent,
+					payload,
+				})
+			}
+		}
+		throw error
+	}
+	const summary = await readWorkflowInstanceSummary(instance)
+	if (input.env.APP_DB) {
+		await recordWorkflowRun({
+			db: input.env.APP_DB,
+			id,
+			payload,
+			status: summary.status ?? 'queued',
+		})
+	}
+	return createWorkflowCreateResult({ summary, payload })
+}
+
 export async function createPackageWorkflow(input: {
-	env: Pick<Env, 'PACKAGE_WORKFLOWS'>
+	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'PACKAGE_WORKFLOWS'>
 	userId: string
 	packageId: string
 	kodyId: string
 	sourceId: string
 	body: PackageWorkflowCreateInput
 }) {
+	if (input.env.DYNAMIC_CALLABLE_WORKFLOWS && input.env.APP_DB) {
+		return await createDynamicCallableWorkflow({
+			env: input.env,
+			userId: input.userId,
+			packageContext: {
+				packageId: input.packageId,
+				kodyId: input.kodyId,
+				sourceId: input.sourceId,
+			},
+			body: input.body,
+		})
+	}
+	if (
+		!('exportName' in input.body) ||
+		typeof input.body.exportName !== 'string'
+	) {
+		throw new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.')
+	}
 	return await createPackageWorkflowInstance({
 		workflow: input.env.PACKAGE_WORKFLOWS,
 		userId: input.userId,
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 		sourceId: input.sourceId,
-		workflowName: input.body.workflowName,
+		workflowName: normalizeOptionalWorkflowName(
+			input.body.workflowName,
+			input.body.exportName,
+		),
 		exportName: input.body.exportName,
 		runAt: input.body.runAt,
 		idempotencyKey: input.body.idempotencyKey,
 		params: input.body.params,
 	})
+}
+
+export async function listWorkflowRunsForUser(input: {
+	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS'>
+	userId: string
+	limit?: number
+}): Promise<Array<WorkflowRunInspection>> {
+	const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
+	const result = await input.env.APP_DB.prepare(
+		`SELECT *
+		FROM workflow_runs
+		WHERE user_id = ?
+		ORDER BY created_at DESC
+		LIMIT ?`,
+	)
+		.bind(input.userId, limit)
+		.all<Record<string, unknown>>()
+	const rows = (result.results ?? []).map(mapWorkflowRunRow)
+	await Promise.all(
+		rows.map(async (row) => {
+			if (!input.env.DYNAMIC_CALLABLE_WORKFLOWS) return
+			if (!row.status || !activeWorkflowStatuses.has(row.status)) return
+			const instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(
+				row.id,
+			).catch(() => null)
+			if (!instance) return
+			const summary = await readWorkflowInstanceSummary(instance)
+			if (!summary.status || summary.status === row.status) return
+			row.status = summary.status
+			row.updatedAt = new Date().toISOString()
+			await input.env.APP_DB.prepare(
+				`UPDATE workflow_runs
+				SET status = ?, updated_at = ?
+				WHERE id = ? AND user_id = ?`,
+			)
+				.bind(row.status, row.updatedAt, row.id, input.userId)
+				.run()
+		}),
+	)
+	return rows
+}
+
+export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
+	Env,
+	DynamicCallableWorkflowPayload
+> {
+	async run(
+		event: Readonly<WorkflowEvent<DynamicCallableWorkflowPayload>>,
+		step: WorkflowStep,
+	) {
+		const payload = validateDynamicCallableWorkflowPayload(event.payload)
+		const runAt = new Date(payload.runAt)
+		if (runAt.getTime() > Date.now()) {
+			await step.sleepUntil('wait until dynamic workflow runAt', runAt)
+		}
+		await updateWorkflowRunStatus({
+			env: this.env,
+			id: event.instanceId,
+			payload,
+			status: 'running',
+		})
+		const typedStep = step as unknown as {
+			do(
+				name: string,
+				config: WorkflowStepDoConfig,
+				callback: () => Promise<JsonValue>,
+			): Promise<JsonValue>
+		}
+		try {
+			const result = await typedStep.do(
+				payload.sourceType === 'package'
+					? 'invoke saved package workflow export'
+					: 'execute inline workflow code',
+				workflowStepDoConfig,
+				async () => {
+					if (payload.sourceType === 'package') {
+						return await this.invokePackageWorkflowExport(payload)
+					}
+					return await this.invokeInlineWorkflowCode(payload)
+				},
+			)
+			await updateWorkflowRunStatus({
+				env: this.env,
+				id: event.instanceId,
+				payload,
+				status: 'complete',
+				completedAt: new Date().toISOString(),
+			})
+			return result
+		} catch (error) {
+			await updateWorkflowRunStatus({
+				env: this.env,
+				id: event.instanceId,
+				payload,
+				status: 'errored',
+				lastError: error instanceof Error ? error.message : String(error),
+				completedAt: new Date().toISOString(),
+			})
+			throw error
+		}
+	}
+
+	private async invokePackageWorkflowExport(
+		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'package' }>,
+	): Promise<JsonValue> {
+		const response = await invokePackageExport({
+			env: this.env,
+			baseUrl: getAppBaseUrl({
+				env: this.env,
+				requestUrl: 'https://kody.invalid/',
+			}),
+			token: {
+				tokenId: packageWorkflowTokenId,
+				userId: payload.userId,
+				email: '',
+				displayName: `package:${payload.packageId}`,
+				packageIds: [payload.packageId],
+				packageKodyIds: [payload.kodyId],
+				exportNames: [payload.exportName],
+				sources: ['package-workflow'],
+			},
+			request: {
+				packageIdOrKodyId: payload.packageId,
+				exportName: payload.exportName,
+				params: payload.params,
+				idempotencyKey: payload.idempotencyKey,
+				source: 'package-workflow',
+				topic: payload.workflowName,
+			},
+		})
+		return {
+			status: response.status,
+			body: toSerializableJson(response.body),
+		}
+	}
+
+	private async invokeInlineWorkflowCode(
+		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'inline' }>,
+	): Promise<JsonValue> {
+		const [{ runModuleWithRegistry }, { createMcpCallerContext }] =
+			await Promise.all([
+				import('#mcp/run-codemode-registry.ts'),
+				import('#mcp/context.ts'),
+			])
+		const result = await runModuleWithRegistry(
+			this.env,
+			createMcpCallerContext({
+				baseUrl: getAppBaseUrl({
+					env: this.env,
+					requestUrl: 'https://kody.invalid/',
+				}),
+				user: {
+					userId: payload.userId,
+					email: '',
+					displayName: `workflow:${payload.workflowName}`,
+				},
+			}),
+			payload.code,
+			payload.params,
+		)
+		if (result.error) {
+			throw new Error(String(result.error))
+		}
+		return toSerializableJson(result.result) as JsonValue
+	}
 }
 
 export class PackageWorkflowEntrypointBase extends WorkflowEntrypoint<
@@ -427,4 +1114,9 @@ export class PackageWorkflowEntrypointBase extends WorkflowEntrypoint<
 export const PackageWorkflowEntrypoint = Sentry.instrumentWorkflowWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	PackageWorkflowEntrypointBase,
+)
+
+export const DynamicCallableWorkflow = Sentry.instrumentWorkflowWithSentry(
+	(env: Env) => buildSentryOptions(env),
+	DynamicCallableWorkflowBase,
 )

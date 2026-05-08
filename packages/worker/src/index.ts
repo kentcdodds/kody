@@ -9,7 +9,10 @@ import { AgentTurnRunner } from './agent-turn/runner-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
-import { PackageWorkflowEntrypoint } from '#worker/package-runtime/package-workflows.ts'
+import {
+	DynamicCallableWorkflow,
+	PackageWorkflowEntrypoint,
+} from '#worker/package-runtime/package-workflows.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
@@ -64,6 +67,7 @@ export {
 	PackageRealtimeSession,
 	PackageServiceInstance,
 	PackageWorkflowEntrypoint,
+	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,
 	StorageRunner,
 }

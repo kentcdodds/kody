@@ -21,7 +21,39 @@ test('createWorkflowTools creates package workflow instances from package contex
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const workflowTools = createWorkflowTools({
 		env: {
-			PACKAGE_WORKFLOWS: {
+			APP_DB: {
+				prepare(query: string) {
+					return {
+						bind() {
+							return {
+								async first() {
+									if (query.includes('COUNT(*) AS count')) return { count: 0 }
+									if (query.includes('FROM saved_packages')) {
+										return {
+											id: 'pkg-1',
+											user_id: 'user-1',
+											name: 'Shade automation',
+											kody_id: 'shade-automation',
+											description: 'Shade automation package',
+											tags_json: '[]',
+											search_text: null,
+											source_id: 'source-1',
+											has_app: 0,
+											created_at: '2026-05-03T00:00:00.000Z',
+											updated_at: '2026-05-03T00:00:00.000Z',
+										}
+									}
+									return null
+								},
+								async run() {
+									return { success: true }
+								},
+							}
+						},
+					}
+				},
+			} as unknown as D1Database,
+			DYNAMIC_CALLABLE_WORKFLOWS: {
 				get: async () => {
 					throw new Error('not found')
 				},
@@ -1420,6 +1452,121 @@ test('runBundledModuleWithRegistry injects workflow helper when custom workflow 
 			ok: true,
 			input: { workflowName: 'custom' },
 		})
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry injects default workflow helper for execute and standalone job contexts', async () => {
+	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const env = {
+		APP_DB: {
+			prepare(query: string) {
+				return {
+					bind() {
+						return {
+							async first() {
+								if (query.includes('COUNT(*) AS count')) return { count: 0 }
+								return null
+							},
+							async run() {
+								return { success: true }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as D1Database,
+		DYNAMIC_CALLABLE_WORKFLOWS: {
+			get: async () => {
+				throw new Error('not found')
+			},
+			create: async (options?: WorkflowInstanceCreateOptions<unknown>) => {
+				if (!options) throw new Error('missing options')
+				created.push(options)
+				return {
+					id: options.id ?? 'generated',
+					status: async () => ({ status: 'queued' }),
+				} as WorkflowInstance
+			},
+		} as Workflow<unknown>,
+	} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped, providers) {
+				expect(wrapped).toContain('const workflows = {')
+				expect(wrapped).toContain('packageContext: null')
+				expect(wrapped).toContain(
+					"workflows: typeof workflows === 'undefined' ? null : workflows",
+				)
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async () => "ok"',
+				},
+			},
+			undefined,
+			{
+				packageContext: null,
+			},
+		)
+		await expect(
+			providerFns?.package_workflow_create({
+				runAt: '2026-05-03T12:00:00.000Z',
+				idempotencyKey: 'execute-smoke',
+				code: 'export default async function main(p){ return { ok: true, p }; }',
+				params: { greeting: 'hello' },
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			source_type: 'inline',
+			status: 'queued',
+		})
+		expect(created[0]?.params).toEqual(
+			expect.objectContaining({
+				sourceType: 'inline',
+				userId: 'user-123',
+				params: { greeting: 'hello' },
+			}),
+		)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
