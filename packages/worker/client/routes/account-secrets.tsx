@@ -1374,9 +1374,14 @@ export function AccountSecretsRoute(handle: Handle) {
 													{secret.description ? (
 														<span
 															mix={css({
+																display: '-webkit-box',
 																fontSize: typography.fontSize.sm,
 																color: colors.textMuted,
+																overflow: 'hidden',
 																overflowWrap: 'anywhere',
+																textOverflow: 'ellipsis',
+																WebkitBoxOrient: 'vertical',
+																WebkitLineClamp: 2,
 															})}
 														>
 															{secret.description}
