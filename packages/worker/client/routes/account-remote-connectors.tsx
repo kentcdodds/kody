@@ -224,6 +224,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	function applyPayload(payload: AccountRemoteConnectorsPayload) {
 		email = payload.email
 		connectors = payload.connectors
+		deleteConfirm = false
 		if (payload.selectedConnectorId) {
 			const selected = connectors.find(
 				(connector) => connector.id === payload.selectedConnectorId,

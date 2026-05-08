@@ -23,6 +23,7 @@ import {
 
 const connectorTag = 'connector'
 const stateStorageKey = 'remote-connector-session-state'
+const legacyStateStorageKey = 'home-connector-session-state'
 const rpcTimeoutMs = 15_000
 
 type PendingRpcRequest = {
@@ -227,8 +228,16 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	private async restoreState() {
-		const stored =
+		let stored =
 			await this.ctx.storage.get<RemoteConnectorSessionState>(stateStorageKey)
+		if (!stored) {
+			stored = await this.ctx.storage.get<RemoteConnectorSessionState>(
+				legacyStateStorageKey,
+			)
+			if (stored) {
+				await this.ctx.storage.put(stateStorageKey, stored)
+			}
+		}
 		if (!stored) return
 		if (stored.persisted.connectorKind === undefined) {
 			stored.persisted.connectorKind = null

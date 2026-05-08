@@ -48,6 +48,7 @@ async function waitForRestoreState(state: DurableObjectState) {
 function createState(
 	input: {
 		storedState?: StoredRemoteConnectorSessionState | null
+		storedStateKey?: string
 		webSockets?: Array<WebSocket>
 	} = {},
 ) {
@@ -55,7 +56,10 @@ function createState(
 	const webSockets = input.webSockets ?? []
 	const persistedEntries = new Map<string, unknown>()
 	if (storedState) {
-		persistedEntries.set('remote-connector-session-state', storedState)
+		persistedEntries.set(
+			input.storedStateKey ?? 'remote-connector-session-state',
+			storedState,
+		)
 	}
 
 	return {
@@ -107,6 +111,45 @@ test('constructor restores persisted state through blockConcurrencyWhile', async
 	expect(snapshot).toMatchObject({
 		connectorId: 'default',
 		tools: [{ name: 'bond_shade_set_position' }],
+	})
+})
+
+test('constructor migrates legacy persisted state key', async () => {
+	captureMessageMock.mockReset()
+	const { state, persistedEntries } = createState({
+		storedStateKey: 'home-connector-session-state',
+		storedState: {
+			persisted: {
+				connectorId: 'default',
+				connectorKind: 'lights',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'lights_on' }],
+		},
+		webSockets: [{} as WebSocket],
+	})
+
+	const session = new RemoteConnectorSession(
+		{
+			storage: state.storage,
+			getWebSockets: state.getWebSockets,
+			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
+		} as unknown as DurableObjectState,
+		{} as Env,
+	)
+	await waitForRestoreState(state)
+
+	expect(await session.getSnapshot()).toMatchObject({
+		connectorId: 'default',
+		tools: [{ name: 'lights_on' }],
+	})
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
+		persisted: {
+			connectorId: 'default',
+			connectorKind: 'lights',
+		},
 	})
 })
 

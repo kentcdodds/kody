@@ -100,6 +100,12 @@ saved remote connector settings. Operators can manage those settings at
   API after saving. Enter a new value to replace it; leave it blank when editing
   to keep the saved value.
 
+A connector WebSocket session is shared by **`kind:instanceId`** across users.
+Because `connector.hello` does not identify a user, any user's enabled saved
+secret for that ref can authenticate that shared session. To make connector
+hello authentication user-isolated in the future, thread user identity through
+the connector hello flow and filter stored secret lookup by `user_id`.
+
 Source: `packages/shared/src/chat.ts`,
 `packages/shared/src/remote-connectors.ts`, and
 `packages/worker/src/remote-connector/settings-service.ts`.

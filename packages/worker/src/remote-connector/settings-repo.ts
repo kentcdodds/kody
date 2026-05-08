@@ -37,6 +37,8 @@ export async function listRemoteConnectorSharedSecretRows(input: {
 	kind: string
 	instanceId: string
 }): Promise<Array<RemoteConnectorSettingRow>> {
+	// Connector websocket sessions are keyed only by kind + instanceId, so hello
+	// auth is necessarily cross-user until user identity is part of the protocol.
 	const { results } = await input.db
 		.prepare(
 			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
@@ -117,6 +119,38 @@ export async function upsertRemoteConnectorSettingRow(input: {
 			input.row.updated_at ?? now,
 		)
 		.run()
+}
+
+export async function updateRemoteConnectorSettingRow(input: {
+	db: D1Database
+	row: Omit<RemoteConnectorSettingRow, 'created_at' | 'updated_at'> & {
+		updated_at?: string
+	}
+}): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE remote_connector_settings
+			SET kind = ?,
+				instance_id = ?,
+				enabled = ?,
+				attached = ?,
+				encrypted_shared_secret = ?,
+				updated_at = ?
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(
+			input.row.kind,
+			input.row.instance_id,
+			input.row.enabled ? 1 : 0,
+			input.row.attached ? 1 : 0,
+			input.row.encrypted_shared_secret,
+			input.row.updated_at ?? now,
+			input.row.user_id,
+			input.row.id,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function deleteRemoteConnectorSettingRow(input: {

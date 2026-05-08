@@ -7,6 +7,7 @@ import {
 	listAttachedRemoteConnectorSettingRows,
 	listRemoteConnectorSettingRows,
 	listRemoteConnectorSharedSecretRows,
+	updateRemoteConnectorSettingRow,
 	upsertRemoteConnectorSettingRow,
 } from './settings-repo.ts'
 import {
@@ -103,14 +104,18 @@ export async function saveRemoteConnectorSetting(
 		throw new Error('Remote connector setting not found.')
 	}
 
-	const refConflict = await getRemoteConnectorSettingRowByRef({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		kind,
-		instanceId,
-	})
-	if (refConflict && refConflict.id !== existing?.id) {
-		throw new Error('A remote connector with this kind and instance ID exists.')
+	if (input.id) {
+		const refConflict = await getRemoteConnectorSettingRowByRef({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			kind,
+			instanceId,
+		})
+		if (refConflict && refConflict.id !== existing?.id) {
+			throw new Error(
+				'A remote connector with this kind and instance ID exists.',
+			)
+		}
 	}
 
 	const sharedSecret = input.sharedSecret?.trim() ?? ''
@@ -134,10 +139,20 @@ export async function saveRemoteConnectorSetting(
 		updated_at: now,
 	} satisfies RemoteConnectorSettingRow
 
-	await upsertRemoteConnectorSettingRow({
-		db: input.env.APP_DB,
-		row,
-	})
+	if (input.id) {
+		const updated = await updateRemoteConnectorSettingRow({
+			db: input.env.APP_DB,
+			row,
+		})
+		if (!updated) {
+			throw new Error('Remote connector setting not found.')
+		}
+	} else {
+		await upsertRemoteConnectorSettingRow({
+			db: input.env.APP_DB,
+			row,
+		})
+	}
 	return toMetadata(row)
 }
 

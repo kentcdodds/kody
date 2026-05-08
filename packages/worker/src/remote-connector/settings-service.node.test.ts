@@ -156,6 +156,39 @@ function createRemoteConnectorSettingsTestDb() {
 								rows.delete(id)
 								return { meta: { changes: 1 } }
 							}
+							if (
+								normalizedQuery.startsWith(
+									'update remote_connector_settings set',
+								)
+							) {
+								const [
+									kind,
+									instanceId,
+									enabled,
+									attached,
+									encryptedSharedSecret,
+									updatedAt,
+									userId,
+									id,
+								] = params as Array<string | number | null>
+								const existing = rows.get(String(id))
+								if (!existing || existing.user_id !== userId) {
+									return { meta: { changes: 0 } }
+								}
+								rows.set(String(id), {
+									...existing,
+									kind: String(kind),
+									instance_id: String(instanceId),
+									enabled: Boolean(Number(enabled)),
+									attached: Boolean(Number(attached)),
+									encrypted_shared_secret:
+										encryptedSharedSecret == null
+											? null
+											: String(encryptedSharedSecret),
+									updated_at: String(updatedAt),
+								})
+								return { meta: { changes: 1 } }
+							}
 							return { meta: { changes: 0 } }
 						},
 					}
@@ -252,6 +285,48 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	await expect(
 		listRemoteConnectorSettings({ env, userId: 'user-1' }),
 	).resolves.toEqual([])
+})
+
+test('renames an existing remote connector setting by id', async () => {
+	const env = createEnv()
+	const saved = await saveRemoteConnectorSetting({
+		env,
+		userId: 'user-1',
+		kind: 'lights',
+		instanceId: 'default',
+		enabled: true,
+		attached: true,
+		sharedSecret: 'lights-secret',
+	})
+
+	const renamed = await saveRemoteConnectorSetting({
+		env,
+		userId: 'user-1',
+		id: saved.id,
+		kind: 'roku',
+		instanceId: 'living-room',
+		enabled: true,
+		attached: true,
+		sharedSecret: '',
+	})
+
+	expect(renamed).toMatchObject({
+		id: saved.id,
+		kind: 'roku',
+		instanceId: 'living-room',
+		hasSharedSecret: true,
+	})
+	await expect(
+		listAttachedRemoteConnectorRefs({ env, userId: 'user-1' }),
+	).resolves.toEqual([{ kind: 'roku', instanceId: 'living-room' }])
+	await expect(
+		remoteConnectorSharedSecretMatches({
+			env,
+			kind: 'roku',
+			instanceId: 'living-room',
+			sharedSecret: 'lights-secret',
+		}),
+	).resolves.toBe(true)
 })
 
 test('disabled connector settings do not authenticate connector hello', async () => {
