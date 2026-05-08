@@ -85,7 +85,48 @@ const optionalRemoteConnectorSecretsSchema = createSchema<
 	unknown,
 	Record<string, string> | undefined
 >((value, context) => {
+	function validateRecord(parsed: unknown) {
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			return fail(
+				'REMOTE_CONNECTOR_SECRETS must be a JSON object mapping "kind:instanceId" keys to secret strings.',
+				context.path,
+			)
+		}
+
+		const out: Record<string, string> = {}
+		for (const [rawKey, rawVal] of Object.entries(parsed)) {
+			const key = rawKey.trim()
+			const colon = key.indexOf(':')
+			if (colon <= 0 || colon === key.length - 1) {
+				return fail(
+					`REMOTE_CONNECTOR_SECRETS has invalid key "${rawKey}" (expected "kind:instanceId").`,
+					context.path,
+				)
+			}
+			const kind = key.slice(0, colon).trim().toLowerCase()
+			const instanceId = key.slice(colon + 1).trim()
+			if (!kind || !instanceId) {
+				return fail(
+					`REMOTE_CONNECTOR_SECRETS has invalid key "${rawKey}" (kind and instanceId must be non-empty).`,
+					context.path,
+				)
+			}
+			const canonicalKey = `${kind}:${instanceId}`
+			if (typeof rawVal !== 'string' || !rawVal.trim()) {
+				return fail(
+					`REMOTE_CONNECTOR_SECRETS value for "${canonicalKey}" must be a non-empty string.`,
+					context.path,
+				)
+			}
+			out[canonicalKey] = rawVal.trim()
+		}
+		return { value: out }
+	}
+
 	if (value === undefined) return { value: undefined }
+	if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+		return validateRecord(value)
+	}
 	if (typeof value !== 'string') return fail('Expected string', context.path)
 
 	const trimmed = value.trim()
@@ -100,41 +141,7 @@ const optionalRemoteConnectorSecretsSchema = createSchema<
 			context.path,
 		)
 	}
-	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		return fail(
-			'REMOTE_CONNECTOR_SECRETS must be a JSON object mapping "kind:instanceId" keys to secret strings.',
-			context.path,
-		)
-	}
-
-	const out: Record<string, string> = {}
-	for (const [rawKey, rawVal] of Object.entries(parsed)) {
-		const key = rawKey.trim()
-		const colon = key.indexOf(':')
-		if (colon <= 0 || colon === key.length - 1) {
-			return fail(
-				`REMOTE_CONNECTOR_SECRETS has invalid key "${rawKey}" (expected "kind:instanceId").`,
-				context.path,
-			)
-		}
-		const kind = key.slice(0, colon).trim().toLowerCase()
-		const instanceId = key.slice(colon + 1).trim()
-		if (!kind || !instanceId) {
-			return fail(
-				`REMOTE_CONNECTOR_SECRETS has invalid key "${rawKey}" (kind and instanceId must be non-empty).`,
-				context.path,
-			)
-		}
-		const canonicalKey = `${kind}:${instanceId}`
-		if (typeof rawVal !== 'string' || !rawVal.trim()) {
-			return fail(
-				`REMOTE_CONNECTOR_SECRETS value for "${canonicalKey}" must be a non-empty string.`,
-				context.path,
-			)
-		}
-		out[canonicalKey] = rawVal.trim()
-	}
-	return { value: out }
+	return validateRecord(parsed)
 })
 
 const optionalSentryTracesSampleRateSchema = createSchema<
