@@ -19,9 +19,9 @@ test('account secrets api ignores legacy remote connector env secrets', async ()
 	const response = await handleRequest(
 		new Request('https://example.com/account/secrets.json'),
 		createEnv({
-			REMOTE_CONNECTOR_SECRETS: JSON.stringify({
+			REMOTE_CONNECTOR_SECRETS: {
 				'custom:alpha': 'alpha-secret',
-			}),
+			},
 		}),
 	)
 

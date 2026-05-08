@@ -178,8 +178,14 @@ export function App(handle: Handle) {
 							<a href="/chat" mix={css(navLinkCss)}>
 								Chat
 							</a>
-							<a href="/account/secrets" mix={css(navLinkCss)}>
+							<a href="/account" mix={css(navLinkCss)}>
 								{sessionEmail}
+							</a>
+							<a href="/account/secrets" mix={css(navLinkCss)}>
+								Secrets
+							</a>
+							<a href="/account/remote-connectors" mix={css(navLinkCss)}>
+								Connectors
 							</a>
 							<form method="post" action="/logout" mix={css({ margin: 0 })}>
 								<button type="submit" mix={css(logOutButtonCss)}>
