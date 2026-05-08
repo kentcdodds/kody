@@ -14,7 +14,7 @@ const mockModule = vi.hoisted(() => ({
 		},
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-	listRemoteConnectorSettings: vi.fn(async () => [
+	listRemoteConnectorSettingsWithSharedSecrets: vi.fn(async () => [
 		{
 			id: 'connector-1',
 			kind: 'lights',
@@ -22,6 +22,7 @@ const mockModule = vi.hoisted(() => ({
 			enabled: true,
 			attached: true,
 			hasSharedSecret: true,
+			sharedSecret: 'lights-secret',
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
 		},
@@ -62,8 +63,8 @@ vi.mock('#app/render.ts', () => ({
 }))
 
 vi.mock('#worker/remote-connector/settings-service.ts', () => ({
-	listRemoteConnectorSettings: (...args: Array<unknown>) =>
-		mockModule.listRemoteConnectorSettings(...args),
+	listRemoteConnectorSettingsWithSharedSecrets: (...args: Array<unknown>) =>
+		mockModule.listRemoteConnectorSettingsWithSharedSecrets(...args),
 	saveRemoteConnectorSetting: (...args: Array<unknown>) =>
 		mockModule.saveRemoteConnectorSetting(...args),
 	deleteRemoteConnectorSetting: (...args: Array<unknown>) =>
@@ -80,7 +81,7 @@ function createEnv() {
 	} as Env
 }
 
-test('remote connector settings API lists metadata without plaintext secrets', async () => {
+test('remote connector settings API lists settings with plaintext secrets', async () => {
 	const handler = createAccountRemoteConnectorsApiHandler(createEnv())
 	const response = await handler.handler({
 		request: new Request('https://example.com/account/remote-connectors.json'),
@@ -91,7 +92,6 @@ test('remote connector settings API lists metadata without plaintext secrets', a
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	const text = await response.text()
 	expect(text).toContain('"hasSharedSecret":true')
-	expect(text).not.toContain('lights-secret')
 	expect(JSON.parse(text)).toEqual({
 		ok: true,
 		email: 'user@example.com',
@@ -103,6 +103,7 @@ test('remote connector settings API lists metadata without plaintext secrets', a
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,
+				sharedSecret: 'lights-secret',
 				createdAt: new Date(0).toISOString(),
 				updatedAt: new Date(0).toISOString(),
 			},
@@ -110,7 +111,7 @@ test('remote connector settings API lists metadata without plaintext secrets', a
 	})
 })
 
-test('remote connector settings API passes shared secret only to save service', async () => {
+test('remote connector settings API passes submitted secret to save service', async () => {
 	const handler = createAccountRemoteConnectorsApiHandler(createEnv())
 	const response = await handler.handler({
 		request: new Request('https://example.com/account/remote-connectors.json', {
@@ -137,5 +138,22 @@ test('remote connector settings API passes shared secret only to save service', 
 			sharedSecret: 'roku-secret',
 		}),
 	)
-	expect(await response.text()).not.toContain('roku-secret')
+	expect(await response.json()).toEqual({
+		ok: true,
+		email: 'user@example.com',
+		selectedConnectorId: 'connector-1',
+		connectors: [
+			{
+				id: 'connector-1',
+				kind: 'lights',
+				instanceId: 'default',
+				enabled: true,
+				attached: true,
+				hasSharedSecret: true,
+				sharedSecret: 'lights-secret',
+				createdAt: new Date(0).toISOString(),
+				updatedAt: new Date(0).toISOString(),
+			},
+		],
+	})
 })

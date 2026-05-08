@@ -13,6 +13,7 @@ import {
 import {
 	type RemoteConnectorSettingMetadata,
 	type RemoteConnectorSettingRow,
+	type RemoteConnectorSettingWithSharedSecret,
 } from './settings-types.ts'
 
 type RemoteConnectorSettingsEnv = Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
@@ -60,6 +61,24 @@ export async function listRemoteConnectorSettings(input: {
 		userId: input.userId,
 	})
 	return rows.map(toMetadata)
+}
+
+export async function listRemoteConnectorSettingsWithSharedSecrets(input: {
+	env: RemoteConnectorSettingsEnv
+	userId: string
+}): Promise<Array<RemoteConnectorSettingWithSharedSecret>> {
+	const rows = await listRemoteConnectorSettingRows({
+		db: input.env.APP_DB,
+		userId: input.userId,
+	})
+	return Promise.all(
+		rows.map(async (row) => ({
+			...toMetadata(row),
+			sharedSecret: row.encrypted_shared_secret
+				? await decryptSecretValue(input.env, row.encrypted_shared_secret)
+				: '',
+		})),
+	)
 }
 
 export async function listAttachedRemoteConnectorRefs(input: {

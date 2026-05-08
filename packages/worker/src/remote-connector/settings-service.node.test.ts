@@ -4,6 +4,7 @@ import {
 	deleteRemoteConnectorSetting,
 	listAttachedRemoteConnectorRefs,
 	listRemoteConnectorSettings,
+	listRemoteConnectorSettingsWithSharedSecrets,
 	saveRemoteConnectorSetting,
 } from './settings-service.ts'
 import { type RemoteConnectorSettingRow } from './settings-types.ts'
@@ -236,6 +237,17 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	expect(connectors).toHaveLength(1)
 	expect(connectors[0]).not.toHaveProperty('sharedSecret')
 	expect(JSON.stringify(connectors)).not.toContain('lights-secret')
+	await expect(
+		listRemoteConnectorSettingsWithSharedSecrets({
+			env,
+			userId: 'user-1',
+		}),
+	).resolves.toEqual([
+		{
+			...connectors[0],
+			sharedSecret: 'lights-secret',
+		},
+	])
 	await expect(
 		listAttachedRemoteConnectorRefs({ env, userId: 'user-1' }),
 	).resolves.toEqual([{ kind: 'lights', instanceId: 'default' }])

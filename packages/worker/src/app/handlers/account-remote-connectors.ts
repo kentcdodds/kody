@@ -7,7 +7,7 @@ import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
 import {
 	deleteRemoteConnectorSetting,
-	listRemoteConnectorSettings,
+	listRemoteConnectorSettingsWithSharedSecrets,
 	saveRemoteConnectorSetting,
 } from '#worker/remote-connector/settings-service.ts'
 
@@ -22,6 +22,7 @@ type AccountRemoteConnectorListItem = {
 	enabled: boolean
 	attached: boolean
 	hasSharedSecret: boolean
+	sharedSecret: string
 	createdAt: string
 	updatedAt: string
 }
@@ -156,7 +157,7 @@ async function buildPayload(input: {
 	env: Env
 	user: AuthenticatedUser
 }): Promise<AccountRemoteConnectorsPayload> {
-	const connectors = await listRemoteConnectorSettings({
+	const connectors = await listRemoteConnectorSettingsWithSharedSecrets({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 	})

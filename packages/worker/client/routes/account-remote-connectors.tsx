@@ -30,6 +30,7 @@ type RemoteConnectorListItem = {
 	enabled: boolean
 	attached: boolean
 	hasSharedSecret: boolean
+	sharedSecret: string
 	createdAt: string
 	updatedAt: string
 }
@@ -75,7 +76,7 @@ function createEditorStateFromConnector(
 		instanceId: connector.instanceId,
 		enabled: connector.enabled,
 		attached: connector.attached,
-		sharedSecret: '',
+		sharedSecret: connector.sharedSecret,
 		hasSharedSecret: connector.hasSharedSecret,
 	}
 }
@@ -405,17 +406,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function copySharedSecret() {
-		if (!editorState.sharedSecret) return
-		try {
-			await navigator.clipboard.writeText(editorState.sharedSecret)
-			message = 'Copied shared secret.'
-		} catch {
-			message = 'Unable to copy shared secret.'
-		}
-		handle.update()
-	}
-
 	return () => {
 		const currentHref =
 			typeof window === 'undefined'
@@ -591,7 +581,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
 								<p mix={css(descriptionCss)}>
 									Connector refs are generic kind and instance ID pairs. The
-									shared secret is never returned by this page after saving.
+									shared secret is loaded into the password field for editing.
 								</p>
 							</div>
 
@@ -663,11 +653,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												aria-label="Shared secret"
 												type="text"
 												value={editorState.sharedSecret}
-												placeholder={
-													editorState.hasSharedSecret
-														? 'Leave blank to keep the saved secret'
-														: 'Connector hello shared secret'
-												}
+												placeholder="Connector hello shared secret"
 												autoComplete="new-password"
 												disabled={isMutating}
 												mix={[
@@ -687,11 +673,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												aria-label="Shared secret"
 												type="password"
 												value={editorState.sharedSecret}
-												placeholder={
-													editorState.hasSharedSecret
-														? 'Leave blank to keep the saved secret'
-														: 'Connector hello shared secret'
-												}
+												placeholder="Connector hello shared secret"
 												autoComplete="new-password"
 												disabled={isMutating}
 												mix={[
@@ -739,16 +721,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 										]}
 									>
 										Generate
-									</button>
-									<button
-										type="button"
-										disabled={isMutating || !editorState.sharedSecret}
-										mix={[
-											on('click', () => void copySharedSecret()),
-											css(secondaryButtonCss),
-										]}
-									>
-										Copy
 									</button>
 								</div>
 							</div>

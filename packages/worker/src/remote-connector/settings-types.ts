@@ -20,3 +20,8 @@ export type RemoteConnectorSettingMetadata = {
 	createdAt: string
 	updatedAt: string
 }
+
+export type RemoteConnectorSettingWithSharedSecret =
+	RemoteConnectorSettingMetadata & {
+		sharedSecret: string
+	}
