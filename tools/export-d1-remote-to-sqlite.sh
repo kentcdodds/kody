@@ -9,14 +9,14 @@
 # Usage:
 #   ./tools/export-d1-remote-to-sqlite.sh <d1-database-name>
 #
-# Example (legacy DB that old wrangler.jsonc IDs pointed at):
+# Example (remote D1 database name):
 #   ./tools/export-d1-remote-to-sqlite.sh epicflare
 #
 # Output (gitignored via .tmp/):
 #   .tmp/d1-exports/<name>.sql
 #   .tmp/d1-exports/<name>.sqlite
 #
-# See docs/contributing/d1-legacy-export.md for copying rows into a new kody D1.
+# Copy only the rows you need into the local Kody D1 after export.
 
 set -euo pipefail
 

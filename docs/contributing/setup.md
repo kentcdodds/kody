@@ -26,10 +26,9 @@ Quick notes for getting a local kody environment running.
   `packages/worker/wrangler-preview.generated.json` (gitignored). KV titles
   follow the worker name: production defaults to `<worker-name>-oauth`; preview
   uses `<preview-worker-name>-oauth-kv` (see `tools/ci/preview-resources.ts`).
-- **Migrating from a legacy D1**: export a remote database to a local SQLite
-  file and copy only the tables you need — see
-  [`docs/contributing/d1-legacy-export.md`](./d1-legacy-export.md) and
-  `tools/export-d1-remote-to-sqlite.sh`.
+- **Exporting from an existing remote D1**: export the remote database to a
+  local SQLite file with `tools/export-d1-remote-to-sqlite.sh`, then copy only
+  the tables you need into the local Kody database.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed. The example includes placeholder
   values for `COOKIE_SECRET` and `SECRET_STORE_KEY`; all environments must set
