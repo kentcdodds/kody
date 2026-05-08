@@ -1380,8 +1380,8 @@ export function AccountSecretsRoute(handle: Handle) {
 																overflow: 'hidden',
 																overflowWrap: 'anywhere',
 																textOverflow: 'ellipsis',
-																WebkitBoxOrient: 'vertical',
-																WebkitLineClamp: 2,
+																'-webkit-box-orient': 'vertical',
+																'-webkit-line-clamp': '2',
 															})}
 														>
 															{secret.description}
