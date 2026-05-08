@@ -1336,7 +1336,7 @@ export function AccountSecretsRoute(handle: Handle) {
 														mix={css({
 															display: 'flex',
 															justifyContent: 'space-between',
-															gap: spacing.sm,
+															gap: spacing.md,
 															alignItems: 'baseline',
 															minWidth: 0,
 														})}
