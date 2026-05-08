@@ -446,6 +446,13 @@ function buildAppOptionDescription(updatedAt: string) {
 	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
 }
 
+const truncatedTextCss = {
+	minWidth: 0,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+} as const
+
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
@@ -1277,6 +1284,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								mix={css({
 									maxHeight: 'min(65vh, 48rem)',
 									overflowY: 'auto',
+									overflowX: 'hidden',
 									paddingRight: spacing.xs,
 								})}
 							>
@@ -1292,7 +1300,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									{filteredSecrets.map((secret) => {
 										const isActive = activeSecretId === secret.id
 										return (
-											<li key={secret.id}>
+											<li key={secret.id} mix={css({ minWidth: 0 })}>
 												<button
 													type="button"
 													mix={[
@@ -1304,10 +1312,12 @@ export function AccountSecretsRoute(handle: Handle) {
 
 														css({
 															width: '100%',
+															minWidth: 0,
 															textAlign: 'left',
 															display: 'grid',
 															gap: spacing.xs,
 															padding: spacing.md,
+															overflow: 'hidden',
 															borderRadius: radius.md,
 															border: `1px solid ${
 																isActive ? colors.primary : colors.border
@@ -1328,13 +1338,23 @@ export function AccountSecretsRoute(handle: Handle) {
 															justifyContent: 'space-between',
 															gap: spacing.sm,
 															alignItems: 'baseline',
+															minWidth: 0,
 														})}
 													>
-														<strong>{secret.name}</strong>
+														<strong
+															mix={css({
+																...truncatedTextCss,
+																display: 'block',
+																flex: '1 1 auto',
+															})}
+														>
+															{secret.name}
+														</strong>
 														<span
 															mix={css({
 																fontSize: typography.fontSize.xs,
 																color: colors.textMuted,
+																flex: '0 0 auto',
 															})}
 														>
 															{formatRelativeTtl(secret.ttlMs)}
@@ -1342,6 +1362,8 @@ export function AccountSecretsRoute(handle: Handle) {
 													</div>
 													<span
 														mix={css({
+															...truncatedTextCss,
+															display: 'block',
 															fontSize: typography.fontSize.sm,
 															color: colors.textMuted,
 														})}
@@ -1354,6 +1376,7 @@ export function AccountSecretsRoute(handle: Handle) {
 															mix={css({
 																fontSize: typography.fontSize.sm,
 																color: colors.textMuted,
+																overflowWrap: 'anywhere',
 															})}
 														>
 															{secret.description}
