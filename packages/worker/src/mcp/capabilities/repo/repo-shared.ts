@@ -134,6 +134,54 @@ export const repoReadFileOutputSchema = z.object({
 	content: z.string().nullable(),
 })
 
+export const repoWriteFileInputSchema = repoSessionIdSchema.extend({
+	files: z
+		.array(
+			z.object({
+				path: z
+					.string()
+					.min(1)
+					.describe(
+						'Repo-relative file path to write. Existing files are overwritten with the provided content; missing parent directories are created.',
+					),
+				content: z
+					.string()
+					.describe(
+						'Full new file content. Pass the entire file body, not a patch or diff.',
+					),
+			}),
+		)
+		.min(1)
+		.describe(
+			'One or more files to overwrite in the active repo session. Each entry replaces the file at `path` with `content` exactly.',
+		),
+	dry_run: z
+		.boolean()
+		.optional()
+		.describe(
+			'When true, compute the per-file diff without writing the workspace. Useful for previewing changes before committing.',
+		),
+	rollback_on_error: z
+		.boolean()
+		.optional()
+		.describe(
+			'When true (default), all writes are rolled back if any individual write fails. Set to false to keep partial progress.',
+		),
+})
+
+export const repoWriteFileEditSchema = z.object({
+	path: z.string(),
+	changed: z.boolean(),
+	content: z.string(),
+	diff: z.string(),
+})
+
+export const repoWriteFileOutputSchema = z.object({
+	dry_run: z.boolean(),
+	total_changed: z.number().int().min(0),
+	edits: z.array(repoWriteFileEditSchema),
+})
+
 export const repoTreeInputSchema = repoSessionIdSchema.extend({
 	path: z
 		.string()

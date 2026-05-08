@@ -132,6 +132,10 @@ Operational notes:
   the repo session Durable Object. It accepts only parsed git command forms, not
   arbitrary shell syntax, and package runtime bundles are loaded from published
   artifacts rather than a mounted checkout.
+- `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
+  a first-class MCP capability for whole-file overwrites. Prefer it over
+  `git apply` heredocs when the agent is replacing an entire file (for example,
+  a single-file job source) instead of patching a hunk with surrounding context.
 
 ### Direct Artifacts git publishes
 

@@ -79,10 +79,10 @@ unified diff. Each file patch must include:
 Multiple file patches can be stacked back-to-back inside a single heredoc; do
 not separate them with `diff --git` lines or per-file `git apply` invocations.
 Patches are applied with the standard `diff` library, so the heredoc must match
-exactly what an upstream `git diff` would produce. If you only need to edit one
-file, prefer copying the new full file body and writing a clean unified diff
-against the current contents (read it first with `repo_read_file` when in doubt)
-rather than approximating context lines.
+exactly what an upstream `git diff` would produce. If you have the full new file
+body and only need to overwrite a file (rather than apply a true patch with
+context lines), prefer `repo_write_file` (see below) — it sidesteps unified-diff
+context drift entirely.
 
 ## Opening by package identity
 
@@ -122,10 +122,48 @@ session:
 
 - browse files with `repo_tree` and `repo_read_file`
 - search the workspace with `repo_search`
+- overwrite or create files with `repo_write_file` (preferred over `git apply`
+  for whole-file replacements such as single-file job sources or generated
+  package modules)
 - inspect file contents or diffs only when you decide to read them
 - run checks separately from publish
 - inspect status with `repo_get_check_status`
 - repair drift with `repo_rebase_session`
+
+### `repo_write_file` vs `git apply`
+
+`repo_run_commands` accepts `git apply <<'PATCH' ... PATCH` heredocs for true
+unified diffs (see [`git apply` patch format](#git-apply-patch-format)). That
+form is fragile when you do not have the exact surrounding context lines — a
+common situation for AI-authored single-file job sources or freshly generated
+files.
+
+`repo_write_file` overwrites one or more files with full new content and returns
+a per-file diff plus a `changed` flag. Reach for it when:
+
+- replacing the entire body of a job, app server, or skill module
+- writing a freshly generated package file that does not yet exist
+- patching a one-line config when you do not want to hand-craft a diff hunk
+
+It only mutates the live session overlay. Pair it with `repo_run_commands` for
+`git add`/`git commit` and `repo_publish_session` (or `repo_run_commands` with
+`publish: true`) when you are ready to publish.
+
+For non-package repo-backed scheduled job source you can also short-circuit
+sessions entirely by passing a replacement `code` string to `job_update`, which
+republishes the job module without opening a session.
+
+```json
+{
+	"session_id": "session-1",
+	"files": [
+		{
+			"path": "src/index.ts",
+			"content": "export default async function main() { return { ok: true } }\n"
+		}
+	]
+}
+```
 
 ## Example
 

@@ -11,6 +11,7 @@ import { repoRunChecksCapability } from './repo-run-checks.ts'
 import { repoRunCommandsCapability } from './repo-run-commands.ts'
 import { repoSearchCapability } from './repo-search.ts'
 import { repoTreeCapability } from './repo-tree.ts'
+import { repoWriteFileCapability } from './repo-write-file.ts'
 
 export const repoDomain = defineDomain({
 	name: capabilityDomainNames.repo,
@@ -23,6 +24,7 @@ export const repoDomain = defineDomain({
 		repoGetSessionCapability,
 		repoTreeCapability,
 		repoReadFileCapability,
+		repoWriteFileCapability,
 		repoSearchCapability,
 		repoRunChecksCapability,
 		repoGetCheckStatusCapability,

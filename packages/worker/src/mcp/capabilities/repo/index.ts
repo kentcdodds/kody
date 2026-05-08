@@ -12,5 +12,6 @@ export { repoRunCommandsCapability } from './repo-run-commands.ts'
 export { repoRunChecksCapability } from './repo-run-checks.ts'
 export { repoSearchCapability } from './repo-search.ts'
 export { repoTreeCapability } from './repo-tree.ts'
+export { repoWriteFileCapability } from './repo-write-file.ts'
 
 export const repoCapabilities = repoDomain.capabilities
