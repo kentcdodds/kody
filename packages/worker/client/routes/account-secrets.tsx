@@ -1217,7 +1217,10 @@ export function AccountSecretsRoute(handle: Handle) {
 											},
 										),
 
-										css(inputCss),
+										css({
+											...inputCss,
+											paddingRight: spacing.xl,
+										}),
 									]}
 								/>
 							</label>
