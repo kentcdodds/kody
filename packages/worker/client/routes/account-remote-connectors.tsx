@@ -654,7 +654,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												type="text"
 												value={editorState.sharedSecret}
 												placeholder="Connector hello shared secret"
-												autoComplete="new-password"
+												autoComplete="off"
 												disabled={isMutating}
 												mix={[
 													on('input', (event) => {
@@ -674,7 +674,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												type="password"
 												value={editorState.sharedSecret}
 												placeholder="Connector hello shared secret"
-												autoComplete="new-password"
+												autoComplete="off"
 												disabled={isMutating}
 												mix={[
 													on('input', (event) => {
