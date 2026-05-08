@@ -9,7 +9,7 @@ import { type Connection, type ConnectionContext } from 'agents'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createChatThreadsStore } from '#app/chat-threads.ts'
 import { createMcpCallerContext } from './mcp/context.ts'
-import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
+import { safelyListAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
 import { createAiRuntime, type AiRuntimeResult } from './ai-runtime.ts'
 import { buildSentryOptions } from './sentry-options.ts'
 
@@ -259,7 +259,7 @@ class ChatAgentBase extends AIChatAgent<Env> {
 			throw new Error('Thread not found for authenticated user.')
 		}
 		const baseUrl = new URL(request.url).origin
-		const remoteConnectors = await listAttachedRemoteConnectorRefs({
+		const remoteConnectors = await safelyListAttachedRemoteConnectorRefs({
 			env: this.env,
 			userId: user.mcpUser.userId,
 		})

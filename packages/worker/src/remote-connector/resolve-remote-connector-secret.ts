@@ -1,4 +1,5 @@
 import {
+	hasRemoteConnectorSharedSecretForRef,
 	listRemoteConnectorSharedSecretsForRef,
 	normalizeRemoteConnectorInstanceId,
 	normalizeRemoteConnectorKind,
@@ -64,6 +65,26 @@ async function listStoredSharedSecrets(input: {
 	}
 }
 
+async function storedSharedSecretExists(input: {
+	kind: string
+	instanceId: string
+	env: Env
+}) {
+	try {
+		return await hasRemoteConnectorSharedSecretForRef({
+			env: input.env,
+			kind: input.kind,
+			instanceId: input.instanceId,
+		})
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error)
+		console.error(
+			`[remote-connectors] failed to check persisted shared secret for ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)} (falling back to env map): ${detail}`,
+		)
+		return false
+	}
+}
+
 export async function resolveRemoteConnectorSharedSecret(
 	kind: string,
 	instanceId: string,
@@ -101,8 +122,7 @@ export async function hasRemoteConnectorSharedSecret(input: {
 	instanceId: string
 	env: Env
 }): Promise<boolean> {
-	const storedSecrets = await listStoredSharedSecrets(input)
-	if (storedSecrets.length > 0) return true
+	if (await storedSharedSecretExists(input)) return true
 	return Boolean(
 		resolveRemoteConnectorSharedSecretFromEnv(
 			input.kind,

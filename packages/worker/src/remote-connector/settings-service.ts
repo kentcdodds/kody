@@ -76,6 +76,21 @@ export async function listAttachedRemoteConnectorRefs(input: {
 	}))
 }
 
+export async function safelyListAttachedRemoteConnectorRefs(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}) {
+	try {
+		return await listAttachedRemoteConnectorRefs(input)
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error)
+		console.error(
+			`[remote-connectors] failed to read attached connector refs for user ${input.userId}: ${detail}`,
+		)
+		return []
+	}
+}
+
 export async function saveRemoteConnectorSetting(
 	input: SaveRemoteConnectorSettingInput,
 ): Promise<RemoteConnectorSettingMetadata> {
@@ -190,4 +205,21 @@ export async function listRemoteConnectorSharedSecretsForRef(input: {
 		)
 	}
 	return secrets
+}
+
+export async function hasRemoteConnectorSharedSecretForRef(input: {
+	env: Pick<Env, 'APP_DB'>
+	kind: string
+	instanceId: string
+}) {
+	const kind = normalizeRemoteConnectorKind(input.kind)
+	const instanceId = normalizeRemoteConnectorInstanceId(input.instanceId)
+	if (!kind || !instanceId) return false
+
+	const rows = await listRemoteConnectorSharedSecretRows({
+		db: input.env.APP_DB,
+		kind,
+		instanceId,
+	})
+	return rows.length > 0
 }

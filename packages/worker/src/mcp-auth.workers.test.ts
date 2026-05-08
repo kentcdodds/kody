@@ -272,3 +272,46 @@ test('mcp request includes persisted attached remote connector refs', async () =
 		remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
 	})
 })
+
+test('mcp request still forwards when attached connector lookup fails', async () => {
+	const tokenSummary: TokenSummary = {
+		id: 'token',
+		grantId: 'grant',
+		userId: 'user',
+		createdAt: 0,
+		expiresAt: 999999,
+		audience: `https://example.com${mcpResourcePath}`,
+		grant: {
+			clientId: 'client',
+			scope: oauthScopes,
+			props: { userId: 'user' },
+		},
+	}
+	const appDb = {
+		prepare: () => {
+			throw new Error('D1 unavailable')
+		},
+	} as unknown as D1Database
+	let receivedProps: unknown = null
+	const response = await handleMcpRequest({
+		request: new Request(`https://example.com${mcpResourcePath}`, {
+			headers: { Authorization: 'Bearer valid' },
+		}),
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () => tokenSummary,
+			}),
+			{ APP_DB: appDb },
+		),
+		ctx: createContext(),
+		fetchMcp: (_request, _env, ctx) => {
+			receivedProps = ctx.props
+			return new Response('ok')
+		},
+	})
+
+	expect(response.status).toBe(200)
+	expect(receivedProps).toMatchObject({
+		remoteConnectors: [],
+	})
+})
