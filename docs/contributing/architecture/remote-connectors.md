@@ -28,9 +28,8 @@ All messages are **JSON objects** with a **`type`** field.
    - **`type`:** `"connector.hello"`
    - **`connectorId`:** string — instance id (for example `default`,
      `living-room`).
-   - **`sharedSecret`:** string — must match the saved shared secret for the
-     connector ref, or the optional environment fallback (see
-     [Environment variables](../environment-variables.md#remote-connector-secrets)).
+   - **`sharedSecret`:** string — must match an enabled shared secret saved for
+     the connector ref in D1.
    - **`connectorKind`:** non-empty string. Lowercase values are normalized.
 
 2. **`connector.heartbeat`**
@@ -141,5 +140,3 @@ Source: `packages/shared/src/chat.ts`,
 
 - [Request lifecycle](./request-lifecycle.md) — where connector routes sit in
   the Worker.
-- [Environment variables](../environment-variables.md#remote-connector-secrets)
-  — secrets and optional JSON map.

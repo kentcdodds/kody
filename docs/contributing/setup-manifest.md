@@ -127,9 +127,6 @@ Configure these GitHub Actions secrets and variables for workflows:
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
   when set; synced like other optional secrets)
-- `REMOTE_CONNECTOR_SECRETS` (optional GitHub **secret**; JSON object mapping
-  remote connector `"kind:instanceId"` keys to shared secret strings; synced to
-  the production Worker as a secret when set)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
@@ -188,11 +185,6 @@ How to get/set each value:
     `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-skills`
     with `Authorization: Bearer …` to refresh capability and user-skill
     embeddings.
-- `REMOTE_CONNECTOR_SECRETS` (optional)
-  - Store a JSON object as the repository secret `REMOTE_CONNECTOR_SECRETS`.
-    Each key must match the connector kind and instance id, such as
-    `{"home:default":"<shared-secret>"}`. The connector process must use the
-    matching shared secret when it opens its Worker websocket session.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

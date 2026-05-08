@@ -127,24 +127,6 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   local repo create/get/list/token/fork calls do not need the live Artifacts
   REST API.
 
-## Remote connector secrets
-
-See `packages/worker/src/env-schema.ts` and
-`packages/worker/src/remote-connector/resolve-remote-connector-secret.ts`.
-
-- `REMOTE_CONNECTOR_SECRETS` — optional Worker **secret** (JSON string) whose
-  value is a JSON object mapping **`"kind:instanceId"`** keys (trimmed, kind
-  lowercased) to **shared secret strings** for **`connector.hello`**. Kody first
-  checks the encrypted remote connector settings users manage from
-  `/account/remote-connectors`; this environment variable is a generic
-  operational fallback for refs that are not saved in D1 yet. At Worker boot,
-  invalid JSON or malformed keys fail env validation with a clear error. At
-  runtime, if the value is a plain string in a test harness, malformed JSON is
-  logged and ignored for map lookup only.
-
-Authoring guide for outbound WebSocket services:
-[`architecture/remote-connectors.md`](./architecture/remote-connectors.md).
-
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that
