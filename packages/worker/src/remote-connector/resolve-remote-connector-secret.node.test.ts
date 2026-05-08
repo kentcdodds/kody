@@ -1,27 +1,44 @@
 import { expect, test } from 'vitest'
 import { resolveRemoteConnectorSharedSecret } from './resolve-remote-connector-secret.ts'
 
-test('REMOTE_CONNECTOR_SECRETS resolves by kind and instance', () => {
+test('REMOTE_CONNECTOR_SECRETS resolves by kind and instance', async () => {
 	const env = {
+		APP_DB: {} as D1Database,
+		SECRET_STORE_KEY: 'x'.repeat(32),
 		REMOTE_CONNECTOR_SECRETS: {
 			'custom:alpha': 'alpha-secret',
-			'home:default': 'home-secret',
+			'lights:default': 'lights-secret',
 		},
 	} as Env
-	expect(resolveRemoteConnectorSharedSecret('custom', 'alpha', env)).toBe(
-		'alpha-secret',
-	)
-	expect(resolveRemoteConnectorSharedSecret('home', 'default', env)).toBe(
-		'home-secret',
-	)
+	await expect(
+		resolveRemoteConnectorSharedSecret('custom', 'alpha', env),
+	).resolves.toBe('alpha-secret')
+	await expect(
+		resolveRemoteConnectorSharedSecret('lights', 'default', env),
+	).resolves.toBe('lights-secret')
 })
 
-test('returns undefined when the map does not contain the connector key', () => {
-	expect(
+test('returns undefined when the map does not contain the connector key', async () => {
+	await expect(
 		resolveRemoteConnectorSharedSecret('custom', 'alpha', {
+			APP_DB: {} as D1Database,
+			SECRET_STORE_KEY: 'x'.repeat(32),
 			REMOTE_CONNECTOR_SECRETS: {
-				'home:default': 'home-secret',
+				'lights:default': 'lights-secret',
 			},
 		} as Env),
-	).toBeUndefined()
+	).resolves.toBeUndefined()
+})
+
+test('normalizes fallback connector keys generically', async () => {
+	const env = {
+		APP_DB: {} as D1Database,
+		SECRET_STORE_KEY: 'x'.repeat(32),
+		REMOTE_CONNECTOR_SECRETS: {
+			'roku:living-room': 'roku-secret',
+		},
+	} as Env
+	await expect(
+		resolveRemoteConnectorSharedSecret(' Roku ', ' living-room ', env),
+	).resolves.toBe('roku-secret')
 })

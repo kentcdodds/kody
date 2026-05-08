@@ -55,7 +55,7 @@ function createState(
 	const webSockets = input.webSockets ?? []
 	const persistedEntries = new Map<string, unknown>()
 	if (storedState) {
-		persistedEntries.set('home-connector-session-state', storedState)
+		persistedEntries.set('remote-connector-session-state', storedState)
 	}
 
 	return {
@@ -82,7 +82,7 @@ test('constructor restores persisted state through blockConcurrencyWhile', async
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -116,7 +116,7 @@ test('snapshot returns null when persisted connector has no live websocket', asy
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -145,7 +145,7 @@ test('websocket close clears connectedAt and tools from persisted state', async 
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -173,7 +173,7 @@ test('websocket close clears connectedAt and tools from persisted state', async 
 			level: 'warning',
 		}),
 	)
-	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
 		persisted: {
 			connectorId: 'default',
 			connectedAt: null,
@@ -190,7 +190,7 @@ test('stale websocket close preserves active connection state', async () => {
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -212,7 +212,7 @@ test('stale websocket close preserves active connection state', async () => {
 	state.getWebSockets.mockReturnValue([activeSocket])
 	await session.webSocketClose(staleSocket, 1006, 'stale-socket', false)
 
-	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
 		persisted: {
 			connectorId: 'default',
 			connectedAt: '2026-04-26T05:00:00.000Z',
@@ -227,7 +227,7 @@ test('websocket heartbeat work is returned so the runtime can wait for persisten
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -254,7 +254,7 @@ test('websocket heartbeat work is returned so the runtime can wait for persisten
 	await handlerWork
 
 	const persisted = persistedEntries.get(
-		'home-connector-session-state',
+		'remote-connector-session-state',
 	) as StoredRemoteConnectorSessionState
 	expect(persisted).toMatchObject({
 		persisted: {
@@ -274,7 +274,7 @@ test('websocket error clears connected state when the socket is gone', async () 
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -302,7 +302,7 @@ test('websocket error clears connected state when the socket is gone', async () 
 			level: 'warning',
 		}),
 	)
-	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
 		persisted: {
 			connectorId: 'default',
 			connectedAt: null,
@@ -318,7 +318,7 @@ test('websocket error and close only disconnect once for the same socket', async
 		storedState: {
 			persisted: {
 				connectorId: 'default',
-				connectorKind: 'home',
+				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -343,7 +343,7 @@ test('websocket error and close only disconnect once for the same socket', async
 
 	expect(captureMessageMock).toHaveBeenCalledTimes(1)
 	expect(state.storage.put).toHaveBeenCalledTimes(1)
-	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
 		persisted: {
 			connectorId: 'default',
 			connectedAt: null,

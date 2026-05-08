@@ -24,7 +24,7 @@ function createConnectedStatus(
 	kind: string,
 ): RemoteConnectorStatus {
 	const resolvedKind =
-		(snapshot.connectorKind ?? kind).trim().toLowerCase() || 'home'
+		(snapshot.connectorKind ?? kind).trim().toLowerCase() || 'unknown'
 	const toolCount = snapshot.tools.length
 	const label = connectorLabel(resolvedKind, snapshot.connectorId)
 	return {

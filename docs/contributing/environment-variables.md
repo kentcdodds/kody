@@ -134,9 +134,10 @@ See `packages/worker/src/env-schema.ts` and
 
 - `REMOTE_CONNECTOR_SECRETS` — optional Worker **secret** (JSON string) whose
   value is a JSON object mapping **`"kind:instanceId"`** keys (trimmed, kind
-  lowercased) to **shared secret strings** for **`connector.hello`**. When a key
-  is present, it authorizes that connector instance. Production deploys sync the
-  value from the GitHub Actions secret with the same name. At Worker boot,
+  lowercased) to **shared secret strings** for **`connector.hello`**. Kody first
+  checks the encrypted remote connector settings users manage from
+  `/account/remote-connectors`; this environment variable is a generic
+  operational fallback for refs that are not saved in D1 yet. At Worker boot,
   invalid JSON or malformed keys fail env validation with a clear error. At
   runtime, if the value is a plain string in a test harness, malformed JSON is
   logged and ignored for map lookup only.

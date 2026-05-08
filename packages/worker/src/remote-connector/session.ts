@@ -16,10 +16,13 @@ import {
 	stringifyRemoteConnectorMessage,
 } from './utils.ts'
 import { connectorSessionKey } from './connector-session-key.ts'
-import { resolveRemoteConnectorSharedSecret } from './resolve-remote-connector-secret.ts'
+import {
+	hasRemoteConnectorSharedSecret,
+	remoteConnectorSharedSecretMatches,
+} from './resolve-remote-connector-secret.ts'
 
 const connectorTag = 'connector'
-const stateStorageKey = 'home-connector-session-state'
+const stateStorageKey = 'remote-connector-session-state'
 const rpcTimeoutMs = 15_000
 
 type PendingRpcRequest = {
@@ -213,7 +216,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		if (this.ctx.getWebSockets(connectorTag).length === 0) {
 			return null
 		}
-		const kind = (connectorKind && connectorKind.trim()) || ('home' as const)
+		const kind = (connectorKind && connectorKind.trim()) || 'unknown'
 		return {
 			connectorKind: kind,
 			connectorId,
@@ -358,12 +361,18 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			return
 		}
 
-		const expectedSecret = resolveRemoteConnectorSharedSecret(
-			declaredKind,
-			canonicalInstanceId,
-			this.env,
-		)
-		if (!expectedSecret || message.sharedSecret !== expectedSecret) {
+		const secretMatches = await remoteConnectorSharedSecretMatches({
+			kind: declaredKind,
+			instanceId: canonicalInstanceId,
+			sharedSecret: message.sharedSecret,
+			env: this.env,
+		})
+		if (!secretMatches) {
+			const hasExpectedSecret = await hasRemoteConnectorSharedSecret({
+				kind: declaredKind,
+				instanceId: canonicalInstanceId,
+				env: this.env,
+			})
 			this.captureSessionMessage(
 				'Remote connector session rejected websocket hello.',
 				{
@@ -371,7 +380,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					extra: {
 						connectorId: canonicalInstanceId,
 						declaredKind,
-						hasExpectedSecret: Boolean(expectedSecret),
+						hasExpectedSecret,
 					},
 				},
 			)

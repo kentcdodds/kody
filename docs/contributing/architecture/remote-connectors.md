@@ -28,7 +28,8 @@ All messages are **JSON objects** with a **`type`** field.
    - **`type`:** `"connector.hello"`
    - **`connectorId`:** string — instance id (for example `default`,
      `living-room`).
-   - **`sharedSecret`:** string — must match Worker configuration (see
+   - **`sharedSecret`:** string — must match the saved shared secret for the
+     connector ref, or the optional environment fallback (see
      [Environment variables](../environment-variables.md#remote-connector-secrets)).
    - **`connectorKind`:** non-empty string. Lowercase values are normalized.
 
@@ -86,8 +87,22 @@ that connector:
   (including empty), it fully defines the set of remote connectors for that
   session.
 
+Regular authenticated MCP and chat sessions load this array from the user's
+saved remote connector settings. Operators can manage those settings at
+`/account/remote-connectors`:
+
+- **`kind`** and **`instanceId`** identify the connector ref generically.
+- **`enabled`** controls whether the saved shared secret can authenticate
+  `connector.hello` for that ref.
+- **`attached`** controls whether the ref is included in normal Kody MCP/chat
+  caller context.
+- **`sharedSecret`** is encrypted in D1 and is never returned by the account UI
+  API after saving. Enter a new value to replace it; leave it blank when editing
+  to keep the saved value.
+
 Source: `packages/shared/src/chat.ts`,
-`packages/shared/src/remote-connectors.ts`.
+`packages/shared/src/remote-connectors.ts`, and
+`packages/worker/src/remote-connector/settings-service.ts`.
 
 ## Capability naming (search / execute)
 
@@ -104,8 +119,9 @@ Source: `packages/shared/src/chat.ts`,
 3. Implement **`tools/list`** and **`tools/call`** on the socket via
    **`connector.jsonrpc`** envelopes.
 4. **Heartbeats** if the service stays connected for a long time.
-5. **Operator config:** Worker `REMOTE_CONNECTOR_SECRETS`; MCP clients must pass
-   **`remoteConnectors`** so the registry merges your domain.
+5. **Operator config:** save the connector ref and shared secret from
+   `/account/remote-connectors`; enabled + attached refs are loaded into normal
+   Kody sessions so the registry merges your domain.
 
 ## Reference implementation
 

@@ -32,7 +32,6 @@ export const metaListRemoteConnectorStatusCapability = defineDomainCapability(
 			'status',
 			'connected',
 			'disconnected',
-			'home',
 			'troubleshoot',
 		],
 		readOnly: true,

@@ -51,7 +51,17 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 }
 
 function createEnv(helpers: OAuthHelpers, overrides: Partial<Env> = {}) {
-	return { OAUTH_PROVIDER: helpers, ...overrides } as unknown as Env
+	return {
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					all: async () => ({ results: [], meta: { changes: 0 } }),
+				}),
+			}),
+		} as unknown as D1Database,
+		OAUTH_PROVIDER: helpers,
+		...overrides,
+	} as unknown as Env
 }
 
 function createContext() {
@@ -197,8 +207,68 @@ test('mcp request forwards when token is valid', async () => {
 	expect(response.status).toBe(200)
 	expect(receivedProps).toMatchObject({
 		baseUrl: 'https://example.com',
-		remoteConnectors: null,
+		remoteConnectors: [],
 		storageContext: null,
 		user: { userId: 'user' },
+	})
+})
+
+test('mcp request includes persisted attached remote connector refs', async () => {
+	const tokenSummary: TokenSummary = {
+		id: 'token',
+		grantId: 'grant',
+		userId: 'user',
+		createdAt: 0,
+		expiresAt: 999999,
+		audience: `https://example.com${mcpResourcePath}`,
+		grant: {
+			clientId: 'client',
+			scope: oauthScopes,
+			props: { userId: 'user' },
+		},
+	}
+	const appDb = {
+		prepare: () => ({
+			bind: () => ({
+				all: async () => ({
+					results: [
+						{
+							id: 'connector-1',
+							user_id: 'user',
+							kind: 'lights',
+							instance_id: 'default',
+							enabled: 1,
+							attached: 1,
+							encrypted_shared_secret: 'encrypted',
+							created_at: new Date(0).toISOString(),
+							updated_at: new Date(0).toISOString(),
+						},
+					],
+					meta: { changes: 0 },
+				}),
+			}),
+		}),
+	} as unknown as D1Database
+	let receivedProps: unknown = null
+	const response = await handleMcpRequest({
+		request: new Request(`https://example.com${mcpResourcePath}`, {
+			headers: { Authorization: 'Bearer valid' },
+		}),
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () => tokenSummary,
+			}),
+			{ APP_DB: appDb },
+		),
+		ctx: createContext(),
+		fetchMcp: (_request, _env, ctx) => {
+			receivedProps = ctx.props
+			return new Response('ok')
+		},
+	})
+
+	expect(response.status).toBe(200)
+	expect(receivedProps).toMatchObject({
+		remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
 	})
 })

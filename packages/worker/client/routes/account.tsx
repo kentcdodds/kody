@@ -109,18 +109,32 @@ export function AccountRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<section mix={css(cardCss)}>
-						<h2 mix={css(cardTitleCss)}>Secret management</h2>
-						<p mix={css(descriptionCss)}>
-							Create, edit, and delete secrets from the dedicated management
-							page.
-						</p>
-						<div>
-							<a href="/account/secrets" mix={css(primaryLinkCss)}>
-								Manage secrets
-							</a>
-						</div>
-					</section>
+					<>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Secret management</h2>
+							<p mix={css(descriptionCss)}>
+								Create, edit, and delete secrets from the dedicated management
+								page.
+							</p>
+							<div>
+								<a href="/account/secrets" mix={css(primaryLinkCss)}>
+									Manage secrets
+								</a>
+							</div>
+						</section>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Remote connectors</h2>
+							<p mix={css(descriptionCss)}>
+								Attach generic remote connector refs to normal Kody sessions and
+								manage their connector hello shared secrets.
+							</p>
+							<div>
+								<a href="/account/remote-connectors" mix={css(primaryLinkCss)}>
+									Manage remote connectors
+								</a>
+							</div>
+						</section>
+					</>
 				) : null}
 			</section>
 		)

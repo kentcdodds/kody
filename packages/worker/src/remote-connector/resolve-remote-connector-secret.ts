@@ -1,3 +1,9 @@
+import {
+	listRemoteConnectorSharedSecretsForRef,
+	normalizeRemoteConnectorInstanceId,
+	normalizeRemoteConnectorKind,
+} from './settings-service.ts'
+
 function parseSecretsMapFromEnv(value: unknown): Record<string, string> | null {
 	if (!value) return null
 	if (typeof value === 'object' && !Array.isArray(value)) {
@@ -20,13 +26,13 @@ function parseSecretsMapFromEnv(value: unknown): Record<string, string> | null {
 	return null
 }
 
-export function resolveRemoteConnectorSharedSecret(
+function resolveRemoteConnectorSharedSecretFromEnv(
 	kind: string,
 	instanceId: string,
 	env: Env,
 ): string | undefined {
-	const k = kind.trim().toLowerCase()
-	const id = instanceId.trim()
+	const k = normalizeRemoteConnectorKind(kind)
+	const id = normalizeRemoteConnectorInstanceId(instanceId)
 	const map = parseSecretsMapFromEnv(env.REMOTE_CONNECTOR_SECRETS as unknown)
 	if (map) {
 		const key = `${k}:${id}`
@@ -36,4 +42,72 @@ export function resolveRemoteConnectorSharedSecret(
 		}
 	}
 	return undefined
+}
+
+async function listStoredSharedSecrets(input: {
+	kind: string
+	instanceId: string
+	env: Env
+}) {
+	try {
+		return await listRemoteConnectorSharedSecretsForRef({
+			env: input.env,
+			kind: input.kind,
+			instanceId: input.instanceId,
+		})
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error)
+		console.error(
+			`[remote-connectors] failed to read persisted shared secrets for ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)} (falling back to env map): ${detail}`,
+		)
+		return []
+	}
+}
+
+export async function resolveRemoteConnectorSharedSecret(
+	kind: string,
+	instanceId: string,
+	env: Env,
+): Promise<string | undefined> {
+	const [storedSecret] = await listStoredSharedSecrets({
+		kind,
+		instanceId,
+		env,
+	})
+	if (storedSecret) return storedSecret
+	return resolveRemoteConnectorSharedSecretFromEnv(kind, instanceId, env)
+}
+
+export async function remoteConnectorSharedSecretMatches(input: {
+	kind: string
+	instanceId: string
+	sharedSecret: string
+	env: Env
+}): Promise<boolean> {
+	const storedSecrets = await listStoredSharedSecrets(input)
+	if (storedSecrets.some((secret) => input.sharedSecret === secret)) {
+		return true
+	}
+	const fallbackSecret = resolveRemoteConnectorSharedSecretFromEnv(
+		input.kind,
+		input.instanceId,
+		input.env,
+	)
+	return Boolean(fallbackSecret && input.sharedSecret === fallbackSecret)
+}
+
+export async function hasRemoteConnectorSharedSecret(input: {
+	kind: string
+	instanceId: string
+	env: Env
+}): Promise<boolean> {
+	const storedSecrets = await listStoredSharedSecrets(input)
+	if (storedSecrets.length > 0) return true
+	return Boolean(
+		resolveRemoteConnectorSharedSecretFromEnv(
+			input.kind,
+			input.instanceId,
+			input.env,
+		),
+	)
 }

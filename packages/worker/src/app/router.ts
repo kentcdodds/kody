@@ -1,6 +1,10 @@
 import { createRouter } from 'remix/fetch-router'
 import { account } from '#app/handlers/account.ts'
 import {
+	createAccountRemoteConnectorsApiHandler,
+	createAccountRemoteConnectorsHandler,
+} from '#app/handlers/account-remote-connectors.ts'
+import {
 	createAccountSecretsApiHandler,
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
@@ -53,6 +57,15 @@ export function createAppRouter(appEnv: AppEnv) {
 			login,
 			signup,
 			account,
+			accountRemoteConnectors: createAccountRemoteConnectorsHandler(
+				appEnv as unknown as Env,
+			),
+			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(
+				appEnv as unknown as Env,
+			),
+			accountRemoteConnectorsApiPost: createAccountRemoteConnectorsApiHandler(
+				appEnv as unknown as Env,
+			),
 			accountSecrets: createAccountSecretsHandler(appEnv as unknown as Env),
 			accountSecretNew: createAccountSecretsHandler(appEnv as unknown as Env),
 			accountSecretsApprove: createAccountSecretsHandler(
