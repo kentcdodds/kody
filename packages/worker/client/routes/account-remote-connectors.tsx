@@ -52,6 +52,7 @@ type EditorState = {
 }
 
 const accountRemoteConnectorsApiPath = '/account/remote-connectors.json'
+const generatedSecretBytes = 32
 
 function createEmptyEditorState(): EditorState {
 	return {
@@ -89,6 +90,86 @@ function connectorLabel(
 	return `${connector.kind}:${connector.instanceId}`
 }
 
+function bytesToBase64Url(bytes: Uint8Array) {
+	let binary = ''
+	for (const value of bytes) {
+		binary += String.fromCharCode(value)
+	}
+	return btoa(binary)
+		.replaceAll('+', '-')
+		.replaceAll('/', '_')
+		.replaceAll('=', '')
+}
+
+function generateSharedSecret() {
+	const bytes = new Uint8Array(generatedSecretBytes)
+	crypto.getRandomValues(bytes)
+	return bytesToBase64Url(bytes)
+}
+
+function EyeIcon(props: { showSecret: boolean }) {
+	return props.showSecret ? (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="20"
+			height="20"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+			<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+			<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+			<line x1="2" x2="22" y1="2" y2="22" />
+		</svg>
+	) : (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="20"
+			height="20"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+			<circle cx="12" cy="12" r="3" />
+		</svg>
+	)
+}
+
+const iconButtonCss = {
+	position: 'absolute' as const,
+	right: spacing.sm,
+	top: '50%',
+	transform: 'translateY(-50%)',
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '2rem',
+	height: '2rem',
+	padding: 0,
+	border: 'none',
+	borderRadius: radius.full,
+	backgroundColor: 'transparent',
+	color: colors.textMuted,
+	cursor: 'pointer',
+	boxShadow: 'none',
+	'&:hover': {
+		color: colors.text,
+		backgroundColor: colors.primarySoftest,
+	},
+	'&:disabled': {
+		cursor: 'not-allowed',
+		opacity: 0.5,
+	},
+}
+
 export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
@@ -98,6 +179,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let message: string | null = null
 	let lastLoadedHref = ''
 	let deleteConfirm = false
+	let showSharedSecret = false
 
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
@@ -149,6 +231,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			editorState = selected
 				? createEditorStateFromConnector(selected)
 				: createEmptyEditorState()
+			showSharedSecret = false
 			return
 		}
 		if (editorState.id) {
@@ -158,11 +241,44 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			editorState = selected
 				? createEditorStateFromConnector(selected)
 				: createEmptyEditorState()
+			showSharedSecret = false
 		}
 	}
 
-	async function saveConnector() {
+	function readEditorStateFromForm(form: HTMLFormElement) {
+		const formData = new FormData(form)
+		return {
+			...editorState,
+			kind: String(formData.get('kind') ?? '').trim(),
+			instanceId: String(formData.get('instanceId') ?? '').trim(),
+			sharedSecret: String(formData.get('sharedSecret') ?? ''),
+			enabled: formData.get('enabled') === 'on',
+			attached: formData.get('attached') === 'on',
+		} satisfies EditorState
+	}
+
+	async function saveConnector(form?: HTMLFormElement) {
 		if (saveState !== 'idle') return
+		const nextEditorState = form ? readEditorStateFromForm(form) : editorState
+		editorState = nextEditorState
+		if (!nextEditorState.kind.trim()) {
+			message = 'Connector kind is required.'
+			handle.update()
+			return
+		}
+		if (!nextEditorState.instanceId.trim()) {
+			message = 'Connector instance ID is required.'
+			handle.update()
+			return
+		}
+		if (
+			!nextEditorState.hasSharedSecret &&
+			!nextEditorState.sharedSecret.trim()
+		) {
+			message = 'Connector shared secret is required.'
+			handle.update()
+			return
+		}
 		const wasEditing = Boolean(editorState.id)
 		saveState = 'saving'
 		message = null
@@ -177,12 +293,12 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action: 'save',
-					id: editorState.id,
-					kind: editorState.kind,
-					instanceId: editorState.instanceId,
-					enabled: editorState.enabled,
-					attached: editorState.attached,
-					sharedSecret: editorState.sharedSecret,
+					id: nextEditorState.id,
+					kind: nextEditorState.kind,
+					instanceId: nextEditorState.instanceId,
+					enabled: nextEditorState.enabled,
+					attached: nextEditorState.attached,
+					sharedSecret: nextEditorState.sharedSecret,
 				}),
 			})
 			if (response.status === 401) {
@@ -258,6 +374,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	function selectConnector(connector: RemoteConnectorListItem) {
 		editorState = createEditorStateFromConnector(connector)
 		deleteConfirm = false
+		showSharedSecret = false
 		message = null
 		handle.update()
 	}
@@ -265,7 +382,33 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	function startNewConnector() {
 		editorState = createEmptyEditorState()
 		deleteConfirm = false
+		showSharedSecret = false
 		message = null
+		handle.update()
+	}
+
+	function setSharedSecret(value: string) {
+		editorState = {
+			...editorState,
+			sharedSecret: value,
+		}
+	}
+
+	function generateConnectorSecret() {
+		setSharedSecret(generateSharedSecret())
+		showSharedSecret = true
+		message = null
+		handle.update()
+	}
+
+	async function copySharedSecret() {
+		if (!editorState.sharedSecret) return
+		try {
+			await navigator.clipboard.writeText(editorState.sharedSecret)
+			message = 'Copied shared secret.'
+		} catch {
+			message = 'Unable to copy shared secret.'
+		}
 		handle.update()
 	}
 
@@ -429,10 +572,13 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 						<form
 							method="post"
+							noValidate
 							mix={[
 								on('submit', (event) => {
 									event.preventDefault()
-									void saveConnector()
+									if (event.currentTarget instanceof HTMLFormElement) {
+										void saveConnector(event.currentTarget)
+									}
 								}),
 								css(cardCss),
 							]}
@@ -448,6 +594,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Kind</span>
 								<input
+									name="kind"
 									type="text"
 									value={editorState.kind}
 									placeholder="lights"
@@ -468,6 +615,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Instance ID</span>
 								<input
+									name="instanceId"
 									type="text"
 									value={editorState.instanceId}
 									placeholder="living-room"
@@ -485,34 +633,121 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									]}
 								/>
 							</label>
-							<label mix={css(fieldCss)}>
+							<div mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>
 									Shared secret
 									{editorState.hasSharedSecret ? ' (saved)' : ''}
 								</span>
-								<input
-									type="password"
-									value={editorState.sharedSecret}
-									placeholder={
-										editorState.hasSharedSecret
-											? 'Leave blank to keep the saved secret'
-											: 'Connector hello shared secret'
-									}
-									autoComplete="new-password"
-									disabled={isMutating}
-									required={!editorState.hasSharedSecret}
-									mix={[
-										on('input', (event) => {
-											editorState = {
-												...editorState,
-												sharedSecret: event.currentTarget.value,
+								<div
+									mix={css({
+										display: 'flex',
+										gap: spacing.sm,
+										alignItems: 'center',
+										flexWrap: 'wrap',
+									})}
+								>
+									<div
+										mix={css({
+											position: 'relative',
+											flex: '1 1 18rem',
+											minWidth: 0,
+										})}
+									>
+										{showSharedSecret ? (
+											<input
+												name="sharedSecret"
+												aria-label="Shared secret"
+												type="text"
+												value={editorState.sharedSecret}
+												placeholder={
+													editorState.hasSharedSecret
+														? 'Leave blank to keep the saved secret'
+														: 'Connector hello shared secret'
+												}
+												autoComplete="new-password"
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setSharedSecret(event.currentTarget.value)
+														handle.update()
+													}),
+													css({
+														...inputCss,
+														paddingRight: '3rem',
+													}),
+												]}
+											/>
+										) : (
+											<input
+												name="sharedSecret"
+												aria-label="Shared secret"
+												type="password"
+												value={editorState.sharedSecret}
+												placeholder={
+													editorState.hasSharedSecret
+														? 'Leave blank to keep the saved secret'
+														: 'Connector hello shared secret'
+												}
+												autoComplete="new-password"
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setSharedSecret(event.currentTarget.value)
+														handle.update()
+													}),
+													css({
+														...inputCss,
+														paddingRight: '3rem',
+													}),
+												]}
+											/>
+										)}
+										<button
+											type="button"
+											aria-label={
+												showSharedSecret
+													? 'Hide shared secret'
+													: 'Show shared secret'
 											}
-											handle.update()
-										}),
-										css(inputCss),
-									]}
-								/>
-							</label>
+											title={
+												showSharedSecret
+													? 'Hide shared secret'
+													: 'Show shared secret'
+											}
+											disabled={isMutating || !editorState.sharedSecret}
+											mix={[
+												on('click', () => {
+													showSharedSecret = !showSharedSecret
+													handle.update()
+												}),
+												css(iconButtonCss),
+											]}
+										>
+											{EyeIcon({ showSecret: showSharedSecret })}
+										</button>
+									</div>
+									<button
+										type="button"
+										disabled={isMutating}
+										mix={[
+											on('click', generateConnectorSecret),
+											css(secondaryButtonCss),
+										]}
+									>
+										Generate
+									</button>
+									<button
+										type="button"
+										disabled={isMutating || !editorState.sharedSecret}
+										mix={[
+											on('click', () => void copySharedSecret()),
+											css(secondaryButtonCss),
+										]}
+									>
+										Copy
+									</button>
+								</div>
+							</div>
 							<label
 								mix={css({
 									display: 'flex',
@@ -522,6 +757,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								})}
 							>
 								<input
+									name="enabled"
 									type="checkbox"
 									checked={editorState.enabled}
 									disabled={isMutating}
@@ -551,6 +787,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								})}
 							>
 								<input
+									name="attached"
 									type="checkbox"
 									checked={editorState.attached}
 									disabled={isMutating || !editorState.enabled}
