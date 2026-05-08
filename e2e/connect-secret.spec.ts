@@ -22,11 +22,9 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(page.getByLabel('Description')).toHaveValue(description)
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 
+	const secretValueInput = page.getByRole('textbox', { name: /^Secret value/ })
 	await page.getByLabel('Name').fill(editedName)
-	await page
-		.locator('input[autocomplete="new-password"]')
-		.first()
-		.fill(secretValue)
+	await secretValueInput.fill(secretValue)
 	await page.getByRole('button', { name: 'Review' }).click()
 
 	const reviewConfirmation = page.getByLabel(
@@ -50,9 +48,7 @@ test('connect secret shows editable name and scope and saves the edited name', a
 		page.getByRole('heading', { level: 2, name: editedName }),
 	).toBeVisible()
 	await expect(page.getByLabel('Description')).toHaveValue(description)
-	const savedSecretInput = page
-		.locator('input[autocomplete="new-password"]')
-		.first()
+	const savedSecretInput = page.getByRole('textbox', { name: /^Secret value/ })
 	await expect(savedSecretInput).toHaveAttribute('type', 'password')
 	await expect(savedSecretInput).toHaveValue(secretValue)
 	await page.getByRole('button', { name: 'Show secret value' }).click()

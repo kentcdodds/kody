@@ -31,39 +31,31 @@ test('preserves JSON Schema descriptions as type comments', () => {
 		typeName: 'CreateIssueInput',
 		jsonSchema: {
 			type: 'object',
-			description: 'Input for creating an issue.',
+			description: 'Root description.',
 			properties: {
 				owner: {
 					type: 'string',
-					description: 'Repository owner.',
+					description: 'Owner field.',
 				},
 				repo: {
 					type: 'string',
-					description: 'Repository name.\nMay include dashes.',
+					description: 'First line.\nSecond line.',
 				},
 				body: {
 					type: 'string',
-					description: 'Issue body with a closing marker */ inside.',
+					description: 'Closing marker */ should stay escaped.',
 				},
 			},
 			required: ['owner', 'repo'],
 		} as CapabilityJsonSchema,
 	})
 
-	expect(typeDefinition).toContain('/** Input for creating an issue. */')
+	expect(typeDefinition).toContain('/** Root description. */')
+	expect(typeDefinition).toContain('\t/** Owner field. */\n\towner: string')
 	expect(typeDefinition).toContain(
-		'\t/** Repository owner. */\n\towner: string',
+		['\t/**', '\t * First line.', '\t * Second line.', '\t */'].join('\n'),
 	)
-	expect(typeDefinition).toContain(
-		[
-			'\t/**',
-			'\t * Repository name.',
-			'\t * May include dashes.',
-			'\t */',
-		].join('\n'),
-	)
-	expect(typeDefinition).toContain(
-		'\t/** Issue body with a closing marker * / inside. */',
-	)
+	expect(typeDefinition).toContain('Closing marker * / should stay escaped.')
+	expect(typeDefinition).not.toContain('Closing marker */ should stay escaped.')
 	expect(typeDefinition).toContain('\tbody?: string')
 })
