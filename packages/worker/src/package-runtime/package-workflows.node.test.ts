@@ -506,14 +506,16 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 		logs: [],
 	})
 	vi.useFakeTimers()
-	vi.setSystemTime(new Date('2026-05-03T12:35:00.000Z'))
-	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
-	const stepDo = vi.fn(
-		async (_name: string, _config: unknown, callback: () => unknown) =>
-			await callback(),
-	)
-
 	try {
+		vi.setSystemTime(new Date('2026-05-03T12:35:00.000Z'))
+		const workflow = new DynamicCallableWorkflowBase(
+			{} as ExecutionContext,
+			env,
+		)
+		const stepDo = vi.fn(
+			async (_name: string, _config: unknown, callback: () => unknown) =>
+				await callback(),
+		)
 		await expect(
 			workflow.run(
 				{
@@ -594,6 +596,23 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 		}),
 	).rejects.toThrow(
 		'Package "not-owned" was not found or is not owned by the current user.',
+	)
+	await expect(
+		createDynamicCallableWorkflow({
+			env: {
+				APP_DB: db,
+				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			} as Env,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				exportName: './run-event',
+				runAt: '2026-05-03T12:34:56.000Z',
+				idempotencyKey: 'event-key',
+			} as never,
+		}),
+	).rejects.toThrow(
+		'workflows.create requires exactly one of exportName or code.',
 	)
 })
 

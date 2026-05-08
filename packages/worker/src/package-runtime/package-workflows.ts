@@ -746,24 +746,32 @@ async function resolveWorkflowPayload(input: {
 	} | null
 	body: PackageWorkflowCreateInput
 }): Promise<DynamicCallableWorkflowPayload> {
-	if ('code' in input.body && typeof input.body.code === 'string') {
+	const body = input.body as PackageWorkflowCreateInput &
+		Record<string, unknown>
+	const code =
+		typeof body.code === 'string' && body.code.trim() ? body.code : null
+	const exportName =
+		typeof body.exportName === 'string' && body.exportName.trim()
+			? body.exportName
+			: null
+	if ((code ? 1 : 0) + (exportName ? 1 : 0) !== 1) {
+		throw new Error(
+			'workflows.create requires exactly one of exportName or code.',
+		)
+	}
+	if (code) {
 		return createInlineWorkflowPayload({
 			userId: input.userId,
 			workflowName: input.body.workflowName,
-			code: input.body.code,
+			code,
 			idempotencyKey: input.body.idempotencyKey,
 			runAt: input.body.runAt,
 			params: input.body.params,
 		})
 	}
-	if (
-		!('exportName' in input.body) ||
-		typeof input.body.exportName !== 'string'
-	) {
-		throw new Error('workflows.create requires either exportName or code.')
-	}
 	const packageIdOrKodyId =
-		input.body.packageId?.trim() || input.packageContext?.packageId?.trim()
+		(typeof body.packageId === 'string' ? body.packageId.trim() : '') ||
+		input.packageContext?.packageId?.trim()
 	if (!packageIdOrKodyId) {
 		throw new Error(
 			'workflows.create requires packageId when exportName is used outside package runtime context.',
@@ -789,7 +797,7 @@ async function resolveWorkflowPayload(input: {
 		kodyId: savedPackage.kodyId,
 		sourceId: savedPackage.sourceId,
 		workflowName: input.body.workflowName,
-		exportName: input.body.exportName,
+		exportName: exportName ?? '',
 		idempotencyKey: input.body.idempotencyKey,
 		runAt: input.body.runAt,
 		params: input.body.params,
