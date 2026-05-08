@@ -221,9 +221,10 @@ function normalizeNonEmptyString(value: string, fieldName: string) {
 	return trimmed
 }
 
-function normalizeWorkflowExportName(exportName: string) {
+export function normalizeWorkflowExportName(exportName: string) {
 	const trimmed = normalizeNonEmptyString(exportName, 'exportName')
 	if (trimmed === '.' || trimmed === './') return '.'
+	if (trimmed.startsWith('kody:')) return trimmed
 	return trimmed.startsWith('./') ? trimmed : `./${trimmed}`
 }
 
@@ -523,6 +524,43 @@ function createPackageWorkflowCreateResult(input: {
 	})
 }
 
+function createWorkflowCreateResultFromRow(
+	row: WorkflowRunInspection,
+): PackageWorkflowCreateResult {
+	return {
+		ok: true,
+		id: row.id,
+		workflow_name: row.workflowName,
+		source_type: row.sourceType,
+		package_id: row.sourceType === 'package' ? row.packageId : null,
+		export_name: row.sourceType === 'package' ? row.exportName : null,
+		run_at: row.runAt,
+		plan_date: row.planDate,
+		...(row.status ? { status: row.status } : {}),
+	}
+}
+
+async function findWorkflowRunByIdempotencyKey(input: {
+	db: D1Database
+	userId: string
+	idempotencyKey: string
+}): Promise<WorkflowRunInspection | null> {
+	const trimmedKey = input.idempotencyKey.trim()
+	if (!trimmedKey) return null
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM workflow_runs
+			WHERE user_id = ? AND idempotency_key = ?
+			ORDER BY created_at ASC
+			LIMIT 1`,
+		)
+		.bind(input.userId, trimmedKey)
+		.first<Record<string, unknown>>()
+	if (!result) return null
+	return mapWorkflowRunRow(result)
+}
+
 async function createInlineWorkflowInstanceId(input: {
 	userId: string
 	workflowName: string
@@ -736,6 +774,25 @@ export async function createPackageWorkflowInstance(input: {
 	return createPackageWorkflowCreateResult({ summary, payload })
 }
 
+function assertWorkflowCreateBodyShape(body: PackageWorkflowCreateInput): {
+	code: string | null
+	exportName: string | null
+} {
+	const record = body as PackageWorkflowCreateInput & Record<string, unknown>
+	const code =
+		typeof record.code === 'string' && record.code.trim() ? record.code : null
+	const exportName =
+		typeof record.exportName === 'string' && record.exportName.trim()
+			? record.exportName
+			: null
+	if ((code ? 1 : 0) + (exportName ? 1 : 0) !== 1) {
+		throw new Error(
+			'workflows.create requires exactly one of exportName or code.',
+		)
+	}
+	return { code, exportName }
+}
+
 async function resolveWorkflowPayload(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
@@ -748,17 +805,7 @@ async function resolveWorkflowPayload(input: {
 }): Promise<DynamicCallableWorkflowPayload> {
 	const body = input.body as PackageWorkflowCreateInput &
 		Record<string, unknown>
-	const code =
-		typeof body.code === 'string' && body.code.trim() ? body.code : null
-	const exportName =
-		typeof body.exportName === 'string' && body.exportName.trim()
-			? body.exportName
-			: null
-	if ((code ? 1 : 0) + (exportName ? 1 : 0) !== 1) {
-		throw new Error(
-			'workflows.create requires exactly one of exportName or code.',
-		)
-	}
+	const { code, exportName } = assertWorkflowCreateBodyShape(input.body)
 	if (code) {
 		return createInlineWorkflowPayload({
 			userId: input.userId,
@@ -816,6 +863,21 @@ export async function createDynamicCallableWorkflow(input: {
 }): Promise<PackageWorkflowCreateResult> {
 	if (!input.env.DYNAMIC_CALLABLE_WORKFLOWS) {
 		throw new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.')
+	}
+	assertWorkflowCreateBodyShape(input.body)
+	const idempotencyKeyInput =
+		typeof input.body.idempotencyKey === 'string'
+			? input.body.idempotencyKey.trim()
+			: ''
+	if (input.env.APP_DB && idempotencyKeyInput) {
+		const existingRun = await findWorkflowRunByIdempotencyKey({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			idempotencyKey: idempotencyKeyInput,
+		})
+		if (existingRun) {
+			return createWorkflowCreateResultFromRow(existingRun)
+		}
 	}
 	const payload = await resolveWorkflowPayload(input)
 	const id = await createDynamicCallableWorkflowInstanceId(payload)

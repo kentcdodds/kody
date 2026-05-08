@@ -120,6 +120,25 @@ function createWorkflowRunsDatabase(options?: {
 									savedPackage['kody_id'] === params[0]
 								return userMatches && idMatches ? savedPackage : null
 							}
+							if (
+								query.includes('FROM workflow_runs') &&
+								query.includes('idempotency_key = ?')
+							) {
+								const userId = params[0]
+								const idempotencyKey = params[1]
+								const matches = [...workflowRuns.values()]
+									.filter(
+										(row) =>
+											row['user_id'] === userId &&
+											row['idempotency_key'] === idempotencyKey,
+									)
+									.sort((left, right) =>
+										String(left['created_at']).localeCompare(
+											String(right['created_at']),
+										),
+									)
+								return matches[0] ?? null
+							}
 							return null
 						},
 						async all() {
@@ -614,6 +633,183 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 	).rejects.toThrow(
 		'workflows.create requires exactly one of exportName or code.',
 	)
+})
+
+test('createDynamicCallableWorkflow dedupes by (user_id, idempotency_key) across runAt changes and runs the workflow only once', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+	} as Env
+
+	const first = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-08T19:30:00.000Z',
+			idempotencyKey: 'idempotency-repro',
+			params: { date: '2026-05-08', key: 'noop' },
+		},
+	})
+
+	const second = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-08T19:31:00.000Z',
+			idempotencyKey: 'idempotency-repro',
+			params: { date: '2026-05-08', key: 'noop' },
+		},
+	})
+
+	expect(second.id).toBe(first.id)
+	expect(second).toMatchObject({
+		ok: true,
+		id: first.id,
+		source_type: 'package',
+		package_id: 'pkg-1',
+		export_name: './workflow-run-event',
+		run_at: first.run_at,
+	})
+	expect(binding.create).toHaveBeenCalledTimes(1)
+	expect(binding.instances.size).toBe(1)
+	expect(db.workflowRuns.size).toBe(1)
+	const stored = [...db.workflowRuns.values()]
+	expect(stored).toHaveLength(1)
+	expect(stored[0]).toMatchObject({
+		idempotency_key: 'idempotency-repro',
+		run_at: '2026-05-08T19:30:00.000Z',
+	})
+})
+
+test('createDynamicCallableWorkflow scopes idempotency dedupe per user', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase({
+		savedPackage: {
+			id: 'pkg-1',
+			user_id: 'user-2',
+			name: 'Shade automation',
+			kody_id: 'shade-automation',
+			description: 'Shade automation package',
+			tags_json: '[]',
+			search_text: null,
+			source_id: 'source-1',
+			has_app: 0,
+			created_at: '2026-05-03T00:00:00.000Z',
+			updated_at: '2026-05-03T00:00:00.000Z',
+		},
+	})
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+	} as Env
+
+	const userOne = await createDynamicCallableWorkflow({
+		env: {
+			APP_DB: createWorkflowRunsDatabase(),
+			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		} as Env,
+		userId: 'user-1',
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-08T19:30:00.000Z',
+			idempotencyKey: 'shared-key',
+		},
+	})
+	const userTwo = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-2',
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-08T19:30:00.000Z',
+			idempotencyKey: 'shared-key',
+		},
+	})
+
+	expect(userOne.id).not.toBe(userTwo.id)
+	expect(binding.create).toHaveBeenCalledTimes(2)
+})
+
+test('createDynamicCallableWorkflow dedupes even when the prior run terminated with an error', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+	} as Env
+
+	const first = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-08T19:30:00.000Z',
+			idempotencyKey: 'terminal-key',
+		},
+	})
+	const stored = db.workflowRuns.get(first.id)
+	if (!stored) throw new Error('Expected stored workflow row.')
+	stored['status'] = 'errored'
+
+	const replay = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-08T19:31:00.000Z',
+			idempotencyKey: 'terminal-key',
+		},
+	})
+
+	expect(replay.id).toBe(first.id)
+	expect(replay.status).toBe('errored')
+	expect(binding.create).toHaveBeenCalledTimes(1)
+})
+
+test('createDynamicCallableWorkflow normalizes exportName: FQN, relative, and bare forms store without doubled "./"', async () => {
+	for (const form of [
+		'kody:@kentcdodds/shade-automation/workflow-run-event',
+		'./workflow-run-event',
+		'workflow-run-event',
+	]) {
+		const binding = createStatefulWorkflowBinding()
+		const db = createWorkflowRunsDatabase()
+		const env = {
+			APP_DB: db,
+			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		} as Env
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			body: {
+				packageId: 'pkg-1',
+				exportName: form,
+				runAt: '2026-05-08T19:30:00.000Z',
+				idempotencyKey: `key-${form}`,
+			},
+		})
+		const expectedExportName = form.startsWith('kody:')
+			? form
+			: form.startsWith('./')
+				? form
+				: `./${form}`
+		expect(created.export_name, `create result for ${form}`).toBe(
+			expectedExportName,
+		)
+		expect(
+			db.workflowRuns.get(created.id)?.['export_name'],
+			`stored row for ${form}`,
+		).toBe(expectedExportName)
+	}
 })
 
 test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {
