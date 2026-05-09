@@ -163,10 +163,23 @@ async function revokeAllOAuthGrants(input: {
 	userId: string
 	warnings: Array<string>
 }): Promise<number> {
+	// Both the page listing and the individual revoke calls can throw, and
+	// neither failure should abort the larger account-deletion cascade -
+	// the rest of the steps still need to run so the user's data is
+	// removed even if the OAuth provider is briefly unavailable.
 	let cursor: string | undefined
 	let revoked = 0
-	do {
-		const page = await input.helpers.listUserGrants(input.userId, { cursor })
+	while (true) {
+		let page: Awaited<ReturnType<OAuthHelpersShape['listUserGrants']>>
+		try {
+			page = await input.helpers.listUserGrants(input.userId, { cursor })
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			input.warnings.push(
+				`OAuth grant listing failed; revoked ${revoked} grant(s) before the failure: ${message}`,
+			)
+			return revoked
+		}
 		for (const grant of page.items) {
 			try {
 				await input.helpers.revokeGrant(grant.id, input.userId)
@@ -178,9 +191,9 @@ async function revokeAllOAuthGrants(input: {
 				)
 			}
 		}
+		if (!page.cursor) return revoked
 		cursor = page.cursor
-	} while (cursor)
-	return revoked
+	}
 }
 
 async function clearStorageRunners(input: {
@@ -427,11 +440,16 @@ export async function deleteUserAccount(input: {
 
 	const helpers = input.env.OAUTH_PROVIDER
 	if (helpers) {
-		result.revokedOAuthGrants = await revokeAllOAuthGrants({
-			helpers,
-			userId: input.mcpUserId,
-			warnings,
-		})
+		try {
+			result.revokedOAuthGrants = await revokeAllOAuthGrants({
+				helpers,
+				userId: input.mcpUserId,
+				warnings,
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			warnings.push(`OAuth grant revocation failed unexpectedly: ${message}`)
+		}
 	} else {
 		warnings.push(
 			'OAuth provider binding was unavailable; OAuth grants were not revoked.',

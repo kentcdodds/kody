@@ -323,6 +323,49 @@ test('deleteUserAccount revokes OAuth grants when an OAuth provider is bound', a
 	expect(result.revokedOAuthGrants).toBe(2)
 })
 
+test('deleteUserAccount records a warning when listUserGrants throws and continues the cascade', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+		jobs: [{ id: 'job-1', user_id: 'user-aaa', storage_id: null }],
+	})
+
+	const helpers = {
+		async listUserGrants() {
+			throw new Error('OAuth provider is temporarily unavailable')
+		},
+		revokeGrant: vi.fn(async () => undefined),
+	} as unknown as Parameters<
+		typeof deleteUserAccount
+	>[0]['env']['OAUTH_PROVIDER']
+
+	const env = {
+		APP_DB: db,
+		OAUTH_PROVIDER: helpers,
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ clearStorage: async () => ({ ok: true as const }) }),
+		},
+	} as unknown as Parameters<typeof deleteUserAccount>[0]['env']
+
+	const result = await deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	// The cascade still ran the D1 deletes even though OAuth listing
+	// blew up: the user's job rows are gone and the user row itself was
+	// deleted.
+	expect(rows.jobs).toEqual([])
+	expect(rows.users).toEqual([])
+	expect(result.revokedOAuthGrants).toBe(0)
+	const oauthWarning = result.warnings.find((warning) =>
+		warning.includes('OAuth grant listing failed'),
+	)
+	expect(oauthWarning).toBeDefined()
+	expect(oauthWarning).toContain('OAuth provider is temporarily unavailable')
+})
+
 test('deleteUserAccount surfaces a warning when BUNDLE_ARTIFACTS_KV is unavailable', async () => {
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],
