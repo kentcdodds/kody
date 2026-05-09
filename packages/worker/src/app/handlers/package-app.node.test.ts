@@ -120,6 +120,10 @@ test('handlePackageAppRequest reports package app runtime failures to Sentry', a
 	expect(mockModule.captureException).toHaveBeenCalledWith(expect.any(Error))
 	expect(mockModule.sentryScope.setLevel).toHaveBeenCalledWith('error')
 	expect(mockModule.sentryScope.setTag).toHaveBeenCalledWith(
+		'package_app.phase',
+		'host-setup',
+	)
+	expect(mockModule.sentryScope.setTag).toHaveBeenCalledWith(
 		'package_app.kody_id',
 		'example',
 	)
@@ -142,6 +146,7 @@ test('handlePackageAppRequest reports package app runtime failures to Sentry', a
 	expect(mockModule.sentryScope.setContext).toHaveBeenCalledWith(
 		'package_app',
 		expect.objectContaining({
+			phase: 'host-setup',
 			kodyId: 'example',
 			packageId: 'package-1',
 			packageName: '@kody/example',
@@ -150,6 +155,41 @@ test('handlePackageAppRequest reports package app runtime failures to Sentry', a
 			hostPath: '/packages/example/report',
 		}),
 	)
+})
+
+test('handlePackageAppRequest does not report package entrypoint failures to Kody Sentry', async () => {
+	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		source: {
+			published_commit: 'commit-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kody/example',
+				kody: { id: 'example', app: { entry: 'app.js' } },
+			}),
+			'app.js': 'export default {}',
+		},
+	})
+	mockModule.buildPackageAppWorker.mockResolvedValueOnce({
+		entrypointName: 'entry',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					throw new Error('package code failed')
+				},
+			}),
+		},
+	})
+
+	const response = await handlePackageAppRequest(
+		new Request('https://example.com/packages/example'),
+		{} as Env,
+	)
+
+	expect(response.status).toBe(500)
+	expect(mockModule.captureException).not.toHaveBeenCalled()
 })
 
 test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {
