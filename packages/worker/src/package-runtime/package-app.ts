@@ -35,6 +35,12 @@ import {
 	isPackageSecretAccessUnavailableError,
 	resolvePackageMountedSecret,
 } from '#mcp/secrets/package-access.ts'
+import {
+	beginPackageRuntimeRun,
+	finishPackageRuntimeRun,
+	type PackageRuntimeRunHandle,
+	type PackageRuntimeStatus,
+} from './package-runtime-debug.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -470,6 +476,24 @@ function createFacetStorageId(packageContext, facetName) {
 	return \`\${packageId}:facet:\${buildFacetName(facetName)}\`;
 }
 
+function serializeRuntimeError(error) {
+	return {
+		name: error && typeof error.name === 'string' ? error.name : 'Error',
+		message:
+			error && typeof error.message === 'string'
+				? error.message
+				: String(error),
+	};
+}
+
+async function startRuntimeRun(runtimeBridge, input) {
+	return await runtimeBridge.packageRuntimeRunStart(input).catch(() => null);
+}
+
+async function finishRuntimeRun(runtimeBridge, input) {
+	await runtimeBridge.packageRuntimeRunFinish(input).catch(() => {});
+}
+
 function resolveRealtimeHandler(userModule, facetName) {
 	const facetExportName = buildFacetClassExportName(facetName);
 	if (typeof userModule[facetExportName] === 'function') {
@@ -502,9 +526,17 @@ function resolveRealtimeHandler(userModule, facetName) {
 
 export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 	async fetch(request) {
+		const runtimeBridge = this.env.${packageAppRuntimeBindingName};
+		const runtimeRun = await startRuntimeRun(runtimeBridge, {
+			surface: 'app_fetch',
+			name: new URL(request.url).pathname,
+			metadata: {
+				method: request.method,
+			},
+		});
 		const previousRuntime = globalThis.__kodyRuntime;
 		globalThis.__kodyRuntime = createRuntime(
-			this.env.${packageAppRuntimeBindingName},
+			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
@@ -520,7 +552,19 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			if (!fetchHandler) {
 				throw new Error('Package apps must default export a fetch handler or an object with fetch().');
 			}
-			return await fetchHandler(request, runtimeEnv, this.ctx);
+			const response = await fetchHandler(request, runtimeEnv, this.ctx);
+			await finishRuntimeRun(runtimeBridge, {
+				run: runtimeRun,
+				status: 'success',
+			});
+			return response;
+		} catch (error) {
+			await finishRuntimeRun(runtimeBridge, {
+				run: runtimeRun,
+				status: 'error',
+				error: serializeRuntimeError(error),
+			});
+			throw error;
 		} finally {
 			if (previousRuntime === undefined) delete globalThis.__kodyRuntime;
 			else globalThis.__kodyRuntime = previousRuntime;
@@ -528,9 +572,19 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 	}
 
 	async handleRealtimeEvent(payload) {
+		const runtimeBridge = this.env.${packageAppRuntimeBindingName};
+		const runtimeRun = await startRuntimeRun(runtimeBridge, {
+			surface: 'app_realtime',
+			name: buildFacetName(payload?.facet),
+			sessionId: payload?.sessionId,
+			metadata: {
+				facet: payload?.facet,
+				topic: payload?.topic,
+			},
+		});
 		const previousRuntime = globalThis.__kodyRuntime;
 		globalThis.__kodyRuntime = createRuntime(
-			this.env.${packageAppRuntimeBindingName},
+			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
@@ -538,25 +592,43 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			const runtimeEnv = createPackageAppEnv(this.env, userModule);
 			const resolved = resolveRealtimeHandler(userModule, payload?.facet);
 			if (!resolved) {
-				return { actions: [] };
+				const result = { actions: [] };
+				await finishRuntimeRun(runtimeBridge, {
+					run: runtimeRun,
+					status: 'success',
+				});
+				return result;
 			}
+			let result;
 			if (resolved.kind === 'function') {
-				return await resolved.exported(payload, runtimeEnv, this.ctx);
+				result = await resolved.exported(payload, runtimeEnv, this.ctx);
+			} else if (resolved.kind === 'bound-method') {
+				result = await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+			} else {
+				const state = createInternalDurableObjectState(
+					runtimeBridge,
+					createFacetStorageId(this.env.__kodyPackageContext ?? null, payload?.facet),
+				);
+				const instance = Object.create(resolved.exported.prototype);
+				instance.ctx = state;
+				instance.env = runtimeEnv;
+				if (typeof instance.onRealtimeEvent !== 'function') {
+					throw new Error(\`Package app facet "\${buildFacetName(payload?.facet)}" must implement onRealtimeEvent().\`);
+				}
+				result = await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
 			}
-			if (resolved.kind === 'bound-method') {
-				return await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
-			}
-			const state = createInternalDurableObjectState(
-				this.env.${packageAppRuntimeBindingName},
-				createFacetStorageId(this.env.__kodyPackageContext ?? null, payload?.facet),
-			);
-			const instance = Object.create(resolved.exported.prototype);
-			instance.ctx = state;
-			instance.env = runtimeEnv;
-			if (typeof instance.onRealtimeEvent !== 'function') {
-				throw new Error(\`Package app facet "\${buildFacetName(payload?.facet)}" must implement onRealtimeEvent().\`);
-			}
-			return await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+			await finishRuntimeRun(runtimeBridge, {
+				run: runtimeRun,
+				status: 'success',
+			});
+			return result;
+		} catch (error) {
+			await finishRuntimeRun(runtimeBridge, {
+				run: runtimeRun,
+				status: 'error',
+				error: serializeRuntimeError(error),
+			});
+			throw error;
 		} finally {
 			if (previousRuntime === undefined) delete globalThis.__kodyRuntime;
 			else globalThis.__kodyRuntime = previousRuntime;
@@ -625,6 +697,43 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			baseUrl: this.ctx.props.baseUrl,
 			serviceName,
 		})
+	}
+
+	async packageRuntimeRunStart(input: {
+		surface: 'app_fetch' | 'app_realtime'
+		name?: string | null
+		sessionId?: string | null
+		metadata?: Record<string, unknown> | null
+	}): Promise<PackageRuntimeRunHandle | null> {
+		return await beginPackageRuntimeRun({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			context: {
+				packageId: this.ctx.props.packageId,
+				kodyId: this.ctx.props.kodyId,
+				sourceId: this.ctx.props.sourceId,
+				surface: input.surface,
+				name: input.name,
+				sessionId: input.sessionId,
+				metadata: input.metadata,
+			},
+		})
+	}
+
+	async packageRuntimeRunFinish(input: {
+		run: PackageRuntimeRunHandle | null
+		status: Exclude<PackageRuntimeStatus, 'running'>
+		error?: unknown
+		logs?: Array<string>
+	}) {
+		await finishPackageRuntimeRun({
+			env: this.env,
+			handle: input.run,
+			status: input.status,
+			error: input.error,
+			logs: input.logs,
+		})
+		return { ok: true }
 	}
 
 	async callCapability(input: { name: string; args?: unknown }) {

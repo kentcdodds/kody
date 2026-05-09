@@ -160,6 +160,20 @@ async function invokeRetriever(input: {
 			packageContext: {
 				packageId: input.entry.packageId,
 				kodyId: input.entry.kodyId,
+				sourceId: input.entry.sourceId,
+			},
+			runtimeDebug: {
+				packageId: input.entry.packageId,
+				kodyId: input.entry.kodyId,
+				sourceId: input.entry.sourceId,
+				publishedCommit: source.published_commit,
+				surface: 'retriever',
+				name: input.entry.retrieverKey,
+				storageId: buildPackageRetrieverStorageId(input.entry.packageId),
+				metadata: {
+					scope: input.scope,
+					limit,
+				},
 			},
 			executorTimeoutMs: clampTimeout(input.entry.timeoutMs, input.scope),
 		},

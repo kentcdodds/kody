@@ -452,6 +452,19 @@ async function executePublishedJobArtifact(input: {
 			...(input.artifact.packageContext
 				? { packageContext: input.artifact.packageContext }
 				: {}),
+			runtimeDebug: input.artifact.packageContext
+				? {
+						packageId: input.artifact.packageContext.packageId,
+						kodyId: input.artifact.packageContext.kodyId,
+						sourceId:
+							input.artifact.packageContext.sourceId ?? input.job.sourceId,
+						publishedCommit: source?.published_commit ?? input.job.publishedCommit,
+						surface: 'job',
+						name: input.job.name,
+						storageId: input.job.storageId,
+						jobId: input.job.id,
+					}
+				: null,
 		},
 	).then((result) => ({
 		...result,

@@ -554,6 +554,18 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					storageId: runtime.storageId,
 					writable: true,
 				},
+				runtimeDebug: {
+					packageId: binding.packageId,
+					kodyId: binding.kodyId,
+					sourceId: binding.sourceId,
+					publishedCommit: null,
+					surface: 'service',
+					name: binding.serviceName,
+					storageId: runtime.storageId,
+					metadata: {
+						mode: runtime.loaded.serviceDefinition?.mode ?? 'bounded',
+					},
+				},
 				executorTimeoutMs: runtime.executorTimeoutMs,
 			},
 		)
