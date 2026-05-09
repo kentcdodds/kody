@@ -112,14 +112,20 @@ function normalizeOptionalString(value: string | null | undefined) {
 function truncateUtf8(value: string, maxBytes: number) {
 	if (textEncoder.encode(value).length <= maxBytes) return value
 	const suffix = '... [truncated]'
-	let truncated = value
-	while (
-		truncated.length > 0 &&
-		textEncoder.encode(`${truncated}${suffix}`).length > maxBytes
-	) {
-		truncated = truncated.slice(0, Math.max(0, truncated.length - 256))
+	let low = 0
+	let high = value.length
+	let best = ''
+	while (low <= high) {
+		const midpoint = Math.floor((low + high) / 2)
+		const candidate = `${value.slice(0, midpoint)}${suffix}`
+		if (textEncoder.encode(candidate).length <= maxBytes) {
+			best = candidate
+			low = midpoint + 1
+		} else {
+			high = midpoint - 1
+		}
 	}
-	return `${truncated}${suffix}`
+	return best
 }
 
 function toJsonSafeValue(value: unknown): unknown {

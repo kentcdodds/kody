@@ -216,4 +216,36 @@ describe('package runtime debug persistence', () => {
 			errorMessage: 'boom',
 		})
 	})
+
+	test('truncates large UTF-8 log entries within the byte limit', async () => {
+		const env = { APP_DB: createDebugDatabase() } as Env
+		const run = await beginPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			context: {
+				packageId: 'pkg-1',
+				kodyId: 'calendar-agent',
+				surface: 'export',
+				name: './sync',
+			},
+		})
+
+		await finishPackageRuntimeRun({
+			env,
+			handle: run,
+			status: 'success',
+			logs: ['😀'.repeat(20_000)],
+		})
+
+		const loaded = await getPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			runId: run?.id ?? '',
+		})
+		const message = loaded?.logs[0]?.message ?? ''
+		expect(new TextEncoder().encode(message).length).toBeLessThanOrEqual(
+			16 * 1024,
+		)
+		expect(message.endsWith('... [truncated]')).toBe(true)
+	})
 })
