@@ -11,6 +11,7 @@ import {
 	createPackageAppCallerContext,
 } from '#worker/package-runtime/package-app.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
+import { wantsJson } from '#worker/utils.ts'
 
 function parsePackageAppPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
@@ -91,11 +92,6 @@ type PackageAppFailureKind =
 	| 'host-setup'
 	| 'package-entrypoint'
 	| 'realtime-connect'
-
-function wantsJson(request: Request) {
-	const accept = request.headers.get('accept')
-	return accept?.includes('application/json') ?? false
-}
 
 function createPackageAppErrorResponse(input: {
 	request: Request
