@@ -23,6 +23,7 @@ export const routes = route({
 	login: '/login',
 	signup: '/signup',
 	account: '/account',
+	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	session: '/session',
 	logout: post('/logout'),

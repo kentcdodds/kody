@@ -1,5 +1,6 @@
 import { createRouter } from 'remix/fetch-router'
 import { account } from '#app/handlers/account.ts'
+import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import {
 	createAccountRemoteConnectorsApiHandler,
 	createAccountRemoteConnectorsHandler,
@@ -44,6 +45,7 @@ export function createAppRouter(appEnv: AppEnv) {
 			login,
 			signup,
 			account,
+			accountDelete: createAccountDeleteHandler(appEnv as unknown as Env),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(
 				appEnv as unknown as Env,
 			),
