@@ -289,4 +289,72 @@ describe('package runtime debug persistence', () => {
 		})
 		expect(loaded?.logs).toEqual([])
 	})
+
+	test('keeps truncated metadata parseable', async () => {
+		const env = { APP_DB: createDebugDatabase() } as Env
+		const run = await beginPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			context: {
+				packageId: 'pkg-1',
+				kodyId: 'calendar-agent',
+				surface: 'export',
+				name: './sync',
+				metadata: {
+					payload: 'x'.repeat(50_000),
+				},
+			},
+		})
+
+		await finishPackageRuntimeRun({
+			env,
+			handle: run,
+			status: 'success',
+		})
+
+		const listed = await listPackageRuntimeRuns({
+			env,
+			userId: 'user-1',
+		})
+		expect(listed[0]?.metadata).toMatchObject({
+			__truncated__: true,
+		})
+		expect(typeof listed[0]?.metadata['preview']).toBe('string')
+	})
+
+	test('retains the newest log entries when log count exceeds the cap', async () => {
+		const env = { APP_DB: createDebugDatabase() } as Env
+		const run = await beginPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			context: {
+				packageId: 'pkg-1',
+				kodyId: 'calendar-agent',
+				surface: 'export',
+				name: './sync',
+			},
+		})
+
+		await finishPackageRuntimeRun({
+			env,
+			handle: run,
+			status: 'success',
+			logs: Array.from({ length: 205 }, (_, index) => `line-${index}`),
+		})
+
+		const loaded = await getPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			runId: run?.id ?? '',
+		})
+		expect(loaded?.logs).toHaveLength(200)
+		expect(loaded?.logs[0]).toMatchObject({
+			sequence: 0,
+			message: 'line-5',
+		})
+		expect(loaded?.logs.at(-1)).toMatchObject({
+			sequence: 199,
+			message: 'line-204',
+		})
+	})
 })

@@ -667,6 +667,16 @@ export async function runModuleWithRegistry(
 	)
 }
 
+async function finishPackageRuntimeRunBestEffort(
+	input: Parameters<typeof finishPackageRuntimeRun>[0],
+) {
+	try {
+		await finishPackageRuntimeRun(input)
+	} catch (error) {
+		console.warn('package-runtime-debug-finish-unhandled', error)
+	}
+}
+
 export async function runBundledModuleWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -809,7 +819,7 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
 			const result = await executor.execute(wrapped, [provider])
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
-				await finishPackageRuntimeRun({
+				await finishPackageRuntimeRunBestEffort({
 					env,
 					handle: runtimeDebugRun,
 					status: 'success',
@@ -829,7 +839,7 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
 						error: secretRedactor.redactErrorMessage(batchMessage),
 					}
 				: sanitizedResult
-			await finishPackageRuntimeRun({
+			await finishPackageRuntimeRunBestEffort({
 				env,
 				handle: runtimeDebugRun,
 				status: 'error',
@@ -852,7 +862,7 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
 		}
 	} catch (error) {
 		if (!runtimeDebugFinished) {
-			await finishPackageRuntimeRun({
+			await finishPackageRuntimeRunBestEffort({
 				env,
 				handle: runtimeDebugRun,
 				status: 'error',

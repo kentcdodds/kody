@@ -558,7 +558,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					packageId: binding.packageId,
 					kodyId: binding.kodyId,
 					sourceId: binding.sourceId,
-					publishedCommit: null,
+					publishedCommit:
+						runtime.loaded.packageSource.source.published_commit ?? null,
 					surface: 'service',
 					name: binding.serviceName,
 					storageId: runtime.storageId,

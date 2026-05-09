@@ -646,6 +646,7 @@ type PackageAppRuntimeBridgeProps = {
 	packageId: string
 	kodyId: string
 	sourceId: string
+	publishedCommit: string | null
 }
 
 export class PackageAppRuntimeBridge extends WorkerEntrypoint<
@@ -712,6 +713,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				packageId: this.ctx.props.packageId,
 				kodyId: this.ctx.props.kodyId,
 				sourceId: this.ctx.props.sourceId,
+				publishedCommit: this.ctx.props.publishedCommit,
 				surface: input.surface,
 				name: input.name,
 				sessionId: input.sessionId,
@@ -1140,12 +1142,14 @@ export async function buildPackageAppWorker(input: {
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
 						sourceId: input.savedPackage.sourceId,
+						publishedCommit: input.savedPackage.publishedCommit,
 					},
 				}),
 				__kodyPackageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
 					sourceId: input.savedPackage.sourceId,
+					publishedCommit: input.savedPackage.publishedCommit,
 				},
 			},
 			globalOutbound: workerExports?.CodemodeFetchGateway

@@ -6,6 +6,7 @@ import {
 } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
+import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -974,14 +975,14 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				packageIds: [payload.packageId],
 				packageKodyIds: [payload.kodyId],
 				exportNames: [payload.exportName],
-				sources: ['package-workflow'],
+				sources: [packageWorkflowInvocationSource],
 			},
 			request: {
 				packageIdOrKodyId: payload.packageId,
 				exportName: payload.exportName,
 				params: payload.params,
 				idempotencyKey: payload.idempotencyKey,
-				source: 'package-workflow',
+				source: packageWorkflowInvocationSource,
 				topic: payload.workflowName,
 			},
 		})

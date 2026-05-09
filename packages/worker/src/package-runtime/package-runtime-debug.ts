@@ -137,7 +137,21 @@ function toJsonSafeValue(value: unknown): unknown {
 }
 
 function serializeJson(value: unknown, maxBytes = maxPersistedJsonBytes) {
-	return truncateUtf8(JSON.stringify(toJsonSafeValue(value)), maxBytes)
+	const json = JSON.stringify(toJsonSafeValue(value))
+	if (textEncoder.encode(json).length <= maxBytes) return json
+	let preview = truncateUtf8(json, Math.max(0, maxBytes - 128))
+	let wrapped = JSON.stringify({
+		__truncated__: true,
+		preview,
+	})
+	while (textEncoder.encode(wrapped).length > maxBytes && preview.length > 0) {
+		preview = preview.slice(0, Math.floor(preview.length * 0.8))
+		wrapped = JSON.stringify({
+			__truncated__: true,
+			preview,
+		})
+	}
+	return wrapped
 }
 
 function parseJsonRecord(value: unknown): Record<string, unknown> {
@@ -229,13 +243,11 @@ function getErrorFields(error: unknown) {
 }
 
 function normalizeLogs(logs: Array<string> | undefined) {
-	return (logs ?? [])
-		.slice(0, maxPersistedLogEntries)
-		.map((message, index) => ({
-			sequence: index,
-			level: 'log' as const,
-			message: truncateUtf8(String(message), maxPersistedTextBytes),
-		}))
+	return (logs ?? []).slice(-maxPersistedLogEntries).map((message, index) => ({
+		sequence: index,
+		level: 'log' as const,
+		message: truncateUtf8(String(message), maxPersistedTextBytes),
+	}))
 }
 
 export async function beginPackageRuntimeRun(input: {

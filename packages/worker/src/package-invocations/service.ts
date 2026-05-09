@@ -22,6 +22,7 @@ import {
 	loadPublishedBundleArtifactByIdentity,
 	persistPublishedBundleArtifact,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { packageWorkflowInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	buildPackageSubscriptionArtifactName,
@@ -518,7 +519,7 @@ function resolveInvocationRuntimeSurface(input: {
 	selector: PackageModuleSelector
 	source: string | null
 }): PackageRuntimeSurface {
-	if (input.source === 'package-workflow') return 'workflow'
+	if (input.source === packageWorkflowInvocationSource) return 'workflow'
 	switch (input.selector.kind) {
 		case 'export':
 			return 'export'
