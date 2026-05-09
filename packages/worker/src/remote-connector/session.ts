@@ -580,12 +580,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	} {
 		try {
 			const attachment = ws.deserializeAttachment() as unknown
-			if (typeof attachment === 'string') {
-				return {
-					ingressSessionKey: attachment || null,
-					ingressUserId: null,
-				}
-			}
 			if (attachment && typeof attachment === 'object') {
 				const record = attachment as Record<string, unknown>
 				const sessionKey =

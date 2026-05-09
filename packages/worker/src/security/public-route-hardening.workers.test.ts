@@ -16,26 +16,6 @@ async function workerFetch(request: Request): Promise<Response> {
 	return response
 }
 
-test('legacy non-user-scoped connector URLs return HTTP 410 Gone with reconfiguration guidance', async () => {
-	const legacyRequests = [
-		createRequest('/connectors/lights/default'),
-		createRequest('/connectors/lights/default/snapshot'),
-		createRequest('/connectors/lights/default', {
-			headers: { Upgrade: 'websocket' },
-		}),
-	]
-
-	for (const request of legacyRequests) {
-		const response = await workerFetch(request)
-		expect(response.status).toBe(410)
-		await expect(response.json()).resolves.toMatchObject({
-			error: expect.stringContaining(
-				'/connectors/u/{userId}/{kind}/{instanceId}',
-			),
-		})
-	}
-})
-
 test('user-scoped connector entrypoints reject unauthenticated HTTP access while allowing WebSocket upgrades', async () => {
 	const unauthorizedRequests = [
 		createRequest('/connectors/u/user-1/lights/default/snapshot'),

@@ -94,10 +94,9 @@ that two different users always resolve to two different object ids:
 - `RemoteConnectorSession` —
   `userScopedConnectorSessionKey(userId, kind, instanceId)`. Connectors must
   connect through the new user-scoped ingress URL
-  `/connectors/u/{userId}/{kind}/{instanceId}`; the legacy non-user-scoped URL
-  is rejected with HTTP 410. The DO carries the ingress user id forward via
-  headers + websocket attachment and verifies the shared secret against that
-  user's row only.
+  `/connectors/u/{userId}/{kind}/{instanceId}`. The DO carries the ingress user
+  id forward via headers + websocket attachment and verifies the shared secret
+  against that user's row only.
 - `AgentTurnRunner` — `idFromName(JSON.stringify([userId, sessionId]))`. The
   runner DO also requires every request to carry an `X-Kody-User-Id` header,
   persists `ownerUserId` on first contact, and rejects mismatched callers with

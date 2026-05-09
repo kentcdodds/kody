@@ -1,9 +1,3 @@
-export {
-	connectorIngressPath,
-	connectorSessionKey,
-	parseConnectorRoutePath,
-} from '@kody-bot/connector-kit/urls'
-
 const userScopedConnectorIngressPrefix = '/connectors/u/'
 
 export type UserScopedConnectorRouteMatch = {
