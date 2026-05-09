@@ -42,8 +42,8 @@ import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
-	connectorSessionKey,
-	parseConnectorRoutePath,
+	parseUserScopedConnectorRoutePath,
+	userScopedConnectorSessionKey,
 } from './remote-connector/connector-session-key.ts'
 import { handlePackageAppRequest } from '#app/handlers/package-app.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
@@ -190,22 +190,29 @@ const appHandler = withCors({
 			return handlePackageAppRequest(request, env)
 		}
 
-		const connectorRoute = parseConnectorRoutePath(url.pathname)
-		if (connectorRoute) {
+		const userScopedConnectorRoute = parseUserScopedConnectorRoutePath(
+			url.pathname,
+		)
+		if (userScopedConnectorRoute) {
 			if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
 				return new Response('Not Found', { status: 404 })
 			}
-			const sessionKey = connectorSessionKey(
-				connectorRoute.kind,
-				connectorRoute.instanceId,
-			)
+			const sessionKey = userScopedConnectorSessionKey({
+				userId: userScopedConnectorRoute.userId,
+				kind: userScopedConnectorRoute.kind,
+				instanceId: userScopedConnectorRoute.instanceId,
+			})
 			const stub = env.REMOTE_CONNECTOR_SESSION.get(
 				env.REMOTE_CONNECTOR_SESSION.idFromName(sessionKey),
 			)
 			const forwardUrl = new URL(request.url)
-			forwardUrl.pathname = connectorRoute.rest || '/'
+			forwardUrl.pathname = userScopedConnectorRoute.rest || '/'
 			const forwardRequest = new Request(forwardUrl.toString(), request)
 			forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
+			forwardRequest.headers.set(
+				'X-Kody-Connector-User-Id',
+				userScopedConnectorRoute.userId,
+			)
 			return stub.fetch(forwardRequest)
 		}
 

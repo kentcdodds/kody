@@ -1475,11 +1475,17 @@ function serializeRemoteConnectorStatus(status: RemoteConnectorStatus): {
 
 export async function loadDownRemoteConnectorStatuses(input: {
 	env: Env
-	callerContext: Pick<McpCallerContext, 'remoteConnectors'>
+	callerContext: Pick<McpCallerContext, 'remoteConnectors' | 'user'>
 }): Promise<Array<RemoteConnectorStatus>> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
+	const userId = input.callerContext.user?.userId ?? null
+	if (refs.length === 0 || !userId) {
+		return []
+	}
 	const statuses = await Promise.all(
-		refs.map((ref) => getRemoteConnectorStatus(input.env, ref)),
+		refs.map((ref) =>
+			getRemoteConnectorStatus({ env: input.env, userId, ref }),
+		),
 	)
 	return statuses.filter(shouldIncludeRemoteConnectorStatus)
 }

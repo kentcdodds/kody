@@ -107,18 +107,24 @@ export function formatRemoteConnectorUnavailableMessage(
 	}
 }
 
-export async function getRemoteConnectorStatus(
-	env: Env,
-	ref: RemoteConnectorRef,
-): Promise<RemoteConnectorStatus> {
+export async function getRemoteConnectorStatus(input: {
+	env: Env
+	userId: string
+	ref: RemoteConnectorRef
+}): Promise<RemoteConnectorStatus> {
 	try {
-		const client = createRemoteConnectorMcpClient(env, ref.kind, ref.instanceId)
+		const client = createRemoteConnectorMcpClient({
+			env: input.env,
+			userId: input.userId,
+			kind: input.ref.kind,
+			instanceId: input.ref.instanceId,
+		})
 		const snapshot = await client.getSnapshot()
 		if (!snapshot) {
-			return createDisconnectedStatus(ref)
+			return createDisconnectedStatus(input.ref)
 		}
-		return createConnectedStatus(snapshot, ref.kind)
+		return createConnectedStatus(snapshot, input.ref.kind)
 	} catch (error) {
-		return createErrorStatus(ref, error)
+		return createErrorStatus(input.ref, error)
 	}
 }

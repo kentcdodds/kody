@@ -204,6 +204,7 @@ export async function deleteRemoteConnectorSetting(input: {
 
 export async function listRemoteConnectorSharedSecretsForRef(input: {
 	env: RemoteConnectorSettingsEnv
+	userId: string
 	kind: string
 	instanceId: string
 }): Promise<Array<string>> {
@@ -213,6 +214,7 @@ export async function listRemoteConnectorSharedSecretsForRef(input: {
 
 	const rows = await listRemoteConnectorSharedSecretRows({
 		db: input.env.APP_DB,
+		userId: input.userId,
 		kind,
 		instanceId,
 	})
@@ -228,6 +230,7 @@ export async function listRemoteConnectorSharedSecretsForRef(input: {
 
 export async function hasRemoteConnectorSharedSecretForRef(input: {
 	env: Pick<Env, 'APP_DB'>
+	userId: string
 	kind: string
 	instanceId: string
 }) {
@@ -237,6 +240,7 @@ export async function hasRemoteConnectorSharedSecretForRef(input: {
 
 	const rows = await listRemoteConnectorSharedSecretRows({
 		db: input.env.APP_DB,
+		userId: input.userId,
 		kind,
 		instanceId,
 	})

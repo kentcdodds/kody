@@ -36,13 +36,18 @@ async function loadRemoteConnectorInstructionSummaries(input: {
 	caller: McpCallerContext
 }): Promise<Array<RemoteConnectorInstructionSummary>> {
 	const refs = normalizeRemoteConnectorRefs(input.caller)
+	const userId = input.caller.user?.userId ?? null
+	if (refs.length === 0 || !userId) {
+		return []
+	}
 	const settled = await Promise.allSettled(
 		refs.map(async (ref) => {
-			const snapshot = await createRemoteConnectorMcpClient(
-				input.env,
-				ref.kind,
-				ref.instanceId,
-			).getSnapshot()
+			const snapshot = await createRemoteConnectorMcpClient({
+				env: input.env,
+				userId,
+				kind: ref.kind,
+				instanceId: ref.instanceId,
+			}).getSnapshot()
 			if (!snapshot) return null
 			const connectorKind = snapshot.connectorKind.trim().toLowerCase()
 			const connectorId = snapshot.connectorId.trim()

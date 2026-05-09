@@ -40,6 +40,7 @@ function timingSafeStringEquals(left: string, right: string) {
 }
 
 async function listStoredSharedSecrets(input: {
+	userId: string
 	kind: string
 	instanceId: string
 	env: Env
@@ -47,19 +48,21 @@ async function listStoredSharedSecrets(input: {
 	try {
 		return await listRemoteConnectorSharedSecretsForRef({
 			env: input.env,
+			userId: input.userId,
 			kind: input.kind,
 			instanceId: input.instanceId,
 		})
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)
 		console.error(
-			`[remote-connectors] failed to read persisted shared secrets for ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
+			`[remote-connectors] failed to read persisted shared secrets for ${input.userId} ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
 		)
 		return []
 	}
 }
 
 async function storedSharedSecretExists(input: {
+	userId: string
 	kind: string
 	instanceId: string
 	env: Env
@@ -67,32 +70,31 @@ async function storedSharedSecretExists(input: {
 	try {
 		return await hasRemoteConnectorSharedSecretForRef({
 			env: input.env,
+			userId: input.userId,
 			kind: input.kind,
 			instanceId: input.instanceId,
 		})
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)
 		console.error(
-			`[remote-connectors] failed to check persisted shared secret for ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
+			`[remote-connectors] failed to check persisted shared secret for ${input.userId} ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
 		)
 		return false
 	}
 }
 
-export async function resolveRemoteConnectorSharedSecret(
-	kind: string,
-	instanceId: string,
-	env: Env,
-): Promise<string | undefined> {
-	const [storedSecret] = await listStoredSharedSecrets({
-		kind,
-		instanceId,
-		env,
-	})
+export async function resolveRemoteConnectorSharedSecret(input: {
+	userId: string
+	kind: string
+	instanceId: string
+	env: Env
+}): Promise<string | undefined> {
+	const [storedSecret] = await listStoredSharedSecrets(input)
 	return storedSecret
 }
 
 export async function remoteConnectorSharedSecretMatches(input: {
+	userId: string
 	kind: string
 	instanceId: string
 	sharedSecret: string
@@ -112,6 +114,7 @@ export async function remoteConnectorSharedSecretMatches(input: {
 }
 
 export async function hasRemoteConnectorSharedSecret(input: {
+	userId: string
 	kind: string
 	instanceId: string
 	env: Env

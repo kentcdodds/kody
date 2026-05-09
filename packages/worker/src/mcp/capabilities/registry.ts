@@ -33,10 +33,16 @@ export async function getCapabilityRegistryForContext(input: {
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
+	const userId = input.callerContext.user?.userId ?? null
 	const synthesizedDomains: Array<SynthesizedRemoteConnectorDomain['domain']> =
 		[]
+	if (refs.length === 0 || !userId) {
+		return staticRegistry
+	}
 	const settled = await Promise.allSettled(
-		refs.map((ref) => synthesizeRemoteToolDomain(input.env, ref)),
+		refs.map((ref) =>
+			synthesizeRemoteToolDomain({ env: input.env, userId, ref }),
+		),
 	)
 	for (const [index, outcome] of settled.entries()) {
 		if (outcome.status === 'fulfilled' && outcome.value) {

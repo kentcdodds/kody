@@ -116,18 +116,29 @@ function createCapabilityFromTool(input: {
 		inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
 		...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
 		async handler(args, ctx) {
-			const client = createRemoteConnectorMcpClient(
-				ctx.env,
-				binding.kind,
-				binding.instanceId,
-			)
+			const userId = ctx.callerContext.user?.userId
+			if (!userId) {
+				throw new Error(
+					`Remote capability "${binding.kind}:${binding.instanceId}:${tool.name}" requires an authenticated user.`,
+				)
+			}
+			const client = createRemoteConnectorMcpClient({
+				env: ctx.env,
+				userId,
+				kind: binding.kind,
+				instanceId: binding.instanceId,
+			})
 			let result: Awaited<ReturnType<typeof client.callTool>>
 			try {
 				result = await client.callTool(tool.name, args)
 			} catch (error) {
-				const status = await getRemoteConnectorStatus(ctx.env, {
-					kind: binding.kind,
-					instanceId: binding.instanceId,
+				const status = await getRemoteConnectorStatus({
+					env: ctx.env,
+					userId,
+					ref: {
+						kind: binding.kind,
+						instanceId: binding.instanceId,
+					},
 				})
 				if (status.state !== 'connected' || status.toolCount === 0) {
 					throw new Error(formatRemoteConnectorUnavailableMessage(status))
@@ -154,12 +165,19 @@ function createCapabilityFromTool(input: {
 	return { capability, binding }
 }
 
-export async function synthesizeRemoteToolDomain(
-	env: Env,
-	ref: RemoteConnectorRef,
-): Promise<SynthesizedRemoteConnectorDomain | null> {
-	const client = createRemoteConnectorMcpClient(env, ref.kind, ref.instanceId)
+export async function synthesizeRemoteToolDomain(input: {
+	env: Env
+	userId: string
+	ref: RemoteConnectorRef
+}): Promise<SynthesizedRemoteConnectorDomain | null> {
+	const client = createRemoteConnectorMcpClient({
+		env: input.env,
+		userId: input.userId,
+		kind: input.ref.kind,
+		instanceId: input.ref.instanceId,
+	})
 	const snapshot = await client.getSnapshot()
+	const ref = input.ref
 	if (!snapshot || snapshot.tools.length === 0) return null
 
 	const domainId = remoteConnectorDomainId(ref)

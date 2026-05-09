@@ -254,6 +254,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
+			userId: 'user-1',
 			kind: 'lights',
 			instanceId: 'default',
 			sharedSecret: 'lights-secret',
@@ -262,6 +263,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
+			userId: 'user-1',
 			kind: 'lights',
 			instanceId: 'default',
 			sharedSecret: 'wrong-secret',
@@ -285,6 +287,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
+			userId: 'user-1',
 			kind: 'lights',
 			instanceId: 'default',
 			sharedSecret: 'lights-secret',
@@ -334,6 +337,7 @@ test('renames an existing remote connector setting by id', async () => {
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
+			userId: 'user-1',
 			kind: 'roku',
 			instanceId: 'living-room',
 			sharedSecret: 'lights-secret',
@@ -359,9 +363,71 @@ test('disabled connector settings do not authenticate connector hello', async ()
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
+			userId: 'user-1',
 			kind: 'roku',
 			instanceId: 'living-room',
 			sharedSecret: 'roku-secret',
+		}),
+	).resolves.toBe(false)
+})
+
+test('connector hello secrets are scoped to the user_id of the ingress', async () => {
+	const env = createEnv()
+	await saveRemoteConnectorSetting({
+		env,
+		userId: 'user-aaa',
+		kind: 'lights',
+		instanceId: 'default',
+		enabled: true,
+		attached: true,
+		sharedSecret: 'aaa-secret',
+	})
+	await saveRemoteConnectorSetting({
+		env,
+		userId: 'user-bbb',
+		kind: 'lights',
+		instanceId: 'default',
+		enabled: true,
+		attached: true,
+		sharedSecret: 'bbb-secret',
+	})
+
+	// Each user's secret only authenticates that user's connector even when
+	// (kind, instanceId) collide.
+	await expect(
+		remoteConnectorSharedSecretMatches({
+			env,
+			userId: 'user-aaa',
+			kind: 'lights',
+			instanceId: 'default',
+			sharedSecret: 'aaa-secret',
+		}),
+	).resolves.toBe(true)
+	await expect(
+		remoteConnectorSharedSecretMatches({
+			env,
+			userId: 'user-aaa',
+			kind: 'lights',
+			instanceId: 'default',
+			sharedSecret: 'bbb-secret',
+		}),
+	).resolves.toBe(false)
+	await expect(
+		remoteConnectorSharedSecretMatches({
+			env,
+			userId: 'user-bbb',
+			kind: 'lights',
+			instanceId: 'default',
+			sharedSecret: 'bbb-secret',
+		}),
+	).resolves.toBe(true)
+	await expect(
+		remoteConnectorSharedSecretMatches({
+			env,
+			userId: 'user-bbb',
+			kind: 'lights',
+			instanceId: 'default',
+			sharedSecret: 'aaa-secret',
 		}),
 	).resolves.toBe(false)
 })

@@ -26,11 +26,17 @@ test('remote connector shared secrets are not read from environment variables', 
 	} as Env
 
 	await expect(
-		resolveRemoteConnectorSharedSecret('custom', 'alpha', env),
+		resolveRemoteConnectorSharedSecret({
+			env,
+			userId: 'user-aaa',
+			kind: 'custom',
+			instanceId: 'alpha',
+		}),
 	).resolves.toBeUndefined()
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
+			userId: 'user-aaa',
 			kind: 'custom',
 			instanceId: 'alpha',
 			sharedSecret: 'alpha-secret',
@@ -39,6 +45,7 @@ test('remote connector shared secrets are not read from environment variables', 
 	await expect(
 		hasRemoteConnectorSharedSecret({
 			env,
+			userId: 'user-aaa',
 			kind: 'lights',
 			instanceId: 'default',
 		}),

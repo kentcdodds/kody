@@ -1,5 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import { connectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
+import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
 import {
 	type RemoteConnectorSnapshot,
 	type RemoteConnectorToolDescriptor,
@@ -16,19 +16,29 @@ export type RemoteConnectorMcpClient = {
 	getSnapshot(): Promise<RemoteConnectorSnapshot | null>
 }
 
-function getSessionStub(env: Env, kind: string, instanceId: string) {
-	const sessionKey = connectorSessionKey(kind, instanceId)
-	return env.REMOTE_CONNECTOR_SESSION.get(
-		env.REMOTE_CONNECTOR_SESSION.idFromName(sessionKey),
+function getSessionStub(input: {
+	env: Env
+	userId: string
+	kind: string
+	instanceId: string
+}) {
+	const sessionKey = userScopedConnectorSessionKey({
+		userId: input.userId,
+		kind: input.kind,
+		instanceId: input.instanceId,
+	})
+	return input.env.REMOTE_CONNECTOR_SESSION.get(
+		input.env.REMOTE_CONNECTOR_SESSION.idFromName(sessionKey),
 	)
 }
 
-export function createRemoteConnectorMcpClient(
-	env: Env,
-	kind: string,
-	instanceId: string,
-): RemoteConnectorMcpClient {
-	const stub = getSessionStub(env, kind, instanceId)
+export function createRemoteConnectorMcpClient(input: {
+	env: Env
+	userId: string
+	kind: string
+	instanceId: string
+}): RemoteConnectorMcpClient {
+	const stub = getSessionStub(input)
 
 	return {
 		async listTools() {

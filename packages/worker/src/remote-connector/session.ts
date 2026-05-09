@@ -14,7 +14,7 @@ import {
 	parseRemoteConnectorMessage,
 	stringifyRemoteConnectorMessage,
 } from './utils.ts'
-import { connectorSessionKey } from './connector-session-key.ts'
+import { userScopedConnectorSessionKey } from './connector-session-key.ts'
 import {
 	hasRemoteConnectorSharedSecret,
 	remoteConnectorSharedSecretMatches,
@@ -58,6 +58,8 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	private ingressSessionKeys = new WeakMap<WebSocket, string | null>()
+
+	private ingressUserIds = new WeakMap<WebSocket, string | null>()
 
 	private disconnectedSockets = new WeakSet<WebSocket>()
 
@@ -105,7 +107,13 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			const sessionKeyHeader = request.headers
 				.get('X-Kody-Connector-Session-Key')
 				?.trim()
-			return this.handleWebSocketUpgrade(sessionKeyHeader || null)
+			const userIdHeader = request.headers
+				.get('X-Kody-Connector-User-Id')
+				?.trim()
+			return this.handleWebSocketUpgrade(
+				sessionKeyHeader || null,
+				userIdHeader || null,
+			)
 		}
 		return new Response('Not Found', { status: 404 })
 	}
@@ -244,7 +252,10 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		await this.ctx.storage.put(stateStorageKey, this.stateSnapshot)
 	}
 
-	private async handleWebSocketUpgrade(ingressSessionKey: string | null) {
+	private async handleWebSocketUpgrade(
+		ingressSessionKey: string | null,
+		ingressUserId: string | null,
+	) {
 		const pair = new WebSocketPair()
 		const sockets = Object.values(pair)
 		const client = sockets[0]
@@ -253,7 +264,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			throw new Error('Failed to create WebSocket pair.')
 		}
 		this.ctx.acceptWebSocket(server, [connectorTag])
-		this.stashIngressSessionKey(server, ingressSessionKey)
+		this.stashIngressSessionKey(server, ingressSessionKey, ingressUserId)
 		server.send(
 			stringifyRemoteConnectorMessage({
 				type: 'server.ping',
@@ -336,10 +347,33 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	) {
 		const declaredKind = message.connectorKind.trim().toLowerCase()
 		const canonicalInstanceId = message.connectorId.trim()
-		const expectedSessionKey = connectorSessionKey(
-			declaredKind,
-			canonicalInstanceId,
-		)
+		const ingressUserId = this.loadIngressUserId(ws)
+		if (!ingressUserId) {
+			this.captureSessionMessage(
+				'Remote connector session rejected hello (missing user id on ingress).',
+				{
+					level: 'error',
+					extra: {
+						connectorId: canonicalInstanceId,
+						declaredKind,
+					},
+				},
+			)
+			ws.send(
+				stringifyRemoteConnectorMessage({
+					type: 'server.error',
+					message:
+						'Connector ingress is missing the owning user id. Reconfigure the connector to use the /connectors/u/{userId}/{kind}/{instanceId} URL.',
+				}),
+			)
+			ws.close(4002, 'missing-user')
+			return
+		}
+		const expectedSessionKey = userScopedConnectorSessionKey({
+			userId: ingressUserId,
+			kind: declaredKind,
+			instanceId: canonicalInstanceId,
+		})
 		const ingressSessionKey = this.loadIngressSessionKey(ws)
 		if (ingressSessionKey && ingressSessionKey !== expectedSessionKey) {
 			this.captureSessionMessage(
@@ -366,6 +400,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 
 		const secretMatches = await remoteConnectorSharedSecretMatches({
+			userId: ingressUserId,
 			kind: declaredKind,
 			instanceId: canonicalInstanceId,
 			sharedSecret: message.sharedSecret,
@@ -373,6 +408,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		})
 		if (!secretMatches) {
 			const hasExpectedSecret = await hasRemoteConnectorSharedSecret({
+				userId: ingressUserId,
 				kind: declaredKind,
 				instanceId: canonicalInstanceId,
 				env: this.env,
@@ -524,30 +560,75 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	private stashIngressSessionKey(
 		ws: WebSocket,
 		ingressSessionKey: string | null,
+		ingressUserId: string | null,
 	) {
 		this.ingressSessionKeys.set(ws, ingressSessionKey)
+		this.ingressUserIds.set(ws, ingressUserId)
 		try {
-			ws.serializeAttachment(ingressSessionKey ?? '')
+			ws.serializeAttachment({
+				ingressSessionKey: ingressSessionKey ?? '',
+				ingressUserId: ingressUserId ?? '',
+			})
 		} catch {
 			// No attachment support; keep in-memory map only.
 		}
+	}
+
+	private loadIngressAttachment(ws: WebSocket): {
+		ingressSessionKey: string | null
+		ingressUserId: string | null
+	} {
+		try {
+			const attachment = ws.deserializeAttachment() as unknown
+			if (typeof attachment === 'string') {
+				return {
+					ingressSessionKey: attachment || null,
+					ingressUserId: null,
+				}
+			}
+			if (attachment && typeof attachment === 'object') {
+				const record = attachment as Record<string, unknown>
+				const sessionKey =
+					typeof record.ingressSessionKey === 'string'
+						? record.ingressSessionKey
+						: null
+				const userId =
+					typeof record.ingressUserId === 'string'
+						? record.ingressUserId
+						: null
+				return {
+					ingressSessionKey: sessionKey || null,
+					ingressUserId: userId || null,
+				}
+			}
+		} catch {
+			// Ignore deserialization errors, we only enforce if we have a key.
+		}
+		return { ingressSessionKey: null, ingressUserId: null }
 	}
 
 	private loadIngressSessionKey(ws: WebSocket): string | null {
 		if (this.ingressSessionKeys.has(ws)) {
 			return this.ingressSessionKeys.get(ws) ?? null
 		}
-		let ingressSessionKey: string | null = null
-		try {
-			const attachment = ws.deserializeAttachment()
-			if (typeof attachment === 'string') {
-				ingressSessionKey = attachment || null
-			}
-		} catch {
-			// Ignore deserialization errors, we only enforce if we have a key.
-		}
+		const { ingressSessionKey, ingressUserId } = this.loadIngressAttachment(ws)
 		this.ingressSessionKeys.set(ws, ingressSessionKey)
+		if (!this.ingressUserIds.has(ws)) {
+			this.ingressUserIds.set(ws, ingressUserId)
+		}
 		return ingressSessionKey
+	}
+
+	private loadIngressUserId(ws: WebSocket): string | null {
+		if (this.ingressUserIds.has(ws)) {
+			return this.ingressUserIds.get(ws) ?? null
+		}
+		const { ingressSessionKey, ingressUserId } = this.loadIngressAttachment(ws)
+		this.ingressUserIds.set(ws, ingressUserId)
+		if (!this.ingressSessionKeys.has(ws)) {
+			this.ingressSessionKeys.set(ws, ingressSessionKey)
+		}
+		return ingressUserId
 	}
 }
 

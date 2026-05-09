@@ -34,20 +34,19 @@ export async function listAttachedRemoteConnectorSettingRows(input: {
 
 export async function listRemoteConnectorSharedSecretRows(input: {
 	db: D1Database
+	userId: string
 	kind: string
 	instanceId: string
 }): Promise<Array<RemoteConnectorSettingRow>> {
-	// Connector websocket sessions are keyed only by kind + instanceId, so hello
-	// auth is necessarily cross-user until user identity is part of the protocol.
 	const { results } = await input.db
 		.prepare(
 			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
 			FROM remote_connector_settings
-			WHERE kind = ? AND instance_id = ? AND enabled = 1
+			WHERE user_id = ? AND kind = ? AND instance_id = ? AND enabled = 1
 				AND encrypted_shared_secret IS NOT NULL
 			ORDER BY updated_at DESC`,
 		)
-		.bind(input.kind, input.instanceId)
+		.bind(input.userId, input.kind, input.instanceId)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRemoteConnectorSettingRow)
 }
