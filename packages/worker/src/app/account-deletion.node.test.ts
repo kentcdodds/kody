@@ -322,3 +322,43 @@ test('deleteUserAccount revokes OAuth grants when an OAuth provider is bound', a
 	expect(revokeGrant).toHaveBeenNthCalledWith(2, 'grant-2', 'user-aaa')
 	expect(result.revokedOAuthGrants).toBe(2)
 })
+
+test('deleteUserAccount surfaces a warning when BUNDLE_ARTIFACTS_KV is unavailable', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+		published_bundle_artifacts: [
+			{ id: 'pba-1', user_id: 'user-aaa', kv_key: 'bundle-artifact:v1:src-1' },
+		],
+		archived_job_artifacts: [
+			{ id: 'aja-1', user_id: 'user-aaa', kv_key: 'archived:src-1' },
+		],
+	})
+
+	const env = {
+		APP_DB: db,
+		// BUNDLE_ARTIFACTS_KV intentionally unbound to exercise the warning path.
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ clearStorage: async () => ({ ok: true as const }) }),
+		},
+	} as unknown as Parameters<typeof deleteUserAccount>[0]['env']
+
+	const result = await deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	// D1 rows were deleted as usual; KV deletes were skipped because the
+	// binding is missing.
+	expect(rows.published_bundle_artifacts).toEqual([])
+	expect(rows.archived_job_artifacts).toEqual([])
+	expect(result.deletedKvKeys).toBe(0)
+	// The warning surfaces both the count and the operator-visible
+	// guidance to clean up the KV namespace manually.
+	const kvWarning = result.warnings.find((warning) =>
+		warning.includes('BUNDLE_ARTIFACTS_KV'),
+	)
+	expect(kvWarning).toBeDefined()
+	expect(kvWarning).toContain('2 bundle artifact key(s)')
+})

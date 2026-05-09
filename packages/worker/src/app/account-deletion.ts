@@ -407,6 +407,15 @@ export async function deleteUserAccount(input: {
 			keys: bundleKvKeys,
 			warnings,
 		})
+	} else if (bundleKvKeys.length > 0) {
+		// We collected keys from D1 (published_bundle_artifacts /
+		// archived_job_artifacts) but the KV binding is missing, so
+		// deleteUserScopedRows below would drop the D1 rows without
+		// reaping the underlying KV entries. Surface that as a warning
+		// so the operator knows the KV namespace needs a manual sweep.
+		warnings.push(
+			`BUNDLE_ARTIFACTS_KV binding was unavailable; ${bundleKvKeys.length} bundle artifact key(s) referenced by the deleted user were not removed and must be cleaned up manually.`,
+		)
 	}
 
 	result.deletedRowCounts = await deleteUserScopedRows({
