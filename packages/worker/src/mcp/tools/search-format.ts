@@ -435,9 +435,9 @@ export function buildPackageActionImportUsage(input: {
 	return `import { ${input.functionName} } from ${JSON.stringify(importSpecifier)}`
 }
 
-export function getPrimaryPackageActionFunction(
-	actionMatch: PackageActionMatch,
-) {
+export function getPrimaryPackageActionFunction<
+	FunctionShape extends { name: string },
+>(actionMatch: { functions: Array<FunctionShape> }) {
 	return (
 		actionMatch.functions.find((fn) => fn.name !== 'default') ??
 		actionMatch.functions[0] ??
@@ -642,9 +642,7 @@ export function toSlimStructuredMatches(input: {
 			})
 			const [primaryAction] = actionMatches
 			const primaryActionFunction = primaryAction
-				? (primaryAction.functions.find((fn) => fn.name !== 'default') ??
-					primaryAction.functions[0] ??
-					null)
+				? getPrimaryPackageActionFunction(primaryAction)
 				: null
 			const nextStep =
 				primaryAction && primaryActionFunction
