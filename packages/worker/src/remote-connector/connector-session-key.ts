@@ -11,17 +11,19 @@ export type UserScopedConnectorRouteMatch = {
  * Stable Durable Object name for a per-user remote connector WebSocket
  * session. The DO id is keyed on `(userId, kind, instanceId)` so two users
  * cannot share a connector session by registering the same `(kind,
- * instanceId)` pair.
+ * instanceId)` pair. Encoded as a JSON tuple so any character (including
+ * '/' and ':') in any of the three components round-trips unambiguously.
  */
 export function userScopedConnectorSessionKey(input: {
 	userId: string
 	kind: string
 	instanceId: string
 }) {
-	const userId = input.userId.trim()
-	const kind = input.kind.trim().toLowerCase()
-	const instanceId = input.instanceId.trim()
-	return `u/${userId}/${kind}/${instanceId}`
+	return JSON.stringify([
+		input.userId.trim(),
+		input.kind.trim().toLowerCase(),
+		input.instanceId.trim(),
+	])
 }
 
 export function userScopedConnectorIngressPath(input: {
@@ -47,7 +49,7 @@ export function parseUserScopedConnectorRoutePath(
 		}
 	}
 	if (
-		parts.length >= 4 &&
+		parts.length >= 5 &&
 		parts[0] === 'connectors' &&
 		parts[1] === 'u' &&
 		parts[2] &&

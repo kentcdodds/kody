@@ -35,6 +35,7 @@ export type AccountDeletionResult = {
 
 type UserScopedDeleteTarget =
 	| { kind: 'user_id'; table: string }
+	| { kind: 'db_user_id'; table: string }
 	| { kind: 'bucket_parent'; table: string; parentTable: string }
 	| { kind: 'attachment_parent'; table: string }
 	| { kind: 'mcp_memory_suppression' }
@@ -86,7 +87,10 @@ const userScopedTables: ReadonlyArray<UserScopedDeleteTarget> = [
 	{ kind: 'user_id', table: 'email_inboxes' },
 	{ kind: 'user_id', table: 'email_sender_identities' },
 	{ kind: 'user_id', table: 'chat_threads' },
-	{ kind: 'user_id', table: 'password_resets' },
+	// password_resets.user_id is an INTEGER FK to users.id (predates the
+	// stable mcp string user id), so it must be cleared with the database
+	// integer id rather than the mcp user id.
+	{ kind: 'db_user_id', table: 'password_resets' },
 ]
 
 async function listUserVectorIds(env: Env, userId: string) {
@@ -248,7 +252,8 @@ async function deleteKvKeys(input: {
 
 async function deleteUserScopedRows(input: {
 	env: Env
-	userId: string
+	mcpUserId: string
+	dbUserId: number
 	warnings: Array<string>
 }): Promise<Record<string, number>> {
 	const counts: Record<string, number> = {}
@@ -260,7 +265,13 @@ async function deleteUserScopedRows(input: {
 			switch (target.kind) {
 				case 'user_id': {
 					sql = `DELETE FROM ${target.table} WHERE user_id = ?`
-					params = [input.userId]
+					params = [input.mcpUserId]
+					tableName = target.table
+					break
+				}
+				case 'db_user_id': {
+					sql = `DELETE FROM ${target.table} WHERE user_id = ?`
+					params = [input.dbUserId]
 					tableName = target.table
 					break
 				}
@@ -268,7 +279,7 @@ async function deleteUserScopedRows(input: {
 					sql = `DELETE FROM ${target.table} WHERE bucket_id IN (
 						SELECT id FROM ${target.parentTable} WHERE user_id = ?
 					)`
-					params = [input.userId]
+					params = [input.mcpUserId]
 					tableName = target.table
 					break
 				}
@@ -276,13 +287,13 @@ async function deleteUserScopedRows(input: {
 					sql = `DELETE FROM email_attachments WHERE message_id IN (
 						SELECT id FROM email_messages WHERE user_id = ?
 					)`
-					params = [input.userId]
+					params = [input.mcpUserId]
 					tableName = 'email_attachments'
 					break
 				}
 				case 'mcp_memory_suppression': {
 					sql = `DELETE FROM mcp_memory_conversation_suppressions WHERE user_id = ?`
-					params = [input.userId]
+					params = [input.mcpUserId]
 					tableName = 'mcp_memory_conversation_suppressions'
 					break
 				}
@@ -400,7 +411,8 @@ export async function deleteUserAccount(input: {
 
 	result.deletedRowCounts = await deleteUserScopedRows({
 		env: input.env,
-		userId: input.mcpUserId,
+		mcpUserId: input.mcpUserId,
+		dbUserId: input.dbUserId,
 		warnings,
 	})
 

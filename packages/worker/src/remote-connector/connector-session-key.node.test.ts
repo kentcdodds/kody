@@ -17,8 +17,24 @@ test('userScopedConnectorSessionKey isolates connectors by user', () => {
 		instanceId: 'default',
 	})
 	expect(a).not.toBe(b)
-	expect(a).toBe('u/user-aaa/lights/default')
-	expect(b).toBe('u/user-bbb/lights/default')
+	expect(a).toBe('["user-aaa","lights","default"]')
+	expect(b).toBe('["user-bbb","lights","default"]')
+})
+
+test('userScopedConnectorSessionKey unambiguously encodes "/" in any segment', () => {
+	// Two distinct tuples must never collapse onto the same DO id, even when a
+	// component contains the segment delimiter.
+	const collidingA = userScopedConnectorSessionKey({
+		userId: 'user-aaa',
+		kind: 'lights',
+		instanceId: 'a/b',
+	})
+	const collidingB = userScopedConnectorSessionKey({
+		userId: 'user-aaa',
+		kind: 'lights/a',
+		instanceId: 'b',
+	})
+	expect(collidingA).not.toBe(collidingB)
 })
 
 test('userScopedConnectorIngressPath builds /connectors/u/... routes', () => {

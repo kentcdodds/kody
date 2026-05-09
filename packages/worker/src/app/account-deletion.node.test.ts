@@ -185,7 +185,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		entity_sources: [{ id: 'es-1', user_id: userAaa }],
 		repo_sessions: [{ id: 'rs-1', user_id: userAaa }],
 		chat_threads: [{ id: 't-1', user_id: userAaa }],
-		password_resets: [{ id: 1, user_id: 1 }],
+		password_resets: [
+			{ id: 1, user_id: 1 },
+			{ id: 2, user_id: 1 },
+			{ id: 3, user_id: 2 },
+		],
 		mcp_user_server_instructions: [{ user_id: userAaa }],
 		package_invocation_tokens: [{ id: 'pit-1', user_id: userAaa }],
 		package_invocations: [{ id: 'pi-1', user_id: userAaa }],
@@ -219,10 +223,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		},
 	} as unknown as Env
 
-	// Note: password_resets cascade key is the integer users.id, not mcp user id;
-	// we still expect the row to remain because password_resets.user_id references
-	// users.id, not the mcp user id. The deletion service is responsible for the
-	// mcp-user-scoped tables; the user row is the integer id deletion below.
+	// password_resets.user_id is the database integer id; the deletion
+	// service must use the dbUserId (1) to clear the deleted user's reset
+	// tokens while leaving the other user's tokens in place.
 	const result = await deleteUserAccount({
 		env: env as Env & { OAUTH_PROVIDER: undefined },
 		dbUserId: 1,
@@ -241,6 +244,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.published_bundle_artifacts).toEqual([
 		{ id: 'pba-2', user_id: userBbb, kv_key: 'bundle-artifact:v1:src-2' },
 	])
+	expect(rows.password_resets).toEqual([{ id: 3, user_id: 2 }])
 
 	// User-scoped data is removed.
 	expect(rows.mcp_skills).toEqual([])
@@ -256,6 +260,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.email_attachments).toEqual([])
 	expect(rows.email_messages).toEqual([])
 	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
+	expect(result.deletedRowCounts.password_resets).toBe(2)
 
 	// Storage runners for the deleted user's storage_ids were cleared.
 	expect(clearStorageMock).toHaveBeenCalledTimes(1)
