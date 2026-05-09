@@ -111,7 +111,9 @@ Quick notes for getting a local kody environment running.
   use `(max numeric prefix) + 1`, zero-padded to four digits (for example, if
   the last file is `0036-...sql`, your new file is `0037-<slug>.sql`).
 - If your branch is behind `main` and a new migration has landed upstream with
-  the prefix you picked, rebase and renumber. Do not commit a duplicate prefix.
+  the prefix you picked, rebase and renumber your file to a new unused prefix.
+  Do not introduce new duplicate prefixes — the four pairs documented below are
+  grandfathered exceptions, not a precedent.
 - Do not edit migration files that have already landed in `main` and been
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should
