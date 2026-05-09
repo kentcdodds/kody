@@ -62,8 +62,10 @@ import {
 	type PackageActionMatch,
 	type SearchMatch,
 	type SearchResultStructuredContent,
+	buildPackageActionImportUsage,
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
+	getPrimaryPackageActionFunction,
 	parseEntityRef,
 	toSlimStructuredMatches,
 } from './search-format.ts'
@@ -307,19 +309,15 @@ function buildRecommendedNextStep(
 	}
 	if (topMatch?.type === 'package') {
 		const [actionMatch] = topMatch.actionMatches ?? []
-		const actionFunction =
-			actionMatch?.functions.find((fn) => fn.name !== 'default') ??
-			actionMatch?.functions[0] ??
-			null
+		const actionFunction = actionMatch
+			? getPrimaryPackageActionFunction(actionMatch)
+			: null
 		if (actionMatch && actionFunction) {
-			const importSpecifier = buildPackageImportSpecifier(
-				topMatch.name,
-				actionMatch.subpath,
-			)
-			const importStatement =
-				actionFunction.name === 'default'
-					? `import action from ${JSON.stringify(importSpecifier)}`
-					: `import { ${actionFunction.name} } from ${JSON.stringify(importSpecifier)}`
+			const importStatement = buildPackageActionImportUsage({
+				packageName: topMatch.name,
+				subpath: actionMatch.subpath,
+				functionName: actionFunction.name,
+			})
 			return `Use \`${importStatement}\` for the matched package action. Inspect \`search({ entity: "${topMatch.kodyId}:package" })\` only if you need more exports or full package detail.`
 		}
 		return topMatch.hasApp
@@ -963,20 +961,7 @@ function buildPackageCandidates(input: {
 					entry.record.description,
 					entry.record.searchText ?? '',
 					...entry.record.tags,
-					...exports.flatMap((exportDetail) => [
-						exportDetail.subpath,
-						exportDetail.runtimeTarget ?? '',
-						exportDetail.typesPath ?? '',
-						exportDetail.description ?? '',
-						exportDetail.typeDefinition ?? '',
-						...flattenReferencedTypeFields(exportDetail.referencedTypes),
-						...(exportDetail.functions ?? []).flatMap((fn) => [
-							fn.name,
-							fn.description ?? '',
-							fn.typeDefinition ?? '',
-							...flattenReferencedTypeFields(fn.referencedTypes),
-						]),
-					]),
+					...exports.flatMap(buildPackageExportSearchFields),
 					...jobs.flatMap((job) => [
 						job.name,
 						job.entry,

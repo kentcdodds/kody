@@ -420,7 +420,7 @@ function buildPackageRootImportUsage(packageName: string) {
 	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(packageName, '.'))}`
 }
 
-function buildPackageActionImportUsage(input: {
+export function buildPackageActionImportUsage(input: {
 	packageName: string
 	subpath: string
 	functionName: string
@@ -435,7 +435,9 @@ function buildPackageActionImportUsage(input: {
 	return `import { ${input.functionName} } from ${JSON.stringify(importSpecifier)}`
 }
 
-function getPrimaryPackageActionFunction(actionMatch: PackageActionMatch) {
+export function getPrimaryPackageActionFunction(
+	actionMatch: PackageActionMatch,
+) {
 	return (
 		actionMatch.functions.find((fn) => fn.name !== 'default') ??
 		actionMatch.functions[0] ??
