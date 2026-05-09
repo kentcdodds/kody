@@ -1,0 +1,28 @@
+{
+  "name": "@kody/voice-call-app",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./app.ts"
+  },
+  "dependencies": {
+    "@cloudflare/voice": "0.1.3",
+    "agents": "0.12.3",
+    "ai": "6.0.177",
+    "workers-ai-provider": "3.1.14",
+    "zod": "4.4.3"
+  },
+  "kody": {
+    "id": "voice-call-app",
+    "description": "Authenticated Kody voice-console package app with responsive UI and a local AI SDK tool loop.",
+    "tags": [
+      "voice",
+      "cloudflare",
+      "workers-ai",
+      "tool-calls"
+    ],
+    "app": {
+      "entry": "app.ts"
+    }
+  }
+}
