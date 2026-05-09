@@ -29,7 +29,10 @@ function createTestDb(initial: RowMap): {
 		return removed
 	}
 
-	function selectIds(table: string, where: (row: Record<string, unknown>) => boolean) {
+	function selectIds(
+		table: string,
+		where: (row: Record<string, unknown>) => boolean,
+	) {
 		return (rows[table] ?? []).filter(where).map((row) => row['id'])
 	}
 
@@ -43,9 +46,7 @@ function createTestDb(initial: RowMap): {
 						async all<T>() {
 							let results: Array<unknown> = []
 							const userId = params[0] as string
-							const m = lower.match(
-								/^select id from (\w+) where user_id = \?/,
-							)
+							const m = lower.match(/^select id from (\w+) where user_id = \?/)
 							if (m) {
 								const table = m[1] as string
 								results = (rows[table] ?? [])
@@ -61,8 +62,7 @@ function createTestDb(initial: RowMap): {
 								results = (rows[table] ?? [])
 									.filter(
 										(row) =>
-											row['user_id'] === userId &&
-											row['storage_id'] != null,
+											row['user_id'] === userId && row['storage_id'] != null,
 									)
 									.map((row) => ({ storage_id: row['storage_id'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
@@ -105,9 +105,8 @@ function createTestDb(initial: RowMap): {
 								const parentIds = new Set(
 									selectIds(parentTable, (row) => row['user_id'] === userId),
 								)
-								const removed = deleteByPredicate(
-									childTable,
-									(row) => parentIds.has(row['bucket_id']),
+								const removed = deleteByPredicate(childTable, (row) =>
+									parentIds.has(row['bucket_id']),
 								)
 								return { meta: { changes: removed } }
 							}
@@ -121,15 +120,12 @@ function createTestDb(initial: RowMap): {
 										(row) => row['user_id'] === userId,
 									),
 								)
-								const removed = deleteByPredicate(
-									'email_attachments',
-									(row) => messageIds.has(row['message_id']),
+								const removed = deleteByPredicate('email_attachments', (row) =>
+									messageIds.has(row['message_id']),
 								)
 								return { meta: { changes: removed } }
 							}
-							const usersMatch = lower.match(
-								/^delete from users where id = \?/,
-							)
+							const usersMatch = lower.match(/^delete from users where id = \?/)
 							if (usersMatch) {
 								const removed = deleteByPredicate(
 									'users',
@@ -297,7 +293,9 @@ test('deleteUserAccount revokes OAuth grants when an OAuth provider is bound', a
 			}
 		},
 		revokeGrant,
-	} as unknown as Parameters<typeof deleteUserAccount>[0]['env']['OAUTH_PROVIDER']
+	} as unknown as Parameters<
+		typeof deleteUserAccount
+	>[0]['env']['OAUTH_PROVIDER']
 
 	const env = {
 		APP_DB: db,

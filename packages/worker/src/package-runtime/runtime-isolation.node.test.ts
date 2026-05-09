@@ -23,7 +23,10 @@ async function loadRuntimeModule(source: string) {
 	await writeFile(filePath, source, 'utf8')
 	const url = pathToFileURL(filePath).href
 	const mod = (await import(url)) as {
-		__kodyRunInRuntime: <T>(value: unknown, callback: () => Promise<T>) => Promise<T>
+		__kodyRunInRuntime: <T>(
+			value: unknown,
+			callback: () => Promise<T>,
+		) => Promise<T>
 		codemode: { tool_call: (args: unknown) => Promise<unknown> }
 		storage: { get: (key: string) => Promise<unknown> }
 		packageContext: Record<string, unknown> | null
@@ -167,34 +170,37 @@ test('runtime exports throw clearly outside a runtime context', async () => {
 	// codemode/storage are Proxies; reading a property outside a runtime
 	// context returns undefined rather than throwing - it's the access at
 	// call time that should fail. We exercise the apply-trap explicitly.
-	expect(() =>
-		(mod.codemode as unknown as () => unknown)(),
-	).toThrowError(/not callable/)
+	expect(() => (mod.codemode as unknown as () => unknown)()).toThrowError(
+		/not callable/,
+	)
 })
 
 test('shared AsyncLocalStorage instance survives multiple module evaluations', async () => {
 	const first = await loadRuntimeModule(runtimeSource)
 	cleanupRuntimeModule = first.cleanup
-	await first.mod.__kodyRunInRuntime({ packageContext: { packageId: 'a' } }, async () => {
-		expect(String(first.mod.packageContext?.packageId ?? '')).toBe('a')
-
-		// A second evaluation of the same source (e.g. a nested dynamic
-		// import in the same isolate) must observe the *same* ALS instance,
-		// otherwise concurrent contexts would silently leak.
-		const second = await loadRuntimeModule(runtimeSource)
-		try {
-			expect(String(second.mod.packageContext?.packageId ?? '')).toBe('a')
-			await second.mod.__kodyRunInRuntime(
-				{ packageContext: { packageId: 'b' } },
-				async () => {
-					expect(String(first.mod.packageContext?.packageId ?? '')).toBe('b')
-					expect(String(second.mod.packageContext?.packageId ?? '')).toBe('b')
-				},
-			)
-			// Outer context restored when inner run() completes.
+	await first.mod.__kodyRunInRuntime(
+		{ packageContext: { packageId: 'a' } },
+		async () => {
 			expect(String(first.mod.packageContext?.packageId ?? '')).toBe('a')
-		} finally {
-			await second.cleanup()
-		}
-	})
+
+			// A second evaluation of the same source (e.g. a nested dynamic
+			// import in the same isolate) must observe the *same* ALS instance,
+			// otherwise concurrent contexts would silently leak.
+			const second = await loadRuntimeModule(runtimeSource)
+			try {
+				expect(String(second.mod.packageContext?.packageId ?? '')).toBe('a')
+				await second.mod.__kodyRunInRuntime(
+					{ packageContext: { packageId: 'b' } },
+					async () => {
+						expect(String(first.mod.packageContext?.packageId ?? '')).toBe('b')
+						expect(String(second.mod.packageContext?.packageId ?? '')).toBe('b')
+					},
+				)
+				// Outer context restored when inner run() completes.
+				expect(String(first.mod.packageContext?.packageId ?? '')).toBe('a')
+			} finally {
+				await second.cleanup()
+			}
+		},
+	)
 })

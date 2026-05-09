@@ -168,8 +168,7 @@ async function revokeAllOAuthGrants(input: {
 				await input.helpers.revokeGrant(grant.id, input.userId)
 				revoked += 1
 			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : String(error)
+				const message = error instanceof Error ? error.message : String(error)
 				input.warnings.push(
 					`OAuth grant revoke failed for grant ${grant.id}: ${message}`,
 				)

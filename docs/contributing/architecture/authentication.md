@@ -1,10 +1,10 @@
 # Authentication
 
-`kody` is multi-user. Each signed-in user has a fully isolated assistant:
-their own packages, jobs, secrets, values, memories, chat threads,
-remote connectors, email inboxes, and durable storage. The auth layer
-is the boundary that establishes which user a request belongs to before
-any handler reads or writes data.
+`kody` is multi-user. Each signed-in user has a fully isolated assistant: their
+own packages, jobs, secrets, values, memories, chat threads, remote connectors,
+email inboxes, and durable storage. The auth layer is the boundary that
+establishes which user a request belongs to before any handler reads or writes
+data.
 
 `kody` uses two related authentication models:
 
@@ -47,38 +47,35 @@ request so cookie signing and verification are available to handlers.
 
 ### Signup gating
 
-Signup is open by default. Deployments can restrict who is allowed to
-create new accounts by setting the optional `ALLOWED_SIGNUP_EMAILS`
-environment variable to a comma-separated list of allowed signup
-emails. When the variable is set, requests with `mode: 'signup'` for
-emails outside the list are rejected with HTTP 403 and an
-`email_not_allowed` audit reason. The variable is consulted only on
-signup; existing users can always log in regardless of allowlist
-membership.
+Signup is open by default. Deployments can restrict who is allowed to create new
+accounts by setting the optional `ALLOWED_SIGNUP_EMAILS` environment variable to
+a comma-separated list of allowed signup emails. When the variable is set,
+requests with `mode: 'signup'` for emails outside the list are rejected with
+HTTP 403 and an `email_not_allowed` audit reason. The variable is consulted only
+on signup; existing users can always log in regardless of allowlist membership.
 
 ## Account deletion
 
 `POST /account/delete` is implemented by
-`packages/worker/src/app/handlers/account-delete.ts` and orchestrated
-by `packages/worker/src/app/account-deletion.ts`.
+`packages/worker/src/app/handlers/account-delete.ts` and orchestrated by
+`packages/worker/src/app/account-deletion.ts`.
 
-- Requires an active `kody_session` cookie and a JSON body with
-  `password` re-authenticating the current user; failures emit an
-  audit event with `action: 'account_delete'`, `result: 'failure'`.
+- Requires an active `kody_session` cookie and a JSON body with `password`
+  re-authenticating the current user; failures emit an audit event with
+  `action: 'account_delete'`, `result: 'failure'`.
 - On success, runs a full per-user cascade across:
   - all `user_id`-scoped D1 tables (children before parents),
   - the shared Vectorize capability index, removing memory, job and
     saved-package entries by id,
-  - `BUNDLE_ARTIFACTS_KV` keys captured from
-    `published_bundle_artifacts` and `archived_job_artifacts`,
+  - `BUNDLE_ARTIFACTS_KV` keys captured from `published_bundle_artifacts` and
+    `archived_job_artifacts`,
   - the user's `StorageRunner` Durable Objects via the user-scoped
     `storageRunnerRpc` stub,
   - all OAuth grants for the user via the bound OAuth provider,
   - the user row itself last so a partial failure can be retried.
-- Returns a structured `{ ok, deletedRowCounts, deletedKvKeys,
-  revokedOAuthGrants, clearedDurableObjects, deletedVectors,
-  warnings }` payload alongside a `Set-Cookie` that destroys the
-  session.
+- Returns a structured
+  `{ ok, deletedRowCounts, deletedKvKeys, revokedOAuthGrants, clearedDurableObjects, deletedVectors, warnings }`
+  payload alongside a `Set-Cookie` that destroys the session.
 
 Related handlers:
 

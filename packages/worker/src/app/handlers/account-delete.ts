@@ -51,7 +51,10 @@ export function createAccountDeleteHandler(env: Env) {
 			if (!userRow) {
 				return Response.json({ error: 'User not found.' }, { status: 404 })
 			}
-			const passwordValid = await verifyPassword(password, userRow.password_hash)
+			const passwordValid = await verifyPassword(
+				password,
+				userRow.password_hash,
+			)
 			if (!passwordValid) {
 				void logAuditEvent({
 					category: 'auth',

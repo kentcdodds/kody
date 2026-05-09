@@ -593,9 +593,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 						? record.ingressSessionKey
 						: null
 				const userId =
-					typeof record.ingressUserId === 'string'
-						? record.ingressUserId
-						: null
+					typeof record.ingressUserId === 'string' ? record.ingressUserId : null
 				return {
 					ingressSessionKey: sessionKey || null,
 					ingressUserId: userId || null,

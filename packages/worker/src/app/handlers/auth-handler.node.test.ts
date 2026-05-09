@@ -23,9 +23,7 @@ function createAuthRequest(
 	}
 }
 
-function createAuthTestContext(
-	options: { allowedSignupEmails?: string } = {},
-) {
+function createAuthTestContext(options: { allowedSignupEmails?: string } = {}) {
 	const testDb = createTestDb()
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
