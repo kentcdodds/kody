@@ -39,6 +39,7 @@ export type RepoCheckRunResult = {
 	ok: boolean
 	results: Array<RepoCheckResult>
 	manifest: AuthoredPackageJson
+	sourceFiles: Record<string, string>
 }
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
@@ -378,10 +379,6 @@ function parseDeclaredDependencies(packageJsonContent: string | null) {
 	}
 }
 
-function createSourceFilesRecord(snapshotFiles: Map<string, string>) {
-	return Object.fromEntries(snapshotFiles) as Record<string, string>
-}
-
 async function validatePackageBundles(input: {
 	env: Env
 	baseUrl: string
@@ -641,20 +638,20 @@ export async function runRepoChecks(input: {
 		/\/+$/,
 		'',
 	)
-	const snapshotFiles = await (async () => {
-		const collected = new Map<string, string>()
+	const sourceFiles = await (async () => {
+		const collected: Record<string, string> = {}
 		for await (const [path, content] of workspaceFilesForSnapshot({
 			workspace: input.workspace,
 			root: sourceRoot,
 		})) {
-			collected.set(path, content)
+			collected[path] = content
 		}
 		return collected
 	})()
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
-			for (const [path, content] of snapshotFiles) {
+			for (const [path, content] of Object.entries(sourceFiles)) {
 				yield [path, content] as const
 			}
 		})(),
@@ -712,7 +709,7 @@ export async function runRepoChecks(input: {
 			: bundleContext
 				? await validatePackageBundles({
 						...bundleContext,
-						sourceFiles: createSourceFilesRecord(snapshotFiles),
+						sourceFiles,
 						entryPoints: bundleTargets,
 					})
 				: {
@@ -745,6 +742,7 @@ export async function runRepoChecks(input: {
 			ok: results.every((result) => result.ok),
 			results,
 			manifest,
+			sourceFiles,
 		}
 	}
 
@@ -770,6 +768,7 @@ export async function runRepoChecks(input: {
 			ok: results.every((result) => result.ok),
 			results,
 			manifest,
+			sourceFiles,
 		}
 	}
 
@@ -788,6 +787,7 @@ export async function runRepoChecks(input: {
 			ok: results.every((result) => result.ok),
 			results,
 			manifest,
+			sourceFiles,
 		}
 	}
 
@@ -835,5 +835,6 @@ export async function runRepoChecks(input: {
 		ok: results.every((result) => result.ok),
 		results,
 		manifest,
+		sourceFiles,
 	}
 }

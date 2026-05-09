@@ -951,6 +951,7 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 	})
 
 	expect(result.status).toBe('published')
+	expect(mockModule.workspaceGlob).not.toHaveBeenCalled()
 	expect(mockModule.git.log).toHaveBeenCalledWith({
 		dir: '/session',
 		ref: 'commit-new',

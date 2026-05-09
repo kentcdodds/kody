@@ -110,7 +110,7 @@ export async function publishFromExternalRef(input: {
 	isFastForward(input: { previousCommit: string }): Promise<boolean>
 	allowForce?: boolean
 	workspace: RepoPublishWorkspace
-	files: Record<string, string>
+	files?: Record<string, string>
 	baseUrl: string
 	manifestPath?: string
 	sourceRoot?: string
@@ -162,7 +162,7 @@ export async function publishFromExternalRef(input: {
 		env: input.env,
 		source,
 		publishedCommit: input.newCommit,
-		files: input.files,
+		files: input.files ?? checks.sourceFiles,
 		baseUrl: input.baseUrl,
 	})
 	return {

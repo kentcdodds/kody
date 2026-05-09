@@ -1457,7 +1457,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: input.newCommit,
 			force: true,
 		})
-		const files = await this.collectWorkspaceFiles()
 		return publishExternalRefSource({
 			env: this.env,
 			sourceId: source.id,
@@ -1470,7 +1469,6 @@ class RepoSessionBase extends DurableObject<Env> {
 				}),
 			allowForce: input.allowForce,
 			workspace: this.workspace,
-			files,
 			baseUrl: input.baseUrl ?? source.source_root,
 			manifestPath: resolveRepoWorkspacePath(
 				source.manifest_path,

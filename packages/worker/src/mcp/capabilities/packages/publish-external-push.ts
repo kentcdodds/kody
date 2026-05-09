@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -11,6 +12,63 @@ const inputSchema = z.object({
 	kody_id: z.string().min(1).optional(),
 	allow_force: z.boolean().optional().default(false),
 })
+
+const externalPublishRetryDelaysMs = [100, 500] as const
+
+function getErrorMessage(error: unknown) {
+	return error instanceof Error ? error.message : String(error)
+}
+
+function isTransientDurableObjectResetError(error: unknown) {
+	const message = getErrorMessage(error)
+	return (
+		message.includes('Durable Object exceeded its CPU time limit') ||
+		message.includes("Durable Object's isolate exceeded its memory limit") ||
+		message.includes('Durable Object was reset')
+	)
+}
+
+function logExternalPublishRetry(input: {
+	sourceId: string
+	repoId: string
+	packageId: string
+	newCommit: string
+	attempt: number
+	nextDelayMs: number
+	error: unknown
+}) {
+	const errorMessage = getErrorMessage(input.error)
+	console.warn(
+		JSON.stringify({
+			message: 'package_publish_external_push transient Durable Object reset',
+			sourceId: input.sourceId,
+			repoId: input.repoId,
+			packageId: input.packageId,
+			newCommit: input.newCommit,
+			attempt: input.attempt,
+			nextDelayMs: input.nextDelayMs,
+			errorMessage,
+		}),
+	)
+	Sentry.captureException(input.error, {
+		tags: {
+			scope: 'package_publish_external_push.transient-do-reset',
+		},
+		extra: {
+			sourceId: input.sourceId,
+			repoId: input.repoId,
+			packageId: input.packageId,
+			newCommit: input.newCommit,
+			attempt: input.attempt,
+			nextDelayMs: input.nextDelayMs,
+			errorMessage,
+		},
+	})
+}
+
+async function delay(ms: number) {
+	await new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 const checkSchema = z.object({
 	kind: z.enum([
@@ -65,38 +123,79 @@ export const publishExternalPushCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const { source } = await resolveOwnedPackageSource({
-				db: ctx.env.APP_DB,
-				userId: user.userId,
-				args: {
-					package_id: args.package_id,
-					kody_id: args.kody_id,
-				},
-			})
-			const publishedCommit = source.published_commit
-			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
-			const newCommit = head.commit
-			if (!newCommit) {
-				throw new Error(
-					`Artifacts repo "${source.repo_id}" has no published HEAD to reconcile.`,
-				)
+			const maxAttempts = externalPublishRetryDelaysMs.length + 1
+			let lastTransientError: unknown = null
+			for (
+				let attemptIndex = 0;
+				attemptIndex < maxAttempts;
+				attemptIndex += 1
+			) {
+				const attempt = attemptIndex + 1
+				const { packageId, source } = await resolveOwnedPackageSource({
+					db: ctx.env.APP_DB,
+					userId: user.userId,
+					args: {
+						package_id: args.package_id,
+						kody_id: args.kody_id,
+					},
+				})
+				const publishedCommit = source.published_commit
+				const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
+				const newCommit = head.commit
+				if (!newCommit) {
+					throw new Error(
+						`Artifacts repo "${source.repo_id}" has no published HEAD to reconcile.`,
+					)
+				}
+				if (newCommit === publishedCommit) {
+					return {
+						status: 'already_published',
+						published_commit: publishedCommit,
+					} as const
+				}
+				const sessionId =
+					attemptIndex === 0
+						? `external-publish-${source.id}`
+						: `external-publish-${source.id}-retry-${attempt}`
+				try {
+					return await repoSessionRpc(
+						ctx.env,
+						sessionId,
+					).publishFromExternalRef({
+						sessionId,
+						sourceId: source.id,
+						userId: user.userId,
+						newCommit,
+						expectedHead: newCommit,
+						allowForce: args.allow_force,
+						baseUrl: ctx.callerContext.baseUrl,
+					})
+				} catch (error) {
+					if (!isTransientDurableObjectResetError(error)) {
+						throw error
+					}
+					lastTransientError = error
+					if (attemptIndex >= externalPublishRetryDelaysMs.length) {
+						break
+					}
+					const nextDelayMs = externalPublishRetryDelaysMs[attemptIndex] ?? 0
+					logExternalPublishRetry({
+						sourceId: source.id,
+						repoId: source.repo_id,
+						packageId,
+						newCommit,
+						attempt,
+						nextDelayMs,
+						error,
+					})
+					await delay(nextDelayMs)
+				}
 			}
-			if (newCommit === publishedCommit) {
-				return {
-					status: 'already_published',
-					published_commit: publishedCommit,
-				} as const
-			}
-			const sessionId = `external-publish-${source.id}`
-			return repoSessionRpc(ctx.env, sessionId).publishFromExternalRef({
-				sessionId,
-				sourceId: source.id,
-				userId: user.userId,
-				newCommit,
-				expectedHead: newCommit,
-				allowForce: args.allow_force,
-				baseUrl: ctx.callerContext.baseUrl,
-			})
+			throw new Error(
+				`package_publish_external_push could not recover after ${maxAttempts} transient Durable Object reset attempts: ${getErrorMessage(
+					lastTransientError,
+				)}`,
+			)
 		},
 	},
 )

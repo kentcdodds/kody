@@ -138,6 +138,44 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 	)
 })
 
+test('finalizes with the source files already collected by checks', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+		sourceFiles: {
+			'package.json': '{"name":"@scope/demo"}',
+			'src/index.ts': 'export default async () => null',
+		},
+	})
+
+	const result = await publishFromExternalRef({
+		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: async () => true,
+		workspace: workspace(),
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(result.status).toBe('published')
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			files: {
+				'package.json': '{"name":"@scope/demo"}',
+				'src/index.ts': 'export default async () => null',
+			},
+		}),
+	)
+})
+
 test('returns no-op when commit is already current', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 
