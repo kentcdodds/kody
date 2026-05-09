@@ -190,6 +190,9 @@ export const searchCapability = defineDomainCapability(
 			ctx: CapabilityContext,
 		) {
 			const query = args.query.trim()
+			if (!query) {
+				throw new Error('Search query is required.')
+			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const [searchRows, retrieverRun] = await Promise.all([
