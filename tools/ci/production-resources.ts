@@ -21,7 +21,6 @@ type CliOptions = {
 
 type ResolvedProductionBindings = {
 	workerName: string
-	packageWorkflowName: string
 	d1DatabaseName: string
 	d1ConfiguredId: string
 	oauthKvTitle: string
@@ -102,10 +101,6 @@ function defaultOauthKvTitle(workerName: string) {
 
 function defaultBundleArtifactsKvTitle(workerName: string) {
 	return truncateWithSuffix(workerName, '-bundle-artifacts', 63)
-}
-
-function defaultPackageWorkflowName(workerName: string) {
-	return truncateWithSuffix(workerName, '-package-workflows', 63)
 }
 
 function ensureD1Database({
@@ -312,7 +307,6 @@ async function resolveProductionBindings({
 
 	const resolved: ResolvedProductionBindings = {
 		workerName,
-		packageWorkflowName: defaultPackageWorkflowName(workerName),
 		d1DatabaseName,
 		d1ConfiguredId,
 		oauthKvTitle,
@@ -355,7 +349,6 @@ async function ensureProductionResources(options: CliOptions) {
 		outConfigPath: options.outConfigPath,
 		envName: 'production',
 		workerName: bindings.workerName,
-		packageWorkflowName: bindings.packageWorkflowName,
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		oauthKvId: oauthKv.id,

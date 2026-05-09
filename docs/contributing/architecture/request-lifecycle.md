@@ -80,11 +80,6 @@ there is no context-specific Workflow class anymore.
   `packageId` from `packageContext`; ad hoc contexts must pass it explicitly.
 - The hub verifies saved-package ownership before queuing export-backed
   workflows and records recent workflow rows for `workflow_list`.
-- Manifests no longer accept `kody.workflows`; `package_save` rejects the field
-  with a clear migration error. The legacy `PackageWorkflowEntrypoint`
-  Cloudflare Workflow class is still registered so in-flight Workflow Durable
-  Objects from prior deploys can drain naturally, but no new runtime path
-  creates instances on it.
 
 ## App server flow
 

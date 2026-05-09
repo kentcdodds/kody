@@ -35,20 +35,6 @@ export type PackageWorkflowCreateInput = WorkflowCreateBaseInput &
 		  }
 	)
 
-export type PackageWorkflowPayload = {
-	version: 1
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
-	workflowName: string
-	exportName: string
-	idempotencyKey: string
-	runAt: string
-	planDate: string | null
-	params?: PackageWorkflowParams
-}
-
 export type PackageWorkflowCreateResult = {
 	ok: true
 	id: string
@@ -294,38 +280,6 @@ export function createPackageWorkflowPlanDate(runAt: string | Date) {
 	return normalizeRunAt(runAt).slice(0, 'YYYY-MM-DD'.length)
 }
 
-export function createPackageWorkflowPayload(input: {
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
-	workflowName: string
-	exportName: string
-	idempotencyKey: string
-	runAt: string | Date
-	params?: PackageWorkflowParams | null
-	planDate?: string | null
-}): PackageWorkflowPayload {
-	const runAt = normalizeRunAt(input.runAt)
-	const params = normalizePackageWorkflowParams(input.params)
-	return {
-		version: 1,
-		userId: normalizeNonEmptyString(input.userId, 'userId'),
-		packageId: normalizeNonEmptyString(input.packageId, 'packageId'),
-		kodyId: normalizeNonEmptyString(input.kodyId, 'kodyId'),
-		sourceId: normalizeNonEmptyString(input.sourceId, 'sourceId'),
-		workflowName: normalizeNonEmptyString(input.workflowName, 'workflowName'),
-		exportName: normalizeWorkflowExportName(input.exportName),
-		idempotencyKey: normalizeNonEmptyString(
-			input.idempotencyKey,
-			'idempotencyKey',
-		),
-		runAt,
-		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
-		...(params === undefined ? {} : { params }),
-	}
-}
-
 function createInlineWorkflowPayload(input: {
 	userId: string
 	workflowName?: string
@@ -368,44 +322,29 @@ function createDynamicPackageWorkflowPayload(input: {
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
 }): DynamicCallableWorkflowPayload {
-	const legacyPayload = createPackageWorkflowPayload({
-		...input,
-		workflowName: normalizeOptionalWorkflowName(
-			input.workflowName,
-			input.exportName,
-		),
-	})
-	const { version: _version, ...payloadWithoutVersion } = legacyPayload
+	const runAt = normalizeRunAt(input.runAt)
+	const params = normalizePackageWorkflowParams(input.params)
+	const workflowName = normalizeNonEmptyString(
+		normalizeOptionalWorkflowName(input.workflowName, input.exportName),
+		'workflowName',
+	)
 	return {
 		version: 2,
 		sourceType: 'package',
-		...payloadWithoutVersion,
+		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		packageId: normalizeNonEmptyString(input.packageId, 'packageId'),
+		kodyId: normalizeNonEmptyString(input.kodyId, 'kodyId'),
+		sourceId: normalizeNonEmptyString(input.sourceId, 'sourceId'),
+		workflowName,
+		exportName: normalizeWorkflowExportName(input.exportName),
+		idempotencyKey: normalizeNonEmptyString(
+			input.idempotencyKey,
+			'idempotencyKey',
+		),
+		runAt,
+		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
+		...(params === undefined ? {} : { params }),
 	}
-}
-
-function validatePackageWorkflowPayload(
-	input: unknown,
-): PackageWorkflowPayload {
-	if (!input || typeof input !== 'object' || Array.isArray(input)) {
-		throw new Error('Package workflow payload must be an object.')
-	}
-	const record = input as Record<string, unknown>
-	const params = normalizePackageWorkflowParams(
-		record['params'] as PackageWorkflowParams | null | undefined,
-	)
-	return createPackageWorkflowPayload({
-		userId: String(record['userId'] ?? ''),
-		packageId: String(record['packageId'] ?? ''),
-		kodyId: String(record['kodyId'] ?? ''),
-		sourceId: String(record['sourceId'] ?? ''),
-		workflowName: String(record['workflowName'] ?? ''),
-		exportName: String(record['exportName'] ?? ''),
-		idempotencyKey: String(record['idempotencyKey'] ?? ''),
-		runAt: String(record['runAt'] ?? ''),
-		params,
-		planDate:
-			typeof record['planDate'] === 'string' ? record['planDate'] : null,
-	})
 }
 
 function validateDynamicCallableWorkflowPayload(
@@ -466,7 +405,7 @@ async function readWorkflowInstanceSummary(
 }
 
 async function getExistingWorkflowInstance(
-	workflow: Workflow<PackageWorkflowPayload>,
+	workflow: Workflow<DynamicCallableWorkflowPayload>,
 	id: string,
 ) {
 	try {
@@ -1082,70 +1021,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		return toSerializableJson(result.result) as JsonValue
 	}
 }
-
-export class PackageWorkflowEntrypointBase extends WorkflowEntrypoint<
-	Env,
-	PackageWorkflowPayload
-> {
-	async run(
-		event: Readonly<WorkflowEvent<PackageWorkflowPayload>>,
-		step: WorkflowStep,
-	) {
-		const payload = validatePackageWorkflowPayload(event.payload)
-		const runAt = new Date(payload.runAt)
-		if (runAt.getTime() > Date.now()) {
-			await step.sleepUntil('wait until package workflow runAt', runAt)
-		}
-		const invokePackageWorkflowExport = async (): Promise<JsonValue> => {
-			const response = await invokePackageExport({
-				env: this.env,
-				baseUrl: getAppBaseUrl({
-					env: this.env,
-					requestUrl: 'https://kody.invalid/',
-				}),
-				token: {
-					tokenId: packageWorkflowTokenId,
-					userId: payload.userId,
-					email: '',
-					displayName: `package:${payload.packageId}`,
-					packageIds: [payload.packageId],
-					packageKodyIds: [payload.kodyId],
-					exportNames: [payload.exportName],
-					sources: ['package-workflow'],
-				},
-				request: {
-					packageIdOrKodyId: payload.packageId,
-					exportName: payload.exportName,
-					params: payload.params,
-					idempotencyKey: payload.idempotencyKey,
-					source: 'package-workflow',
-					topic: payload.workflowName,
-				},
-			})
-			return {
-				status: response.status,
-				body: toSerializableJson(response.body),
-			}
-		}
-		const typedStep = step as unknown as {
-			do(
-				name: string,
-				config: WorkflowStepDoConfig,
-				callback: () => Promise<JsonValue>,
-			): Promise<JsonValue>
-		}
-		return await typedStep.do(
-			'invoke saved package workflow export',
-			workflowStepDoConfig,
-			invokePackageWorkflowExport,
-		)
-	}
-}
-
-export const PackageWorkflowEntrypoint = Sentry.instrumentWorkflowWithSentry(
-	(env: Env) => buildSentryOptions(env),
-	PackageWorkflowEntrypointBase,
-)
 
 export const DynamicCallableWorkflow = Sentry.instrumentWorkflowWithSentry(
 	(env: Env) => buildSentryOptions(env),

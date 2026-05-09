@@ -95,11 +95,6 @@
 					"name": "kody-dynamic-callable-workflows",
 					"class_name": "DynamicCallableWorkflow",
 				},
-				{
-					"binding": "PACKAGE_WORKFLOWS",
-					"name": "kody-package-workflows",
-					"class_name": "PackageWorkflowEntrypoint",
-				},
 			],
 			"assets": {
 				"directory": "./public",
@@ -198,11 +193,6 @@
 					"name": "kody-preview-dynamic-callable-workflows",
 					"class_name": "DynamicCallableWorkflow",
 				},
-				{
-					"binding": "PACKAGE_WORKFLOWS",
-					"name": "kody-preview-package-workflows",
-					"class_name": "PackageWorkflowEntrypoint",
-				},
 			],
 			"assets": {
 				"directory": "./public",
@@ -300,11 +290,6 @@
 					"binding": "DYNAMIC_CALLABLE_WORKFLOWS",
 					"name": "kody-test-dynamic-callable-workflows",
 					"class_name": "DynamicCallableWorkflow",
-				},
-				{
-					"binding": "PACKAGE_WORKFLOWS",
-					"name": "kody-test-package-workflows",
-					"class_name": "PackageWorkflowEntrypoint",
 				},
 			],
 			"assets": {
