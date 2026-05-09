@@ -13,7 +13,20 @@ import { type AppEnv } from '#worker/env-schema.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
-const primaryUserEmail = 'me@kentcdodds.com'
+
+function parseSignupAllowlist(raw: string | undefined): Array<string> | null {
+	if (typeof raw !== 'string') return null
+	const entries = raw
+		.split(',')
+		.map((entry) => entry.trim().toLowerCase())
+		.filter((entry) => entry.length > 0)
+	return entries.length > 0 ? entries : null
+}
+
+function isSignupAllowed(email: string, allowlist: Array<string> | null) {
+	if (!allowlist) return true
+	return allowlist.includes(email)
+}
 
 function isUniqueConstraintError(error: unknown) {
 	let currentError = error
@@ -37,6 +50,7 @@ const dummyPasswordHash =
 
 export function createAuthHandler(appEnv: AppEnv) {
 	const db = createDb(appEnv.APP_DB)
+	const signupAllowlist = parseSignupAllowlist(appEnv.ALLOWED_SIGNUP_EMAILS)
 
 	return {
 		middleware: [],
@@ -95,10 +109,13 @@ export function createAuthHandler(appEnv: AppEnv) {
 				)
 			}
 
-			if (normalizedEmail !== primaryUserEmail) {
+			if (
+				normalizedMode === 'signup' &&
+				!isSignupAllowed(normalizedEmail, signupAllowlist)
+			) {
 				void logAuditEvent({
 					category: 'auth',
-					action: normalizedMode,
+					action: 'signup',
 					result: 'failure',
 					email: normalizedEmail,
 					ip: requestIp,
@@ -107,7 +124,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 				})
 				return Response.json(
 					{
-						error: `Only ${primaryUserEmail} can sign in or sign up.`,
+						error: 'Signup is not enabled for this email address.',
 					},
 					{ status: 403 },
 				)
