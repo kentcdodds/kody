@@ -61,4 +61,3 @@ export function buildGeneratedUiRuntimeImportMap(runtimeScriptHref: string) {
 	)
 	return `<script type="importmap">${importMapJson}</script>`
 }
-
