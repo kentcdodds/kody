@@ -2,6 +2,18 @@
 
 This project uses three Cloudflare storage systems for different purposes.
 
+## Per-user isolation invariant
+
+Kody is multi-user with strict per-user isolation. Every storage layer
+described below is scoped by `user_id` (D1 columns, Vectorize metadata,
+KV key prefixes, Durable Object names) and every read/write path takes
+a `userId` argument. Two users with the same logical identifier (for
+example the same `kind`/`instanceId` pair on a remote connector, or
+the same `sessionId` on an agent turn) land on different durable
+objects and different rows. Any new persistence layer added to the
+project must follow the same convention; user-scoped tests should
+exercise both the "happy" path and a cross-user denial path.
+
 ## D1 (`APP_DB`)
 
 Relational app data lives in D1.
@@ -45,6 +57,9 @@ MCP server runtime state is hosted via a Durable Object class (`MCP`) in
 
 - The Worker forwards authorized MCP requests to `MCP.serve(...).fetch`
 - Durable Objects provide a stateful execution model for MCP operations
+- The DO is keyed by the MCP SDK session id (per-connection); per-user
+  identity is supplied on every request via the OAuth token's `props`
+  (`McpCallerContext.user`) rather than baked into the DO id.
 
 ## Durable Objects (`JobManager` and `StorageRunner`)
 
@@ -64,6 +79,54 @@ Storage split:
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`
+
+## Per-user Durable Object naming
+
+The Durable Objects whose state is intrinsically owned by one user are
+named so that two different users always resolve to two different
+object ids:
+
+- `JobManager` — `idFromName(userId)`
+  (`packages/worker/src/jobs/manager-client.ts`).
+- `StorageRunner` —
+  `idFromName(JSON.stringify([userId, storageId]))`
+  (`packages/worker/src/storage-runner.ts`).
+- `PackageRealtimeSession` and `PackageServiceInstance` — keyed by
+  `(userId, packageId, ...)` via the helpers in
+  `packages/worker/src/package-runtime/`.
+- `RemoteConnectorSession` — `userScopedConnectorSessionKey(userId,
+  kind, instanceId)`. Connectors must connect through the new
+  user-scoped ingress URL `/connectors/u/{userId}/{kind}/{instanceId}`;
+  the legacy non-user-scoped URL is rejected with HTTP 410. The DO
+  carries the ingress user id forward via headers + websocket
+  attachment and verifies the shared secret against that user's row
+  only.
+- `AgentTurnRunner` —
+  `idFromName(JSON.stringify([userId, sessionId]))`. The runner DO
+  also requires every request to carry an `X-Kody-User-Id` header,
+  persists `ownerUserId` on first contact, and rejects mismatched
+  callers with HTTP 403.
+
+The `MCP` and `ChatAgent` Durable Objects are addressed by request
+session/thread id rather than user id; ownership is enforced at the
+request boundary by validating the authenticated user against the
+`McpCallerContext` / `chat_threads` row before routing.
+
+## Per-user runtime context (no shared `globalThis`)
+
+Codemode `execute` calls and package-app worker entrypoints used to
+push the current request's runtime onto `globalThis.__kodyRuntime`
+with a try/finally save/restore. That is now an `AsyncLocalStorage`
+shared between the wrapper and the `kody:runtime` virtual module via
+`Symbol.for('kody.runtimeStorage')`. Two concurrent calls in the same
+isolate observe their own runtime view through the ALS rather than
+racing on a single mutable globalThis slot. See
+`packages/worker/src/package-runtime/module-graph.ts`,
+`packages/worker/src/mcp/run-codemode-registry.ts`, and
+`packages/worker/src/package-runtime/package-app.ts` for the wrapper
+implementations, and
+`packages/worker/src/package-runtime/runtime-isolation.node.test.ts`
+for the concurrent two-runtime test that pins this invariant.
 
 ## Configuration reference
 

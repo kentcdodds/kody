@@ -25,25 +25,33 @@ conflict with the guidance here, treat this document as the project's intent.
 
 ## Who this is for
 
-This project is intentionally single-user.
+Kody is a multi-user personal assistant. Each authenticated user gets a
+strictly isolated assistant: their own packages, jobs, secrets, values,
+memories, chat threads, remote connectors, email inboxes, and durable
+storage. There is no shared state between users.
 
-- Primary user: `me@kentcdodds.com`
-- Product posture: personal assistant for Kent
-- Optimization target: useful behavior for one trusted user, not generic
-  multi-tenant safety or broad organizational administration
+- Optimization target: a high-quality personal assistant for each
+  individual signed-in user, with hard isolation between users
+- Onboarding: signup is open by default; deployments may opt into a
+  per-deployment allowlist via the `ALLOWED_SIGNUP_EMAILS` env var
+  (comma-separated list of allowed signup emails)
+- Primary first-party user: `me@kentcdodds.com` (the maintainer's own
+  account); tests, fixtures, and historical examples often reference
+  this address but it is not a privileged account at runtime
 
 Optimize for:
 
-- Fast iteration
-- Personal workflows and preferences
+- Per-user isolation as a first-class invariant, enforced at the
+  storage, durable-object, vectorize, and runtime layers
+- Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
 
 It does not need to optimize for:
 
-- Multi-user account models
-- Per-organization tenancy
+- Per-organization tenancy or shared-team workspaces
 - Fine-grained permission delegation between many distinct humans
-- Broad consumer onboarding flows
+  inside a single account
+- Enterprise SSO / directory provisioning
 
 ## Product intent
 
@@ -67,6 +75,10 @@ When working in this repo, do not assume:
 - This project should evolve into a large catalog of explicitly declared MCP
   tools.
 - This project is trying to become a generic starter kit for others.
+- This is a single-user system. Per-user isolation is now an invariant,
+  not a future direction; treat any code path that reads or writes data
+  without a `userId` (or that shares a Durable Object id across users)
+  as a bug.
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes
@@ -77,9 +89,10 @@ that exists in the repository.
 
 When updating docs or explaining architecture:
 
-- Describe the repo as an experiment and foundation for a personal assistant.
-- Mention the single-user assumption when it materially affects product or auth
-  decisions.
+- Describe the repo as a multi-user personal-assistant platform with
+  strict per-user isolation, not a shared workspace product.
+- Mention the per-user isolation invariant when it materially affects
+  product, auth, or storage decisions.
 - Keep present behavior separate from design notes and proposals.
 - Prefer focused docs over expanding `AGENTS.md`.
 
@@ -88,8 +101,10 @@ When updating docs or explaining architecture:
 If you are an agent working in this repo:
 
 - Read this file before making product-level decisions.
-- Avoid pushing the design toward multi-tenant abstractions unless explicitly
-  asked.
+- Per-user isolation is a hard invariant. Any new feature that touches
+  data must be scoped by `userId` at the data layer, by user-namespaced
+  Durable Object ids at the runtime layer, and by user-aware filters at
+  the search/vector layer.
 - Avoid proposing a large static MCP tool catalog as the default direction.
 - Keep interoperability with MCP hosts in mind, especially around compact tool
   surfaces and clear server instructions.
