@@ -27,7 +27,8 @@ export const packageRuntimeLogLevelValues = [
 	'error',
 ] as const
 
-export type PackageRuntimeLogLevel = (typeof packageRuntimeLogLevelValues)[number]
+export type PackageRuntimeLogLevel =
+	(typeof packageRuntimeLogLevelValues)[number]
 
 export type PackageRuntimeDebugContext = {
 	packageId: string
@@ -137,7 +138,8 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
 	if (typeof value !== 'string' || value.length === 0) return {}
 	try {
 		const parsed = JSON.parse(value) as unknown
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+			return {}
 		return parsed as Record<string, unknown>
 	} catch {
 		return {}
@@ -189,7 +191,8 @@ function mapLogRow(row: Record<string, unknown>): PackageRuntimeLogRecord {
 		sequence: Number(row['sequence']) || 0,
 		level: String(row['level']) as PackageRuntimeLogLevel,
 		message: String(row['message']),
-		fields: row['fields_json'] == null ? null : parseJsonRecord(row['fields_json']),
+		fields:
+			row['fields_json'] == null ? null : parseJsonRecord(row['fields_json']),
 		createdAt: String(row['created_at']),
 	}
 }
@@ -220,11 +223,13 @@ function getErrorFields(error: unknown) {
 }
 
 function normalizeLogs(logs: Array<string> | undefined) {
-	return (logs ?? []).slice(0, maxPersistedLogEntries).map((message, index) => ({
-		sequence: index,
-		level: 'log' as const,
-		message: truncateUtf8(String(message), maxPersistedTextBytes),
-	}))
+	return (logs ?? [])
+		.slice(0, maxPersistedLogEntries)
+		.map((message, index) => ({
+			sequence: index,
+			level: 'log' as const,
+			message: truncateUtf8(String(message), maxPersistedTextBytes),
+		}))
 }
 
 export async function beginPackageRuntimeRun(input: {

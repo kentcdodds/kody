@@ -458,7 +458,8 @@ async function executePublishedJobArtifact(input: {
 						kodyId: input.artifact.packageContext.kodyId,
 						sourceId:
 							input.artifact.packageContext.sourceId ?? input.job.sourceId,
-						publishedCommit: source?.published_commit ?? input.job.publishedCommit,
+						publishedCommit:
+							source?.published_commit ?? input.job.publishedCommit,
 						surface: 'job',
 						name: input.job.name,
 						storageId: input.job.storageId,

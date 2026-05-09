@@ -24,8 +24,9 @@ function createDebugDatabase() {
 		return rows
 			.toSorted(
 				(left, right) =>
-					String(right['started_at']).localeCompare(String(left['started_at'])) ||
-					String(right['id']).localeCompare(String(left['id'])),
+					String(right['started_at']).localeCompare(
+						String(left['started_at']),
+					) || String(right['id']).localeCompare(String(left['id'])),
 			)
 			.slice(0, limit)
 	}
@@ -63,7 +64,9 @@ function createDebugDatabase() {
 									updated_at: params[18],
 								})
 							}
-							if (query.includes('INSERT OR REPLACE INTO package_runtime_logs')) {
+							if (
+								query.includes('INSERT OR REPLACE INTO package_runtime_logs')
+							) {
 								logs.push({
 									id: params[0],
 									run_id: params[1],

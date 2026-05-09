@@ -25,14 +25,7 @@ export const packageDebugListRunsCapability = defineDomainCapability(
 		name: 'package_debug_list_runs',
 		description:
 			'List recent retained runtime runs for live package exports, apps, services, jobs, workflows, subscriptions, and retrievers.',
-		keywords: [
-			'package',
-			'debug',
-			'logs',
-			'runs',
-			'observability',
-			'trace',
-		],
+		keywords: ['package', 'debug', 'logs', 'runs', 'observability', 'trace'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
