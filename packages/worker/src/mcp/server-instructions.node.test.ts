@@ -32,7 +32,9 @@ test('surfaces remote connector identifiers and compacts long descriptions', () 
 
 	expect(shortConnectorLine).toContain('`home/default` (`remote:home:default`)')
 	expect(shortConnectorLine).toContain(shortDescription)
-	expect(longConnectorLine).toContain('`tools/default` (`remote:tools:default`)')
+	expect(longConnectorLine).toContain(
+		'`tools/default` (`remote:tools:default`)',
+	)
 	expect(longConnectorLine).toContain('...')
 	expect(longConnectorLine).not.toContain(longDescription)
 	expect(longConnectorDescription.length).toBeLessThanOrEqual(240)

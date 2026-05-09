@@ -201,7 +201,9 @@ test('buildCodemodeCapabilityExecuteCode runs the intended capability with the o
 		},
 	})
 
-	await expect(new Script(`(${code})()`).runInContext(context)).resolves.toBe('ok')
+	await expect(new Script(`(${code})()`).runInContext(context)).resolves.toBe(
+		'ok',
+	)
 	expect(calls).toEqual([
 		{
 			capability: 'value_set',
