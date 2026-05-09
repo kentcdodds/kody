@@ -32,9 +32,11 @@ shared state between users.
 
 - Optimization target: a high-quality personal assistant for each individual
   signed-in user, with hard isolation between users
-- Onboarding: signup is open by default; deployments may opt into a
-  per-deployment allowlist via the `ALLOWED_SIGNUP_EMAILS` env var
-  (comma-separated list of allowed signup emails)
+- Onboarding: signup is open. There is no email allowlist, no invite flow, and
+  no privileged account at runtime — any user who can reach the signup endpoint
+  can create an account. Operators who want to restrict who can sign up should
+  put the worker behind their own network-layer access control rather than
+  expecting the application to gate it.
 - Primary first-party user: `me@kentcdodds.com` (the maintainer's own account);
   tests, fixtures, and historical examples often reference this address but it
   is not a privileged account at runtime

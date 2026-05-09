@@ -14,20 +14,6 @@ import { type AppEnv } from '#worker/env-schema.ts'
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
 
-function parseSignupAllowlist(raw: string | undefined): Array<string> | null {
-	if (typeof raw !== 'string') return null
-	const entries = raw
-		.split(',')
-		.map((entry) => entry.trim().toLowerCase())
-		.filter((entry) => entry.length > 0)
-	return entries.length > 0 ? entries : null
-}
-
-function isSignupAllowed(email: string, allowlist: Array<string> | null) {
-	if (!allowlist) return true
-	return allowlist.includes(email)
-}
-
 function isUniqueConstraintError(error: unknown) {
 	let currentError = error
 	while (currentError instanceof Error) {
@@ -50,7 +36,6 @@ const dummyPasswordHash =
 
 export function createAuthHandler(appEnv: AppEnv) {
 	const db = createDb(appEnv.APP_DB)
-	const signupAllowlist = parseSignupAllowlist(appEnv.ALLOWED_SIGNUP_EMAILS)
 
 	return {
 		middleware: [],
@@ -106,27 +91,6 @@ export function createAuthHandler(appEnv: AppEnv) {
 				return Response.json(
 					{ error: 'Email, password, and mode are required.' },
 					{ status: 400 },
-				)
-			}
-
-			if (
-				normalizedMode === 'signup' &&
-				!isSignupAllowed(normalizedEmail, signupAllowlist)
-			) {
-				void logAuditEvent({
-					category: 'auth',
-					action: 'signup',
-					result: 'failure',
-					email: normalizedEmail,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'email_not_allowed',
-				})
-				return Response.json(
-					{
-						error: 'Signup is not enabled for this email address.',
-					},
-					{ status: 403 },
 				)
 			}
 

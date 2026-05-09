@@ -45,14 +45,13 @@ request so cookie signing and verification are available to handlers.
 - Returns signed session cookie via `Set-Cookie` on success
 - Emits structured audit events through `packages/worker/src/app/audit-log.ts`
 
-### Signup gating
+### Signup posture
 
-Signup is open by default. Deployments can restrict who is allowed to create new
-accounts by setting the optional `ALLOWED_SIGNUP_EMAILS` environment variable to
-a comma-separated list of allowed signup emails. When the variable is set,
-requests with `mode: 'signup'` for emails outside the list are rejected with
-HTTP 403 and an `email_not_allowed` audit reason. The variable is consulted only
-on signup; existing users can always log in regardless of allowlist membership.
+Signup is open. The auth handler does not gate on email — anyone who can reach
+`POST /auth` with `mode: 'signup'` and a valid body can create an account. There
+is no application-level allowlist, invite flow, or privileged "primary user".
+Operators who want to restrict who can sign up should put the worker behind
+their own network-layer access control.
 
 ## Account deletion
 

@@ -23,12 +23,11 @@ function createAuthRequest(
 	}
 }
 
-function createAuthTestContext(options: { allowedSignupEmails?: string } = {}) {
+function createAuthTestContext() {
 	const testDb = createTestDb()
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
-		ALLOWED_SIGNUP_EMAILS: options.allowedSignupEmails,
 	})
 
 	return {
@@ -163,7 +162,7 @@ test('auth handler rejects malformed request payloads', async () => {
 	})
 })
 
-test('auth handler returns invalid credentials for unknown logins regardless of allowlist', async () => {
+test('auth handler returns invalid credentials for unknown logins', async () => {
 	const { request } = createAuthTestContext()
 
 	const unknownUserLoginResponse = await request({
@@ -177,32 +176,7 @@ test('auth handler returns invalid credentials for unknown logins regardless of 
 	})
 })
 
-test('auth handler enforces the configured signup allowlist', async () => {
-	const { request, testDb } = createAuthTestContext({
-		allowedSignupEmails: 'me@kentcdodds.com, allowed@example.com',
-	})
-
-	const forbiddenSignupResponse = await request({
-		email: 'new@example.com',
-		password: 'secret',
-		mode: 'signup',
-	})
-	expect(forbiddenSignupResponse.status).toBe(403)
-	expect(await forbiddenSignupResponse.json()).toEqual({
-		error: 'Signup is not enabled for this email address.',
-	})
-	expect(testDb.users.has('new@example.com')).toBe(false)
-
-	const allowedSignupResponse = await request({
-		email: 'allowed@example.com',
-		password: 'secret',
-		mode: 'signup',
-	})
-	expect(allowedSignupResponse.status).toBe(200)
-	expect(testDb.users.has('allowed@example.com')).toBe(true)
-})
-
-test('auth handler permits open signup when no allowlist is configured', async () => {
+test('auth handler permits open signup for any new email', async () => {
 	const { request, testDb } = createAuthTestContext()
 
 	const userOneSignup = await request({
