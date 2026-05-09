@@ -494,6 +494,96 @@ test('package search formatting keeps runnable package actions in structured out
 	expect(packageMatch?.nextStep).toEqual(expect.any(String))
 })
 
+test('package search formatting surfaces matched action recipes compactly', () => {
+	const markdown = formatSearchMarkdown({
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-123',
+				kodyId: 'google-products',
+				name: '@kentcdodds/google-products',
+				title: '@kentcdodds/google-products',
+				description: 'Google product helpers.',
+				tags: ['google', 'calendar'],
+				hasApp: false,
+				actionMatches: [
+					{
+						subpath: './calendar',
+						description: 'Create a calendar event.',
+						typeDefinition:
+							'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
+						functions: [
+							{
+								name: 'createEvent',
+								description: 'Create a calendar event.',
+								typeDefinition:
+									'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
+							},
+						],
+						score: 0.92,
+						matchedTerms: ['calendar', 'create', 'event'],
+					},
+				],
+			},
+		],
+	})
+	const [packageMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-123',
+				kodyId: 'google-products',
+				name: '@kentcdodds/google-products',
+				title: '@kentcdodds/google-products',
+				description: 'Google product helpers.',
+				tags: ['google', 'calendar'],
+				hasApp: false,
+				actionMatches: [
+					{
+						subpath: './calendar',
+						description: 'Create a calendar event.',
+						typeDefinition:
+							'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
+						functions: [
+							{
+								name: 'createEvent',
+								description: 'Create a calendar event.',
+								typeDefinition:
+									'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
+							},
+						],
+						score: 0.92,
+						matchedTerms: ['calendar', 'create', 'event'],
+					},
+				],
+			},
+		],
+	})
+
+	expect(markdown).toContain(
+		'Best action: `createEvent` via `import { createEvent } from "kody:@kentcdodds/google-products/calendar"`',
+	)
+	expect(packageMatch).toMatchObject({
+		type: 'package',
+		usage:
+			'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
+		actionMatches: [
+			expect.objectContaining({
+				subpath: './calendar',
+				importSpecifier: 'kody:@kentcdodds/google-products/calendar',
+				functions: [
+					expect.objectContaining({
+						name: 'createEvent',
+						usage:
+							'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
+					}),
+				],
+			}),
+		],
+	})
+})
+
 test('search markdown keeps broad query results compact', () => {
 	const markdown = formatSearchMarkdown({
 		warnings: [

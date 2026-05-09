@@ -258,6 +258,14 @@ contexts. OAuth helpers are imported from **`kody:runtime`**:
 
 **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
 
+`createAuthenticatedFetch(providerName)` is async. Await it before calling the
+returned fetch wrapper:
+
+```ts
+const googleFetch = await createAuthenticatedFetch('google-business')
+const response = await googleFetch('/calendar/v3/users/me/calendarList')
+```
+
 Integration names should usually follow `<provider>-<purpose>` when multiple
 accounts may exist, such as `google`, `google-business`, or
 `google-youtube-brand`. Call **`integration_list`** up front when a provider may

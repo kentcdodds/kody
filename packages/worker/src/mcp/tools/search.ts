@@ -39,6 +39,7 @@ import {
 	buildPackageReadmeSnippet,
 	type PackageReadmeSnippet,
 } from '#worker/package-registry/package-readme.ts'
+import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	getRemoteConnectorStatus,
@@ -58,6 +59,7 @@ import {
 	resolveConversationId,
 } from './tool-call-context.ts'
 import {
+	type PackageActionMatch,
 	type SearchMatch,
 	type SearchResultStructuredContent,
 	formatEntityDetailMarkdown,
@@ -70,6 +72,7 @@ import { prependToolMetadataContent } from './tool-response-content.ts'
 import {
 	type SearchIntent,
 	type SearchableEntityDescriptor,
+	extractMeaningfulSearchTokens,
 	extractSearchTokens,
 	normalizeSearchText,
 	understandSearchQuery,
@@ -303,9 +306,25 @@ function buildRecommendedNextStep(
 		return `Found saved package \`${topPackage.kodyId}\` and integration \`${topIntegration.integrationName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the integration detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
 	}
 	if (topMatch?.type === 'package') {
+		const [actionMatch] = topMatch.actionMatches ?? []
+		const actionFunction =
+			actionMatch?.functions.find((fn) => fn.name !== 'default') ??
+			actionMatch?.functions[0] ??
+			null
+		if (actionMatch && actionFunction) {
+			const importSpecifier = buildPackageImportSpecifier(
+				topMatch.name,
+				actionMatch.subpath,
+			)
+			const importStatement =
+				actionFunction.name === 'default'
+					? `import action from ${JSON.stringify(importSpecifier)}`
+					: `import { ${actionFunction.name} } from ${JSON.stringify(importSpecifier)}`
+			return `Use \`${importStatement}\` for the matched package action. Inspect \`search({ entity: "${topMatch.kodyId}:package" })\` only if you need more exports or full package detail.`
+		}
 		return topMatch.hasApp
 			? `Open the saved app with \`open_generated_ui({ kody_id: "${topMatch.kodyId}" })\` or inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports and jobs.`
-			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`kody:@${topMatch.kodyId}\` or a subpath export.`
+			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`${buildPackageImportSpecifier(topMatch.name, '.')}\` or a subpath export.`
 	}
 	if (topMatch?.type === 'integration') {
 		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
@@ -529,6 +548,67 @@ function scoreMatchedTerms(
 		if (fieldTokens.has(term)) matched += 1
 	}
 	return matched / Math.max(1, matchedTerms.length)
+}
+
+function buildPackageExportSearchFields(
+	exportDetail: PackageSearchProjection['exports'][number],
+) {
+	return [
+		exportDetail.subpath,
+		exportDetail.runtimeTarget ?? '',
+		exportDetail.typesPath ?? '',
+		exportDetail.description ?? '',
+		exportDetail.typeDefinition ?? '',
+		...flattenReferencedTypeFields(exportDetail.referencedTypes),
+		...(exportDetail.functions ?? []).flatMap((fn) => [
+			fn.name,
+			fn.description ?? '',
+			fn.typeDefinition ?? '',
+			...flattenReferencedTypeFields(fn.referencedTypes),
+		]),
+	]
+}
+
+function buildPackageActionMatches(input: {
+	query: string
+	meaningfulTokens: ReadonlyArray<string>
+	exports: ReadonlyArray<PackageSearchProjection['exports'][number]>
+}): Array<PackageActionMatch> {
+	if (input.meaningfulTokens.length === 0) return []
+	return input.exports
+		.map((exportDetail) => {
+			const searchFields = buildPackageExportSearchFields(exportDetail)
+			const matchedTerms = input.meaningfulTokens.filter((token) =>
+				scoreMatchedTerms(searchFields, [token]),
+			)
+			const termCoverage =
+				matchedTerms.length / Math.max(1, input.meaningfulTokens.length)
+			const score =
+				lexicalScore(input.query, searchFields.join('\n')) +
+				Math.min(0.5, termCoverage * 0.65)
+			return {
+				subpath: exportDetail.subpath,
+				description: exportDetail.description,
+				typeDefinition: exportDetail.typeDefinition,
+				functions: (exportDetail.functions ?? []).map((fn) => ({
+					name: fn.name,
+					description: fn.description,
+					typeDefinition: fn.typeDefinition,
+				})),
+				score,
+				matchedTerms,
+			} satisfies PackageActionMatch
+		})
+		.filter(
+			(match) =>
+				match.functions.length > 0 &&
+				(match.matchedTerms.length >= 2 || match.score >= 0.35),
+		)
+		.sort((left, right) => {
+			if (right.score !== left.score) return right.score - left.score
+			return left.subpath.localeCompare(right.subpath)
+		})
+		.slice(0, 3)
 }
 
 function scoreConstraintBoost(
@@ -844,6 +924,11 @@ function buildPackageCandidates(input: {
 				? entry.projection.subscriptions
 				: []
 			const readmeSnippet = entry.readmeSnippet?.snippet ?? ''
+			const actionMatches = buildPackageActionMatches({
+				query: input.query,
+				meaningfulTokens: extractMeaningfulSearchTokens(input.query),
+				exports,
+			})
 			const document = [
 				buildPackageSearchDocument(entry.projection),
 				readmeSnippet,
@@ -866,6 +951,7 @@ function buildPackageCandidates(input: {
 					tags: entry.record.tags,
 					hasApp: entry.record.hasApp,
 					readmeSnippet: entry.readmeSnippet ?? null,
+					actionMatches,
 				},
 				type: 'package' as const,
 				id: entry.record.kodyId,
@@ -920,7 +1006,7 @@ function buildPackageCandidates(input: {
 					...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 				],
 				scoreComponents: buildCandidateBaseScore({
-					lexical,
+					lexical: Math.max(lexical, (actionMatches[0]?.score ?? 0) * 0.8),
 					vector,
 				}),
 			}

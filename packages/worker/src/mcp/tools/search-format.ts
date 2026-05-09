@@ -34,6 +34,19 @@ type SearchMatchType =
 	| 'secret'
 	| 'retriever_result'
 
+export type PackageActionMatch = {
+	subpath: string
+	description: string | null
+	typeDefinition: string | null
+	functions: Array<{
+		name: string
+		description: string | null
+		typeDefinition: string | null
+	}>
+	score: number
+	matchedTerms: Array<string>
+}
+
 export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
 	offline: boolean
@@ -116,6 +129,20 @@ export type SlimSearchMatch =
 				snippet: string
 				truncated: boolean
 			} | null
+			actionMatches: Array<{
+				subpath: string
+				importSpecifier: string
+				description: string | null
+				typeDefinition: string | null
+				functions: Array<{
+					name: string
+					description: string | null
+					typeDefinition: string | null
+					usage: string
+				}>
+				score: number
+				matchedTerms: Array<string>
+			}>
 			nextStep?: string
 	  }
 	| {
@@ -344,6 +371,7 @@ export type SearchMatch =
 				snippet: string
 				truncated: boolean
 			} | null
+			actionMatches?: Array<PackageActionMatch>
 	  }
 	| {
 			type: 'value'
@@ -390,6 +418,29 @@ function buildCapabilityUsage(name: string) {
 
 function buildPackageRootImportUsage(packageName: string) {
 	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(packageName, '.'))}`
+}
+
+function buildPackageActionImportUsage(input: {
+	packageName: string
+	subpath: string
+	functionName: string
+}) {
+	const importSpecifier = buildPackageImportSpecifier(
+		input.packageName,
+		input.subpath,
+	)
+	if (input.functionName === 'default') {
+		return `import action from ${JSON.stringify(importSpecifier)}`
+	}
+	return `import { ${input.functionName} } from ${JSON.stringify(importSpecifier)}`
+}
+
+function getPrimaryPackageActionFunction(actionMatch: PackageActionMatch) {
+	return (
+		actionMatch.functions.find((fn) => fn.name !== 'default') ??
+		actionMatch.functions[0] ??
+		null
+	)
 }
 
 function formatInlineTypeDefinition(typeDefinition: string) {
@@ -514,7 +565,15 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 	}
 	if (match.type === 'package') {
 		const entityRef = buildEntityRef(match.kodyId, 'package')
-		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+		const [actionMatch] = match.actionMatches ?? []
+		const actionFunction = actionMatch
+			? getPrimaryPackageActionFunction(actionMatch)
+			: null
+		const actionSummary =
+			actionMatch && actionFunction
+				? ` Best action: ${formatMarkdownInlineCode(actionFunction.name)} via ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
+				: ''
+		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}`
 	}
 	if (match.type === 'value') {
 		const entityRef = buildEntityRef(match.valueId, 'value')
@@ -555,9 +614,41 @@ export function toSlimStructuredMatches(input: {
 			const openGeneratedUiUsage = match.hasApp
 				? buildPackageAppUsage(match.kodyId)
 				: null
+			const actionMatches = (match.actionMatches ?? []).map((actionMatch) => {
+				const importSpecifier = buildPackageImportSpecifier(
+					match.name,
+					actionMatch.subpath,
+				)
+				return {
+					subpath: actionMatch.subpath,
+					importSpecifier,
+					description: actionMatch.description,
+					typeDefinition: actionMatch.typeDefinition,
+					functions: actionMatch.functions.map((fn) => ({
+						name: fn.name,
+						description: fn.description,
+						typeDefinition: fn.typeDefinition,
+						usage: buildPackageActionImportUsage({
+							packageName: match.name,
+							subpath: actionMatch.subpath,
+							functionName: fn.name,
+						}),
+					})),
+					score: actionMatch.score,
+					matchedTerms: actionMatch.matchedTerms,
+				}
+			})
+			const [primaryAction] = actionMatches
+			const primaryActionFunction = primaryAction
+				? (primaryAction.functions.find((fn) => fn.name !== 'default') ??
+					primaryAction.functions[0] ??
+					null)
+				: null
 			const nextStep = match.hasApp
 				? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
-				: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
+				: primaryAction && primaryActionFunction
+					? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.`
+					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
 			return {
 				type: 'package',
 				id: match.kodyId,
@@ -566,7 +657,10 @@ export function toSlimStructuredMatches(input: {
 				kodyId: match.kodyId,
 				title: match.title,
 				description: match.description,
-				usage: openGeneratedUiUsage ?? rootImportUsage,
+				usage:
+					primaryActionFunction?.usage ??
+					openGeneratedUiUsage ??
+					rootImportUsage,
 				rootImportUsage,
 				openGeneratedUiUsage,
 				tags: match.tags,
@@ -581,6 +675,7 @@ export function toSlimStructuredMatches(input: {
 							truncated: match.readmeSnippet.truncated,
 						}
 					: null,
+				actionMatches,
 				nextStep,
 			}
 		}

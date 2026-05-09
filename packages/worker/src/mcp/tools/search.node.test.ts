@@ -13,14 +13,31 @@ import {
 	type PackageSearchRow,
 } from './search.ts'
 
-function createPackageExportProjection(subpath: string) {
+function createPackageExportProjection(
+	subpath: string,
+	options: {
+		description?: string
+		typeDefinition?: string
+		functionName?: string
+		functionDescription?: string
+	} = {},
+) {
 	return {
 		subpath,
 		runtimeTarget: null,
 		typesPath: null,
-		description: null,
-		typeDefinition: null,
-		functions: [],
+		description: options.description ?? null,
+		typeDefinition: options.typeDefinition ?? null,
+		functions: options.functionName
+			? [
+					{
+						name: options.functionName,
+						description: options.functionDescription ?? null,
+						typeDefinition: options.typeDefinition ?? null,
+						referencedTypes: [],
+					},
+				]
+			: [],
 		referencedTypes: [],
 	}
 }
@@ -510,6 +527,142 @@ test('searchUnified ranks related packages and integrations for operate queries'
 		type: 'package',
 		kodyId: 'spotify',
 	})
+})
+
+test('searchUnified annotates high-confidence package action matches', async () => {
+	const registry = buildCapabilityRegistry([])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'google calendar create event',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [
+				{
+					record: {
+						id: 'google-pkg',
+						userId: 'user-1',
+						name: '@kentcdodds/google-products',
+						kodyId: 'google-products',
+						description: 'Google product helpers.',
+						tags: ['google', 'calendar'],
+						searchText: 'Gmail Calendar Drive helpers',
+						sourceId: 'source-google',
+						hasApp: false,
+						createdAt: '2026-04-20T00:00:00.000Z',
+						updatedAt: '2026-04-20T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kentcdodds/google-products',
+						kodyId: 'google-products',
+						description: 'Google product helpers.',
+						tags: ['google', 'calendar'],
+						searchText: 'Gmail Calendar Drive helpers',
+						hasApp: false,
+						appEntry: null,
+						exports: [
+							createPackageExportProjection('./calendar', {
+								description: 'Create a calendar event.',
+								functionName: 'createEvent',
+								functionDescription: 'Create a calendar event.',
+								typeDefinition:
+									'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
+							}),
+							createPackageExportProjection('./gmail', {
+								description: 'Search Gmail messages.',
+								functionName: 'searchMessages',
+								functionDescription: 'Search Gmail messages.',
+							}),
+						],
+						jobs: [],
+						services: [],
+						subscriptions: [],
+						retrievers: [],
+					},
+				},
+			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	const packageMatch = result.matches[0]
+	expect(packageMatch).toMatchObject({
+		type: 'package',
+		kodyId: 'google-products',
+		actionMatches: [
+			expect.objectContaining({
+				subpath: './calendar',
+				functions: [
+					expect.objectContaining({
+						name: 'createEvent',
+					}),
+				],
+			}),
+		],
+	})
+	expect(result.guidance).toContain(
+		'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
+	)
+})
+
+test('searchUnified leaves broad package queries flexible without action matches', async () => {
+	const registry = buildCapabilityRegistry([])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'google products helpers',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [
+				{
+					record: {
+						id: 'google-pkg',
+						userId: 'user-1',
+						name: '@kentcdodds/google-products',
+						kodyId: 'google-products',
+						description: 'Google product helpers.',
+						tags: ['google'],
+						searchText: 'Gmail Calendar Drive helpers',
+						sourceId: 'source-google',
+						hasApp: false,
+						createdAt: '2026-04-20T00:00:00.000Z',
+						updatedAt: '2026-04-20T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kentcdodds/google-products',
+						kodyId: 'google-products',
+						description: 'Google product helpers.',
+						tags: ['google'],
+						searchText: 'Gmail Calendar Drive helpers',
+						hasApp: false,
+						appEntry: null,
+						exports: [
+							createPackageExportProjection('./calendar', {
+								description: 'Create a calendar event.',
+								functionName: 'createEvent',
+							}),
+						],
+						jobs: [],
+						services: [],
+						subscriptions: [],
+						retrievers: [],
+					},
+				},
+			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'google-products',
+		actionMatches: [],
+	})
+	expect(result.guidance).toContain(
+		'search({ entity: "google-products:package" })',
+	)
 })
 
 test('searchUnified prefers safer package wrappers over raw low-level capabilities', async () => {
