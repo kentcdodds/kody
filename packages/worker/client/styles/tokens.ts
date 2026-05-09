@@ -5,11 +5,9 @@ export const colors = {
 	primaryActive: 'var(--color-primary-active)',
 	primaryText: 'var(--color-primary-text)',
 	primarySoftest: 'color-mix(in srgb, var(--color-primary) 6%, transparent)',
-	primarySoftSubtle: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
 	primarySoft: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
 	primarySoftStrong:
 		'color-mix(in srgb, var(--color-primary) 15%, transparent)',
-	primarySoftHover: 'color-mix(in srgb, var(--color-primary) 18%, transparent)',
 	onPrimary: 'var(--color-on-primary)',
 	background: 'var(--color-background)',
 	surface: 'var(--color-surface)',
@@ -65,7 +63,6 @@ export const radius = {
 export const shadows = {
 	sm: 'var(--shadow-sm)',
 	md: 'var(--shadow-md)',
-	lg: 'var(--shadow-lg)',
 } as const
 
 // Transition tokens
@@ -84,5 +81,4 @@ export const breakpoints = {
 export const mq = {
 	mobile: `@media (max-width: ${breakpoints.mobile})`,
 	tablet: `@media (max-width: ${breakpoints.tablet})`,
-	desktop: `@media (min-width: ${breakpoints.tablet})`,
 } as const
