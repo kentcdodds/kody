@@ -2,16 +2,8 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { listValues } from '#mcp/values/service.ts'
-import {
-	buildSavedPackageSearchRows,
-	loadDownRemoteConnectorStatuses,
-	loadOptionalSearchRows,
-	resolveSearchMemoryContext,
-	searchUnified,
-} from '#mcp/tools/search.ts'
 import {
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
@@ -79,6 +71,10 @@ async function loadSearchRows(input: {
 	userId: string | null
 }) {
 	const { env, callerContext } = input.ctx
+	const { getCapabilityRegistryForContext } =
+		await import('#mcp/capabilities/registry.ts')
+	const { buildSavedPackageSearchRows, loadOptionalSearchRows } =
+		await import('#mcp/tools/search.ts')
 	const [registry, optionalRows] = await Promise.all([
 		getCapabilityRegistryForContext({ env, callerContext }),
 		loadOptionalSearchRows({
@@ -127,9 +123,9 @@ async function runPackageRetrieverSearch(input: {
 		return { results: [], warnings: [] }
 	}
 	try {
-		const { runPackageRetrievers } = await import(
-			'#worker/package-retrievers/service.ts'
-		)
+		const { resolveSearchMemoryContext } = await import('#mcp/tools/search.ts')
+		const { runPackageRetrievers } =
+			await import('#worker/package-retrievers/service.ts')
 		return await runPackageRetrievers({
 			env: input.ctx.env,
 			baseUrl: input.ctx.callerContext.baseUrl,
@@ -206,6 +202,11 @@ export const searchCapability = defineDomainCapability(
 					memoryContext: args.memoryContext,
 				}),
 			])
+			const {
+				loadDownRemoteConnectorStatuses,
+				resolveSearchMemoryContext,
+				searchUnified,
+			} = await import('#mcp/tools/search.ts')
 			const result = await searchUnified({
 				env: ctx.env,
 				query,
