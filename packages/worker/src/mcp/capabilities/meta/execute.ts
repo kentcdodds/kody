@@ -4,7 +4,6 @@ import {
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 } from '#mcp/executor.ts'
-import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -107,6 +106,8 @@ export const executeCapability = defineDomainCapability(
 				},
 			}
 			const conversationId = resolveConversationId(args.conversationId)
+			const { runModuleWithRegistry } =
+				await import('#mcp/run-codemode-registry.ts')
 			const result = await runModuleWithRegistry(
 				ctx.env,
 				callerContext,

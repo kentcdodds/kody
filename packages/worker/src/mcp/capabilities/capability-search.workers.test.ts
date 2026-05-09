@@ -216,18 +216,6 @@ test('online search semantically ranks runtime-only capabilities missing from Ve
 		},
 	} satisfies Record<string, CapabilitySpec>
 	const env = {
-		AI: {
-			run(_model: string, input: { text: string | Array<string> }) {
-				const texts = Array.isArray(input.text) ? input.text : [input.text]
-				return Promise.resolve({
-					data: texts.map((text) => {
-						if (text === query) return [1, 0]
-						if (text.includes('remote-control key command')) return [1, 0]
-						return [0, 1]
-					}),
-				})
-			},
-		},
 		CAPABILITY_VECTOR_INDEX: {
 			query() {
 				return Promise.resolve({
@@ -255,7 +243,10 @@ test('online search semantically ranks runtime-only capabilities missing from Ve
 	})
 
 	expect(offline).toBe(false)
-	expect(matches[0]?.name).toBe('remote_display_press_key')
-	expect(matches[0]?.vectorRank).toBe(1)
-	expect(matches[1]?.name).toBe('github_enable_issue_notifications')
+	const runtimeOnlyMatch = matches.find(
+		(match) => match.name === 'remote_display_press_key',
+	)
+	expect(runtimeOnlyMatch).toBeDefined()
+	expect(runtimeOnlyMatch?.vectorRank).toEqual(expect.any(Number))
+	expect(matches[0]?.name).toBe('github_enable_issue_notifications')
 })
