@@ -1,9 +1,9 @@
-export type ScrollFades = {
+type ScrollFades = {
 	top: boolean
 	bottom: boolean
 }
 
-export type ScrollAnchor = {
+type ScrollAnchor = {
 	scrollHeight: number
 	scrollTop: number
 }

@@ -10,7 +10,7 @@ export type InfiniteListSnapshot<T> = InfiniteListWindow<T> & {
 	isLoadingMore: boolean
 }
 
-export type InfiniteListLoadResult<T> = InfiniteListWindow<T>
+type InfiniteListLoadResult<T> = InfiniteListWindow<T>
 
 type InfiniteListOptions<T> = {
 	mergeDirection: 'append' | 'prepend'

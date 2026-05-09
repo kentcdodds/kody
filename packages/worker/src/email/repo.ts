@@ -501,7 +501,7 @@ export async function getVerifiedSenderIdentity(input: {
 	return row ? mapSenderIdentityRow(row) : null
 }
 
-export async function findThreadForMessage(input: {
+async function findThreadForMessage(input: {
 	db: D1Database
 	userId: string
 	inboxId?: string | null

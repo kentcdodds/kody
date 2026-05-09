@@ -62,15 +62,3 @@ export function buildGeneratedUiRuntimeImportMap(runtimeScriptHref: string) {
 	return `<script type="importmap">${importMapJson}</script>`
 }
 
-export function injectGeneratedUiBootstrapScript(
-	bootstrap: GeneratedUiRuntimeBootstrap,
-) {
-	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
-	return `
-<script>
-window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
-window.__kodyAppParams = window.__kodyGeneratedUiBootstrap.params ?? {};
-window.params = window.__kodyAppParams;
-</script>
-	`.trim()
-}

@@ -1127,7 +1127,7 @@ function parseScopes(raw: string | null) {
 		.filter(Boolean)
 }
 
-export function normalizeHosts(hosts: Array<string>) {
+function normalizeHosts(hosts: Array<string>) {
 	return Array.from(
 		new Set(
 			hosts

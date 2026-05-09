@@ -15,12 +15,12 @@ type WranglerMigration = {
 	}>
 }
 
-export type D1DatabaseListEntry = {
+type D1DatabaseListEntry = {
 	uuid: string
 	name: string
 }
 
-export type KvNamespaceListEntry = {
+type KvNamespaceListEntry = {
 	id: string
 	title: string
 }

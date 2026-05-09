@@ -180,7 +180,7 @@ function isPortAlreadyInUseError(error: unknown) {
 	)
 }
 
-export async function loginToApp(origin: string, user: TestUser) {
+async function loginToApp(origin: string, user: TestUser) {
 	const signupResponse = await authenticateAppUser(origin, user, 'signup')
 	if (signupResponse.ok) {
 		return readCookieHeader(signupResponse)
@@ -255,7 +255,7 @@ export async function createMcpClient(
 	}
 }
 
-export async function fetchJson<T = Record<string, unknown>>(
+async function fetchJson<T = Record<string, unknown>>(
 	origin: string,
 	pathname: string,
 	init?: RequestInit,

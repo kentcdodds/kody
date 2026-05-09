@@ -74,13 +74,6 @@ export const transitions = {
 	normal: 'var(--transition-normal)',
 } as const
 
-// Responsive tokens - these change based on screen size
-export const responsive = {
-	spacingPage: 'var(--spacing-page)',
-	spacingSection: 'var(--spacing-section)',
-	spacingHeader: 'var(--spacing-header)',
-} as const
-
 // Breakpoints for CSS-in-JS media queries
 export const breakpoints = {
 	mobile: '640px',

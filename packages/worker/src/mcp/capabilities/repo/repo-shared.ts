@@ -43,8 +43,6 @@ export const repoSessionIdSchema = z.object({
 	session_id: z.string().min(1).describe('Active repo session id.'),
 })
 
-export const repoSessionIdInputSchema = repoSessionIdSchema
-
 export const repoOpenSessionInputSchema = z
 	.object({
 		source_id: z
@@ -127,8 +125,6 @@ export const repoReadFileInputSchema = repoSessionIdSchema.extend({
 	path: z.string().min(1).describe('Repo-relative file path to read.'),
 })
 
-export const repoFileInputSchema = repoReadFileInputSchema
-
 export const repoReadFileOutputSchema = z.object({
 	path: z.string(),
 	content: z.string().nullable(),
@@ -208,8 +204,6 @@ export const repoTreeNodeSchema: z.ZodType<unknown> = z.lazy(() =>
 	}),
 )
 
-export const repoTreeOutputSchema = repoTreeNodeSchema
-
 export const repoSearchInputSchema = repoSessionIdSchema.extend({
 	pattern: z.string().min(1).describe('Literal text or regex to search for.'),
 	mode: repoSearchModeSchema
@@ -279,10 +273,6 @@ export const repoDiscardSessionOutputSchema = z.object({
 	session_id: z.string(),
 	deleted: z.boolean(),
 })
-
-export const repoDiscardSessionInputSchema = repoSessionIdSchema
-
-export const repoRunChecksInputSchema = repoSessionIdSchema
 
 export const repoRunCommandsInputSchema = z
 	.object({

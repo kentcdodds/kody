@@ -4,7 +4,7 @@ import { config as loadDotEnv } from 'dotenv'
 import { type UserConfig } from 'vitest/config'
 
 export const rootDir = fileURLToPath(new URL('.', import.meta.url))
-export const testTimeout = process.env.CI ? 20_000 : 5_000
+const testTimeout = process.env.CI ? 20_000 : 5_000
 
 loadDotEnv({
 	path: resolve(rootDir, 'packages/worker/.env'),
