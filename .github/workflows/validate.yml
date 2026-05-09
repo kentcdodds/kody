@@ -24,79 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  validate:
     runs-on: ubuntu-latest
-    name: 🧹 Lint
-    timeout-minutes: 4
-    if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: 📥 Install Dependencies
-        run: npm ci
-
-      - name: 🧹 Lint
-        run: npm run lint
-
-  typecheck:
-    runs-on: ubuntu-latest
-    name: 🧪 Typecheck
-    timeout-minutes: 4
-    if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: 📥 Install Dependencies
-        run: npm ci
-
-      - name: 🧪 Typecheck
-        run: npm run typecheck
-
-  test:
-    runs-on: ubuntu-latest
-    name: ✅ Unit Tests
-    timeout-minutes: 4
-    if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: 📥 Install Dependencies
-        run: npm ci
-
-      - name: ✅ Run Unit Tests
-        run: npm run test
-
-  e2e:
-    runs-on: ubuntu-latest
-    name: 🎭 E2E
-    timeout-minutes: 12
+    name: ✅ Validate
+    timeout-minutes: 15
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -130,34 +61,5 @@ jobs:
       - name: 🗄️ Apply D1 Migrations
         run: npm run migrate:local
 
-      - name: 🧪 Playwright Tests
-        run: npm run test:e2e:run
-
-  mcp-e2e:
-    runs-on: ubuntu-latest
-    name: 🧩 MCP E2E
-    timeout-minutes: 4
-    if: >-
-      github.event_name != 'pull_request' || github.event.pull_request.draft ==
-      false
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: 📥 Install Dependencies
-        run: npm ci
-
-      - name: 📝 Prepare worker env
-        run: cp packages/worker/.env.example packages/worker/.env
-
-      - name: 🗄️ Apply D1 Migrations
-        run: npm run migrate:local
-
-      - name: 🧩 MCP E2E Tests
-        run: npm run test:mcp
+      - name: ✅ Validate
+        run: npm run validate
