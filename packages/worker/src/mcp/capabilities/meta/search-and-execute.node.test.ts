@@ -152,7 +152,9 @@ test('search capability returns shared slim structured search matches', async ()
 		results: [{ id: 'retriever-result' }],
 		warnings: ['retriever warning'],
 	})
-	mockModule.resolveSearchMemoryContext.mockReturnValue({ query: 'package_save' })
+	mockModule.resolveSearchMemoryContext.mockReturnValue({
+		query: 'package_save',
+	})
 	mockModule.searchUnified.mockResolvedValue({
 		matches: rawMatches,
 		offline: false,
