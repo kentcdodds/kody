@@ -9,13 +9,7 @@ import {
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
-import { chat } from '#app/handlers/chat.ts'
 import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
-import {
-	createChatThreadsHandler,
-	createDeleteChatThreadHandler,
-	createUpdateChatThreadHandler,
-} from '#app/handlers/chat-threads.ts'
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { home } from '#app/handlers/home.ts'
 import { login } from '#app/handlers/login.ts'
@@ -42,17 +36,10 @@ export function createAppRouter(appEnv: AppEnv) {
 			return render(Layout({}))
 		},
 	})
-	const chatThreadsHandler = createChatThreadsHandler(appEnv)
 
 	router.map(routes, {
 		actions: {
 			home,
-			chat,
-			chatThread: chat,
-			chatThreads: chatThreadsHandler,
-			chatThreadsCreate: chatThreadsHandler,
-			chatThreadsUpdate: createUpdateChatThreadHandler(appEnv),
-			chatThreadsDelete: createDeleteChatThreadHandler(appEnv),
 			health: createHealthHandler(appEnv),
 			login,
 			signup,

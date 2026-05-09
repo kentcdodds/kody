@@ -24,8 +24,6 @@ helpers are runtime exports:
   for integration OAuth helpers
 - use **`import { storage } from 'kody:runtime'`** when the execute call is
   bound to a storage id
-- use **`import { agentChatTurnStream } from 'kody:runtime'`** for streamed
-  agent turns
 - use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
   Workflows from execute calls, ad hoc jobs, package jobs, package
   subscriptions, package services, and package exports. See
@@ -118,67 +116,9 @@ you.
 
 ## Agent turns
 
-Kody exposes two generic primitives for tool-using chat turns:
-
-- **`agentChatTurnStream(input)`** — an async iterable helper available through
-  `kody:runtime`. Use this when your code needs incremental events such as
-  reasoning deltas, tool call notifications, and a final `turn_complete`
-  message.
-- **`codemode.agent_chat_turn(args)`** — a normal final-value capability
-  wrapper. Use this when you only need the completed result and do not need to
-  process stream events manually.
-
-Typical pattern inside execute:
-
-- use **`import { agentChatTurnStream } from 'kody:runtime'`** when interactive
-  controllers need to forward progress over time
-- use **`codemode.agent_chat_turn(...)`** in package jobs or workflows that only
-  need the final answer
-
-### Prompt caching for stable prefixes
-
-Agent turns accept the existing string-only prompt shape, plus an optional
-cache-hint form for prompts with a stable prefix:
-
-```ts
-await codemode.agent_chat_turn({
-	sessionId: 'email-follow-up',
-	system: {
-		content: stableSystemPrompt,
-		cache: 'prefix',
-	},
-	messages: [
-		{
-			role: 'user',
-			content: normalizedThreadContext,
-			cache: 'prefix',
-		},
-		{
-			role: 'user',
-			content: latestInboundEmail,
-		},
-	],
-})
-```
-
-Use `cache: 'prefix'` only on prompt segments that are intentionally stable
-across repeated turns. Kody translates that hint into provider-specific cache
-controls only when the configured model/provider supports prompt caching. For
-other providers, the hint is ignored with no behavior change.
-
-For follow-up email workflows, structure prompts in this order:
-
-1. **Stable system prompt first** - instructions, policy, response style,
-   tool-use guidance
-2. **Stable normalized thread context next** - summarize or normalize the
-   earlier thread so repeated quoted content stays stable
-3. **Newest inbound email last** - put the newest inbound email content after
-   the cached prefix so only the changing tail invalidates less cached work
-
-Prefer normalizing long quoted threads before passing them into the agent turn
-instead of appending raw mailbox history every time. That keeps the stable
-prefix stable enough to benefit from caching and makes the final changing email
-content easier for the model to prioritize.
+Generic tool-using agent turns are package-owned behavior rather than a built-in
+runtime primitive. Search for an agent-turn package, then import that package
+from execute or another saved package.
 
 ## Storage
 

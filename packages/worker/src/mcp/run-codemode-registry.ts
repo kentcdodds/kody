@@ -760,7 +760,6 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
     storage: typeof storage === 'undefined' ? undefined : storage,
     refreshAccessToken,
     createAuthenticatedFetch,
-    agentChatTurnStream,
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
     service: typeof service === 'undefined' ? null : service,

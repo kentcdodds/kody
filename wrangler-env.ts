@@ -4,7 +4,6 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
-import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
 import {
 	signalChildProcessTree,
 	spawnChildProcess,
@@ -19,7 +18,6 @@ const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
 
 const hasEnvFlag = args.includes('--env') || args.includes('-e')
 const isDevCommand = args[0] === 'dev'
-const isLocalDevCommand = isDevCommand && args.includes('--local')
 const hasPortFlag = args.includes('--port')
 const hasConfigFlag = args.some(
 	(arg) => arg === '--config' || arg.startsWith('--config='),
@@ -27,13 +25,6 @@ const hasConfigFlag = args.some(
 const hasInspectorPortFlag = args.some(
 	(arg) => arg === '--inspector-port' || arg.startsWith('--inspector-port='),
 )
-
-if (isLocalDevCommand) {
-	const startupError = getRemoteAiLocalDevStartupError(process.env)
-	if (startupError) {
-		throw new Error(startupError)
-	}
-}
 
 const commandArgs = [...args]
 

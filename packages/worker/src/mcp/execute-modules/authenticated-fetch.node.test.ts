@@ -55,15 +55,6 @@ function createCodemode() {
 			secretSetCalls.push(call)
 			return { name: call.name, scope: call.scope }
 		},
-		async agent_turn_start() {
-			return { ok: true, runId: 'r', sessionId: 's', conversationId: 'c' }
-		},
-		async agent_turn_next() {
-			return { ok: true, events: [], nextCursor: 0, done: true }
-		},
-		async agent_turn_cancel() {
-			return { ok: true, cancelled: true }
-		},
 	} satisfies CodemodeNamespace
 
 	const fetchCalls: Array<Request> = []
@@ -263,15 +254,6 @@ test('fails closed when integration has no allowlist configured', async () => {
 			const call = args as { name: string; value: string; scope: string }
 			secretSetCalls.push(call)
 			return { name: call.name, scope: call.scope }
-		},
-		async agent_turn_start() {
-			return { ok: true, runId: 'r', sessionId: 's', conversationId: 'c' }
-		},
-		async agent_turn_next() {
-			return { ok: true, events: [], nextCursor: 0, done: true }
-		},
-		async agent_turn_cancel() {
-			return { ok: true, cancelled: true }
 		},
 	} satisfies CodemodeNamespace
 

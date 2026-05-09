@@ -89,7 +89,6 @@ export function App(handle: Handle) {
 
 	return () => {
 		const isWideLayout =
-			currentPathname.startsWith('/chat') ||
 			currentPathname.startsWith('/account/remote-connectors') ||
 			currentPathname.startsWith('/account/secrets')
 		const sessionEmail = session?.email ?? ''
@@ -175,9 +174,6 @@ export function App(handle: Handle) {
 					) : null}
 					{isLoggedIn ? (
 						<>
-							<a href="/chat" mix={css(navLinkCss)}>
-								Chat
-							</a>
 							<a href="/account" mix={css(navLinkCss)}>
 								{sessionEmail}
 							</a>

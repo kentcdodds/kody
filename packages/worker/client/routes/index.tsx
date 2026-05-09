@@ -1,7 +1,6 @@
 import { AccountRoute } from './account.tsx'
 import { AccountRemoteConnectorsRoute } from './account-remote-connectors.tsx'
 import { AccountSecretsRoute } from './account-secrets.tsx'
-import { ChatRoute } from './chat.tsx'
 import { ConnectSecretRoute } from './connect-secret.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute } from './home.tsx'
@@ -12,8 +11,6 @@ import { ResetPasswordRoute } from './reset-password.tsx'
 
 export const clientRoutes = {
 	'/': <HomeRoute />,
-	'/chat': <ChatRoute />,
-	'/chat/:threadId': <ChatRoute />,
 	'/connect/secret': <ConnectSecretRoute />,
 	'/account': <AccountRoute />,
 	'/account/remote-connectors': <AccountRemoteConnectorsRoute />,

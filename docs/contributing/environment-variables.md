@@ -112,8 +112,7 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   the Cloudflare Email sender. User Cloudflare API calls from authored package
   modules use saved secrets and secret-aware `fetch` (see
   `docs/contributing/packages-and-manifests.md`). Local `npm run dev` sets this
-  to the Cloudflare mock token unless `AI_MODE=remote` or
-  `SKIP_CLOUDFLARE_MOCK=1`.
+  to the Cloudflare mock token unless `SKIP_CLOUDFLARE_MOCK=1`.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the Cloudflare
   Email Service REST API fallback used by local mocks and preview deploys. This
   is a Worker var (not a secret) and should match the account behind
@@ -121,11 +120,10 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset, including for outbound email sending.
   Local `npm run dev` sets this to the Cloudflare mock Worker unless
-  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`. That same local mock serves the
-  Artifacts REST control-plane endpoints used by
-  `packages/worker/src/repo/artifacts.ts` (`repos`, `tokens`, and `fork`), so
-  local repo create/get/list/token/fork calls do not need the live Artifacts
-  REST API.
+  `SKIP_CLOUDFLARE_MOCK=1`. That same local mock serves the Artifacts REST
+  control-plane endpoints used by `packages/worker/src/repo/artifacts.ts`
+  (`repos`, `tokens`, and `fork`), so local repo create/get/list/token/fork
+  calls do not need the live Artifacts REST API.
 
 ## Why Zod?
 

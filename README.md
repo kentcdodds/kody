@@ -18,8 +18,8 @@
 
 `kody` is an experimental personal assistant platform built on Cloudflare
 Workers and the Model Context Protocol (MCP). It ships a Remix UI, Worker-based
-request routing, chat-agent plumbing, and OAuth-protected MCP endpoints. The
-project favors a compact MCP surface with powerful `search` and Code Mode
+request routing, package runtime plumbing, and OAuth-protected MCP endpoints.
+The project favors a compact MCP surface with powerful `search` and Code Mode
 `execute` flows over a large static tool catalog.
 
 This project is intentionally single-user and is scoped to `me@kentcdodds.com`.

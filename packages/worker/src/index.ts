@@ -1,19 +1,15 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
-import { ChatAgent } from './chat-agent.ts'
 import { RemoteConnectorSession } from './remote-connector/session.ts'
 import { MCP } from './mcp/index.ts'
 import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
-import { AgentTurnRunner } from './agent-turn/runner-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
-import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
-import { handleChatAgentRequest } from './chat-agent-routing.ts'
 import {
 	apiHandler,
 	handleAuthorizeRequest,
@@ -54,8 +50,6 @@ import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 
 export {
-	ChatAgent,
-	AgentTurnRunner,
 	RepoSession,
 	CodemodeFetchGateway,
 	RemoteConnectorSession,
@@ -213,10 +207,6 @@ const appHandler = withCors({
 			const forwardRequest = new Request(forwardUrl.toString(), request)
 			forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
 			return stub.fetch(forwardRequest)
-		}
-
-		if (url.pathname.startsWith(`${chatAgentBasePath}/`)) {
-			return handleChatAgentRequest(request, env)
 		}
 
 		// Sandboxed widget iframes have an opaque origin, so JS/CSS loads become CORS fetches.

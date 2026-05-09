@@ -7,11 +7,9 @@ export function getCapabilityVectorIndex(env: Env): VectorizeIndex | undefined {
 }
 
 /** Must match Vectorize index dimensions for production indexes. */
-export const CAPABILITY_EMBEDDING_MODEL = '@cf/baai/bge-small-en-v1.5'
 export const CAPABILITY_EMBEDDING_DIMENSIONS = 384
 
 export const CAPABILITY_SEARCH_RRF_K = 60
-const vectorizeEmbedBatchSize = 16
 
 function fnv1a32(input: string): number {
 	let hash = 2_166_136_261
@@ -191,29 +189,9 @@ export async function embedTextsForVectorize(
 	env: Env,
 	texts: ReadonlyArray<string>,
 ): Promise<Array<Array<number>>> {
+	void env
 	if (texts.length === 0) return []
-
-	const vectors: Array<Array<number>> = []
-
-	for (
-		let offset = 0;
-		offset < texts.length;
-		offset += vectorizeEmbedBatchSize
-	) {
-		const batch = texts.slice(offset, offset + vectorizeEmbedBatchSize)
-		const textInput = batch.length === 1 ? batch[0]! : batch
-		const out = (await env.AI.run(CAPABILITY_EMBEDDING_MODEL, {
-			text: textInput,
-			pooling: 'mean',
-		})) as { data?: Array<Array<number>> }
-		const rows = out.data
-		if (!rows || rows.length !== batch.length) {
-			throw new Error('Workers AI embedding batch size mismatch')
-		}
-		vectors.push(...rows)
-	}
-
-	return vectors
+	return texts.map((text) => deterministicEmbedding(text))
 }
 
 export async function searchCapabilities(input: {

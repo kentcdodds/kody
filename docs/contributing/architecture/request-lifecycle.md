@@ -44,12 +44,9 @@ Requests are handled in this order:
 
    See [Remote connectors](./remote-connectors.md).
 
-7. Internal chat agent endpoint:
-   - `/chat-agent/:threadId...` (requires the app session cookie and routes to
-     the per-thread chat Agent instance)
-8. Static assets:
+7. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
-9. App server routes:
+8. App server routes:
    - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## Package service runtime
@@ -123,10 +120,10 @@ The Worker default export is wrapped with `Sentry.withSentry` from
 requests are traced and uncaught errors can be reported when `SENTRY_DSN` is
 configured.
 
-The **MCP** (`MCP` / `MCP_OBJECT`) and **chat** (`ChatAgent`) Durable Objects
-are each wrapped with `Sentry.instrumentDurableObjectWithSentry` (see
-`packages/worker/src/mcp/index.ts` and `packages/worker/src/chat-agent.ts`)
-because they run in separate isolates from the top-level Worker.
+The **MCP** (`MCP` / `MCP_OBJECT`) Durable Object is wrapped with
+`Sentry.instrumentDurableObjectWithSentry` (see
+`packages/worker/src/mcp/index.ts`) because it runs in a separate isolate from
+the top-level Worker.
 
 The remote connector flow adds one more Durable Object:
 
@@ -134,9 +131,8 @@ The remote connector flow adds one more Durable Object:
   connections from connector processes and proxies JSON-RPC/MCP requests over
   those sockets.
 
-The chat agent attaches to the main compact MCP server (`kody`). The runtime
-capability registry **merges** synthesized domains from **remote connectors**
-listed in MCP caller context (`remoteConnectors`). See
+The runtime capability registry **merges** synthesized domains from **remote
+connectors** listed in MCP caller context (`remoteConnectors`). See
 [Remote connectors](./remote-connectors.md).
 
 Shared options are built in `packages/worker/src/sentry-options.ts`: **release**

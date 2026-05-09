@@ -2,8 +2,6 @@ import { post, route } from 'remix/fetch-router/routes'
 
 export const routes = route({
 	home: '/',
-	chat: '/chat',
-	chatThread: '/chat/:threadId',
 	connectSecret: '/connect/secret',
 	connectSecretApi: '/connect/secret.json',
 	connectSecretApiPost: post('/connect/secret.json'),
@@ -21,10 +19,6 @@ export const routes = route({
 	accountSecretsApprove: '/account/secrets/approve',
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),
-	chatThreads: '/chat-threads',
-	chatThreadsCreate: post('/chat-threads'),
-	chatThreadsUpdate: post('/chat-threads/update'),
-	chatThreadsDelete: post('/chat-threads/delete'),
 	health: '/health',
 	login: '/login',
 	signup: '/signup',

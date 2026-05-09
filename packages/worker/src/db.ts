@@ -26,25 +26,6 @@ export const passwordResetsTable = table({
 	primaryKey: 'id',
 })
 
-export const chatThreadsTable = table({
-	name: 'chat_threads',
-	columns: {
-		id: c.text(),
-		user_id: c.integer(),
-		title: c.text(),
-		last_message_preview: c.text(),
-		message_count: c.integer(),
-		created_at: c.text(),
-		updated_at: c.text(),
-		deleted_at: c.text().nullable(),
-	},
-	primaryKey: 'id',
-	timestamps: {
-		createdAt: 'created_at',
-		updatedAt: 'updated_at',
-	},
-})
-
 export function createDb(db: D1Database) {
 	return createDatabase(createD1DataTableAdapter(db), {
 		now: () => new Date().toISOString(),

@@ -1,5 +1,5 @@
 import {
-	CAPABILITY_EMBEDDING_MODEL,
+	embedTextsForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#mcp/capabilities/capability-search.ts'
@@ -31,14 +31,7 @@ export async function reindexMemoryVectors(env: Env): Promise<{
 	for (let offset = 0; offset < rows.length; offset += upsertBatchSize) {
 		const batch = rows.slice(offset, offset + upsertBatchSize)
 		const texts = batch.map((row) => buildMemoryEmbedTextFromRow(row))
-		const result = (await env.AI.run(CAPABILITY_EMBEDDING_MODEL, {
-			text: texts,
-			pooling: 'mean',
-		})) as { data?: Array<Array<number>> }
-		const vectors = result.data
-		if (!vectors || vectors.length !== batch.length) {
-			throw new Error('Workers AI embedding batch size mismatch for memories')
-		}
+		const vectors = await embedTextsForVectorize(env, texts)
 		await index.upsert(
 			batch.map((row, index_) => ({
 				id: memoryVectorId(row.id),

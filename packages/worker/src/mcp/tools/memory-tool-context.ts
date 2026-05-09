@@ -72,8 +72,7 @@ async function runContextPackageRetrievers(input: {
 }
 
 export async function loadRelevantMemoriesForTool(input: {
-	env: Pick<Env, 'APP_DB' | 'AI'> &
-		Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	env: Pick<Env, 'APP_DB'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 	callerContext: McpCallerContext
 	conversationId: string
 	memoryContext?: {
@@ -128,8 +127,7 @@ export async function loadRelevantMemoriesForTool(input: {
 }
 
 export async function surfaceToolMemories(input: {
-	env: Pick<Env, 'APP_DB' | 'AI'> &
-		Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	env: Pick<Env, 'APP_DB'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 	callerContext: McpCallerContext
 	conversationId: string
 	retrievalQuery: string

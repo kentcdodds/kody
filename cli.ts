@@ -4,7 +4,6 @@ import { platform } from 'node:os'
 import readline from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import getPort, { clearLockedPorts } from 'get-port'
-import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
 import {
 	spawnInOwnProcessGroup,
 	stopChildProcessTree,
@@ -69,7 +68,6 @@ const extraArgs = process.argv.slice(2)
 let shutdown: (() => void) | null = null
 let devChildren: Array<ChildProcess> = []
 let workerOrigin = ''
-let mockAiProcess: ChildProcess | null = null
 let mockCloudflareProcess: ChildProcess | null = null
 let mockEnvOverrides: Record<string, string> = {}
 
@@ -79,10 +77,6 @@ void startDev().catch((error) => {
 })
 
 async function startDev() {
-	const startupError = getRemoteAiLocalDevStartupError(process.env)
-	if (startupError) {
-		throw new Error(startupError)
-	}
 	await restartDev({ announce: false })
 	setupInteractiveCli({
 		getWorkerOrigin: () => workerOrigin,
@@ -90,10 +84,7 @@ async function startDev() {
 	})
 	shutdown = setupShutdown(
 		() => devChildren,
-		() =>
-			[mockAiProcess, mockCloudflareProcess].filter(
-				Boolean,
-			) as Array<ChildProcess>,
+		() => [mockCloudflareProcess].filter(Boolean) as Array<ChildProcess>,
 	)
 }
 
@@ -332,10 +323,6 @@ function hasEnvValue(value: string | undefined) {
 	return typeof value === 'string' && value.trim().length > 0
 }
 
-function resolveAiMode() {
-	return process.env.AI_MODE?.trim() === 'remote' ? 'remote' : 'mock'
-}
-
 function isChildRunning(child: ChildProcess | null) {
 	return Boolean(child && !child.killed && child.exitCode === null)
 }
@@ -395,10 +382,6 @@ async function attachCloudflareMock(
 	if (process.env.SKIP_CLOUDFLARE_MOCK?.trim() === '1') {
 		return
 	}
-	const shouldPreserveRealToken = resolveAiMode() === 'remote'
-	if (shouldPreserveRealToken) {
-		return
-	}
 	if (
 		hasEnvValue(mockEnv.CLOUDFLARE_API_BASE_URL) &&
 		isChildRunning(mockCloudflareProcess)
@@ -456,25 +439,13 @@ async function attachOptionalMocksInParallel(
 }
 
 async function ensureMockServers() {
-	const previousMockEnvOverrides = { ...mockEnvOverrides }
-	const desiredAiMode = resolveAiMode()
-	const canReuseAiMock = isChildRunning(mockAiProcess)
-	const hasMatchingCachedMode = mockEnvOverrides.AI_MODE === desiredAiMode
-	const canReuseCachedAiEnv =
-		canReuseAiMock &&
-		hasEnvValue(previousMockEnvOverrides.AI_MOCK_BASE_URL) &&
-		hasEnvValue(previousMockEnvOverrides.AI_MOCK_API_KEY)
 	const canReuseCachedCloudflareEnv =
 		isChildRunning(mockCloudflareProcess) &&
-		hasEnvValue(previousMockEnvOverrides.CLOUDFLARE_API_BASE_URL) &&
-		hasEnvValue(previousMockEnvOverrides.CLOUDFLARE_API_TOKEN) &&
-		hasEnvValue(previousMockEnvOverrides.CLOUDFLARE_ACCOUNT_ID)
+		hasEnvValue(mockEnvOverrides.CLOUDFLARE_API_BASE_URL) &&
+		hasEnvValue(mockEnvOverrides.CLOUDFLARE_API_TOKEN) &&
+		hasEnvValue(mockEnvOverrides.CLOUDFLARE_ACCOUNT_ID)
 
-	if (
-		canReuseCachedCloudflareEnv &&
-		hasMatchingCachedMode &&
-		(desiredAiMode === 'remote' || canReuseCachedAiEnv)
-	) {
+	if (canReuseCachedCloudflareEnv) {
 		const cloudflareForAnchor = new URL(
 			mockEnvOverrides.CLOUDFLARE_API_BASE_URL ??
 				`http://127.0.0.1:${defaultMockPort + 240}`,
@@ -491,10 +462,6 @@ async function ensureMockServers() {
 		await stopChild(mockCloudflareProcess)
 		mockCloudflareProcess = null
 	}
-	if (mockAiProcess && !mockAiProcess.killed && !canReuseCachedAiEnv) {
-		await stopChild(mockAiProcess)
-		mockAiProcess = null
-	}
 	const desiredPort = Number.parseInt(
 		process.env.MOCK_API_PORT ?? String(defaultMockPort),
 		10,
@@ -504,74 +471,14 @@ async function ensureMockServers() {
 		(_, index) => desiredPort + index,
 	)
 	const mockPort = await getPort({ port: portRange })
-	mockEnvOverrides = {
-		AI_MODE: desiredAiMode,
-	}
+	mockEnvOverrides = {}
 
 	const optionalMocksReady = attachOptionalMocksInParallel(
 		mockEnvOverrides,
 		mockPort,
 	)
-	const pendingMockStarts: Array<Promise<void>> = []
 
-	if (desiredAiMode === 'mock') {
-		if (canReuseCachedAiEnv) {
-			mockEnvOverrides.AI_MOCK_BASE_URL =
-				previousMockEnvOverrides.AI_MOCK_BASE_URL ?? ''
-			mockEnvOverrides.AI_MOCK_API_KEY =
-				previousMockEnvOverrides.AI_MOCK_API_KEY ?? ''
-		} else {
-			const aiPort = await getPort({
-				port: Array.from({ length: 10 }, (_, index) => mockPort + 10 + index),
-			})
-			const aiBaseUrl = `http://127.0.0.1:${aiPort}`
-			const aiApiToken = `mock-ai-${randomUUID()}`
-			const aiChild = runNpmScript(
-				'dev:mock-ai',
-				[
-					'--port',
-					String(aiPort),
-					'--ip',
-					'127.0.0.1',
-					'--var',
-					`MOCK_API_TOKEN:${aiApiToken}`,
-				],
-				{},
-				{
-					label: 'dev:mock-ai',
-					mode: 'buffer-on-error',
-				},
-			)
-			mockAiProcess = aiChild
-			aiChild.once('exit', () => {
-				if (mockAiProcess === aiChild) {
-					mockAiProcess = null
-				}
-			})
-			mockEnvOverrides.AI_MOCK_BASE_URL = aiBaseUrl
-			mockEnvOverrides.AI_MOCK_API_KEY = aiApiToken
-			pendingMockStarts.push(
-				(async () => {
-					const aiDidStart = await waitForMockReady(aiBaseUrl, aiChild)
-					if (!aiDidStart) {
-						console.warn(
-							`Mock AI worker did not become ready within ${mockReadyTimeoutMs}ms.`,
-						)
-					}
-					console.log(dim(`AI mock base URL ${aiBaseUrl}`))
-				})(),
-			)
-		}
-	} else {
-		if (mockAiProcess && !mockAiProcess.killed) {
-			await stopChild(mockAiProcess)
-			mockAiProcess = null
-		}
-		mockEnvOverrides.AI_MOCK_BASE_URL = ''
-		mockEnvOverrides.AI_MOCK_API_KEY = ''
-	}
-
-	await Promise.all([optionalMocksReady, ...pendingMockStarts])
+	await optionalMocksReady
 
 	return mockEnvOverrides
 }

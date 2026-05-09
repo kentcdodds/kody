@@ -118,58 +118,6 @@ function createStorageProxy(runtimeBridge, storageId) {
 	}
 }
 
-function createAgentChatTurnStream(runtimeBridge) {
-	return async function* agentChatTurnStream(args) {
-		const start = await runtimeBridge.callCapability({
-			name: 'agent_turn_start',
-			args,
-		});
-		if (
-			!start ||
-			start.ok !== true ||
-			typeof start.runId !== 'string' ||
-			typeof start.sessionId !== 'string'
-		) {
-			throw new Error(
-				'agent_turn_start did not return a valid run id and session id.',
-			);
-		}
-		let cursor = 0;
-		let done = false;
-		try {
-			while (!done) {
-				const next = await runtimeBridge.callCapability({
-					name: 'agent_turn_next',
-					args: {
-						sessionId: start.sessionId,
-						runId: start.runId,
-						cursor,
-					},
-				});
-				const events = Array.isArray(next?.events) ? next.events : [];
-				cursor =
-					typeof next?.nextCursor === 'number' ? next.nextCursor : cursor;
-				for (const event of events) {
-					yield event;
-				}
-				done = next?.done === true;
-			}
-		} finally {
-			if (!done) {
-				await runtimeBridge.callCapability({
-					name: 'agent_turn_cancel',
-					args: {
-						sessionId: start.sessionId,
-						runId: start.runId,
-					},
-				}).catch(() => {
-					// Best effort only.
-				});
-			}
-		}
-	}
-}
-
 function createRealtimeProxy(runtimeBridge) {
 	return {
 		emit: async (sessionId, data) =>
@@ -456,7 +404,6 @@ function createRuntime(runtimeBridge, packageContext) {
 		refreshAccessToken: async (providerName) =>
 			await runtimeBridge.refreshAccessToken(providerName),
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
-		agentChatTurnStream: createAgentChatTurnStream(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
 		services: createServicesProxy(runtimeBridge),
 		packageSecrets,

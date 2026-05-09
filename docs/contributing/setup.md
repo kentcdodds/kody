@@ -35,33 +35,23 @@ Quick notes for getting a local kody environment running.
   both secrets (see
   [`docs/contributing/secret-rotation.md`](./secret-rotation.md)).
 - `npm run dev` starts mock API servers automatically plus the main worker; it
-  sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and `CLOUDFLARE_API_BASE_URL` +
-  `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` to the local Cloudflare API
-  mock Worker for the internal Cloudflare API client, local email sending, and
-  Artifacts REST repo create/get/list/token/fork calls. Those REST calls do not
-  hit the live Cloudflare Artifacts control plane during normal local
-  development. The mock covers only the REST control plane; repo-session git
-  clone/pull/push flows need a real Git-capable Artifacts remote and are not
-  fully simulated by the local mock. Password reset email sends as
-  `kody@<APP_BASE_URL hostname>` and requires `APP_BASE_URL` to be set. Set
-  `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The main
-  worker streams logs live; the client bundle and background mock workers buffer
-  logs and only print them if that child process exits with an error.
+  sets `CLOUDFLARE_API_BASE_URL`, `CLOUDFLARE_API_TOKEN`, and
+  `CLOUDFLARE_ACCOUNT_ID` to the local Cloudflare API mock Worker for the
+  internal Cloudflare API client, local email sending, and Artifacts REST repo
+  create/get/list/token/fork calls. Those REST calls do not hit the live
+  Cloudflare Artifacts control plane during normal local development. The mock
+  covers only the REST control plane; repo-session git clone/pull/push flows
+  need a real Git-capable Artifacts remote and are not fully simulated by the
+  local mock. Password reset email sends as `kody@<APP_BASE_URL hostname>` and
+  requires `APP_BASE_URL` to be set. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the
+  local Cloudflare mock entirely. The main worker streams logs live; the client
+  bundle and background mock workers buffer logs and only print them if that
+  child process exits with an error.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
   Vectorize plus Workers AI; see `docs/contributing/environment-variables.md`.
 - Add new mock API servers by following `docs/contributing/mock-api-servers.md`.
-- To opt into live remote inference locally, set `AI_MODE=remote` before
-  starting `npm run dev`.
-- When `AI_MODE=remote`, set `AI_GATEWAY_ID`, `CLOUDFLARE_ACCOUNT_ID`, and
-  `CLOUDFLARE_API_TOKEN` in `packages/worker/.env`; remote AI mode requires
-  requests to flow through a configured Cloudflare AI Gateway using your
-  Cloudflare account credentials. If any are missing, `npm run dev` fails fast
-  with an explanatory startup error.
-- Local remote inference does not require `wrangler dev --remote`; the normal
-  dev server keeps local Durable Objects/D1 while routing Workers AI calls
-  through Cloudflare using the configured account credentials.
 - If you only need the client bundle or worker, use:
   - `npm run dev:client`
   - `npm run dev:worker`

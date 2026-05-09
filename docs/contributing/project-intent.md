@@ -16,8 +16,7 @@ This repository is:
 
 - A working Cloudflare Workers application.
 - A place to experiment with OAuth-protected MCP endpoints.
-- A place to experiment with chat-agent behavior, MCP apps, and supporting
-  infrastructure.
+- A place to experiment with MCP apps, packages, and supporting infrastructure.
 - The foundation for a personal assistant rather than a general-purpose SaaS
   product.
 

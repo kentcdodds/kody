@@ -1,4 +1,3 @@
-import { aiModeValues } from '@kody-internal/shared/chat.ts'
 import {
 	createSchema,
 	fail,
@@ -65,21 +64,6 @@ const optionalCommitShaSchema = createSchema<unknown, string | undefined>(
 		return { value: trimmed.toLowerCase() }
 	},
 )
-
-const optionalAiModeSchema = createSchema<
-	unknown,
-	(typeof aiModeValues)[number] | undefined
->((value, context) => {
-	if (value === undefined) return { value: undefined }
-	if (typeof value !== 'string') return fail('Expected string', context.path)
-
-	const trimmed = value.trim()
-	if (!trimmed) return { value: undefined }
-	if (aiModeValues.includes(trimmed as (typeof aiModeValues)[number])) {
-		return { value: trimmed as (typeof aiModeValues)[number] }
-	}
-	return fail(`Expected one of: ${aiModeValues.join(', ')}`, context.path)
-})
 
 const optionalSentryTracesSampleRateSchema = createSchema<
 	unknown,
@@ -197,11 +181,6 @@ export const EnvSchema = object({
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
-	AI_MODE: optionalAiModeSchema,
-	AI_MODEL: optionalNonEmptyStringSchema,
-	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
-	AI_MOCK_BASE_URL: optionalUrlStringSchema,
-	AI_MOCK_API_KEY: optionalNonEmptyStringSchema,
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,

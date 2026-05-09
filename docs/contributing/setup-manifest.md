@@ -76,17 +76,10 @@ automatically:
   email sends require this value and use `kody@<hostname>` as the sender.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
-- `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
-  gateway ID from GitHub Actions secrets so remote inference goes through
-  Cloudflare AI Gateway)
-- `CLOUDFLARE_ACCOUNT_ID` (required for local development when `AI_MODE=remote`
-  so Wrangler can authenticate Workers AI requests against the correct account;
-  also required for the Cloudflare Email Service REST API fallback used by local
-  mocks and preview deploys)
-- `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`
-  so Wrangler can authenticate Workers AI requests; also reused by the
-  Cloudflare Email Service REST API fallback when local/preview email is routed
-  through the Cloudflare mock or API)
+- `CLOUDFLARE_ACCOUNT_ID` (required for the Cloudflare Email Service REST API
+  fallback used by local mocks and preview deploys)
+- `CLOUDFLARE_API_TOKEN` (used by the Cloudflare Email Service REST API fallback
+  when local/preview email is routed through the Cloudflare mock or API)
 - `SENTRY_DSN` (optional Cloudflare Worker secret; enables error reporting and
   tracing for the Worker and Durable Objects)
 - `SENTRY_ENVIRONMENT` (set per deploy via `packages/worker/wrangler.jsonc`

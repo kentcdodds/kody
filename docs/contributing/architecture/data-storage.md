@@ -10,7 +10,6 @@ Current schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
-- `chat_threads`: per-user chat thread records and relational metadata
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history
 - `entity_sources`: durable mapping from user-facing entities to Artifacts repos
@@ -47,16 +46,6 @@ MCP server runtime state is hosted via a Durable Object class (`MCP`) in
 - The Worker forwards authorized MCP requests to `MCP.serve(...).fetch`
 - Durable Objects provide a stateful execution model for MCP operations
 
-## Durable Objects (`ChatAgent`)
-
-Chat conversations run through a chat Agent Durable Object.
-
-- D1 stores thread rows in `chat_threads`
-- The chat Agent's built-in SQLite stores the full transcript and chat runtime
-  state (streaming, approvals, resumable context)
-- The Worker routes same-origin browser chat traffic to the agent using the
-  existing app session cookie rather than the public MCP OAuth flow
-
 ## Durable Objects (`JobManager` and `StorageRunner`)
 
 Jobs use two Durable Object roles:
@@ -84,7 +73,6 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `APP_DB` (D1)
 - `OAUTH_KV` (KV)
 - `MCP_OBJECT` (Durable Objects)
-- `ChatAgent` (Durable Objects)
 - `JOB_MANAGER` (Durable Objects)
 - `STORAGE_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)

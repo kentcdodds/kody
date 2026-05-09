@@ -8,12 +8,6 @@ import { metaMemoryVerifyCapability } from './meta-memory-verify.ts'
 import { metaListRemoteConnectorStatusCapability } from './meta-list-remote-connector-status.ts'
 import { metaGetMcpServerInstructionsCapability } from './meta-get-mcp-server-instructions.ts'
 import { executeCapability } from './execute.ts'
-import {
-	metaAgentChatTurnCapability,
-	metaAgentTurnCancelCapability,
-	metaAgentTurnNextCapability,
-	metaAgentTurnStartCapability,
-} from './meta-agent-turn.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 import { metaSetMcpServerInstructionsCapability } from './meta-set-mcp-server-instructions.ts'
 import { searchCapability } from './search.ts'
@@ -35,9 +29,5 @@ export const metaDomain = defineDomain({
 		metaMemoryVerifyCapability,
 		metaMemoryUpsertCapability,
 		metaMemoryDeleteCapability,
-		metaAgentChatTurnCapability,
-		metaAgentTurnStartCapability,
-		metaAgentTurnNextCapability,
-		metaAgentTurnCancelCapability,
 	],
 })

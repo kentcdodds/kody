@@ -134,10 +134,6 @@ Use these if you're building MCP servers or connecting to external MCP servers.
 These exist, but you only need them if your UI stack wants them.
 
 - `agents/react` (React state sync)
-- `agents/ai-react` (React chat UI helpers)
-- `agents/ai-chat-agent` (re-export of `@cloudflare/ai-chat`, including
-  `AIChatAgent`) Docs for chat agents:
-  https://developers.cloudflare.com/agents/getting-started/build-a-chat-agent/
 
 ## Capability outline (what the SDK enables)
 

@@ -52,7 +52,7 @@ type MemoryOwnerContext = {
 	storageContext?: StorageContext | null
 }
 
-type MemoryEnv = Pick<Env, 'APP_DB' | 'AI'> &
+type MemoryEnv = Pick<Env, 'APP_DB'> &
 	Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 
 type MemoryUpsertInput = MemoryOwnerContext & {

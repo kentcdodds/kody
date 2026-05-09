@@ -1,4 +1,5 @@
 import {
+	embedTextsForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#mcp/capabilities/capability-search.ts'
@@ -7,8 +8,6 @@ import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { listJobs } from './service.ts'
 
 const upsertBatchSize = 16
-
-type JobEmbeddingBatchResult = { data?: Array<Array<number>> }
 
 export async function reindexJobVectors(
 	env: Env,
@@ -50,14 +49,7 @@ export async function reindexJobVectors(
 				publishedCommit: job.publishedCommit,
 			}),
 		)
-		const result = (await env.AI.run('@cf/baai/bge-small-en-v1.5', {
-			text: texts,
-			pooling: 'mean',
-		})) as JobEmbeddingBatchResult
-		const vectors = result.data
-		if (!vectors || vectors.length !== batch.length) {
-			throw new Error('Workers AI embedding batch size mismatch for jobs')
-		}
+		const vectors = await embedTextsForVectorize(env, texts)
 		await index.upsert(
 			batch.map(({ userId, job }, index_) => ({
 				id: jobVectorId(job.id),

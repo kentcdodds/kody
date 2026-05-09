@@ -67,6 +67,10 @@
 			"deleted_classes": ["HomeMCP"],
 			"tag": "v16",
 		},
+		{
+			"deleted_classes": ["ChatAgent", "AgentTurnRunner"],
+			"tag": "v17",
+		},
 	],
 
 	"observability": {
@@ -77,10 +81,6 @@
 	},
 	"env": {
 		"production": {
-			"ai": {
-				"binding": "AI",
-				"remote": true,
-			},
 			"worker_loaders": [
 				{
 					"binding": "LOADER",
@@ -108,10 +108,6 @@
 						"name": "MCP_OBJECT",
 					},
 					{
-						"class_name": "ChatAgent",
-						"name": "ChatAgent",
-					},
-					{
 						"class_name": "RemoteConnectorSession",
 						"name": "REMOTE_CONNECTOR_SESSION",
 					},
@@ -122,10 +118,6 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
-					},
-					{
-						"class_name": "AgentTurnRunner",
-						"name": "AGENT_TURN_RUNNER",
 					},
 					{
 						"class_name": "RepoSession",
@@ -168,17 +160,11 @@
 				},
 			],
 			"vars": {
-				"AI_MODE": "remote",
-				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
 				"SENTRY_ENVIRONMENT": "production",
 				"WORKFLOW_CONCURRENT_LIMIT": "100",
 			},
 		},
 		"preview": {
-			"ai": {
-				"binding": "AI",
-				"remote": true,
-			},
 			"worker_loaders": [
 				{
 					"binding": "LOADER",
@@ -206,10 +192,6 @@
 						"name": "MCP_OBJECT",
 					},
 					{
-						"class_name": "ChatAgent",
-						"name": "ChatAgent",
-					},
-					{
 						"class_name": "RemoteConnectorSession",
 						"name": "REMOTE_CONNECTOR_SESSION",
 					},
@@ -220,10 +202,6 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
-					},
-					{
-						"class_name": "AgentTurnRunner",
-						"name": "AGENT_TURN_RUNNER",
 					},
 					{
 						"class_name": "RepoSession",
@@ -266,17 +244,11 @@
 				},
 			],
 			"vars": {
-				"AI_MODE": "remote",
-				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
 				"SENTRY_ENVIRONMENT": "preview",
 				"WORKFLOW_CONCURRENT_LIMIT": "100",
 			},
 		},
 		"test": {
-			"ai": {
-				"binding": "AI",
-				"remote": true,
-			},
 			"worker_loaders": [
 				{
 					"binding": "LOADER",
@@ -304,10 +276,6 @@
 						"name": "MCP_OBJECT",
 					},
 					{
-						"class_name": "ChatAgent",
-						"name": "ChatAgent",
-					},
-					{
 						"class_name": "RemoteConnectorSession",
 						"name": "REMOTE_CONNECTOR_SESSION",
 					},
@@ -318,10 +286,6 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
-					},
-					{
-						"class_name": "AgentTurnRunner",
-						"name": "AGENT_TURN_RUNNER",
 					},
 					{
 						"class_name": "RepoSession",
@@ -358,8 +322,6 @@
 				},
 			],
 			"vars": {
-				"AI_MODE": "mock",
-				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
 				"SENTRY_ENVIRONMENT": "test",
 				"WORKFLOW_CONCURRENT_LIMIT": "100",
 				"COOKIE_SECRET": "LOCAL_AND_PREVIEW_COOKIE_SECRET_32_CHARS_MINIMUM",

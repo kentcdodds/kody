@@ -1,8 +1,0 @@
-{
-  "name": "@kody/mock-ai",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@kody-internal/shared": "file:../../shared"
-  }
-}

@@ -223,7 +223,6 @@ declare function refreshAccessToken(providerName: string): Promise<string>;
 declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
-declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
 declare const packageContext: { packageId: string; kodyId: string } | null;
 declare const serviceContext: { serviceName: string } | null;
 declare const packageSecrets:

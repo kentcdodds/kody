@@ -151,7 +151,6 @@ export const codemode = runtime.codemode;
 export const storage = runtime.storage;
 export const refreshAccessToken = runtime.refreshAccessToken;
 export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
-export const agentChatTurnStream = runtime.agentChatTurnStream;
 export const packageContext = runtime.packageContext ?? null;
 export const serviceContext = runtime.serviceContext ?? null;
 export const service = runtime.service ?? null;

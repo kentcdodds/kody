@@ -1,6 +1,6 @@
 import {
 	buildCapabilityEmbedText,
-	CAPABILITY_EMBEDDING_MODEL,
+	embedTextsForVectorize,
 	getCapabilityVectorIndex,
 } from './capability-search.ts'
 import { type CapabilitySpec } from './types.ts'
@@ -22,15 +22,7 @@ export async function reindexCapabilityVectors(
 	for (let offset = 0; offset < list.length; offset += upsertBatchSize) {
 		const batch = list.slice(offset, offset + upsertBatchSize)
 		const texts = batch.map((spec) => buildCapabilityEmbedText(spec))
-		const result = (await env.AI.run(CAPABILITY_EMBEDDING_MODEL, {
-			text: texts,
-			pooling: 'mean',
-		})) as { data?: Array<Array<number>> }
-
-		const rows = result.data
-		if (!rows || rows.length !== batch.length) {
-			throw new Error('Workers AI embedding batch size mismatch')
-		}
+		const rows = await embedTextsForVectorize(env, texts)
 
 		const vectors = batch.map((spec, index_) => ({
 			id: spec.name,

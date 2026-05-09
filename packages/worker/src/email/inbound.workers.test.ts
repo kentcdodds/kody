@@ -18,7 +18,6 @@ import {
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import * as agentTurnApi from '#worker/agent-turn/api.ts'
 
 function createForwardableEmailMessage(input: {
 	from: string
@@ -317,31 +316,6 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 	const bundleKv = new Map<string, string>()
 	const subscriptionCalls: Array<Record<string, unknown>> = []
 	const replyFrom = `package-reply-${crypto.randomUUID()}@example.com`
-	const beginAgentTurnSpy = vi
-		.spyOn(agentTurnApi, 'beginAgentTurn')
-		.mockResolvedValue({
-			ok: true,
-			runId: 'run-subscription-1',
-			conversationId: 'conversation-subscription-1',
-		})
-	const collectAgentTurnEventsSpy = vi
-		.spyOn(agentTurnApi, 'collectAgentTurnEvents')
-		.mockResolvedValue([
-			{
-				type: 'turn_complete',
-				assistantText: 'Thanks for the email.',
-				reasoningText: '',
-				summary: 'Drafted an acknowledgement',
-				continueRecommended: false,
-				needsUserInput: false,
-				stepsUsed: 1,
-				newInformation: true,
-				stopReason: 'completed',
-				finishReason: 'completed',
-				toolCalls: [],
-				conversationId: 'conversation-subscription-1',
-			},
-		])
 
 	const db = env.APP_DB
 	await db
@@ -523,19 +497,9 @@ export const codemode = runtime.codemode;
 export const email = runtime.email ?? null;
 `.trim(),
 			'dist/subscription.js': `
-import { codemode, email } from '../.__kody_virtual__/runtime.js'
+import { email } from '../.__kody_virtual__/runtime.js'
 
 export default async function main(input = {}) {
-  const agentResult = await codemode.agent_chat_turn({
-    sessionId: 'email-subscription-session',
-    system: 'Write a short acknowledgement for this inbound email.',
-    messages: [
-      {
-        role: 'user',
-        content: 'Reply with a brief acknowledgement.',
-      },
-    ],
-  })
   const result = await email.getMessage(input.message.id)
   const firstAttachment = Array.isArray(input.attachments) ? input.attachments[0] : null
   const attachment = firstAttachment?.id
@@ -547,14 +511,14 @@ export default async function main(input = {}) {
   const reply = await email.reply({
     message_id: input.message.id,
     from: ${JSON.stringify(replyFrom)},
-    text: agentResult?.result?.assistantText ?? 'Fallback reply',
+    text: 'Thanks for the email.',
   })
   return {
     eventType: 'received',
     messageId: result.id,
     textBody: result.text_body,
     attachmentText,
-    agentReplyText: agentResult?.result?.assistantText ?? null,
+    replyText: 'Thanks for the email.',
     replyMessageId: reply.id,
     replyDirection: reply.direction,
   }
@@ -726,7 +690,7 @@ export default async function main(input = {}) {
 				eventType: 'received',
 				textBody: 'Stored body.\n',
 				attachmentText: 'Attachment text\n',
-				agentReplyText: 'Thanks for the email.',
+				replyText: 'Thanks for the email.',
 				replyDirection: 'outbound',
 			},
 		})
@@ -736,12 +700,10 @@ export default async function main(input = {}) {
 				eventType: 'received',
 				textBody: 'Approved body.\n',
 				attachmentText: null,
-				agentReplyText: 'Thanks for the email.',
+				replyText: 'Thanks for the email.',
 				replyDirection: 'outbound',
 			},
 		})
-		expect(beginAgentTurnSpy).toHaveBeenCalledTimes(2)
-		expect(collectAgentTurnEventsSpy).toHaveBeenCalledTimes(2)
 		expect(outboundMessages).toHaveLength(2)
 		expect(outboundMessages.map((message) => message.fromAddress)).toEqual([
 			replyFrom,
@@ -759,8 +721,6 @@ export default async function main(input = {}) {
 			'Thanks for the email.',
 		])
 	} finally {
-		beginAgentTurnSpy.mockRestore()
-		collectAgentTurnEventsSpy.mockRestore()
 		Object.assign(env, {
 			BUNDLE_ARTIFACTS_KV: originalKv,
 			EMAIL: originalEmailBinding,
