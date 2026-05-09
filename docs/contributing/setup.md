@@ -81,12 +81,17 @@ Quick notes for getting a local kody environment running.
   typechecking, agents do not need to run those checks separately before every
   commit unless they want earlier feedback or are validating a larger change set
   before opening a PR.
-- Push-time hooks intentionally stop short of `npm run validate`; MCP E2E, build
-  validation, and repo-wide format checks remain explicit checks because they
-  are heavier than the push gate.
-- `npm run validate` runs format check, lint fix, build, typecheck, Playwright
-  tests, and MCP E2E tests.
-- `npm run format` applies formatting updates.
+- Push-time hooks intentionally stop short of `npm run validate`; MCP E2E and
+  repo-wide format checks remain explicit checks because they are heavier than
+  the push gate.
+- `npm run validate` is the single authoritative gate and is what CI runs. It is
+  read-only and executes `format:check`, `lint`, `typecheck`, unit tests,
+  Playwright E2E, and MCP E2E in parallel, reporting every failure (sibling
+  checks are not aborted on the first failure). If `npm run validate` passes
+  locally, CI will pass.
+- `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
+  for mutating auto-fixes. It is never required to pass `validate`.
+- `npm run format` applies formatting updates on its own.
 - `npm run test:push` runs the same worker tests and Playwright E2E suite
   enforced by the Husky `pre-push` hook.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the

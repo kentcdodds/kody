@@ -119,5 +119,6 @@ high-signal smoke journeys.
 If `packages/worker/.env` is missing, the E2E server startup path copies
 `packages/worker/.env.example` to `packages/worker/.env` before Wrangler starts.
 
-These tests are executed by the `validate` gate, which also runs `lint:fix` and
-the MCP E2E suite.
+These tests are executed by the `validate` gate, alongside `format:check`,
+`lint`, `typecheck`, unit tests, and the MCP E2E suite. `validate` is read-only;
+use `npm run validate:fix` for `format` + `lint:fix`.
