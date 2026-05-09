@@ -12,7 +12,6 @@ import {
 import {
 	createJsonRpcRequest,
 	parseRemoteConnectorMessage,
-	parseJsonRpcMessage,
 	stringifyRemoteConnectorMessage,
 } from './utils.ts'
 import { connectorSessionKey } from './connector-session-key.ts'
@@ -438,18 +437,17 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	private async handleJsonRpcMessage(message: JSONRPCMessage) {
-		const parsed = parseJsonRpcMessage(message)
-		if ('result' in parsed || 'error' in parsed) {
-			const pending = this.pendingRequests.get(String(parsed.id))
+		if ('result' in message || 'error' in message) {
+			const pending = this.pendingRequests.get(String(message.id))
 			if (!pending) return
 			clearTimeout(pending.timeout)
-			this.pendingRequests.delete(String(parsed.id))
-			pending.resolve(parsed)
+			this.pendingRequests.delete(String(message.id))
+			pending.resolve(message)
 			return
 		}
 		if (
-			'method' in parsed &&
-			parsed.method === 'notifications/tools/list_changed'
+			'method' in message &&
+			message.method === 'notifications/tools/list_changed'
 		) {
 			try {
 				await this.refreshToolsSnapshot()
