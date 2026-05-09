@@ -101,6 +101,28 @@ Quick notes for getting a local kody environment running.
   `worker:prepare-e2e-env` target, which writes `packages/worker/.env` from
   `.env.example` when needed and backfills `COOKIE_SECRET` before the test run.
 
+## Authoring D1 migrations
+
+- New migration files live in `packages/worker/migrations/` and are applied in
+  lexicographic filename order by Wrangler (`npm run migrate:local`,
+  `migrate:e2e`, and the documented `d1 migrations apply APP_DB --remote`
+  invocations below).
+- Pick the next-highest 4-digit prefix as the filename: read the directory and
+  use `(max numeric prefix) + 1`, zero-padded to four digits (for example, if
+  the last file is `0036-...sql`, your new file is `0037-<slug>.sql`).
+- If your branch is behind `main` and a new migration has landed upstream with
+  the prefix you picked, rebase and renumber. Do not commit a duplicate prefix.
+- Do not edit migration files that have already landed in `main` and been
+  deployed. New migration files that only exist on your branch can be revised
+  freely until they land in `main`; once deployed, any schema correction should
+  ship as a new migration instead.
+- The directory currently contains four pairs of files that share a numeric
+  prefix from earlier parallel-branch merges (`0009`, `0010`, `0018`, `0023`).
+  These are intentionally left in place: D1 tracks applied migrations by exact
+  filename, all four pairs are additive (new tables/indexes only), and the
+  alphabetical apply order is stable. Treat them as grandfathered — do not
+  rename them, and do not add a third file to any of those prefixes.
+
 ## Documentation maintenance
 
 - Read `docs/contributing/project-intent.md` before making product-level changes
@@ -115,10 +137,6 @@ Quick notes for getting a local kody environment running.
 - Keep `AGENTS.md` concise and index-like; put details in focused docs.
 - When failures repeat, promote lessons from docs into tests, lint rules, or
   scripts.
-- Do not edit migration files that have already landed in `main` and been
-  deployed. New migration files that only exist on your branch can be revised
-  freely until they land in `main`; once deployed, any schema correction should
-  ship as a new migration instead.
 
 ## Seed test account
 
