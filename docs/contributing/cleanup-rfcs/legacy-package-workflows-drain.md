@@ -18,6 +18,58 @@ class, the binding, the test module, and the CI plumbing.
 This document inventories what is left, defines a "drain complete" signal,
 proposes the exact removal sequence, and recommends a timing rule.
 
+## Production state (as of 2026-05-09)
+
+A live audit of the production Cloudflare account (`KCD Account` —
+`a41d50ecaf0ae0f86dd1824ef6729cb2`) and of the signed-in user's saved Kody data
+narrows the blast radius significantly:
+
+- **Saved-package manifests:** all 36 of the signed-in user's saved packages
+  were inspected (`package.json#kody`). **None** carry a `kody.workflows` field.
+  `package_save` already rejects new ones, and no historical row has the field
+  either, so manifest hygiene is a no-op.
+- **`workflow_runs` table:** the legacy `PackageWorkflowEntrypoint` never wrote
+  to this table (only `DynamicCallableWorkflow` does), and a `workflow_list`
+  scan confirms every existing row is hub-backed and either `complete` or one of
+  the four newly migrated `running` rows described below. Nothing here is
+  legacy.
+- **Cloudflare Workflows definitions on the production account:**
+  - `kody-package-workflows` (production, legacy): exists,
+    `script_name: kody-production`, `class_name: PackageWorkflowEntrypoint`.
+    Pre-migration instance counts: `waiting: 4`, `errored: 2`, `complete: 21`,
+    `terminated: 0`, all others `0`. Post-migration: `waiting: 0`,
+    `terminated: 4`, `errored: 2`, `complete: 21`. **Zero non-terminal instances
+    remain.**
+  - `kody-preview-package-workflows` (preview, legacy): **does not exist on the
+    Cloudflare side.** The binding in `env.preview.workflows` was never
+    provisioned as a real workflow definition on the account.
+  - `kody-test-package-workflows` (test, legacy): **does not exist on the
+    Cloudflare side.** Same situation.
+  - 49 `kody-pr-N-package-workflows` definitions exist as leftovers from
+    closed/merged PR preview deploys. These are unrelated to the legacy cleanup
+    but worth a separate sweep.
+- **Live migration performed:** the four `waiting` legacy instances were all
+  from the `shade-automation` package's daily planner (saved package
+  `1a0476b4-c1d6-47ad-802e-dd5f4631c919`, export `./workflow-run-event`),
+  scheduled to fire between 2026-05-09T02:10Z and 2026-05-09T03:30Z. Each was
+  migrated to the hub-backed `kody-dynamic-callable-workflows` workflow by
+  re-issuing `workflows.create` with the same `packageId`, `exportName`,
+  `workflowName`, `idempotencyKey`, `runAt`, and `params`, then the legacy
+  instance was terminated via the Cloudflare Workflows
+  `PATCH /.../instances/:id/status` API. The hub-backed re-creations now appear
+  in `workflow_runs` with `source_type: package`, `status: running` (sleeping
+  until their original `runAt`), and the same `pkgwf-` instance IDs (the ID is a
+  deterministic hash of the canonical payload, so the hub instance carries the
+  same identifier on a different Workflow definition). The two pre-existing
+  `errored` instances are already terminal and require no action — Cloudflare
+  expires them after the configured 30-day retention.
+
+The net effect: as of the timestamp above, the production legacy workflow holds
+zero in-flight DOs, the user's workflow data is intact and now lives on the hub,
+and §5's quiet-window criterion has been pre-satisfied. Re-run the verification
+queries in §2 immediately before merging the binding-removal PR to confirm
+nothing has changed.
+
 ## Inventory of the legacy surface
 
 The following exist only to support drain:
@@ -171,6 +223,13 @@ The order matters. The two hard constraints are:
    re-creates a workflow on a redeploy because the binding is still present,
    re-run the delete.)
 
+   Empirical note (see §"Production state"): only `kody-package-workflows`
+   actually exists on the production account. The preview and test workflow
+   names are not provisioned, so the second and third
+   `wrangler workflows delete` calls are expected to no-op or error with "not
+   found" — that is safe and indicates there is nothing on the Cloudflare side
+   to clean up for those bindings.
+
 4. **Remove the binding from `wrangler.jsonc`.** Delete the three
    `PACKAGE_WORKFLOWS` entries from `env.production.workflows`,
    `env.preview.workflows`, and `env.test.workflows`. Leave the
@@ -263,7 +322,22 @@ Workflows are not part of the DO migrations ledger. Removing the binding from
 
 ## 5. Recommended timing
 
-### Constraints
+### Empirical short-circuit
+
+The drain criterion below was framed under the assumption that we would wait for
+legacy DOs to age out naturally. The "Production state" section above shows
+that, as of 2026-05-09, the production legacy workflow already holds **zero**
+non-terminal instances (the four real schedules were migrated to the hub) and
+the preview/test workflow names were never provisioned in the first place. So
+the conservative 30-day window is no longer required: PR B (binding removal) can
+ship as soon as PR A's instrumentation has been deployed for one verify cycle
+and the §2 queries still return zero.
+
+If the intent is to _not_ land any drain instrumentation at all, PR B can ship
+directly after re-running the §2 verification against production immediately
+before merging. PR A becomes optional in that case.
+
+### Constraints (if you choose the conservative path)
 
 - `1c23974` was deployed on **2026-05-08**.
 - Workflow instances created by the legacy path used
