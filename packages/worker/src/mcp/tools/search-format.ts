@@ -644,11 +644,12 @@ export function toSlimStructuredMatches(input: {
 					primaryAction.functions[0] ??
 					null)
 				: null
-			const nextStep = match.hasApp
-				? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
-				: primaryAction && primaryActionFunction
+			const nextStep =
+				primaryAction && primaryActionFunction
 					? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.`
-					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
+					: match.hasApp
+						? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
+						: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
 			return {
 				type: 'package',
 				id: match.kodyId,

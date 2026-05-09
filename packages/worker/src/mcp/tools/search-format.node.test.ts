@@ -505,7 +505,7 @@ test('package search formatting surfaces matched action recipes compactly', () =
 				title: '@kentcdodds/google-products',
 				description: 'Google product helpers.',
 				tags: ['google', 'calendar'],
-				hasApp: false,
+				hasApp: true,
 				actionMatches: [
 					{
 						subpath: './calendar',
@@ -538,7 +538,7 @@ test('package search formatting surfaces matched action recipes compactly', () =
 				title: '@kentcdodds/google-products',
 				description: 'Google product helpers.',
 				tags: ['google', 'calendar'],
-				hasApp: false,
+				hasApp: true,
 				actionMatches: [
 					{
 						subpath: './calendar',
@@ -568,6 +568,8 @@ test('package search formatting surfaces matched action recipes compactly', () =
 		type: 'package',
 		usage:
 			'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
+		nextStep:
+			'Use import { createEvent } from "kody:@kentcdodds/google-products/calendar"; inspect search({ entity: "google-products:package" }) only if you need more exports.',
 		actionMatches: [
 			expect.objectContaining({
 				subpath: './calendar',

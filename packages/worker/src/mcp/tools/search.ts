@@ -906,6 +906,7 @@ function buildPackageCandidates(input: {
 	rows: Array<PackageSearchRow>
 	queryEmbedding: ReadonlyArray<number>
 }): Array<SearchCandidate> {
+	const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
 	return input.rows
 		.map((entry) => {
 			const exports = Array.isArray(entry.projection.exports)
@@ -926,7 +927,7 @@ function buildPackageCandidates(input: {
 			const readmeSnippet = entry.readmeSnippet?.snippet ?? ''
 			const actionMatches = buildPackageActionMatches({
 				query: input.query,
-				meaningfulTokens: extractMeaningfulSearchTokens(input.query),
+				meaningfulTokens,
 				exports,
 			})
 			const document = [
