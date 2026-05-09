@@ -98,6 +98,11 @@ test('meta_list_capabilities includes runtime remote connector capabilities with
 			env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
+				user: {
+					userId: 'user-1',
+					email: 'user-1@example.com',
+					displayName: 'user-1',
+				},
 				remoteConnectors: [{ kind: 'roku', instanceId: 'default' }],
 			}),
 		},

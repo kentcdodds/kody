@@ -1138,6 +1138,11 @@ test('down remote connector status is returned when the connector is disconnecte
 			},
 		} as unknown as Env,
 		callerContext: {
+			user: {
+				userId: 'user-1',
+				email: 'user-1@example.com',
+				displayName: 'user-1',
+			},
 			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
 		},
 	})
@@ -1173,9 +1178,24 @@ test('down remote connector status stays hidden when the connector is up', async
 			},
 		} as unknown as Env,
 		callerContext: {
+			user: {
+				userId: 'user-1',
+				email: 'user-1@example.com',
+				displayName: 'user-1',
+			},
 			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
 		},
 	})
 
+	expect(statuses).toEqual([])
+})
+
+test('loadDownRemoteConnectorStatuses returns no statuses when caller has no user', async () => {
+	const statuses = await loadDownRemoteConnectorStatuses({
+		env: {} as unknown as Env,
+		callerContext: {
+			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
+		},
+	})
 	expect(statuses).toEqual([])
 })

@@ -70,12 +70,15 @@ function createRemoteConnectorSettingsTestDb() {
 							}
 							if (
 								normalizedQuery.includes('from remote_connector_settings') &&
-								normalizedQuery.includes('where kind = ? and instance_id = ?')
+								normalizedQuery.includes(
+									'where user_id = ? and kind = ? and instance_id = ? and enabled = 1',
+								)
 							) {
-								const [kind, instanceId] = params as Array<string>
+								const [userId, kind, instanceId] = params as Array<string>
 								const results = Array.from(rows.values())
 									.filter(
 										(row) =>
+											row.user_id === userId &&
 											row.kind === kind &&
 											row.instance_id === instanceId &&
 											row.enabled &&
