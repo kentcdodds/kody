@@ -68,9 +68,6 @@ function reportPackageAppFailure(input: {
 			scope.setTag('package_app.kody_id', input.kodyId)
 			scope.setTag('package_app.package_id', input.packageId)
 			scope.setTag('package_app.source_id', input.sourceId)
-			scope.setTag('package_app.forwarded_path', input.forwardedPath)
-			scope.setTag('package_app.realtime_path', input.realtimePath)
-			scope.setTag('package_app.host_path', input.requestUrl.pathname)
 			scope.setContext('package_app', {
 				phase: input.phase,
 				kodyId: input.kodyId,

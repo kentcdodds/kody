@@ -135,13 +135,17 @@ test('handlePackageAppRequest reports package app runtime failures to Sentry', a
 		'package_app.source_id',
 		'source-1',
 	)
-	expect(mockModule.sentryScope.setTag).toHaveBeenCalledWith(
+	expect(mockModule.sentryScope.setTag).not.toHaveBeenCalledWith(
 		'package_app.forwarded_path',
-		'/report',
+		expect.any(String),
 	)
-	expect(mockModule.sentryScope.setTag).toHaveBeenCalledWith(
+	expect(mockModule.sentryScope.setTag).not.toHaveBeenCalledWith(
+		'package_app.realtime_path',
+		expect.any(String),
+	)
+	expect(mockModule.sentryScope.setTag).not.toHaveBeenCalledWith(
 		'package_app.host_path',
-		'/packages/example/report',
+		expect.any(String),
 	)
 	expect(mockModule.sentryScope.setContext).toHaveBeenCalledWith(
 		'package_app',
