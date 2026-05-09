@@ -99,14 +99,44 @@ beforeEach(() => {
 	vi.clearAllMocks()
 })
 
-test('handlePackageAppRequest returns a plain 500 when package app runtime setup fails', async () => {
+test('handlePackageAppRequest returns a helpful HTML 500 when package app runtime setup fails', async () => {
 	const response = await handlePackageAppRequest(
 		new Request('https://example.com/packages/example'),
 		{} as Env,
 	)
 
 	expect(response.status).toBe(500)
-	await expect(response.text()).resolves.toBe('Internal Server Error')
+	expect(response.headers.get('content-type')).toContain('text/html')
+	const body = await response.text()
+	expect(body).toContain('Package app could not be prepared')
+	expect(body).toContain(
+		'Kody could not load or prepare this package app runtime',
+	)
+	expect(body).toContain('@kody/example')
+	expect(body).toContain('example')
+})
+
+test('handlePackageAppRequest returns a helpful JSON 500 for API package app requests', async () => {
+	const response = await handlePackageAppRequest(
+		new Request('https://example.com/packages/example/api/data', {
+			headers: { accept: 'application/json' },
+		}),
+		{} as Env,
+	)
+
+	expect(response.status).toBe(500)
+	await expect(response.json()).resolves.toEqual({
+		error: 'Package app could not be prepared',
+		message:
+			'Kody could not load or prepare this package app runtime before your request reached the package code.',
+		next_step:
+			'This has been reported to Kody. Try again shortly, or ask the package owner to republish the package if it keeps happening.',
+		package: {
+			name: '@kody/example',
+			kody_id: 'example',
+		},
+		request_path: '/packages/example/api/data',
+	})
 })
 
 test('handlePackageAppRequest reports package app runtime failures to Sentry', async () => {
@@ -193,6 +223,10 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 	)
 
 	expect(response.status).toBe(500)
+	const body = await response.text()
+	expect(body).toContain('Package app crashed')
+	expect(body).toContain('its own request handler failed')
+	expect(body).toContain('package runtime debug runs')
 	expect(mockModule.captureException).not.toHaveBeenCalled()
 })
 

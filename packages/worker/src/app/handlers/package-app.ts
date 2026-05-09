@@ -1,4 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
+import { html } from 'remix/html-template'
+import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
@@ -85,6 +87,148 @@ function reportPackageAppFailure(input: {
 	}
 }
 
+type PackageAppFailureKind =
+	| 'host-setup'
+	| 'package-entrypoint'
+	| 'realtime-connect'
+
+function wantsJson(request: Request) {
+	const accept = request.headers.get('accept')
+	return accept?.includes('application/json') ?? false
+}
+
+function createPackageAppErrorResponse(input: {
+	request: Request
+	kind: PackageAppFailureKind
+	kodyId: string
+	packageName: string
+}) {
+	const messages = {
+		'host-setup': {
+			title: 'Package app could not be prepared',
+			summary:
+				'Kody could not load or prepare this package app runtime before your request reached the package code.',
+			nextStep:
+				'This has been reported to Kody. Try again shortly, or ask the package owner to republish the package if it keeps happening.',
+		},
+		'package-entrypoint': {
+			title: 'Package app crashed',
+			summary:
+				'The package app started, but its own request handler failed while processing this request.',
+			nextStep:
+				'Ask the package owner to inspect recent package runtime debug runs for this app.',
+		},
+		'realtime-connect': {
+			title: 'Package realtime connection failed',
+			summary:
+				'Kody could not establish the realtime session for this package app.',
+			nextStep:
+				'This has been reported to Kody. Try reconnecting, or ask the package owner to retry after checking the package app.',
+		},
+	} satisfies Record<
+		PackageAppFailureKind,
+		{ title: string; summary: string; nextStep: string }
+	>
+	const message = messages[input.kind]
+	const requestPath = new URL(input.request.url).pathname
+	const body = {
+		error: message.title,
+		message: message.summary,
+		next_step: message.nextStep,
+		package: {
+			name: input.packageName,
+			kody_id: input.kodyId,
+		},
+		request_path: requestPath,
+	}
+	if (wantsJson(input.request)) {
+		return Response.json(body, { status: 500 })
+	}
+	return createHtmlResponse(
+		html`<!doctype html>
+			<html lang="en">
+				<head>
+					<meta charset="utf-8" />
+					<meta name="viewport" content="width=device-width, initial-scale=1" />
+					<title>${message.title}</title>
+					<style>
+						:root {
+							color-scheme: light dark;
+							font-family:
+								ui-sans-serif,
+								system-ui,
+								-apple-system,
+								BlinkMacSystemFont,
+								'Segoe UI',
+								sans-serif;
+							line-height: 1.5;
+						}
+						body {
+							margin: 0;
+							background: #f8fafc;
+							color: #0f172a;
+						}
+						main {
+							box-sizing: border-box;
+							max-width: 46rem;
+							margin: 0 auto;
+							padding: min(12vh, 6rem) 1.25rem;
+						}
+						.card {
+							border: 1px solid #cbd5e1;
+							border-radius: 1rem;
+							background: white;
+							padding: clamp(1.25rem, 4vw, 2rem);
+							box-shadow: 0 20px 60px rgb(15 23 42 / 0.12);
+						}
+						h1 {
+							margin: 0 0 0.75rem;
+							font-size: clamp(1.75rem, 4vw, 2.75rem);
+							line-height: 1;
+						}
+						dl {
+							display: grid;
+							grid-template-columns: max-content 1fr;
+							gap: 0.35rem 0.75rem;
+							margin: 1.5rem 0 0;
+						}
+						dt {
+							font-weight: 700;
+						}
+						@media (prefers-color-scheme: dark) {
+							body {
+								background: #020617;
+								color: #e2e8f0;
+							}
+							.card {
+								border-color: #334155;
+								background: #0f172a;
+							}
+						}
+					</style>
+				</head>
+				<body>
+					<main>
+						<section class="card" aria-labelledby="package-app-error-title">
+							<h1 id="package-app-error-title">${message.title}</h1>
+							<p>${message.summary}</p>
+							<p>${message.nextStep}</p>
+							<dl>
+								<dt>Package</dt>
+								<dd>${input.packageName}</dd>
+								<dt>Kody ID</dt>
+								<dd><code>${input.kodyId}</code></dd>
+								<dt>Path</dt>
+								<dd><code>${requestPath}</code></dd>
+							</dl>
+						</section>
+					</main>
+				</body>
+			</html>`,
+		{ status: 500 },
+	)
+}
+
 export async function handlePackageAppRequest(
 	request: Request,
 	env: Env,
@@ -138,7 +282,12 @@ export async function handlePackageAppRequest(
 				forwardedPath: forwardedPackageRestPath,
 				realtimePath: packageRealtimeRestPath,
 			})
-			return new Response('Internal Server Error', { status: 500 })
+			return createPackageAppErrorResponse({
+				request,
+				kind: 'realtime-connect',
+				kodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+			})
 		}
 	}
 
@@ -195,13 +344,23 @@ export async function handlePackageAppRequest(
 			forwardedPath: forwardedPackageRestPath,
 			realtimePath: packageRealtimeRestPath,
 		})
-		return new Response('Internal Server Error', { status: 500 })
+		return createPackageAppErrorResponse({
+			request,
+			kind: 'host-setup',
+			kodyId: savedPackage.kodyId,
+			packageName: savedPackage.name,
+		})
 	}
 
 	try {
 		return await entrypoint.fetch(forwardedRequest)
 	} catch (error) {
 		console.error('Package app entrypoint failed:', error)
-		return new Response('Internal Server Error', { status: 500 })
+		return createPackageAppErrorResponse({
+			request,
+			kind: 'package-entrypoint',
+			kodyId: savedPackage.kodyId,
+			packageName: savedPackage.name,
+		})
 	}
 }
