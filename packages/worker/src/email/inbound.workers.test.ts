@@ -492,9 +492,32 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 		mainModule: 'dist/subscription.js',
 		modules: {
 			'.__kody_virtual__/runtime.js': `
-const runtime = globalThis.__kodyRuntime ?? {};
-export const codemode = runtime.codemode;
-export const email = runtime.email ?? null;
+import { AsyncLocalStorage } from 'node:async_hooks';
+const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+const __kodyGlobal = globalThis;
+const __kodyRuntimeStorage =
+  __kodyGlobal[__kodyRuntimeStorageSymbol] ??
+  (__kodyGlobal[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
+const __getRuntime = () => __kodyRuntimeStorage.getStore() ?? {};
+function __wrap(getValue) {
+	return new Proxy(function () {}, {
+		get(_t, p) {
+			const v = getValue();
+			if (v == null) return undefined;
+			const child = v[p];
+			return typeof child === 'function' ? child.bind(v) : child;
+		},
+		apply(_t, _this, args) {
+			const v = getValue();
+			if (typeof v !== 'function') {
+				throw new Error('Runtime export not callable.');
+			}
+			return Reflect.apply(v, undefined, args);
+		},
+	});
+}
+export const codemode = __wrap(() => __getRuntime().codemode);
+export const email = __wrap(() => __getRuntime().email ?? null);
 `.trim(),
 			'dist/subscription.js': `
 import { email } from '../.__kody_virtual__/runtime.js'

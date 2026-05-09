@@ -121,8 +121,48 @@ function createRelativeImportSpecifier(fromPath: string, targetPath: string) {
 }
 
 function createRuntimeModuleSource() {
+	// The runtime context for a single execute-call / package-app fetch is
+	// kept in AsyncLocalStorage rather than a single mutable globalThis slot.
+	// AsyncLocalStorage propagates through async chains so concurrent calls
+	// in the same isolate cannot clobber each other's runtime view, and the
+	// surrounding wrapper no longer needs a try/finally save/restore dance.
+	//
+	// The AsyncLocalStorage *instance* must be shared between this virtual
+	// runtime module and the surrounding execute / package-app wrapper,
+	// because the wrapper is the one that calls `.run(runtime, cb)` while
+	// user code reads the resulting store via the exports below. We share
+	// the instance through a globalThis symbol; only the *instance* lives on
+	// globalThis - the per-request runtime value is held inside the ALS, so
+	// concurrent requests do not stomp on each other's view.
+	//
+	// The exports are evaluated when the module is first imported. Both
+	// the codemode executor and the package-app worker load this bundle
+	// fresh per request (DynamicWorkerExecutor for codemode,
+	// APP_LOADER.load() for package-app), and each wrapper resolves the
+	// same AsyncLocalStorage off the well-known symbol and calls
+	// \`storage.run(runtime, async () => { await import(...) })\` before
+	// any user module - so the store is already populated by the time
+	// the assignments below run. \`__kodyRunInRuntime\` exposes that same
+	// \`storage.run(...)\` for tests and for any future wrapper that wants
+	// to call into the runtime module directly. Capturing the values
+	// statically (rather than via Proxies) preserves the original
+	// semantics of \`import { email } from 'kody:runtime'\`: optional
+	// runtime exports stay falsy when the surrounding wrapper did not
+	// provide them, so \`if (email) { ... }\` guards continue to work.
 	return `
-const runtime = globalThis.__kodyRuntime ?? {};
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+const __globalAny = /** @type {any} */ (globalThis);
+const __kodyRuntimeStorage =
+	__globalAny[__kodyRuntimeStorageSymbol] ??
+	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
+
+export function __kodyRunInRuntime(runtime, callback) {
+	return __kodyRuntimeStorage.run(runtime, callback);
+}
+
+const runtime = __kodyRuntimeStorage.getStore() ?? {};
 
 export const codemode = runtime.codemode;
 export const storage = runtime.storage;

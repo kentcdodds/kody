@@ -826,8 +826,13 @@ ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
 ${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
 ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
 ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
-  const __previousRuntime = globalThis.__kodyRuntime;
-  globalThis.__kodyRuntime = {
+  const { AsyncLocalStorage: __KodyAsyncLocalStorage } = await import('node:async_hooks');
+  const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+  const __kodyGlobal = globalThis;
+  const __kodyRuntimeStorage =
+    __kodyGlobal[__kodyRuntimeStorageSymbol] ??
+    (__kodyGlobal[__kodyRuntimeStorageSymbol] = new __KodyAsyncLocalStorage());
+  const __kodyRuntime = {
     codemode,
     storage: typeof storage === 'undefined' ? undefined : storage,
     refreshAccessToken,
@@ -840,20 +845,14 @@ ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
     workflows: typeof workflows === 'undefined' ? null : workflows,
     packages: typeof packages === 'undefined' ? null : packages,
   };
-  try {
+  return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
     const __kodyEntrypoint = __kodyModule?.default;
     if (typeof __kodyEntrypoint !== 'function') {
       throw new Error('Kody execute modules must default export a function.');
     }
     return await __kodyEntrypoint(${entrypointInputSource});
-  } finally {
-    if (__previousRuntime === undefined) {
-      delete globalThis.__kodyRuntime;
-    } else {
-      globalThis.__kodyRuntime = __previousRuntime;
-    }
-  }
+  });
 }`
 		try {
 			const result = await executor.execute(wrapped, [provider])

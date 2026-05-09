@@ -1728,12 +1728,15 @@ test('buildKodyAppBundle runtime module exports service helper', async () => {
 				files?: Record<string, string>
 		  }
 		| undefined
-	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
-		'export const service = runtime.service ?? null;',
+	const runtimeSource = firstCall?.files?.['.__kody_virtual__/runtime.js'] ?? ''
+	expect(runtimeSource).toContain(
+		'export const service = createValueProxy(() => __getRuntime().service ?? null);',
 	)
-	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).not.toContain(
-		'params',
+	expect(runtimeSource).toContain(
+		"import { AsyncLocalStorage } from 'node:async_hooks';",
 	)
+	expect(runtimeSource).toContain('export function __kodyRunInRuntime')
+	expect(runtimeSource).not.toContain('params')
 })
 
 test('buildKodyAppBundle runtime module exports package invocation helper', async () => {

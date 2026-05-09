@@ -48,6 +48,22 @@ const packageAppRuntimeBindingName = 'KODY_RUNTIME'
 function createPackageAppWorkerSource(input: { mainModule: string }) {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+// Resolve the AsyncLocalStorage instance synchronously at module load,
+// then publish it under the well-known symbol exactly once. The runtime
+// virtual module reads the same symbol, so wrapper and user code are
+// guaranteed to share the same ALS instance even when several requests
+// race during cold start.
+const __kodyRuntimeStorage = (() => {
+	const globalAny = globalThis;
+	const existing = globalAny[__kodyRuntimeStorageSymbol];
+	if (existing) return existing;
+	const created = new AsyncLocalStorage();
+	globalAny[__kodyRuntimeStorageSymbol] = created;
+	return created;
+})();
 
 function buildFacetName(rawFacetName) {
 	return typeof rawFacetName === 'string' && rawFacetName.trim().length > 0
@@ -488,25 +504,26 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				method: request.method,
 			},
 		});
-		const previousRuntime = globalThis.__kodyRuntime;
-		globalThis.__kodyRuntime = createRuntime(
+		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
-			const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
-			const runtimeEnv = createPackageAppEnv(this.env, userModule);
-			const candidate = userModule.default ?? userModule;
-			const fetchHandler =
-				typeof candidate === 'function'
-					? candidate
-					: candidate && typeof candidate.fetch === 'function'
-						? candidate.fetch.bind(candidate)
-						: null;
-			if (!fetchHandler) {
-				throw new Error('Package apps must default export a fetch handler or an object with fetch().');
-			}
-			const response = await fetchHandler(request, runtimeEnv, this.ctx);
+			const response = await __kodyRuntimeStorage.run(runtime, async () => {
+				const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
+				const runtimeEnv = createPackageAppEnv(this.env, userModule);
+				const candidate = userModule.default ?? userModule;
+				const fetchHandler =
+					typeof candidate === 'function'
+						? candidate
+						: candidate && typeof candidate.fetch === 'function'
+							? candidate.fetch.bind(candidate)
+							: null;
+				if (!fetchHandler) {
+					throw new Error('Package apps must default export a fetch handler or an object with fetch().');
+				}
+				return await fetchHandler(request, runtimeEnv, this.ctx);
+			});
 			await finishRuntimeRun(runtimeBridge, {
 				run: runtimeRun,
 				status: 'success',
@@ -519,9 +536,6 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				error: serializeRuntimeError(error),
 			});
 			throw error;
-		} finally {
-			if (previousRuntime === undefined) delete globalThis.__kodyRuntime;
-			else globalThis.__kodyRuntime = previousRuntime;
 		}
 	}
 
@@ -536,29 +550,24 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				topic: payload?.topic,
 			},
 		});
-		const previousRuntime = globalThis.__kodyRuntime;
-		globalThis.__kodyRuntime = createRuntime(
+		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
-			const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
-			const runtimeEnv = createPackageAppEnv(this.env, userModule);
-			const resolved = resolveRealtimeHandler(userModule, payload?.facet);
-			if (!resolved) {
-				const result = { actions: [] };
-				await finishRuntimeRun(runtimeBridge, {
-					run: runtimeRun,
-					status: 'success',
-				});
-				return result;
-			}
-			let result;
-			if (resolved.kind === 'function') {
-				result = await resolved.exported(payload, runtimeEnv, this.ctx);
-			} else if (resolved.kind === 'bound-method') {
-				result = await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
-			} else {
+			const result = await __kodyRuntimeStorage.run(runtime, async () => {
+				const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
+				const runtimeEnv = createPackageAppEnv(this.env, userModule);
+				const resolved = resolveRealtimeHandler(userModule, payload?.facet);
+				if (!resolved) {
+					return { actions: [] };
+				}
+				if (resolved.kind === 'function') {
+					return await resolved.exported(payload, runtimeEnv, this.ctx);
+				}
+				if (resolved.kind === 'bound-method') {
+					return await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+				}
 				const state = createInternalDurableObjectState(
 					runtimeBridge,
 					createFacetStorageId(this.env.__kodyPackageContext ?? null, payload?.facet),
@@ -569,8 +578,8 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				if (typeof instance.onRealtimeEvent !== 'function') {
 					throw new Error(\`Package app facet "\${buildFacetName(payload?.facet)}" must implement onRealtimeEvent().\`);
 				}
-				result = await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
-			}
+				return await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+			});
 			await finishRuntimeRun(runtimeBridge, {
 				run: runtimeRun,
 				status: 'success',
@@ -583,9 +592,6 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				error: serializeRuntimeError(error),
 			});
 			throw error;
-		} finally {
-			if (previousRuntime === undefined) delete globalThis.__kodyRuntime;
-			else globalThis.__kodyRuntime = previousRuntime;
 		}
 	}
 }
