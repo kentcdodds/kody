@@ -12,12 +12,13 @@ up, read [`docs/contributing/project-intent.md`](./project-intent.md) first.
 This repo uses starter-oriented conventions in some docs and structure, and the
 project intent is to build a personal assistant with an MCP-first architecture.
 
-## Create the project with degit
+## Create the project
 
+```bash
+npx create-epicflare
 ```
-npx degit epicweb-dev/epicflare my-kody-app
-cd my-kody-app
-```
+
+See the [README quick start](../../README.md#quick-start) for details.
 
 ## Install dependencies
 

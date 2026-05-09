@@ -6,7 +6,7 @@
   </p>
 
   <p>
-    <a href="https://github.com/epicweb-dev/epicflare/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/epicweb-dev/epicflare/deploy.yml?branch=main&style=flat-square&logo=github&label=CI" alt="Build Status" /></a>
+    <a href="https://github.com/kentcdodds/kody/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/kentcdodds/kody/deploy.yml?branch=main&style=flat-square&logo=github&label=CI" alt="Build Status" /></a>
     <img src="https://img.shields.io/badge/TypeScript-5.9-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Node-24-5FA04E?style=flat-square&logo=node.js&logoColor=white" alt="Node 24" />
     <img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers" />
