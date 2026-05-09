@@ -15,7 +15,7 @@ export async function ensurePrimaryUserExists(request: APIRequestContext) {
 		return
 	}
 
-	if (response.status() !== 409) {
+	if (response.status() !== 409 && response.status() !== 429) {
 		throw new Error(`Failed to seed primary user (${response.status()}).`)
 	}
 
