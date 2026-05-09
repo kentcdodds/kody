@@ -39,6 +39,10 @@ The app serves three paths:
 - `/api/status` reports whether Workers AI is available
 - `/api/chat` runs the text fallback model/tool loop when `env.AI` is available
 
+Before handing off changes to the starter, run `npm run test:voice-app`. The
+self-test starts the preview server, drives Chromium through the call flow, and
+saves screenshots for quick visual review.
+
 The UI uses a typed utterance as the transcript source until the Cloudflare
 Voice transport can be attached. That keeps the app testable while preserving
 the intended flow:

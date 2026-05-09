@@ -20,3 +20,24 @@ What still needs platform work:
 
 Save the files in this directory with `package_save`, then open the package with
 `open_generated_ui({ "kody_id": "voice-call-app" })`.
+
+## Local confidence check
+
+Run this before handing off voice-app changes:
+
+```sh
+npm run test:voice-app
+```
+
+The command starts the local preview server, opens Chromium with Playwright, and
+checks:
+
+- the call button enters listening mode
+- the utterance field enables and receives focus
+- sending an utterance enters the thinking state
+- the pending setup guidance appears when Workers AI is unavailable
+- dark mode toggles correctly
+- the mobile layout has no horizontal overflow
+
+Screenshots are written to `/tmp/kody-voice-app-self-test` by default. Override
+that with `VOICE_APP_ARTIFACT_DIR=/path/to/screenshots`.

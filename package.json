@@ -46,6 +46,7 @@
     "typecheck": "nx run worker:typecheck",
     "test": "nx run worker:test",
     "test:push": "npm run test && npm run test:e2e:run",
+    "test:voice-app": "node docs/examples/voice-call-app/self-test.mjs",
     "inspect": "npx -y @mcpjam/inspector inspector",
     "validate": "concurrently -n format,lint,typecheck,test,e2e,mcp -c green,yellow,magenta,blue,cyan,red \"npm run format:check\" \"npm run lint\" \"npm run typecheck\" \"npm run test\" \"npm run test:e2e:run\" \"npm run test:mcp\"",
     "validate:fix": "npm run format && npm run lint:fix",
