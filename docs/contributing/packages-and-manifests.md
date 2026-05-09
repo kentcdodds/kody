@@ -98,9 +98,10 @@ Jobs are not their own top-level saved primitive.
 
 ## Package-owned workflows
 
-Packages no longer declare workflow entrypoints in `package.json#kody`. The
-shared `DynamicCallableWorkflow` hub resolves workflow targets at runtime, so
-any package export is callable as a workflow without a manifest declaration.
+Packages declare workflow entrypoints in runtime code, not in
+`package.json#kody`. The shared `DynamicCallableWorkflow` hub resolves workflow
+targets at runtime, so any package export is callable as a workflow without a
+manifest declaration.
 
 Runtime code calls `workflows.create(...)` with the package export plus small
 parameters:
@@ -136,8 +137,7 @@ through the same package execution path used by package invocations. Workflow
 instances are not search results and are not saved as a new top-level Kody
 entity.
 
-Publishing a package that still declares a `kody.workflows` block fails fast
-with:
+Publishing a package with a `kody.workflows` block fails fast with:
 
 > Invalid package.json: `kody.workflows` is no longer supported; use
 > `workflows.create({ packageId, exportName })` from any runtime context.

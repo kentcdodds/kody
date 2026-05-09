@@ -123,12 +123,12 @@ Quick notes for getting a local kody environment running.
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should
   ship as a new migration instead.
-- The directory currently contains four pairs of files that share a numeric
-  prefix from earlier parallel-branch merges (`0009`, `0010`, `0018`, `0023`).
-  These are intentionally left in place: D1 tracks applied migrations by exact
-  filename, all four pairs are additive (new tables/indexes only), and the
-  alphabetical apply order is stable. Treat them as grandfathered — do not
-  rename them, and do not add a third file to any of those prefixes.
+- The directory contains four pairs of files that share a numeric prefix from
+  earlier parallel-branch merges (`0009`, `0010`, `0018`, `0023`). These are
+  intentionally left in place: D1 tracks applied migrations by exact filename,
+  all four pairs are additive (new tables/indexes only), and the alphabetical
+  apply order is stable. Treat them as grandfathered — do not rename them, and
+  do not add a third file to any of those prefixes.
 
 ## Documentation maintenance
 
