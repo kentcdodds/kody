@@ -290,10 +290,11 @@ export async function finishPackageRuntimeRun(input: {
 }) {
 	const db = dbFromEnv(input.env)
 	if (!db || !input.handle) return
+	const handle = input.handle
 	const finishedAt = new Date().toISOString()
 	const durationMs = Math.max(
 		0,
-		finishedAt ? Date.parse(finishedAt) - Date.parse(input.handle.startedAt) : 0,
+		Date.parse(finishedAt) - Date.parse(handle.startedAt),
 	)
 	const { errorName, errorMessage } = getErrorFields(input.error)
 	const logs = normalizeLogs(input.logs)
@@ -308,10 +309,10 @@ export async function finishPackageRuntimeRun(input: {
 						) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
 					)
 					.bind(
-						`${input.handle.id}:${log.sequence}`,
-						input.handle.id,
-						input.handle.userId,
-						input.handle.packageId,
+						`${handle.id}:${log.sequence}`,
+						handle.id,
+						handle.userId,
+						handle.packageId,
 						finishedAt,
 						log.sequence,
 						log.level,
@@ -340,8 +341,8 @@ export async function finishPackageRuntimeRun(input: {
 				errorName,
 				errorMessage,
 				finishedAt,
-				input.handle.id,
-				input.handle.userId,
+				handle.id,
+				handle.userId,
 			)
 			.run()
 	} catch (error) {
