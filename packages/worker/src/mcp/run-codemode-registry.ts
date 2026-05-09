@@ -710,64 +710,66 @@ export async function runBundledModuleWithRegistry(
 		userId: callerContext.user?.userId ?? null,
 		context: runtimeDebugContext,
 	})
-	const executor = createExecuteExecutor({
-		env,
-		exports: options?.executorExports ?? workerExports,
-		timeoutMs: options?.executorTimeoutMs,
-		gatewayProps: {
-			baseUrl: callerContext.baseUrl,
-			userId: callerContext.user?.userId ?? null,
-			storageContext: normalizedStorageContext,
-		},
-		modules: bundle.modules,
-	})
-	const workflowTools =
-		options?.workflowTools ??
-		createWorkflowTools({
+	let runtimeDebugFinished = false
+	try {
+		const executor = createExecuteExecutor({
 			env,
-			callerContext,
-			packageContext: options?.packageContext ?? null,
+			exports: options?.executorExports ?? workerExports,
+			timeoutMs: options?.executorTimeoutMs,
+			gatewayProps: {
+				baseUrl: callerContext.baseUrl,
+				userId: callerContext.user?.userId ?? null,
+				storageContext: normalizedStorageContext,
+			},
+			modules: bundle.modules,
 		})
-	const provider = await buildCodemodeProvider(env, callerContext, {
-		trackSecretInputValue: (value) => {
-			secretRedactor.track(value)
-		},
-		additionalTools: options?.additionalTools,
-		storageTools: options?.storageTools,
-		serviceTools: options?.serviceTools,
-		packageSecretTools: options?.packageContext
-			? createPackageSecretTools({
-					env,
-					callerContext,
-					packageId: options.packageContext.packageId,
-				})
-			: undefined,
-		emailTools: options?.emailTools,
-		workflowTools,
-		skipCapabilityRegistry: options?.skipCapabilityRegistry,
-	})
-	const storageHelperPrelude = options?.storageTools
-		? createStorageHelperPrelude({
-				storageId: options.storageTools.storageId,
-				writable: options.storageTools.writable,
+		const workflowTools =
+			options?.workflowTools ??
+			createWorkflowTools({
+				env,
+				callerContext,
+				packageContext: options?.packageContext ?? null,
 			})
-		: ''
-	const serviceHelperPrelude = options?.serviceTools
-		? createServiceHelperPrelude()
-		: ''
-	const packageSecretsHelperPrelude = options?.packageContext
-		? createPackageSecretsHelperPrelude()
-		: ''
-	const emailHelperPrelude = options?.emailTools
-		? createEmailHelperPrelude()
-		: ''
-	const workflowsHelperPrelude = workflowTools
-		? createWorkflowsHelperPrelude()
-		: ''
-	const entrypointInputJson = JSON.stringify(params)
-	const entrypointInputSource =
-		entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
-	const wrapped = `async () => {
+		const provider = await buildCodemodeProvider(env, callerContext, {
+			trackSecretInputValue: (value) => {
+				secretRedactor.track(value)
+			},
+			additionalTools: options?.additionalTools,
+			storageTools: options?.storageTools,
+			serviceTools: options?.serviceTools,
+			packageSecretTools: options?.packageContext
+				? createPackageSecretTools({
+						env,
+						callerContext,
+						packageId: options.packageContext.packageId,
+					})
+				: undefined,
+			emailTools: options?.emailTools,
+			workflowTools,
+			skipCapabilityRegistry: options?.skipCapabilityRegistry,
+		})
+		const storageHelperPrelude = options?.storageTools
+			? createStorageHelperPrelude({
+					storageId: options.storageTools.storageId,
+					writable: options.storageTools.writable,
+				})
+			: ''
+		const serviceHelperPrelude = options?.serviceTools
+			? createServiceHelperPrelude()
+			: ''
+		const packageSecretsHelperPrelude = options?.packageContext
+			? createPackageSecretsHelperPrelude()
+			: ''
+		const emailHelperPrelude = options?.emailTools
+			? createEmailHelperPrelude()
+			: ''
+		const workflowsHelperPrelude = workflowTools
+			? createWorkflowsHelperPrelude()
+			: ''
+		const entrypointInputJson = JSON.stringify(params)
+		const entrypointInputSource =
+			entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
+		const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
 ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
@@ -803,44 +805,60 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
     }
   }
 }`
-	try {
-		const result = await executor.execute(wrapped, [provider])
-		const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
-		if (!result.error) {
+		try {
+			const result = await executor.execute(wrapped, [provider])
+			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
+			if (!result.error) {
+				await finishPackageRuntimeRun({
+					env,
+					handle: runtimeDebugRun,
+					status: 'success',
+					logs: sanitizedResult.logs ?? [],
+				})
+				runtimeDebugFinished = true
+				return sanitizedResult
+			}
+			const batchMessage = await rewriteCapabilitySecretError({
+				error: result.error,
+				env,
+				callerContext,
+			})
+			const finalResult = batchMessage
+				? {
+						...sanitizedResult,
+						error: secretRedactor.redactErrorMessage(batchMessage),
+					}
+				: sanitizedResult
 			await finishPackageRuntimeRun({
 				env,
 				handle: runtimeDebugRun,
-				status: 'success',
-				logs: sanitizedResult.logs ?? [],
+				status: 'error',
+				logs: finalResult.logs ?? [],
+				error: finalResult.error,
 			})
-			return sanitizedResult
+			runtimeDebugFinished = true
+			return finalResult
+		} catch (error) {
+			if (!runtimeDebugFinished) {
+				await finishPackageRuntimeRun({
+					env,
+					handle: runtimeDebugRun,
+					status: 'error',
+					error,
+				})
+				runtimeDebugFinished = true
+			}
+			throw error
 		}
-		const batchMessage = await rewriteCapabilitySecretError({
-			error: result.error,
-			env,
-			callerContext,
-		})
-		const finalResult = batchMessage
-			? {
-					...sanitizedResult,
-					error: secretRedactor.redactErrorMessage(batchMessage),
-				}
-			: sanitizedResult
-		await finishPackageRuntimeRun({
-			env,
-			handle: runtimeDebugRun,
-			status: 'error',
-			logs: finalResult.logs ?? [],
-			error: finalResult.error,
-		})
-		return finalResult
 	} catch (error) {
-		await finishPackageRuntimeRun({
-			env,
-			handle: runtimeDebugRun,
-			status: 'error',
-			error,
-		})
+		if (!runtimeDebugFinished) {
+			await finishPackageRuntimeRun({
+				env,
+				handle: runtimeDebugRun,
+				status: 'error',
+				error,
+			})
+		}
 		throw error
 	}
 }
