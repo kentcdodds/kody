@@ -58,12 +58,6 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'Build a package-native long-lived service using kody.services, package app realtime fanout, service-owned storage, background lifecycle helpers, and scheduled wake-ups.',
 	},
-	voice_package_app: {
-		file: 'voice-package-app.md',
-		title: 'Voice package app starter',
-		summary:
-			'Build a Kody-authenticated package app voice-console starter with responsive UI, light/dark mode, pending thinking audio, and local AI SDK tool loops without agent-turn primitives.',
-	},
 } as const
 
 const guideIds = Object.keys(kodyOfficialGuideCatalog) as Array<
@@ -117,7 +111,7 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. For authenticated browser voice app starters without Kody agent turns, use `voice_package_app`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
@@ -138,7 +132,6 @@ const guideFieldSchema = z
 			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
 			'`connect_secret`: /connect/secret for API keys, PATs, and other secret collection steps.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
-			'`voice_package_app`: authenticated package app voice-console starter with Cloudflare Voice handoff notes and local tool loops.',
 		].join(' '),
 	)
 
@@ -192,14 +185,6 @@ const allKeywords = [
 		'heartbeat',
 		'reconnect',
 		'resume',
-		'voice',
-		'voice app',
-		'cloudflare voice',
-		'workers ai voice',
-		'thinking sound',
-		'audio',
-		'tool calls',
-		'light dark mode',
 		'credentials',
 		'official guide',
 		'documentation',
