@@ -15,7 +15,13 @@ export async function ensurePrimaryUserExists(request: APIRequestContext) {
 		return
 	}
 
-	if (response.status() !== 409 && response.status() !== 429) {
+	if (response.status() === 429) {
+		throw new Error(
+			'Failed to seed primary user because /auth is rate-limited.',
+		)
+	}
+
+	if (response.status() !== 409) {
 		throw new Error(`Failed to seed primary user (${response.status()}).`)
 	}
 }
