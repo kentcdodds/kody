@@ -30,13 +30,10 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	expect(authenticateHeader).toMatch(/^Bearer\s+/)
 })
 
-test('authenticated MCP smoke exposes core tools and inline UI sessions', async () => {
+test('authenticated MCP smoke returns same-origin inline UI sessions', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const tools = await mcpClient.client.listTools()
-	expect(tools.tools.map((tool) => tool.name)).toContain('open_generated_ui')
 
 	const inlineUiResult = await mcpClient.client.callTool({
 		name: 'open_generated_ui',

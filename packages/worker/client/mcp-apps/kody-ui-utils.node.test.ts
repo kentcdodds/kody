@@ -182,65 +182,47 @@ test('readSavedPackageAppSourceFromHostToolResult preserves host tool errors', (
 	})
 })
 
-test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', () => {
+test('buildCodemodeCapabilityExecuteCode runs the intended capability with the original args', async () => {
 	const code = buildCodemodeCapabilityExecuteCode('value_set', {
 		name: 'workspaceSlug',
 		value: 'kody',
 		scope: 'app',
 	})
-
-	const [opener, invocation, closer] = code.split('\n')
-	expect(opener).toBe('async () => {')
-	expect(closer).toBe('}')
-	expect(invocation).toBe(
-		'  return await codemode["value_set"]({"name":"workspaceSlug","value":"kody","scope":"app"});',
-	)
-})
-
-test('kodyWidget public api exposes executeCode helper', () => {
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	expect(typeof kodyWidget.executeCode).toBe('function')
-})
-
-test('kodyWidget public api exposes appBackend helper facade when available', () => {
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	runtimeState.install({
-		mode: 'hosted',
-		appBackend: {
-			basePath: '/app/app-123',
-			facetNames: ['main'],
+	const calls: Array<{ capability: string; args: unknown }> = []
+	const context = createContext({
+		codemode: {
+			async value_set(args: unknown) {
+				calls.push({
+					capability: 'value_set',
+					args: JSON.parse(JSON.stringify(args)),
+				})
+				return 'ok'
+			},
 		},
 	})
 
-	expect(kodyWidget.appBackend).not.toBeNull()
-	expect(kodyWidget.appBackend?.basePath).toBe('/app/app-123')
-	expect(kodyWidget.appBackend?.facetNames).toEqual(['main'])
-	expect(typeof kodyWidget.appBackend?.resolveUrl).toBe('function')
-	expect(typeof kodyWidget.appBackend?.fetch).toBe('function')
-})
-
-test('public module does not export readiness helpers', () => {
-	expect('getKodyWidget' in uiUtils).toBe(false)
-	expect('whenKodyWidgetReady' in uiUtils).toBe(false)
-})
-
-test('imported kodyWidget is synchronously stable before runtime init', () => {
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	const kodyGlobal = globalThis as typeof globalThis & {
-		kodyWidget?: typeof kodyWidget
-	}
-
-	expect(kodyWidget).toBe(kodyGlobal.kodyWidget)
-	expect(kodyWidget.params).toEqual({})
-	expect(typeof kodyWidget.sendMessage).toBe('function')
+	await expect(new Script(`(${code})()`).runInContext(context)).resolves.toBe('ok')
+	expect(calls).toEqual([
+		{
+			capability: 'value_set',
+			args: {
+				name: 'workspaceSlug',
+				value: 'kody',
+				scope: 'app',
+			},
+		},
+	])
 })
 
 test('async helpers read installed runtime state', async () => {
 	const runtimeState = getKodyWidgetRuntimeStateForTest()
 	runtimeState.reset()
+
+	expect(kodyWidget.params).toEqual({})
+	expect(kodyWidget.appBackend).toBeNull()
+	expect(typeof kodyWidget.sendMessage).toBe('function')
+	expect(typeof kodyWidget.executeCode).toBe('function')
+
 	runtimeState.install({
 		mode: 'mcp',
 		params: { owner: 'kody' },

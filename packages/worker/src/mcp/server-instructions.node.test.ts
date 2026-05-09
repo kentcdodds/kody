@@ -18,12 +18,22 @@ test('surfaces remote connector identifiers and compacts long descriptions', () 
 			},
 		],
 	})
+	const connectorLines = instructions
+		.split('\n')
+		.filter((line) => line.startsWith('- `'))
+	const shortConnectorLine = connectorLines.find((line) =>
+		line.includes('`home/default`'),
+	)
+	const longConnectorLine = connectorLines.find((line) =>
+		line.includes('`tools/default`'),
+	)
+	const longConnectorDescription =
+		longConnectorLine?.split(': ').slice(1).join(': ') ?? ''
 
-	expect(instructions).toContain('`home/default`')
-	expect(instructions).toContain('`remote:home:default`')
-	expect(instructions).toContain(shortDescription)
-	expect(instructions).toContain('`tools/default`')
-	expect(instructions).toContain('`remote:tools:default`')
-	expect(instructions).toContain(`${'a'.repeat(237)}...`)
-	expect(instructions).not.toContain(longDescription)
+	expect(shortConnectorLine).toContain('`home/default` (`remote:home:default`)')
+	expect(shortConnectorLine).toContain(shortDescription)
+	expect(longConnectorLine).toContain('`tools/default` (`remote:tools:default`)')
+	expect(longConnectorLine).toContain('...')
+	expect(longConnectorLine).not.toContain(longDescription)
+	expect(longConnectorDescription.length).toBeLessThanOrEqual(240)
 })

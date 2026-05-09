@@ -1,3 +1,4 @@
+import { Script, createContext } from 'node:vm'
 import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { builtinDomains } from '#mcp/capabilities/builtin-domains.ts'
@@ -7,6 +8,26 @@ import {
 	parseEntityRef,
 	toSlimStructuredMatches,
 } from './search-format.ts'
+
+function executeUsageSnippet(usage: string) {
+	const calls: Array<{ toolName: string; args: unknown }> = []
+	const codemode = {
+		integration_get(args: unknown) {
+			calls.push({
+				toolName: 'integration_get',
+				args: JSON.parse(JSON.stringify(args)),
+			})
+		},
+		value_get(args: unknown) {
+			calls.push({
+				toolName: 'value_get',
+				args: JSON.parse(JSON.stringify(args)),
+			})
+		},
+	}
+	new Script(usage).runInContext(createContext({ codemode }))
+	return calls
+}
 
 test('parseEntityRef accepts value and integration entity types', () => {
 	expect(parseEntityRef('user:preferred_repo:value')).toEqual({
@@ -758,15 +779,26 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 		],
 	})
 
-	expect(valueMatch).toMatchObject({
-		type: 'value',
-		usage:
-			'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
-	})
-	expect(integrationMatch).toMatchObject({
-		type: 'integration',
-		usage: 'codemode.integration_get({ name: "conn\\"name" })',
-	})
+	expect(valueMatch?.type).toBe('value')
+	expect(executeUsageSnippet(valueMatch?.usage ?? '')).toEqual([
+		{
+			toolName: 'value_get',
+			args: {
+				name: 'display"name',
+				scope: 'user"scope',
+			},
+		},
+	])
+
+	expect(integrationMatch?.type).toBe('integration')
+	expect(executeUsageSnippet(integrationMatch?.usage ?? '')).toEqual([
+		{
+			toolName: 'integration_get',
+			args: {
+				name: 'conn"name',
+			},
+		},
+	])
 })
 
 test('search formatting falls back to a safe secret usage placeholder for display-only names', () => {

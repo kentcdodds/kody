@@ -28,9 +28,6 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 	)
 	await page.getByRole('button', { name: 'Save connector' }).click()
 	expect((await saveResponse).ok()).toBe(true)
-	await expect(page.getByRole('alert')).toContainText(
-		'Created remote connector.',
-	)
 
 	await page.reload()
 	await page

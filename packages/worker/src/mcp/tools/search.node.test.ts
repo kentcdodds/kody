@@ -296,17 +296,7 @@ test('searchUnified clamps package retriever scores into the normal ranking rang
 	)
 })
 
-test('search memory context falls back to the query when omitted', () => {
-	expect(
-		resolveSearchMemoryContext({
-			query: 'saved interactive dashboard app',
-		}),
-	).toEqual({
-		query: 'saved interactive dashboard app',
-	})
-})
-
-test('search memory context preserves explicit caller context', () => {
+test('search memory context preserves caller context and otherwise falls back to meaningful queries', () => {
 	expect(
 		resolveSearchMemoryContext({
 			query: 'saved interactive dashboard app',
@@ -321,9 +311,15 @@ test('search memory context preserves explicit caller context', () => {
 		query: 'saved dashboard app',
 		entities: ['dashboard'],
 	})
-})
 
-test('search memory context does not synthesize a fallback for blank queries', () => {
+	expect(
+		resolveSearchMemoryContext({
+			query: 'saved interactive dashboard app',
+		}),
+	).toEqual({
+		query: 'saved interactive dashboard app',
+	})
+
 	expect(
 		resolveSearchMemoryContext({
 			query: '   ',
