@@ -33,11 +33,15 @@ The repo is organized as an Nx monorepo, with shared modules in
 ## Quick Start
 
 ```bash
-npx create-epicflare
+npm install
+npm run dev
 ```
 
-This will clone the template, install dependencies, run the guided setup, and
-start the dev server.
+The dev server runs at `localhost:8787`. Wrangler handles the local Cloudflare
+Workers runtime and D1 database automatically.
+
+To scaffold a **new** project from the epicflare template instead, run
+`npx create-epicflare`.
 
 See
 [`docs/contributing/getting-started.md`](./docs/contributing/getting-started.md)
