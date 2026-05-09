@@ -1,16 +1,16 @@
 # Agent turns package smoke test
 
 Use these manual Kody `execute` smoke tests to verify the production
-`@kentcdodds/agent-turns` package after MCP auth is available.
+`@kentcdodds/ai-chat` package after MCP auth is available.
 
 ## Basic turn
 
 ```ts
-import runAgentTurn from 'kody:@kentcdodds/agent-turns'
+import runAgentTurn from 'kody:@kentcdodds/ai-chat'
 
 export default async function main() {
 	const result = await runAgentTurn({
-		sessionId: `agent-turns-basic-smoke-${Date.now()}`,
+		sessionId: `ai-chat-basic-smoke-${Date.now()}`,
 		system:
 			'You are a smoke-test assistant. Reply exactly with package-ok. Do not call tools.',
 		messages: [{ role: 'user', content: 'Reply exactly: package-ok' }],
@@ -33,11 +33,11 @@ errors are present.
 ## Search tool path
 
 ```ts
-import runAgentTurn from 'kody:@kentcdodds/agent-turns'
+import runAgentTurn from 'kody:@kentcdodds/ai-chat'
 
 export default async function main() {
 	const result = await runAgentTurn({
-		sessionId: `agent-turns-search-smoke-${Date.now()}`,
+		sessionId: `ai-chat-search-smoke-${Date.now()}`,
 		system:
 			'You are a smoke-test assistant. Use the actual search tool exactly once when asked to search, then answer briefly.',
 		messages: [{ role: 'user', content: 'Search Kody for package_save.' }],
@@ -65,11 +65,11 @@ Expected: at least one `search` tool call has `hasOutput: true` and
 ## Execute tool path
 
 ```ts
-import runAgentTurn from 'kody:@kentcdodds/agent-turns'
+import runAgentTurn from 'kody:@kentcdodds/ai-chat'
 
 export default async function main() {
 	const result = await runAgentTurn({
-		sessionId: `agent-turns-execute-smoke-${Date.now()}`,
+		sessionId: `ai-chat-execute-smoke-${Date.now()}`,
 		system:
 			'You are a smoke-test assistant. Use the actual execute tool exactly once when asked to execute code, then answer briefly.',
 		messages: [
