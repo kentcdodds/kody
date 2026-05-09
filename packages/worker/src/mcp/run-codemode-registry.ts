@@ -850,7 +850,7 @@ ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
 			return finalResult
 		} catch (error) {
 			if (!runtimeDebugFinished) {
-				await finishPackageRuntimeRun({
+				await finishPackageRuntimeRunBestEffort({
 					env,
 					handle: runtimeDebugRun,
 					status: 'error',
