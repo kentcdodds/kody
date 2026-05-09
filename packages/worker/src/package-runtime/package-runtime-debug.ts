@@ -309,8 +309,8 @@ export async function finishPackageRuntimeRun(input: {
 	)
 	const { errorName, errorMessage } = getErrorFields(input.error)
 	const logs = normalizeLogs(input.logs)
-	try {
-		if (logs.length > 0) {
+	if (logs.length > 0) {
+		try {
 			const statements = logs.map((log) =>
 				db
 					.prepare(
@@ -337,7 +337,11 @@ export async function finishPackageRuntimeRun(input: {
 			} else {
 				await Promise.all(statements.map((statement) => statement.run()))
 			}
+		} catch (error) {
+			console.warn('package-runtime-debug-logs-failed', error)
 		}
+	}
+	try {
 		await db
 			.prepare(
 				`UPDATE package_runtime_runs
@@ -357,7 +361,7 @@ export async function finishPackageRuntimeRun(input: {
 			)
 			.run()
 	} catch (error) {
-		console.warn('package-runtime-debug-finish-failed', error)
+		console.warn('package-runtime-debug-status-failed', error)
 	}
 }
 

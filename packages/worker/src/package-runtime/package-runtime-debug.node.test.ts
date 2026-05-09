@@ -6,7 +6,7 @@ import {
 	listPackageRuntimeRuns,
 } from './package-runtime-debug.ts'
 
-function createDebugDatabase() {
+function createDebugDatabase(options: { failLogInsert?: boolean } = {}) {
 	const runs: Array<Record<string, unknown>> = []
 	const logs: Array<Record<string, unknown>> = []
 	const selectRows = (query: string, params: Array<unknown>) => {
@@ -67,6 +67,9 @@ function createDebugDatabase() {
 							if (
 								query.includes('INSERT OR REPLACE INTO package_runtime_logs')
 							) {
+								if (options.failLogInsert) {
+									throw new Error('log insert failed')
+								}
 								logs.push({
 									id: params[0],
 									run_id: params[1],
@@ -247,5 +250,43 @@ describe('package runtime debug persistence', () => {
 			16 * 1024,
 		)
 		expect(message.endsWith('... [truncated]')).toBe(true)
+	})
+
+	test('updates run status when log persistence fails', async () => {
+		const env = {
+			APP_DB: createDebugDatabase({ failLogInsert: true }),
+		} as Env
+		const run = await beginPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			context: {
+				packageId: 'pkg-1',
+				kodyId: 'calendar-agent',
+				surface: 'export',
+				name: './sync',
+			},
+		})
+
+		await finishPackageRuntimeRun({
+			env,
+			handle: run,
+			status: 'success',
+			logs: ['log write will fail'],
+		})
+
+		const listed = await listPackageRuntimeRuns({
+			env,
+			userId: 'user-1',
+		})
+		expect(listed[0]).toMatchObject({
+			status: 'success',
+			name: './sync',
+		})
+		const loaded = await getPackageRuntimeRun({
+			env,
+			userId: 'user-1',
+			runId: run?.id ?? '',
+		})
+		expect(loaded?.logs).toEqual([])
 	})
 })
