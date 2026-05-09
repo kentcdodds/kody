@@ -1730,7 +1730,7 @@ test('buildKodyAppBundle runtime module exports service helper', async () => {
 		| undefined
 	const runtimeSource = firstCall?.files?.['.__kody_virtual__/runtime.js'] ?? ''
 	expect(runtimeSource).toContain(
-		'export const service = createValueProxy(() => __getRuntime().service ?? null);',
+		'export const service = runtime.service ?? null;',
 	)
 	expect(runtimeSource).toContain(
 		"import { AsyncLocalStorage } from 'node:async_hooks';",

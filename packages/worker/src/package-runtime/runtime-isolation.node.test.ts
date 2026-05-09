@@ -2,42 +2,20 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-// Pull the runtime virtual-module source out of module-graph.ts by exercising
-// the same `createRuntimeModuleSource()` helper indirectly: we re-construct
-// it here to keep this test focused on the AsyncLocalStorage contract.
+// The kody:runtime virtual module captures its named exports statically
+// when it evaluates inside the surrounding AsyncLocalStorage context. The
+// surrounding wrapper (codemode executor / package-app worker) loads the
+// bundle fresh per request, so each request gets a fresh evaluation with
+// the per-request runtime values.
 //
-// The runtime virtual module is the module that user code imports when it
-// writes `import { codemode, storage, ... } from 'kody:runtime'`. The
-// surrounding execute / package-app wrapper is responsible for putting the
-// per-request runtime into the AsyncLocalStorage with __kodyRunInRuntime.
-// This test verifies that two concurrent calls into the same isolate observe
-// their own runtime view and never see each other's values, which is the
-// invariant that replaces the previous globalThis-based save/restore.
-
-async function loadRuntimeModule(source: string) {
-	const dir = await mkdtemp(join(tmpdir(), 'kody-runtime-isolation-'))
-	const filePath = join(dir, '.__kody_virtual__/runtime.js')
-	await mkdir(dirname(filePath), { recursive: true })
-	await writeFile(filePath, source, 'utf8')
-	const url = pathToFileURL(filePath).href
-	const mod = (await import(url)) as {
-		__kodyRunInRuntime: <T>(
-			value: unknown,
-			callback: () => Promise<T>,
-		) => Promise<T>
-		codemode: { tool_call: (args: unknown) => Promise<unknown> }
-		storage: { get: (key: string) => Promise<unknown> }
-		packageContext: Record<string, unknown> | null
-	}
-	return {
-		mod,
-		async cleanup() {
-			await rm(dir, { recursive: true, force: true })
-		},
-	}
-}
+// These tests stand up the same shape against the local filesystem: a
+// fresh on-disk copy per "request", evaluated inside __kodyRunInRuntime,
+// to verify that two concurrent calls each capture their own runtime
+// view and that optional (undefined) runtime exports stay falsy so user
+// code's `if (email) { ... }` guards keep working.
 
 const runtimeSource = `
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -48,40 +26,31 @@ const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
 
-function __getRuntime() {
-	return __kodyRuntimeStorage.getStore() ?? {};
-}
-
 export function __kodyRunInRuntime(runtime, callback) {
 	return __kodyRuntimeStorage.run(runtime, callback);
 }
 
-function createValueProxy(getValue) {
-	return new Proxy(function () {}, {
-		get(_target, property) {
-			const value = getValue();
-			if (value == null) return undefined;
-			const child = value[property];
-			return typeof child === 'function' ? child.bind(value) : child;
-		},
-		apply(_target, _thisArg, args) {
-			const value = getValue();
-			if (typeof value !== 'function') {
-				throw new Error('Runtime export is not callable in this context.');
-			}
-			return Reflect.apply(value, undefined, args);
-		},
-	});
-}
+const runtime = __kodyRuntimeStorage.getStore() ?? {};
 
-export const codemode = createValueProxy(() => __getRuntime().codemode);
-export const storage = createValueProxy(() => __getRuntime().storage);
-export const packageContext = createValueProxy(
-	() => __getRuntime().packageContext ?? null,
-);
+export const codemode = runtime.codemode;
+export const storage = runtime.storage;
+export const email = runtime.email ?? null;
+export const packageContext = runtime.packageContext ?? null;
+export default runtime;
 `.trim()
 
-let cleanupRuntimeModule: (() => Promise<void>) | null = null
+type RuntimeModule = {
+	__kodyRunInRuntime: <T>(
+		value: unknown,
+		callback: () => Promise<T>,
+	) => Promise<T>
+	codemode: { tool_call: (args: unknown) => Promise<unknown> } | undefined
+	storage: { get: (key: string) => Promise<unknown> } | undefined
+	email: unknown
+	packageContext: Record<string, unknown> | null
+}
+
+const cleanupCallbacks: Array<() => Promise<void>> = []
 
 beforeEach(() => {
 	const symbolKey = Symbol.for('kody.runtimeStorage')
@@ -89,15 +58,26 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-	if (cleanupRuntimeModule) {
-		await cleanupRuntimeModule()
-		cleanupRuntimeModule = null
+	while (cleanupCallbacks.length > 0) {
+		const callback = cleanupCallbacks.pop()
+		if (callback) await callback()
 	}
 })
 
+async function writeRuntimeFile() {
+	const dir = await mkdtemp(join(tmpdir(), 'kody-runtime-isolation-'))
+	const filePath = join(dir, '.__kody_virtual__/runtime.js')
+	await mkdir(dirname(filePath), { recursive: true })
+	await writeFile(filePath, runtimeSource, 'utf8')
+	cleanupCallbacks.push(() => rm(dir, { recursive: true, force: true }))
+	return pathToFileURL(filePath).href
+}
+
 test('two concurrent runs observe their own runtime values', async () => {
-	const { mod, cleanup } = await loadRuntimeModule(runtimeSource)
-	cleanupRuntimeModule = cleanup
+	const sharedStorage = new AsyncLocalStorage<unknown>()
+	;(globalThis as unknown as Record<symbol, unknown>)[
+		Symbol.for('kody.runtimeStorage')
+	] = sharedStorage
 
 	type Observation = {
 		userId: string
@@ -125,25 +105,30 @@ test('two concurrent runs observe their own runtime values', async () => {
 	}
 
 	async function performRun(userId: string) {
-		await mod.__kodyRunInRuntime(buildRuntime(userId), async () => {
-			// Yield once so the two concurrent calls actually interleave.
+		// Each "request" has its own fresh runtime module, mirroring the
+		// production behaviour where DynamicWorkerExecutor / APP_LOADER.load()
+		// produce a fresh isolate per request. The module evaluates inside
+		// the AsyncLocalStorage context and captures the per-request runtime.
+		await sharedStorage.run(buildRuntime(userId), async () => {
+			const url = await writeRuntimeFile()
 			await new Promise<void>((resolve) => setImmediate(resolve))
-			const toolResult = (await mod.codemode.tool_call({})) as {
+			const mod = (await import(url)) as RuntimeModule
+			await new Promise<void>((resolve) => setImmediate(resolve))
+			const tool = mod.codemode
+			if (!tool) throw new Error('codemode missing')
+			const toolResult = (await tool.tool_call({})) as {
 				ok: true
 				userId: string
 			}
-			await new Promise<void>((resolve) => setImmediate(resolve))
-			const storageResult = (await mod.storage.get('answer')) as {
-				value: string
-			}
-			await new Promise<void>((resolve) => setImmediate(resolve))
-			const observation: Observation = {
+			const store = mod.storage
+			if (!store) throw new Error('storage missing')
+			const storageResult = (await store.get('answer')) as { value: string }
+			observations.set(userId, {
 				userId,
 				toolValue: toolResult.userId,
 				storageValue: storageResult.value,
 				packageId: String(mod.packageContext?.packageId ?? ''),
-			}
-			observations.set(userId, observation)
+			})
 		})
 	}
 
@@ -163,44 +148,33 @@ test('two concurrent runs observe their own runtime values', async () => {
 	})
 })
 
-test('runtime exports throw clearly outside a runtime context', async () => {
-	const { mod, cleanup } = await loadRuntimeModule(runtimeSource)
-	cleanupRuntimeModule = cleanup
+test('optional runtime exports stay falsy when the wrapper omits them', async () => {
+	const sharedStorage = new AsyncLocalStorage<unknown>()
+	;(globalThis as unknown as Record<symbol, unknown>)[
+		Symbol.for('kody.runtimeStorage')
+	] = sharedStorage
 
-	// codemode/storage are Proxies; reading a property outside a runtime
-	// context returns undefined rather than throwing - it's the access at
-	// call time that should fail. We exercise the apply-trap explicitly.
-	expect(() => (mod.codemode as unknown as () => unknown)()).toThrowError(
-		/not callable/,
-	)
-})
-
-test('shared AsyncLocalStorage instance survives multiple module evaluations', async () => {
-	const first = await loadRuntimeModule(runtimeSource)
-	cleanupRuntimeModule = first.cleanup
-	await first.mod.__kodyRunInRuntime(
-		{ packageContext: { packageId: 'a' } },
+	let captured: RuntimeModule | null = null
+	await sharedStorage.run(
+		// Intentionally omit `email`, `storage`, `codemode` from the runtime
+		// payload to mirror an execute call that did not bind any of those
+		// runtime helpers.
+		{ packageContext: { packageId: 'pkg-1' } },
 		async () => {
-			expect(String(first.mod.packageContext?.packageId ?? '')).toBe('a')
-
-			// A second evaluation of the same source (e.g. a nested dynamic
-			// import in the same isolate) must observe the *same* ALS instance,
-			// otherwise concurrent contexts would silently leak.
-			const second = await loadRuntimeModule(runtimeSource)
-			try {
-				expect(String(second.mod.packageContext?.packageId ?? '')).toBe('a')
-				await second.mod.__kodyRunInRuntime(
-					{ packageContext: { packageId: 'b' } },
-					async () => {
-						expect(String(first.mod.packageContext?.packageId ?? '')).toBe('b')
-						expect(String(second.mod.packageContext?.packageId ?? '')).toBe('b')
-					},
-				)
-				// Outer context restored when inner run() completes.
-				expect(String(first.mod.packageContext?.packageId ?? '')).toBe('a')
-			} finally {
-				await second.cleanup()
-			}
+			const url = await writeRuntimeFile()
+			captured = (await import(url)) as RuntimeModule
 		},
 	)
+
+	const mod = captured as unknown as RuntimeModule
+	// Each missing export must be falsy so user code that does
+	// `if (email) {...}` continues to skip the branch.
+	expect(mod.email).toBeNull()
+	expect(mod.codemode).toBeUndefined()
+	expect(mod.storage).toBeUndefined()
+	expect(Boolean(mod.email)).toBe(false)
+	expect(Boolean(mod.codemode)).toBe(false)
+	expect(Boolean(mod.storage)).toBe(false)
+	// Provided exports survive.
+	expect(mod.packageContext).toEqual({ packageId: 'pkg-1' })
 })
