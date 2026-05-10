@@ -824,7 +824,8 @@ test('package runtime check reads target package metadata changes without republ
 		}),
 	)
 	sourceFiles.set('source-subscriber', {
-		'package.json': sourceFiles.get('source-subscriber')?.['package.json'] ?? '',
+		'package.json':
+			sourceFiles.get('source-subscriber')?.['package.json'] ?? '',
 		'src/handle-discord-message-created.ts': `/**
  * Handle the current Discord message-created event contract.
  */

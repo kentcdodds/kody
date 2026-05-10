@@ -155,7 +155,9 @@ function readSinglePackageIdentifier(
 		(candidate): candidate is { kind: 'kodyId' | 'packageId'; value: string } =>
 			candidate.value !== null,
 	)
-	const unique = Array.from(new Set(candidates.map((candidate) => candidate.value)))
+	const unique = Array.from(
+		new Set(candidates.map((candidate) => candidate.value)),
+	)
 	if (unique.length > 1) {
 		throw new Error(
 			`${operationName} accepts one package identifier. Use kodyId unless you need the saved package id.`,
@@ -361,8 +363,9 @@ function findPackageExportProjection(input: {
 	exportName: string
 }) {
 	return (
-		input.exports.find((exportDetail) => exportDetail.subpath === input.exportName) ??
-		null
+		input.exports.find(
+			(exportDetail) => exportDetail.subpath === input.exportName,
+		) ?? null
 	)
 }
 
@@ -494,7 +497,10 @@ async function checkPackageInvokeForRuntime(input: {
 	} catch {
 		sourceLoadFailed = true
 	}
-	const projection = buildPackageSearchProjection(manifestResult.manifest, files)
+	const projection = buildPackageSearchProjection(
+		manifestResult.manifest,
+		files,
+	)
 	const exportDetail = findPackageExportProjection({
 		exports: projection.exports,
 		exportName,

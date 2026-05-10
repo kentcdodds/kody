@@ -107,9 +107,9 @@ time through the package invocation service, using the current authenticated
 user and package caller context. Package code never handles external
 package-invocation bearer tokens for this flow.
 
-Use dynamic invocation for runtime dispatch surfaces that must pick up the target
-package's current published bundle, such as event subscribers, workflows, and
-agents. Prefer `packages.invokeChecked` for new dynamic calls so Kody first
+Use dynamic invocation for runtime dispatch surfaces that must pick up the
+target package's current published bundle, such as event subscribers, workflows,
+and agents. Prefer `packages.invokeChecked` for new dynamic calls so Kody first
 checks that the current package and export exist, params are a JSON object, and
 the current contract metadata can be surfaced to the caller. Use
 `packages.check` directly when a caller wants to inspect the current contract or
@@ -128,8 +128,8 @@ const result = await packages.invoke(check.invoke)
 
 Continue to use static `kody:@scope/package/export` imports for library-like
 dependencies where the caller should keep the dependency bundle it was published
-with. Use bare `packages.invoke` only after a successful `packages.check` or when
-the caller intentionally accepts direct runtime failure.
+with. Use bare `packages.invoke` only after a successful `packages.check` or
+when the caller intentionally accepts direct runtime failure.
 
 `packages.check` returns the current package id/kody id/name, source id,
 published commit, normalized export name, runtime target, and available
