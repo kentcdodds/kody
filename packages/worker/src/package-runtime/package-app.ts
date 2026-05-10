@@ -41,7 +41,6 @@ import {
 	type PackageRuntimeRunHandle,
 	type PackageRuntimeStatus,
 } from './package-runtime-debug.ts'
-import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -981,6 +980,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async packageInvoke(input: Record<string, unknown>) {
+		// Avoid a top-level package-app -> package-invocations cycle during worker
+		// startup; apps only need this helper when package code calls it.
+		const { createPackageRuntimeInvokeTools } =
+			await import('#worker/package-invocations/service.ts')
 		const packageContext = {
 			packageId: this.ctx.props.packageId,
 			kodyId: this.ctx.props.kodyId,

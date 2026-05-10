@@ -5,7 +5,6 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { loadPublishedBundleArtifactByIdentity } from '#worker/package-runtime/published-bundle-artifacts.ts'
-import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	type PackageRetrieverManifestCacheEntry,
 	type PackageRetrieverResult,
@@ -156,6 +155,10 @@ async function invokeRetriever(input: {
 			limit,
 		},
 	}
+	// Avoid a top-level package-retrievers -> package-invocations cycle during
+	// capability registry initialization.
+	const { createPackageRuntimeInvokeTools } =
+		await import('#worker/package-invocations/service.ts')
 	const executionResult = await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,

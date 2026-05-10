@@ -9,7 +9,6 @@ import {
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 
 const serviceStateStorageKey = 'package-service-state'
@@ -490,10 +489,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			{ runBundledModuleWithRegistry },
 			{ buildKodyModuleBundle },
 			{ loadPublishedBundleArtifactByIdentity },
+			{ createPackageRuntimeInvokeTools },
 		] = await Promise.all([
 			import('#mcp/run-codemode-registry.ts'),
 			import('./module-graph.ts'),
 			import('./published-bundle-artifacts.ts'),
+			// Avoid a top-level package-service -> package-invocations cycle during
+			// capability registry initialization.
+			import('#worker/package-invocations/service.ts'),
 		])
 		const artifact = await loadPublishedBundleArtifactByIdentity({
 			env: this.env,

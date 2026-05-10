@@ -50,7 +50,6 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-codemode-execution.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
@@ -450,6 +449,22 @@ async function executePublishedJobArtifact(input: {
 				jobId: input.job.id,
 			}
 		: null
+	const packageInvokeTools = packageContext
+		? await (async () => {
+				// Avoid a top-level jobs -> package-invocations cycle during capability
+				// registry initialization.
+				const { createPackageRuntimeInvokeTools } =
+					await import('#worker/package-invocations/service.ts')
+				return createPackageRuntimeInvokeTools({
+					env: input.env,
+					baseUrl: input.callerContext.baseUrl,
+					callerContext,
+					packageContext,
+					parentRuntimeDebug: runtimeDebug,
+					packageInvokeDepth: 0,
+				})
+			})()
+		: null
 	return await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,
@@ -466,16 +481,9 @@ async function executePublishedJobArtifact(input: {
 			},
 			...(packageContext ? { packageContext } : {}),
 			runtimeDebug,
-			...(packageContext
+			...(packageContext && packageInvokeTools
 				? {
-						packageInvokeTools: createPackageRuntimeInvokeTools({
-							env: input.env,
-							baseUrl: input.callerContext.baseUrl,
-							callerContext,
-							packageContext,
-							parentRuntimeDebug: runtimeDebug,
-							packageInvokeDepth: 0,
-						}),
+						packageInvokeTools,
 						packageInvokeDepth: 0,
 					}
 				: {}),
