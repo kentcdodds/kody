@@ -81,7 +81,9 @@ exhaustive.
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
-  checks fail when static imports and declarations differ.
+  checks fail when static imports and declarations differ. Type-only imports do
+  not count; literal dynamic `import("kody:@...")` expressions are bundled and
+  must be declared.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that

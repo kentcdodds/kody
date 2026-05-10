@@ -1197,6 +1197,49 @@ test('runRepoChecks requires mixed value export-from kody package imports to be 
 	)
 })
 
+test('runRepoChecks requires literal dynamic kody package imports to be declared', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/dynamic-import-package',
+				kodyId: 'dynamic-import-package',
+				description: 'Dynamically imports another Kody package',
+			}),
+		],
+		[
+			'src/index.ts',
+			'export async function load() { return await import("kody:@kentcdodds/dynamic/run") }\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: false,
+				message: expect.stringContaining('missing "@kentcdodds/dynamic"'),
+			}),
+		]),
+	)
+})
+
 test('runRepoChecks rejects invalid static kody package dependency declarations', async () => {
 	const files = new Map<string, string>([
 		[
