@@ -30,7 +30,9 @@ import {
 	type JobExecutionResult,
 	type JobRepoCheckPolicy,
 	type JobRecord,
+	type JobSourceInspection,
 	type JobUpdateInput,
+	type JobView,
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
@@ -369,6 +371,77 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		)
 	}
 	return loadedArtifact.artifact
+}
+
+function buildJobSourceInspectionError(error: unknown): JobSourceInspection {
+	return {
+		entrypoint: null,
+		code: null,
+		error: formatJobError(error),
+	}
+}
+
+async function inspectPublishedJobSource(input: {
+	env: Env
+	userId: string
+	job: JobView
+}): Promise<JobSourceInspection> {
+	try {
+		const published = await loadPublishedEntitySource({
+			env: input.env,
+			userId: input.userId,
+			sourceId: input.job.sourceId,
+		})
+		const publishedSource = published.source
+		if (!publishedSource) {
+			throw new Error(`Published source "${input.job.sourceId}" was not found.`)
+		}
+		const manifestPath = publishedSource.manifest_path.replace(/^\/+/, '')
+		const manifestContent = published.files[manifestPath]
+		if (typeof manifestContent !== 'string') {
+			throw new Error(`Job manifest "${manifestPath}" was not found.`)
+		}
+		let entrypoint: string
+		if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
+			const manifest = parseRepoManifest({
+				content: manifestContent,
+				manifestPath,
+			})
+			if (manifest.kind !== 'job') {
+				throw new Error(
+					`Repo source "${input.job.sourceId}" is not a job manifest.`,
+				)
+			}
+			entrypoint = getManifestEntrypointPath(manifest)
+		} else {
+			const manifest = parseAuthoredPackageJson({
+				content: manifestContent,
+				manifestPath,
+			})
+			const jobDefinition = manifest.kody.jobs?.[input.job.name]
+			if (!jobDefinition) {
+				throw new Error(
+					`Package "${manifest.kody.id}" does not define job "${input.job.name}".`,
+				)
+			}
+			entrypoint = normalizePackageWorkspacePath(jobDefinition.entry)
+		}
+		const code = published.files[entrypoint]
+		if (typeof code !== 'string') {
+			return {
+				entrypoint,
+				code: null,
+				error: `Job entrypoint "${entrypoint}" was not found.`,
+			}
+		}
+		return {
+			entrypoint,
+			code,
+			error: null,
+		}
+	} catch (error) {
+		return buildJobSourceInspectionError(error)
+	}
 }
 
 async function rebuildAndExecuteJobArtifact(input: {
@@ -876,6 +949,7 @@ export async function getJobInspection(input: {
 	env: Env
 	userId: string
 	jobId: string
+	includeCode?: boolean
 }) {
 	const [job, alarm] = await Promise.all([
 		getJob(input),
@@ -884,9 +958,17 @@ export async function getJobInspection(input: {
 			userId: input.userId,
 		}),
 	])
+	const source = input.includeCode
+		? await inspectPublishedJobSource({
+				env: input.env,
+				userId: input.userId,
+				job,
+			})
+		: undefined
 	return {
 		job,
 		alarm,
+		...(source ? { source } : {}),
 	}
 }
 

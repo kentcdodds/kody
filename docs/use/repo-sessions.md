@@ -27,6 +27,11 @@ is usually neither of these: pass a replacement `code` string to
 **`job_update`**, which republishes the job module on its repo-backed source
 without opening a session.
 
+When you only need to inspect the current scheduled job source, call
+**`job_get`** with `includeCode: true`. The response includes the published
+manifest-declared entrypoint path and source code, so you do not need to open a
+repo session just to read the job module.
+
 ## Preferred workflow for repo sessions
 
 For package edits via repo sessions, use **`repo_run_commands`**.

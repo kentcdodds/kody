@@ -98,6 +98,9 @@ module-oriented runtime model:
   run uses the new module; the replacement must default export a function that
   receives `params` from its first argument (there is no `params` export from
   `kody:runtime`)
+- **`codemode.job_get({ id, includeCode: true })`** returns the scheduled job
+  inspection details plus the stored repo-backed entrypoint path and source code
+  when you need to inspect the current module before changing it
 - **`codemode.job_delete(...)`** removes an existing scheduled job by id for the
   signed-in user
 - **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and
