@@ -1247,7 +1247,7 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 				name: '@kentcdodds/local-package',
 				exports: {
 					'.': './src/index.ts',
-					'./helper': './src/helper.ts',
+					'./helper': './src/helper.js',
 				},
 				kody: {
 					id: 'local-package',

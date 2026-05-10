@@ -246,17 +246,11 @@ function normalizeWorkspaceModulePath(path: string) {
 	return parts.join('/')
 }
 
-function resolveLocalImportPath(input: {
+function resolveWorkspaceSourceFilePath(input: {
 	files: Record<string, string>
-	fromPath: string
-	specifier: string
+	path: string
 }) {
-	if (!input.specifier.startsWith('./') && !input.specifier.startsWith('../')) {
-		return null
-	}
-	const basePath = normalizeWorkspaceModulePath(
-		joinPath(dirname(input.fromPath), input.specifier),
-	)
+	const basePath = normalizeWorkspaceModulePath(input.path)
 	const candidates = [
 		basePath,
 		`${basePath}.ts`,
@@ -284,6 +278,20 @@ function resolveLocalImportPath(input: {
 	return candidates.find((candidate) => input.files[candidate] != null) ?? null
 }
 
+function resolveLocalImportPath(input: {
+	files: Record<string, string>
+	fromPath: string
+	specifier: string
+}) {
+	if (!input.specifier.startsWith('./') && !input.specifier.startsWith('../')) {
+		return null
+	}
+	return resolveWorkspaceSourceFilePath({
+		files: input.files,
+		path: joinPath(dirname(input.fromPath), input.specifier),
+	})
+}
+
 function collectReachableSourceFilePaths(input: {
 	files: Record<string, string>
 	entryPoint: string
@@ -293,7 +301,12 @@ function collectReachableSourceFilePaths(input: {
 	} | null
 }) {
 	const reachable = new Set<string>()
-	const stack = [normalizePackageWorkspacePath(input.entryPoint)]
+	const stack = [
+		resolveWorkspaceSourceFilePath({
+			files: input.files,
+			path: input.entryPoint,
+		}) ?? normalizePackageWorkspacePath(input.entryPoint),
+	]
 	while (stack.length > 0) {
 		const filePath = stack.pop()
 		if (
@@ -310,11 +323,15 @@ function collectReachableSourceFilePaths(input: {
 			if (node.specifier.startsWith(packageSpecifierPrefix)) {
 				const parsed = parseKodyPackageSpecifier(node.specifier)
 				if (parsed.packageName === input.rootPackage?.manifest.name) {
+					const exportPath = resolvePackageExportPath({
+						manifest: input.rootPackage.manifest,
+						exportName: parsed.exportName,
+					})
 					stack.push(
-						resolvePackageExportPath({
-							manifest: input.rootPackage.manifest,
-							exportName: parsed.exportName,
-						}),
+						resolveWorkspaceSourceFilePath({
+							files: input.files,
+							path: exportPath,
+						}) ?? exportPath,
 					)
 				}
 				continue
@@ -344,9 +361,14 @@ async function resolveDirectKodyDependenciesForEntryPoint(input: {
 	>
 }) {
 	const rootPackage = readRootPackage(input.sourceFiles)
+	const entryPoint =
+		resolveWorkspaceSourceFilePath({
+			files: input.sourceFiles,
+			path: input.entryPoint,
+		}) ?? normalizePackageWorkspacePath(input.entryPoint)
 	const reachable = collectReachableSourceFilePaths({
 		files: input.sourceFiles,
-		entryPoint: input.entryPoint,
+		entryPoint,
 		rootPackage,
 	})
 	const reachableFiles = Object.fromEntries(
@@ -696,10 +718,12 @@ export async function buildKodyModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 	})
-	const normalizedEntrypoint = joinPath(
-		rootSourcePrefix,
-		normalizePackageWorkspacePath(input.entryPoint),
-	)
+	const entryPoint =
+		resolveWorkspaceSourceFilePath({
+			files: input.sourceFiles,
+			path: input.entryPoint,
+		}) ?? normalizePackageWorkspacePath(input.entryPoint)
+	const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_execute_entry__.js')
 	files[bootstrapPath] = createExecuteEntrypointSource({
 		modulePath: createRelativeImportSpecifier(
@@ -739,10 +763,12 @@ export async function buildKodyImportableModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 	})
-	const normalizedEntrypoint = joinPath(
-		rootSourcePrefix,
-		normalizePackageWorkspacePath(input.entryPoint),
-	)
+	const entryPoint =
+		resolveWorkspaceSourceFilePath({
+			files: input.sourceFiles,
+			path: input.entryPoint,
+		}) ?? normalizePackageWorkspacePath(input.entryPoint)
+	const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_import_entry__.js')
 	files[bootstrapPath] = createImportableEntrypointSource({
 		modulePath: createRelativeImportSpecifier(
@@ -779,9 +805,14 @@ async function prepareKodyGraphFiles(input: {
 		[runtimeModulePath]: createRuntimeModuleSource(),
 	}
 	const rootPackage = readRootPackage(input.sourceFiles)
+	const entryPoint =
+		resolveWorkspaceSourceFilePath({
+			files: input.sourceFiles,
+			path: input.entryPoint,
+		}) ?? normalizePackageWorkspacePath(input.entryPoint)
 	const reachableRootFiles = collectReachableSourceFilePaths({
 		files: input.sourceFiles,
-		entryPoint: input.entryPoint,
+		entryPoint,
 		rootPackage,
 	})
 	const state: RewriteState = {
@@ -844,10 +875,12 @@ export async function buildKodyAppBundle(input: {
 			sourceFiles: input.sourceFiles,
 			entryPoint: input.entryPoint,
 		})
-		const normalizedEntrypoint = joinPath(
-			rootSourcePrefix,
-			normalizePackageWorkspacePath(input.entryPoint),
-		)
+		const entryPoint =
+			resolveWorkspaceSourceFilePath({
+				files: input.sourceFiles,
+				path: input.entryPoint,
+			}) ?? normalizePackageWorkspacePath(input.entryPoint)
+		const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 		const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_app_entry__.js')
 		files[bootstrapPath] = createAppEntrypointSource({
 			modulePath: createRelativeImportSpecifier(
