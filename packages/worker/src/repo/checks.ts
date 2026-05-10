@@ -157,16 +157,14 @@ async function* workspaceFilesForSnapshot(input: {
 		/\/+$/,
 		'',
 	)
-	const pattern =
-		normalizedRoot === ''
-			? '**/*.{ts,tsx,js,jsx,json}'
-			: `${normalizedRoot}/**/*.{ts,tsx,js,jsx,json}`
+	const pattern = normalizedRoot === '' ? '**/*' : `${normalizedRoot}/**/*`
 	const files = await input.workspace.glob(pattern)
 	for (const file of files) {
 		if (file.type !== 'file') continue
+		const normalizedPath = normalizeRepoWorkspacePath(file.path)
+		if (normalizedPath.split('/').includes('.git')) continue
 		const content = await input.workspace.readFile(file.path)
 		if (content == null) continue
-		const normalizedPath = normalizeRepoWorkspacePath(file.path)
 		const relativePath =
 			normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
 				? normalizedPath.slice(normalizedRoot.length + 1)

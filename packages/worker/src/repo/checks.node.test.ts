@@ -129,6 +129,61 @@ function createPackageManifest(input: {
 	})
 }
 
+test('runRepoChecks keeps non-code source files for publish snapshots while excluding git internals', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/static-assets',
+				kodyId: 'static-assets',
+				description: 'Includes static assets',
+				exports: {
+					'.': './src/index.ts',
+				},
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+		['styles/app.css', 'body { color: red; }\n'],
+		['public/icon.svg', '<svg />\n'],
+		['.git/config', '[remote "origin"]\n'],
+	])
+	let globPattern = ''
+	let snapshotFiles = new Map<string, string>()
+	const snapshot = createSnapshotFromFiles(snapshotFiles)
+	mockModule.createFileSystemSnapshot.mockImplementation(async (input) => {
+		snapshotFiles = await collectSnapshotFiles(
+			input as AsyncIterable<readonly [string, string]>,
+		)
+		snapshot.read.mockImplementation(
+			(path: string) => snapshotFiles.get(path) ?? null,
+		)
+		return snapshot
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob(pattern: string) {
+				globPattern = pattern
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(globPattern).toBe('**/*')
+	expect(result.sourceFiles).toEqual({
+		'package.json': files.get('package.json'),
+		'src/index.ts': files.get('src/index.ts'),
+		'styles/app.css': files.get('styles/app.css'),
+		'public/icon.svg': files.get('public/icon.svg'),
+	})
+	expect(snapshotFiles.has('.git/config')).toBe(false)
+})
+
 test('runRepoChecks normalizes leading slashes in package job entrypoints', async () => {
 	const files = new Map<string, string>([
 		[
