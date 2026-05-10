@@ -128,3 +128,142 @@ test('saved package execution passes input as the default export argument', asyn
 		missing: 'defaulted',
 	})
 })
+
+test('saved package execution exposes packages.invoke when package invoke tools are provided', async () => {
+	const packageJson = JSON.stringify({
+		name: '@kentcdodds/invoker-package',
+		exports: {
+			'.': './src/index.ts',
+		},
+		kody: {
+			id: 'invoker-package',
+			description: 'Exercises package invocation runtime helper',
+		},
+	})
+	const bundle = await buildKodyModuleBundle({
+		env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-workers-test',
+		sourceFiles: {
+			'package.json': packageJson,
+			'src/index.ts': [
+				"import { packageContext, packages } from 'kody:runtime'",
+				'',
+				'export default async function main(input = {}) {',
+				'\treturn {',
+				'\t\tpackageId: packageContext?.packageId ?? null,',
+				"\t\thasInvoke: typeof packages?.invoke === 'function',",
+				'\t\tinvoked: await packages?.invoke({',
+				"\t\t\tkodyId: 'target-package',",
+				"\t\t\texportName: './run',",
+				'\t\t\tparams: input,',
+				'\t\t}),',
+				'\t}',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'src/index.ts',
+	})
+	const invokedInputs: Array<Record<string, unknown>> = []
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-workers-test',
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+		},
+		{ eventId: 'event-1' },
+		{
+			packageContext: {
+				packageId: 'pkg-invoker',
+				kodyId: 'invoker-package',
+				sourceId: 'source-invoker',
+			},
+			packageInvokeTools: {
+				invoke: async (input) => {
+					invokedInputs.push(input)
+					return { ok: true, input }
+				},
+			},
+			skipCapabilityRegistry: true,
+		},
+	)
+
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		packageId: 'pkg-invoker',
+		hasInvoke: true,
+		invoked: {
+			ok: true,
+			input: {
+				kodyId: 'target-package',
+				exportName: './run',
+				params: { eventId: 'event-1' },
+			},
+		},
+	})
+	expect(invokedInputs).toEqual([
+		{
+			kodyId: 'target-package',
+			exportName: './run',
+			params: { eventId: 'event-1' },
+		},
+	])
+})
+
+test('ad hoc execute runtime exposes packages as null without package invoke tools', async () => {
+	const bundle = await buildKodyModuleBundle({
+		env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-workers-test',
+		sourceFiles: {
+			'entry.ts': [
+				"import { packageContext, packages } from 'kody:runtime'",
+				'',
+				'export default async function main() {',
+				'\treturn {',
+				'\t\tpackageContextIsNull: packageContext === null,',
+				'\t\tpackagesIsNull: packages === null,',
+				"\t\thasInvoke: typeof packages?.invoke === 'function',",
+				'\t}',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'entry.ts',
+	})
+
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-workers-test',
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+		},
+		undefined,
+		{
+			packageContext: null,
+			skipCapabilityRegistry: true,
+		},
+	)
+
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		packageContextIsNull: true,
+		packagesIsNull: true,
+		hasInvoke: false,
+	})
+})
