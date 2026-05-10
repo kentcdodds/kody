@@ -132,6 +132,12 @@ scoped to packages owned by the current authenticated user. Package code does
 not need to mint or pass package-invocation bearer tokens. Nested package
 invocations are depth-limited to prevent runaway loops.
 
+Ad hoc MCP `execute` code, including saved package modules imported from that
+execute call, does not get a package runtime context. In those runs
+`import { packages } from 'kody:runtime'` returns `null`; enter the package
+through package invocation, a package subscription, a package job, service, or
+app when the code needs `packages.invoke`.
+
 If `idempotencyKey` is omitted, Kody generates one. In package invocations that
 already have a parent idempotency key, the generated key is deterministic for
 the parent key, parent runtime surface/name, call order, target, export, and

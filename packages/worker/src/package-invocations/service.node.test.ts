@@ -578,6 +578,19 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		expect.anything(),
 		expect.anything(),
 	)
+	const runOptions =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
+	expect(runOptions).toMatchObject({
+		packageContext: {
+			packageId: 'pkg-1',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-1',
+		},
+	})
+	expect(
+		(runOptions as { packageInvokeTools?: { invoke?: unknown } })
+			.packageInvokeTools?.invoke,
+	).toEqual(expect.any(Function))
 })
 
 test('package runtime can dynamically invoke the current published export from another package', async () => {
@@ -668,6 +681,25 @@ test('package runtime can dynamically invoke the current published export from a
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(4)
+	const firstGatewayRunOptions =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
+	const firstSubscriberRunOptions =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[1]?.[4]
+	expect(
+		(firstGatewayRunOptions as { packageInvokeTools?: { invoke?: unknown } })
+			.packageInvokeTools?.invoke,
+	).toEqual(expect.any(Function))
+	expect(firstSubscriberRunOptions).toMatchObject({
+		packageContext: {
+			packageId: 'pkg-subscriber',
+			kodyId: 'discord-general-chat',
+			sourceId: 'source-subscriber',
+		},
+	})
+	expect(
+		(firstSubscriberRunOptions as { packageInvokeTools?: { invoke?: unknown } })
+			.packageInvokeTools?.invoke,
+	).toEqual(expect.any(Function))
 })
 
 test('package runtime invocation errors clearly when the target package is missing', async () => {
