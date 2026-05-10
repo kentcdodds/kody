@@ -1051,6 +1051,130 @@ test('buildKodyModuleBundle keeps dependencies for scoped packages with the same
 	])
 })
 
+test('buildKodyModuleBundle records only entrypoint-reachable kody package dependencies', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('reachable-deps'),
+	)
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				name: string
+			},
+		) => {
+			if (input.name === '@alice/reachable-package') {
+				return {
+					id: 'pkg-reachable',
+					userId: 'user-1',
+					name: '@alice/reachable-package',
+					kodyId: 'reachable-package',
+					description: 'Reachable package',
+					tags: [],
+					searchText: null,
+					sourceId: 'source-reachable',
+					hasApp: false,
+					createdAt: '2026-05-10T00:00:00.000Z',
+					updatedAt: '2026-05-10T00:00:00.000Z',
+				}
+			}
+			if (input.name === '@bob/unreachable-package') {
+				return {
+					id: 'pkg-unreachable',
+					userId: 'user-1',
+					name: '@bob/unreachable-package',
+					kodyId: 'unreachable-package',
+					description: 'Unreachable package',
+					tags: [],
+					searchText: null,
+					sourceId: 'source-unreachable',
+					hasApp: false,
+					createdAt: '2026-05-10T00:00:00.000Z',
+					updatedAt: '2026-05-10T00:00:00.000Z',
+				}
+			}
+			return null
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => ({
+			source: {
+				id: input.sourceId,
+				user_id: 'user-1',
+				entity_kind: 'package',
+				entity_id: `pkg-${input.sourceId}`,
+				repo_id: `repo-${input.sourceId}`,
+				published_commit: `commit-${input.sourceId}`,
+				indexed_commit: null,
+				manifest_path: 'package.json',
+				source_root: '/',
+				last_external_check_at: null,
+				created_at: '2026-05-10T00:00:00.000Z',
+				updated_at: '2026-05-10T00:00:00.000Z',
+			},
+			manifest: {
+				name:
+					input.sourceId === 'source-reachable'
+						? '@alice/reachable-package'
+						: '@bob/unreachable-package',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id:
+						input.sourceId === 'source-reachable'
+							? 'reachable-package'
+							: 'unreachable-package',
+					description: 'Dependency package',
+				},
+			},
+			files: {
+				'package.json': '{}',
+				'src/index.ts': 'export default async function run() { return "ok" }',
+			},
+		}),
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	const result = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './src/index.ts',
+					'./unused': './src/unused.ts',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'src/index.ts':
+				'import "./reachable"; export default async function run() { return "ok" }',
+			'src/reachable.ts':
+				'import reachable from "kody:@alice/reachable-package"; export { reachable }',
+			'src/unused.ts':
+				'import unreachable from "kody:@bob/unreachable-package"; export { unreachable }',
+		},
+		entryPoint: 'src/index.ts',
+	})
+
+	expect(result.dependencies).toEqual([
+		{
+			sourceId: 'source-reachable',
+			publishedCommit: 'commit-source-reachable',
+			kodyId: 'reachable-package',
+			packageName: '@alice/reachable-package',
+		},
+	])
+})
+
 test('buildKodyModuleBundle keeps virtual package paths distinct for scoped packages with the same leaf', async () => {
 	mockModule.createWorker.mockResolvedValue(
 		createBundleResult('shared-leaf-prefix'),
