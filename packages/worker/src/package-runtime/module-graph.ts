@@ -646,7 +646,7 @@ async function ensurePackageProxy(
 			? joinPath(
 					state.rootPackage.prefix,
 					resolvePackageExportSourcePath({
-						files: input.state.sourceFiles,
+						files: state.sourceFiles,
 						manifest: state.rootPackage.manifest,
 						exportName: parsed.exportName,
 					}),
