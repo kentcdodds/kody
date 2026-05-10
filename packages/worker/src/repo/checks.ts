@@ -13,6 +13,7 @@ import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
+import { collectStaticKodyPackageImportsFromFiles } from '#worker/package-runtime/static-kody-imports.ts'
 import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import {
 	createRepoCodemodeModuleTypecheckHarness,
@@ -363,7 +364,7 @@ function collectPackageCallableTypecheckTargets(
 	return Array.from(targets.values())
 }
 
-function parseDeclaredDependencies(packageJsonContent: string | null) {
+function parseDeclaredNpmDependencies(packageJsonContent: string | null) {
 	if (!packageJsonContent) return []
 	try {
 		const parsed = JSON.parse(packageJsonContent) as {
@@ -374,6 +375,89 @@ function parseDeclaredDependencies(packageJsonContent: string | null) {
 		)
 	} catch {
 		return []
+	}
+}
+
+function pluralize(count: number, singular: string, plural: string) {
+	return count === 1 ? singular : plural
+}
+
+function formatQuotedList(values: Array<string>) {
+	return values.map((value) => `"${value}"`).join(', ')
+}
+
+function formatNpmDependencyCheckMessage(input: {
+	packageJsonMissing: boolean
+	dependencies: Array<string>
+}) {
+	if (input.packageJsonMissing) {
+		return 'No package.json found in source root; dependency check skipped.'
+	}
+	if (input.dependencies.length === 0) {
+		return 'package.json declares no npm dependencies.'
+	}
+	return `package.json declares ${input.dependencies.length} npm ${pluralize(
+		input.dependencies.length,
+		'dependency',
+		'dependencies',
+	)}: ${formatQuotedList(input.dependencies)}.`
+}
+
+function getDeclaredStaticKodyPackageDependencies(
+	manifest: AuthoredPackageJson,
+) {
+	return Array.from(
+		new Set(
+			(manifest.kody.dependencies ?? []).map((dependency) => dependency.trim()),
+		),
+	).sort((left, right) => left.localeCompare(right))
+}
+
+function getImportedStaticKodyPackageDependencies(input: {
+	manifest: AuthoredPackageJson
+	sourceFiles: Record<string, string>
+}) {
+	return Array.from(
+		new Set(
+			collectStaticKodyPackageImportsFromFiles(input.sourceFiles)
+				.map((imported) => imported.packageName)
+				.filter((packageName) => packageName !== input.manifest.name),
+		),
+	).sort((left, right) => left.localeCompare(right))
+}
+
+function validateStaticKodyPackageDependencyDeclarations(input: {
+	manifest: AuthoredPackageJson
+	sourceFiles: Record<string, string>
+}) {
+	const declared = getDeclaredStaticKodyPackageDependencies(input.manifest)
+	const imported = getImportedStaticKodyPackageDependencies(input)
+	const missing = imported.filter(
+		(packageName) => !declared.includes(packageName),
+	)
+	const unused = declared.filter(
+		(packageName) => !imported.includes(packageName),
+	)
+	if (missing.length === 0 && unused.length === 0) {
+		return {
+			ok: true,
+			message:
+				declared.length === 0
+					? 'package.json#kody.dependencies declares no static Kody package dependencies.'
+					: `package.json#kody.dependencies declares ${declared.length} static Kody package ${pluralize(
+							declared.length,
+							'dependency',
+							'dependencies',
+						)}: ${formatQuotedList(declared)}.`,
+		}
+	}
+	const details = [
+		missing.length > 0 ? `missing ${formatQuotedList(missing)}` : null,
+		unused.length > 0 ? `unused ${formatQuotedList(unused)}` : null,
+	].filter((detail): detail is string => detail != null)
+	return {
+		ok: false,
+		message: `package.json#kody.dependencies must match direct static kody:@ imports (${details.join('; ')}).`,
 	}
 }
 
@@ -656,18 +740,22 @@ export async function runRepoChecks(input: {
 	)
 
 	const packageJson = snapshot.read('package.json')
-	const declaredDependencies = parseDeclaredDependencies(packageJson)
+	const declaredNpmDependencies = parseDeclaredNpmDependencies(packageJson)
+	const staticKodyDependencyCheck =
+		validateStaticKodyPackageDependencyDeclarations({
+			manifest,
+			sourceFiles,
+		})
 	results.push({
 		kind: 'dependencies',
-		ok: true,
-		message:
-			packageJson == null
-				? 'No package.json found in source root; dependency check skipped.'
-				: declaredDependencies.length === 0
-					? 'package.json declares no npm dependencies.'
-					: `package.json declares ${declaredDependencies.length} npm dependenc${
-							declaredDependencies.length === 1 ? 'y' : 'ies'
-						}: ${declaredDependencies.map((dependency) => `"${dependency}"`).join(', ')}.`,
+		ok: staticKodyDependencyCheck.ok,
+		message: [
+			formatNpmDependencyCheckMessage({
+				packageJsonMissing: packageJson == null,
+				dependencies: declaredNpmDependencies,
+			}),
+			staticKodyDependencyCheck.message,
+		].join(' '),
 	})
 
 	const bundleTargets = collectPackageBundleTargets(manifest)

@@ -111,11 +111,50 @@ export const packageExportTargetSchema = z.union([
 
 export type PackageExportTarget = z.infer<typeof packageExportTargetSchema>
 
+export const kodyPackageDependencySchema = z
+	.string()
+	.min(1)
+	.refine(
+		(value) => {
+			const trimmed = value.trim()
+			const separator = trimmed.indexOf('/')
+			return (
+				trimmed.startsWith('@') &&
+				separator > 1 &&
+				separator < trimmed.length - 1
+			)
+		},
+		{
+			message:
+				'Static Kody package dependencies must be scoped package names like "@scope/package".',
+		},
+	)
+
+const kodyPackageDependenciesSchema = z
+	.array(kodyPackageDependencySchema)
+	.superRefine((dependencies, ctx) => {
+		const seen = new Set<string>()
+		for (const [index, dependency] of dependencies.entries()) {
+			const normalized = dependency.trim()
+			if (seen.has(normalized)) {
+				ctx.addIssue({
+					code: 'custom',
+					path: [index],
+					message: `Duplicate static Kody package dependency "${normalized}".`,
+				})
+			}
+			seen.add(normalized)
+		}
+	})
+
+export type KodyPackageDependency = z.infer<typeof kodyPackageDependencySchema>
+
 export const authoredPackageKodySchema = z.object({
 	id: z.string().regex(kodyPackageIdPattern),
 	description: z.string().min(1),
 	tags: z.array(z.string().min(1)).optional(),
 	searchText: z.string().min(1).optional(),
+	dependencies: kodyPackageDependenciesSchema.optional(),
 	secretMounts: z
 		.record(z.string().min(1), packageSecretMountDefinitionSchema)
 		.optional(),

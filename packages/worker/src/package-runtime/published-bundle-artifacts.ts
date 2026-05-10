@@ -33,6 +33,7 @@ import {
 	parseKodyPackageSpecifier,
 	resolveSavedPackageImport,
 } from './package-import-resolution.ts'
+import { collectStaticKodyPackageImportsFromFiles } from './static-kody-imports.ts'
 import { buildPackageSubscriptionArtifactName } from './subscription-artifacts.ts'
 
 type DependencyResolutionState = {
@@ -105,22 +106,19 @@ async function collectDependenciesFromFiles(input: {
 	userId: string
 	files: Record<string, string>
 }) {
-	const packageSpecifierPattern = /['"](kody:@[^'"]+)['"]/g
 	const state: DependencyResolutionState = {
 		env: input.env,
 		userId: input.userId,
 		visited: new Set(),
 		dependencies: [],
 	}
-	for (const content of Object.values(input.files)) {
-		for (const match of content.matchAll(packageSpecifierPattern)) {
-			const specifier = match[1]?.trim()
-			if (!specifier) continue
-			await resolveDependencyForPackage({
-				state,
-				specifier,
-			})
-		}
+	for (const imported of collectStaticKodyPackageImportsFromFiles(
+		input.files,
+	)) {
+		await resolveDependencyForPackage({
+			state,
+			specifier: imported.specifier,
+		})
 	}
 	return state.dependencies.sort(
 		(left, right) =>

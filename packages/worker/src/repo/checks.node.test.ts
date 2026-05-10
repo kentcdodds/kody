@@ -95,6 +95,7 @@ function createPackageManifest(input: {
 		{ handler: string; description?: string; filters?: Record<string, unknown> }
 	>
 	services?: Record<string, { entry: string }>
+	kodyDependencies?: Array<string>
 	retrievers?: Record<
 		string,
 		{
@@ -116,6 +117,7 @@ function createPackageManifest(input: {
 		kody: {
 			id: input.kodyId,
 			description: input.description,
+			dependencies: input.kodyDependencies,
 			app: input.appEntry
 				? {
 						entry: input.appEntry,
@@ -409,7 +411,8 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: 'package.json declares no npm dependencies.',
+				message:
+					'package.json declares no npm dependencies. package.json#kody.dependencies declares no static Kody package dependencies.',
 			}),
 			expect.objectContaining({
 				kind: 'typecheck',
@@ -1048,7 +1051,146 @@ test('runRepoChecks reports declared npm dependencies in package.json', async ()
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: 'package.json declares 1 npm dependency: "kleur".',
+				message:
+					'package.json declares 1 npm dependency: "kleur". package.json#kody.dependencies declares no static Kody package dependencies.',
+			}),
+		]),
+	)
+})
+
+test('runRepoChecks requires static kody package imports to be declared', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/uses-static-package',
+				kodyId: 'uses-static-package',
+				description: 'Uses a static Kody package import',
+			}),
+		],
+		[
+			'src/index.ts',
+			'import helper from "kody:@kentcdodds/helper/run"\nexport const ready = helper\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: false,
+				message: expect.stringContaining(
+					'package.json#kody.dependencies must match direct static kody:@ imports (missing "@kentcdodds/helper").',
+				),
+			}),
+		]),
+	)
+})
+
+test('runRepoChecks accepts declared static kody package imports and ignores type-only imports', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/declared-static-package',
+				kodyId: 'declared-static-package',
+				description: 'Declares static Kody package imports',
+				kodyDependencies: ['@kentcdodds/helper'],
+			}),
+		],
+		[
+			'src/index.ts',
+			[
+				'import helper from "kody:@kentcdodds/helper/run"',
+				'import type { HelperConfig } from "kody:@kentcdodds/types/config"',
+				'export const ready: HelperConfig | unknown = helper',
+			].join('\n'),
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: true,
+				message: expect.stringContaining(
+					'package.json#kody.dependencies declares 1 static Kody package dependency: "@kentcdodds/helper".',
+				),
+			}),
+		]),
+	)
+})
+
+test('runRepoChecks rejects unused static kody package dependency declarations', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/unused-static-package',
+				kodyId: 'unused-static-package',
+				description: 'Declares an unused Kody package dependency',
+				kodyDependencies: ['@kentcdodds/unused'],
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: false,
+				message: expect.stringContaining(
+					'package.json#kody.dependencies must match direct static kody:@ imports (unused "@kentcdodds/unused").',
+				),
 			}),
 		]),
 	)
@@ -1195,7 +1337,8 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: 'package.json declares 1 npm dependency: "marked".',
+				message:
+					'package.json declares 1 npm dependency: "marked". package.json#kody.dependencies declares no static Kody package dependencies.',
 			}),
 			expect.objectContaining({
 				kind: 'bundle',

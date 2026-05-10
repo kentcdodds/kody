@@ -17,6 +17,8 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — package description for search/detail
 - `kody.tags` — search tags
+- `kody.dependencies` — direct static saved package dependencies imported via
+  `kody:@...`
 - `kody.app` — optional hosted package app config
 - `kody.jobs` — optional package-owned schedules
 - `kody.retrievers` — optional package-owned search/context retrievers
@@ -72,6 +74,11 @@ The top-level saved identity is the package.
   publish-time artifact rebuilds, Kody records the imported saved package's
   published commit in bundle dependency metadata. A later publish of that
   imported package does not rewrite already-published dependent bundles.
+- Direct static `kody:@...` imports are a breaking manifest contract: they must
+  be listed in `package.json#kody.dependencies` by package name, for example
+  `"dependencies": ["@scope/my-package"]` inside the `kody` object. Repo checks
+  fail when a static import is missing from the list or when the list contains a
+  package that is not statically imported. Type-only imports do not count.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

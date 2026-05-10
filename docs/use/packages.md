@@ -30,6 +30,8 @@ Important fields:
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — package description for search/detail
 - `kody.tags` — package tags
+- `kody.dependencies` — direct saved package names imported through static
+  `kody:@...` imports
 - `kody.app` — optional hosted package app config
 - `kody.services` — optional package-owned service runtimes
 - `kody.jobs` — optional package-owned schedules
@@ -76,6 +78,10 @@ exhaustive.
   runtime artifacts as snapshots of the imported package's then-published
   bundle. If the imported package is published again later, already-published
   dependents keep using the older bundled snapshot until they are republished.
+- Every direct static `kody:@...` import must be declared in
+  `package.json#kody.dependencies` using the imported package name, for example
+  `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
+  checks fail when static imports and declarations differ.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that
