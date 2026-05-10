@@ -3,6 +3,7 @@ import { toHex } from '@kody-internal/shared/hex.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 import {
 	runBundledModuleWithRegistry,
 	type PackageInvokeCheckResult,
@@ -333,10 +334,6 @@ function createPackageInvokeCheckFailure(input: {
 		problems: input.problems,
 		...(input.contract ? { contract: input.contract } : {}),
 	}
-}
-
-function getErrorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error)
 }
 
 function buildNormalizedPackageInvokeInput(input: {

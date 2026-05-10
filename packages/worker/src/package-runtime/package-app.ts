@@ -982,7 +982,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
-	async packageInvoke(input: Record<string, unknown>) {
+	async createPackageRuntimeInvokeTools() {
 		// Avoid a top-level package-app -> package-invocations cycle during worker
 		// startup; apps only need this helper when package code calls it.
 		const { createPackageRuntimeInvokeTools } =
@@ -1000,48 +1000,20 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			parentRuntimeDebug: null,
 			packageInvokeDepth: 0,
 		})
+	}
+
+	async packageInvoke(input: Record<string, unknown>) {
+		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.invoke(input)
 	}
 
 	async packageInvokeCheck(input: Record<string, unknown>) {
-		// Avoid a top-level package-app -> package-invocations cycle during worker
-		// startup; apps only need this helper when package code calls it.
-		const { createPackageRuntimeInvokeTools } =
-			await import('#worker/package-invocations/service.ts')
-		const packageContext = {
-			packageId: this.ctx.props.packageId,
-			kodyId: this.ctx.props.kodyId,
-			sourceId: this.ctx.props.sourceId,
-		}
-		const tools = createPackageRuntimeInvokeTools({
-			env: this.env,
-			baseUrl: this.ctx.props.baseUrl,
-			callerContext: this.createCallerContext(this.ctx.props.packageId),
-			packageContext,
-			parentRuntimeDebug: null,
-			packageInvokeDepth: 0,
-		})
+		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.check(input)
 	}
 
 	async packageInvokeChecked(input: Record<string, unknown>) {
-		// Avoid a top-level package-app -> package-invocations cycle during worker
-		// startup; apps only need this helper when package code calls it.
-		const { createPackageRuntimeInvokeTools } =
-			await import('#worker/package-invocations/service.ts')
-		const packageContext = {
-			packageId: this.ctx.props.packageId,
-			kodyId: this.ctx.props.kodyId,
-			sourceId: this.ctx.props.sourceId,
-		}
-		const tools = createPackageRuntimeInvokeTools({
-			env: this.env,
-			baseUrl: this.ctx.props.baseUrl,
-			callerContext: this.createCallerContext(this.ctx.props.packageId),
-			packageContext,
-			parentRuntimeDebug: null,
-			packageInvokeDepth: 0,
-		})
+		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.invokeChecked(input)
 	}
 }
