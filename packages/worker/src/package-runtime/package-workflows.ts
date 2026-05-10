@@ -11,6 +11,7 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
+import { safelyListAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 
 export type PackageWorkflowParams = Record<string, unknown>
@@ -961,6 +962,10 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 	private async invokePackageWorkflowExport(
 		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'package' }>,
 	): Promise<JsonValue> {
+		const remoteConnectors = await safelyListAttachedRemoteConnectorRefs({
+			env: this.env,
+			userId: payload.userId,
+		})
 		const response = await invokePackageExport({
 			env: this.env,
 			baseUrl: getAppBaseUrl({
@@ -976,6 +981,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				packageKodyIds: [payload.kodyId],
 				exportNames: [payload.exportName],
 				sources: [packageWorkflowInvocationSource],
+				remoteConnectors,
 			},
 			request: {
 				packageIdOrKodyId: payload.packageId,
@@ -1000,6 +1006,10 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				import('#mcp/run-codemode-registry.ts'),
 				import('#mcp/context.ts'),
 			])
+		const remoteConnectors = await safelyListAttachedRemoteConnectorRefs({
+			env: this.env,
+			userId: payload.userId,
+		})
 		const result = await runModuleWithRegistry(
 			this.env,
 			createMcpCallerContext({
@@ -1012,6 +1022,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					email: '',
 					displayName: `workflow:${payload.workflowName}`,
 				},
+				remoteConnectors,
 			}),
 			payload.code,
 			payload.params,

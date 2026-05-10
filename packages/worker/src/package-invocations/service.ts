@@ -1,5 +1,6 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -58,6 +59,7 @@ export type PackageInvocationTokenScope = {
 	packageKodyIds?: Array<string>
 	exportNames?: Array<string>
 	sources?: Array<string>
+	remoteConnectors?: Array<RemoteConnectorRef>
 }
 
 export type PackageInvocationRequest = {
@@ -76,6 +78,7 @@ type PackageInvocationActor = {
 	userId: string
 	email: string
 	displayName: string
+	remoteConnectors?: Array<RemoteConnectorRef> | null
 }
 
 type PackageModuleSelector =
@@ -808,6 +811,7 @@ async function invokeSavedPackageModule(input: {
 				appId: input.savedPackage.id,
 				storageId: buildPackageInvocationStorageId(input.savedPackage.id),
 			},
+			remoteConnectors: input.actor.remoteConnectors ?? null,
 			repoContext: repoSource ? createRepoContext(repoSource) : null,
 		})
 		const runtimeSurface = resolveInvocationRuntimeSurface({
@@ -1061,6 +1065,7 @@ export function createPackageRuntimeInvokeTools(input: {
 					userId: user.userId,
 					email: user.email ?? '',
 					displayName: user.displayName ?? '',
+					remoteConnectors: input.callerContext.remoteConnectors ?? null,
 					packageContext: input.packageContext,
 				},
 				request: {
@@ -1103,6 +1108,7 @@ async function invokePackageExportForPackageRuntime(input: {
 		userId: string
 		email: string
 		displayName: string
+		remoteConnectors?: Array<RemoteConnectorRef> | null
 		packageContext: PackageRuntimeContext
 	}
 	request: PackageInvocationRequest
@@ -1148,6 +1154,7 @@ async function invokePackageExportForPackageRuntime(input: {
 			displayName:
 				input.caller.displayName ||
 				`package:${input.caller.packageContext.kodyId}`,
+			remoteConnectors: input.caller.remoteConnectors ?? null,
 		},
 		savedPackage,
 		invocationName: exportName,
@@ -1238,6 +1245,7 @@ export async function invokePackageExport(input: {
 			userId: input.token.userId,
 			email: input.token.email,
 			displayName: input.token.displayName,
+			remoteConnectors: input.token.remoteConnectors ?? null,
 		},
 		savedPackage,
 		invocationName: exportName,

@@ -11,9 +11,18 @@ const invocationMocks = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
 }))
 
+const remoteConnectorMocks = vi.hoisted(() => ({
+	safelyListAttachedRemoteConnectorRefs: vi.fn(async () => []),
+}))
+
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	invokePackageExport: (...args: Array<unknown>) =>
 		invocationMocks.invokePackageExport(...args),
+}))
+
+vi.mock('#worker/remote-connector/settings-service.ts', () => ({
+	safelyListAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
+		remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs(...args),
 }))
 
 vi.mock('#mcp/run-codemode-registry.ts', () => ({
@@ -339,6 +348,125 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('DynamicCallableWorkflowBase restores attached remote connectors for inline code', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			code: 'export default async function main(){ return { ok: true }; }',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'execute-remote-connector-smoke',
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.runModuleWithRegistry.mockReset()
+	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs.mockResolvedValueOnce(
+		[{ kind: 'home', instanceId: 'default' }],
+	)
+
+	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await workflow.run(
+		{
+			payload: queued.params as never,
+			timestamp: new Date(),
+			instanceId: created.id,
+		},
+		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+	)
+
+	expect(
+		remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs,
+	).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+	expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
+		expect.any(Object),
+		expect.objectContaining({
+			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+		}),
+		expect.any(String),
+		undefined,
+	)
+})
+
+test('DynamicCallableWorkflowBase restores attached remote connectors for package exports', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'package-remote-connector-smoke',
+			params: { key: 'north-east-open' },
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.invokePackageExport.mockReset()
+	invocationMocks.invokePackageExport.mockResolvedValueOnce({
+		status: 200,
+		body: { result: { ok: true } },
+	})
+	remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs.mockResolvedValueOnce(
+		[{ kind: 'home', instanceId: 'default' }],
+	)
+
+	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await workflow.run(
+		{
+			payload: queued.params as never,
+			timestamp: new Date(),
+			instanceId: created.id,
+		},
+		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+	)
+
+	expect(
+		remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs,
+	).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+	expect(invocationMocks.invokePackageExport).toHaveBeenCalledWith(
+		expect.objectContaining({
+			token: expect.objectContaining({
+				remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+			}),
+		}),
+	)
 })
 
 test('createDynamicCallableWorkflow verifies package ownership before queueing package exports', async () => {

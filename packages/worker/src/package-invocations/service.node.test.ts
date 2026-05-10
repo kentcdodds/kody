@@ -179,6 +179,7 @@ function createToken(
 	overrides: Partial<{
 		exportNames: Array<string>
 		sources: Array<string>
+		remoteConnectors: Array<{ kind: string; instanceId: string }>
 	}> = {},
 ) {
 	return {
@@ -189,6 +190,7 @@ function createToken(
 		packageKodyIds: ['discord-gateway'],
 		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
 		sources: overrides.sources ?? ['discord-gateway'],
+		remoteConnectors: overrides.remoteConnectors,
 	} as const
 }
 
@@ -543,7 +545,9 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	const response = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken(),
+		token: createToken({
+			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'dispatch-message-created',
@@ -565,6 +569,15 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		logs: ['dispatched'],
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+		}),
+		expect.anything(),
+		expect.anything(),
+		expect.anything(),
+	)
 })
 
 test('package runtime can dynamically invoke the current published export from another package', async () => {
