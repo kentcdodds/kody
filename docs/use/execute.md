@@ -109,11 +109,11 @@ module-oriented runtime model:
 - **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging
 
-Static saved-package imports from ad hoc **execute** run under the ad hoc execute
-runtime. That means imported package modules can share exported helpers, but
-`packageContext` and `packages` remain **`null`** unless the module is entered
-through a true saved-package runtime surface such as package invocation, a
-package job, a package service, a package app, or a package subscription.
+Static saved-package imports from ad hoc **execute** run under the ad hoc
+execute runtime. That means imported package modules can share exported helpers,
+but `packageContext` and `packages` remain **`null`** unless the module is
+entered through a true saved-package runtime surface such as package invocation,
+a package job, a package service, a package app, or a package subscription.
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
