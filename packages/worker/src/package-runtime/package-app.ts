@@ -267,7 +267,10 @@ function createWorkflowsProxy(runtimeBridge) {
 
 function createPackagesProxy(runtimeBridge) {
 	return {
+		check: async (input) => await runtimeBridge.packageInvokeCheck(input ?? {}),
 		invoke: async (input) => await runtimeBridge.packageInvoke(input ?? {}),
+		invokeChecked: async (input) =>
+			await runtimeBridge.packageInvokeChecked(input ?? {}),
 	};
 }
 
@@ -998,6 +1001,48 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			packageInvokeDepth: 0,
 		})
 		return await tools.invoke(input)
+	}
+
+	async packageInvokeCheck(input: Record<string, unknown>) {
+		// Avoid a top-level package-app -> package-invocations cycle during worker
+		// startup; apps only need this helper when package code calls it.
+		const { createPackageRuntimeInvokeTools } =
+			await import('#worker/package-invocations/service.ts')
+		const packageContext = {
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+		}
+		const tools = createPackageRuntimeInvokeTools({
+			env: this.env,
+			baseUrl: this.ctx.props.baseUrl,
+			callerContext: this.createCallerContext(this.ctx.props.packageId),
+			packageContext,
+			parentRuntimeDebug: null,
+			packageInvokeDepth: 0,
+		})
+		return await tools.check(input)
+	}
+
+	async packageInvokeChecked(input: Record<string, unknown>) {
+		// Avoid a top-level package-app -> package-invocations cycle during worker
+		// startup; apps only need this helper when package code calls it.
+		const { createPackageRuntimeInvokeTools } =
+			await import('#worker/package-invocations/service.ts')
+		const packageContext = {
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+		}
+		const tools = createPackageRuntimeInvokeTools({
+			env: this.env,
+			baseUrl: this.ctx.props.baseUrl,
+			callerContext: this.createCallerContext(this.ctx.props.packageId),
+			packageContext,
+			parentRuntimeDebug: null,
+			packageInvokeDepth: 0,
+		})
+		return await tools.invokeChecked(input)
 	}
 }
 

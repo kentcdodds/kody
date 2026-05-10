@@ -79,8 +79,45 @@ type EmailToolOptions = {
 
 export type PackageInvokeInput = Record<string, unknown>
 
+export type PackageInvokeNormalizedInput = {
+	kodyId?: string
+	packageId?: string
+	exportName: string
+	params?: Record<string, unknown>
+	idempotencyKey?: string
+	topic?: string
+}
+
+export type PackageInvokeContract = {
+	packageId: string
+	kodyId: string
+	name: string
+	sourceId: string
+	publishedCommit: string | null
+	exportName: string
+	runtimeTarget: string | null
+	description?: string | null
+	typeDefinition?: string | null
+	warnings: Array<string>
+}
+
+export type PackageInvokeCheckResult =
+	| {
+			ok: true
+			invoke: PackageInvokeNormalizedInput
+			contract: PackageInvokeContract
+	  }
+	| {
+			ok: false
+			message: string
+			problems: Array<string>
+			contract?: Partial<PackageInvokeContract>
+	  }
+
 export type PackageInvokeTools = {
 	invoke: (input: PackageInvokeInput) => Promise<unknown>
+	check: (input: PackageInvokeInput) => Promise<PackageInvokeCheckResult>
+	invokeChecked: (input: PackageInvokeInput) => Promise<unknown>
 }
 
 export type PackageWorkflowTools = {
@@ -246,7 +283,9 @@ const workflows = {
 function createPackagesHelperPrelude() {
 	return `
 const packages = {
+  check: async (input) => await codemode.package_invoke_check(input ?? {}),
   invoke: async (input) => await codemode.package_invoke(input ?? {}),
+  invokeChecked: async (input) => await codemode.package_invoke_checked(input ?? {}),
 };
 	`.trim()
 }
@@ -419,8 +458,14 @@ export async function buildCodemodeFns(
 	const packageInvokeTools = options?.packageInvokeTools
 	const packageInvokeCodemodeTools: AdditionalCodemodeTools = packageInvokeTools
 		? {
+				package_invoke_check: async (args: unknown) =>
+					await packageInvokeTools.check((args ?? {}) as PackageInvokeInput),
 				package_invoke: async (args: unknown) =>
 					await packageInvokeTools.invoke((args ?? {}) as PackageInvokeInput),
+				package_invoke_checked: async (args: unknown) =>
+					await packageInvokeTools.invokeChecked(
+						(args ?? {}) as PackageInvokeInput,
+					),
 			}
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, packageInvokeCodemodeTools)

@@ -152,7 +152,9 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 				'export default async function main(input = {}) {',
 				'\treturn {',
 				'\t\tpackageId: packageContext?.packageId ?? null,',
+				"\t\thasCheck: typeof packages?.check === 'function',",
 				"\t\thasInvoke: typeof packages?.invoke === 'function',",
+				"\t\thasInvokeChecked: typeof packages?.invokeChecked === 'function',",
 				'\t\tinvoked: await packages?.invoke({',
 				"\t\t\tkodyId: 'target-package',",
 				"\t\t\texportName: './run',",
@@ -187,7 +189,29 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 				sourceId: 'source-invoker',
 			},
 			packageInvokeTools: {
+				check: async (input) => ({
+					ok: true,
+					invoke: input as {
+						kodyId: string
+						exportName: string
+						params?: Record<string, unknown>
+					},
+					contract: {
+						packageId: 'pkg-target',
+						kodyId: 'target-package',
+						name: '@kentcdodds/target-package',
+						sourceId: 'source-target',
+						publishedCommit: 'commit-1',
+						exportName: './run',
+						runtimeTarget: 'src/run.ts',
+						warnings: [],
+					},
+				}),
 				invoke: async (input) => {
+					invokedInputs.push(input)
+					return { ok: true, input }
+				},
+				invokeChecked: async (input) => {
 					invokedInputs.push(input)
 					return { ok: true, input }
 				},
@@ -199,7 +223,9 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 	expect(result.error).toBeUndefined()
 	expect(result.result).toEqual({
 		packageId: 'pkg-invoker',
+		hasCheck: true,
 		hasInvoke: true,
+		hasInvokeChecked: true,
 		invoked: {
 			ok: true,
 			input: {

@@ -32,7 +32,10 @@ helpers are runtime exports:
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** only inside saved package
   runtime contexts when you need dynamic current-version invocation through
-  `packages.invoke(...)`; it is **`null`** for ad hoc execute calls
+  `packages.check(...)`, `packages.invoke(...)`, or
+  `packages.invokeChecked(...)`; it is **`null`** for ad hoc execute calls.
+  Prefer `invokeChecked` unless you already called `check` and are passing
+  `check.invoke` to `invoke`
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
   code when you need the current service identity; it is **`null`** outside
   package service runs

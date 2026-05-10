@@ -1513,7 +1513,25 @@ test('runBundledModuleWithRegistry injects package invocation helper when provid
 			undefined,
 			{
 				packageInvokeTools: {
+					check: async (input) => ({
+						ok: true,
+						invoke: input as {
+							kodyId: string
+							exportName: string
+						},
+						contract: {
+							packageId: 'pkg-discord-general-chat',
+							kodyId: 'discord-general-chat',
+							name: '@kentcdodds/discord-general-chat',
+							sourceId: 'source-discord-general-chat',
+							publishedCommit: 'commit-1',
+							exportName: './handle-discord-message-created',
+							runtimeTarget: 'src/handle-discord-message-created.ts',
+							warnings: [],
+						},
+					}),
 					invoke: async (input) => ({ ok: true, input }),
+					invokeChecked: async (input) => ({ ok: true, input }),
 				},
 			},
 		)
@@ -1521,7 +1539,31 @@ test('runBundledModuleWithRegistry injects package invocation helper when provid
 		expect(result.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(
+			providerFns?.package_invoke_check({
+				kodyId: 'discord-general-chat',
+				exportName: './handle-discord-message-created',
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			invoke: {
+				kodyId: 'discord-general-chat',
+				exportName: './handle-discord-message-created',
+			},
+		})
+		await expect(
 			providerFns?.package_invoke({
+				kodyId: 'discord-general-chat',
+				exportName: './handle-discord-message-created',
+			}),
+		).resolves.toEqual({
+			ok: true,
+			input: {
+				kodyId: 'discord-general-chat',
+				exportName: './handle-discord-message-created',
+			},
+		})
+		await expect(
+			providerFns?.package_invoke_checked({
 				kodyId: 'discord-general-chat',
 				exportName: './handle-discord-message-created',
 			}),

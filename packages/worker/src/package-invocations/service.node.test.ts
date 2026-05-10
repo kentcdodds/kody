@@ -471,6 +471,28 @@ function seedRuntimeDispatchPackages() {
 			}),
 		],
 	])
+	const sourceFiles = new Map([
+		[
+			'source-gateway',
+			{
+				'package.json': JSON.stringify(manifests.get('source-gateway')),
+				'src/dispatch-message-created.ts':
+					'export default async function dispatchMessageCreated(input: Record<string, unknown>) { return input }',
+			},
+		],
+		[
+			'source-subscriber',
+			{
+				'package.json': JSON.stringify(manifests.get('source-subscriber')),
+				'src/handle-discord-message-created.ts': `/**
+ * Handle a Discord message-created event.
+ */
+export default async function handleDiscordMessageCreated(input: { event: { id: string }, dryRun?: boolean }): Promise<{ handled: boolean }> {
+	return { handled: true }
+}`,
+			},
+		],
+	])
 	repoMockModule.getSavedPackageById.mockResolvedValue(null)
 	repoMockModule.getSavedPackageByKodyId.mockImplementation(
 		async (_db: unknown, input: { userId: string; kodyId: string }) => {
@@ -486,11 +508,13 @@ function seedRuntimeDispatchPackages() {
 			manifest: manifests.get(input.sourceId),
 		}),
 	)
-	repoMockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: sources.get('source-gateway'),
-		manifest: manifests.get('source-gateway'),
-		files: {},
-	})
+	repoMockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => ({
+			source: sources.get(input.sourceId),
+			manifest: manifests.get(input.sourceId),
+			files: sourceFiles.get(input.sourceId) ?? {},
+		}),
+	)
 	repoMockModule.getEntitySourceById.mockImplementation(
 		async (_db: unknown, sourceId: string) => sources.get(sourceId) ?? null,
 	)
@@ -531,7 +555,36 @@ function seedRuntimeDispatchPackages() {
 			return null
 		},
 	)
-	return { gateway, subscriber }
+	return { gateway, manifests, sourceFiles, sources, subscriber }
+}
+
+function createRuntimeDispatchTools(db: D1Database) {
+	return createPackageRuntimeInvokeTools({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-123',
+				email: 'me@example.com',
+				displayName: 'Me',
+			},
+		}),
+		packageContext: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+		},
+		parentRuntimeDebug: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+			surface: 'export',
+			name: './dispatch-message-created',
+			idempotencyKey: 'message-1',
+		},
+		packageInvokeDepth: 0,
+	})
 }
 
 test('invokePackageExport executes a scoped package export successfully', async () => {
@@ -700,6 +753,173 @@ test('package runtime can dynamically invoke the current published export from a
 		(firstSubscriberRunOptions as { packageInvokeTools?: { invoke?: unknown } })
 			.packageInvokeTools?.invoke,
 	).toEqual(expect.any(Function))
+})
+
+test('package runtime checks and invokes another package with current contract metadata', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { handled: true, eventId: 'message-1' },
+		logs: [],
+	})
+	const tools = createRuntimeDispatchTools(db)
+
+	const check = await tools.check({
+		kodyId: 'discord-general-chat',
+		exportName: 'handle-discord-message-created',
+		params: { event: { id: 'message-1' }, dryRun: true },
+		idempotencyKey: 'message-1',
+		topic: 'discord.message.created',
+	})
+
+	expect(check).toMatchObject({
+		ok: true,
+		invoke: {
+			kodyId: 'discord-general-chat',
+			exportName: './handle-discord-message-created',
+			params: { event: { id: 'message-1' }, dryRun: true },
+			idempotencyKey: 'message-1',
+			topic: 'discord.message.created',
+		},
+		contract: {
+			packageId: 'pkg-subscriber',
+			kodyId: 'discord-general-chat',
+			name: '@kentcdodds/discord-general-chat',
+			sourceId: 'source-subscriber',
+			publishedCommit: 'subscriber-commit-1',
+			exportName: './handle-discord-message-created',
+			runtimeTarget: 'src/handle-discord-message-created.ts',
+			description: 'Handle a Discord message-created event.',
+			typeDefinition:
+				'export default async function handleDiscordMessageCreated(input: { event: { id: string }, dryRun?: boolean }): Promise<{ handled: boolean }>',
+		},
+	})
+	expect(check.ok && check.contract.warnings).toEqual([
+		'No machine-readable params schema is published for package exports; params were only validated as a JSON object.',
+	])
+	if (!check.ok) throw new Error(check.message)
+
+	const result = await tools.invoke(check.invoke)
+
+	expect(result).toEqual({ handled: true, eventId: 'message-1' })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('package runtime check reads target package metadata changes without republishing caller', async () => {
+	const db = createDatabase()
+	const { sourceFiles, sources, subscriber } = seedRuntimeDispatchPackages()
+	const tools = createRuntimeDispatchTools(db)
+
+	const first = await tools.check({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { event: { id: 'message-1' } },
+	})
+	sources.set(
+		'source-subscriber',
+		createSource({
+			id: 'source-subscriber',
+			entityId: subscriber.id,
+			commit: 'subscriber-commit-2',
+		}),
+	)
+	sourceFiles.set('source-subscriber', {
+		'package.json': sourceFiles.get('source-subscriber')?.['package.json'] ?? '',
+		'src/handle-discord-message-created.ts': `/**
+ * Handle the current Discord message-created event contract.
+ */
+export default async function handleDiscordMessageCreated(input: { event: { id: string, guildId: string } }): Promise<{ handled: boolean, version: 2 }> {
+	return { handled: true, version: 2 }
+}`,
+	})
+
+	const second = await tools.check({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { event: { id: 'message-2', guildId: 'guild-1' } },
+	})
+
+	expect(first).toMatchObject({
+		ok: true,
+		contract: {
+			publishedCommit: 'subscriber-commit-1',
+			description: 'Handle a Discord message-created event.',
+		},
+	})
+	expect(second).toMatchObject({
+		ok: true,
+		contract: {
+			publishedCommit: 'subscriber-commit-2',
+			description: 'Handle the current Discord message-created event contract.',
+			typeDefinition:
+				'export default async function handleDiscordMessageCreated(input: { event: { id: string, guildId: string } }): Promise<{ handled: boolean, version: 2 }>',
+		},
+	})
+})
+
+test('package runtime check returns clear failures for invalid package export and params', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	const tools = createRuntimeDispatchTools(db)
+
+	await expect(
+		tools.check({
+			kodyId: 'missing-package',
+			exportName: './handle-discord-message-created',
+			params: {},
+		}),
+	).resolves.toMatchObject({
+		ok: false,
+		message: 'Saved package "missing-package" was not found for this user.',
+		problems: ['Saved package "missing-package" was not found for this user.'],
+	})
+	await expect(
+		tools.check({
+			kodyId: 'discord-general-chat',
+			exportName: './missing-export',
+			params: {},
+		}),
+	).resolves.toMatchObject({
+		ok: false,
+		problems: [
+			'Package "discord-general-chat" does not define export "./missing-export".',
+		],
+		contract: {
+			packageId: 'pkg-subscriber',
+			kodyId: 'discord-general-chat',
+			publishedCommit: 'subscriber-commit-1',
+			exportName: './missing-export',
+		},
+	})
+	await expect(
+		tools.check({
+			kodyId: 'discord-general-chat',
+			exportName: './handle-discord-message-created',
+			params: 'not-an-object',
+		}),
+	).resolves.toMatchObject({
+		ok: false,
+		message: 'packages.check params must be a JSON object when provided.',
+		problems: ['packages.check params must be a JSON object when provided.'],
+	})
+})
+
+test('package runtime invokeChecked fails before invocation when check fails', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	const tools = createRuntimeDispatchTools(db)
+
+	await expect(
+		tools.invokeChecked({
+			kodyId: 'discord-general-chat',
+			exportName: './missing-export',
+			params: {},
+		}),
+	).rejects.toThrow(
+		'packages.invokeChecked check failed: Package "discord-general-chat" does not define export "./missing-export".',
+	)
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
 test('package runtime invocation errors clearly when the target package is missing', async () => {

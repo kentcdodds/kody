@@ -110,18 +110,64 @@ const result = await packages.invoke({
 })
 ```
 
-Use `packages.invoke` for event subscribers, workflow dispatchers, agents, and
-other runtime fan-out where the caller should pick up the target package's
-current published export. The call resolves the target package at runtime, so
-republishing `discord-general-chat` changes what `discord-gateway` observes
-without republishing `discord-gateway`.
+Use `packages.invokeChecked` for event subscribers, workflow dispatchers,
+agents, and other runtime fan-out where the caller should pick up the target
+package's current published export and wants Kody to validate the current
+runtime contract before invoking it. The check resolves the target package at
+runtime, so republishing `discord-general-chat` changes what `discord-gateway`
+observes without republishing `discord-gateway`.
 
 Use static `kody:@scope/package/export` imports for library-like dependencies
 where bundling a published dependency snapshot with the caller is desired.
 
-`packages.invoke` returns the target export's unwrapped return value. If the
-target package, export, or execution fails, the promise rejects with an error
-that includes the package invocation error code in the message.
+Use `packages.check` when the caller wants to inspect the current contract
+before deciding whether to invoke:
+
+```ts
+import { packages } from 'kody:runtime'
+
+const check = await packages.check({
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event, dryRun: true },
+})
+
+if (!check.ok) throw new Error(check.message)
+console.log(check.contract)
+
+const result = await packages.invoke(check.invoke)
+```
+
+For the common check-then-invoke flow, use the combined helper:
+
+```ts
+import { packages } from 'kody:runtime'
+
+const result = await packages.invokeChecked({
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event, dryRun: true },
+})
+```
+
+Use bare `packages.invoke` only when the caller has already checked the contract
+or intentionally wants the older direct invoke behavior. Use static
+`kody:@scope/package/export` imports for library-like dependencies where
+bundling the currently published dependency with the caller is desired.
+
+`packages.check` returns `ok: false` with `message` and `problems` when the
+package, export, or params are invalid. On success it returns `contract`
+metadata, including package id/kody id/name, source id, published commit,
+normalized export name, runtime target, available JSDoc/type definition, and
+warnings. The warnings are important: Kody currently has JSDoc/type metadata but
+no machine-readable params schema for package exports, so params are only
+validated as a JSON object.
+
+`packages.invoke` and `packages.invokeChecked` return the target export's
+unwrapped return value. If execution fails, the promise rejects with an error
+that includes the package invocation error code in the message. If the
+pre-invoke check fails, `packages.invokeChecked` rejects before invoking the
+target export.
 
 The primary identifier is `kodyId`; `kody_id`, `packageId`, and `package_id` are
 accepted aliases for compatibility. `exportName` is required, and `export_name`
@@ -136,7 +182,10 @@ Ad hoc MCP `execute` code, including saved package modules imported from that
 execute call, does not get a package runtime context. In those runs
 `import { packages } from 'kody:runtime'` returns `null`; enter the package
 through package invocation, a package subscription, a package job, service, or
-app when the code needs `packages.invoke`.
+app when the code needs `packages.check`, `packages.invoke`, or
+`packages.invokeChecked`. Inside package runtime code, the equivalent codemode
+helpers are `codemode.package_invoke_check`, `codemode.package_invoke`, and
+`codemode.package_invoke_checked`.
 
 If `idempotencyKey` is omitted, Kody generates one. In package invocations that
 already have a parent idempotency key, the generated key is deterministic for

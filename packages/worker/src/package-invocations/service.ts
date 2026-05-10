@@ -5,7 +5,10 @@ import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	runBundledModuleWithRegistry,
+	type PackageInvokeCheckResult,
+	type PackageInvokeContract,
 	type PackageInvokeInput,
+	type PackageInvokeNormalizedInput,
 	type PackageInvokeTools,
 } from '#mcp/run-codemode-registry.ts'
 import {
@@ -22,8 +25,10 @@ import {
 } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
+	buildPackageSearchProjection,
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
+	type PackageExportProjection,
 } from '#worker/package-registry/manifest.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import {
@@ -133,45 +138,64 @@ function readOptionalString(
 	return null
 }
 
-function readSinglePackageIdentifier(input: PackageInvokeInput) {
+function readSinglePackageIdentifier(
+	input: PackageInvokeInput,
+	operationName = 'packages.invoke',
+) {
 	const candidates = [
-		readOptionalString(input, ['kodyId', 'kody_id']),
-		readOptionalString(input, ['packageId', 'package_id']),
-	].filter((value): value is string => value !== null)
-	const unique = Array.from(new Set(candidates))
+		{
+			kind: 'kodyId' as const,
+			value: readOptionalString(input, ['kodyId', 'kody_id']),
+		},
+		{
+			kind: 'packageId' as const,
+			value: readOptionalString(input, ['packageId', 'package_id']),
+		},
+	].filter(
+		(candidate): candidate is { kind: 'kodyId' | 'packageId'; value: string } =>
+			candidate.value !== null,
+	)
+	const unique = Array.from(new Set(candidates.map((candidate) => candidate.value)))
 	if (unique.length > 1) {
 		throw new Error(
-			'packages.invoke accepts one package identifier. Use kodyId unless you need the saved package id.',
+			`${operationName} accepts one package identifier. Use kodyId unless you need the saved package id.`,
 		)
 	}
-	const packageIdOrKodyId = unique[0]
-	if (!packageIdOrKodyId) {
-		throw new Error('packages.invoke requires kodyId or packageId.')
+	const [identifier] = candidates
+	if (!identifier) {
+		throw new Error(`${operationName} requires kodyId or packageId.`)
 	}
-	return packageIdOrKodyId
+	return identifier
 }
 
-function readPackageInvokeParams(input: PackageInvokeInput) {
+function readPackageInvokeParams(
+	input: PackageInvokeInput,
+	operationName = 'packages.invoke',
+) {
 	const params = input['params']
 	if (params === undefined || params === null) return undefined
 	if (!params || typeof params !== 'object' || Array.isArray(params)) {
 		throw new Error(
-			'packages.invoke params must be a JSON object when provided.',
+			`${operationName} params must be a JSON object when provided.`,
 		)
 	}
 	return params as Record<string, unknown>
 }
 
-function parsePackageInvokeInput(input: PackageInvokeInput) {
-	const packageIdOrKodyId = readSinglePackageIdentifier(input)
+function parsePackageInvokeInput(
+	input: PackageInvokeInput,
+	operationName = 'packages.invoke',
+) {
+	const packageIdentifier = readSinglePackageIdentifier(input, operationName)
 	const exportName = readOptionalString(input, ['exportName', 'export_name'])
 	if (!exportName) {
-		throw new Error('packages.invoke requires exportName.')
+		throw new Error(`${operationName} requires exportName.`)
 	}
 	return {
-		packageIdOrKodyId,
+		packageIdentifier,
+		packageIdOrKodyId: packageIdentifier.value,
 		exportName,
-		params: readPackageInvokeParams(input),
+		params: readPackageInvokeParams(input, operationName),
 		idempotencyKey: readOptionalString(input, [
 			'idempotencyKey',
 			'idempotency_key',
@@ -294,6 +318,203 @@ async function createAutoPackageInvokeIdempotencyKey(input: {
 		String(input.sequence),
 		toHex(new Uint8Array(digest)).slice(0, 24),
 	].join(':')
+}
+
+function createPackageInvokeCheckFailure(input: {
+	message: string
+	problems: Array<string>
+	contract?: Partial<PackageInvokeContract>
+}): PackageInvokeCheckResult {
+	return {
+		ok: false,
+		message: input.message,
+		problems: input.problems,
+		...(input.contract ? { contract: input.contract } : {}),
+	}
+}
+
+function getErrorMessage(error: unknown) {
+	return error instanceof Error ? error.message : String(error)
+}
+
+function buildNormalizedPackageInvokeInput(input: {
+	request: ReturnType<typeof parsePackageInvokeInput>
+	exportName: string
+}): PackageInvokeNormalizedInput {
+	return {
+		...(input.request.packageIdentifier.kind === 'kodyId'
+			? { kodyId: input.request.packageIdentifier.value }
+			: { packageId: input.request.packageIdentifier.value }),
+		exportName: input.exportName,
+		...(input.request.params === undefined
+			? {}
+			: { params: input.request.params }),
+		...(input.request.idempotencyKey
+			? { idempotencyKey: input.request.idempotencyKey }
+			: {}),
+		...(input.request.topic ? { topic: input.request.topic } : {}),
+	}
+}
+
+function findPackageExportProjection(input: {
+	exports: Array<PackageExportProjection>
+	exportName: string
+}) {
+	return (
+		input.exports.find((exportDetail) => exportDetail.subpath === input.exportName) ??
+		null
+	)
+}
+
+function buildPackageInvokeCheckWarnings(input: {
+	exportDetail: PackageExportProjection | null
+	sourceLoadFailed: boolean
+}) {
+	const warnings = [
+		'No machine-readable params schema is published for package exports; params were only validated as a JSON object.',
+	]
+	if (input.sourceLoadFailed) {
+		warnings.push(
+			'Source files could not be loaded for metadata extraction; description and type information may be incomplete.',
+		)
+	}
+	if (!input.exportDetail?.typeDefinition) {
+		warnings.push(
+			'No function type definition was found for this export; callable shape could not be statically confirmed.',
+		)
+	}
+	return warnings
+}
+
+async function checkPackageInvokeForRuntime(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	rawInput: PackageInvokeInput
+}): Promise<PackageInvokeCheckResult> {
+	let request: ReturnType<typeof parsePackageInvokeInput>
+	try {
+		request = parsePackageInvokeInput(input.rawInput, 'packages.check')
+	} catch (error) {
+		const message = getErrorMessage(error)
+		return createPackageInvokeCheckFailure({
+			message,
+			problems: [message],
+		})
+	}
+	const exportName = normalizeExportName(request.exportName)
+	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
+	const savedPackage = await resolveSavedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageIdOrKodyId: request.packageIdOrKodyId,
+	})
+	if (!savedPackage) {
+		const message = `Saved package "${request.packageIdOrKodyId}" was not found for this user.`
+		return createPackageInvokeCheckFailure({
+			message,
+			problems: [message],
+			contract: { exportName },
+		})
+	}
+	const packageContract = {
+		packageId: savedPackage.id,
+		kodyId: savedPackage.kodyId,
+		name: savedPackage.name,
+		sourceId: savedPackage.sourceId,
+		exportName,
+	}
+	let manifestResult: Awaited<ReturnType<typeof loadPackageManifestBySourceId>>
+	try {
+		manifestResult = await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceId: savedPackage.sourceId,
+		})
+	} catch (error) {
+		const problem = `Could not load current package manifest: ${getErrorMessage(error)}`
+		return createPackageInvokeCheckFailure({
+			message: problem,
+			problems: [problem],
+			contract: packageContract,
+		})
+	}
+	let runtimeTarget: string | null = null
+	try {
+		runtimeTarget = resolvePackageExportPath({
+			manifest: manifestResult.manifest,
+			exportName,
+		})
+	} catch (error) {
+		const problem = getErrorMessage(error)
+		return createPackageInvokeCheckFailure({
+			message: problem,
+			problems: [problem],
+			contract: {
+				...packageContract,
+				publishedCommit: manifestResult.source.published_commit ?? null,
+			},
+		})
+	}
+	try {
+		await ensureModuleArtifact({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			savedPackage,
+			selector: {
+				kind: 'export',
+				exportName,
+			},
+			userId: input.userId,
+		})
+	} catch (error) {
+		const problem = `Export "${exportName}" could not be prepared for invocation: ${getErrorMessage(error)}`
+		return createPackageInvokeCheckFailure({
+			message: problem,
+			problems: [problem],
+			contract: {
+				...packageContract,
+				publishedCommit: manifestResult.source.published_commit ?? null,
+				runtimeTarget,
+			},
+		})
+	}
+	let files: Record<string, string> | undefined
+	let sourceLoadFailed = false
+	try {
+		files = (
+			await loadPackageSourceBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: savedPackage.sourceId,
+			})
+		).files
+	} catch {
+		sourceLoadFailed = true
+	}
+	const projection = buildPackageSearchProjection(manifestResult.manifest, files)
+	const exportDetail = findPackageExportProjection({
+		exports: projection.exports,
+		exportName,
+	})
+	const warnings = buildPackageInvokeCheckWarnings({
+		exportDetail,
+		sourceLoadFailed,
+	})
+	return {
+		ok: true,
+		invoke,
+		contract: {
+			...packageContract,
+			publishedCommit: manifestResult.source.published_commit ?? null,
+			runtimeTarget: exportDetail?.runtimeTarget ?? runtimeTarget,
+			description: exportDetail?.description ?? null,
+			typeDefinition: exportDetail?.typeDefinition ?? null,
+			warnings,
+		},
+	}
 }
 
 async function resolveSavedPackage(input: {
@@ -1033,70 +1254,103 @@ export function createPackageRuntimeInvokeTools(input: {
 	packageInvokeDepth?: number
 }): PackageInvokeTools {
 	let autoIdempotencySequence = 0
+	const requireRuntimeCaller = (operationName: string) => {
+		const user = input.callerContext.user
+		if (!user?.userId) {
+			throw new Error(`${operationName} requires an authenticated user.`)
+		}
+		if (!input.packageContext) {
+			throw new Error(`${operationName} requires a package runtime context.`)
+		}
+		return { user, packageContext: input.packageContext }
+	}
+	const invoke = async (rawInput: PackageInvokeInput) => {
+		const { user, packageContext } = requireRuntimeCaller('packages.invoke')
+		const packageInvokeDepth = input.packageInvokeDepth ?? 0
+		if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
+			throw new Error(
+				`packages.invoke exceeded the maximum nested invocation depth (${maxPackageRuntimeInvokeDepth}).`,
+			)
+		}
+		const request = parsePackageInvokeInput(rawInput)
+		autoIdempotencySequence += 1
+		const idempotencyKey =
+			request.idempotencyKey ??
+			(await createAutoPackageInvokeIdempotencyKey({
+				callerPackageContext: packageContext,
+				parentRuntimeDebug: input.parentRuntimeDebug ?? null,
+				sequence: autoIdempotencySequence,
+				request,
+			}))
+		const response = await invokePackageExportForPackageRuntime({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			caller: {
+				userId: user.userId,
+				email: user.email ?? '',
+				displayName: user.displayName ?? '',
+				remoteConnectors: input.callerContext.remoteConnectors ?? null,
+				packageContext,
+			},
+			request: {
+				packageIdOrKodyId: request.packageIdOrKodyId,
+				exportName: request.exportName,
+				params: request.params,
+				idempotencyKey,
+				source: `package:${packageContext.kodyId}`,
+				topic: request.topic,
+			},
+			runtimeInvokeDepth: packageInvokeDepth + 1,
+		})
+		if (response.status >= 200 && response.status < 400) {
+			return response.body['result']
+		}
+		const errorRecord =
+			(response.body['error'] as Record<string, unknown> | undefined) ?? {}
+		const code = String(errorRecord['code'] ?? 'package_invocation_failed')
+		const message = String(
+			errorRecord['message'] ??
+				`Package invocation failed with HTTP ${response.status}.`,
+		)
+		const error = new Error(`[${code}] ${message}`) as Error & {
+			code?: string
+			status?: number
+			response?: PackageInvocationResponse
+		}
+		error.code = code
+		error.status = response.status
+		error.response = response
+		throw error
+	}
 	return {
-		invoke: async (rawInput) => {
-			const user = input.callerContext.user
-			if (!user?.userId) {
-				throw new Error('packages.invoke requires an authenticated user.')
-			}
-			if (!input.packageContext) {
-				throw new Error('packages.invoke requires a package runtime context.')
-			}
-			const packageInvokeDepth = input.packageInvokeDepth ?? 0
-			if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
-				throw new Error(
-					`packages.invoke exceeded the maximum nested invocation depth (${maxPackageRuntimeInvokeDepth}).`,
-				)
-			}
-			const request = parsePackageInvokeInput(rawInput)
-			autoIdempotencySequence += 1
-			const idempotencyKey =
-				request.idempotencyKey ??
-				(await createAutoPackageInvokeIdempotencyKey({
-					callerPackageContext: input.packageContext,
-					parentRuntimeDebug: input.parentRuntimeDebug ?? null,
-					sequence: autoIdempotencySequence,
-					request,
-				}))
-			const response = await invokePackageExportForPackageRuntime({
+		check: async (rawInput) => {
+			const { user } = requireRuntimeCaller('packages.check')
+			return await checkPackageInvokeForRuntime({
 				env: input.env,
 				baseUrl: input.baseUrl,
-				caller: {
-					userId: user.userId,
-					email: user.email ?? '',
-					displayName: user.displayName ?? '',
-					remoteConnectors: input.callerContext.remoteConnectors ?? null,
-					packageContext: input.packageContext,
-				},
-				request: {
-					packageIdOrKodyId: request.packageIdOrKodyId,
-					exportName: request.exportName,
-					params: request.params,
-					idempotencyKey,
-					source: `package:${input.packageContext.kodyId}`,
-					topic: request.topic,
-				},
-				runtimeInvokeDepth: packageInvokeDepth + 1,
+				userId: user.userId,
+				rawInput,
 			})
-			if (response.status >= 200 && response.status < 400) {
-				return response.body['result']
+		},
+		invoke,
+		invokeChecked: async (rawInput) => {
+			const { user } = requireRuntimeCaller('packages.invokeChecked')
+			const check = await checkPackageInvokeForRuntime({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: user.userId,
+				rawInput,
+			})
+			if (!check.ok) {
+				const error = new Error(
+					`packages.invokeChecked check failed: ${check.message}`,
+				) as Error & {
+					check?: PackageInvokeCheckResult
+				}
+				error.check = check
+				throw error
 			}
-			const errorRecord =
-				(response.body['error'] as Record<string, unknown> | undefined) ?? {}
-			const code = String(errorRecord['code'] ?? 'package_invocation_failed')
-			const message = String(
-				errorRecord['message'] ??
-					`Package invocation failed with HTTP ${response.status}.`,
-			)
-			const error = new Error(`[${code}] ${message}`) as Error & {
-				code?: string
-				status?: number
-				response?: PackageInvocationResponse
-			}
-			error.code = code
-			error.status = response.status
-			error.response = response
-			throw error
+			return await invoke(check.invoke)
 		},
 	}
 }

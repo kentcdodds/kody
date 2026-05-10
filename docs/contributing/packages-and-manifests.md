@@ -88,12 +88,13 @@ The top-level saved identity is the package.
 
 ### Dynamic current-version invocation
 
-Package runtime contexts also expose `packages.invoke` from `kody:runtime`:
+Package runtime contexts also expose `packages.check`, `packages.invoke`, and
+`packages.invokeChecked` from `kody:runtime`:
 
 ```ts
 import { packages } from 'kody:runtime'
 
-await packages.invoke({
+await packages.invokeChecked({
 	kodyId: 'discord-general-chat',
 	exportName: './handle-discord-message-created',
 	params: { event },
@@ -106,16 +107,41 @@ time through the package invocation service, using the current authenticated
 user and package caller context. Package code never handles external
 package-invocation bearer tokens for this flow.
 
-Use dynamic invocation for runtime dispatch surfaces that must pick up the
-target package's current published bundle, such as event subscribers, workflows,
-and agents. Continue to use static `kody:@scope/package/export` imports for
-library-like dependencies where the caller should keep the dependency bundle it
-was published with.
+Use dynamic invocation for runtime dispatch surfaces that must pick up the target
+package's current published bundle, such as event subscribers, workflows, and
+agents. Prefer `packages.invokeChecked` for new dynamic calls so Kody first
+checks that the current package and export exist, params are a JSON object, and
+the current contract metadata can be surfaced to the caller. Use
+`packages.check` directly when a caller wants to inspect the current contract or
+warnings before deciding whether to invoke:
+
+```ts
+const check = await packages.check({
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event, dryRun: true },
+})
+
+if (!check.ok) throw new Error(check.message)
+const result = await packages.invoke(check.invoke)
+```
+
+Continue to use static `kody:@scope/package/export` imports for library-like
+dependencies where the caller should keep the dependency bundle it was published
+with. Use bare `packages.invoke` only after a successful `packages.check` or when
+the caller intentionally accepts direct runtime failure.
+
+`packages.check` returns the current package id/kody id/name, source id,
+published commit, normalized export name, runtime target, and available
+JSDoc/type definition. It also returns warnings when validation is weak. Today
+package exports do not publish machine-readable params schemas, so Kody cannot
+validate field-level params shape beyond requiring `params` to be a JSON object.
 
 `packages.invoke` returns the target export's unwrapped result. Non-2xx package
 invocation responses reject with an error whose message starts with the
 underlying code, for example `[package_not_found] ...` or
-`[export_not_found] ...`.
+`[export_not_found] ...`. `packages.invokeChecked` throws before invoking when
+the check fails.
 
 Idempotency:
 

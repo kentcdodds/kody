@@ -53,7 +53,7 @@ Sandbox surface:
 - \`import { workflows } from 'kody:runtime'\` for durable Cloudflare Workflows. \`workflows.create\` accepts either inline \`code\` or a saved-package \`exportName\`; use \`workflow_list\` to inspect recent runs.
 - Optional \`params\` are passed as the first argument to the module default export. Prefer \`export default async function main(input = {}) { ... }\`; pass \`input\` to shared helpers explicitly.
 - \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.
-- \`import { packages } from 'kody:runtime'\` exposes \`packages.invoke(...)\` only in saved package runtime contexts; it is \`null\` for ad hoc execute calls.
+- \`import { packages } from 'kody:runtime'\` exposes \`packages.check(...)\`, \`packages.invoke(...)\`, and \`packages.invokeChecked(...)\` only in saved package runtime contexts; it is \`null\` for ad hoc execute calls. Prefer \`invokeChecked\` for dynamic current-version package calls unless you already called \`check\` and pass \`check.invoke\` to \`invoke\`.
 - \`fetch(...)\` is the host-provided network global; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` work in URL, headers, or body on approved hosts only.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
 - Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
