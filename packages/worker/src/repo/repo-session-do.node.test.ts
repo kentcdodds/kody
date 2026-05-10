@@ -107,6 +107,10 @@ const mockModule = vi.hoisted(() => {
 				exports: { '.': './index.ts' },
 				kody: { id: 'demo', description: 'Demo package' },
 			},
+			sourceFiles: {
+				'package.json': '{"name":"@kody/demo"}',
+				'index.ts': 'export const ready = true\n',
+			},
 		})),
 		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
 	}
@@ -940,8 +944,12 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 		{ oid: 'commit-new' },
 		{ oid: 'commit-old' },
 	])
+	mockModule.writePublishedSourceSnapshot.mockClear()
 
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
 
 	const result = await repoSession.publishFromExternalRef({
 		sessionId: 'external-publish-source-1',
@@ -961,6 +969,14 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 		expect.anything(),
 		expect.objectContaining({
 			publishedCommit: 'commit-new',
+		}),
+	)
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			files: {
+				'package.json': '{"name":"@kody/demo"}',
+				'index.ts': 'export const ready = true\n',
+			},
 		}),
 	)
 })
