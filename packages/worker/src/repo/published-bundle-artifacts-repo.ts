@@ -228,7 +228,7 @@ export async function listStaticDependentBundleArtifactRows(
 					package_rollup.matching_artifact_count,
 					package_rollup.package_bundled_dependency_commit,
 					ROW_NUMBER() OVER (
-						PARTITION BY package_id
+						PARTITION BY matching.package_id
 						ORDER BY artifact_kind ASC, COALESCE(artifact_name, '') ASC, entry_point ASC
 					) AS artifact_rank
 				FROM matching
