@@ -751,12 +751,13 @@ test('package runtime auto idempotency keys include parent runtime identity', as
 			_env: unknown,
 			_callerContext: unknown,
 			bundle: { mainModule: string },
-			params: { marker?: string } | undefined,
+			params: { marker?: string; value?: number } | undefined,
 		) => {
 			expect(bundle.mainModule).toBe('dist/subscriber.js')
 			return {
 				result: {
 					marker: params?.marker,
+					value: params?.value,
 				},
 				logs: [],
 			}
@@ -795,16 +796,16 @@ test('package runtime auto idempotency keys include parent runtime identity', as
 	const first = await createToolsForParent('./first-parent').invoke({
 		kodyId: 'discord-general-chat',
 		exportName: './handle-discord-message-created',
-		params: { marker: 'first' },
+		params: { marker: 'same-child-call', value: 1 },
 	})
 	const second = await createToolsForParent('./second-parent').invoke({
 		kodyId: 'discord-general-chat',
 		exportName: './handle-discord-message-created',
-		params: { marker: 'second' },
+		params: { marker: 'same-child-call', value: 1 },
 	})
 
-	expect(first).toEqual({ marker: 'first' })
-	expect(second).toEqual({ marker: 'second' })
+	expect(first).toEqual({ marker: 'same-child-call', value: 1 })
+	expect(second).toEqual({ marker: 'same-child-call', value: 1 })
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
 })
 
