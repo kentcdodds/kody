@@ -235,7 +235,7 @@ export async function listStaticDependentBundleArtifactRows(
 					package_rollup.package_bundled_dependency_commit,
 					ROW_NUMBER() OVER (
 						PARTITION BY matching.package_id, matching.entry_point
-						ORDER BY artifact_kind ASC, COALESCE(artifact_name, '') ASC, entry_point ASC
+						ORDER BY stale DESC, artifact_kind ASC, COALESCE(artifact_name, '') ASC, entry_point ASC
 					) AS entrypoint_artifact_rank
 				FROM matching
 				JOIN package_rollup
@@ -246,7 +246,7 @@ export async function listStaticDependentBundleArtifactRows(
 					entrypoint_representatives.*,
 					ROW_NUMBER() OVER (
 						PARTITION BY package_id
-						ORDER BY entry_point ASC
+						ORDER BY stale DESC, entry_point ASC
 					) AS entrypoint_rank
 				FROM entrypoint_representatives
 				WHERE entrypoint_artifact_rank = 1

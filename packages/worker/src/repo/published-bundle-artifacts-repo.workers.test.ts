@@ -256,7 +256,7 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 		}),
 	)
 	expect(summary.items[0]?.entrypoints).toHaveLength(5)
-	expect(summary.items[0]?.entrypoints).not.toContain('src/stale.ts')
+	expect(summary.items[0]?.entrypoints[0]).toBe('src/stale.ts')
 	expect(summary.items[1]).toEqual(
 		expect.objectContaining({
 			name: `@kentcdodds/package-c-${unique}`,
