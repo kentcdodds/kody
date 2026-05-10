@@ -3,6 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
+import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import {
 	createJob,
@@ -1529,7 +1530,10 @@ test('getJobInspection can include manifest-declared job source code', async () 
 		publishedCommit: 'published-commit-2',
 		files: {
 			'kody.json': JSON.stringify({
+				version: 1,
 				kind: 'job',
+				title: 'Inspect source job',
+				description: 'Job source fixture',
 				entrypoint: './src/custom-job.ts',
 			}),
 			'src/custom-job.ts': code,
@@ -1578,7 +1582,10 @@ test('getJobInspection reports missing source files without failing inspection',
 		publishedCommit: 'published-commit-2',
 		files: {
 			'kody.json': JSON.stringify({
+				version: 1,
 				kind: 'job',
+				title: 'Missing source job',
+				description: 'Missing entrypoint fixture',
 				entrypoint: './src/missing-job.ts',
 			}),
 		},
@@ -1600,9 +1607,10 @@ test('getJobInspection reports missing source files without failing inspection',
 })
 
 test('getJobInspection reports missing source manifests without failing inspection', async () => {
+	const bundleKv = createBundleArtifactsKv()
 	const env = {
 		APP_DB: createDatabase(),
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
@@ -1625,10 +1633,27 @@ test('getJobInspection reports missing source manifests without failing inspecti
 		sourceId: created.sourceId,
 		entityId: created.id,
 		publishedCommit: 'published-commit-2',
-		files: {
-			'src/job.ts': 'export default async () => ({ ok: true })',
-		},
 	})
+	await bundleKv.put(
+		buildPublishedSourceSnapshotKvKey({
+			sourceId: created.sourceId,
+			publishedCommit: 'published-commit-2',
+		}),
+		JSON.stringify({
+			version: 1,
+			sourceId: created.sourceId,
+			repoId: `job-${created.id}`,
+			entityKind: 'job',
+			entityId: created.id,
+			publishedCommit: 'published-commit-2',
+			manifestPath: 'kody.json',
+			sourceRoot: '/',
+			files: {
+				'src/job.ts': 'export default async () => ({ ok: true })',
+			},
+			createdAt: '2026-04-16T00:00:00.000Z',
+		}),
+	)
 
 	const inspected = await getJobInspection({
 		env,
