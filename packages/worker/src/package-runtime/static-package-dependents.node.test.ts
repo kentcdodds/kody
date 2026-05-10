@@ -16,7 +16,9 @@ test('buildStaticPackageDependentsSummary marks a static dependent stale after d
 				artifactKind: 'module',
 				artifactName: '.',
 				entryPoint: 'src/index.ts',
+				packageStale: true,
 				matchingArtifactCount: 1,
+				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
 		],
@@ -83,7 +85,9 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 				artifactKind: 'module',
 				artifactName: '.',
 				entryPoint: 'src/index.ts',
+				packageStale: true,
 				matchingArtifactCount: 2,
+				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
 			{
@@ -95,7 +99,9 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 				artifactKind: 'job',
 				artifactName: 'nightly',
 				entryPoint: 'src/nightly.ts',
+				packageStale: true,
 				matchingArtifactCount: 2,
+				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
 			{
@@ -107,7 +113,9 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 				artifactKind: 'module',
 				artifactName: '.',
 				entryPoint: 'src/index.ts',
+				packageStale: true,
 				matchingArtifactCount: 1,
+				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
 		],
@@ -123,4 +131,78 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 			entrypoints_truncated: true,
 		}),
 	)
+})
+
+test('buildStaticPackageDependentsSummary keeps stale true when stale artifact is not returned', () => {
+	const summary = buildStaticPackageDependentsSummary({
+		total: 1,
+		stale: 1,
+		currentDependencyCommit: 'commit-a-new',
+		artifactsPerPackageLimit: 1,
+		rows: [
+			{
+				packageId: 'package-b',
+				packageKodyId: 'package-b',
+				packageName: '@kentcdodds/package-b',
+				sourceId: 'source-b',
+				publishedCommit: 'commit-b',
+				artifactKind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/index.ts',
+				packageStale: true,
+				matchingArtifactCount: 6,
+				packageBundledDependencyCommit: null,
+				bundledDependencyCommit: 'commit-a-new',
+			},
+		],
+	})
+
+	expect(summary.items[0]).toEqual(
+		expect.objectContaining({
+			stale: true,
+			artifact_count: 6,
+			entrypoints_truncated: true,
+			bundled_dependency_commit: null,
+		}),
+	)
+})
+
+test('buildStaticPackageDependentsSummary reports null commit for mixed missing dependency commits', () => {
+	const summary = buildStaticPackageDependentsSummary({
+		total: 1,
+		stale: 1,
+		currentDependencyCommit: 'commit-a-new',
+		rows: [
+			{
+				packageId: 'package-b',
+				packageKodyId: 'package-b',
+				packageName: '@kentcdodds/package-b',
+				sourceId: 'source-b',
+				publishedCommit: 'commit-b',
+				artifactKind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/index.ts',
+				packageStale: true,
+				matchingArtifactCount: 2,
+				packageBundledDependencyCommit: null,
+				bundledDependencyCommit: 'commit-a-new',
+			},
+			{
+				packageId: 'package-b',
+				packageKodyId: 'package-b',
+				packageName: '@kentcdodds/package-b',
+				sourceId: 'source-b',
+				publishedCommit: 'commit-b',
+				artifactKind: 'job',
+				artifactName: 'nightly',
+				entryPoint: 'src/nightly.ts',
+				packageStale: true,
+				matchingArtifactCount: 2,
+				packageBundledDependencyCommit: null,
+				bundledDependencyCommit: null,
+			},
+		],
+	})
+
+	expect(summary.items[0]?.bundled_dependency_commit).toBeNull()
 })

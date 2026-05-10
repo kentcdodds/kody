@@ -54,11 +54,11 @@ type StaticDependentPackageAccumulator = {
 	name: string
 	source_id: string
 	published_commit: string | null
+	packageStale: boolean
 	matchingArtifactCount: number
 	artifactRows: Array<StaticDependentBundleArtifactRow>
 	entrypoints: Array<string>
-	bundledDependencyCommits: Set<string>
-	stale: boolean
+	packageBundledDependencyCommit: string | null
 }
 
 function createRecommendedNextAction(input: { total: number; stale: number }) {
@@ -87,18 +87,17 @@ function createAccumulator(
 		name: row.packageName,
 		source_id: row.sourceId,
 		published_commit: row.publishedCommit,
+		packageStale: row.packageStale,
 		matchingArtifactCount: row.matchingArtifactCount,
 		artifactRows: [],
 		entrypoints: [],
-		bundledDependencyCommits: new Set(),
-		stale: false,
+		packageBundledDependencyCommit: row.packageBundledDependencyCommit,
 	}
 }
 
 function addRowToAccumulator(input: {
 	accumulator: StaticDependentPackageAccumulator
 	row: StaticDependentBundleArtifactRow
-	currentDependencyCommit: string
 }) {
 	input.accumulator.artifactRows.push(input.row)
 	input.accumulator.matchingArtifactCount = Math.max(
@@ -108,14 +107,13 @@ function addRowToAccumulator(input: {
 	if (!input.accumulator.entrypoints.includes(input.row.entryPoint)) {
 		input.accumulator.entrypoints.push(input.row.entryPoint)
 	}
-	if (input.row.bundledDependencyCommit) {
-		input.accumulator.bundledDependencyCommits.add(
-			input.row.bundledDependencyCommit,
-		)
-	}
-	if (input.row.bundledDependencyCommit !== input.currentDependencyCommit) {
-		input.accumulator.stale = true
-	}
+	input.accumulator.packageStale =
+		input.accumulator.packageStale || input.row.packageStale
+	input.accumulator.packageBundledDependencyCommit =
+		input.accumulator.packageBundledDependencyCommit ===
+		input.row.packageBundledDependencyCommit
+			? input.accumulator.packageBundledDependencyCommit
+			: null
 }
 
 export function buildStaticPackageDependentsSummary(
@@ -132,29 +130,29 @@ export function buildStaticPackageDependentsSummary(
 		addRowToAccumulator({
 			accumulator,
 			row,
-			currentDependencyCommit: input.currentDependencyCommit,
 		})
 	}
-	const items = [...packages.values()].slice(0, packageLimit).map((item) => {
-		const bundledCommits = [...item.bundledDependencyCommits]
-		return {
-			package_id: item.package_id,
-			kody_id: item.kody_id,
-			name: item.name,
-			source_id: item.source_id,
-			published_commit: item.published_commit,
-			stale: item.stale,
-			artifact_count: item.matchingArtifactCount,
-			entrypoints: item.entrypoints.slice(0, artifactsPerPackageLimit),
-			entrypoints_truncated:
-				item.matchingArtifactCount >
-				Math.min(item.entrypoints.length, artifactsPerPackageLimit),
-			bundled_dependency_commit:
-				bundledCommits.length === 1 ? (bundledCommits[0] ?? null) : null,
-			current_dependency_commit: input.currentDependencyCommit,
-			recommended_action: createRecommendedItemAction({ stale: item.stale }),
-		} satisfies StaticDependentPackageSummaryItem
-	})
+	const items = [...packages.values()].slice(0, packageLimit).map(
+		(item) =>
+			({
+				package_id: item.package_id,
+				kody_id: item.kody_id,
+				name: item.name,
+				source_id: item.source_id,
+				published_commit: item.published_commit,
+				stale: item.packageStale,
+				artifact_count: item.matchingArtifactCount,
+				entrypoints: item.entrypoints.slice(0, artifactsPerPackageLimit),
+				entrypoints_truncated:
+					item.matchingArtifactCount >
+					Math.min(item.entrypoints.length, artifactsPerPackageLimit),
+				bundled_dependency_commit: item.packageBundledDependencyCommit,
+				current_dependency_commit: input.currentDependencyCommit,
+				recommended_action: createRecommendedItemAction({
+					stale: item.packageStale,
+				}),
+			}) satisfies StaticDependentPackageSummaryItem,
+	)
 	return {
 		total: input.total,
 		stale: input.stale,

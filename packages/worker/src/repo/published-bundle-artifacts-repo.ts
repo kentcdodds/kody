@@ -32,7 +32,9 @@ export type StaticDependentBundleArtifactRow = {
 	artifactKind: string
 	artifactName: string | null
 	entryPoint: string
+	packageStale: boolean
 	matchingArtifactCount: number
+	packageBundledDependencyCommit: string | null
 	bundledDependencyCommit: string | null
 }
 
@@ -72,7 +74,12 @@ function mapStaticDependentBundleArtifactRow(
 		artifactName:
 			row['artifact_name'] == null ? null : String(row['artifact_name']),
 		entryPoint: String(row['entry_point']),
+		packageStale: Number(row['package_stale'] ?? 0) === 1,
 		matchingArtifactCount: Number(row['matching_artifact_count'] ?? 0),
+		packageBundledDependencyCommit:
+			row['package_bundled_dependency_commit'] == null
+				? null
+				: String(row['package_bundled_dependency_commit']),
 		bundledDependencyCommit:
 			row['bundled_dependency_commit'] == null
 				? null
@@ -201,16 +208,32 @@ export async function listStaticDependentBundleArtifactRows(
 					AND artifact.source_id != ?
 					AND json_extract(dependency.value, '$.sourceId') = ?
 			),
+			package_rollup AS (
+				SELECT
+					package_id,
+					MAX(stale) AS package_stale,
+					COUNT(*) AS matching_artifact_count,
+					CASE
+						WHEN COUNT(DISTINCT COALESCE(bundled_dependency_commit, '__missing__')) = 1
+						THEN MIN(bundled_dependency_commit)
+						ELSE NULL
+					END AS package_bundled_dependency_commit
+				FROM matching
+				GROUP BY package_id
+			),
 			ranked_artifacts AS (
 				SELECT
 					matching.*,
-					MAX(stale) OVER (PARTITION BY package_id) AS package_stale,
-					COUNT(*) OVER (PARTITION BY package_id) AS matching_artifact_count,
+					package_rollup.package_stale,
+					package_rollup.matching_artifact_count,
+					package_rollup.package_bundled_dependency_commit,
 					ROW_NUMBER() OVER (
 						PARTITION BY package_id
 						ORDER BY artifact_kind ASC, COALESCE(artifact_name, '') ASC, entry_point ASC
 					) AS artifact_rank
 				FROM matching
+				JOIN package_rollup
+					ON package_rollup.package_id = matching.package_id
 			),
 			ranked_packages AS (
 				SELECT
@@ -229,7 +252,9 @@ export async function listStaticDependentBundleArtifactRows(
 				artifact_kind,
 				artifact_name,
 				entry_point,
+				package_stale,
 				matching_artifact_count,
+				package_bundled_dependency_commit,
 				bundled_dependency_commit
 			FROM ranked_packages
 			WHERE package_rank <= ? AND artifact_rank <= ?
