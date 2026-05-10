@@ -98,6 +98,7 @@ type RewriteState = {
 	baseUrl: string
 	userId: string
 	files: Record<string, string>
+	sourceFiles: Record<string, string>
 	rootPackage: {
 		manifest: AuthoredPackageJson
 		prefix: string
@@ -209,6 +210,23 @@ function createPackageProxyPathSegment(specifier: string) {
 	const parsed = parseKodyPackageSpecifier(specifier)
 	return encodePathKey(
 		`${parsed.packageName}#${normalizePackageExportKey(parsed.exportName)}`,
+	)
+}
+
+function resolvePackageExportSourcePath(input: {
+	files: Record<string, string>
+	manifest: AuthoredPackageJson
+	exportName: string
+}) {
+	const exportPath = resolvePackageExportPath({
+		manifest: input.manifest,
+		exportName: input.exportName,
+	})
+	return (
+		resolveWorkspaceSourceFilePath({
+			files: input.files,
+			path: exportPath,
+		}) ?? exportPath
 	)
 }
 
@@ -627,7 +645,8 @@ async function ensurePackageProxy(
 		parsed.packageName === state.rootPackage?.manifest.name
 			? joinPath(
 					state.rootPackage.prefix,
-					resolvePackageExportPath({
+					resolvePackageExportSourcePath({
+						files: input.state.sourceFiles,
 						manifest: state.rootPackage.manifest,
 						exportName: parsed.exportName,
 					}),
@@ -647,7 +666,8 @@ async function ensurePackageProxy(
 									parsed.exportName,
 								)}"`,
 							})
-							const exportPath = resolvePackageExportPath({
+							const exportPath = resolvePackageExportSourcePath({
+								files: loaded.files,
 								manifest: loaded.manifest,
 								exportName: parsed.exportName,
 							})
@@ -820,6 +840,7 @@ async function prepareKodyGraphFiles(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		files,
+		sourceFiles: input.sourceFiles,
 		rootPackage,
 		proxies: new Map(),
 		packages: new Map(),

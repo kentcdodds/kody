@@ -1220,7 +1220,7 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 		manifest: {
 			name: '@alice/reachable-package',
 			exports: {
-				'.': './src/index.ts',
+				'.': './src/index.js',
 			},
 			kody: {
 				id: 'reachable-package',
@@ -1270,6 +1270,27 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 			packageName: '@alice/reachable-package',
 		},
 	])
+	const workerInput = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const selfProxy = Object.values(workerInput?.files ?? {}).find((source) =>
+		source.includes('src/helper.ts'),
+	)
+	expect(selfProxy).toContain('src/helper.ts')
+	expect(Object.keys(workerInput?.files ?? {})).toContain(
+		'.__kody_root__/src/helper.ts',
+	)
+	expect(Object.keys(workerInput?.files ?? {})).not.toContain(
+		'.__kody_root__/src/helper.js',
+	)
+	expect(Object.keys(workerInput?.files ?? {})).toContain(
+		'.__kody_packages__/@alice/reachable-package/src/index.ts',
+	)
+	expect(Object.keys(workerInput?.files ?? {})).not.toContain(
+		'.__kody_packages__/@alice/reachable-package/src/index.js',
+	)
 })
 
 test('buildKodyModuleBundle keeps virtual package paths distinct for scoped packages with the same leaf', async () => {
