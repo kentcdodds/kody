@@ -11,6 +11,10 @@ export type StaticKodyPackageImport = {
 	exportName: string
 }
 
+export function isTypeDeclarationFilePath(filePath: string) {
+	return /\.d\.[cm]?ts$/.test(filePath)
+}
+
 function collectStaticKodyPackageImportsFromSource(input: {
 	filePath: string
 	source: string
@@ -33,6 +37,7 @@ export function collectStaticKodyPackageImportsFromFiles(
 	files: Record<string, string>,
 ): Array<StaticKodyPackageImport> {
 	return Object.entries(files)
+		.filter(([filePath]) => !isTypeDeclarationFilePath(filePath))
 		.flatMap(([filePath, source]) =>
 			collectStaticKodyPackageImportsFromSource({
 				filePath,

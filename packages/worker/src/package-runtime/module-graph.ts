@@ -29,6 +29,7 @@ import {
 } from './package-import-resolution.ts'
 import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifacts.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
+import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 import {
 	collectLiteralImportNodes,
 	collectLiteralImportSpecifiers,
@@ -440,6 +441,10 @@ async function ensurePackageLoaded(
 	for (const [filePath, content] of Object.entries(loaded.files)) {
 		const normalizedPath = normalizePackageWorkspacePath(filePath)
 		const targetPath = joinPath(entry.prefix, normalizedPath)
+		if (isTypeDeclarationFilePath(normalizedPath)) {
+			state.files[targetPath] = content
+			continue
+		}
 		state.files[targetPath] = await rewriteKodyImports({
 			state,
 			source: content,
@@ -646,6 +651,10 @@ async function prepareKodyGraphFiles(input: {
 			continue
 		}
 		const normalizedPath = joinPath(rootSourcePrefix, normalizedSourcePath)
+		if (isTypeDeclarationFilePath(normalizedSourcePath)) {
+			files[normalizedPath] = content
+			continue
+		}
 		if (normalizedSourcePath === packageManifestPath) {
 			files[normalizedPath] = content
 			continue

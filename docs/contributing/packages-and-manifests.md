@@ -78,9 +78,10 @@ The top-level saved identity is the package.
   be listed in `package.json#kody.dependencies` by package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Repo checks
   fail when a static import is missing from the list or when the list contains a
-  package that is not statically imported. Type-only imports do not count.
-  Literal dynamic `import("kody:@...")` expressions are bundled snapshots too,
-  so they must be declared.
+  package that is not statically imported. Type-only imports do not count, and
+  declaration files such as `.d.ts` are treated as type-only. Literal dynamic
+  `import("kody:@...")` expressions are bundled snapshots too, so they must be
+  declared.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

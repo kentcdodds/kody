@@ -82,8 +82,9 @@ exhaustive.
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
   checks fail when static imports and declarations differ. Type-only imports do
-  not count; literal dynamic `import("kody:@...")` expressions are bundled and
-  must be declared.
+  not count, and declaration files such as `.d.ts` are treated as type-only;
+  literal dynamic `import("kody:@...")` expressions are bundled and must be
+  declared.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that
