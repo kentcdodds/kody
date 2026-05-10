@@ -305,6 +305,10 @@ function resolveLocalImportPath(input: {
 function collectReachableSourceFilePaths(input: {
 	files: Record<string, string>
 	entryPoint: string
+	rootPackage: {
+		manifest: AuthoredPackageJson
+		prefix: string
+	} | null
 }) {
 	const reachable = new Set<string>()
 	const stack = [normalizePackageWorkspacePath(input.entryPoint)]
@@ -321,6 +325,18 @@ function collectReachableSourceFilePaths(input: {
 		if (source == null) continue
 		reachable.add(filePath)
 		for (const node of collectLiteralImportNodes(source)) {
+			if (node.specifier.startsWith(packageSpecifierPrefix)) {
+				const parsed = parseKodyPackageSpecifier(node.specifier)
+				if (parsed.packageName === input.rootPackage?.manifest.name) {
+					stack.push(
+						resolvePackageExportPath({
+							manifest: input.rootPackage.manifest,
+							exportName: parsed.exportName,
+						}),
+					)
+				}
+				continue
+			}
 			const localPath = resolveLocalImportPath({
 				files: input.files,
 				fromPath: filePath,
@@ -349,6 +365,7 @@ async function resolveDirectKodyDependenciesForEntryPoint(input: {
 	const reachable = collectReachableSourceFilePaths({
 		files: input.sourceFiles,
 		entryPoint: input.entryPoint,
+		rootPackage,
 	})
 	const reachableFiles = Object.fromEntries(
 		Object.entries(input.sourceFiles).filter(([filePath]) =>
@@ -704,6 +721,7 @@ export async function buildKodyModuleBundle(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceFiles: input.sourceFiles,
+		entryPoint: input.entryPoint,
 	})
 	const normalizedEntrypoint = joinPath(
 		rootSourcePrefix,
@@ -746,6 +764,7 @@ export async function buildKodyImportableModuleBundle(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceFiles: input.sourceFiles,
+		entryPoint: input.entryPoint,
 	})
 	const normalizedEntrypoint = joinPath(
 		rootSourcePrefix,
@@ -781,16 +800,23 @@ async function prepareKodyGraphFiles(input: {
 	baseUrl: string
 	userId: string
 	sourceFiles: Record<string, string>
+	entryPoint: string
 }) {
 	const files: Record<string, string> = {
 		[runtimeModulePath]: createRuntimeModuleSource(),
 	}
+	const rootPackage = readRootPackage(input.sourceFiles)
+	const reachableRootFiles = collectReachableSourceFilePaths({
+		files: input.sourceFiles,
+		entryPoint: input.entryPoint,
+		rootPackage,
+	})
 	const state: RewriteState = {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		files,
-		rootPackage: readRootPackage(input.sourceFiles),
+		rootPackage,
 		proxies: new Map(),
 		packages: new Map(),
 		dependencies: new Map(),
@@ -807,11 +833,14 @@ async function prepareKodyGraphFiles(input: {
 			continue
 		}
 		const normalizedPath = joinPath(rootSourcePrefix, normalizedSourcePath)
-		if (isTypeDeclarationFilePath(normalizedSourcePath)) {
+		if (normalizedSourcePath === packageManifestPath) {
 			files[normalizedPath] = content
 			continue
 		}
-		if (normalizedSourcePath === packageManifestPath) {
+		if (!reachableRootFiles.has(normalizedSourcePath)) {
+			continue
+		}
+		if (isTypeDeclarationFilePath(normalizedSourcePath)) {
 			files[normalizedPath] = content
 			continue
 		}
@@ -842,6 +871,7 @@ export async function buildKodyAppBundle(input: {
 			baseUrl: input.baseUrl,
 			userId: input.userId,
 			sourceFiles: input.sourceFiles,
+			entryPoint: input.entryPoint,
 		})
 		const normalizedEntrypoint = joinPath(
 			rootSourcePrefix,

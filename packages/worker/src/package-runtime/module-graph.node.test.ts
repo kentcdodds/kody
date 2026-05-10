@@ -1175,6 +1175,103 @@ test('buildKodyModuleBundle records only entrypoint-reachable kody package depen
 	])
 })
 
+test('buildKodyModuleBundle follows self kody imports when recording reachable dependencies', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('self-reachable-deps'),
+	)
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				name: string
+			},
+		) => {
+			if (input.name !== '@alice/reachable-package') return null
+			return {
+				id: 'pkg-reachable',
+				userId: 'user-1',
+				name: '@alice/reachable-package',
+				kodyId: 'reachable-package',
+				description: 'Reachable package',
+				tags: [],
+				searchText: null,
+				sourceId: 'source-reachable',
+				hasApp: false,
+				createdAt: '2026-05-10T00:00:00.000Z',
+				updatedAt: '2026-05-10T00:00:00.000Z',
+			}
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-reachable',
+			user_id: 'user-1',
+			entity_kind: 'package',
+			entity_id: 'pkg-reachable',
+			repo_id: 'repo-reachable',
+			published_commit: 'commit-reachable',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			last_external_check_at: null,
+			created_at: '2026-05-10T00:00:00.000Z',
+			updated_at: '2026-05-10T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@alice/reachable-package',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'reachable-package',
+				description: 'Dependency package',
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'src/index.ts': 'export default async function run() { return "ok" }',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	const result = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './src/index.ts',
+					'./helper': './src/helper.ts',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'src/index.ts':
+				'import helper from "kody:@kentcdodds/local-package/helper"; export default helper',
+			'src/helper.ts':
+				'import reachable from "kody:@alice/reachable-package"; export default reachable',
+		},
+		entryPoint: 'src/index.ts',
+	})
+
+	expect(result.dependencies).toEqual([
+		{
+			sourceId: 'source-reachable',
+			publishedCommit: 'commit-reachable',
+			kodyId: 'reachable-package',
+			packageName: '@alice/reachable-package',
+		},
+	])
+})
+
 test('buildKodyModuleBundle keeps virtual package paths distinct for scoped packages with the same leaf', async () => {
 	mockModule.createWorker.mockResolvedValue(
 		createBundleResult('shared-leaf-prefix'),
