@@ -172,10 +172,10 @@ export const publishExternalPushCapability = defineDomainCapability(
 						throw error
 					}
 					lastTransientError = error
-					if (attemptIndex >= externalPublishRetryDelaysMs.length) {
-						break
-					}
-					const nextDelayMs = externalPublishRetryDelaysMs[attemptIndex] ?? 0
+					const willRetry = attemptIndex < externalPublishRetryDelaysMs.length
+					const nextDelayMs = willRetry
+						? (externalPublishRetryDelaysMs[attemptIndex] ?? 0)
+						: 0
 					logExternalPublishRetry({
 						sourceId: source.id,
 						repoId: source.repo_id,
@@ -185,6 +185,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 						nextDelayMs,
 						error,
 					})
+					if (!willRetry) {
+						break
+					}
 					await delay(nextDelayMs)
 				}
 			}

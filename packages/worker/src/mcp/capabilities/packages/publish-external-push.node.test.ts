@@ -316,6 +316,7 @@ test('replaces exhausted transient reset attempts with a stable error message', 
 			'package_publish_external_push could not recover after 3 transient Durable Object reset attempts',
 		)
 		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(3)
+		expect(mockModule.captureException).toHaveBeenCalledTimes(3)
 	} finally {
 		warnSpy.mockRestore()
 	}
