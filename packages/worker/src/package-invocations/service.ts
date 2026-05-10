@@ -952,7 +952,6 @@ async function invokeSavedPackageModule(input: {
 					parentRuntimeDebug: runtimeDebug,
 					packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
 				}),
-				packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
 			},
 		)
 		const response = executionResult.error
@@ -1097,7 +1096,7 @@ export function createPackageRuntimeInvokeTools(input: {
 	}
 }
 
-export async function invokePackageExportForPackageRuntime(input: {
+async function invokePackageExportForPackageRuntime(input: {
 	env: Env
 	baseUrl: string
 	caller: {

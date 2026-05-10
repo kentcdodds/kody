@@ -580,7 +580,6 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					parentRuntimeDebug: runtimeDebug,
 					packageInvokeDepth: 0,
 				}),
-				packageInvokeDepth: 0,
 				executorTimeoutMs: runtime.executorTimeoutMs,
 			},
 		)

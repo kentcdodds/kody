@@ -484,7 +484,6 @@ async function executePublishedJobArtifact(input: {
 			...(packageContext && packageInvokeTools
 				? {
 						packageInvokeTools,
-						packageInvokeDepth: 0,
 					}
 				: {}),
 		},

@@ -734,7 +734,6 @@ export async function runBundledModuleWithRegistry(
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
 		runtimeDebug?: PackageRuntimeDebugContext | null
-		packageInvokeDepth?: number
 	},
 ): Promise<ExecuteResult> {
 	const secretRedactor = createExecutionSecretRedactor()

@@ -189,7 +189,6 @@ async function invokeRetriever(input: {
 				parentRuntimeDebug: runtimeDebug,
 				packageInvokeDepth: 0,
 			}),
-			packageInvokeDepth: 0,
 			executorTimeoutMs: clampTimeout(input.entry.timeoutMs, input.scope),
 		},
 	)

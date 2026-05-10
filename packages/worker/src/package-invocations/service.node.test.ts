@@ -655,11 +655,6 @@ test('package runtime can dynamically invoke the current published export from a
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(4)
-	const firstNestedCall =
-		repoMockModule.runBundledModuleWithRegistry.mock.calls[1]
-	expect(firstNestedCall?.[4]).toMatchObject({
-		packageInvokeDepth: 1,
-	})
 })
 
 test('package runtime invocation errors clearly when the target package is missing', async () => {
