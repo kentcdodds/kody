@@ -129,3 +129,49 @@ test('repo_run_commands registry spec and tool descriptor stay structurally alig
 		description: expect.any(String),
 	})
 })
+
+test('job_get registry exposes optional source-code inspection fields', () => {
+	const registry = buildCapabilityRegistry(builtinDomains)
+	const capabilitySpec = registry.capabilitySpecs.job_get
+	const toolDescriptor = registry.capabilityToolDescriptors.job_get
+	const inputProperties =
+		capabilitySpec?.inputSchema &&
+		typeof capabilitySpec.inputSchema === 'object' &&
+		'properties' in capabilitySpec.inputSchema &&
+		capabilitySpec.inputSchema.properties &&
+		typeof capabilitySpec.inputSchema.properties === 'object'
+			? capabilitySpec.inputSchema.properties
+			: null
+	const outputProperties =
+		capabilitySpec?.outputSchema &&
+		typeof capabilitySpec.outputSchema === 'object' &&
+		'properties' in capabilitySpec.outputSchema &&
+		capabilitySpec.outputSchema.properties &&
+		typeof capabilitySpec.outputSchema.properties === 'object'
+			? capabilitySpec.outputSchema.properties
+			: null
+	const includeCodeSchema =
+		inputProperties && 'includeCode' in inputProperties
+			? inputProperties.includeCode
+			: null
+	const sourceSchema =
+		outputProperties && 'source' in outputProperties
+			? outputProperties.source
+			: null
+
+	expect(capabilitySpec).toBeDefined()
+	expect(capabilitySpec?.inputFields).toEqual(
+		expect.arrayContaining(['id', 'job_id', 'includeCode']),
+	)
+	expect(capabilitySpec?.outputFields).toEqual(
+		expect.arrayContaining(['job', 'alarm', 'source']),
+	)
+	expect(capabilitySpec?.inputTypeDefinition).toContain('includeCode?: boolean')
+	expect(capabilitySpec?.outputTypeDefinition).toContain('source?:')
+	expect(includeCodeSchema).toMatchObject({
+		type: 'boolean',
+	})
+	expect(sourceSchema).toBeDefined()
+	expect(toolDescriptor?.inputSchema).toEqual(capabilitySpec?.inputSchema)
+	expect(toolDescriptor?.outputSchema).toEqual(capabilitySpec?.outputSchema)
+})

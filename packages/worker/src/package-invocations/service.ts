@@ -2,8 +2,15 @@ import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { type PackageRuntimeSurface } from '#worker/package-runtime/package-runtime-debug.ts'
+import {
+	runBundledModuleWithRegistry,
+	type PackageInvokeInput,
+	type PackageInvokeTools,
+} from '#mcp/run-codemode-registry.ts'
+import {
+	type PackageRuntimeDebugContext,
+	type PackageRuntimeSurface,
+} from '#worker/package-runtime/package-runtime-debug.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -86,7 +93,15 @@ type PackageModuleResolution = {
 	entryPoint: string
 }
 
+type PackageRuntimeContext = {
+	packageId: string
+	kodyId: string
+	sourceId?: string | null
+}
+
 const internalEmailSubscriptionTokenId = 'internal:email-subscriptions'
+const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
+const maxPackageRuntimeInvokeDepth = 8
 
 function normalizeExportName(exportName: string) {
 	const trimmed = exportName.trim()
@@ -102,6 +117,64 @@ function normalizeExportName(exportName: string) {
 function normalizeNullableString(value: string | null | undefined) {
 	const trimmed = value?.trim()
 	return trimmed && trimmed.length > 0 ? trimmed : null
+}
+
+function readOptionalString(
+	input: PackageInvokeInput,
+	fieldNames: Array<string>,
+) {
+	for (const fieldName of fieldNames) {
+		const value = input[fieldName]
+		if (typeof value === 'string' && value.trim()) return value.trim()
+	}
+	return null
+}
+
+function readSinglePackageIdentifier(input: PackageInvokeInput) {
+	const candidates = [
+		readOptionalString(input, ['kodyId', 'kody_id']),
+		readOptionalString(input, ['packageId', 'package_id']),
+	].filter((value): value is string => value !== null)
+	const unique = Array.from(new Set(candidates))
+	if (unique.length > 1) {
+		throw new Error(
+			'packages.invoke accepts one package identifier. Use kodyId unless you need the saved package id.',
+		)
+	}
+	const packageIdOrKodyId = unique[0]
+	if (!packageIdOrKodyId) {
+		throw new Error('packages.invoke requires kodyId or packageId.')
+	}
+	return packageIdOrKodyId
+}
+
+function readPackageInvokeParams(input: PackageInvokeInput) {
+	const params = input['params']
+	if (params === undefined || params === null) return undefined
+	if (!params || typeof params !== 'object' || Array.isArray(params)) {
+		throw new Error(
+			'packages.invoke params must be a JSON object when provided.',
+		)
+	}
+	return params as Record<string, unknown>
+}
+
+function parsePackageInvokeInput(input: PackageInvokeInput) {
+	const packageIdOrKodyId = readSinglePackageIdentifier(input)
+	const exportName = readOptionalString(input, ['exportName', 'export_name'])
+	if (!exportName) {
+		throw new Error('packages.invoke requires exportName.')
+	}
+	return {
+		packageIdOrKodyId,
+		exportName,
+		params: readPackageInvokeParams(input),
+		idempotencyKey: readOptionalString(input, [
+			'idempotencyKey',
+			'idempotency_key',
+		]),
+		topic: readOptionalString(input, ['topic']),
+	}
 }
 
 function buildPackageInvocationStorageId(packageId: string) {
@@ -183,6 +256,41 @@ function canonicalizeJsonValue(value: unknown): unknown {
 		)
 	}
 	return value
+}
+
+async function createAutoPackageInvokeIdempotencyKey(input: {
+	callerPackageContext: PackageRuntimeContext
+	parentRuntimeDebug: PackageRuntimeDebugContext | null
+	sequence: number
+	request: ReturnType<typeof parsePackageInvokeInput>
+}) {
+	const parentKey = input.parentRuntimeDebug?.idempotencyKey?.trim()
+	if (!parentKey) {
+		return `pkginvoke:${crypto.randomUUID()}`
+	}
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(
+			canonicalJsonStringify({
+				callerPackageId: input.callerPackageContext.packageId,
+				parentKey,
+				parentSurface: input.parentRuntimeDebug?.surface ?? null,
+				parentName: input.parentRuntimeDebug?.name ?? null,
+				sequence: input.sequence,
+				packageIdOrKodyId: input.request.packageIdOrKodyId,
+				exportName: normalizeExportName(input.request.exportName),
+				params: input.request.params,
+				topic: input.request.topic,
+			}),
+		),
+	)
+	return [
+		'pkginvoke',
+		input.callerPackageContext.packageId,
+		parentKey,
+		String(input.sequence),
+		toHex(new Uint8Array(digest)).slice(0, 24),
+	].join(':')
 }
 
 async function resolveSavedPackage(input: {
@@ -570,6 +678,7 @@ async function invokeSavedPackageModule(input: {
 	source: string | null
 	topic: string | null
 	notFoundCode: 'export_not_found' | 'subscription_not_found'
+	runtimeInvokeDepth?: number
 }) {
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
@@ -705,6 +814,30 @@ async function invokeSavedPackageModule(input: {
 			selector: input.moduleSelector,
 			source: input.source,
 		})
+		const packageContext = artifact.packageContext ?? {
+			packageId: input.savedPackage.id,
+			kodyId: input.savedPackage.kodyId,
+			sourceId: input.savedPackage.sourceId,
+		}
+		const runtimeDebug: PackageRuntimeDebugContext = {
+			packageId: input.savedPackage.id,
+			kodyId: input.savedPackage.kodyId,
+			sourceId: input.savedPackage.sourceId,
+			publishedCommit: repoSource?.published_commit ?? null,
+			surface: runtimeSurface,
+			name: resolveInvocationRuntimeName({
+				surface: runtimeSurface,
+				invocationName: input.invocationName,
+				topic: input.topic,
+			}),
+			invocationId,
+			idempotencyKey: input.idempotencyKey,
+			metadata: {
+				exportName: input.invocationName,
+				source: input.source,
+				topic: input.topic,
+			},
+		}
 		const executionResult = await runBundledModuleWithRegistry(
 			input.env,
 			callerContext,
@@ -719,25 +852,7 @@ async function invokeSavedPackageModule(input: {
 					storageId: buildPackageInvocationStorageId(input.savedPackage.id),
 					writable: true,
 				},
-				runtimeDebug: {
-					packageId: input.savedPackage.id,
-					kodyId: input.savedPackage.kodyId,
-					sourceId: input.savedPackage.sourceId,
-					publishedCommit: repoSource?.published_commit ?? null,
-					surface: runtimeSurface,
-					name: resolveInvocationRuntimeName({
-						surface: runtimeSurface,
-						invocationName: input.invocationName,
-						topic: input.topic,
-					}),
-					invocationId,
-					idempotencyKey: input.idempotencyKey,
-					metadata: {
-						exportName: input.invocationName,
-						source: input.source,
-						topic: input.topic,
-					},
-				},
+				runtimeDebug,
 				emailTools: {
 					getMessage: async (messageId) => {
 						const loaded = await getEmailMessageWithAttachmentsById({
@@ -828,9 +943,15 @@ async function invokeSavedPackageModule(input: {
 						}
 					},
 				},
-				...(artifact.packageContext
-					? { packageContext: artifact.packageContext }
-					: {}),
+				packageContext,
+				packageInvokeTools: createPackageRuntimeInvokeTools({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					callerContext,
+					packageContext,
+					parentRuntimeDebug: runtimeDebug,
+					packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
+				}),
 			},
 		)
 		const response = executionResult.error
@@ -899,11 +1020,158 @@ async function invokeSavedPackageModule(input: {
 	}
 }
 
+export function createPackageRuntimeInvokeTools(input: {
+	env: Env
+	baseUrl: string
+	callerContext: ReturnType<typeof createMcpCallerContext>
+	packageContext: PackageRuntimeContext | null
+	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	packageInvokeDepth?: number
+}): PackageInvokeTools {
+	let autoIdempotencySequence = 0
+	return {
+		invoke: async (rawInput) => {
+			const user = input.callerContext.user
+			if (!user?.userId) {
+				throw new Error('packages.invoke requires an authenticated user.')
+			}
+			if (!input.packageContext) {
+				throw new Error('packages.invoke requires a package runtime context.')
+			}
+			const packageInvokeDepth = input.packageInvokeDepth ?? 0
+			if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
+				throw new Error(
+					`packages.invoke exceeded the maximum nested invocation depth (${maxPackageRuntimeInvokeDepth}).`,
+				)
+			}
+			const request = parsePackageInvokeInput(rawInput)
+			autoIdempotencySequence += 1
+			const idempotencyKey =
+				request.idempotencyKey ??
+				(await createAutoPackageInvokeIdempotencyKey({
+					callerPackageContext: input.packageContext,
+					parentRuntimeDebug: input.parentRuntimeDebug ?? null,
+					sequence: autoIdempotencySequence,
+					request,
+				}))
+			const response = await invokePackageExportForPackageRuntime({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				caller: {
+					userId: user.userId,
+					email: user.email ?? '',
+					displayName: user.displayName ?? '',
+					packageContext: input.packageContext,
+				},
+				request: {
+					packageIdOrKodyId: request.packageIdOrKodyId,
+					exportName: request.exportName,
+					params: request.params,
+					idempotencyKey,
+					source: `package:${input.packageContext.kodyId}`,
+					topic: request.topic,
+				},
+				runtimeInvokeDepth: packageInvokeDepth + 1,
+			})
+			if (response.status >= 200 && response.status < 400) {
+				return response.body['result']
+			}
+			const errorRecord =
+				(response.body['error'] as Record<string, unknown> | undefined) ?? {}
+			const code = String(errorRecord['code'] ?? 'package_invocation_failed')
+			const message = String(
+				errorRecord['message'] ??
+					`Package invocation failed with HTTP ${response.status}.`,
+			)
+			const error = new Error(`[${code}] ${message}`) as Error & {
+				code?: string
+				status?: number
+				response?: PackageInvocationResponse
+			}
+			error.code = code
+			error.status = response.status
+			error.response = response
+			throw error
+		},
+	}
+}
+
+async function invokePackageExportForPackageRuntime(input: {
+	env: Env
+	baseUrl: string
+	caller: {
+		userId: string
+		email: string
+		displayName: string
+		packageContext: PackageRuntimeContext
+	}
+	request: PackageInvocationRequest
+	runtimeInvokeDepth?: number
+}): Promise<PackageInvocationResponse> {
+	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
+	if (!packageIdOrKodyId) {
+		return buildJsonErrorResponse({
+			status: 400,
+			code: 'invalid_package',
+			message: 'Package id or kody id is required.',
+		})
+	}
+	const exportName = normalizeExportName(input.request.exportName)
+	const idempotencyKey = input.request.idempotencyKey.trim()
+	if (!idempotencyKey) {
+		return buildJsonErrorResponse({
+			status: 400,
+			code: 'missing_idempotency_key',
+			message: 'Package invocations require a non-empty idempotencyKey.',
+		})
+	}
+	const savedPackage = await resolveSavedPackage({
+		db: input.env.APP_DB,
+		userId: input.caller.userId,
+		packageIdOrKodyId,
+	})
+	if (!savedPackage) {
+		return buildJsonErrorResponse({
+			status: 404,
+			code: 'package_not_found',
+			message: `Saved package "${packageIdOrKodyId}" was not found for this user.`,
+			idempotencyKey,
+		})
+	}
+	return await invokeSavedPackageModule({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		actor: {
+			tokenId: `${internalPackageRuntimeInvokeTokenId}:${input.caller.packageContext.packageId}`,
+			userId: input.caller.userId,
+			email: input.caller.email,
+			displayName:
+				input.caller.displayName ||
+				`package:${input.caller.packageContext.kodyId}`,
+		},
+		savedPackage,
+		invocationName: exportName,
+		moduleSelector: {
+			kind: 'export',
+			exportName,
+		},
+		params: input.request.params,
+		idempotencyKey,
+		source:
+			normalizeNullableString(input.request.source) ??
+			`package:${input.caller.packageContext.kodyId}`,
+		topic: normalizeNullableString(input.request.topic),
+		notFoundCode: 'export_not_found',
+		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
+	})
+}
+
 export async function invokePackageExport(input: {
 	env: Env
 	baseUrl: string
 	token: PackageInvocationTokenScope
 	request: PackageInvocationRequest
+	runtimeInvokeDepth?: number
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -982,6 +1250,7 @@ export async function invokePackageExport(input: {
 		source,
 		topic,
 		notFoundCode: 'export_not_found',
+		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 	})
 }
 

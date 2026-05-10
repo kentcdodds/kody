@@ -3,6 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
+import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import {
 	createJob,
@@ -1495,6 +1496,177 @@ test('getJobInspection returns one job and out-of-sync alarm details', async () 
 		nextRunnableJobId: created.id,
 		nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
 		alarmInSync: false,
+	})
+	expect(inspected).not.toHaveProperty('source')
+})
+
+test('getJobInspection can include manifest-declared job source code', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Inspect source job',
+			code: 'export default async () => ({ default: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	const code =
+		'export default async function main() { return { custom: true } }'
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: created.sourceId,
+		entityId: created.id,
+		publishedCommit: 'published-commit-2',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Inspect source job',
+				description: 'Job source fixture',
+				entrypoint: 'src/custom-job.ts',
+			}),
+			'src/custom-job.ts': code,
+		},
+	})
+
+	const inspected = await getJobInspection({
+		env,
+		userId: callerContext.user.userId,
+		jobId: created.id,
+		includeCode: true,
+	})
+
+	expect(inspected.source).toEqual({
+		entrypoint: 'src/custom-job.ts',
+		code,
+		error: null,
+	})
+})
+
+test('getJobInspection reports missing source files without failing inspection', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Missing source job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: created.sourceId,
+		entityId: created.id,
+		publishedCommit: 'published-commit-2',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Missing source job',
+				description: 'Missing entrypoint fixture',
+				entrypoint: 'src/missing-job.ts',
+			}),
+		},
+	})
+
+	const inspected = await getJobInspection({
+		env,
+		userId: callerContext.user.userId,
+		jobId: created.id,
+		includeCode: true,
+	})
+
+	expect(inspected.job.id).toBe(created.id)
+	expect(inspected.source).toEqual({
+		entrypoint: 'src/missing-job.ts',
+		code: null,
+		error: 'Job entrypoint "src/missing-job.ts" was not found.',
+	})
+})
+
+test('getJobInspection reports missing source manifests without failing inspection', async () => {
+	const bundleKv = createBundleArtifactsKv()
+	const env = {
+		APP_DB: createDatabase(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Missing manifest job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: created.sourceId,
+		entityId: created.id,
+		publishedCommit: 'published-commit-2',
+	})
+	await bundleKv.put(
+		buildPublishedSourceSnapshotKvKey({
+			sourceId: created.sourceId,
+			publishedCommit: 'published-commit-2',
+		}),
+		JSON.stringify({
+			version: 1,
+			sourceId: created.sourceId,
+			repoId: `job-${created.id}`,
+			entityKind: 'job',
+			entityId: created.id,
+			publishedCommit: 'published-commit-2',
+			manifestPath: 'kody.json',
+			sourceRoot: '/',
+			files: {
+				'src/job.ts': 'export default async () => ({ ok: true })',
+			},
+			createdAt: '2026-04-16T00:00:00.000Z',
+		}),
+	)
+
+	const inspected = await getJobInspection({
+		env,
+		userId: callerContext.user.userId,
+		jobId: created.id,
+		includeCode: true,
+	})
+
+	expect(inspected.job.id).toBe(created.id)
+	expect(inspected.source).toEqual({
+		entrypoint: null,
+		code: null,
+		error: 'Job manifest "kody.json" was not found.',
 	})
 })
 

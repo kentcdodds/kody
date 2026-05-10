@@ -31,5 +31,5 @@ export function buildJobEmbedText(
 }
 
 export function buildJobUsage(job: Pick<JobView, 'id'>) {
-	return `Inspect with job_get: ${JSON.stringify({ id: job.id })}. List jobs with job_list: {}. Update with job_update: ${JSON.stringify({ id: job.id, enabled: false })}. Delete with job_delete: ${JSON.stringify({ id: job.id })}. Trigger immediately with job_run_now: ${JSON.stringify({ id: job.id })}.`
+	return `Inspect metadata with job_get: ${JSON.stringify({ id: job.id })}. Include source code with job_get: ${JSON.stringify({ id: job.id, includeCode: true })}. List jobs with job_list: {}. Update with job_update: ${JSON.stringify({ id: job.id, enabled: false })}. Delete with job_delete: ${JSON.stringify({ id: job.id })}. Trigger immediately with job_run_now: ${JSON.stringify({ id: job.id })}.`
 }

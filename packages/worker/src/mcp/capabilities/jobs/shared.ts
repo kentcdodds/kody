@@ -7,6 +7,7 @@ import {
 	type JobCreateInput,
 	type JobExecutionResult,
 	type JobSchedule,
+	type JobSourceInspection,
 	type JobUpdateInput,
 	type JobView,
 } from '#worker/jobs/types.ts'
@@ -89,6 +90,42 @@ export const jobInspectionInputSchema = z.object({
 		.describe('Job id from job_list output or a previous scheduling response.'),
 })
 
+export const jobGetInputSchema = z
+	.object({
+		id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Job id from job_list output or a previous scheduling response.',
+			),
+		job_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('Alias for id, accepted for callers copying job_id outputs.'),
+		includeCode: z
+			.boolean()
+			.optional()
+			.describe(
+				'When true, include the published job source entrypoint path and code in the response.',
+			),
+	})
+	.refine((input) => input.id !== undefined || input.job_id !== undefined, {
+		message: 'Provide id or job_id.',
+		path: ['id'],
+	})
+	.refine(
+		(input) =>
+			input.id === undefined ||
+			input.job_id === undefined ||
+			input.id === input.job_id,
+		{
+			message: 'id and job_id must match when both are provided.',
+			path: ['job_id'],
+		},
+	)
+
 const nonNegativeIntegerSchema = z.number().int().min(0)
 
 const jobRunHistoryEntrySchema = z.object({
@@ -133,6 +170,25 @@ export const jobInspectionSchema = z.object({
 	recent_runs: z.array(jobRunHistoryEntrySchema),
 })
 
+export const jobSourceInspectionSchema = z.object({
+	entrypoint: z
+		.string()
+		.nullable()
+		.describe(
+			'Normalized manifest-declared job entrypoint path, when resolved.',
+		),
+	code: z
+		.string()
+		.nullable()
+		.describe(
+			'Stored source code for the entrypoint, or null when unavailable.',
+		),
+	error: z
+		.string()
+		.nullable()
+		.describe('Source resolution error, or null when code was loaded.'),
+})
+
 export const jobManagerDebugSchema = z.object({
 	binding_available: z.boolean(),
 	status: z.enum(['missing_binding', 'idle', 'armed', 'out_of_sync']),
@@ -151,6 +207,9 @@ export const jobListOutputSchema = z.object({
 export const jobGetOutputSchema = z.object({
 	job: jobInspectionSchema,
 	alarm: jobManagerDebugSchema,
+	source: jobSourceInspectionSchema
+		.optional()
+		.describe('Published job source details when includeCode is true.'),
 })
 
 export const jobScheduleInputSchema = z.object({
@@ -302,6 +361,7 @@ export const jobRunNowOutputSchema = z.object({
 })
 
 export type JobScheduleCapabilityInput = z.infer<typeof jobScheduleInputSchema>
+export type JobGetCapabilityInput = z.infer<typeof jobGetInputSchema>
 export type JobDeleteCapabilityInput = z.infer<typeof jobDeleteInputSchema>
 export type JobRunNowCapabilityInput = z.infer<typeof jobRunNowInputSchema>
 export type JobUpdateCapabilityInput = z.infer<typeof jobUpdateInputSchema>
@@ -411,6 +471,14 @@ export function buildJobDeleteOutput(input: { id: string; deleted: true }) {
 	return {
 		job_id: input.id,
 		deleted: input.deleted,
+	}
+}
+
+export function buildJobSourceInspectionOutput(source: JobSourceInspection) {
+	return {
+		entrypoint: source.entrypoint,
+		code: source.code,
+		error: source.error,
 	}
 }
 

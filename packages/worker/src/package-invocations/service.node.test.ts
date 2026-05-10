@@ -1,5 +1,10 @@
 import { expect, test, vi } from 'vitest'
-import { invokePackageExport, invokePackageSubscription } from './service.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import {
+	createPackageRuntimeInvokeTools,
+	invokePackageExport,
+	invokePackageSubscription,
+} from './service.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -321,6 +326,212 @@ function seedPackageResolution() {
 	repoMockModule.persistPublishedBundleArtifact.mockResolvedValue('kv:key')
 }
 
+function createSavedPackage(input: {
+	id: string
+	sourceId: string
+	name: string
+	kodyId: string
+	description?: string
+}) {
+	return {
+		id: input.id,
+		userId: 'user-123',
+		name: input.name,
+		kodyId: input.kodyId,
+		description: input.description ?? `${input.kodyId} package`,
+		tags: [],
+		searchText: null,
+		sourceId: input.sourceId,
+		hasApp: false,
+		createdAt: '2026-05-10T00:00:00.000Z',
+		updatedAt: '2026-05-10T00:00:00.000Z',
+	}
+}
+
+function createSource(input: { id: string; entityId: string; commit: string }) {
+	return {
+		id: input.id,
+		user_id: 'user-123',
+		entity_kind: 'package',
+		entity_id: input.entityId,
+		repo_id: `repo-${input.id}`,
+		published_commit: input.commit,
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		created_at: '2026-05-10T00:00:00.000Z',
+		updated_at: '2026-05-10T00:00:00.000Z',
+	}
+}
+
+function createManifest(input: {
+	name: string
+	kodyId: string
+	exportName: string
+	entryPoint: string
+}) {
+	return {
+		name: input.name,
+		exports: {
+			[input.exportName]: input.entryPoint,
+		},
+		kody: {
+			id: input.kodyId,
+			description: `${input.kodyId} package`,
+		},
+	}
+}
+
+function createModuleArtifact(input: {
+	sourceId: string
+	publishedCommit: string
+	artifactName: string
+	entryPoint: string
+	mainModule: string
+	packageContext: {
+		packageId: string
+		kodyId: string
+		sourceId: string
+	}
+}) {
+	return {
+		row: {
+			id: `artifact-${input.packageContext.packageId}`,
+		},
+		artifact: {
+			version: 1,
+			kind: 'module',
+			artifactName: input.artifactName,
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			entryPoint: input.entryPoint,
+			mainModule: input.mainModule,
+			modules: {
+				[input.mainModule]:
+					'export default async function run(){ return { ok: true } }',
+			},
+			dependencies: [],
+			packageContext: input.packageContext,
+			serviceContext: null,
+			createdAt: '2026-05-10T00:00:00.000Z',
+		},
+	}
+}
+
+function seedRuntimeDispatchPackages() {
+	const gateway = createSavedPackage({
+		id: 'pkg-gateway',
+		sourceId: 'source-gateway',
+		name: '@kentcdodds/discord-gateway',
+		kodyId: 'discord-gateway',
+	})
+	const subscriber = createSavedPackage({
+		id: 'pkg-subscriber',
+		sourceId: 'source-subscriber',
+		name: '@kentcdodds/discord-general-chat',
+		kodyId: 'discord-general-chat',
+	})
+	const sources = new Map([
+		[
+			'source-gateway',
+			createSource({
+				id: 'source-gateway',
+				entityId: 'pkg-gateway',
+				commit: 'gateway-commit-1',
+			}),
+		],
+		[
+			'source-subscriber',
+			createSource({
+				id: 'source-subscriber',
+				entityId: 'pkg-subscriber',
+				commit: 'subscriber-commit-1',
+			}),
+		],
+	])
+	const manifests = new Map([
+		[
+			'source-gateway',
+			createManifest({
+				name: gateway.name,
+				kodyId: gateway.kodyId,
+				exportName: './dispatch-message-created',
+				entryPoint: './src/dispatch-message-created.ts',
+			}),
+		],
+		[
+			'source-subscriber',
+			createManifest({
+				name: subscriber.name,
+				kodyId: subscriber.kodyId,
+				exportName: './handle-discord-message-created',
+				entryPoint: './src/handle-discord-message-created.ts',
+			}),
+		],
+	])
+	repoMockModule.getSavedPackageById.mockResolvedValue(null)
+	repoMockModule.getSavedPackageByKodyId.mockImplementation(
+		async (_db: unknown, input: { userId: string; kodyId: string }) => {
+			expect(input.userId).toBe('user-123')
+			if (input.kodyId === gateway.kodyId) return gateway
+			if (input.kodyId === subscriber.kodyId) return subscriber
+			return null
+		},
+	)
+	repoMockModule.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => ({
+			source: sources.get(input.sourceId),
+			manifest: manifests.get(input.sourceId),
+		}),
+	)
+	repoMockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: sources.get('source-gateway'),
+		manifest: manifests.get('source-gateway'),
+		files: {},
+	})
+	repoMockModule.getEntitySourceById.mockImplementation(
+		async (_db: unknown, sourceId: string) => sources.get(sourceId) ?? null,
+	)
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: {
+			sourceId: string
+			artifactName: string
+			entryPoint: string
+		}) => {
+			if (input.sourceId === 'source-gateway') {
+				return createModuleArtifact({
+					sourceId: 'source-gateway',
+					publishedCommit: 'gateway-commit-1',
+					artifactName: './dispatch-message-created',
+					entryPoint: 'src/dispatch-message-created.ts',
+					mainModule: 'dist/gateway.js',
+					packageContext: {
+						packageId: gateway.id,
+						kodyId: gateway.kodyId,
+						sourceId: gateway.sourceId,
+					},
+				})
+			}
+			if (input.sourceId === 'source-subscriber') {
+				return createModuleArtifact({
+					sourceId: 'source-subscriber',
+					publishedCommit: 'subscriber-commit-1',
+					artifactName: './handle-discord-message-created',
+					entryPoint: 'src/handle-discord-message-created.ts',
+					mainModule: 'dist/subscriber.js',
+					packageContext: {
+						packageId: subscriber.id,
+						kodyId: subscriber.kodyId,
+						sourceId: subscriber.sourceId,
+					},
+				})
+			}
+			return null
+		},
+	)
+	return { gateway, subscriber }
+}
+
 test('invokePackageExport executes a scoped package export successfully', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
@@ -354,6 +565,290 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		logs: ['dispatched'],
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('package runtime can dynamically invoke the current published export from another package', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	let subscriberVersion = 'v1'
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(
+		async (
+			_env: unknown,
+			_callerContext: unknown,
+			bundle: { mainModule: string },
+			params: { event?: { id?: string } } | undefined,
+			options: {
+				packageInvokeTools?: {
+					invoke(input: Record<string, unknown>): Promise<unknown>
+				}
+			},
+		) => {
+			if (bundle.mainModule === 'dist/gateway.js') {
+				return {
+					result: await options.packageInvokeTools?.invoke({
+						kodyId: 'discord-general-chat',
+						exportName: './handle-discord-message-created',
+						params: { event: params?.event },
+					}),
+					logs: [],
+				}
+			}
+			if (bundle.mainModule === 'dist/subscriber.js') {
+				return {
+					result: {
+						version: subscriberVersion,
+						eventId: params?.event?.id,
+					},
+					logs: [],
+				}
+			}
+			throw new Error(`Unexpected bundle ${bundle.mainModule}`)
+		},
+	)
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: {
+			...createToken(),
+			packageKodyIds: ['discord-gateway'],
+			exportNames: ['./dispatch-message-created'],
+		},
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: './dispatch-message-created',
+			params: { event: { id: 'message-1' } },
+			idempotencyKey: 'gateway-message-1',
+		},
+	})
+	subscriberVersion = 'v2'
+	const second = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: {
+			...createToken(),
+			packageKodyIds: ['discord-gateway'],
+			exportNames: ['./dispatch-message-created'],
+		},
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: './dispatch-message-created',
+			params: { event: { id: 'message-2' } },
+			idempotencyKey: 'gateway-message-2',
+		},
+	})
+
+	expect(first.status).toBe(200)
+	expect(first.body).toMatchObject({
+		ok: true,
+		result: {
+			version: 'v1',
+			eventId: 'message-1',
+		},
+	})
+	expect(second.status).toBe(200)
+	expect(second.body).toMatchObject({
+		ok: true,
+		result: {
+			version: 'v2',
+			eventId: 'message-2',
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(4)
+})
+
+test('package runtime invocation errors clearly when the target package is missing', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+
+	const tools = createPackageRuntimeInvokeTools({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-123',
+				email: 'me@example.com',
+				displayName: 'Me',
+			},
+		}),
+		packageContext: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+		},
+		parentRuntimeDebug: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+			surface: 'export',
+			name: './dispatch-message-created',
+			idempotencyKey: 'message-1',
+		},
+		packageInvokeDepth: 0,
+	})
+
+	await expect(
+		tools.invoke({
+			kodyId: 'missing-package',
+			exportName: './handle-discord-message-created',
+		}),
+	).rejects.toThrow(
+		'[package_not_found] Saved package "missing-package" was not found for this user.',
+	)
+})
+
+test('package runtime invocation errors clearly when the target export is missing', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	const tools = createPackageRuntimeInvokeTools({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-123',
+				email: 'me@example.com',
+				displayName: 'Me',
+			},
+		}),
+		packageContext: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+		},
+		parentRuntimeDebug: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+			surface: 'export',
+			name: './dispatch-message-created',
+			idempotencyKey: 'message-1',
+		},
+		packageInvokeDepth: 0,
+	})
+
+	await expect(
+		tools.invoke({
+			kodyId: 'discord-general-chat',
+			exportName: './missing-export',
+			params: { event: { id: 'message-1' } },
+		}),
+	).rejects.toThrow('[export_not_found]')
+})
+
+test('package runtime auto idempotency keys include parent runtime identity', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(
+		async (
+			_env: unknown,
+			_callerContext: unknown,
+			bundle: { mainModule: string },
+			params: { marker?: string; value?: number } | undefined,
+		) => {
+			expect(bundle.mainModule).toBe('dist/subscriber.js')
+			return {
+				result: {
+					marker: params?.marker,
+					value: params?.value,
+				},
+				logs: [],
+			}
+		},
+	)
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.dev',
+		user: {
+			userId: 'user-123',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+	})
+	const packageContext = {
+		packageId: 'pkg-gateway',
+		kodyId: 'discord-gateway',
+		sourceId: 'source-gateway',
+	}
+	const createToolsForParent = (name: string) =>
+		createPackageRuntimeInvokeTools({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			callerContext,
+			packageContext,
+			parentRuntimeDebug: {
+				packageId: 'pkg-gateway',
+				kodyId: 'discord-gateway',
+				sourceId: 'source-gateway',
+				surface: 'export',
+				name,
+				idempotencyKey: 'shared-domain-event',
+			},
+			packageInvokeDepth: 0,
+		})
+
+	const first = await createToolsForParent('./first-parent').invoke({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { marker: 'same-child-call', value: 1 },
+	})
+	const second = await createToolsForParent('./second-parent').invoke({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { marker: 'same-child-call', value: 1 },
+	})
+
+	expect(first).toEqual({ marker: 'same-child-call', value: 1 })
+	expect(second).toEqual({ marker: 'same-child-call', value: 1 })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+})
+
+test('package runtime invocation requires package context and enforces loop depth', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.dev',
+		user: {
+			userId: 'user-123',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+	})
+	const withoutPackageContext = createPackageRuntimeInvokeTools({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		callerContext,
+		packageContext: null,
+		packageInvokeDepth: 0,
+	})
+
+	await expect(
+		withoutPackageContext.invoke({
+			kodyId: 'discord-general-chat',
+			exportName: './handle-discord-message-created',
+		}),
+	).rejects.toThrow('packages.invoke requires a package runtime context.')
+
+	const tooDeep = createPackageRuntimeInvokeTools({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		callerContext,
+		packageContext: {
+			packageId: 'pkg-gateway',
+			kodyId: 'discord-gateway',
+			sourceId: 'source-gateway',
+		},
+		packageInvokeDepth: 8,
+	})
+	await expect(
+		tooDeep.invoke({
+			kodyId: 'discord-general-chat',
+			exportName: './handle-discord-message-created',
+		}),
+	).rejects.toThrow(
+		'packages.invoke exceeded the maximum nested invocation depth (8).',
+	)
 })
 
 test('invokePackageExport replays the stored response for a duplicate idempotency key', async () => {

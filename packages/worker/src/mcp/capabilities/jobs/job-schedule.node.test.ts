@@ -1031,6 +1031,7 @@ test('job inspection capabilities expose due-now state, history, and alarm statu
 			env,
 			userId: 'user-123',
 			jobId: 'job-123',
+			includeCode: false,
 		})
 		expect(getResult.job).toMatchObject({
 			id: 'job-123',
@@ -1064,4 +1065,77 @@ test('job inspection capabilities expose due-now state, history, and alarm statu
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('job_get can request published source code', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	const sourceCode =
+		'export default async function main() { return { ok: true } }'
+	mockModule.getJobInspection.mockResolvedValue({
+		job: {
+			id: 'job-123',
+			name: 'Inspect source',
+			sourceId: 'source-123',
+			publishedCommit: 'commit-123',
+			storageId: 'job:job-123',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+			scheduleSummary: 'Runs every 15m',
+			timezone: 'UTC',
+			enabled: true,
+			killSwitchEnabled: false,
+			createdAt: '2026-04-20T10:00:00.000Z',
+			updatedAt: '2026-04-20T10:05:00.000Z',
+			nextRunAt: '2026-04-20T18:30:00.000Z',
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+			runHistory: [],
+		},
+		alarm: {
+			bindingAvailable: true,
+			status: 'armed',
+			storedUserId: 'user-123',
+			alarmScheduledFor: '2026-04-20T18:30:00.000Z',
+			nextRunnableJobId: 'job-123',
+			nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
+			alarmInSync: true,
+		},
+		source: {
+			entrypoint: 'src/custom-job.ts',
+			code: sourceCode,
+			error: null,
+		},
+	})
+
+	const result = await jobGetCapability.handler(
+		{ job_id: 'job-123', includeCode: true },
+		{
+			env,
+			callerContext,
+		},
+	)
+
+	expect(mockModule.getJobInspection).toHaveBeenCalledWith({
+		env,
+		userId: 'user-123',
+		jobId: 'job-123',
+		includeCode: true,
+	})
+	expect(result.source).toEqual({
+		entrypoint: 'src/custom-job.ts',
+		code: sourceCode,
+		error: null,
+	})
 })

@@ -489,10 +489,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			{ runBundledModuleWithRegistry },
 			{ buildKodyModuleBundle },
 			{ loadPublishedBundleArtifactByIdentity },
+			{ createPackageRuntimeInvokeTools },
 		] = await Promise.all([
 			import('#mcp/run-codemode-registry.ts'),
 			import('./module-graph.ts'),
 			import('./published-bundle-artifacts.ts'),
+			// Avoid a top-level package-service -> package-invocations cycle during
+			// capability registry initialization.
+			import('#worker/package-invocations/service.ts'),
 		])
 		const artifact = await loadPublishedBundleArtifactByIdentity({
 			env: this.env,
@@ -530,6 +534,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				storageId: runtime.storageId,
 			},
 		})
+		const runtimeDebug = {
+			packageId: binding.packageId,
+			kodyId: binding.kodyId,
+			sourceId: binding.sourceId,
+			publishedCommit:
+				runtime.loaded.packageSource.source.published_commit ?? null,
+			surface: 'service' as const,
+			name: binding.serviceName,
+			storageId: runtime.storageId,
+			metadata: {
+				mode: runtime.loaded.serviceDefinition?.mode ?? 'bounded',
+			},
+		}
 		const result = await runBundledModuleWithRegistry(
 			this.env,
 			callerContext,
@@ -554,19 +571,15 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					storageId: runtime.storageId,
 					writable: true,
 				},
-				runtimeDebug: {
-					packageId: binding.packageId,
-					kodyId: binding.kodyId,
-					sourceId: binding.sourceId,
-					publishedCommit:
-						runtime.loaded.packageSource.source.published_commit ?? null,
-					surface: 'service',
-					name: binding.serviceName,
-					storageId: runtime.storageId,
-					metadata: {
-						mode: runtime.loaded.serviceDefinition?.mode ?? 'bounded',
-					},
-				},
+				runtimeDebug,
+				packageInvokeTools: createPackageRuntimeInvokeTools({
+					env: this.env,
+					baseUrl: binding.baseUrl,
+					callerContext,
+					packageContext: runtime.packageContext,
+					parentRuntimeDebug: runtimeDebug,
+					packageInvokeDepth: 0,
+				}),
 				executorTimeoutMs: runtime.executorTimeoutMs,
 			},
 		)

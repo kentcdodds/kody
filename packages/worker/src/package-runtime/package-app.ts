@@ -265,6 +265,12 @@ function createWorkflowsProxy(runtimeBridge) {
 	};
 }
 
+function createPackagesProxy(runtimeBridge) {
+	return {
+		invoke: async (input) => await runtimeBridge.packageInvoke(input ?? {}),
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -414,6 +420,7 @@ function createRuntime(runtimeBridge, packageContext) {
 		services: createServicesProxy(runtimeBridge),
 		packageSecrets,
 		workflows: createWorkflowsProxy(runtimeBridge),
+		packages: createPackagesProxy(runtimeBridge),
 		packageContext,
 	};
 }
@@ -970,6 +977,27 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			},
 			body: input as PackageWorkflowCreateInput,
 		})
+	}
+
+	async packageInvoke(input: Record<string, unknown>) {
+		// Avoid a top-level package-app -> package-invocations cycle during worker
+		// startup; apps only need this helper when package code calls it.
+		const { createPackageRuntimeInvokeTools } =
+			await import('#worker/package-invocations/service.ts')
+		const packageContext = {
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+		}
+		const tools = createPackageRuntimeInvokeTools({
+			env: this.env,
+			baseUrl: this.ctx.props.baseUrl,
+			callerContext: this.createCallerContext(this.ctx.props.packageId),
+			packageContext,
+			parentRuntimeDebug: null,
+			packageInvokeDepth: 0,
+		})
+		return await tools.invoke(input)
 	}
 }
 

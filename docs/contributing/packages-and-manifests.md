@@ -86,6 +86,63 @@ The top-level saved identity is the package.
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
 
+### Dynamic current-version invocation
+
+Package runtime contexts also expose `packages.invoke` from `kody:runtime`:
+
+```ts
+import { packages } from 'kody:runtime'
+
+await packages.invoke({
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event },
+})
+```
+
+This path deliberately does not rewrite to a static `kody:@...` import during
+bundle construction. It resolves the target saved package and export at call
+time through the package invocation service, using the current authenticated
+user and package caller context. Package code never handles external
+package-invocation bearer tokens for this flow.
+
+Use dynamic invocation for runtime dispatch surfaces that must pick up the
+target package's current published bundle, such as event subscribers, workflows,
+and agents. Continue to use static `kody:@scope/package/export` imports for
+library-like dependencies where the caller should keep the dependency bundle it
+was published with.
+
+`packages.invoke` returns the target export's unwrapped result. Non-2xx package
+invocation responses reject with an error whose message starts with the
+underlying code, for example `[package_not_found] ...` or
+`[export_not_found] ...`.
+
+Idempotency:
+
+- Callers may pass `idempotencyKey` (or `idempotency_key`) explicitly. This is
+  recommended for domain events such as Discord message ids.
+- If omitted during a parent package invocation with its own idempotency key,
+  Kody derives a nested key from the parent key, parent runtime surface/name,
+  call order, target, export, and params so retries do not duplicate the same
+  nested dispatch.
+- If omitted in contexts without a parent invocation key, Kody uses a unique key
+  because replay is not implied.
+
+Security and loop safeguards:
+
+- Resolution is same-user only; package code cannot invoke another user's saved
+  package.
+- `packages.invoke` requires package runtime context, preserving package-owned
+  storage and caller metadata.
+- Nested dynamic package invocations are depth-limited to prevent runaway
+  package-to-package loops.
+
+For the Discord gateway/subscriber pattern, switch dispatchers from statically
+importing subscriber packages to
+`packages.invoke({ kodyId, exportName, params, idempotencyKey })`. Republish
+subscribers independently; the gateway will observe the current published
+subscriber export on its next dispatch without being republished.
+
 ## Package apps
 
 A package app is optional.

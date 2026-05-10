@@ -213,6 +213,41 @@ function createExecuteTypecheckPrelude(input?: { includeStorage?: boolean }) {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
+type KodyPackagesInvokeTarget =
+  | { kodyId: string; kody_id?: never; packageId?: never; package_id?: never }
+  | { kodyId?: never; kody_id: string; packageId?: never; package_id?: never }
+  | { kodyId?: never; kody_id?: never; packageId: string; package_id?: never }
+  | { kodyId?: never; kody_id?: never; packageId?: never; package_id: string };
+type KodyPackagesInvokeExport =
+  | { exportName: string; export_name?: never }
+  | { exportName?: never; export_name: string };
+type KodyPackagesInvokeInput = KodyPackagesInvokeTarget &
+  KodyPackagesInvokeExport & {
+  params?: Record<string, unknown>;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  topic?: string | null;
+};
+type KodyPackagesRuntime = {
+  invoke(input: KodyPackagesInvokeInput): Promise<unknown>;
+};
+type KodyStorageRuntime = {
+  id: string;
+  get(key: string): Promise<unknown>;
+  list(options?: KodyCapabilityArgs): Promise<unknown>;
+  sql(query: string, params?: Array<KodyJsonValue>): Promise<unknown>;
+  set(key: string, value: KodyJsonValue): Promise<unknown>;
+  delete(key: string): Promise<unknown>;
+  clear(): Promise<unknown>;
+};
+type KodyEmailRuntime = {
+  getMessage(messageId: string): Promise<unknown>;
+  getAttachment(attachmentId: string): Promise<unknown>;
+  reply(input?: KodyCapabilityArgs): Promise<unknown>;
+} | null;
+type KodyWorkflowsRuntime = {
+  create(input: KodyCapabilityArgs): Promise<unknown>;
+} | null;
 
 declare const codemode: Record<
   string,
@@ -225,6 +260,9 @@ declare function createAuthenticatedFetch(
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
 declare const packageContext: { packageId: string; kodyId: string } | null;
 declare const serviceContext: { serviceName: string } | null;
+declare const packages: KodyPackagesRuntime | null;
+declare const email: KodyEmailRuntime;
+declare const workflows: KodyWorkflowsRuntime;
 declare const packageSecrets:
   | {
       get(alias: string): Promise<string>;
@@ -239,18 +277,45 @@ declare const service:
       clearAlarm(): Promise<unknown>;
     }
   | null;
+
+declare module "kody:runtime" {
+  export const codemode: Record<
+    string,
+    (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
+  >;
+  export function refreshAccessToken(providerName: string): Promise<string>;
+  export function createAuthenticatedFetch(
+    providerName: string,
+  ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
+  export const packageContext: { packageId: string; kodyId: string } | null;
+  export const serviceContext: { serviceName: string } | null;
+  export const packages: KodyPackagesRuntime | null;
+  export const storage: ${
+		input?.includeStorage === true
+			? 'KodyStorageRuntime'
+			: 'KodyStorageRuntime | undefined'
+	};
+  export const email: KodyEmailRuntime;
+  export const workflows: KodyWorkflowsRuntime;
+  export const packageSecrets:
+    | {
+        get(alias: string): Promise<string>;
+        has(alias: string): Promise<boolean>;
+      }
+    | null;
+  export const service:
+    | {
+        getStatus(): Promise<unknown>;
+        shouldStop(): Promise<boolean>;
+        setAlarm(runAt: string | Date): Promise<unknown>;
+        clearAlarm(): Promise<unknown>;
+      }
+    | null;
+}
 ${
 	input?.includeStorage === true
 		? `
-declare const storage: {
-  id: string;
-  get(key: string): Promise<unknown>;
-  list(options?: KodyCapabilityArgs): Promise<unknown>;
-  sql(query: string, params?: Array<KodyJsonValue>): Promise<unknown>;
-  set(key: string, value: KodyJsonValue): Promise<unknown>;
-  delete(key: string): Promise<unknown>;
-  clear(): Promise<unknown>;
-};
+declare const storage: KodyStorageRuntime;
 `
 		: ''
 }
