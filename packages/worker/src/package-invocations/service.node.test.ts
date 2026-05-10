@@ -743,6 +743,71 @@ test('package runtime invocation errors clearly when the target export is missin
 	).rejects.toThrow('[export_not_found]')
 })
 
+test('package runtime auto idempotency keys include parent runtime identity', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(
+		async (
+			_env: unknown,
+			_callerContext: unknown,
+			bundle: { mainModule: string },
+			params: { marker?: string } | undefined,
+		) => {
+			expect(bundle.mainModule).toBe('dist/subscriber.js')
+			return {
+				result: {
+					marker: params?.marker,
+				},
+				logs: [],
+			}
+		},
+	)
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.dev',
+		user: {
+			userId: 'user-123',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+	})
+	const packageContext = {
+		packageId: 'pkg-gateway',
+		kodyId: 'discord-gateway',
+		sourceId: 'source-gateway',
+	}
+	const createToolsForParent = (name: string) =>
+		createPackageRuntimeInvokeTools({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			callerContext,
+			packageContext,
+			parentRuntimeDebug: {
+				packageId: 'pkg-gateway',
+				kodyId: 'discord-gateway',
+				sourceId: 'source-gateway',
+				surface: 'export',
+				name,
+				idempotencyKey: 'shared-domain-event',
+			},
+			packageInvokeDepth: 0,
+		})
+
+	const first = await createToolsForParent('./first-parent').invoke({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { marker: 'first' },
+	})
+	const second = await createToolsForParent('./second-parent').invoke({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { marker: 'second' },
+	})
+
+	expect(first).toEqual({ marker: 'first' })
+	expect(second).toEqual({ marker: 'second' })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+})
+
 test('package runtime invocation requires package context and enforces loop depth', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()

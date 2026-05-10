@@ -274,6 +274,8 @@ async function createAutoPackageInvokeIdempotencyKey(input: {
 			canonicalJsonStringify({
 				callerPackageId: input.callerPackageContext.packageId,
 				parentKey,
+				parentSurface: input.parentRuntimeDebug?.surface ?? null,
+				parentName: input.parentRuntimeDebug?.name ?? null,
 				sequence: input.sequence,
 				packageIdOrKodyId: input.request.packageIdOrKodyId,
 				exportName: normalizeExportName(input.request.exportName),

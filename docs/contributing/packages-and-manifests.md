@@ -108,8 +108,9 @@ Idempotency:
 - Callers may pass `idempotencyKey` (or `idempotency_key`) explicitly. This is
   recommended for domain events such as Discord message ids.
 - If omitted during a parent package invocation with its own idempotency key,
-  Kody derives a nested key from the parent key, call order, target, export, and
-  params so retries do not duplicate the same nested dispatch.
+  Kody derives a nested key from the parent key, parent runtime surface/name,
+  call order, target, export, and params so retries do not duplicate the same
+  nested dispatch.
 - If omitted in contexts without a parent invocation key, Kody uses a unique key
   because replay is not implied.
 

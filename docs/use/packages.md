@@ -121,10 +121,10 @@ invocations are depth-limited to prevent runaway loops.
 
 If `idempotencyKey` is omitted, Kody generates one. In package invocations that
 already have a parent idempotency key, the generated key is deterministic for
-the parent key, call order, target, export, and params. In contexts without a
-parent invocation key, Kody uses a unique key, which avoids accidental replay.
-Pass your own `idempotencyKey` when the target operation must dedupe against a
-domain event id.
+the parent key, parent runtime surface/name, call order, target, export, and
+params. In contexts without a parent invocation key, Kody uses a unique key,
+which avoids accidental replay. Pass your own `idempotencyKey` when the target
+operation must dedupe against a domain event id.
 
 For `discord-gateway`, subscriber dispatch should move from static imports such
 as `kody:@kentcdodds/discord-general-chat/handle-discord-message-created` to the
