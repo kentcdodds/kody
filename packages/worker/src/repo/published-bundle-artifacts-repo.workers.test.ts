@@ -176,6 +176,21 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 		userId,
 		sourceId: sourceB,
 		publishedCommit: 'commit-b',
+		artifactName: 'a-current-0-importable',
+		entryPoint: 'src/current-0.ts',
+		dependencies: [
+			{
+				sourceId: sourceA,
+				publishedCommit: 'commit-a-new',
+				kodyId: `package-a-${unique}`,
+				packageName: `@kentcdodds/package-a-${unique}`,
+			},
+		],
+	})
+	await insertArtifact({
+		userId,
+		sourceId: sourceB,
+		publishedCommit: 'commit-b',
 		artifactName: 'z-stale',
 		entryPoint: 'src/stale.ts',
 		dependencies: [
@@ -235,7 +250,7 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 		expect.objectContaining({
 			name: `@kentcdodds/package-b-${unique}`,
 			stale: true,
-			artifact_count: 6,
+			artifact_count: 7,
 			entrypoints_truncated: true,
 			bundled_dependency_commit: null,
 		}),

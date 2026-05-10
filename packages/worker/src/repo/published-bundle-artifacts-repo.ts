@@ -226,7 +226,7 @@ export async function listStaticDependentBundleArtifactRows(
 				FROM matching
 				GROUP BY package_id
 			),
-			ranked_artifacts AS (
+			entrypoint_representatives AS (
 				SELECT
 					matching.*,
 					package_rollup.package_stale,
@@ -234,20 +234,30 @@ export async function listStaticDependentBundleArtifactRows(
 					package_rollup.matching_entrypoint_count,
 					package_rollup.package_bundled_dependency_commit,
 					ROW_NUMBER() OVER (
-						PARTITION BY matching.package_id
+						PARTITION BY matching.package_id, matching.entry_point
 						ORDER BY artifact_kind ASC, COALESCE(artifact_name, '') ASC, entry_point ASC
-					) AS artifact_rank
+					) AS entrypoint_artifact_rank
 				FROM matching
 				JOIN package_rollup
 					ON package_rollup.package_id = matching.package_id
 			),
+			ranked_entrypoints AS (
+				SELECT
+					entrypoint_representatives.*,
+					ROW_NUMBER() OVER (
+						PARTITION BY package_id
+						ORDER BY entry_point ASC
+					) AS entrypoint_rank
+				FROM entrypoint_representatives
+				WHERE entrypoint_artifact_rank = 1
+			),
 			ranked_packages AS (
 				SELECT
-					ranked_artifacts.*,
+					ranked_entrypoints.*,
 					DENSE_RANK() OVER (
 						ORDER BY package_stale DESC, package_name ASC, package_id ASC
 					) AS package_rank
-				FROM ranked_artifacts
+				FROM ranked_entrypoints
 			)
 			SELECT
 				package_id,
@@ -264,8 +274,8 @@ export async function listStaticDependentBundleArtifactRows(
 				package_bundled_dependency_commit,
 				bundled_dependency_commit
 			FROM ranked_packages
-			WHERE package_rank <= ? AND artifact_rank <= ?
-			ORDER BY package_rank ASC, artifact_rank ASC`,
+			WHERE package_rank <= ? AND entrypoint_rank <= ?
+			ORDER BY package_rank ASC, entrypoint_rank ASC`,
 		)
 		.bind(
 			input.currentDependencyCommit,
