@@ -67,7 +67,7 @@ Saved packages may also declare long-lived package services under
 
 All server-side Kody runtime contexts expose `workflows` from `kody:runtime`.
 The helper routes every call to the shared `DynamicCallableWorkflow` binding;
-there is no context-specific Workflow class anymore.
+there is no separate context-specific Workflow class.
 
 - `workflows.create({ code, runAt, idempotencyKey, params })` queues an inline
   ESM module and later executes it through the same module loader used by
