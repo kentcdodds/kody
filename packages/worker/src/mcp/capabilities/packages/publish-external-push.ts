@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
@@ -14,10 +15,6 @@ const inputSchema = z.object({
 })
 
 const externalPublishRetryDelaysMs = [100, 500] as const
-
-function getErrorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error)
-}
 
 function isTransientDurableObjectResetError(error: unknown) {
 	const message = getErrorMessage(error)

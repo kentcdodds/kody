@@ -6,6 +6,7 @@ import {
 } from '#mcp/executor.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	conversationIdInputField,
@@ -29,10 +30,6 @@ const executeOutputSchema = z.object({
 	errorDetails: z.unknown().optional(),
 	logs: z.array(z.unknown()),
 })
-
-function getErrorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error)
-}
 
 export const executeCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
