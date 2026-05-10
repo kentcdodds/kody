@@ -157,6 +157,7 @@ export const service = runtime.service ?? null;
 export const packageSecrets = runtime.packageSecrets ?? null;
 export const email = runtime.email ?? null;
 export const workflows = runtime.workflows ?? null;
+export const packages = runtime.packages ?? null;
 
 export default runtime;
 `.trim()

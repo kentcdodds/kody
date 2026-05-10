@@ -9,6 +9,7 @@ import {
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 
 const serviceStateStorageKey = 'package-service-state'
@@ -530,6 +531,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				storageId: runtime.storageId,
 			},
 		})
+		const runtimeDebug = {
+			packageId: binding.packageId,
+			kodyId: binding.kodyId,
+			sourceId: binding.sourceId,
+			publishedCommit:
+				runtime.loaded.packageSource.source.published_commit ?? null,
+			surface: 'service' as const,
+			name: binding.serviceName,
+			storageId: runtime.storageId,
+			metadata: {
+				mode: runtime.loaded.serviceDefinition?.mode ?? 'bounded',
+			},
+		}
 		const result = await runBundledModuleWithRegistry(
 			this.env,
 			callerContext,
@@ -554,19 +568,16 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					storageId: runtime.storageId,
 					writable: true,
 				},
-				runtimeDebug: {
-					packageId: binding.packageId,
-					kodyId: binding.kodyId,
-					sourceId: binding.sourceId,
-					publishedCommit:
-						runtime.loaded.packageSource.source.published_commit ?? null,
-					surface: 'service',
-					name: binding.serviceName,
-					storageId: runtime.storageId,
-					metadata: {
-						mode: runtime.loaded.serviceDefinition?.mode ?? 'bounded',
-					},
-				},
+				runtimeDebug,
+				packageInvokeTools: createPackageRuntimeInvokeTools({
+					env: this.env,
+					baseUrl: binding.baseUrl,
+					callerContext,
+					packageContext: runtime.packageContext,
+					parentRuntimeDebug: runtimeDebug,
+					packageInvokeDepth: 0,
+				}),
+				packageInvokeDepth: 0,
 				executorTimeoutMs: runtime.executorTimeoutMs,
 			},
 		)

@@ -1493,3 +1493,51 @@ test('buildKodyAppBundle runtime module exports service helper', async () => {
 		'params',
 	)
 })
+
+test('buildKodyAppBundle runtime module exports package invocation helper', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('runtime-packages-helper'),
+	)
+
+	await buildKodyAppBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+					app: {
+						entry: 'app.ts',
+					},
+				},
+			}),
+			'app.ts': `export default {
+	async fetch() {
+		return Response.json({ ok: true })
+	},
+}
+`,
+			'index.ts': 'export const value = "ok"',
+		},
+		entryPoint: 'app.ts',
+		cacheKey: null,
+	})
+
+	const firstCall = mockModule.createWorker.mock.calls.at(-1)?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
+		'export const packages = runtime.packages ?? null;',
+	)
+})

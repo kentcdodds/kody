@@ -82,6 +82,55 @@ exhaustive.
   `types` file. Package search detail surfaces package descriptions, export
   descriptions, function signatures, JSDoc, and type definitions.
 
+### Dynamic package invocation
+
+Package runtime code can invoke another package owned by the same user without
+statically importing it:
+
+```ts
+import { packages } from 'kody:runtime'
+
+const result = await packages.invoke({
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event },
+})
+```
+
+Use `packages.invoke` for event subscribers, workflow dispatchers, agents, and
+other runtime fan-out where the caller should pick up the target package's
+current published export. The call resolves the target package at runtime, so
+republishing `discord-general-chat` changes what `discord-gateway` observes
+without republishing `discord-gateway`.
+
+Use static `kody:@scope/package/export` imports for library-like dependencies
+where bundling the currently published dependency with the caller is desired.
+
+`packages.invoke` returns the target export's unwrapped return value. If the
+target package, export, or execution fails, the promise rejects with an error
+that includes the package invocation error code in the message.
+
+The primary identifier is `kodyId`; `kody_id`, `packageId`, and `package_id` are
+accepted aliases for compatibility. `exportName` is required, and `export_name`
+is accepted as an alias.
+
+Only package runtime contexts can call `packages.invoke`, and resolution is
+scoped to packages owned by the current authenticated user. Package code does
+not need to mint or pass package-invocation bearer tokens. Nested package
+invocations are depth-limited to prevent runaway loops.
+
+If `idempotencyKey` is omitted, Kody generates one. In package invocations that
+already have a parent idempotency key, the generated key is deterministic for
+the parent key, call order, target, export, and params. In contexts without a
+parent invocation key, Kody uses a unique key, which avoids accidental replay.
+Pass your own `idempotencyKey` when the target operation must dedupe against a
+domain event id.
+
+For `discord-gateway`, subscriber dispatch should move from static imports such
+as `kody:@kentcdodds/discord-general-chat/handle-discord-message-created` to the
+dynamic shape above, using the Discord event id as the explicit `idempotencyKey`
+when available.
+
 ## Package apps
 
 A package app is optional.

@@ -5,6 +5,7 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { loadPublishedBundleArtifactByIdentity } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	type PackageRetrieverManifestCacheEntry,
 	type PackageRetrieverResult,
@@ -137,6 +138,24 @@ async function invokeRetriever(input: {
 		},
 		repoContext: createRepoContext(source),
 	})
+	const packageContext = {
+		packageId: input.entry.packageId,
+		kodyId: input.entry.kodyId,
+		sourceId: input.entry.sourceId,
+	}
+	const runtimeDebug = {
+		packageId: input.entry.packageId,
+		kodyId: input.entry.kodyId,
+		sourceId: input.entry.sourceId,
+		publishedCommit: source.published_commit,
+		surface: 'retriever' as const,
+		name: input.entry.retrieverKey,
+		storageId: buildPackageRetrieverStorageId(input.entry.packageId),
+		metadata: {
+			scope: input.scope,
+			limit,
+		},
+	}
 	const executionResult = await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,
@@ -157,24 +176,17 @@ async function invokeRetriever(input: {
 				storageId: buildPackageRetrieverStorageId(input.entry.packageId),
 				writable: false,
 			},
-			packageContext: {
-				packageId: input.entry.packageId,
-				kodyId: input.entry.kodyId,
-				sourceId: input.entry.sourceId,
-			},
-			runtimeDebug: {
-				packageId: input.entry.packageId,
-				kodyId: input.entry.kodyId,
-				sourceId: input.entry.sourceId,
-				publishedCommit: source.published_commit,
-				surface: 'retriever',
-				name: input.entry.retrieverKey,
-				storageId: buildPackageRetrieverStorageId(input.entry.packageId),
-				metadata: {
-					scope: input.scope,
-					limit,
-				},
-			},
+			packageContext,
+			runtimeDebug,
+			packageInvokeTools: createPackageRuntimeInvokeTools({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				callerContext,
+				packageContext,
+				parentRuntimeDebug: runtimeDebug,
+				packageInvokeDepth: 0,
+			}),
+			packageInvokeDepth: 0,
 			executorTimeoutMs: clampTimeout(input.entry.timeoutMs, input.scope),
 		},
 	)

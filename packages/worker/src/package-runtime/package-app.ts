@@ -41,6 +41,7 @@ import {
 	type PackageRuntimeRunHandle,
 	type PackageRuntimeStatus,
 } from './package-runtime-debug.ts'
+import { createPackageRuntimeInvokeTools } from '#worker/package-invocations/service.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -265,6 +266,12 @@ function createWorkflowsProxy(runtimeBridge) {
 	};
 }
 
+function createPackagesProxy(runtimeBridge) {
+	return {
+		invoke: async (input) => await runtimeBridge.packageInvoke(input ?? {}),
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -414,6 +421,7 @@ function createRuntime(runtimeBridge, packageContext) {
 		services: createServicesProxy(runtimeBridge),
 		packageSecrets,
 		workflows: createWorkflowsProxy(runtimeBridge),
+		packages: createPackagesProxy(runtimeBridge),
 		packageContext,
 	};
 }
@@ -970,6 +978,23 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			},
 			body: input as PackageWorkflowCreateInput,
 		})
+	}
+
+	async packageInvoke(input: Record<string, unknown>) {
+		const packageContext = {
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+		}
+		const tools = createPackageRuntimeInvokeTools({
+			env: this.env,
+			baseUrl: this.ctx.props.baseUrl,
+			callerContext: this.createCallerContext(this.ctx.props.packageId),
+			packageContext,
+			parentRuntimeDebug: null,
+			packageInvokeDepth: 0,
+		})
+		return await tools.invoke(input)
 	}
 }
 

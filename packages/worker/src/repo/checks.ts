@@ -212,6 +212,21 @@ function createExecuteTypecheckPrelude(input?: { includeStorage?: boolean }) {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
+type KodyPackagesInvokeInput = {
+  kodyId?: string;
+  kody_id?: string;
+  packageId?: string;
+  package_id?: string;
+  exportName?: string;
+  export_name?: string;
+  params?: Record<string, unknown>;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  topic?: string | null;
+};
+type KodyPackagesRuntime = {
+  invoke(input: KodyPackagesInvokeInput): Promise<unknown>;
+};
 
 declare const codemode: Record<
   string,
@@ -224,6 +239,7 @@ declare function createAuthenticatedFetch(
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
 declare const packageContext: { packageId: string; kodyId: string } | null;
 declare const serviceContext: { serviceName: string } | null;
+declare const packages: KodyPackagesRuntime | null;
 declare const packageSecrets:
   | {
       get(alias: string): Promise<string>;
@@ -238,6 +254,34 @@ declare const service:
       clearAlarm(): Promise<unknown>;
     }
   | null;
+
+declare module "kody:runtime" {
+  export const codemode: Record<
+    string,
+    (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
+  >;
+  export function refreshAccessToken(providerName: string): Promise<string>;
+  export function createAuthenticatedFetch(
+    providerName: string,
+  ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
+  export const packageContext: { packageId: string; kodyId: string } | null;
+  export const serviceContext: { serviceName: string } | null;
+  export const packages: KodyPackagesRuntime | null;
+  export const packageSecrets:
+    | {
+        get(alias: string): Promise<string>;
+        has(alias: string): Promise<boolean>;
+      }
+    | null;
+  export const service:
+    | {
+        getStatus(): Promise<unknown>;
+        shouldStop(): Promise<boolean>;
+        setAlarm(runAt: string | Date): Promise<unknown>;
+        clearAlarm(): Promise<unknown>;
+      }
+    | null;
+}
 ${
 	input?.includeStorage === true
 		? `

@@ -1458,6 +1458,86 @@ test('runBundledModuleWithRegistry injects workflow helper when custom workflow 
 	}
 })
 
+test('runBundledModuleWithRegistry injects package invocation helper when provided', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped, providers) {
+				expect(wrapped).toContain('const packages = {')
+				expect(wrapped).toContain(
+					"packages: typeof packages === 'undefined' ? null : packages",
+				)
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async () => "ok"',
+				},
+			},
+			undefined,
+			{
+				packageInvokeTools: {
+					invoke: async (input) => ({ ok: true, input }),
+				},
+			},
+		)
+
+		expect(result.result).toBe('ok')
+		expect(providerFns).not.toBeNull()
+		await expect(
+			providerFns?.package_invoke({
+				kodyId: 'discord-general-chat',
+				exportName: './handle-discord-message-created',
+			}),
+		).resolves.toEqual({
+			ok: true,
+			input: {
+				kodyId: 'discord-general-chat',
+				exportName: './handle-discord-message-created',
+			},
+		})
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
 test('runBundledModuleWithRegistry injects default workflow helper for execute and standalone job contexts', async () => {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const env = {
