@@ -39,6 +39,30 @@ function readLiteralStringNode(
 	return null
 }
 
+function hasOnlyTypeSpecifiers(node: ModuleAstNode) {
+	const specifiers = (node as { specifiers?: unknown }).specifiers
+	if (!Array.isArray(specifiers) || specifiers.length === 0) {
+		return false
+	}
+	return specifiers.every(
+		(specifier) =>
+			specifier &&
+			typeof specifier === 'object' &&
+			((specifier as { importKind?: unknown }).importKind === 'type' ||
+				(specifier as { exportKind?: unknown }).exportKind === 'type'),
+	)
+}
+
+function isTypeOnlyImportOrExport(node: ModuleAstNode) {
+	if (
+		(node as { importKind?: unknown }).importKind === 'type' ||
+		(node as { exportKind?: unknown }).exportKind === 'type'
+	) {
+		return true
+	}
+	return hasOnlyTypeSpecifiers(node)
+}
+
 export function collectLiteralImportNodes(
 	source: string,
 ): Array<LiteralImportNode> {
@@ -59,6 +83,9 @@ export function collectLiteralImportNodes(
 			typedNode.type === 'ExportAllDeclaration' ||
 			typedNode.type === 'ExportNamedDeclaration'
 		) {
+			if (isTypeOnlyImportOrExport(typedNode)) {
+				return
+			}
 			const literalNode = readLiteralStringNode(typedNode.source)
 			if (literalNode) {
 				nodes.push(literalNode)

@@ -44,7 +44,19 @@ function isTypeOnlyImport(node: ModuleAstNode) {
 }
 
 function isTypeOnlyExport(node: ModuleAstNode) {
-	return (node as { exportKind?: unknown }).exportKind === 'type'
+	if ((node as { exportKind?: unknown }).exportKind === 'type') {
+		return true
+	}
+	const specifiers = (node as { specifiers?: unknown }).specifiers
+	if (!Array.isArray(specifiers) || specifiers.length === 0) {
+		return false
+	}
+	return specifiers.every(
+		(specifier) =>
+			specifier &&
+			typeof specifier === 'object' &&
+			(specifier as { exportKind?: unknown }).exportKind === 'type',
+	)
 }
 
 function collectStaticKodyPackageImportsFromSource(input: {

@@ -111,24 +111,15 @@ export const packageExportTargetSchema = z.union([
 
 export type PackageExportTarget = z.infer<typeof packageExportTargetSchema>
 
+const scopedPackageNamePattern = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/
+
 export const kodyPackageDependencySchema = z
 	.string()
 	.min(1)
-	.refine(
-		(value) => {
-			const trimmed = value.trim()
-			const separator = trimmed.indexOf('/')
-			return (
-				trimmed.startsWith('@') &&
-				separator > 1 &&
-				separator < trimmed.length - 1
-			)
-		},
-		{
-			message:
-				'Static Kody package dependencies must be scoped package names like "@scope/package".',
-		},
-	)
+	.regex(scopedPackageNamePattern, {
+		message:
+			'Static Kody package dependencies must be scoped package names like "@scope/package".',
+	})
 
 const kodyPackageDependenciesSchema = z
 	.array(kodyPackageDependencySchema)

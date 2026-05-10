@@ -1119,6 +1119,7 @@ test('runRepoChecks accepts declared static kody package imports and ignores typ
 			[
 				'import helper from "kody:@kentcdodds/helper/run"',
 				'import type { HelperConfig } from "kody:@kentcdodds/types/config"',
+				'export { type HelperResult } from "kody:@kentcdodds/types/result"',
 				'export const ready: HelperConfig | unknown = helper',
 			].join('\n'),
 		],
@@ -1150,6 +1151,89 @@ test('runRepoChecks accepts declared static kody package imports and ignores typ
 				),
 			}),
 		]),
+	)
+})
+
+test('runRepoChecks requires mixed value export-from kody package imports to be declared', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/mixed-export-package',
+				kodyId: 'mixed-export-package',
+				description: 'Exports a value from another Kody package',
+			}),
+		],
+		[
+			'src/index.ts',
+			'export { run, type RunInput } from "kody:@kentcdodds/runner"\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: false,
+				message: expect.stringContaining('missing "@kentcdodds/runner"'),
+			}),
+		]),
+	)
+})
+
+test('runRepoChecks rejects invalid static kody package dependency declarations', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/invalid-dependency-declaration',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'invalid-dependency-declaration',
+					description: 'Declares an invalid Kody dependency',
+					dependencies: ['@kentcdodds/helper/run'],
+				},
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+	])
+
+	await expect(
+		runRepoChecks({
+			workspace: {
+				async readFile(path: string) {
+					return files.get(path) ?? null
+				},
+				async glob() {
+					return Array.from(files.keys()).map((path) => ({
+						path,
+						type: 'file',
+					}))
+				},
+			},
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		}),
+	).rejects.toThrow(
+		'Static Kody package dependencies must be scoped package names like "@scope/package".',
 	)
 })
 
