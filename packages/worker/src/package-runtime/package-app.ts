@@ -992,7 +992,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			kodyId: this.ctx.props.kodyId,
 			sourceId: this.ctx.props.sourceId,
 		}
-		const tools = createPackageRuntimeInvokeTools({
+		return createPackageRuntimeInvokeTools({
 			env: this.env,
 			baseUrl: this.ctx.props.baseUrl,
 			callerContext: this.createCallerContext(this.ctx.props.packageId),
