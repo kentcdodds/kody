@@ -4,6 +4,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	getStaticPackageDependentsSummary,
+	type StaticPackageDependentsSummary,
+} from '#worker/package-runtime/static-package-dependents.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
@@ -80,10 +84,100 @@ const checkSchema = z.object({
 	message: z.string(),
 })
 
+const staticDependentItemSchema = z
+	.object({
+		package_id: z
+			.string()
+			.describe('Saved package id of the dependent package.'),
+		kody_id: z
+			.string()
+			.describe('User-scoped kody.id of the dependent package.'),
+		name: z
+			.string()
+			.describe('Scoped package.json name of the dependent package.'),
+		source_id: z
+			.string()
+			.describe('Repo-backed source id for the dependent package.'),
+		published_commit: z
+			.string()
+			.nullable()
+			.describe('Current published commit of the dependent package.'),
+		stale: z
+			.boolean()
+			.describe(
+				'True when at least one dependent bundle artifact captured an older dependency commit than the just-published package commit.',
+			),
+		artifact_count: z
+			.number()
+			.int()
+			.nonnegative()
+			.describe(
+				'Number of published bundle artifacts that reference this dependency.',
+			),
+		entrypoints: z
+			.array(z.string())
+			.describe(
+				'Bounded list of dependent bundle entrypoints referencing this dependency.',
+			),
+		entrypoints_truncated: z
+			.boolean()
+			.describe(
+				'True when the dependent has more matching entrypoints than returned.',
+			),
+		bundled_dependency_commit: z
+			.string()
+			.nullable()
+			.describe(
+				'Dependency commit captured in the dependent bundle, or null when matching artifacts have mixed or missing commits.',
+			),
+		current_dependency_commit: z
+			.string()
+			.describe(
+				'Current published commit for the package that was just published.',
+			),
+		recommended_action: z
+			.string()
+			.describe('Agent guidance for this dependent package.'),
+	})
+	.describe('A direct static dependent package from persisted bundle metadata.')
+
+const staticDependentsSchema = z
+	.object({
+		total: z
+			.number()
+			.int()
+			.nonnegative()
+			.describe('Total direct static dependent packages found.'),
+		stale: z
+			.number()
+			.int()
+			.nonnegative()
+			.describe(
+				'Count of direct static dependent packages with stale bundled snapshots.',
+			),
+		truncated: z
+			.boolean()
+			.describe(
+				'True when more dependent packages exist than are returned in items.',
+			),
+		items: z
+			.array(staticDependentItemSchema)
+			.describe('Bounded direct static dependent package summaries.'),
+		recommended_next_action: z
+			.string()
+			.describe(
+				'Agent guidance explaining whether to inspect or republish dependents. Kody does not republish dependents automatically.',
+			),
+	})
+	.describe(
+		'Bounded summary of saved packages whose published bundles statically captured this package through kody:@ imports.',
+	)
+
 const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('already_published'),
 		published_commit: z.string().nullable(),
+		static_dependents: staticDependentsSchema,
 	}),
 	z.object({
 		status: z.literal('not_fast_forward'),
@@ -103,15 +197,40 @@ const outputSchema = z.discriminatedUnion('status', [
 		published_commit: z.string(),
 		manifest: z.unknown(),
 		checks: z.array(checkSchema),
+		static_dependents: staticDependentsSchema,
 	}),
 ])
+
+async function getPublishStaticDependents(input: {
+	db: D1Database
+	userId: string
+	sourceId: string
+	publishedCommit: string | null
+}): Promise<StaticPackageDependentsSummary> {
+	if (!input.publishedCommit) {
+		return {
+			total: 0,
+			stale: 0,
+			truncated: false,
+			items: [],
+			recommended_next_action:
+				'No published commit is available, so static dependent bundle metadata cannot be compared.',
+		}
+	}
+	return await getStaticPackageDependentsSummary({
+		db: input.db,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		currentDependencyCommit: input.publishedCommit,
+	})
+}
 
 export const publishExternalPushCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_publish_external_push',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass.',
+			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
@@ -148,6 +267,12 @@ export const publishExternalPushCapability = defineDomainCapability(
 					return {
 						status: 'already_published',
 						published_commit: publishedCommit,
+						static_dependents: await getPublishStaticDependents({
+							db: ctx.env.APP_DB,
+							userId: user.userId,
+							sourceId: source.id,
+							publishedCommit,
+						}),
 					} as const
 				}
 				const sessionId =
@@ -155,7 +280,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 						? `external-publish-${source.id}`
 						: `external-publish-${source.id}-retry-${attempt}`
 				try {
-					return await repoSessionRpc(
+					const result = await repoSessionRpc(
 						ctx.env,
 						sessionId,
 					).publishFromExternalRef({
@@ -167,6 +292,29 @@ export const publishExternalPushCapability = defineDomainCapability(
 						allowForce: args.allow_force,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
+					if (result.status === 'already_published') {
+						return {
+							...result,
+							static_dependents: await getPublishStaticDependents({
+								db: ctx.env.APP_DB,
+								userId: user.userId,
+								sourceId: source.id,
+								publishedCommit: result.published_commit,
+							}),
+						} as const
+					}
+					if (result.status !== 'published') {
+						return result
+					}
+					return {
+						...result,
+						static_dependents: await getPublishStaticDependents({
+							db: ctx.env.APP_DB,
+							userId: user.userId,
+							sourceId: source.id,
+							publishedCommit: result.published_commit,
+						}),
+					} as const
 				} catch (error) {
 					if (!isTransientDurableObjectResetError(error)) {
 						throw error

@@ -68,6 +68,10 @@ The top-level saved identity is the package.
 
 - Cross-package imports use the full package name, for example
   `kody:@scope/my-package/export-name`.
+- Static `kody:@...` imports are bundled snapshots. During checks and
+  publish-time artifact rebuilds, Kody records the imported saved package's
+  published commit in bundle dependency metadata. A later publish of that
+  imported package does not rewrite already-published dependent bundles.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
@@ -217,6 +221,19 @@ advancing `entity_sources.published_commit`. Check failures return the failed
 checks and do not mutate D1, KV snapshots, published bundle artifacts, package
 projections, or vectors. Non-fast-forward external heads are refused unless the
 caller passes `allow_force: true`.
+
+When publish succeeds, `package_publish_external_push` decorates the response
+with `static_dependents`, a bounded summary of direct saved packages whose
+published bundle artifact dependency metadata references the package that was
+just published. `already_published` responses include the same summary when the
+published commit is available. The stale count compares each dependent
+artifact's captured dependency commit to the current published commit.
+
+This summary is visibility only. Do not add automatic fanout republishing to the
+publish path. Agents should inspect and republish dependent packages only when
+the static snapshot semantics matter for the change. Dynamic runtime invocation
+through package execution, where available, resolves the current published
+target at invocation time and should not force a dependent package republish.
 
 The scheduled reconcile job in
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for

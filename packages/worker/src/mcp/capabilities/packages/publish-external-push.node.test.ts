@@ -7,6 +7,7 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
+	getStaticPackageDependentsSummary: vi.fn(),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
@@ -38,6 +39,11 @@ vi.mock('#worker/repo/repo-session-do.ts', () => ({
 	}),
 }))
 
+vi.mock('#worker/package-runtime/static-package-dependents.ts', () => ({
+	getStaticPackageDependentsSummary: (...args: Array<unknown>) =>
+		mockModule.getStaticPackageDependentsSummary(...args),
+}))
+
 const { publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
 
@@ -65,6 +71,14 @@ beforeEach(() => {
 		last_external_check_at: null,
 		created_at: '2026-05-04T00:00:00.000Z',
 		updated_at: '2026-05-04T00:00:00.000Z',
+	})
+	mockModule.getStaticPackageDependentsSummary.mockResolvedValue({
+		total: 0,
+		stale: 0,
+		truncated: false,
+		items: [],
+		recommended_next_action:
+			'No published bundle artifacts currently declare a static dependency on this package.',
 	})
 })
 
@@ -104,6 +118,14 @@ test('publishes a new external Artifacts HEAD', async () => {
 	)
 
 	expect(result.status).toBe('published')
+	expect(result).toEqual(
+		expect.objectContaining({
+			static_dependents: expect.objectContaining({
+				total: 0,
+				items: [],
+			}),
+		}),
+	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
@@ -129,8 +151,89 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 	expect(result).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-old',
+		static_dependents: {
+			total: 0,
+			stale: 0,
+			truncated: false,
+			items: [],
+			recommended_next_action:
+				'No published bundle artifacts currently declare a static dependency on this package.',
+		},
 	})
 	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
+})
+
+test('published output lists stale static dependents for the new dependency commit', async () => {
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
+	mockModule.getStaticPackageDependentsSummary.mockResolvedValue({
+		total: 1,
+		stale: 1,
+		truncated: false,
+		items: [
+			{
+				package_id: 'package-b',
+				kody_id: 'package-b',
+				name: '@kentcdodds/package-b',
+				source_id: 'source-b',
+				published_commit: 'commit-b',
+				stale: true,
+				artifact_count: 1,
+				entrypoints: ['src/index.ts'],
+				entrypoints_truncated: false,
+				bundled_dependency_commit: 'commit-a-old',
+				current_dependency_commit: 'commit-new',
+				recommended_action:
+					'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the newly published dependency commit.',
+			},
+		],
+		recommended_next_action:
+			'Inspect stale static dependents and republish only the packages whose bundled snapshot should include this package publish. Kody does not republish dependents automatically.',
+	})
+
+	const result = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+
+	expect(result).toEqual(
+		expect.objectContaining({
+			status: 'published',
+			static_dependents: expect.objectContaining({
+				total: 1,
+				stale: 1,
+				items: [
+					expect.objectContaining({
+						package_id: 'package-b',
+						stale: true,
+						bundled_dependency_commit: 'commit-a-old',
+						current_dependency_commit: 'commit-new',
+					}),
+				],
+			}),
+		}),
+	)
+	expect(mockModule.getStaticPackageDependentsSummary).toHaveBeenCalledWith({
+		db: {},
+		userId: 'user-1',
+		sourceId: 'source-1',
+		currentDependencyCommit: 'commit-new',
+	})
+	expect(publishExternalPushCapability.outputTypeDefinition).toContain(
+		'static_dependents',
+	)
+	expect(publishExternalPushCapability.outputTypeDefinition).toContain(
+		'current_dependency_commit',
+	)
 })
 
 test('surfaces not-fast-forward refusal without force', async () => {
@@ -289,6 +392,14 @@ test('returns already_published when a retry observes that the reset attempt com
 		expect(result).toEqual({
 			status: 'already_published',
 			published_commit: 'commit-new',
+			static_dependents: {
+				total: 0,
+				stale: 0,
+				truncated: false,
+				items: [],
+				recommended_next_action:
+					'No published bundle artifacts currently declare a static dependency on this package.',
+			},
 		})
 		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 	} finally {

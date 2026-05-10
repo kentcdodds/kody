@@ -72,6 +72,10 @@ exhaustive.
 
 - Cross-package imports use the full package name such as
   `kody:@scope/my-package/export-name`.
+- Static `kody:@...` imports in saved package code are bundled into published
+  runtime artifacts as snapshots of the imported package's then-published
+  bundle. If the imported package is published again later, already-published
+  dependents keep using the older bundled snapshot until they are republished.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that
@@ -221,6 +225,20 @@ edit it with a normal git client without round-tripping each file change through
    projections. If the pushed HEAD is already current, the tool returns
    `already_published`. If checks fail, it returns `checks_failed` with the
    failed check entries and leaves the underlying storage state unchanged.
+   Successful `published` responses, and `already_published` responses when the
+   metadata is available, include a bounded `static_dependents` summary of
+   direct saved packages whose published bundle artifacts statically reference
+   this package. Stale entries mean the dependent bundle captured an older
+   dependency commit. Kody does not automatically republish those dependents;
+   inspect and republish only the ones whose static snapshot should pick up the
+   new publish.
+
+Dynamic package invocation is different from static bundled imports. When a
+runtime feature invokes another package dynamically through the package
+execution path, it resolves the current published package at invocation time
+instead of embedding a source snapshot in the dependent bundle. Dynamic
+invocation should not require republishing a dependent package just because the
+called package was republished.
 
 Choose the narrowest token scope that fits the task. Use `read` for inspection
 or local diffing, and `write` only when the git client needs to push. Keep TTLs
