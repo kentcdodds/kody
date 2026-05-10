@@ -1156,7 +1156,7 @@ test('buildKodyModuleBundle records only entrypoint-reachable kody package depen
 				},
 			}),
 			'src/index.ts':
-				'import "./reachable"; export default async function run() { return "ok" }',
+				'import "./reachable.js"; export default async function run() { return "ok" }',
 			'src/reachable.ts':
 				'import reachable from "kody:@alice/reachable-package"; export { reachable }',
 			'src/unused.ts':
