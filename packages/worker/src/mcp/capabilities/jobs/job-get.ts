@@ -26,7 +26,14 @@ export const jobGetCapability = defineDomainCapability(
 		name: 'job_get',
 		description:
 			'Load one scheduled job for the signed-in user, including debugging fields such as run counters, last error, recent run history, current alarm state, and optionally the published source code.',
-		keywords: ['job', 'inspect', 'debug', 'status', 'scheduled job', 'source code'],
+		keywords: [
+			'job',
+			'inspect',
+			'debug',
+			'status',
+			'scheduled job',
+			'source code',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,

@@ -166,9 +166,7 @@ test('job_get registry exposes optional source-code inspection fields', () => {
 	expect(capabilitySpec?.outputFields).toEqual(
 		expect.arrayContaining(['job', 'alarm', 'source']),
 	)
-	expect(capabilitySpec?.inputTypeDefinition).toContain(
-		'includeCode?: boolean',
-	)
+	expect(capabilitySpec?.inputTypeDefinition).toContain('includeCode?: boolean')
 	expect(capabilitySpec?.outputTypeDefinition).toContain('source?:')
 	expect(includeCodeSchema).toMatchObject({
 		type: 'boolean',

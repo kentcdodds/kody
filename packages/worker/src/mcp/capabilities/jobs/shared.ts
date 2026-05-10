@@ -96,7 +96,9 @@ export const jobGetInputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Job id from job_list output or a previous scheduling response.'),
+			.describe(
+				'Job id from job_list output or a previous scheduling response.',
+			),
 		job_id: z
 			.string()
 			.min(1)
@@ -172,11 +174,15 @@ export const jobSourceInspectionSchema = z.object({
 	entrypoint: z
 		.string()
 		.nullable()
-		.describe('Normalized manifest-declared job entrypoint path, when resolved.'),
+		.describe(
+			'Normalized manifest-declared job entrypoint path, when resolved.',
+		),
 	code: z
 		.string()
 		.nullable()
-		.describe('Stored source code for the entrypoint, or null when unavailable.'),
+		.describe(
+			'Stored source code for the entrypoint, or null when unavailable.',
+		),
 	error: z
 		.string()
 		.nullable()
