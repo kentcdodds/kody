@@ -34,6 +34,7 @@ export type StaticDependentBundleArtifactRow = {
 	entryPoint: string
 	packageStale: boolean
 	matchingArtifactCount: number
+	matchingEntrypointCount: number
 	packageBundledDependencyCommit: string | null
 	bundledDependencyCommit: string | null
 }
@@ -76,6 +77,7 @@ function mapStaticDependentBundleArtifactRow(
 		entryPoint: String(row['entry_point']),
 		packageStale: Number(row['package_stale'] ?? 0) === 1,
 		matchingArtifactCount: Number(row['matching_artifact_count'] ?? 0),
+		matchingEntrypointCount: Number(row['matching_entrypoint_count'] ?? 0),
 		packageBundledDependencyCommit:
 			row['package_bundled_dependency_commit'] == null
 				? null
@@ -146,6 +148,7 @@ export async function countStaticDependentBundleArtifactPackages(
 					AND p.user_id = artifact.user_id
 				WHERE artifact.user_id = ?
 					AND artifact.source_id != ?
+					AND artifact.published_commit = source.published_commit
 					AND json_extract(dependency.value, '$.sourceId') = ?
 			)
 			SELECT
@@ -206,6 +209,7 @@ export async function listStaticDependentBundleArtifactRows(
 					AND p.user_id = artifact.user_id
 				WHERE artifact.user_id = ?
 					AND artifact.source_id != ?
+					AND artifact.published_commit = source.published_commit
 					AND json_extract(dependency.value, '$.sourceId') = ?
 			),
 			package_rollup AS (
@@ -213,6 +217,7 @@ export async function listStaticDependentBundleArtifactRows(
 					package_id,
 					MAX(stale) AS package_stale,
 					COUNT(*) AS matching_artifact_count,
+					COUNT(DISTINCT entry_point) AS matching_entrypoint_count,
 					CASE
 						WHEN COUNT(DISTINCT COALESCE(bundled_dependency_commit, '__missing__')) = 1
 						THEN MIN(bundled_dependency_commit)
@@ -226,6 +231,7 @@ export async function listStaticDependentBundleArtifactRows(
 					matching.*,
 					package_rollup.package_stale,
 					package_rollup.matching_artifact_count,
+					package_rollup.matching_entrypoint_count,
 					package_rollup.package_bundled_dependency_commit,
 					ROW_NUMBER() OVER (
 						PARTITION BY matching.package_id
@@ -254,6 +260,7 @@ export async function listStaticDependentBundleArtifactRows(
 				entry_point,
 				package_stale,
 				matching_artifact_count,
+				matching_entrypoint_count,
 				package_bundled_dependency_commit,
 				bundled_dependency_commit
 			FROM ranked_packages

@@ -18,6 +18,7 @@ test('buildStaticPackageDependentsSummary marks a static dependent stale after d
 				entryPoint: 'src/index.ts',
 				packageStale: true,
 				matchingArtifactCount: 1,
+				matchingEntrypointCount: 1,
 				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
@@ -87,6 +88,7 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 				entryPoint: 'src/index.ts',
 				packageStale: true,
 				matchingArtifactCount: 2,
+				matchingEntrypointCount: 2,
 				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
@@ -101,6 +103,7 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 				entryPoint: 'src/nightly.ts',
 				packageStale: true,
 				matchingArtifactCount: 2,
+				matchingEntrypointCount: 2,
 				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
@@ -115,6 +118,7 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 				entryPoint: 'src/index.ts',
 				packageStale: true,
 				matchingArtifactCount: 1,
+				matchingEntrypointCount: 1,
 				packageBundledDependencyCommit: 'commit-a-old',
 				bundledDependencyCommit: 'commit-a-old',
 			},
@@ -151,6 +155,7 @@ test('buildStaticPackageDependentsSummary keeps stale true when stale artifact i
 				entryPoint: 'src/index.ts',
 				packageStale: true,
 				matchingArtifactCount: 6,
+				matchingEntrypointCount: 6,
 				packageBundledDependencyCommit: null,
 				bundledDependencyCommit: 'commit-a-new',
 			},
@@ -184,6 +189,7 @@ test('buildStaticPackageDependentsSummary reports null commit for mixed missing 
 				entryPoint: 'src/index.ts',
 				packageStale: true,
 				matchingArtifactCount: 2,
+				matchingEntrypointCount: 2,
 				packageBundledDependencyCommit: null,
 				bundledDependencyCommit: 'commit-a-new',
 			},
@@ -198,6 +204,7 @@ test('buildStaticPackageDependentsSummary reports null commit for mixed missing 
 				entryPoint: 'src/nightly.ts',
 				packageStale: true,
 				matchingArtifactCount: 2,
+				matchingEntrypointCount: 2,
 				packageBundledDependencyCommit: null,
 				bundledDependencyCommit: null,
 			},
@@ -205,4 +212,53 @@ test('buildStaticPackageDependentsSummary reports null commit for mixed missing 
 	})
 
 	expect(summary.items[0]?.bundled_dependency_commit).toBeNull()
+})
+
+test('buildStaticPackageDependentsSummary truncates by distinct entrypoints, not artifact rows', () => {
+	const summary = buildStaticPackageDependentsSummary({
+		total: 1,
+		stale: 0,
+		currentDependencyCommit: 'commit-a-new',
+		artifactsPerPackageLimit: 1,
+		rows: [
+			{
+				packageId: 'package-b',
+				packageKodyId: 'package-b',
+				packageName: '@kentcdodds/package-b',
+				sourceId: 'source-b',
+				publishedCommit: 'commit-b',
+				artifactKind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/index.ts',
+				packageStale: false,
+				matchingArtifactCount: 2,
+				matchingEntrypointCount: 1,
+				packageBundledDependencyCommit: 'commit-a-new',
+				bundledDependencyCommit: 'commit-a-new',
+			},
+			{
+				packageId: 'package-b',
+				packageKodyId: 'package-b',
+				packageName: '@kentcdodds/package-b',
+				sourceId: 'source-b',
+				publishedCommit: 'commit-b',
+				artifactKind: 'importable-module',
+				artifactName: '.',
+				entryPoint: 'src/index.ts',
+				packageStale: false,
+				matchingArtifactCount: 2,
+				matchingEntrypointCount: 1,
+				packageBundledDependencyCommit: 'commit-a-new',
+				bundledDependencyCommit: 'commit-a-new',
+			},
+		],
+	})
+
+	expect(summary.items[0]).toEqual(
+		expect.objectContaining({
+			artifact_count: 2,
+			entrypoints: ['src/index.ts'],
+			entrypoints_truncated: false,
+		}),
+	)
 })

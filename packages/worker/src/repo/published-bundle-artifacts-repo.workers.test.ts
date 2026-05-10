@@ -122,6 +122,7 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 	const sourceA = `source-a-${unique}`
 	const sourceB = `source-b-${unique}`
 	const sourceC = `source-c-${unique}`
+	const sourceD = `source-d-${unique}`
 	await insertPackage({
 		userId,
 		packageId: `package-a-${unique}`,
@@ -145,6 +146,14 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 		name: `@kentcdodds/package-c-${unique}`,
 		sourceId: sourceC,
 		publishedCommit: 'commit-c',
+	})
+	await insertPackage({
+		userId,
+		packageId: `package-d-${unique}`,
+		kodyId: `package-d-${unique}`,
+		name: `@kentcdodds/package-d-${unique}`,
+		sourceId: sourceD,
+		publishedCommit: 'commit-d-current',
 	})
 	for (let index = 0; index < 5; index += 1) {
 		await insertArtifact({
@@ -187,6 +196,21 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 		dependencies: [
 			{
 				sourceId: sourceA,
+				kodyId: `package-a-${unique}`,
+				packageName: `@kentcdodds/package-a-${unique}`,
+			},
+		],
+	})
+	await insertArtifact({
+		userId,
+		sourceId: sourceD,
+		publishedCommit: 'commit-d-obsolete',
+		artifactName: 'removed-import',
+		entryPoint: 'src/removed-import.ts',
+		dependencies: [
+			{
+				sourceId: sourceA,
+				publishedCommit: 'commit-a-old',
 				kodyId: `package-a-${unique}`,
 				packageName: `@kentcdodds/package-a-${unique}`,
 			},

@@ -56,6 +56,7 @@ type StaticDependentPackageAccumulator = {
 	published_commit: string | null
 	packageStale: boolean
 	matchingArtifactCount: number
+	matchingEntrypointCount: number
 	artifactRows: Array<StaticDependentBundleArtifactRow>
 	entrypoints: Array<string>
 	packageBundledDependencyCommit: string | null
@@ -89,6 +90,7 @@ function createAccumulator(
 		published_commit: row.publishedCommit,
 		packageStale: row.packageStale,
 		matchingArtifactCount: row.matchingArtifactCount,
+		matchingEntrypointCount: row.matchingEntrypointCount,
 		artifactRows: [],
 		entrypoints: [],
 		packageBundledDependencyCommit: row.packageBundledDependencyCommit,
@@ -103,6 +105,10 @@ function addRowToAccumulator(input: {
 	input.accumulator.matchingArtifactCount = Math.max(
 		input.accumulator.matchingArtifactCount,
 		input.row.matchingArtifactCount,
+	)
+	input.accumulator.matchingEntrypointCount = Math.max(
+		input.accumulator.matchingEntrypointCount,
+		input.row.matchingEntrypointCount,
 	)
 	if (!input.accumulator.entrypoints.includes(input.row.entryPoint)) {
 		input.accumulator.entrypoints.push(input.row.entryPoint)
@@ -144,7 +150,7 @@ export function buildStaticPackageDependentsSummary(
 				artifact_count: item.matchingArtifactCount,
 				entrypoints: item.entrypoints.slice(0, artifactsPerPackageLimit),
 				entrypoints_truncated:
-					item.matchingArtifactCount >
+					item.matchingEntrypointCount >
 					Math.min(item.entrypoints.length, artifactsPerPackageLimit),
 				bundled_dependency_commit: item.packageBundledDependencyCommit,
 				current_dependency_commit: input.currentDependencyCommit,

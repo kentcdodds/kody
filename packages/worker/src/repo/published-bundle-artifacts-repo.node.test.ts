@@ -53,6 +53,9 @@ test('countStaticDependentBundleArtifactPackages counts direct JSON dependency r
 		['commit-a-new', 'user-1', 'source-a', 'source-a'],
 	)
 	expect(onBind.mock.calls[0]?.[0]).toContain('artifact.source_id != ?')
+	expect(onBind.mock.calls[0]?.[0]).toContain(
+		'artifact.published_commit = source.published_commit',
+	)
 })
 
 test('listStaticDependentBundleArtifactRows maps bounded dependent package artifact rows', async () => {
@@ -70,6 +73,7 @@ test('listStaticDependentBundleArtifactRows maps bounded dependent package artif
 				entry_point: 'src/index.ts',
 				package_stale: 1,
 				matching_artifact_count: 1,
+				matching_entrypoint_count: 1,
 				package_bundled_dependency_commit: 'commit-a-old',
 				bundled_dependency_commit: 'commit-a-old',
 			},
@@ -97,6 +101,7 @@ test('listStaticDependentBundleArtifactRows maps bounded dependent package artif
 			entryPoint: 'src/index.ts',
 			packageStale: true,
 			matchingArtifactCount: 1,
+			matchingEntrypointCount: 1,
 			packageBundledDependencyCommit: 'commit-a-old',
 			bundledDependencyCommit: 'commit-a-old',
 		},
