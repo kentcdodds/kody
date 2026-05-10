@@ -277,12 +277,16 @@ function resolveWorkspaceSourceFilePath(input: {
 		`${basePath}.jsx`,
 		`${basePath}.mts`,
 		`${basePath}.cts`,
+		`${basePath}.mjs`,
+		`${basePath}.cjs`,
 		joinPath(basePath, 'index.ts'),
 		joinPath(basePath, 'index.tsx'),
 		joinPath(basePath, 'index.js'),
 		joinPath(basePath, 'index.jsx'),
 		joinPath(basePath, 'index.mts'),
 		joinPath(basePath, 'index.cts'),
+		joinPath(basePath, 'index.mjs'),
+		joinPath(basePath, 'index.cjs'),
 	]
 	const substitutionBase = basePath.replace(/\.(?:js|jsx|mjs|cjs)$/, '')
 	if (substitutionBase !== basePath) {
@@ -291,6 +295,8 @@ function resolveWorkspaceSourceFilePath(input: {
 			`${substitutionBase}.tsx`,
 			`${substitutionBase}.mts`,
 			`${substitutionBase}.cts`,
+			`${substitutionBase}.mjs`,
+			`${substitutionBase}.cjs`,
 		)
 	}
 	return candidates.find((candidate) => input.files[candidate] != null) ?? null

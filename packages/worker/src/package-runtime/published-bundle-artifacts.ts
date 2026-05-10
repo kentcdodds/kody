@@ -7,7 +7,6 @@ import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	type BundleArtifactDependency,
 	type BundleArtifactKind,
@@ -29,19 +28,7 @@ import {
 } from '#worker/repo/published-bundle-artifacts-repo.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
-import {
-	parseKodyPackageSpecifier,
-	resolveSavedPackageImport,
-} from './package-import-resolution.ts'
-import { collectStaticKodyPackageImportsFromFiles } from './static-kody-imports.ts'
 import { buildPackageSubscriptionArtifactName } from './subscription-artifacts.ts'
-
-type DependencyResolutionState = {
-	env: Env
-	userId: string
-	visited: Set<string>
-	dependencies: Array<BundleArtifactDependency>
-}
 
 type PersistPublishedBundleArtifactInput = {
 	env: Env
@@ -67,64 +54,6 @@ function normalizeEntryPoint(entryPoint: string) {
 		throw new Error('Bundle artifact entrypoint must be non-empty.')
 	}
 	return trimmed
-}
-
-async function resolveDependencyForPackage(input: {
-	state: DependencyResolutionState
-	specifier: string
-}) {
-	const parsed = parseKodyPackageSpecifier(input.specifier)
-	const existing = input.state.visited.has(parsed.packageName)
-	if (existing) return
-	input.state.visited.add(parsed.packageName)
-	const row = await resolveSavedPackageImport({
-		db: input.state.env.APP_DB,
-		userId: input.state.userId,
-		specifier: parsed,
-	})
-	if (!row) {
-		throw new Error(
-			`Saved package "${parsed.packageName}" was not found for this user.`,
-		)
-	}
-	const source = await getEntitySourceById(input.state.env.APP_DB, row.sourceId)
-	if (!source?.published_commit) {
-		throw new Error(
-			`Saved package "${row.name}" source "${row.sourceId}" has no published commit.`,
-		)
-	}
-	input.state.dependencies.push({
-		sourceId: source.id,
-		publishedCommit: source.published_commit,
-		kodyId: row.kodyId,
-		packageName: row.name,
-	})
-}
-
-async function collectDependenciesFromFiles(input: {
-	env: Env
-	userId: string
-	files: Record<string, string>
-}) {
-	const state: DependencyResolutionState = {
-		env: input.env,
-		userId: input.userId,
-		visited: new Set(),
-		dependencies: [],
-	}
-	for (const imported of collectStaticKodyPackageImportsFromFiles(
-		input.files,
-	)) {
-		await resolveDependencyForPackage({
-			state,
-			specifier: imported.specifier,
-		})
-	}
-	return state.dependencies.sort(
-		(left, right) =>
-			left.kodyId.localeCompare(right.kodyId) ||
-			left.sourceId.localeCompare(right.sourceId),
-	)
 }
 
 function toDbRowInput(input: {
@@ -269,24 +198,19 @@ export async function rebuildPublishedPackageArtifacts(input: {
 	buildAppBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
-		dependencies?: Array<BundleArtifactDependency>
+		dependencies: Array<BundleArtifactDependency>
 	}>
 	buildModuleBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
-		dependencies?: Array<BundleArtifactDependency>
+		dependencies: Array<BundleArtifactDependency>
 	}>
 	buildImportableModuleBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
-		dependencies?: Array<BundleArtifactDependency>
+		dependencies: Array<BundleArtifactDependency>
 	}>
 }) {
-	const fallbackDependencies = await collectDependenciesFromFiles({
-		env: input.env,
-		userId: input.userId,
-		files: input.files,
-	})
 	if (input.manifest.kody.app) {
 		const entryPoint = getPackageAppEntryPath(input.manifest)
 		if (entryPoint) {
@@ -299,7 +223,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 				entryPoint,
 				mainModule: bundle.mainModule,
 				modules: bundle.modules,
-				dependencies: bundle.dependencies ?? fallbackDependencies,
+				dependencies: bundle.dependencies,
 				packageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
@@ -321,7 +245,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			entryPoint: service.entry,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
-			dependencies: bundle.dependencies ?? fallbackDependencies,
+			dependencies: bundle.dependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -349,7 +273,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			entryPoint,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
-			dependencies: bundle.dependencies ?? fallbackDependencies,
+			dependencies: bundle.dependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -368,7 +292,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			entryPoint,
 			mainModule: importableBundle.mainModule,
 			modules: importableBundle.modules,
-			dependencies: importableBundle.dependencies ?? fallbackDependencies,
+			dependencies: importableBundle.dependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -389,7 +313,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			entryPoint: subscription.handler,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
-			dependencies: bundle.dependencies ?? fallbackDependencies,
+			dependencies: bundle.dependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -414,7 +338,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			entryPoint: jobDefinition.entry,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
-			dependencies: bundle.dependencies ?? fallbackDependencies,
+			dependencies: bundle.dependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
