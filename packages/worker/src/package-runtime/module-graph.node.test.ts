@@ -895,6 +895,169 @@ export default async function run() {
 	}
 })
 
+test('hydrateKodyRuntimeModules terminates circular literal dynamic package imports', async () => {
+	const createDynamicPlaceholder = (specifier: string) =>
+		`export const __kodyDynamicPackageSpecifier = ${JSON.stringify(specifier)};
+throw new Error('unhydrated ${specifier}');
+`
+	const createLoadedPackage = (input: {
+		name: string
+		kodyId: string
+		sourceId: string
+		commit: string
+	}) => ({
+		source: {
+			id: input.sourceId,
+			published_commit: input.commit,
+		},
+		manifest: {
+			name: input.name,
+			exports: {
+				'./run': './index.js',
+			},
+			kody: {
+				id: input.kodyId,
+				description: `${input.name} package`,
+			},
+		},
+		files: {
+			'index.js': 'export default async function run() { return "ok" }',
+		},
+	})
+	const createArtifact = (input: {
+		sourceId: string
+		commit: string
+		specifier: string
+		nextSpecifier: string
+	}) => ({
+		version: 1,
+		kind: 'importable-module' as const,
+		artifactName: './run',
+		sourceId: input.sourceId,
+		publishedCommit: input.commit,
+		entryPoint: './index.js',
+		mainModule: 'index.js',
+		modules: {
+			'index.js': `export default async function run() {
+	const module = await import('./.__kody_virtual__/dynamic-imports/next.js')
+	return module.default
+}
+`,
+			'.__kody_virtual__/dynamic-imports/next.js': createDynamicPlaceholder(
+				input.nextSpecifier,
+			),
+		},
+		dependencies: [],
+		dynamicDependencies: [
+			{
+				specifier: input.nextSpecifier,
+				packageName: input.nextSpecifier
+					.replace('kody:', '')
+					.split('/')
+					.slice(0, 2)
+					.join('/'),
+				exportName: './run',
+			},
+		],
+		packageContext: null,
+		serviceContext: null,
+		createdAt: '2026-05-11T00:00:00.000Z',
+	})
+	const packages = new Map([
+		[
+			'@kentcdodds/a-package',
+			{
+				row: createSavedPackageRecord({
+					name: '@kentcdodds/a-package',
+					kodyId: 'a-package',
+					sourceId: 'source-a',
+				}),
+				loaded: createLoadedPackage({
+					name: '@kentcdodds/a-package',
+					kodyId: 'a-package',
+					sourceId: 'source-a',
+					commit: 'commit-a',
+				}),
+				artifact: createArtifact({
+					sourceId: 'source-a',
+					commit: 'commit-a',
+					specifier: 'kody:@kentcdodds/a-package/run',
+					nextSpecifier: 'kody:@kentcdodds/b-package/run',
+				}),
+			},
+		],
+		[
+			'@kentcdodds/b-package',
+			{
+				row: createSavedPackageRecord({
+					name: '@kentcdodds/b-package',
+					kodyId: 'b-package',
+					sourceId: 'source-b',
+				}),
+				loaded: createLoadedPackage({
+					name: '@kentcdodds/b-package',
+					kodyId: 'b-package',
+					sourceId: 'source-b',
+					commit: 'commit-b',
+				}),
+				artifact: createArtifact({
+					sourceId: 'source-b',
+					commit: 'commit-b',
+					specifier: 'kody:@kentcdodds/b-package/run',
+					nextSpecifier: 'kody:@kentcdodds/a-package/run',
+				}),
+			},
+		],
+	])
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) =>
+			packages.get(input.name)?.row ?? null,
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) =>
+			[...packages.values()].find(
+				(entry) => entry.row.sourceId === input.sourceId,
+			)?.loaded ?? null,
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { sourceId: string }) => ({
+			row: {},
+			artifact: [...packages.values()].find(
+				(entry) => entry.row.sourceId === input.sourceId,
+			)?.artifact,
+		}),
+	)
+
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules: {
+			'entry.js': `export default async function run() {
+	const module = await import('./.__kody_virtual__/dynamic-imports/a.js')
+	return module.default
+}
+`,
+			'.__kody_virtual__/dynamic-imports/a.js': createDynamicPlaceholder(
+				'kody:@kentcdodds/a-package/run',
+			),
+		},
+	})
+
+	const currentArtifactModulePaths = Object.keys(hydratedModules).filter(
+		(path) => path.includes('/.__kody_current__/'),
+	)
+	expect(currentArtifactModulePaths).toHaveLength(4)
+	expect(
+		currentArtifactModulePaths.filter((path) =>
+			path.includes('/.__kody_current__/'),
+		),
+	).toEqual(currentArtifactModulePaths)
+})
+
 test.each([
 	{
 		name: 'subscription service start',

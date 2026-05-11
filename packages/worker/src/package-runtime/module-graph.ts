@@ -1026,6 +1026,14 @@ function installDynamicPackageArtifactModules(input: {
 			joinPath(artifactPrefix, input.artifact.mainModule),
 		),
 	})
+	return joinPath(artifactPrefix, input.artifact.mainModule)
+}
+
+function createDynamicPackageImportArtifactKey(input: {
+	specifier: string
+	artifact: PublishedBundleArtifact
+}) {
+	return `${input.specifier}:${input.artifact.sourceId}:${input.artifact.publishedCommit}`
 }
 
 export async function hydrateKodyRuntimeModules(input: {
@@ -1035,25 +1043,37 @@ export async function hydrateKodyRuntimeModules(input: {
 	modules: WorkerLoaderModules
 }): Promise<WorkerLoaderModules> {
 	const modules = refreshKodyRuntimeModules(input.modules)
-	const hydratedDynamicImports = new Set<string>()
+	const installedArtifacts = new Map<string, string>()
 	while (true) {
 		let installedDynamicImport = false
 		for (const entry of collectDynamicPackageImportsFromModules(modules)) {
-			const importKey = `${entry.modulePath}:${entry.specifier}`
-			if (hydratedDynamicImports.has(importKey)) continue
-			hydratedDynamicImports.add(importKey)
 			const artifact = await resolveCurrentDynamicPackageArtifact({
 				env: input.env,
 				baseUrl: input.baseUrl,
 				userId: input.userId,
 				specifier: entry.specifier,
 			})
-			installDynamicPackageArtifactModules({
+			const artifactKey = createDynamicPackageImportArtifactKey({
+				specifier: entry.specifier,
+				artifact,
+			})
+			const existingArtifactMainModule = installedArtifacts.get(artifactKey)
+			if (existingArtifactMainModule) {
+				modules[entry.modulePath] = createDynamicPackageImportProxySource({
+					targetPath: createRelativeImportSpecifier(
+						entry.modulePath,
+						existingArtifactMainModule,
+					),
+				})
+				continue
+			}
+			const installedArtifactMainModule = installDynamicPackageArtifactModules({
 				modules,
 				modulePath: entry.modulePath,
 				specifier: entry.specifier,
 				artifact,
 			})
+			installedArtifacts.set(artifactKey, installedArtifactMainModule)
 			installedDynamicImport = true
 		}
 		if (!installedDynamicImport) return refreshKodyRuntimeModules(modules)
