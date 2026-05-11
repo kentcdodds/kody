@@ -112,15 +112,24 @@ async function createTemporaryModuleGraph(files: Record<string, string>) {
 		'utf8',
 	)
 	return {
-		async importModule(modulePath: string) {
+		async importModule(modulePath: string, options?: { cacheBust?: boolean }) {
 			const moduleUrl = pathToFileURL(join(root, modulePath))
-			moduleUrl.searchParams.set('cache', crypto.randomUUID())
+			if (options?.cacheBust ?? true) {
+				moduleUrl.searchParams.set('cache', crypto.randomUUID())
+			}
 			return await import(moduleUrl.href)
 		},
 		async cleanup() {
 			await rm(root, { recursive: true, force: true })
 		},
 	}
+}
+
+type RuntimeModule = {
+	__kodyRunInRuntime: <T>(
+		runtime: Record<string, unknown>,
+		callback: () => Promise<T>,
+	) => Promise<T>
 }
 
 function createSavedPackageRecord(input?: {
@@ -649,6 +658,116 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 		await moduleGraph.cleanup()
 	}
 })
+
+test.each([
+	{
+		name: 'subscription service start',
+		entryPoint: 'src/handle-email-message-received.ts',
+		source: `import { codemode } from 'kody:runtime'
+
+export default async function handleEmailMessageReceived() {
+	return await codemode.service_start({
+		package_id: 'pkg-1',
+		service_name: 'email-agent-processor',
+	})
+}
+`,
+		codemode: {
+			async service_start(input: unknown) {
+				return { ok: true, tool: 'service_start', input }
+			},
+		},
+		expected: {
+			ok: true,
+			tool: 'service_start',
+			input: {
+				package_id: 'pkg-1',
+				service_name: 'email-agent-processor',
+			},
+		},
+	},
+	{
+		name: 'export secret list',
+		entryPoint: 'src/launch-agent.ts',
+		source: `import { codemode } from 'kody:runtime'
+
+export default async function launchAgent() {
+	return await codemode.secret_list({ scope: 'user' })
+}
+`,
+		codemode: {
+			async secret_list(input: unknown) {
+				return { ok: true, tool: 'secret_list', input }
+			},
+		},
+		expected: {
+			ok: true,
+			tool: 'secret_list',
+			input: { scope: 'user' },
+		},
+	},
+])(
+	'buildKodyModuleBundle keeps codemode available for a preloaded package $name runtime',
+	async ({ entryPoint, source, codemode, expected }) => {
+		mockModule.createWorker.mockImplementation(
+			async (input: { files: Record<string, string>; entryPoint: string }) => ({
+				mainModule: input.entryPoint,
+				modules: input.files,
+				dependencies: [],
+			}),
+		)
+
+		const { buildKodyModuleBundle } = await import('./module-graph.ts')
+		const bundle = await buildKodyModuleBundle({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/email-received-subscriber',
+					exports: {
+						'./launch-agent': './src/launch-agent.ts',
+					},
+					kody: {
+						id: 'email-received-subscriber',
+						description: 'Email received subscriber',
+						subscriptions: {
+							'email.message.received': {
+								handler: './src/handle-email-message-received.ts',
+							},
+						},
+					},
+				}),
+				[entryPoint]: source,
+			},
+			entryPoint,
+		})
+
+		const moduleGraph = await createTemporaryModuleGraph(bundle.modules)
+		try {
+			const runtime = (await moduleGraph.importModule(
+				'.__kody_virtual__/runtime.js',
+				{ cacheBust: false },
+			)) as RuntimeModule
+			const result = await runtime.__kodyRunInRuntime(
+				{ codemode },
+				async () => {
+					const entry = (await moduleGraph.importModule(bundle.mainModule, {
+						cacheBust: false,
+					})) as { default: (input?: unknown) => Promise<unknown> }
+					return await entry.default({})
+				},
+			)
+
+			expect(result).toEqual(expected)
+		} finally {
+			await moduleGraph.cleanup()
+		}
+	},
+)
 
 test('buildKodyModuleBundle keeps distinct proxy and artifact paths for exports whose names only differ by punctuation', async () => {
 	mockModule.createWorker.mockResolvedValue(

@@ -135,20 +135,19 @@ function createRuntimeModuleSource() {
 	// globalThis - the per-request runtime value is held inside the ALS, so
 	// concurrent requests do not stomp on each other's view.
 	//
-	// The exports are evaluated when the module is first imported. Both
-	// the codemode executor and the package-app worker load this bundle
-	// fresh per request (DynamicWorkerExecutor for codemode,
-	// APP_LOADER.load() for package-app), and each wrapper resolves the
-	// same AsyncLocalStorage off the well-known symbol and calls
-	// \`storage.run(runtime, async () => { await import(...) })\` before
-	// any user module - so the store is already populated by the time
-	// the assignments below run. \`__kodyRunInRuntime\` exposes that same
-	// \`storage.run(...)\` for tests and for any future wrapper that wants
-	// to call into the runtime module directly. Capturing the values
-	// statically (rather than via Proxies) preserves the original
-	// semantics of \`import { email } from 'kody:runtime'\`: optional
-	// runtime exports stay falsy when the surrounding wrapper did not
-	// provide them, so \`if (email) { ... }\` guards continue to work.
+	// The exports are evaluated when the module is first imported. The
+	// surrounding wrapper resolves the same AsyncLocalStorage off the
+	// well-known symbol and calls \`storage.run(runtime, async () => {
+	// await import(...) })\`. Optional exports still capture the initial
+	// value so \`if (email) { ... }\` guards stay falsy when a wrapper
+	// intentionally omits that export.
+	//
+	// \`codemode\` is different: every execute/package runtime should provide
+	// it, and Worker module loaders may evaluate this virtual module before
+	// the wrapper installs the per-run store. In that preload case, expose a
+	// late-bound proxy so named imports like \`import { codemode } from
+	// 'kody:runtime'\` still resolve against the current AsyncLocalStorage
+	// store at call time instead of freezing as undefined.
 	return `
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -162,9 +161,41 @@ export function __kodyRunInRuntime(runtime, callback) {
 	return __kodyRuntimeStorage.run(runtime, callback);
 }
 
-const runtime = __kodyRuntimeStorage.getStore() ?? {};
+function __kodyReadRuntimeExport(exportName) {
+	const currentRuntime = __kodyRuntimeStorage.getStore();
+	const runtimeExport = currentRuntime?.[exportName];
+	if (runtimeExport == null) {
+		throw new Error(
+			\`kody:runtime export "\${exportName}" is not available in this execution context.\`,
+		);
+	}
+	return runtimeExport;
+}
 
-export const codemode = runtime.codemode;
+function __kodyCreateRuntimeObjectProxy(exportName) {
+	return new Proxy({}, {
+		get(_target, property) {
+			if (property === Symbol.toStringTag) return \`KodyRuntime:\${exportName}\`;
+			if (property === 'then') return undefined;
+			const runtimeExport = __kodyReadRuntimeExport(exportName);
+			const value = runtimeExport[property];
+			return typeof value === 'function' ? value.bind(runtimeExport) : value;
+		},
+		has(_target, property) {
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const runtimeExport = currentRuntime?.[exportName];
+			return runtimeExport != null && property in runtimeExport;
+		},
+	});
+}
+
+const __kodyInitialRuntime = __kodyRuntimeStorage.getStore();
+const runtime = __kodyInitialRuntime ?? {};
+
+export const codemode =
+	__kodyInitialRuntime === undefined
+		? __kodyCreateRuntimeObjectProxy('codemode')
+		: runtime.codemode;
 export const storage = runtime.storage;
 export const refreshAccessToken = runtime.refreshAccessToken;
 export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
