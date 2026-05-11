@@ -762,6 +762,7 @@ test('package runtime checks and invokes another package with current contract m
 		result: { handled: true, eventId: 'message-1' },
 		logs: [],
 	})
+	repoMockModule.loadPackageManifestBySourceId.mockClear()
 	const tools = createRuntimeDispatchTools(db)
 
 	const check = await tools.check({
@@ -797,6 +798,7 @@ test('package runtime checks and invokes another package with current contract m
 	expect(check.ok && check.contract.warnings).toEqual([
 		'No machine-readable params schema is published for package exports; params were only validated as a JSON object.',
 	])
+	expect(repoMockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
 	if (!check.ok) throw new Error(check.message)
 
 	const result = await tools.invoke(check.invoke)

@@ -440,11 +440,14 @@ async function checkPackageInvokeForRuntime(input: {
 			contract: packageContract,
 		})
 	}
-	let runtimeTarget: string | null = null
+	let resolution: PackageModuleResolution
 	try {
-		runtimeTarget = resolvePackageExportPath({
+		resolution = resolvePackageModuleResolution({
 			manifest: manifestResult.manifest,
-			exportName,
+			selector: {
+				kind: 'export',
+				exportName,
+			},
 		})
 	} catch (error) {
 		const problem = getErrorMessage(error)
@@ -461,6 +464,8 @@ async function checkPackageInvokeForRuntime(input: {
 		await ensureModuleArtifact({
 			env: input.env,
 			baseUrl: input.baseUrl,
+			packageManifest: manifestResult,
+			resolution,
 			savedPackage,
 			selector: {
 				kind: 'export',
@@ -476,7 +481,7 @@ async function checkPackageInvokeForRuntime(input: {
 			contract: {
 				...packageContract,
 				publishedCommit: manifestResult.source.published_commit ?? null,
-				runtimeTarget,
+				runtimeTarget: resolution.entryPoint,
 			},
 		})
 	}
@@ -512,7 +517,7 @@ async function checkPackageInvokeForRuntime(input: {
 		contract: {
 			...packageContract,
 			publishedCommit: manifestResult.source.published_commit ?? null,
-			runtimeTarget: exportDetail?.runtimeTarget ?? runtimeTarget,
+			runtimeTarget: exportDetail?.runtimeTarget ?? resolution.entryPoint,
 			description: exportDetail?.description ?? null,
 			typeDefinition: exportDetail?.typeDefinition ?? null,
 			warnings,
@@ -570,20 +575,26 @@ function tokenAllowsSource(input: {
 async function ensureModuleArtifact(input: {
 	env: Env
 	baseUrl: string
+	packageManifest?: Awaited<ReturnType<typeof loadPackageManifestBySourceId>>
+	resolution?: PackageModuleResolution
 	savedPackage: SavedPackageRecord
 	selector: PackageModuleSelector
 	userId: string
 }) {
-	const packageManifest = await loadPackageManifestBySourceId({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceId: input.savedPackage.sourceId,
-	})
-	const resolution = resolvePackageModuleResolution({
-		manifest: packageManifest.manifest,
-		selector: input.selector,
-	})
+	const packageManifest =
+		input.packageManifest ??
+		(await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceId: input.savedPackage.sourceId,
+		}))
+	const resolution =
+		input.resolution ??
+		resolvePackageModuleResolution({
+			manifest: packageManifest.manifest,
+			selector: input.selector,
+		})
 	const loaded = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
 		userId: input.userId,
