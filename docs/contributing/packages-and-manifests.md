@@ -210,7 +210,7 @@ entity.
 
 Publishing a package with a `kody.workflows` block fails fast with:
 
-> Invalid package.json: `kody.workflows` is no longer supported; use
+> Invalid package.json: `kody.workflows` is not a supported field; use
 > `workflows.create({ packageId, exportName })` from any runtime context.
 
 Remove the block and call `workflows.create` from runtime code instead.

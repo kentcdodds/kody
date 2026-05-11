@@ -50,7 +50,7 @@ export function parseAuthoredPackageJson(input: {
 		'workflows' in ((parsed as { kody: object }).kody as object)
 	) {
 		throw new Error(
-			`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.workflows is no longer supported; use workflows.create({ packageId, exportName }) from any runtime context.`,
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.workflows is not a supported field; use workflows.create({ packageId, exportName }) from any runtime context.`,
 		)
 	}
 	const result = authoredPackageJsonSchema.safeParse(parsed)

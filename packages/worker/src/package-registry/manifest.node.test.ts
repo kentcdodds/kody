@@ -112,7 +112,7 @@ test('parseAuthoredPackageJson rejects legacy kody.workflows declarations with a
 			manifestPath: 'package.json',
 		}),
 	).toThrow(
-		'kody.workflows is no longer supported; use workflows.create({ packageId, exportName }) from any runtime context.',
+		'kody.workflows is not a supported field; use workflows.create({ packageId, exportName }) from any runtime context.',
 	)
 })
 

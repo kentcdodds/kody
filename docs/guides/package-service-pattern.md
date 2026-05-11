@@ -5,7 +5,7 @@ runtime instead of relying on a separate external service.
 
 This guide assumes:
 
-- the package runtime already supports `package.json#kody.services`
+- the package declares `package.json#kody.services`
 - the package will likely also expose a package app for operator UI
 - protocol credentials and downstream delivery details are handled separately
 

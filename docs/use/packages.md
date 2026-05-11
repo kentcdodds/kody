@@ -117,7 +117,7 @@ republishing `discord-general-chat` changes what `discord-gateway` observes
 without republishing `discord-gateway`.
 
 Use static `kody:@scope/package/export` imports for library-like dependencies
-where bundling the currently published dependency with the caller is desired.
+where bundling a published dependency snapshot with the caller is desired.
 
 `packages.invoke` returns the target export's unwrapped return value. If the
 target package, export, or execution fails, the promise rejects with an error
