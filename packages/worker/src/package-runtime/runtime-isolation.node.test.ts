@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { afterEach, beforeEach, expect, test } from 'vitest'
+import { createRuntimeModuleSource } from './module-graph.ts'
 
 // The kody:runtime virtual module captures its named exports statically
 // when it evaluates inside the surrounding AsyncLocalStorage context. The
@@ -17,59 +18,7 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 // working, and a preloaded runtime still late-binds the always-present codemode
 // namespace inside the execution context.
 
-const runtimeSource = `
-import { AsyncLocalStorage } from 'node:async_hooks';
-
-const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
-const __globalAny = globalThis;
-const __kodyRuntimeStorage =
-	__globalAny[__kodyRuntimeStorageSymbol] ??
-	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
-
-export function __kodyRunInRuntime(runtime, callback) {
-	return __kodyRuntimeStorage.run(runtime, callback);
-}
-
-function __kodyReadRuntimeExport(exportName) {
-	const currentRuntime = __kodyRuntimeStorage.getStore();
-	const runtimeExport = currentRuntime?.[exportName];
-	if (runtimeExport == null) {
-		throw new Error(
-			\`kody:runtime export "\${exportName}" is not available in this execution context.\`,
-		);
-	}
-	return runtimeExport;
-}
-
-function __kodyCreateRuntimeObjectProxy(exportName) {
-	return new Proxy({}, {
-		get(_target, property) {
-			if (property === Symbol.toStringTag) return \`KodyRuntime:\${exportName}\`;
-			if (property === 'then') return undefined;
-			const runtimeExport = __kodyReadRuntimeExport(exportName);
-			const value = runtimeExport[property];
-			return typeof value === 'function' ? value.bind(runtimeExport) : value;
-		},
-		has(_target, property) {
-			const currentRuntime = __kodyRuntimeStorage.getStore();
-			const runtimeExport = currentRuntime?.[exportName];
-			return runtimeExport != null && property in runtimeExport;
-		},
-	});
-}
-
-const __kodyInitialRuntime = __kodyRuntimeStorage.getStore();
-const runtime = __kodyInitialRuntime ?? {};
-
-export const codemode =
-	__kodyInitialRuntime === undefined
-		? __kodyCreateRuntimeObjectProxy('codemode')
-		: runtime.codemode;
-export const storage = runtime.storage;
-export const email = runtime.email ?? null;
-export const packageContext = runtime.packageContext ?? null;
-export default runtime;
-`.trim()
+const runtimeSource = createRuntimeModuleSource()
 
 type RuntimeModule = {
 	__kodyRunInRuntime: <T>(
@@ -238,4 +187,18 @@ test('preloaded codemode export resolves from the active runtime store', async (
 		ok: true,
 		args: { value: 'active-store' },
 	})
+})
+
+test('preloaded codemode export supports inspection outside a runtime store', async () => {
+	const url = await writeRuntimeFile()
+	const mod = (await import(url)) as RuntimeModule
+
+	expect(String(mod.codemode)).toBe('[KodyRuntime:codemode]')
+	expect(Object.prototype.toString.call(mod.codemode)).toBe(
+		'[object KodyRuntime:codemode]',
+	)
+	expect(Symbol.iterator in Object(mod.codemode)).toBe(false)
+	expect(() => mod.codemode?.tool_call({})).toThrow(
+		'kody:runtime export "codemode" is not available in this execution context.',
+	)
 })

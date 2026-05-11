@@ -120,7 +120,7 @@ function createRelativeImportSpecifier(fromPath: string, targetPath: string) {
 	return normalized.replaceAll('\\', '/')
 }
 
-function createRuntimeModuleSource() {
+export function createRuntimeModuleSource() {
 	// The runtime context for a single execute-call / package-app fetch is
 	// kept in AsyncLocalStorage rather than a single mutable globalThis slot.
 	// AsyncLocalStorage propagates through async chains so concurrent calls
@@ -172,16 +172,63 @@ function __kodyReadRuntimeExport(exportName) {
 	return runtimeExport;
 }
 
+function __kodyRuntimeProxyLabel(exportName) {
+	return \`[KodyRuntime:\${exportName}]\`;
+}
+
+function __kodyRuntimeProxyInspectionValue(exportName, property) {
+	if (property === Symbol.toStringTag) return \`KodyRuntime:\${exportName}\`;
+	if (property === 'then') return undefined;
+	if (
+		property === Symbol.iterator ||
+		property === Symbol.asyncIterator
+	) {
+		return undefined;
+	}
+	if (
+		property === Symbol.toPrimitive ||
+		property === Symbol.for('nodejs.util.inspect.custom') ||
+		property === 'inspect' ||
+		property === 'toString'
+	) {
+		return () => __kodyRuntimeProxyLabel(exportName);
+	}
+	if (property === 'valueOf') {
+		return () => __kodyCreateRuntimeObjectProxy(exportName);
+	}
+	return undefined;
+}
+
+function __kodyIsRuntimeProxyInspectionProperty(property) {
+	return (
+		property === Symbol.toStringTag ||
+		property === 'then' ||
+		property === Symbol.iterator ||
+		property === Symbol.asyncIterator ||
+		property === Symbol.toPrimitive ||
+		property === Symbol.for('nodejs.util.inspect.custom') ||
+		property === 'inspect' ||
+		property === 'toString' ||
+		property === 'valueOf'
+	);
+}
+
 function __kodyCreateRuntimeObjectProxy(exportName) {
 	return new Proxy({}, {
 		get(_target, property) {
-			if (property === Symbol.toStringTag) return \`KodyRuntime:\${exportName}\`;
-			if (property === 'then') return undefined;
+			const inspectionValue = __kodyRuntimeProxyInspectionValue(
+				exportName,
+				property,
+			);
+			if (inspectionValue !== undefined || __kodyIsRuntimeProxyInspectionProperty(property)) {
+				return inspectionValue;
+			}
 			const runtimeExport = __kodyReadRuntimeExport(exportName);
 			const value = runtimeExport[property];
 			return typeof value === 'function' ? value.bind(runtimeExport) : value;
 		},
 		has(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
 			const currentRuntime = __kodyRuntimeStorage.getStore();
 			const runtimeExport = currentRuntime?.[exportName];
 			return runtimeExport != null && property in runtimeExport;

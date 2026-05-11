@@ -748,6 +748,8 @@ export default async function launchAgent() {
 
 		const moduleGraph = await createTemporaryModuleGraph(bundle.modules)
 		try {
+			// Keep both imports on the same Node ESM cache entry to reproduce a
+			// preloaded runtime module shared with the bundled entry.
 			const runtime = (await moduleGraph.importModule(
 				'.__kody_virtual__/runtime.js',
 				{ cacheBust: false },
