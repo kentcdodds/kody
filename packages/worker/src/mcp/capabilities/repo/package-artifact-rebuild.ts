@@ -9,23 +9,30 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 	publishedCommit: string
 	baseUrl: string
 }) {
-	const session = repoSessionRpc(input.env, input.rpcSessionId)
-	const targets = await session.listPublishedPackageArtifactTargets({
-		sessionId: input.sessionId,
-		sourceId: input.sourceId,
-		userId: input.userId,
-	})
-	for (const target of targets) {
-		await repoSessionRpc(
-			input.env,
-			input.rpcSessionId,
-		).rebuildPublishedPackageArtifact({
+	try {
+		const session = repoSessionRpc(input.env, input.rpcSessionId)
+		const targets = await session.listPublishedPackageArtifactTargets({
 			sessionId: input.sessionId,
 			sourceId: input.sourceId,
 			userId: input.userId,
-			publishedCommit: input.publishedCommit,
-			target,
-			baseUrl: input.baseUrl,
 		})
+		for (const target of targets) {
+			await repoSessionRpc(
+				input.env,
+				input.rpcSessionId,
+			).rebuildPublishedPackageArtifact({
+				sessionId: input.sessionId,
+				sourceId: input.sourceId,
+				userId: input.userId,
+				publishedCommit: input.publishedCommit,
+				target,
+				baseUrl: input.baseUrl,
+			})
+		}
+	} catch (error) {
+		throw new Error(
+			`Package source publish succeeded, but bundle artifact rebuild failed for source "${input.sourceId}" at commit "${input.publishedCommit}". Re-run the publish capability to repair artifacts.`,
+			{ cause: error },
+		)
 	}
 }

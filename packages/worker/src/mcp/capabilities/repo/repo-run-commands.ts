@@ -87,25 +87,27 @@ export const repoRunCommandsCapability = defineDomainCapability(
 				runChecks: args.run_checks,
 				publish: false,
 			})
-			const publish =
-				args.publish === true
-					? result.checks.status === 'failed'
-						? {
-								status: 'blocked_by_checks' as const,
-								message: 'Publishing skipped because repo checks failed.',
-								failedChecks: result.checks.failedChecks,
-								runId: result.checks.runId,
-								treeHash: result.checks.treeHash,
-								checkedAt: result.checks.checkedAt,
-							}
-						: result.checks.status === 'passed'
-							? await sessionRpc.publishSession({
-									sessionId: validatedSession.id,
-									userId: user.userId,
-									rebuildPackageArtifacts: false,
-								})
-							: { status: 'not_requested' as const }
-					: result.publish
+			let publish = result.publish
+			if (args.publish === true) {
+				if (result.checks.status === 'failed') {
+					publish = {
+						status: 'blocked_by_checks' as const,
+						message: 'Publishing skipped because repo checks failed.',
+						failedChecks: result.checks.failedChecks,
+						runId: result.checks.runId,
+						treeHash: result.checks.treeHash,
+						checkedAt: result.checks.checkedAt,
+					}
+				} else if (result.checks.status === 'passed') {
+					publish = await sessionRpc.publishSession({
+						sessionId: validatedSession.id,
+						userId: user.userId,
+						rebuildPackageArtifacts: false,
+					})
+				} else {
+					publish = { status: 'not_requested' as const }
+				}
+			}
 			if (
 				args.publish === true &&
 				publish.status === 'ok' &&
