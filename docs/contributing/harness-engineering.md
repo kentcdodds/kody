@@ -1,7 +1,7 @@
 # Harness engineering
 
-This repository uses an agent-first workflow. This guide explains how to
-turn each change into a durable improvement, not a one-off fix.
+This repository uses an agent-first workflow. This guide explains how to turn
+each change into a durable improvement, not a one-off fix.
 
 ## Core mindset
 
