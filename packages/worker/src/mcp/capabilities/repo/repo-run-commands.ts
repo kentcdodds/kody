@@ -13,37 +13,9 @@ import {
 	repoRunCommandsOutputSchema,
 } from './repo-shared.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
+import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 
 type RepoRunCommandsOutput = z.infer<typeof repoRunCommandsOutputSchema>
-
-async function rebuildPublishedPackageArtifactsForSession(input: {
-	env: Env
-	sessionId: string
-	sourceId: string
-	userId: string
-	publishedCommit: string
-	baseUrl: string
-}) {
-	const session = repoSessionRpc(input.env, input.sessionId)
-	const targets = await session.listPublishedPackageArtifactTargets({
-		sessionId: input.sessionId,
-		sourceId: input.sourceId,
-		userId: input.userId,
-	})
-	for (const target of targets) {
-		await repoSessionRpc(
-			input.env,
-			input.sessionId,
-		).rebuildPublishedPackageArtifact({
-			sessionId: input.sessionId,
-			sourceId: input.sourceId,
-			userId: input.userId,
-			publishedCommit: input.publishedCommit,
-			target,
-			baseUrl: input.baseUrl,
-		})
-	}
-}
 
 async function loadRepoCommandSession(input: {
 	env: Env
@@ -130,6 +102,7 @@ export const repoRunCommandsCapability = defineDomainCapability(
 							? await sessionRpc.publishSession({
 									sessionId: validatedSession.id,
 									userId: user.userId,
+									rebuildPackageArtifacts: false,
 								})
 							: { status: 'not_requested' as const }
 					: result.publish
@@ -138,8 +111,9 @@ export const repoRunCommandsCapability = defineDomainCapability(
 				publish.status === 'ok' &&
 				validatedSession.entity_type === 'package'
 			) {
-				await rebuildPublishedPackageArtifactsForSession({
+				await rebuildPublishedPackageArtifactsViaRepoSession({
 					env: ctx.env,
+					rpcSessionId: validatedSession.id,
 					sessionId: validatedSession.id,
 					sourceId: validatedSession.source_id,
 					userId: user.userId,

@@ -121,6 +121,7 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 		force?: boolean
+		rebuildPackageArtifacts?: boolean
 	}) => Promise<RepoSessionPublishResult>
 	publishFromExternalRef: (payload: {
 		sessionId: string

@@ -10,6 +10,7 @@ import {
 } from '#worker/package-runtime/static-package-dependents.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const inputSchema = z.object({
@@ -225,33 +226,6 @@ async function getPublishStaticDependents(input: {
 	})
 }
 
-async function rebuildPublishedPackageArtifactsForExternalPublish(input: {
-	env: Env
-	sessionId: string
-	sourceId: string
-	userId: string
-	publishedCommit: string
-	baseUrl: string
-}) {
-	const session = repoSessionRpc(input.env, input.sessionId)
-	const targets = await session.listPublishedPackageArtifactTargets({
-		sourceId: input.sourceId,
-		userId: input.userId,
-	})
-	for (const target of targets) {
-		await repoSessionRpc(
-			input.env,
-			input.sessionId,
-		).rebuildPublishedPackageArtifact({
-			sourceId: input.sourceId,
-			userId: input.userId,
-			publishedCommit: input.publishedCommit,
-			target,
-			baseUrl: input.baseUrl,
-		})
-	}
-}
-
 export const publishExternalPushCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
@@ -309,9 +283,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 					})
 					if (result.status === 'already_published') {
 						if (result.published_commit) {
-							await rebuildPublishedPackageArtifactsForExternalPublish({
+							await rebuildPublishedPackageArtifactsViaRepoSession({
 								env: ctx.env,
-								sessionId,
+								rpcSessionId: sessionId,
 								sourceId: source.id,
 								userId: user.userId,
 								publishedCommit: result.published_commit,
@@ -331,9 +305,9 @@ export const publishExternalPushCapability = defineDomainCapability(
 					if (result.status !== 'published') {
 						return result
 					}
-					await rebuildPublishedPackageArtifactsForExternalPublish({
+					await rebuildPublishedPackageArtifactsViaRepoSession({
 						env: ctx.env,
-						sessionId,
+						rpcSessionId: sessionId,
 						sourceId: source.id,
 						userId: user.userId,
 						publishedCommit: result.published_commit,

@@ -1441,6 +1441,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 		force?: boolean
+		rebuildPackageArtifacts?: boolean
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -1515,7 +1516,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
 			files: snapshotFiles,
 			baseUrl: source.source_root,
-			rebuildPackageArtifacts: false,
+			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,

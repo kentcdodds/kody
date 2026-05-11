@@ -6,6 +6,7 @@ import {
 	repoPublishSessionOutputSchema,
 	repoSessionIdSchema,
 } from './repo-shared.ts'
+import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -21,14 +22,28 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		outputSchema: repoPublishSessionOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const result = await repoSessionRpc(
-				ctx.env,
-				args.session_id,
-			).publishSession({
+			const session = repoSessionRpc(ctx.env, args.session_id)
+			const sessionInfo = await session.getSessionInfo({
 				sessionId: args.session_id,
 				userId: user.userId,
 			})
+			const result = await session.publishSession({
+				sessionId: args.session_id,
+				userId: user.userId,
+				rebuildPackageArtifacts: false,
+			})
 			if (result.status === 'ok') {
+				if (sessionInfo.entity_type === 'package') {
+					await rebuildPublishedPackageArtifactsViaRepoSession({
+						env: ctx.env,
+						rpcSessionId: args.session_id,
+						sessionId: args.session_id,
+						sourceId: sessionInfo.source_id,
+						userId: user.userId,
+						publishedCommit: result.publishedCommit,
+						baseUrl: ctx.callerContext.baseUrl,
+					})
+				}
 				return {
 					status: 'ok' as const,
 					session_id: result.sessionId,
