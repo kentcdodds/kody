@@ -16,6 +16,7 @@ const repoMockModule = vi.hoisted(() => ({
 	persistPublishedBundleArtifact: vi.fn(),
 	typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
 	runBundledModuleWithRegistry: vi.fn(),
+	buildKodyModuleBundle: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -52,6 +53,11 @@ vi.mock('#worker/repo/checks.ts', () => ({
 vi.mock('#mcp/run-codemode-registry.ts', () => ({
 	runBundledModuleWithRegistry: (...args: Array<unknown>) =>
 		repoMockModule.runBundledModuleWithRegistry(...args),
+}))
+
+vi.mock('#worker/package-runtime/module-graph.ts', () => ({
+	buildKodyModuleBundle: (...args: Array<unknown>) =>
+		repoMockModule.buildKodyModuleBundle(...args),
 }))
 
 function createDatabase(options: { failInsert?: boolean } = {}) {
@@ -324,6 +330,14 @@ function seedPackageResolution() {
 	repoMockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
 		ok: true,
 		message: 'ok',
+	})
+	repoMockModule.buildKodyModuleBundle.mockResolvedValue({
+		mainModule: 'dist/rebuilt.js',
+		modules: {
+			'dist/rebuilt.js':
+				'export default async function run(){ return { rebuilt: true } }',
+		},
+		dependencies: [],
 	})
 	repoMockModule.persistPublishedBundleArtifact.mockResolvedValue('kv:key')
 }
@@ -644,6 +658,97 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		(runOptions as { packageInvokeTools?: { invoke?: unknown } })
 			.packageInvokeTools?.invoke,
 	).toEqual(expect.any(Function))
+})
+
+test('invokePackageExport lazily rebuilds when the persisted artifact is invalidated', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.loadPublishedBundleArtifactByIdentity
+		.mockResolvedValueOnce({
+			row: {
+				id: 'artifact-stale-runtime',
+			},
+			artifact: null,
+		})
+		.mockResolvedValueOnce({
+			row: {
+				id: 'artifact-rebuilt-runtime',
+			},
+			artifact: {
+				version: 1,
+				runtimeShimRevision: 'current-runtime',
+				kind: 'module',
+				artifactName: './dispatch-message-created',
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+				entryPoint: 'src/dispatch-message-created.ts',
+				mainModule: 'dist/rebuilt.js',
+				modules: {
+					'dist/rebuilt.js':
+						'export default async function run(){ return { rebuilt: true } }',
+				},
+				dependencies: [],
+				packageContext: {
+					packageId: 'pkg-1',
+					kodyId: 'discord-gateway',
+					sourceId: 'source-1',
+				},
+				serviceContext: null,
+				createdAt: '2026-05-11T00:00:00.000Z',
+			},
+		})
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { rebuilt: true },
+		logs: [],
+	})
+
+	const response = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-stale-runtime',
+			source: 'discord-gateway',
+		},
+	})
+
+	expect(response.status).toBe(200)
+	expect(response.body).toMatchObject({
+		ok: true,
+		result: { rebuilt: true },
+	})
+	expect(
+		repoMockModule.typecheckPackageEntrypointsFromSourceFiles,
+	).toHaveBeenCalled()
+	expect(repoMockModule.buildKodyModuleBundle).toHaveBeenCalledWith({
+		env: expect.anything(),
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+		sourceFiles: expect.objectContaining({
+			'package.json': expect.any(String),
+			'src/dispatch-message-created.ts': expect.any(String),
+		}),
+		entryPoint: 'src/dispatch-message-created.ts',
+	})
+	expect(repoMockModule.persistPublishedBundleArtifact).toHaveBeenCalledWith(
+		expect.objectContaining({
+			kind: 'module',
+			artifactName: './dispatch-message-created',
+			entryPoint: 'src/dispatch-message-created.ts',
+		}),
+	)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.anything(),
+		expect.objectContaining({
+			mainModule: 'dist/rebuilt.js',
+		}),
+		expect.anything(),
+		expect.anything(),
+	)
 })
 
 test('package runtime can dynamically invoke the current published export from another package', async () => {

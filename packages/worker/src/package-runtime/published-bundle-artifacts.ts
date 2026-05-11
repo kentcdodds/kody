@@ -17,6 +17,7 @@ import {
 	readPublishedBundleArtifact,
 	writePublishedBundleArtifact,
 } from './published-runtime-artifacts.ts'
+import { getKodyRuntimeShimRevision } from './runtime-module.ts'
 import {
 	deletePublishedBundleArtifactRowsBySourceId,
 	getPublishedBundleArtifactByIdentity,
@@ -98,6 +99,7 @@ export async function persistPublishedBundleArtifact(
 	})
 	const artifact: PublishedBundleArtifact = {
 		version: 1,
+		runtimeShimRevision: getKodyRuntimeShimRevision(),
 		kind: input.kind,
 		artifactName,
 		sourceId: input.source.id,

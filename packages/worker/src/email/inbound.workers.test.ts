@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	getEmailDomain,
 	getEmailLocalPart,
@@ -17,7 +17,11 @@ import {
 	upsertEmailSenderIdentity,
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	buildPublishedBundleArtifactKvKey,
+	buildPublishedSourceManifestSnapshotKvKey,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { getKodyRuntimeShimRevision } from '#worker/package-runtime/runtime-module.ts'
 
 function createForwardableEmailMessage(input: {
 	from: string
@@ -484,6 +488,7 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 
 	const subscriptionArtifact = {
 		version: 1,
+		runtimeShimRevision: getKodyRuntimeShimRevision(),
 		kind: 'module',
 		artifactName: 'subscription:email.message.received',
 		sourceId,
@@ -541,7 +546,13 @@ export default async function main(input = {}) {
 		createdAt: now,
 	}
 	const artifactJson = JSON.stringify(subscriptionArtifact)
-	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:email.message.received:src/email-message-received.ts`
+	const artifactKey = buildPublishedBundleArtifactKvKey({
+		sourceId,
+		publishedCommit: 'commit-1',
+		kind: 'module',
+		artifactName: 'subscription:email.message.received',
+		entryPoint: 'src/email-message-received.ts',
+	})
 	bundleKv.set(artifactKey, artifactJson)
 	await db
 		.prepare(

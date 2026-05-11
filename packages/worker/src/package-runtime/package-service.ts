@@ -488,7 +488,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const [
 			{ runBundledModuleWithRegistry },
 			{ buildKodyModuleBundle },
-			{ loadPublishedBundleArtifactByIdentity },
+			{ loadPublishedBundleArtifactByIdentity, persistPublishedBundleArtifact },
 			{ createPackageRuntimeInvokeTools },
 		] = await Promise.all([
 			import('#mcp/run-codemode-registry.ts'),
@@ -513,13 +513,26 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					sourceFiles: runtime.loaded.packageSource.files,
 					bundleLabel: `Saved package service "${binding.serviceName}"`,
 				})
-				return await buildKodyModuleBundle({
+				const built = await buildKodyModuleBundle({
 					env: this.env,
 					baseUrl: binding.baseUrl,
 					userId: binding.userId,
 					sourceFiles: runtime.loaded.packageSource.files,
 					entryPoint: runtime.loaded.serviceEntry,
 				})
+				await persistPublishedBundleArtifact({
+					env: this.env,
+					userId: binding.userId,
+					source: runtime.loaded.packageSource.source,
+					kind: 'service',
+					artifactName: binding.serviceName,
+					entryPoint: runtime.loaded.serviceEntry,
+					mainModule: built.mainModule,
+					modules: built.modules,
+					dependencies: built.dependencies,
+					packageContext: runtime.packageContext,
+				})
+				return built
 			})())
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,

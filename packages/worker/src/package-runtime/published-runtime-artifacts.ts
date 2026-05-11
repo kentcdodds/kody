@@ -1,5 +1,6 @@
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { getKodyRuntimeShimRevision } from './runtime-module.ts'
 
 const sourceSnapshotVersion = 1
 const sourceManifestSnapshotVersion = 1
@@ -56,6 +57,7 @@ export type PublishedSourceManifestSnapshot = {
 
 export type PublishedBundleArtifact = {
 	version: typeof bundleArtifactVersion
+	runtimeShimRevision: string
 	kind: BundleArtifactKind
 	artifactName: string | null
 	sourceId: string
@@ -192,6 +194,7 @@ export function buildPublishedBundleArtifactKvKey(input: {
 	return [
 		bundleArtifactPrefix,
 		`v${bundleArtifactVersion}`,
+		getKodyRuntimeShimRevision(),
 		input.sourceId,
 		input.publishedCommit,
 		input.kind,
@@ -412,6 +415,7 @@ export async function writePublishedBundleArtifact(input: {
 		kvKey,
 		JSON.stringify({
 			...input.artifact,
+			runtimeShimRevision: getKodyRuntimeShimRevision(),
 			modules: serializeWorkerLoaderModules(input.artifact.modules),
 		}),
 	)
@@ -427,6 +431,7 @@ export async function readPublishedBundleArtifact(input: {
 	const artifact = stored as StoredPublishedBundleArtifact
 	if (
 		artifact.version !== bundleArtifactVersion ||
+		artifact.runtimeShimRevision !== getKodyRuntimeShimRevision() ||
 		typeof artifact.modules !== 'object' ||
 		artifact.modules == null
 	) {

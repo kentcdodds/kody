@@ -1,3 +1,5 @@
+import { getKodyRuntimeShimRevision } from '#worker/package-runtime/runtime-module.ts'
+
 type PublishedPackageCacheSource = {
 	id: string
 	published_commit: string | null
@@ -18,6 +20,7 @@ export function createPublishedPackageCacheKey(input: {
 	}
 
 	return JSON.stringify([
+		getKodyRuntimeShimRevision(),
 		input.userId,
 		input.source.id,
 		input.source.published_commit,

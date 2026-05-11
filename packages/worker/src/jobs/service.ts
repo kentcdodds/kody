@@ -74,6 +74,7 @@ import {
 	deletePublishedSourceSnapshot,
 	type PublishedBundleArtifact,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { getKodyRuntimeShimRevision } from '#worker/package-runtime/runtime-module.ts'
 import {
 	logJobSchedulerError,
 	logJobSchedulerEvent,
@@ -189,6 +190,7 @@ async function persistPublishedJobBundleArtifact(input: {
 	})
 	const artifact: PublishedBundleArtifact = {
 		version: 1,
+		runtimeShimRevision: getKodyRuntimeShimRevision(),
 		kind: 'job',
 		artifactName: input.artifactName ?? null,
 		sourceId: input.sourceId,
