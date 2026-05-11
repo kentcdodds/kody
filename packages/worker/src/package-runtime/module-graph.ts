@@ -238,11 +238,12 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 
 const __kodyInitialRuntime = __kodyRuntimeStorage.getStore();
 const runtime = __kodyInitialRuntime ?? {};
-
-export const codemode =
+const __kodyCodemode =
 	__kodyInitialRuntime === undefined
 		? __kodyCreateRuntimeObjectProxy('codemode')
 		: runtime.codemode;
+
+export const codemode = __kodyCodemode;
 export const storage = runtime.storage;
 export const refreshAccessToken = runtime.refreshAccessToken;
 export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
@@ -254,7 +255,10 @@ export const email = runtime.email ?? null;
 export const workflows = runtime.workflows ?? null;
 export const packages = runtime.packages ?? null;
 
-export default runtime;
+export default
+	__kodyInitialRuntime === undefined
+		? { ...runtime, codemode: __kodyCodemode }
+		: runtime;
 `.trim()
 }
 

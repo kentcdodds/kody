@@ -29,6 +29,9 @@ type RuntimeModule = {
 	storage: { get: (key: string) => Promise<unknown> } | undefined
 	email: unknown
 	packageContext: Record<string, unknown> | null
+	default: {
+		codemode?: { tool_call: (args: unknown) => Promise<unknown> }
+	}
 }
 
 const cleanupCallbacks: Array<() => Promise<void>> = []
@@ -186,6 +189,35 @@ test('preloaded codemode export resolves from the active runtime store', async (
 	expect(result).toEqual({
 		ok: true,
 		args: { value: 'active-store' },
+	})
+})
+
+test('preloaded default runtime export exposes active codemode store', async () => {
+	const sharedStorage = new AsyncLocalStorage<unknown>()
+	;(globalThis as unknown as Record<symbol, unknown>)[
+		Symbol.for('kody.runtimeStorage')
+	] = sharedStorage
+	const url = await writeRuntimeFile()
+	const mod = (await import(url)) as RuntimeModule
+
+	const result = await sharedStorage.run(
+		{
+			codemode: {
+				async tool_call(args: unknown) {
+					return { ok: true, args }
+				},
+			},
+		},
+		async () => {
+			const tool = mod.default.codemode
+			if (!tool) throw new Error('default codemode missing')
+			return await tool.tool_call({ value: 'default-active-store' })
+		},
+	)
+
+	expect(result).toEqual({
+		ok: true,
+		args: { value: 'default-active-store' },
 	})
 })
 
