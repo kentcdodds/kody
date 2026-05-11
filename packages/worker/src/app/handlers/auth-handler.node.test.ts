@@ -23,12 +23,22 @@ function createAuthRequest(
 	}
 }
 
-function createAuthTestContext() {
+function createAuthTestContext(options: { signupEnabled?: boolean } = {}) {
 	const testDb = createTestDb()
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
-	})
+		// SENTRY_ENVIRONMENT defaults to 'production' (signups blocked).
+		// Pass `signupEnabled: true` to put the handler in the 'test' env
+		// that mirrors the wrangler `test`/`preview` envs.
+		...(options.signupEnabled
+			? {
+					SENTRY_ENVIRONMENT: 'test' as const,
+				}
+			: {
+					SENTRY_ENVIRONMENT: 'production' as const,
+				}),
+	} as unknown as Parameters<typeof createAuthHandler>[0])
 
 	return {
 		testDb,
@@ -176,41 +186,38 @@ test('auth handler returns invalid credentials for unknown logins', async () => 
 	})
 })
 
-test('auth handler permits open signup for any new email', async () => {
+test('auth handler rejects signups in production envs', async () => {
 	const { request, testDb } = createAuthTestContext()
 
-	const userOneSignup = await request({
-		email: 'first@example.com',
+	const response = await request({
+		email: 'new@example.com',
 		password: 'secret',
 		mode: 'signup',
 	})
-	expect(userOneSignup.status).toBe(200)
-	expect(testDb.users.has('first@example.com')).toBe(true)
-
-	const userTwoSignup = await request({
-		email: 'second@example.com',
-		password: 'another-secret',
-		mode: 'signup',
+	expect(response.status).toBe(403)
+	expect(await response.json()).toEqual({
+		error: 'Signups are currently disabled.',
 	})
-	expect(userTwoSignup.status).toBe(200)
-	expect(testDb.users.has('second@example.com')).toBe(true)
+	expect(testDb.users.has('new@example.com')).toBe(false)
 })
 
-test('auth handler issues the right session cookies for signup and login flows', async () => {
-	const { request, testDb } = createAuthTestContext()
-	const email = 'session-user@example.com'
+test('auth handler permits signups when the env opts in (local dev / preview / test)', async () => {
+	const { request, testDb } = createAuthTestContext({ signupEnabled: true })
 
-	const signupResponse = await request({
-		email,
+	const response = await request({
+		email: 'allowed@example.com',
 		password: 'secret',
 		mode: 'signup',
 	})
-	expect(signupResponse.status).toBe(200)
-	expect(await signupResponse.json()).toEqual({ ok: true, mode: 'signup' })
-	expect(testDb.users.has(email)).toBe(true)
-	const signupCookie = signupResponse.headers.get('Set-Cookie') ?? ''
-	expect(signupCookie).toContain('kody_session=')
-	expect(signupCookie).toContain('Max-Age=604800')
+	expect(response.status).toBe(200)
+	expect(await response.json()).toEqual({ ok: true, mode: 'signup' })
+	expect(testDb.users.has('allowed@example.com')).toBe(true)
+})
+
+test('auth handler issues the right session cookies for login flows', async () => {
+	const { request, testDb } = createAuthTestContext()
+	const email = 'session-user@example.com'
+	await testDb.addUser(email, 'secret')
 
 	const loginResponse = await request({
 		email,

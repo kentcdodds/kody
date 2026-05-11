@@ -14,6 +14,21 @@ import { type AppEnv } from '#worker/env-schema.ts'
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
 
+/**
+ * Signups are blocked in real deployments and allowed in local dev,
+ * preview, and e2e test runs so the existing tooling (Playwright seed
+ * helpers, manual local testing) keeps working without a second
+ * auth-bypass code path. Production wrangler env sets
+ * `SENTRY_ENVIRONMENT: 'production'`; preview/test set 'preview' /
+ * 'test'; `npm run dev` sets `WRANGLER_IS_LOCAL_DEV=true`.
+ */
+function isSignupAllowed(appEnv: AppEnv) {
+	const runtime = appEnv as unknown as Record<string, string | undefined>
+	if (runtime['WRANGLER_IS_LOCAL_DEV'] === 'true') return true
+	const sentryEnv = runtime['SENTRY_ENVIRONMENT']
+	return sentryEnv === 'test' || sentryEnv === 'preview'
+}
+
 function isUniqueConstraintError(error: unknown) {
 	let currentError = error
 	while (currentError instanceof Error) {
@@ -91,6 +106,22 @@ export function createAuthHandler(appEnv: AppEnv) {
 				return Response.json(
 					{ error: 'Email, password, and mode are required.' },
 					{ status: 400 },
+				)
+			}
+
+			if (normalizedMode === 'signup' && !isSignupAllowed(appEnv)) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'signup',
+					result: 'failure',
+					email: normalizedEmail,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'signup_disabled',
+				})
+				return Response.json(
+					{ error: 'Signups are currently disabled.' },
+					{ status: 403 },
 				)
 			}
 
