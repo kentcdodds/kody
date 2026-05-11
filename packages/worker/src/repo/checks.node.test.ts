@@ -1268,7 +1268,7 @@ test('runRepoChecks requires mixed value export-from kody package imports to be 
 	)
 })
 
-test('runRepoChecks requires literal dynamic kody package imports to be declared', async () => {
+test('runRepoChecks does not require current-resolved literal dynamic kody package imports to be declared', async () => {
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -1299,13 +1299,11 @@ test('runRepoChecks requires literal dynamic kody package imports to be declared
 		sourceRoot: '/',
 	})
 
-	expect(result.ok).toBe(false)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
-				ok: false,
-				message: expect.stringContaining('missing "@kentcdodds/dynamic"'),
+				ok: true,
 			}),
 		]),
 	)

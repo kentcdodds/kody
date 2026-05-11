@@ -9,6 +9,7 @@ import {
 } from '#worker/package-registry/types.ts'
 import {
 	type BundleArtifactDependency,
+	type BundleArtifactDynamicDependency,
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
 	buildPublishedBundleArtifactKvKey,
@@ -40,6 +41,7 @@ type PersistPublishedBundleArtifactInput = {
 	mainModule: string
 	modules: WorkerLoaderModules
 	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	packageContext?: PublishedBundleArtifact['packageContext']
 }
 
@@ -106,6 +108,7 @@ export async function persistPublishedBundleArtifact(
 		mainModule: input.mainModule,
 		modules: input.modules,
 		dependencies: input.dependencies,
+		dynamicDependencies: input.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
 		serviceContext: null,
 		createdAt: new Date().toISOString(),
@@ -199,16 +202,19 @@ export async function rebuildPublishedPackageArtifacts(input: {
 		mainModule: string
 		modules: WorkerLoaderModules
 		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	}>
 	buildModuleBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
 		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	}>
 	buildImportableModuleBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
 		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	}>
 }) {
 	if (input.manifest.kody.app) {
@@ -224,6 +230,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 				mainModule: bundle.mainModule,
 				modules: bundle.modules,
 				dependencies: bundle.dependencies,
+				dynamicDependencies: bundle.dynamicDependencies,
 				packageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
@@ -246,6 +253,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
 			dependencies: bundle.dependencies,
+			dynamicDependencies: bundle.dynamicDependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -274,6 +282,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
 			dependencies: bundle.dependencies,
+			dynamicDependencies: bundle.dynamicDependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -293,6 +302,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			mainModule: importableBundle.mainModule,
 			modules: importableBundle.modules,
 			dependencies: importableBundle.dependencies,
+			dynamicDependencies: importableBundle.dynamicDependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -314,6 +324,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
 			dependencies: bundle.dependencies,
+			dynamicDependencies: bundle.dynamicDependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
@@ -339,6 +350,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
 			dependencies: bundle.dependencies,
+			dynamicDependencies: bundle.dynamicDependencies,
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,

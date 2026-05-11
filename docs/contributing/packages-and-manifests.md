@@ -74,14 +74,31 @@ The top-level saved identity is the package.
   publish-time artifact rebuilds, Kody records the imported saved package's
   published commit in bundle dependency metadata. A later publish of that
   imported package does not rewrite already-published dependent bundles.
+- Literal dynamic imports such as `await import("kody:@scope/pkg/export")` are
+  runtime/current package dependencies. Bundle artifacts persist only a
+  host-resolved placeholder plus review metadata; just before execution, Kody
+  resolves the target package under the caller's `userId` and hydrates the
+  current published `importable-module` artifact into the dynamic worker module
+  graph.
 - Direct static `kody:@...` imports are a breaking manifest contract: they must
   be listed in `package.json#kody.dependencies` by package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Repo checks
   fail when a static import is missing from the list or when the list contains a
   package that is not statically imported. Type-only imports do not count, and
   declaration files such as `.d.ts` are treated as type-only. Literal dynamic
-  `import("kody:@...")` expressions are bundled snapshots too, so they must be
-  declared.
+  `import("kody:@...")` expressions are not static dependency declarations.
+- Computed dynamic Kody package imports are intentionally unsupported. The
+  bundler rewrites non-literal `import(...)` expressions with a guard that
+  throws clearly when the runtime specifier starts with `kody:@`; do not add
+  arbitrary computed package resolution until the security and review model is
+  designed.
+- `kody:runtime` is a reserved host-external virtual module. The bundler may add
+  a placeholder so author code can keep
+  `import { codemode } from "kody:runtime"`, but published bundle artifacts must
+  not persist the host runtime implementation. Execution loaders hydrate the
+  currently deployed host runtime module into every referenced
+  `.__kody_virtual__/runtime.js` path, including nested static dependency
+  artifacts and package-app workers.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

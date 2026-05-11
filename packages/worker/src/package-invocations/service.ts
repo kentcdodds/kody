@@ -647,6 +647,7 @@ async function ensureModuleArtifact(input: {
 		mainModule: bundle.mainModule,
 		modules: bundle.modules,
 		dependencies: bundle.dependencies,
+		dynamicDependencies: bundle.dynamicDependencies,
 		packageContext: {
 			packageId: input.savedPackage.id,
 			kodyId: input.savedPackage.kodyId,

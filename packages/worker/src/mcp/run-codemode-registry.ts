@@ -35,7 +35,7 @@ import {
 } from '#worker/module-source.ts'
 import {
 	buildKodyModuleBundle,
-	refreshKodyRuntimeModules,
+	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
 import {
 	beginPackageRuntimeRun,
@@ -814,7 +814,12 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				storageContext: normalizedStorageContext,
 			},
-			modules: refreshKodyRuntimeModules(bundle.modules),
+			modules: await hydrateKodyRuntimeModules({
+				env,
+				baseUrl: callerContext.baseUrl,
+				userId: callerContext.user?.userId ?? '',
+				modules: bundle.modules,
+			}),
 		})
 		const workflowTools =
 			options?.workflowTools ??

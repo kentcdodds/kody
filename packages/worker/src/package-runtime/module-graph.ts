@@ -19,6 +19,7 @@ import {
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	type BundleArtifactDependency,
+	type BundleArtifactDynamicDependency,
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
 } from './published-runtime-artifacts.ts'
@@ -27,13 +28,17 @@ import {
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
 } from './package-import-resolution.ts'
-import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifacts.ts'
+import {
+	loadPublishedBundleArtifactByIdentity,
+	persistPublishedBundleArtifact,
+} from './published-bundle-artifacts.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import {
 	collectStaticKodyPackageImportsFromFiles,
 	isTypeDeclarationFilePath,
 } from './static-kody-imports.ts'
 import {
+	collectDynamicImportExpressionNodes,
 	collectLiteralImportNodes,
 	collectLiteralImportSpecifiers,
 	isBarePackageImportSpecifier,
@@ -46,6 +51,9 @@ const wranglerConfigPaths = ['wrangler.toml', 'wrangler.json', 'wrangler.jsonc']
 const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
+const dynamicPackageImportProxyPrefix = '.__kody_virtual__/dynamic-imports'
+const dynamicPackageImportArtifactSegment = '.__kody_current__'
+const dynamicPackageImportSpecifierExportName = '__kodyDynamicPackageSpecifier'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
 
@@ -104,6 +112,7 @@ type RewriteState = {
 		prefix: string
 	} | null
 	proxies: Map<string, string>
+	dynamicPackageImports: Map<string, string>
 	packages: Map<
 		string,
 		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
@@ -114,10 +123,22 @@ function createRelativeImportSpecifier(fromPath: string, targetPath: string) {
 	const fromDir = dirname(fromPath)
 	const relative = relativePath(fromDir, targetPath)
 	const normalized =
-		relative.startsWith('.') || relative.startsWith('..')
+		relative === '.' || relative.startsWith('./') || relative.startsWith('../')
 			? relative
 			: `./${relative}`
 	return normalized.replaceAll('\\', '/')
+}
+
+function includeDynamicDependenciesWhenPresent(modules: WorkerLoaderModules) {
+	const dynamicDependencies = collectDynamicKodyDependenciesFromModules(modules)
+	return dynamicDependencies.length > 0 ? { dynamicDependencies } : {}
+}
+
+function resolveRelativeModulePath(fromPath: string, specifier: string) {
+	if (!specifier.startsWith('./') && !specifier.startsWith('../')) {
+		return null
+	}
+	return normalizeWorkspaceModulePath(joinPath(dirname(fromPath), specifier))
 }
 
 export function createRuntimeModuleSource() {
@@ -269,16 +290,42 @@ function isRuntimeModulePath(modulePath: string) {
 	)
 }
 
+function collectReferencedRuntimeModulePaths(modules: WorkerLoaderModules) {
+	const runtimePaths = new Set<string>([runtimeModulePath])
+	for (const modulePath of Object.keys(modules)) {
+		if (isRuntimeModulePath(modulePath)) {
+			runtimePaths.add(modulePath)
+		}
+	}
+	for (const [modulePath, source] of iterateModuleSourceTexts(modules)) {
+		for (const node of collectLiteralImportNodes(source)) {
+			const resolvedPath = resolveRelativeModulePath(modulePath, node.specifier)
+			if (resolvedPath && isRuntimeModulePath(resolvedPath)) {
+				runtimePaths.add(resolvedPath)
+			}
+		}
+	}
+	return runtimePaths
+}
+
 export function refreshKodyRuntimeModules(
 	modules: WorkerLoaderModules,
 ): WorkerLoaderModules {
-	let refreshed: WorkerLoaderModules | null = null
-	for (const modulePath of Object.keys(modules)) {
-		if (!isRuntimeModulePath(modulePath)) continue
-		refreshed ??= { ...modules }
+	const refreshed: WorkerLoaderModules = { ...modules }
+	for (const modulePath of collectReferencedRuntimeModulePaths(modules)) {
 		refreshed[modulePath] = createRuntimeModuleSource()
 	}
-	return refreshed ?? modules
+	return refreshed
+}
+
+function stripKodyRuntimeModules(modules: WorkerLoaderModules) {
+	let stripped: WorkerLoaderModules | null = null
+	for (const modulePath of Object.keys(modules)) {
+		if (!isRuntimeModulePath(modulePath)) continue
+		stripped ??= { ...modules }
+		delete stripped[modulePath]
+	}
+	return stripped ?? modules
 }
 
 function createExecuteEntrypointSource(input: { modulePath: string }) {
@@ -333,6 +380,37 @@ export default __kodyPackageModule.default;
 `.trim()
 }
 
+function createDynamicPackageImportPlaceholderSource(input: {
+	specifier: string
+}) {
+	return `
+export const ${dynamicPackageImportSpecifierExportName} = ${JSON.stringify(input.specifier)};
+
+throw new Error(
+	${JSON.stringify(`Kody dynamic package import "${input.specifier}" was not resolved by the host runtime.`)},
+);
+`.trim()
+}
+
+function createDynamicPackageImportProxySource(input: { targetPath: string }) {
+	return createPackageImportProxySource(input)
+}
+
+function createComputedDynamicImportGuardSource(input: { helperName: string }) {
+	return `
+const ${input.helperName} = async (specifier) => {
+	if (typeof specifier === 'string' && specifier.startsWith(${JSON.stringify(
+		packageSpecifierPrefix,
+	)})) {
+		throw new Error(
+			'Computed dynamic Kody package imports are unsupported. Use a string literal like import("kody:@scope/package/export") for current runtime package resolution.',
+		);
+	}
+	return await import(specifier);
+};
+`.trim()
+}
+
 function createImportableEntrypointSource(input: { modulePath: string }) {
 	return `
 export * from ${JSON.stringify(input.modulePath)};
@@ -347,11 +425,46 @@ function encodePathKey(value: string) {
 	).join('')
 }
 
+function decodePathKey(value: string) {
+	const bytes = value.match(/[0-9a-f]{2}/gi)
+	if (!bytes || bytes.join('') !== value) return null
+	try {
+		return new TextDecoder().decode(
+			new Uint8Array(bytes.map((byte) => Number.parseInt(byte, 16))),
+		)
+	} catch {
+		return null
+	}
+}
+
 function createPackageProxyPathSegment(specifier: string) {
 	const parsed = parseKodyPackageSpecifier(specifier)
 	return encodePathKey(
 		`${parsed.packageName}#${normalizePackageExportKey(parsed.exportName)}`,
 	)
+}
+
+function createPackageSpecifierFromProxyPath(modulePath: string) {
+	const normalizedPath = normalizeWorkspaceModulePath(modulePath)
+	const prefix = `${dynamicPackageImportProxyPrefix}/`
+	const prefixIndex = normalizedPath.indexOf(prefix)
+	if (prefixIndex === -1) return null
+	const encodedSegment = normalizedPath
+		.slice(prefixIndex + prefix.length)
+		.split('/')[0]
+		?.replace(/\.js$/, '')
+	if (!encodedSegment) return null
+	const decoded = decodePathKey(encodedSegment)
+	const separator = decoded?.indexOf('#') ?? -1
+	if (!decoded || separator === -1) return null
+	const packageName = decoded.slice(0, separator)
+	const exportName = decoded.slice(separator + 1)
+	if (!packageName.startsWith('@')) return null
+	const exportSuffix =
+		exportName && exportName !== '.'
+			? `/${exportName.replace(/^\.?\//, '')}`
+			: ''
+	return `kody:${packageName}${exportSuffix}`
 }
 
 function resolvePackageExportSourcePath(input: {
@@ -485,7 +598,10 @@ function collectReachableSourceFilePaths(input: {
 		if (source == null) continue
 		reachable.add(filePath)
 		for (const node of collectLiteralImportNodes(source)) {
-			if (node.specifier.startsWith(packageSpecifierPrefix)) {
+			if (
+				node.kind === 'static' &&
+				node.specifier.startsWith(packageSpecifierPrefix)
+			) {
 				const parsed = parseKodyPackageSpecifier(node.specifier)
 				if (parsed.packageName === input.rootPackage?.manifest.name) {
 					const exportPath = resolvePackageExportPath({
@@ -677,6 +793,76 @@ function materializeArtifactModuleSource(input: {
 	)
 }
 
+function readDynamicPackageImportSpecifier(input: {
+	modulePath: string
+	module: WorkerLoaderModules[string]
+}) {
+	const source =
+		typeof input.module === 'string'
+			? input.module
+			: typeof input.module.js === 'string'
+				? input.module.js
+				: typeof input.module.cjs === 'string'
+					? input.module.cjs
+					: typeof input.module.text === 'string'
+						? input.module.text
+						: ''
+	if (!source.includes(dynamicPackageImportSpecifierExportName)) {
+		return createPackageSpecifierFromProxyPath(input.modulePath)
+	}
+	const markerIndex = source.indexOf(dynamicPackageImportSpecifierExportName)
+	const match = source.slice(markerIndex).match(/=\s*("(?:[^"\\]|\\.)*")/)
+	const rawSpecifier = match?.[1]
+	if (!rawSpecifier)
+		return createPackageSpecifierFromProxyPath(input.modulePath)
+	try {
+		const specifier = JSON.parse(rawSpecifier) as unknown
+		return typeof specifier === 'string' &&
+			specifier.startsWith(packageSpecifierPrefix)
+			? specifier
+			: null
+	} catch {
+		return createPackageSpecifierFromProxyPath(input.modulePath)
+	}
+}
+
+function collectDynamicPackageImportsFromModules(modules: WorkerLoaderModules) {
+	return Object.entries(modules)
+		.map(([modulePath, module]) => ({
+			modulePath,
+			specifier: readDynamicPackageImportSpecifier({ modulePath, module }),
+		}))
+		.filter(
+			(
+				entry,
+			): entry is {
+				modulePath: string
+				specifier: string
+			} => entry.specifier != null,
+		)
+}
+
+function collectDynamicKodyDependenciesFromModules(
+	modules: WorkerLoaderModules,
+): Array<BundleArtifactDynamicDependency> {
+	const dependencies = new Map<string, BundleArtifactDynamicDependency>()
+	for (const { specifier } of collectDynamicPackageImportsFromModules(
+		modules,
+	)) {
+		const parsed = parseKodyPackageSpecifier(specifier)
+		dependencies.set(specifier, {
+			specifier,
+			packageName: parsed.packageName,
+			exportName: normalizePackageExportKey(parsed.exportName),
+		})
+	}
+	return [...dependencies.values()].sort(
+		(left, right) =>
+			left.packageName.localeCompare(right.packageName) ||
+			left.exportName.localeCompare(right.exportName),
+	)
+}
+
 async function maybeEnsurePublishedArtifactTarget(input: {
 	state: RewriteState
 	specifier: string
@@ -716,7 +902,162 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 				module,
 			})
 	}
+	input.state.files[joinPath(artifactPrefix, runtimeModulePath)] =
+		createRuntimeModuleSource()
 	return joinPath(artifactPrefix, artifact.artifact.mainModule)
+}
+
+async function resolveCurrentDynamicPackageArtifact(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	specifier: string
+}) {
+	if (!input.userId) {
+		throw new Error(
+			`Dynamic Kody package import "${input.specifier}" requires an authenticated user.`,
+		)
+	}
+	const parsed = parseKodyPackageSpecifier(input.specifier)
+	const row = await resolveSavedPackageImport({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		specifier: parsed,
+	})
+	if (!row) {
+		throw new Error(
+			`Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
+		)
+	}
+	const loaded = await loadPackageSourceBySourceId({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceId: row.sourceId,
+	})
+	if (!loaded.source.published_commit) {
+		throw new Error(
+			`Dynamic Kody package import "${input.specifier}" resolved saved package "${row.name}" source "${row.sourceId}", but it has no published commit.`,
+		)
+	}
+	const exportName = normalizePackageExportKey(parsed.exportName)
+	const entryPoint = resolvePackageExportPath({
+		manifest: loaded.manifest,
+		exportName,
+	})
+	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
+		env: input.env,
+		userId: input.userId,
+		sourceId: row.sourceId,
+		kind: 'importable-module',
+		artifactName: exportName,
+		entryPoint,
+	})
+	if (loadedArtifact?.artifact) {
+		return loadedArtifact.artifact
+	}
+	assertPublishedSourceCanRebuildWithoutInstallingDeps({
+		sourceFiles: loaded.files,
+		bundleLabel: `Dynamic Kody package import "${input.specifier}"`,
+	})
+	const rebuilt = await buildKodyImportableModuleBundle({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceFiles: loaded.files,
+		entryPoint,
+	})
+	await persistPublishedBundleArtifact({
+		env: input.env,
+		userId: input.userId,
+		source: loaded.source,
+		kind: 'importable-module',
+		artifactName: exportName,
+		entryPoint,
+		mainModule: rebuilt.mainModule,
+		modules: rebuilt.modules,
+		dependencies: rebuilt.dependencies,
+		dynamicDependencies: rebuilt.dynamicDependencies,
+		packageContext: {
+			packageId: row.id,
+			kodyId: row.kodyId,
+			sourceId: row.sourceId,
+		},
+	})
+	return createPublishedBundleArtifact({
+		kind: 'importable-module',
+		artifactName: exportName,
+		sourceId: loaded.source.id,
+		publishedCommit: loaded.source.published_commit,
+		entryPoint,
+		mainModule: rebuilt.mainModule,
+		modules: rebuilt.modules,
+		dependencies: rebuilt.dependencies,
+		dynamicDependencies: rebuilt.dynamicDependencies,
+		packageContext: {
+			packageId: row.id,
+			kodyId: row.kodyId,
+			sourceId: row.sourceId,
+		},
+	})
+}
+
+function installDynamicPackageArtifactModules(input: {
+	modules: WorkerLoaderModules
+	modulePath: string
+	specifier: string
+	artifact: PublishedBundleArtifact
+}) {
+	const artifactPrefix = joinPath(
+		dirname(input.modulePath),
+		dynamicPackageImportArtifactSegment,
+		encodePathKey(
+			`${input.specifier}#${input.artifact.sourceId}#${input.artifact.publishedCommit}`,
+		),
+	)
+	for (const [artifactModulePath, module] of Object.entries(
+		input.artifact.modules,
+	)) {
+		input.modules[joinPath(artifactPrefix, artifactModulePath)] = module
+	}
+	input.modules[input.modulePath] = createDynamicPackageImportProxySource({
+		targetPath: createRelativeImportSpecifier(
+			input.modulePath,
+			joinPath(artifactPrefix, input.artifact.mainModule),
+		),
+	})
+}
+
+export async function hydrateKodyRuntimeModules(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	modules: WorkerLoaderModules
+}): Promise<WorkerLoaderModules> {
+	const modules = refreshKodyRuntimeModules(input.modules)
+	const hydratedDynamicImports = new Set<string>()
+	while (true) {
+		let installedDynamicImport = false
+		for (const entry of collectDynamicPackageImportsFromModules(modules)) {
+			const importKey = `${entry.modulePath}:${entry.specifier}`
+			if (hydratedDynamicImports.has(importKey)) continue
+			hydratedDynamicImports.add(importKey)
+			const artifact = await resolveCurrentDynamicPackageArtifact({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				specifier: entry.specifier,
+			})
+			installDynamicPackageArtifactModules({
+				modules,
+				modulePath: entry.modulePath,
+				specifier: entry.specifier,
+				artifact,
+			})
+			installedDynamicImport = true
+		}
+		if (!installedDynamicImport) return refreshKodyRuntimeModules(modules)
+	}
 }
 
 function applyReplacements(
@@ -837,13 +1178,43 @@ async function ensurePackageProxy(
 	return proxyPath
 }
 
+function ensureDynamicPackageImportProxy(
+	state: RewriteState,
+	specifier: string,
+) {
+	const existing = state.dynamicPackageImports.get(specifier)
+	if (existing) return existing
+	const proxyPath = joinPath(
+		dynamicPackageImportProxyPrefix,
+		`${createPackageProxyPathSegment(specifier)}.js`,
+	)
+	state.files[proxyPath] = createDynamicPackageImportPlaceholderSource({
+		specifier,
+	})
+	state.dynamicPackageImports.set(specifier, proxyPath)
+	return proxyPath
+}
+
+function createUniqueHelperName(source: string, baseName: string) {
+	let candidate = baseName
+	let suffix = 0
+	while (source.includes(candidate)) {
+		suffix += 1
+		candidate = `${baseName}${suffix}`
+	}
+	return candidate
+}
+
 async function rewriteKodyImports(input: {
 	state: RewriteState
 	source: string
 	modulePath: string
 }) {
 	const importNodes = collectLiteralImportNodes(input.source)
-	if (importNodes.length === 0) return input.source
+	const dynamicImportNodes = collectDynamicImportExpressionNodes(input.source)
+	if (importNodes.length === 0 && dynamicImportNodes.length === 0) {
+		return input.source
+	}
 	const replacements: Array<RewriteReplacement> = []
 	for (const node of importNodes) {
 		if (node.specifier === 'kody:runtime') {
@@ -859,6 +1230,20 @@ async function rewriteKodyImports(input: {
 		if (!node.specifier.startsWith(packageSpecifierPrefix)) {
 			continue
 		}
+		if (node.kind === 'dynamic') {
+			const proxyPath = ensureDynamicPackageImportProxy(
+				input.state,
+				node.specifier,
+			)
+			replacements.push({
+				start: node.start,
+				end: node.end,
+				value: JSON.stringify(
+					createRelativeImportSpecifier(input.modulePath, proxyPath),
+				),
+			})
+			continue
+		}
 		const proxyPath = await ensurePackageProxy(input.state, node.specifier)
 		replacements.push({
 			start: node.start,
@@ -868,7 +1253,31 @@ async function rewriteKodyImports(input: {
 			),
 		})
 	}
-	return applyReplacements(input.source, replacements)
+	const nonLiteralDynamicImports = dynamicImportNodes.filter(
+		(node) => node.literalSpecifier == null,
+	)
+	let helperName: string | null = null
+	for (const node of nonLiteralDynamicImports) {
+		helperName ??= createUniqueHelperName(
+			input.source,
+			'__kodyDynamicImportGuard',
+		)
+		replacements.push({
+			start: node.start,
+			end: node.end,
+			value: `${helperName}(${input.source.slice(
+				node.sourceStart,
+				node.sourceEnd,
+			)})`,
+		})
+	}
+	const rewritten = applyReplacements(
+		input.source,
+		replacements.sort((left, right) => left.start - right.start),
+	)
+	return helperName
+		? `${createComputedDynamicImportGuardSource({ helperName })}\n${rewritten}`
+		: rewritten
 }
 
 export async function buildKodyModuleBundle(input: {
@@ -902,17 +1311,19 @@ export async function buildKodyModuleBundle(input: {
 		files,
 		entryPoint: bootstrapPath,
 	})
+	const modules = stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules)
 	assertBundleHasNoUnresolvedBareImports({
-		modules: bundle.modules as WorkerLoaderModules,
+		modules,
 		bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
 	})
 	return {
 		mainModule: bundle.mainModule,
-		modules: bundle.modules as WorkerLoaderModules,
+		modules,
 		dependencies: await resolveDirectKodyDependenciesForEntryPoint({
 			...input,
 			loadedPackages: packages,
 		}),
+		...includeDynamicDependenciesWhenPresent(modules),
 	}
 }
 
@@ -947,17 +1358,19 @@ export async function buildKodyImportableModuleBundle(input: {
 		files,
 		entryPoint: bootstrapPath,
 	})
+	const modules = stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules)
 	assertBundleHasNoUnresolvedBareImports({
-		modules: bundle.modules as WorkerLoaderModules,
+		modules,
 		bundleLabel: `Saved package import "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
 	})
 	return {
 		mainModule: bundle.mainModule,
-		modules: bundle.modules as WorkerLoaderModules,
+		modules,
 		dependencies: await resolveDirectKodyDependenciesForEntryPoint({
 			...input,
 			loadedPackages: packages,
 		}),
+		...includeDynamicDependenciesWhenPresent(modules),
 	}
 }
 
@@ -990,6 +1403,7 @@ async function prepareKodyGraphFiles(input: {
 		sourceFiles: input.sourceFiles,
 		rootPackage,
 		proxies: new Map(),
+		dynamicPackageImports: new Map(),
 		packages: new Map(),
 	}
 	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
@@ -1060,17 +1474,21 @@ export async function buildKodyAppBundle(input: {
 			files,
 			entryPoint: bootstrapPath,
 		})
+		const modules = stripKodyRuntimeModules(
+			bundle.modules as WorkerLoaderModules,
+		)
 		assertBundleHasNoUnresolvedBareImports({
-			modules: bundle.modules as WorkerLoaderModules,
+			modules,
 			bundleLabel: `Saved package app "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
 		})
 		return {
 			mainModule: bundle.mainModule,
-			modules: bundle.modules as WorkerLoaderModules,
+			modules,
 			dependencies: await resolveDirectKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
 			}),
+			...includeDynamicDependenciesWhenPresent(modules),
 		}
 	}
 
@@ -1094,6 +1512,7 @@ export function createPublishedBundleArtifact(input: {
 	mainModule: string
 	modules: WorkerLoaderModules
 	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	packageContext?: {
 		packageId: string
 		kodyId: string
@@ -1113,6 +1532,7 @@ export function createPublishedBundleArtifact(input: {
 		mainModule: input.mainModule,
 		modules: input.modules,
 		dependencies: input.dependencies,
+		dynamicDependencies: input.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
 		serviceContext: input.serviceContext ?? null,
 		createdAt: new Date().toISOString(),

@@ -4,6 +4,15 @@ export type LiteralImportNode = {
 	start: number
 	end: number
 	specifier: string
+	kind: 'dynamic' | 'static'
+}
+
+export type DynamicImportExpressionNode = {
+	start: number
+	end: number
+	sourceStart: number
+	sourceEnd: number
+	literalSpecifier: string | null
 }
 
 function readLiteralStringNode(
@@ -88,13 +97,13 @@ export function collectLiteralImportNodes(
 			}
 			const literalNode = readLiteralStringNode(typedNode.source)
 			if (literalNode) {
-				nodes.push(literalNode)
+				nodes.push({ ...literalNode, kind: 'static' })
 			}
 		}
 		if (typedNode.type === 'ImportExpression') {
 			const literalNode = readLiteralStringNode(typedNode.source)
 			if (literalNode) {
-				nodes.push(literalNode)
+				nodes.push({ ...literalNode, kind: 'dynamic' })
 			}
 		}
 		for (const value of Object.values(
@@ -119,6 +128,61 @@ export function collectLiteralImportNodes(
 
 export function collectLiteralImportSpecifiers(source: string): Array<string> {
 	return collectLiteralImportNodes(source).map((node) => node.specifier)
+}
+
+export function collectDynamicImportExpressionNodes(
+	source: string,
+): Array<DynamicImportExpressionNode> {
+	const nodes: Array<DynamicImportExpressionNode> = []
+
+	function visit(node: unknown): void {
+		if (node == null || typeof node !== 'object') return
+		if (Array.isArray(node)) {
+			for (const item of node) visit(item)
+			return
+		}
+		if (!('type' in node)) return
+		const typedNode = node as ModuleAstNode & {
+			start?: number
+			end?: number
+			source?: { start?: number; end?: number }
+		}
+		if (typedNode.type === 'ImportExpression') {
+			const sourceNode = typedNode.source
+			if (
+				typeof typedNode.start === 'number' &&
+				typeof typedNode.end === 'number' &&
+				typeof sourceNode?.start === 'number' &&
+				typeof sourceNode.end === 'number'
+			) {
+				nodes.push({
+					start: typedNode.start,
+					end: typedNode.end,
+					sourceStart: sourceNode.start,
+					sourceEnd: sourceNode.end,
+					literalSpecifier:
+						readLiteralStringNode(sourceNode)?.specifier ?? null,
+				})
+			}
+		}
+		for (const value of Object.values(
+			typedNode as unknown as Record<string, unknown>,
+		)) {
+			if (value == null) continue
+			if (typeof value === 'object') {
+				visit(value)
+			}
+		}
+	}
+
+	try {
+		const program = parseModuleSource(source)
+		visit(program)
+	} catch {
+		return []
+	}
+
+	return nodes.sort((left, right) => left.start - right.start)
 }
 
 export function isBarePackageImportSpecifier(specifier: string) {

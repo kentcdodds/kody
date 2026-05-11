@@ -17,6 +17,7 @@ import {
 	buildKodyAppBundle,
 	createPublishedBundleArtifact,
 	createPublishedPackageAppBundleCacheKey,
+	hydrateKodyRuntimeModules,
 } from './module-graph.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import {
@@ -1114,6 +1115,7 @@ export async function buildPackageAppWorker(input: {
 					mainModule: compiled.mainModule,
 					modules: compiled.modules,
 					dependencies: compiled.dependencies,
+					dynamicDependencies: compiled.dynamicDependencies,
 					packageContext: {
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
@@ -1125,8 +1127,14 @@ export async function buildPackageAppWorker(input: {
 			return compiled
 		})())
 	const mainModule = 'package-app-entry.js'
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		modules: bundled.modules,
+	})
 	const modules = {
-		...bundled.modules,
+		...hydratedModules,
 		[mainModule]: createPackageAppWorkerSource({
 			mainModule: bundled.mainModule,
 		}),

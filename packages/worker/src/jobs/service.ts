@@ -197,6 +197,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		mainModule: bundle.mainModule,
 		modules: bundle.modules,
 		dependencies: bundle.dependencies,
+		dynamicDependencies: bundle.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
 		serviceContext: null,
 		createdAt: new Date().toISOString(),
@@ -211,6 +212,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		mainModule: bundle.mainModule,
 		modules: bundle.modules,
 		dependencies: bundle.dependencies,
+		dynamicDependencies: bundle.dynamicDependencies,
 		packageContext: input.packageContext ?? null,
 	})
 	logJobSchedulerEvent({
@@ -482,7 +484,9 @@ async function executePublishedJobArtifact(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
-	artifact: Awaited<ReturnType<typeof ensurePublishedBundleArtifactForJob>>
+	artifact:
+		| PublishedBundleArtifact
+		| Awaited<ReturnType<typeof ensurePublishedBundleArtifactForJob>>
 	bypassLogs: Array<string>
 }): Promise<ExecuteResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)

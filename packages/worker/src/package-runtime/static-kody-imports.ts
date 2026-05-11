@@ -21,6 +21,7 @@ function collectStaticKodyPackageImportsFromSource(input: {
 }): Array<StaticKodyPackageImport> {
 	const imports: Array<StaticKodyPackageImport> = []
 	for (const node of collectLiteralImportNodes(input.source)) {
+		if (node.kind !== 'static') continue
 		if (!node.specifier.startsWith(packageSpecifierPrefix)) continue
 		const parsedSpecifier = parseKodyPackageSpecifier(node.specifier)
 		imports.push({

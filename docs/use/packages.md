@@ -78,13 +78,26 @@ exhaustive.
   runtime artifacts as snapshots of the imported package's then-published
   bundle. If the imported package is published again later, already-published
   dependents keep using the older bundled snapshot until they are republished.
+- Literal dynamic imports such as
+  `await import("kody:@scope/my-package/export")` are current-version package
+  dependencies. Kody leaves them out of the saved bundle and resolves the target
+  package export at runtime for the signed-in user, so the next execution sees
+  the target package's current published importable artifact.
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
   checks fail when static imports and declarations differ. Type-only imports do
-  not count, and declaration files such as `.d.ts` are treated as type-only;
-  literal dynamic `import("kody:@...")` expressions are bundled and must be
-  declared.
+  not count, declaration files such as `.d.ts` are treated as type-only, and
+  current-version literal dynamic `import("kody:@...")` expressions do not need
+  `kody.dependencies` declarations.
+- Computed dynamic Kody package imports, including template strings and
+  variables such as `import(packageSpecifier)`, are unsupported for now. Use a
+  string literal `import("kody:@scope/my-package/export")` when you want
+  current-version runtime resolution.
+- `kody:runtime` is always host-owned and request-scoped. Static imports such as
+  `import { codemode } from "kody:runtime"` stay valid, but saved package
+  artifacts do not persist Kody's runtime implementation; execution always uses
+  the currently deployed host runtime.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that

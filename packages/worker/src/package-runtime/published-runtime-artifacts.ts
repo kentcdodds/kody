@@ -22,6 +22,12 @@ export type BundleArtifactDependency = {
 	packageName?: string
 }
 
+export type BundleArtifactDynamicDependency = {
+	specifier: string
+	packageName: string
+	exportName: string
+}
+
 type SerializedWorkerLoaderModule =
 	| string
 	| {
@@ -64,6 +70,7 @@ export type PublishedBundleArtifact = {
 	mainModule: string
 	modules: WorkerLoaderModules
 	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	packageContext: {
 		packageId: string
 		kodyId: string
@@ -434,6 +441,7 @@ export async function readPublishedBundleArtifact(input: {
 	}
 	return {
 		...artifact,
+		dynamicDependencies: artifact.dynamicDependencies ?? [],
 		packageContext: artifact.packageContext
 			? {
 					...artifact.packageContext,

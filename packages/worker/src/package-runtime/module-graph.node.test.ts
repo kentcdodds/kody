@@ -41,8 +41,11 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 	}
 })
 
-const { buildKodyAppBundle, createPublishedPackageAppBundleCacheKey } =
-	await import('./module-graph.ts')
+const {
+	buildKodyAppBundle,
+	createPublishedPackageAppBundleCacheKey,
+	hydrateKodyRuntimeModules,
+} = await import('./module-graph.ts')
 
 // eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
 beforeEach(() => {
@@ -659,6 +662,239 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 	}
 })
 
+test('hydrateKodyRuntimeModules replaces stale persisted kody runtime modules', async () => {
+	const staleRuntimeSource =
+		'export const codemode = { stale: true }; export default { codemode };'
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules: {
+			'.__kody_virtual__/runtime.js': staleRuntimeSource,
+			'entry.js': `import { __kodyRunInRuntime, codemode } from './.__kody_virtual__/runtime.js'
+
+export async function runWithRuntime(runtime) {
+	return await __kodyRunInRuntime(runtime, async () => codemode.hostRuntimeVersion({}))
+}
+`,
+		},
+	})
+
+	expect(hydratedModules['.__kody_virtual__/runtime.js']).not.toBe(
+		staleRuntimeSource,
+	)
+	const moduleGraph = await createTemporaryModuleGraph(hydratedModules)
+	try {
+		const entry = (await moduleGraph.importModule('entry.js')) as {
+			runWithRuntime: (runtime: Record<string, unknown>) => Promise<unknown>
+		}
+		const result = await entry.runWithRuntime({
+			codemode: {
+				async hostRuntimeVersion() {
+					return 'current-host-runtime'
+				},
+			},
+		})
+		expect(result).toBe('current-host-runtime')
+	} finally {
+		await moduleGraph.cleanup()
+	}
+})
+
+test('buildKodyModuleBundle keeps static imports pinned while literal dynamic imports resolve current packages', async () => {
+	mockModule.createWorker.mockImplementation(
+		async (input: { files: Record<string, string>; entryPoint: string }) => ({
+			mainModule: input.entryPoint,
+			modules: input.files,
+			dependencies: [],
+		}),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		...createLoadedPackageSource(),
+		manifest: {
+			...createLoadedPackageSource().manifest,
+			exports: {
+				'./value': './value.js',
+			},
+		},
+		files: {
+			'value.js': 'export default function value() { return "source" }',
+		},
+	})
+	let packageVersion = 'pinned'
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { userId: string; kind: string; artifactName?: string }) => {
+			if (input.kind !== 'importable-module') return null
+			return {
+				row: {},
+				artifact: {
+					version: 1,
+					kind: 'importable-module',
+					artifactName: input.artifactName ?? './value',
+					sourceId: 'source-1',
+					publishedCommit:
+						packageVersion === 'pinned' ? 'commit-pinned' : 'commit-current',
+					entryPoint: './value.js',
+					mainModule: 'value.js',
+					modules: {
+						'value.js': `export const marker = ${JSON.stringify(packageVersion)}
+export default function value() { return ${JSON.stringify(packageVersion)} }`,
+					},
+					dependencies: [],
+					dynamicDependencies: [],
+					packageContext: null,
+					serviceContext: null,
+					createdAt: '2026-05-11T00:00:00.000Z',
+				},
+			}
+		},
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	const bundle = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+					dependencies: ['@kentcdodds/example-package'],
+				},
+			}),
+			'index.js': `import staticValue from 'kody:@kentcdodds/example-package/value'
+
+export default async function run() {
+	const dynamicModule = await import('kody:@kentcdodds/example-package/value')
+	return {
+		staticValue: staticValue(),
+		dynamicValue: dynamicModule.default(),
+		dynamicMarker: dynamicModule.marker,
+	}
+}
+`,
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(bundle.dependencies).toEqual([
+		{
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			kodyId: 'example-package',
+			packageName: '@kentcdodds/example-package',
+		},
+	])
+	expect(bundle.dynamicDependencies).toEqual([
+		{
+			specifier: 'kody:@kentcdodds/example-package/value',
+			packageName: '@kentcdodds/example-package',
+			exportName: './value',
+		},
+	])
+	packageVersion = 'current'
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules: bundle.modules,
+	})
+	const moduleGraph = await createTemporaryModuleGraph(hydratedModules)
+	try {
+		const entry = (await moduleGraph.importModule(bundle.mainModule)) as {
+			default: () => Promise<unknown>
+		}
+		await expect(entry.default()).resolves.toEqual({
+			staticValue: 'pinned',
+			dynamicValue: 'current',
+			dynamicMarker: 'current',
+		})
+	} finally {
+		await moduleGraph.cleanup()
+	}
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			userId: 'user-1',
+			name: '@kentcdodds/example-package',
+		}),
+	)
+})
+
+test('buildKodyModuleBundle rejects computed dynamic kody package imports clearly at runtime', async () => {
+	mockModule.createWorker.mockImplementation(
+		async (input: { files: Record<string, string>; entryPoint: string }) => ({
+			mainModule: input.entryPoint,
+			modules: input.files,
+			dependencies: [],
+		}),
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	const bundle = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': `const specifier = 'kody:@kentcdodds/example-package/value'
+
+export default async function run() {
+	return await import(specifier)
+}
+`,
+		},
+		entryPoint: 'index.js',
+	})
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules: bundle.modules,
+	})
+	const moduleGraph = await createTemporaryModuleGraph(hydratedModules)
+	try {
+		const entry = (await moduleGraph.importModule(bundle.mainModule)) as {
+			default: () => Promise<unknown>
+		}
+		await expect(entry.default()).rejects.toThrow(
+			'Computed dynamic Kody package imports are unsupported',
+		)
+	} finally {
+		await moduleGraph.cleanup()
+	}
+})
+
 test.each([
 	{
 		name: 'subscription service start',
@@ -746,7 +982,17 @@ export default async function launchAgent() {
 			entryPoint,
 		})
 
-		const moduleGraph = await createTemporaryModuleGraph(bundle.modules)
+		expect(bundle.modules).not.toHaveProperty('.__kody_virtual__/runtime.js')
+		const hydratedModules = await hydrateKodyRuntimeModules({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			modules: bundle.modules,
+		})
+		const moduleGraph = await createTemporaryModuleGraph(hydratedModules)
 		try {
 			// Keep both imports on the same Node ESM cache entry to reproduce a
 			// preloaded runtime module shared with the bundled entry.

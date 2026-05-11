@@ -50,7 +50,23 @@ helpers are runtime exports:
   package-service timeout
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
-  saved package export by full package name
+  saved package export by full package name. Static `kody:@...` imports are
+  pinned to the dependency's published artifact when the caller is bundled.
+
+`kody:runtime` is always supplied by the Kody host at execution time. Saved
+package artifacts do not contain a copy of the host runtime implementation, so
+old package artifacts automatically observe current host runtime behavior.
+
+Use literal dynamic imports when package code needs the current published
+version of another saved package export:
+
+```ts
+const helper = await import('kody:@scope/my-package/export-name')
+```
+
+Kody resolves that literal import at runtime for the signed-in user. Computed
+dynamic Kody package imports, including variables and template strings, are not
+supported yet.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers
