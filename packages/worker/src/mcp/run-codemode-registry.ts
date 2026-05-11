@@ -33,7 +33,10 @@ import {
 	hasTopLevelModuleSyntax,
 	stripCodeFences,
 } from '#worker/module-source.ts'
-import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
+import {
+	buildKodyModuleBundle,
+	refreshKodyRuntimeModules,
+} from '#worker/package-runtime/module-graph.ts'
 import {
 	beginPackageRuntimeRun,
 	finishPackageRuntimeRun,
@@ -811,7 +814,7 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				storageContext: normalizedStorageContext,
 			},
-			modules: bundle.modules,
+			modules: refreshKodyRuntimeModules(bundle.modules),
 		})
 		const workflowTools =
 			options?.workflowTools ??

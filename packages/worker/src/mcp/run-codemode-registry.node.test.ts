@@ -180,15 +180,21 @@ export default async function run() {
 	}
 })
 
-vi.mock('#worker/package-runtime/module-graph.ts', () => ({
-	buildKodyModuleBundle: vi.fn(async () => ({
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js':
-				'export default async function main(input = {}) { return input }',
-		},
-	})),
-}))
+vi.mock('#worker/package-runtime/module-graph.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/package-runtime/module-graph.ts')
+	>('#worker/package-runtime/module-graph.ts')
+	return {
+		...actual,
+		buildKodyModuleBundle: vi.fn(async () => ({
+			mainModule: 'entry.js',
+			modules: {
+				'entry.js':
+					'export default async function main(input = {}) { return input }',
+			},
+		})),
+	}
+})
 
 test('runBundledModuleWithRegistry passes params as an explicit entrypoint argument', async () => {
 	const env = {} as Env
@@ -246,6 +252,67 @@ test('runBundledModuleWithRegistry passes params as an explicit entrypoint argum
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry refreshes persisted kody runtime modules before execution', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const staleRuntimeSource = 'export const codemode = undefined;'
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockImplementation((input) => {
+			const modules = input.modules as Record<string, string>
+			expect(modules['entry.js']).toBe(
+				'export default async function main() { return "ok" }',
+			)
+			expect(modules['.__kody_virtual__/runtime.js']).toContain(
+				'__kodyCreateRuntimeObjectProxy',
+			)
+			expect(
+				modules[
+					'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
+				],
+			).toContain('__kodyCreateRuntimeObjectProxy')
+			expect(modules['.__kody_virtual__/runtime.js']).not.toBe(
+				staleRuntimeSource,
+			)
+			return {
+				async execute() {
+					return {
+						result: 'ok',
+						logs: [],
+					}
+				},
+			} as never
+		})
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async function main() { return "ok" }',
+					'.__kody_virtual__/runtime.js': staleRuntimeSource,
+					'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js':
+						staleRuntimeSource,
+				},
+			},
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+			},
+		)
+
+		expect(result.result).toBe('ok')
+		expect(createExecuteExecutorSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
 	}
 })
 

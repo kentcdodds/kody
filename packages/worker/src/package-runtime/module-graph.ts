@@ -211,6 +211,25 @@ export default runtime;
 `.trim()
 }
 
+function isRuntimeModulePath(modulePath: string) {
+	return (
+		modulePath === runtimeModulePath ||
+		modulePath.endsWith(`/${runtimeModulePath}`)
+	)
+}
+
+export function refreshKodyRuntimeModules(
+	modules: WorkerLoaderModules,
+): WorkerLoaderModules {
+	let refreshed: WorkerLoaderModules | null = null
+	for (const modulePath of Object.keys(modules)) {
+		if (!isRuntimeModulePath(modulePath)) continue
+		refreshed ??= { ...modules }
+		refreshed[modulePath] = createRuntimeModuleSource()
+	}
+	return refreshed ?? modules
+}
+
 function createExecuteEntrypointSource(input: { modulePath: string }) {
 	return `
 import userEntrypoint from ${JSON.stringify(input.modulePath)};
