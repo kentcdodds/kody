@@ -389,12 +389,13 @@ function buildPackageInvokeCheckWarnings(input: {
 async function checkPackageInvokeForRuntime(input: {
 	env: Env
 	baseUrl: string
+	operationName: 'packages.check' | 'packages.invokeChecked'
 	userId: string
 	rawInput: PackageInvokeInput
 }): Promise<PackageInvokeCheckResult> {
 	let request: ReturnType<typeof parsePackageInvokeInput>
 	try {
-		request = parsePackageInvokeInput(input.rawInput, 'packages.check')
+		request = parsePackageInvokeInput(input.rawInput, input.operationName)
 	} catch (error) {
 		const message = getErrorMessage(error)
 		return createPackageInvokeCheckFailure({
@@ -1342,6 +1343,7 @@ export function createPackageRuntimeInvokeTools(input: {
 			return await checkPackageInvokeForRuntime({
 				env: input.env,
 				baseUrl: input.baseUrl,
+				operationName: 'packages.check',
 				userId: user.userId,
 				rawInput,
 			})
@@ -1352,6 +1354,7 @@ export function createPackageRuntimeInvokeTools(input: {
 			const check = await checkPackageInvokeForRuntime({
 				env: input.env,
 				baseUrl: input.baseUrl,
+				operationName: 'packages.invokeChecked',
 				userId: user.userId,
 				rawInput,
 			})

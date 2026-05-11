@@ -922,6 +922,15 @@ test('package runtime invokeChecked fails before invocation when check fails', a
 	).rejects.toThrow(
 		'packages.invokeChecked check failed: Package "discord-general-chat" does not define export "./missing-export".',
 	)
+	await expect(
+		tools.invokeChecked({
+			kodyId: 'discord-general-chat',
+			exportName: './handle-discord-message-created',
+			params: 'not-an-object',
+		}),
+	).rejects.toThrow(
+		'packages.invokeChecked check failed: packages.invokeChecked params must be a JSON object when provided.',
+	)
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 

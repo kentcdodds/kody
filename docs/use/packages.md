@@ -159,9 +159,9 @@ bundling the currently published dependency with the caller is desired.
 package, export, or params are invalid. On success it returns `contract`
 metadata, including package id/kody id/name, source id, published commit,
 normalized export name, runtime target, available JSDoc/type definition, and
-warnings. The warnings are important: Kody currently has JSDoc/type metadata but
-no machine-readable params schema for package exports, so params are only
-validated as a JSON object.
+warnings on `check.contract.warnings`. Those warnings are important: Kody
+currently has JSDoc/type metadata but no machine-readable params schema for
+package exports, so params are only validated as a JSON object.
 
 `packages.invoke` and `packages.invokeChecked` return the target export's
 unwrapped return value. If execution fails, the promise rejects with an error
