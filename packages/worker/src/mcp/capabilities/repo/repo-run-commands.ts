@@ -16,6 +16,35 @@ import { repoOpenSessionCapability } from './repo-open-session.ts'
 
 type RepoRunCommandsOutput = z.infer<typeof repoRunCommandsOutputSchema>
 
+async function rebuildPublishedPackageArtifactsForSession(input: {
+	env: Env
+	sessionId: string
+	sourceId: string
+	userId: string
+	publishedCommit: string
+	baseUrl: string
+}) {
+	const session = repoSessionRpc(input.env, input.sessionId)
+	const targets = await session.listPublishedPackageArtifactTargets({
+		sessionId: input.sessionId,
+		sourceId: input.sourceId,
+		userId: input.userId,
+	})
+	for (const target of targets) {
+		await repoSessionRpc(
+			input.env,
+			input.sessionId,
+		).rebuildPublishedPackageArtifact({
+			sessionId: input.sessionId,
+			sourceId: input.sourceId,
+			userId: input.userId,
+			publishedCommit: input.publishedCommit,
+			target,
+			baseUrl: input.baseUrl,
+		})
+	}
+}
+
 async function loadRepoCommandSession(input: {
 	env: Env
 	userId: string
@@ -77,23 +106,60 @@ export const repoRunCommandsCapability = defineDomainCapability(
 							sessionId: args.session_id,
 						})
 			const validatedSession = repoOpenSessionOutputSchema.parse(session)
-			const result = await repoSessionRpc(
-				ctx.env,
-				validatedSession.id,
-			).runCommands({
+			const sessionRpc = repoSessionRpc(ctx.env, validatedSession.id)
+			const result = await sessionRpc.runCommands({
 				sessionId: validatedSession.id,
 				userId: user.userId,
 				commands: args.commands,
 				dryRun: args.dry_run,
 				runChecks: args.run_checks,
-				publish: args.publish,
+				publish: false,
 			})
+			const publish =
+				args.publish === true
+					? result.checks.status === 'failed'
+						? {
+								status: 'blocked_by_checks' as const,
+								message: 'Publishing skipped because repo checks failed.',
+								failedChecks: result.checks.failedChecks,
+								runId: result.checks.runId,
+								treeHash: result.checks.treeHash,
+								checkedAt: result.checks.checkedAt,
+							}
+						: result.checks.status === 'passed'
+							? await sessionRpc.publishSession({
+									sessionId: validatedSession.id,
+									userId: user.userId,
+								})
+							: { status: 'not_requested' as const }
+					: result.publish
+			if (
+				args.publish === true &&
+				publish.status === 'ok' &&
+				validatedSession.entity_type === 'package'
+			) {
+				await rebuildPublishedPackageArtifactsForSession({
+					env: ctx.env,
+					sessionId: validatedSession.id,
+					sourceId: validatedSession.source_id,
+					userId: user.userId,
+					publishedCommit: publish.publishedCommit,
+					baseUrl: ctx.callerContext.baseUrl,
+				})
+			}
+			const responseSession =
+				args.publish === true && publish.status === 'ok'
+					? await sessionRpc.getSessionInfo({
+							sessionId: validatedSession.id,
+							userId: user.userId,
+						})
+					: result.session
 			return {
-				session: result.session,
+				session: responseSession,
 				resolved_target: validatedSession.resolved_target,
 				commands: result.commands,
 				checks: normalizeRepoCommandChecks(result.checks),
-				publish: normalizeRepoCommandPublish(result.publish),
+				publish: normalizeRepoCommandPublish(publish),
 			}
 		},
 	},

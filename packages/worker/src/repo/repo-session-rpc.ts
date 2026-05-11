@@ -1,4 +1,5 @@
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
+import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { type RepoRunCommandsResult } from './repo-session-commands.ts'
 import {
 	type RepoSourceBootstrapResult,
@@ -95,6 +96,23 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 	}) => Promise<RepoSessionCheckStatus>
+	listPublishedPackageArtifactTargets: (payload: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+	}) => Promise<Array<PublishedPackageArtifactBuildTarget>>
+	rebuildPublishedPackageArtifact: (payload: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+		publishedCommit: string
+		target: PublishedPackageArtifactBuildTarget
+		baseUrl?: string
+	}) => Promise<{
+		ok: true
+		target: PublishedPackageArtifactBuildTarget
+		kvKey: string | null
+	}>
 	rebaseSession: (payload: {
 		sessionId: string
 		userId: string
@@ -112,6 +130,7 @@ export type RepoSessionRpc = {
 		expectedHead?: string | null
 		allowForce?: boolean
 		baseUrl?: string
+		rebuildPackageArtifacts?: boolean
 	}) => Promise<RepoExternalPublishResult>
 }
 

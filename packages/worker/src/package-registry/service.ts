@@ -7,7 +7,10 @@ import {
 	insertSavedPackage,
 	updateSavedPackage,
 } from './repo.ts'
-import { loadPackageSourceBySourceId } from './source.ts'
+import {
+	loadPackageManifestBySourceId,
+	loadPackageSourceBySourceId,
+} from './source.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -82,13 +85,22 @@ export async function refreshSavedPackageProjection(input: {
 	userId: string
 	packageId: string
 	sourceId: string
+	rebuildArtifacts?: boolean
 }) {
-	const loaded = await loadPackageSourceBySourceId({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceId: input.sourceId,
-	})
+	const shouldRebuildArtifacts = input.rebuildArtifacts ?? true
+	const loaded = shouldRebuildArtifacts
+		? await loadPackageSourceBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: input.sourceId,
+			})
+		: await loadPackageManifestBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: input.sourceId,
+			})
 	const row = toSavedPackageInsertRow({
 		packageId: input.packageId,
 		userId: input.userId,
@@ -133,48 +145,54 @@ export async function refreshSavedPackageProjection(input: {
 		createdAt: existing?.createdAt ?? refreshedAt,
 		updatedAt: refreshedAt,
 	} satisfies SavedPackageRecord
-	await rebuildPublishedPackageArtifacts({
-		env: input.env,
-		userId: input.userId,
-		source: loaded.source,
-		savedPackage,
-		manifest: loaded.manifest,
-		files: loaded.files,
-		buildAppBundle: async ({ entryPoint }) => {
-			const { buildKodyAppBundle } =
-				await import('#worker/package-runtime/module-graph.ts')
-			return await buildKodyAppBundle({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceFiles: loaded.files,
-				entryPoint,
-				cacheKey: null,
-			})
-		},
-		buildModuleBundle: async ({ entryPoint }) => {
-			const { buildKodyModuleBundle } =
-				await import('#worker/package-runtime/module-graph.ts')
-			return await buildKodyModuleBundle({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceFiles: loaded.files,
-				entryPoint,
-			})
-		},
-		buildImportableModuleBundle: async ({ entryPoint }) => {
-			const { buildKodyImportableModuleBundle } =
-				await import('#worker/package-runtime/module-graph.ts')
-			return await buildKodyImportableModuleBundle({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceFiles: loaded.files,
-				entryPoint,
-			})
-		},
-	})
+	const loadedFiles: Record<string, string> | null =
+		shouldRebuildArtifacts && 'files' in loaded
+			? (loaded.files as Record<string, string>)
+			: null
+	if (loadedFiles) {
+		await rebuildPublishedPackageArtifacts({
+			env: input.env,
+			userId: input.userId,
+			source: loaded.source,
+			savedPackage,
+			manifest: loaded.manifest,
+			files: loadedFiles,
+			buildAppBundle: async ({ entryPoint }) => {
+				const { buildKodyAppBundle } =
+					await import('#worker/package-runtime/module-graph.ts')
+				return await buildKodyAppBundle({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceFiles: loadedFiles,
+					entryPoint,
+					cacheKey: null,
+				})
+			},
+			buildModuleBundle: async ({ entryPoint }) => {
+				const { buildKodyModuleBundle } =
+					await import('#worker/package-runtime/module-graph.ts')
+				return await buildKodyModuleBundle({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceFiles: loadedFiles,
+					entryPoint,
+				})
+			},
+			buildImportableModuleBundle: async ({ entryPoint }) => {
+				const { buildKodyImportableModuleBundle } =
+					await import('#worker/package-runtime/module-graph.ts')
+				return await buildKodyImportableModuleBundle({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceFiles: loadedFiles,
+					entryPoint,
+				})
+			},
+		})
+	}
 	try {
 		await refreshPackageRetrieverManifestCache({
 			env: input.env,
@@ -239,7 +257,7 @@ export async function refreshSavedPackageProjection(input: {
 				updatedAt: new Date().toISOString(),
 			} satisfies SavedPackageRecord),
 		manifest: loaded.manifest,
-		files: loaded.files,
+		files: 'files' in loaded ? loaded.files : {},
 	}
 }
 

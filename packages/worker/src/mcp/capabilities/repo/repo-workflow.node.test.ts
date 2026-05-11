@@ -53,6 +53,8 @@ function createRepoRpc(overrides?: Partial<Record<string, unknown>>) {
 		runCommands: vi.fn(),
 		runChecks: vi.fn(),
 		publishSession: vi.fn(),
+		listPublishedPackageArtifactTargets: vi.fn(async () => []),
+		rebuildPublishedPackageArtifact: vi.fn(),
 		...overrides,
 	}
 }
@@ -399,7 +401,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		commands,
 		dryRun: undefined,
 		runChecks: true,
-		publish: true,
+		publish: false,
 	})
 	expect(result.checks).toEqual({
 		status: 'failed',
@@ -424,6 +426,12 @@ test('repo_run_commands opens by target and returns failed checks without publis
 	expect(result.publish).toEqual({
 		status: 'blocked_by_checks',
 		message: 'Publishing skipped because repo checks failed.',
+		failed_checks: [
+			{ kind: 'typecheck', ok: false, message: 'Typecheck failed' },
+		],
+		run_id: 'check-1',
+		tree_hash: 'tree-1',
+		checked_at: '2026-04-18T00:02:00.000Z',
 	})
 })
 
@@ -510,13 +518,28 @@ test('repo_run_commands returns published result after checks pass', async () =>
 			treeHash: 'tree-1',
 			checkedAt: '2026-04-18T00:02:00.000Z',
 		},
-		publish: {
-			status: 'ok',
-			sessionId: 'session-existing',
-			publishedCommit: 'commit-published',
-			message: 'Published session.',
-		},
+		publish: { status: 'not_requested' },
 	})
+	rpc.publishSession.mockResolvedValueOnce({
+		status: 'ok',
+		sessionId: 'session-existing',
+		publishedCommit: 'commit-published',
+		message: 'Published session.',
+	})
+	rpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([
+		{
+			kind: 'module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'module',
+		},
+		{
+			kind: 'importable-module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'importable-module',
+		},
+	])
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 
 	const result = await repoRunCommandsCapability.handler(
@@ -549,6 +572,7 @@ test('repo_run_commands returns published result after checks pass', async () =>
 		published_commit: 'commit-published',
 		message: 'Published session.',
 	})
+	expect(rpc.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 })
 
 test('repo_publish_session returns structured base_moved repair details', async () => {

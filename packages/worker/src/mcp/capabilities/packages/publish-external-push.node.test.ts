@@ -7,6 +7,8 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
+	listPublishedPackageArtifactTargets: vi.fn(),
+	rebuildPublishedPackageArtifact: vi.fn(),
 	getStaticPackageDependentsSummary: vi.fn(),
 }))
 
@@ -36,6 +38,10 @@ vi.mock('#worker/repo/repo-session-do.ts', () => ({
 	repoSessionRpc: () => ({
 		publishFromExternalRef: (...args: Array<unknown>) =>
 			mockModule.publishFromExternalRef(...args),
+		listPublishedPackageArtifactTargets: (...args: Array<unknown>) =>
+			mockModule.listPublishedPackageArtifactTargets(...args),
+		rebuildPublishedPackageArtifact: (...args: Array<unknown>) =>
+			mockModule.rebuildPublishedPackageArtifact(...args),
 	}),
 }))
 
@@ -79,6 +85,17 @@ beforeEach(() => {
 		items: [],
 		recommended_next_action:
 			'No published bundle artifacts currently declare a static dependency on this package.',
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([])
+	mockModule.rebuildPublishedPackageArtifact.mockResolvedValue({
+		ok: true,
+		target: {
+			kind: 'module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'module',
+		},
+		kvKey: 'bundle-key',
 	})
 })
 
@@ -133,15 +150,29 @@ test('publishes a new external Artifacts HEAD', async () => {
 			newCommit: 'commit-new',
 			expectedHead: 'commit-new',
 			allowForce: false,
+			rebuildPackageArtifacts: false,
 		}),
 	)
 })
 
 test('returns already_published when Artifacts HEAD matches D1', async () => {
+	const targets = [
+		{
+			kind: 'service',
+			artifactName: 'inbox',
+			entryPoint: 'src/service.ts',
+			bundleKind: 'module',
+		},
+	]
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-old',
 	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'already_published',
+		published_commit: 'commit-old',
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 
 	const result = await publishExternalPushCapability.handler(
 		{ package_id: 'package-1' },
@@ -160,7 +191,19 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 				'No published bundle artifacts currently declare a static dependency on this package.',
 		},
 	})
-	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceId: 'source-1',
+			newCommit: 'commit-old',
+		}),
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-old',
+		target: targets[0],
+		baseUrl: 'https://kody.test',
+	})
 })
 
 test('published output lists stale static dependents for the new dependency commit', async () => {
@@ -233,6 +276,67 @@ test('published output lists stale static dependents for the new dependency comm
 	)
 	expect(publishExternalPushCapability.outputTypeDefinition).toContain(
 		'current_dependency_commit',
+	)
+})
+
+test('rebuilds published package bundle artifacts one target at a time after publish', async () => {
+	const targets = [
+		{
+			kind: 'module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'module',
+		},
+		{
+			kind: 'importable-module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'importable-module',
+		},
+	]
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+
+	const result = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+
+	expect(result.status).toBe('published')
+	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledWith({
+		sourceId: 'source-1',
+		userId: 'user-1',
+	})
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
+		1,
+		{
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-new',
+			target: targets[0],
+			baseUrl: 'https://kody.test',
+		},
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
+		2,
+		{
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-new',
+			target: targets[1],
+			baseUrl: 'https://kody.test',
+		},
 	)
 })
 
@@ -377,11 +481,16 @@ test('returns already_published when a retry observes that the reset attempt com
 			created_at: '2026-05-04T00:00:00.000Z',
 			updated_at: '2026-05-04T00:00:00.000Z',
 		})
-	mockModule.publishFromExternalRef.mockRejectedValueOnce(
-		new Error(
-			"Durable Object's isolate exceeded its memory limit and was reset",
-		),
-	)
+	mockModule.publishFromExternalRef
+		.mockRejectedValueOnce(
+			new Error(
+				"Durable Object's isolate exceeded its memory limit and was reset",
+			),
+		)
+		.mockResolvedValueOnce({
+			status: 'already_published',
+			published_commit: 'commit-new',
+		})
 
 	try {
 		const result = await publishExternalPushCapability.handler(
@@ -401,7 +510,7 @@ test('returns already_published when a retry observes that the reset attempt com
 					'No published bundle artifacts currently declare a static dependency on this package.',
 			},
 		})
-		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
 	} finally {
 		warnSpy.mockRestore()
 	}

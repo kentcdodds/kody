@@ -22,6 +22,7 @@ export type FinalizePublishedSourceInput = {
 	publishedCommit: string
 	files: Record<string, string>
 	baseUrl?: string
+	rebuildPackageArtifacts?: boolean
 }
 
 export async function finalizePublishedEntitySource(
@@ -77,6 +78,7 @@ export async function finalizePublishedEntitySource(
 				userId: input.source.user_id,
 				packageId: input.source.entity_id,
 				sourceId: input.source.id,
+				rebuildArtifacts: input.rebuildPackageArtifacts ?? true,
 			})
 		} catch (projectionError) {
 			Sentry.captureException(projectionError, {
@@ -115,6 +117,7 @@ export async function publishFromExternalRef(input: {
 	manifestPath?: string
 	sourceRoot?: string
 	runId?: string
+	rebuildPackageArtifacts?: boolean
 }): Promise<RepoExternalPublishResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
@@ -164,6 +167,7 @@ export async function publishFromExternalRef(input: {
 		publishedCommit: input.newCommit,
 		files: input.files ?? checks.sourceFiles,
 		baseUrl: input.baseUrl,
+		rebuildPackageArtifacts: input.rebuildPackageArtifacts,
 	})
 	return {
 		status: 'published',

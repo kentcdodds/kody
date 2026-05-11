@@ -25,6 +25,12 @@ import {
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import {
+	collectPublishedPackageArtifactTargets,
+	persistPublishedPackageArtifactTarget,
+	type PublishedPackageArtifactBuildTarget,
+} from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
 import {
@@ -481,6 +487,39 @@ class RepoSessionBase extends DurableObject<Env> {
 				ok: null,
 				results: null,
 			}
+		)
+	}
+
+	private async resolvePublishSource(input: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+	}) {
+		if (input.sessionId) {
+			const { source } = await this.getSessionState(
+				input.sessionId,
+				input.userId,
+			)
+			return source
+		}
+		if (!input.sourceId) {
+			throw new Error('A sessionId or sourceId is required.')
+		}
+		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
+		if (!source || source.user_id !== input.userId) {
+			throw new Error('Repo source was not found for this user.')
+		}
+		return source
+	}
+
+	private async listPackageArtifactTargetsForSource(source: EntitySourceRow) {
+		if (source.entity_kind !== 'package') return []
+		const manifest = await this.readManifestFromWorkspace(
+			source.manifest_path,
+			source.entity_kind,
+		)
+		return collectPublishedPackageArtifactTargets(
+			manifest as Parameters<typeof collectPublishedPackageArtifactTargets>[0],
 		)
 	}
 
@@ -1228,6 +1267,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			baseUrl: source.source_root,
 			userId: input.userId,
 		})
+		const { sourceFiles: _sourceFiles, ...publicResult } = result
 		const runId = crypto.randomUUID()
 		const treeHash = await this.computeTreeHash()
 		const checkedAt = nowIso()
@@ -1242,15 +1282,15 @@ class RepoSessionBase extends DurableObject<Env> {
 			runId,
 			treeHash,
 			checkedAt,
-			ok: result.ok,
-			results: result.results.map((entry) => ({
+			ok: publicResult.ok,
+			results: publicResult.results.map((entry) => ({
 				kind: entry.kind,
 				ok: entry.ok,
 				message: entry.message,
 			})),
 		})
 		return {
-			...result,
+			...publicResult,
 			runId,
 			treeHash,
 			checkedAt,
@@ -1260,6 +1300,89 @@ class RepoSessionBase extends DurableObject<Env> {
 	async getCheckStatus(input: { sessionId: string; userId: string }) {
 		await this.getSessionState(input.sessionId, input.userId)
 		return this.readCheckStatus()
+	}
+
+	async listPublishedPackageArtifactTargets(input: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+	}): Promise<Array<PublishedPackageArtifactBuildTarget>> {
+		const source = await this.resolvePublishSource(input)
+		return await this.listPackageArtifactTargetsForSource(source)
+	}
+
+	async rebuildPublishedPackageArtifact(input: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+		publishedCommit: string
+		target: PublishedPackageArtifactBuildTarget
+		baseUrl?: string
+	}): Promise<{
+		ok: true
+		target: PublishedPackageArtifactBuildTarget
+		kvKey: string | null
+	}> {
+		const source = await this.resolvePublishSource(input)
+		if (source.entity_kind !== 'package') {
+			throw new Error(
+				'Published bundle artifacts can only be rebuilt for packages.',
+			)
+		}
+		const savedPackage = await getSavedPackageById(this.env.APP_DB, {
+			userId: input.userId,
+			packageId: source.entity_id,
+		})
+		if (!savedPackage) {
+			throw new Error(`Saved package "${source.entity_id}" was not found.`)
+		}
+		const sourceFiles = await this.collectWorkspaceFiles()
+		const sourceAtPublishedCommit = {
+			...source,
+			published_commit: input.publishedCommit,
+		}
+		const {
+			buildKodyAppBundle,
+			buildKodyModuleBundle,
+			buildKodyImportableModuleBundle,
+		} = await import('#worker/package-runtime/module-graph.ts')
+		const kvKey = await persistPublishedPackageArtifactTarget({
+			env: this.env,
+			userId: input.userId,
+			source: sourceAtPublishedCommit,
+			savedPackage,
+			target: input.target,
+			buildAppBundle: async ({ entryPoint }) =>
+				await buildKodyAppBundle({
+					env: this.env,
+					baseUrl: input.baseUrl ?? source.source_root,
+					userId: input.userId,
+					sourceFiles,
+					entryPoint,
+					cacheKey: null,
+				}),
+			buildModuleBundle: async ({ entryPoint }) =>
+				await buildKodyModuleBundle({
+					env: this.env,
+					baseUrl: input.baseUrl ?? source.source_root,
+					userId: input.userId,
+					sourceFiles,
+					entryPoint,
+				}),
+			buildImportableModuleBundle: async ({ entryPoint }) =>
+				await buildKodyImportableModuleBundle({
+					env: this.env,
+					baseUrl: input.baseUrl ?? source.source_root,
+					userId: input.userId,
+					sourceFiles,
+					entryPoint,
+				}),
+		})
+		return {
+			ok: true,
+			target: input.target,
+			kvKey,
+		}
 	}
 
 	async rebaseSession(input: {
@@ -1392,6 +1515,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
 			files: snapshotFiles,
 			baseUrl: source.source_root,
+			rebuildPackageArtifacts: false,
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
@@ -1417,6 +1541,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		expectedHead?: string | null
 		allowForce?: boolean
 		baseUrl?: string
+		rebuildPackageArtifacts?: boolean
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
 		if (!source || source.user_id !== input.userId) {
@@ -1478,6 +1603,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				source.source_root || repoSessionWorkspacePrefix,
 				repoSessionWorkspacePrefix,
 			),
+			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 		})
 	}
 }

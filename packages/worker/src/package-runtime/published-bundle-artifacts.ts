@@ -45,6 +45,34 @@ type PersistPublishedBundleArtifactInput = {
 	packageContext?: PublishedBundleArtifact['packageContext']
 }
 
+export type PublishedPackageArtifactBuildTarget = {
+	kind: BundleArtifactKind
+	artifactName?: string | null
+	entryPoint: string
+	bundleKind: 'app' | 'module' | 'importable-module'
+}
+
+type PublishedPackageArtifactBuilders = {
+	buildAppBundle: (args: { entryPoint: string }) => Promise<{
+		mainModule: string
+		modules: WorkerLoaderModules
+		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
+	}>
+	buildModuleBundle: (args: { entryPoint: string }) => Promise<{
+		mainModule: string
+		modules: WorkerLoaderModules
+		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
+	}>
+	buildImportableModuleBundle: (args: { entryPoint: string }) => Promise<{
+		mainModule: string
+		modules: WorkerLoaderModules
+		dependencies: Array<BundleArtifactDependency>
+		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
+	}>
+}
+
 function normalizeArtifactName(artifactName: string | null | undefined) {
 	const trimmed = artifactName?.trim()
 	return trimmed && trimmed.length > 0 ? trimmed : null
@@ -191,171 +219,129 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 	}
 }
 
-export async function rebuildPublishedPackageArtifacts(input: {
-	env: Env
-	userId: string
-	source: EntitySourceRow
-	savedPackage: SavedPackageRecord
-	manifest: AuthoredPackageJson
-	files: Record<string, string>
-	buildAppBundle: (args: { entryPoint: string }) => Promise<{
-		mainModule: string
-		modules: WorkerLoaderModules
-		dependencies: Array<BundleArtifactDependency>
-		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
-	}>
-	buildModuleBundle: (args: { entryPoint: string }) => Promise<{
-		mainModule: string
-		modules: WorkerLoaderModules
-		dependencies: Array<BundleArtifactDependency>
-		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
-	}>
-	buildImportableModuleBundle: (args: { entryPoint: string }) => Promise<{
-		mainModule: string
-		modules: WorkerLoaderModules
-		dependencies: Array<BundleArtifactDependency>
-		dynamicDependencies?: Array<BundleArtifactDynamicDependency>
-	}>
-}) {
-	if (input.manifest.kody.app) {
-		const entryPoint = getPackageAppEntryPath(input.manifest)
+export function collectPublishedPackageArtifactTargets(
+	manifest: AuthoredPackageJson,
+) {
+	const targets: Array<PublishedPackageArtifactBuildTarget> = []
+	if (manifest.kody.app) {
+		const entryPoint = getPackageAppEntryPath(manifest)
 		if (entryPoint) {
-			const bundle = await input.buildAppBundle({ entryPoint })
-			await persistPublishedBundleArtifact({
-				env: input.env,
-				userId: input.userId,
-				source: input.source,
+			targets.push({
 				kind: 'app',
 				entryPoint,
-				mainModule: bundle.mainModule,
-				modules: bundle.modules,
-				dependencies: bundle.dependencies,
-				dynamicDependencies: bundle.dynamicDependencies,
-				packageContext: {
-					packageId: input.savedPackage.id,
-					kodyId: input.savedPackage.kodyId,
-					sourceId: input.savedPackage.sourceId,
-				},
+				bundleKind: 'app',
 			})
 		}
 	}
-	for (const service of listPackageServices(input.manifest)) {
-		const bundle = await input.buildModuleBundle({
-			entryPoint: service.entry,
-		})
-		await persistPublishedBundleArtifact({
-			env: input.env,
-			userId: input.userId,
-			source: input.source,
+	for (const service of listPackageServices(manifest)) {
+		targets.push({
 			kind: 'service',
 			artifactName: service.name,
 			entryPoint: service.entry,
-			mainModule: bundle.mainModule,
-			modules: bundle.modules,
-			dependencies: bundle.dependencies,
-			dynamicDependencies: bundle.dynamicDependencies,
-			packageContext: {
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				sourceId: input.savedPackage.sourceId,
-			},
+			bundleKind: 'module',
 		})
 	}
 	for (const [exportName, exportTarget] of Object.entries(
-		input.manifest.exports,
+		manifest.exports,
 	) as Array<[string, AuthoredPackageJson['exports'][string]]>) {
 		const entryPoint =
 			typeof exportTarget === 'string'
 				? exportTarget
 				: (exportTarget.import ?? exportTarget.default ?? null)
 		if (!entryPoint) continue
-		const bundle = await input.buildModuleBundle({
-			entryPoint,
-		})
-		await persistPublishedBundleArtifact({
-			env: input.env,
-			userId: input.userId,
-			source: input.source,
+		targets.push({
 			kind: 'module',
 			artifactName: exportName,
 			entryPoint,
-			mainModule: bundle.mainModule,
-			modules: bundle.modules,
-			dependencies: bundle.dependencies,
-			dynamicDependencies: bundle.dynamicDependencies,
-			packageContext: {
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				sourceId: input.savedPackage.sourceId,
-			},
+			bundleKind: 'module',
 		})
-		const importableBundle = await input.buildImportableModuleBundle({
-			entryPoint,
-		})
-		await persistPublishedBundleArtifact({
-			env: input.env,
-			userId: input.userId,
-			source: input.source,
+		targets.push({
 			kind: 'importable-module',
 			artifactName: exportName,
 			entryPoint,
-			mainModule: importableBundle.mainModule,
-			modules: importableBundle.modules,
-			dependencies: importableBundle.dependencies,
-			dynamicDependencies: importableBundle.dynamicDependencies,
-			packageContext: {
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				sourceId: input.savedPackage.sourceId,
-			},
+			bundleKind: 'importable-module',
 		})
 	}
-	for (const subscription of listPackageSubscriptions(input.manifest)) {
-		const bundle = await input.buildModuleBundle({
-			entryPoint: subscription.handler,
-		})
-		await persistPublishedBundleArtifact({
-			env: input.env,
-			userId: input.userId,
-			source: input.source,
+	for (const subscription of listPackageSubscriptions(manifest)) {
+		targets.push({
 			kind: 'module',
 			artifactName: buildPackageSubscriptionArtifactName(subscription.topic),
 			entryPoint: subscription.handler,
-			mainModule: bundle.mainModule,
-			modules: bundle.modules,
-			dependencies: bundle.dependencies,
-			dynamicDependencies: bundle.dynamicDependencies,
-			packageContext: {
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				sourceId: input.savedPackage.sourceId,
-			},
+			bundleKind: 'module',
 		})
 	}
 	for (const [jobName, jobDefinition] of Object.entries(
-		input.manifest.kody.jobs ?? {},
+		manifest.kody.jobs ?? {},
 	) as Array<
 		[string, NonNullable<AuthoredPackageJson['kody']['jobs']>[string]]
 	>) {
-		const bundle = await input.buildModuleBundle({
-			entryPoint: jobDefinition.entry,
-		})
-		await persistPublishedBundleArtifact({
-			env: input.env,
-			userId: input.userId,
-			source: input.source,
+		targets.push({
 			kind: 'job',
 			artifactName: jobName,
 			entryPoint: jobDefinition.entry,
-			mainModule: bundle.mainModule,
-			modules: bundle.modules,
-			dependencies: bundle.dependencies,
-			dynamicDependencies: bundle.dynamicDependencies,
-			packageContext: {
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				sourceId: input.savedPackage.sourceId,
-			},
+			bundleKind: 'module',
+		})
+	}
+	return targets
+}
+
+export async function persistPublishedPackageArtifactTarget(
+	input: {
+		env: Env
+		userId: string
+		source: EntitySourceRow
+		savedPackage: SavedPackageRecord
+		target: PublishedPackageArtifactBuildTarget
+	} & PublishedPackageArtifactBuilders,
+) {
+	const bundle =
+		input.target.bundleKind === 'app'
+			? await input.buildAppBundle({ entryPoint: input.target.entryPoint })
+			: input.target.bundleKind === 'importable-module'
+				? await input.buildImportableModuleBundle({
+						entryPoint: input.target.entryPoint,
+					})
+				: await input.buildModuleBundle({
+						entryPoint: input.target.entryPoint,
+					})
+	return await persistPublishedBundleArtifact({
+		env: input.env,
+		userId: input.userId,
+		source: input.source,
+		kind: input.target.kind,
+		artifactName: input.target.artifactName,
+		entryPoint: input.target.entryPoint,
+		mainModule: bundle.mainModule,
+		modules: bundle.modules,
+		dependencies: bundle.dependencies,
+		dynamicDependencies: bundle.dynamicDependencies,
+		packageContext: {
+			packageId: input.savedPackage.id,
+			kodyId: input.savedPackage.kodyId,
+			sourceId: input.savedPackage.sourceId,
+		},
+	})
+}
+
+export async function rebuildPublishedPackageArtifacts(
+	input: {
+		env: Env
+		userId: string
+		source: EntitySourceRow
+		savedPackage: SavedPackageRecord
+		manifest: AuthoredPackageJson
+	} & PublishedPackageArtifactBuilders,
+) {
+	for (const target of collectPublishedPackageArtifactTargets(input.manifest)) {
+		await persistPublishedPackageArtifactTarget({
+			env: input.env,
+			userId: input.userId,
+			source: input.source,
+			savedPackage: input.savedPackage,
+			target,
+			buildAppBundle: input.buildAppBundle,
+			buildModuleBundle: input.buildModuleBundle,
+			buildImportableModuleBundle: input.buildImportableModuleBundle,
 		})
 	}
 }
