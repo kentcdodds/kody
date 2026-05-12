@@ -2,6 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {
 	normalizeRepoManifestSummary,
 	repoRunChecksOutputSchema,
@@ -22,9 +23,18 @@ export const repoRunChecksCapability = defineDomainCapability(
 		outputSchema: repoRunChecksOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const result = await repoSessionRpc(ctx.env, args.session_id).runChecks({
+			const session = repoSessionRpc(ctx.env, args.session_id)
+			const sessionInfo = await session.getSessionInfo({
 				sessionId: args.session_id,
 				userId: user.userId,
+			})
+			const result = await session.runChecks({
+				sessionId: args.session_id,
+				userId: user.userId,
+				expectedPackageScope:
+					sessionInfo.entity_type === 'package'
+						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
+						: undefined,
 			})
 			return {
 				ok: result.ok,

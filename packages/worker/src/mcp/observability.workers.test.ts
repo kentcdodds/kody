@@ -175,11 +175,69 @@ test('package_save rejects invalid package.json before persistence', async () =>
 					user: {
 						userId: 'user-1',
 						email: 'user@example.com',
+						displayName: 'user',
 					},
 				}),
 			},
 		),
 	).rejects.toThrow('Invalid package.json')
+})
+
+test('package_save rejects package names outside the signed-in username scope', async () => {
+	resetRepoPersistenceMocks()
+	const handler = capabilityMap['package_save'].handler
+	await expect(
+		handler(
+			{
+				files: [
+					{
+						path: 'package.json',
+						content: JSON.stringify({
+							name: '@other/observed-package',
+							exports: {
+								'.': './src/index.ts',
+							},
+							kody: {
+								id: 'observed-package',
+								description: 'Observation test package.',
+							},
+						}),
+					},
+					{
+						path: 'src/index.ts',
+						content:
+							'export default async function main() { return { ok: true } }\n',
+					},
+				],
+			},
+			{
+				env: {
+					APP_DB: {
+						prepare() {
+							return {
+								bind() {
+									return {
+										first: async () => ({ username: 'user' }),
+									}
+								},
+							}
+						},
+					},
+				} as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+						displayName: 'user',
+					},
+				}),
+			},
+		),
+	).rejects.toThrow(
+		'package.json name "@other/observed-package" must use the authenticated user\'s package scope "@user/*".',
+	)
+	expect(repoMockModule.ensureEntitySource).not.toHaveBeenCalled()
 })
 
 test('logMcpEvent reports failure without throwing when Sentry is off', () => {
@@ -223,7 +281,7 @@ test('package_save capability logs success for valid invocation', async () => {
 					{
 						path: 'package.json',
 						content: JSON.stringify({
-							name: '@kody/observed-package',
+							name: '@user/observed-package',
 							exports: {
 								'.': './src/index.ts',
 							},
@@ -261,7 +319,7 @@ test('package_save capability logs success for valid invocation', async () => {
 												? {
 														id: 'package-1',
 														user_id: 'user-1',
-														name: '@kody/observed-package',
+														name: '@user/observed-package',
 														kody_id: 'observed-package',
 														description: 'Observation test package.',
 														tags_json: '[]',
@@ -271,21 +329,25 @@ test('package_save capability logs success for valid invocation', async () => {
 														created_at: '2026-04-13T00:00:00.000Z',
 														updated_at: '2026-04-13T00:00:00.000Z',
 													}
-												: query.includes('SELECT * FROM entity_sources')
+												: query.includes('FROM users')
 													? {
-															id: 'package-package-1',
-															user_id: 'user-1',
-															entity_kind: 'package',
-															entity_id: 'package-1',
-															repo_id: 'package-package-1',
-															published_commit: 'published-commit-1',
-															indexed_commit: 'published-commit-1',
-															manifest_path: 'package.json',
-															source_root: '/',
-															created_at: '2026-04-13T00:00:00.000Z',
-															updated_at: '2026-04-13T00:00:00.000Z',
+															username: 'user',
 														}
-													: null,
+													: query.includes('SELECT * FROM entity_sources')
+														? {
+																id: 'package-package-1',
+																user_id: 'user-1',
+																entity_kind: 'package',
+																entity_id: 'package-1',
+																repo_id: 'package-package-1',
+																published_commit: 'published-commit-1',
+																indexed_commit: 'published-commit-1',
+																manifest_path: 'package.json',
+																source_root: '/',
+																created_at: '2026-04-13T00:00:00.000Z',
+																updated_at: '2026-04-13T00:00:00.000Z',
+															}
+														: null,
 										all: async () => ({
 											results: [],
 										}),
@@ -311,7 +373,7 @@ test('package_save capability logs success for valid invocation', async () => {
 									sourceRoot: '/',
 									files: {
 										'package.json': JSON.stringify({
-											name: '@kody/observed-package',
+											name: '@user/observed-package',
 											exports: { '.': './src/index.ts' },
 											kody: {
 												id: 'observed-package',
@@ -367,7 +429,7 @@ test('package_save capability logs success for valid invocation', async () => {
 									content:
 										path === 'package.json'
 											? JSON.stringify({
-													name: '@kody/observed-package',
+													name: '@user/observed-package',
 													exports: { '.': './src/index.ts' },
 													kody: {
 														id: 'observed-package',
@@ -403,6 +465,7 @@ test('package_save capability logs success for valid invocation', async () => {
 					user: {
 						userId: 'user-1',
 						email: 'user@example.com',
+						displayName: 'user',
 					},
 				}),
 			},

@@ -118,6 +118,7 @@ export async function publishFromExternalRef(input: {
 	sourceRoot?: string
 	runId?: string
 	rebuildPackageArtifacts?: boolean
+	expectedPackageScope?: string
 }): Promise<RepoExternalPublishResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
@@ -151,6 +152,7 @@ export async function publishFromExternalRef(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		expectedPackageScope: input.expectedPackageScope,
 	})
 	const runId = input.runId ?? crypto.randomUUID()
 	if (!checks.ok) {

@@ -18,10 +18,30 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 			},
 		}),
 		manifestPath: 'package.json',
+		expectedPackageScope: 'kentcdodds',
 	})
 
 	expect(manifest.name).toBe('@kentcdodds/cursor-cloud-agents')
 	expect(manifest.kody.id).toBe('cursor-cloud-agents')
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/cursor-cloud-agents',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'cursor-cloud-agents',
+					description: 'Wrong package scope',
+				},
+			}),
+			manifestPath: 'package.json',
+			expectedPackageScope: 'kody',
+		}),
+	).toThrow(
+		'package.json name "@kentcdodds/cursor-cloud-agents" must use the authenticated user\'s package scope "@kody/*".',
+	)
 
 	expect(() =>
 		parseAuthoredPackageJson({

@@ -25,9 +25,31 @@ function getExpectedKodyName(name: string) {
 	return separator === -1 ? trimmed : trimmed.slice(separator + 1)
 }
 
+function getPackageNameScope(name: string) {
+	const trimmed = name.trim()
+	const separator = trimmed.indexOf('/')
+	if (separator <= 1) return null
+	return trimmed.slice(1, separator)
+}
+
+export function assertAuthoredPackageJsonNameScope(input: {
+	manifest: AuthoredPackageJson
+	expectedPackageScope: string
+	manifestPath?: string
+}) {
+	const expectedScope = input.expectedPackageScope.trim().replace(/^@/, '')
+	const actualScope = getPackageNameScope(input.manifest.name)
+	if (actualScope !== expectedScope) {
+		throw new Error(
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${input.manifest.name}" must use the authenticated user's package scope "@${expectedScope}/*".`,
+		)
+	}
+}
+
 export function parseAuthoredPackageJson(input: {
 	content: string
 	manifestPath?: string
+	expectedPackageScope?: string
 }): AuthoredPackageJson {
 	let parsed: unknown
 	try {
@@ -72,6 +94,13 @@ export function parseAuthoredPackageJson(input: {
 		throw new Error(
 			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must use a leaf package name that matches kody.id "${manifest.kody.id}".`,
 		)
+	}
+	if (input.expectedPackageScope !== undefined) {
+		assertAuthoredPackageJsonNameScope({
+			manifest,
+			expectedPackageScope: input.expectedPackageScope,
+			manifestPath: input.manifestPath,
+		})
 	}
 
 	return manifest

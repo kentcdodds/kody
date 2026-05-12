@@ -834,6 +834,7 @@ export async function runRepoChecks(input: {
 	env?: Env
 	baseUrl?: string
 	userId?: string
+	expectedPackageScope?: string
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
@@ -842,6 +843,7 @@ export async function runRepoChecks(input: {
 	const manifest = parseAuthoredPackageJson({
 		content: manifestContent,
 		manifestPath: input.manifestPath,
+		expectedPackageScope: input.expectedPackageScope,
 	})
 	const results: Array<RepoCheckResult> = [
 		{

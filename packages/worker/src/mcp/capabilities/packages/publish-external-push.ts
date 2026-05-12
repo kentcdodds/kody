@@ -8,6 +8,7 @@ import {
 	getStaticPackageDependentsSummary,
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
@@ -240,6 +241,10 @@ export const publishExternalPushCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const expectedPackageScope = await getMcpUserPackageScope(
+				ctx.env.APP_DB,
+				user,
+			)
 			const maxAttempts = externalPublishRetryDelaysMs.length + 1
 			let lastTransientError: unknown = null
 			for (
@@ -280,6 +285,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 						allowForce: args.allow_force,
 						baseUrl: ctx.callerContext.baseUrl,
 						rebuildPackageArtifacts: false,
+						expectedPackageScope,
 					})
 					if (result.status === 'already_published') {
 						if (!result.published_commit) {

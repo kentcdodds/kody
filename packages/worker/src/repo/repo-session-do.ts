@@ -343,6 +343,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async readManifestFromWorkspace(
 		manifestPath: string,
 		entityKind: EntityKind,
+		expectedPackageScope?: string,
 	) {
 		const manifestContent = await this.workspace.readFile(
 			resolveRepoWorkspacePath(manifestPath, repoSessionWorkspacePrefix),
@@ -354,6 +355,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			return parseAuthoredPackageJson({
 				content: manifestContent,
 				manifestPath,
+				expectedPackageScope,
 			})
 		}
 		return parseRepoManifest({
@@ -1246,6 +1248,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async runChecks(input: {
 		sessionId: string
 		userId: string
+		expectedPackageScope?: string
 	}): Promise<RepoSessionCheckRun> {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
@@ -1266,6 +1269,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			env: this.env,
 			baseUrl: source.source_root,
 			userId: input.userId,
+			expectedPackageScope:
+				source.entity_kind === 'package'
+					? input.expectedPackageScope
+					: undefined,
 		})
 		const { sourceFiles: _sourceFiles, ...publicResult } = result
 		const runId = crypto.randomUUID()
@@ -1442,6 +1449,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		force?: boolean
 		rebuildPackageArtifacts?: boolean
+		expectedPackageScope?: string
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -1483,6 +1491,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		const sessionHeadCommit =
 			(await this.commitIfDirty(`Publish repo session ${input.sessionId}`)) ??
 			(await this.getHeadCommit())
+		await this.readManifestFromWorkspace(
+			source.manifest_path,
+			source.entity_kind,
+			input.expectedPackageScope,
+		)
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
@@ -1505,10 +1518,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: targetBranch,
 			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
-		await this.readManifestFromWorkspace(
-			source.manifest_path,
-			source.entity_kind,
-		)
 		const snapshotFiles = await this.collectWorkspaceFiles()
 		await finalizePublishedEntitySource({
 			env: this.env,
@@ -1543,6 +1552,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		allowForce?: boolean
 		baseUrl?: string
 		rebuildPackageArtifacts?: boolean
+		expectedPackageScope?: string
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
 		if (!source || source.user_id !== input.userId) {
@@ -1605,6 +1615,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				repoSessionWorkspacePrefix,
 			),
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
+			expectedPackageScope: input.expectedPackageScope,
 		})
 	}
 }

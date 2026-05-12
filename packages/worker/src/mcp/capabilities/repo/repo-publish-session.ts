@@ -2,6 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {
 	repoPublishSessionOutputSchema,
 	repoSessionIdSchema,
@@ -31,6 +32,10 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				sessionId: args.session_id,
 				userId: user.userId,
 				rebuildPackageArtifacts: false,
+				expectedPackageScope:
+					sessionInfo.entity_type === 'package'
+						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
+						: undefined,
 			})
 			if (result.status === 'ok') {
 				if (sessionInfo.entity_type === 'package') {
