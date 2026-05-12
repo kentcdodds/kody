@@ -11,7 +11,7 @@ test('seed data arg parsing keeps the default local workflow while honoring over
 	expect(defaultOptions.local).toBe(true)
 	expect(defaultOptions.remote).toBe(false)
 	expect(defaultOptions.email).toBe('alice@example.com')
-	expect(defaultOptions.username).toBe('alice@example.com')
+	expect(defaultOptions.username).toBe('alice')
 	expect(defaultOptions.env).toBe('production')
 
 	const explicitUsernameOptions = parseArgs([

@@ -100,7 +100,9 @@ export function parseArgs(argv: Array<string>): CliOptions {
 	const effectiveEmail = options.email
 	if (!usernameProvided) {
 		options.username =
-			effectiveEmail === defaultTestEmail ? defaultTestUsername : effectiveEmail
+			effectiveEmail === defaultTestEmail
+				? defaultTestUsername
+				: usernameFromEmail(effectiveEmail)
 	}
 	if (!options.username) {
 		fail('Missing required --username <username> value.')
@@ -144,6 +146,18 @@ export function resolveWranglerEnv({
 
 function quoteSql(value: string) {
 	return `'${value.replace(/'/g, "''")}'`
+}
+
+function usernameFromEmail(email: string) {
+	const localPart = email.split('@')[0] ?? 'user'
+	const normalized = localPart
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/g, '-')
+		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+	const truncated = normalized
+		.slice(0, 32)
+		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+	return truncated.length >= 3 ? truncated : `user-${truncated || 'test'}`
 }
 
 function buildSeedSql({
