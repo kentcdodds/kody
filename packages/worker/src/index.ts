@@ -216,6 +216,10 @@ const appHandler = withCors({
 			return stub.fetch(forwardRequest)
 		}
 
+		if (url.pathname.startsWith('/connectors/')) {
+			return new Response('Not Found', { status: 404 })
+		}
+
 		// Sandboxed widget iframes have an opaque origin, so JS/CSS loads become CORS fetches.
 		// ChatGPT/MCP Jam can render with sandbox="allow-scripts", which requires these headers.
 		if (

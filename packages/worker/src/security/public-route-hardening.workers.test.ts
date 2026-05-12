@@ -53,6 +53,21 @@ test('user-scoped connector entrypoints reject unauthenticated HTTP access while
 	expect(websocketResponse.webSocket).toBeTruthy()
 })
 
+test('unmatched connector ingress paths do not fall through to the SPA shell', async () => {
+	const requests = [
+		createRequest('/connectors/home/default'),
+		createRequest('/connectors/home/default', {
+			headers: { Upgrade: 'websocket' },
+		}),
+	]
+
+	for (const request of requests) {
+		const response = await workerFetch(request)
+		expect(response.status).toBe(404)
+		await expect(response.text()).resolves.toBe('Not Found')
+	}
+})
+
 test('unknown maintenance endpoints return a consistent JSON 404 response', async () => {
 	const requests = [
 		createRequest('/__maintenance/reindex-skills', {

@@ -55,3 +55,69 @@ test('writeGeneratedWranglerConfig keeps migrations ordered by tag version', asy
 		await rm(tempDir, { force: true, recursive: true })
 	}
 })
+
+test('writeGeneratedWranglerConfig copies production asset routing to the deployed top-level config', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
+
+	try {
+		const outConfigPath = path.join(
+			tempDir,
+			'wrangler-production.generated.json',
+		)
+		await writeGeneratedWranglerConfig({
+			baseConfigPath: workerWranglerConfigPath,
+			outConfigPath,
+			envName: 'production',
+			d1DatabaseName: 'kody',
+			d1DatabaseId: 'dry-run-kody',
+			oauthKvId: 'dry-run-kody-oauth',
+			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+		})
+
+		const generatedConfigText = await readFile(outConfigPath, 'utf8')
+		const generatedConfig = parseJsonc<{
+			assets?: { run_worker_first?: Array<string> }
+			env?: {
+				production?: { assets?: { run_worker_first?: Array<string> } }
+			}
+		}>(generatedConfigText)
+
+		expect(generatedConfig.assets?.run_worker_first).toContain('/connectors/*')
+		expect(generatedConfig.assets).toEqual(
+			generatedConfig.env?.production?.assets,
+		)
+	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})
+
+test('writeGeneratedWranglerConfig copies preview asset routing to the deployed top-level config', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
+
+	try {
+		const outConfigPath = path.join(tempDir, 'wrangler-preview.generated.json')
+		await writeGeneratedWranglerConfig({
+			baseConfigPath: workerWranglerConfigPath,
+			outConfigPath,
+			envName: 'preview',
+			workerName: 'kody-pr-123',
+			d1DatabaseName: 'kody-pr-123-db',
+			d1DatabaseId: 'dry-run-kody-pr-123-db',
+			oauthKvId: 'dry-run-kody-pr-123-oauth',
+			bundleArtifactsKvId: 'dry-run-kody-pr-123-bundle-artifacts',
+		})
+
+		const generatedConfigText = await readFile(outConfigPath, 'utf8')
+		const generatedConfig = parseJsonc<{
+			assets?: { run_worker_first?: Array<string> }
+			env?: {
+				preview?: { assets?: { run_worker_first?: Array<string> } }
+			}
+		}>(generatedConfigText)
+
+		expect(generatedConfig.assets?.run_worker_first).toContain('/connectors/*')
+		expect(generatedConfig.assets).toEqual(generatedConfig.env?.preview?.assets)
+	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})

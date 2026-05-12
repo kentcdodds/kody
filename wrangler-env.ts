@@ -10,11 +10,15 @@ import {
 	stopChildProcessTree,
 } from './tools/dev-process-utils.ts'
 import { resolveLocalBinary } from './tools/node-runtime.ts'
+import {
+	getDefaultWranglerConfigPath,
+	resolveWranglerConfigPath,
+} from './tools/wrangler-env-config.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
 const args = process.argv.slice(2)
-const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
+const defaultWranglerConfigPath = getDefaultWranglerConfigPath()
 
 const hasEnvFlag = args.includes('--env') || args.includes('-e')
 const isDevCommand = args[0] === 'dev'
@@ -30,7 +34,9 @@ const commandArgs = [...args]
 
 if (
 	!hasConfigFlag &&
-	existsSync(path.join(process.cwd(), defaultWranglerConfigPath))
+	existsSync(
+		resolveWranglerConfigPath(defaultWranglerConfigPath, process.cwd()),
+	)
 ) {
 	commandArgs.push('--config', defaultWranglerConfigPath)
 }
