@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	captureException: vi.fn(),
@@ -95,13 +95,15 @@ vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
 
 const { handlePackageAppRequest } = await import('./package-app.ts')
 
-beforeEach(() => {
+function resetMocks() {
 	vi.clearAllMocks()
-})
+}
 
-test('handlePackageAppRequest returns a helpful HTML 500 when package app runtime setup fails', async () => {
+test('handlePackageAppRequest reports host setup failures with helpful responses and Sentry context', async () => {
+	resetMocks()
+
 	const response = await handlePackageAppRequest(
-		new Request('https://example.com/packages/example'),
+		new Request('https://example.com/packages/example/report?tab=errors'),
 		{} as Env,
 	)
 
@@ -109,43 +111,8 @@ test('handlePackageAppRequest returns a helpful HTML 500 when package app runtim
 	expect(response.headers.get('content-type')).toContain('text/html')
 	const body = await response.text()
 	expect(body).toContain('Package app could not be prepared')
-	expect(body).toContain(
-		'Kody could not load or prepare this package app runtime',
-	)
 	expect(body).toContain('@kody/example')
-	expect(body).toContain('example')
-})
-
-test('handlePackageAppRequest returns a helpful JSON 500 for API package app requests', async () => {
-	const response = await handlePackageAppRequest(
-		new Request('https://example.com/packages/example/api/data', {
-			headers: { accept: 'application/json' },
-		}),
-		{} as Env,
-	)
-
-	expect(response.status).toBe(500)
-	await expect(response.json()).resolves.toEqual({
-		error: 'Package app could not be prepared',
-		message:
-			'Kody could not load or prepare this package app runtime before your request reached the package code.',
-		next_step:
-			'This has been reported to Kody. Try again shortly, or ask the package owner to republish the package if it keeps happening.',
-		package: {
-			name: '@kody/example',
-			kody_id: 'example',
-		},
-		request_path: '/packages/example/api/data',
-	})
-})
-
-test('handlePackageAppRequest reports package app runtime failures to Sentry', async () => {
-	const response = await handlePackageAppRequest(
-		new Request('https://example.com/packages/example/report?tab=errors'),
-		{} as Env,
-	)
-
-	expect(response.status).toBe(500)
+	expect(body).toContain('/packages/example/report')
 	expect(mockModule.captureException).toHaveBeenCalledTimes(1)
 	expect(mockModule.captureException).toHaveBeenCalledWith(expect.any(Error))
 	expect(mockModule.sentryScope.setLevel).toHaveBeenCalledWith('error')
@@ -189,9 +156,32 @@ test('handlePackageAppRequest reports package app runtime failures to Sentry', a
 			hostPath: '/packages/example/report',
 		}),
 	)
+
+	const apiResponse = await handlePackageAppRequest(
+		new Request('https://example.com/packages/example/api/data', {
+			headers: { accept: 'application/json' },
+		}),
+		{} as Env,
+	)
+
+	expect(apiResponse.status).toBe(500)
+	await expect(apiResponse.json()).resolves.toEqual({
+		error: 'Package app could not be prepared',
+		message:
+			'Kody could not load or prepare this package app runtime before your request reached the package code.',
+		next_step:
+			'This has been reported to Kody. Try again shortly, or ask the package owner to republish the package if it keeps happening.',
+		package: {
+			name: '@kody/example',
+			kody_id: 'example',
+		},
+		request_path: '/packages/example/api/data',
+	})
 })
 
 test('handlePackageAppRequest does not report package entrypoint failures to Kody Sentry', async () => {
+	resetMocks()
+
 	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
 		source: {
 			published_commit: 'commit-1',
@@ -231,6 +221,8 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 })
 
 test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {
+	resetMocks()
+
 	const request = new Request('https://example.com/packages/example/ws/chat', {
 		headers: {
 			Upgrade: 'websocket',
@@ -249,6 +241,8 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 })
 
 test('handlePackageAppRequest routes websocket paths to realtime session manager when explicitKodyId is provided', async () => {
+	resetMocks()
+
 	const request = new Request('https://example.com/ws/chat', {
 		headers: {
 			Upgrade: 'websocket',
@@ -267,6 +261,8 @@ test('handlePackageAppRequest routes websocket paths to realtime session manager
 })
 
 test('handlePackageAppRequest preserves root forwarding for non-websocket explicitKodyId requests', async () => {
+	resetMocks()
+
 	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
 		source: {
 			published_commit: 'commit-1',

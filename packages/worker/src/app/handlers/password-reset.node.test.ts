@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#app/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -40,11 +40,6 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 const { createPasswordResetRequestHandler } =
 	await import('./password-reset.ts')
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite clears shared hoisted mocks between tests.
-beforeEach(() => {
-	vi.clearAllMocks()
-})
-
 function createEnv(overrides: Partial<Env> = {}) {
 	return {
 		APP_DB: {} as D1Database,
@@ -64,36 +59,48 @@ function createResetRequest() {
 
 const hexTokenPattern = /[0-9a-f]{64}/i
 
-test('password reset email sender is derived from APP_BASE_URL hostname', async () => {
+test('password reset sends from the APP_BASE_URL hostname without logging the token', async () => {
+	vi.clearAllMocks()
+	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const handler = createPasswordResetRequestHandler(
 		createEnv({ APP_BASE_URL: 'https://app.example.com/path' }),
 	)
 
-	const response = await handler.handler({
-		request: createResetRequest(),
-		url: new URL('https://request-origin.test/password-reset'),
-		params: {},
-	})
+	try {
+		const response = await handler.handler({
+			request: createResetRequest(),
+			url: new URL('https://request-origin.test/password-reset'),
+			params: {},
+		})
 
-	expect(response.status).toBe(200)
-	expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
-		{
-			accountId: 'account-id',
-			apiBaseUrl: 'https://api.cloudflare.test',
-			apiToken: 'api-token',
-		},
-		expect.objectContaining({
-			from: 'kody@app.example.com',
-			to: 'user@example.com',
-		}),
-	)
-	const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
-	expect((message as { text: string }).text).toContain(
-		'https://app.example.com/reset-password?token=',
-	)
+		expect(response.status).toBe(200)
+		expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
+			{
+				accountId: 'account-id',
+				apiBaseUrl: 'https://api.cloudflare.test',
+				apiToken: 'api-token',
+			},
+			expect.objectContaining({
+				from: 'kody@app.example.com',
+				to: 'user@example.com',
+			}),
+		)
+		const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
+		expect((message as { text: string }).text).toContain(
+			'https://app.example.com/reset-password?token=',
+		)
+		for (const args of warnSpy.mock.calls) {
+			const joined = args.map(String).join(' ')
+			expect(joined).not.toContain('token=')
+			expect(joined).not.toMatch(hexTokenPattern)
+		}
+	} finally {
+		warnSpy.mockRestore()
+	}
 })
 
-test('password reset email is skipped when APP_BASE_URL is not configured', async () => {
+test('password reset skips sending when APP_BASE_URL is missing and logs a redacted payload', async () => {
+	vi.clearAllMocks()
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const handler = createPasswordResetRequestHandler(
 		createEnv({ APP_BASE_URL: '' }),
@@ -112,25 +119,6 @@ test('password reset email is skipped when APP_BASE_URL is not configured', asyn
 			'password-reset-email-sender-unconfigured',
 			expect.any(String),
 		)
-	} finally {
-		warnSpy.mockRestore()
-	}
-})
-
-test('unconfigured email log does not contain token or raw recipient', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const handler = createPasswordResetRequestHandler(
-		createEnv({ APP_BASE_URL: '' }),
-	)
-
-	try {
-		const response = await handler.handler({
-			request: createResetRequest(),
-			url: new URL('https://request-origin.test/password-reset'),
-			params: {},
-		})
-
-		expect(response.status).toBe(200)
 
 		const warnCalls = warnSpy.mock.calls
 		const emailMissingCall = warnCalls.find(
@@ -148,33 +136,6 @@ test('unconfigured email log does not contain token or raw recipient', async () 
 		const parsed = JSON.parse(logPayload) as Record<string, unknown>
 		expect(parsed).toHaveProperty('subject')
 		expect(parsed.to).toBe('***@example.com')
-	} finally {
-		warnSpy.mockRestore()
-	}
-})
-
-test('configured email send does not log the token', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const handler = createPasswordResetRequestHandler(
-		createEnv({ APP_BASE_URL: 'https://app.example.com' }),
-	)
-
-	try {
-		const response = await handler.handler({
-			request: createResetRequest(),
-			url: new URL('https://request-origin.test/password-reset'),
-			params: {},
-		})
-
-		expect(response.status).toBe(200)
-		expect(mockModule.sendCloudflareEmail).toHaveBeenCalledTimes(1)
-
-		const warnCalls = warnSpy.mock.calls
-		for (const args of warnCalls) {
-			const joined = args.map(String).join(' ')
-			expect(joined).not.toContain('token=')
-			expect(joined).not.toMatch(hexTokenPattern)
-		}
 	} finally {
 		warnSpy.mockRestore()
 	}

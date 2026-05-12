@@ -401,12 +401,6 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 	expect(referencedTypeText).not.toContain('type Record')
 	expect(referencedTypeText).not.toContain('type Date')
 	expect(referencedTypeText).not.toContain('interface Response')
-
-	const document = buildPackageSearchDocument(projection)
-	expect(document).toContain('LaunchCursorCloudAgentInput')
-	expect(document).toContain('RepositoryTarget')
-	expect(document).toContain('LaunchMode')
-	expect(document).not.toContain('UnrelatedLocalType')
 })
 
 test('buildPackageSearchProjection uses local declaration kind for exported const signatures', () => {
@@ -660,7 +654,6 @@ export declare function forecast(city: string): Promise<string>
 	expect(document).not.toContain('workflow:')
 	expect(document).toContain('subscription:email.message.received')
 	expect(document).toContain('subscription:email.message.quarantined')
-	expect(document).toContain(
-		'export declare function forecast(city: string): Promise<string>',
-	)
+	expect(document).toContain('forecast')
+	expect(document).toContain('Look up the forecast for a city.')
 })

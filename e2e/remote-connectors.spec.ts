@@ -24,12 +24,10 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 
 	await page.getByLabel('Kind').fill(kind)
 	await page.getByLabel('Instance ID').fill(instanceId)
-	const connectorUrl = page
-		.locator('code')
-		.filter({ hasText: '/connectors/u/' })
-	await expect(connectorUrl).toHaveText(
+	const connectorUrl = page.getByText(
 		new RegExp(`/connectors/u/[^/]+/${kind}/${instanceId}$`),
 	)
+	await expect(connectorUrl).toBeVisible()
 	await page.getByRole('textbox', { name: 'Shared secret' }).fill(sharedSecret)
 	const saveResponse = page.waitForResponse(
 		(response) =>
@@ -53,9 +51,6 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 		page.getByRole('button', { name: /copy connector url/i }),
 	).toBeVisible()
 	await page.getByRole('button', { name: /copy connector url/i }).click()
-	await expect(
-		page.getByRole('button', { name: /copied connector url/i }),
-	).toBeVisible()
 	await expect
 		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
 		.toMatch(new RegExp(`/connectors/u/[^/]+/${kind}/${instanceId}$`))

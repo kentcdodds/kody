@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	beginPackageRuntimeRun,
 	finishPackageRuntimeRun,
@@ -135,226 +135,224 @@ function createDebugDatabase(options: { failLogInsert?: boolean } = {}) {
 	return db
 }
 
-describe('package runtime debug persistence', () => {
-	test('records, lists, and loads retained package runtime logs', async () => {
-		const env = { APP_DB: createDebugDatabase() } as Env
-		const run = await beginPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			context: {
-				packageId: 'pkg-1',
-				kodyId: 'calendar-agent',
-				sourceId: 'source-1',
-				publishedCommit: 'abc123',
-				surface: 'export',
-				name: './sync',
-				storageId: 'package:pkg-1',
-				invocationId: 'invoke-1',
-				idempotencyKey: 'key-1',
-				metadata: { topic: 'manual' },
-			},
-		})
-
-		await finishPackageRuntimeRun({
-			env,
-			handle: run,
-			status: 'success',
-			logs: ['starting sync', 'finished sync'],
-		})
-
-		const listed = await listPackageRuntimeRuns({
-			env,
-			userId: 'user-1',
+test('records, lists, and loads retained package runtime logs', async () => {
+	const env = { APP_DB: createDebugDatabase() } as Env
+	const run = await beginPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		context: {
 			packageId: 'pkg-1',
+			kodyId: 'calendar-agent',
+			sourceId: 'source-1',
+			publishedCommit: 'abc123',
 			surface: 'export',
-		})
-		expect(listed).toHaveLength(1)
-		expect(listed[0]).toMatchObject({
+			name: './sync',
+			storageId: 'package:pkg-1',
+			invocationId: 'invoke-1',
+			idempotencyKey: 'key-1',
+			metadata: { topic: 'manual' },
+		},
+	})
+
+	await finishPackageRuntimeRun({
+		env,
+		handle: run,
+		status: 'success',
+		logs: ['starting sync', 'finished sync'],
+	})
+
+	const listed = await listPackageRuntimeRuns({
+		env,
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		surface: 'export',
+	})
+	expect(listed).toHaveLength(1)
+	expect(listed[0]).toMatchObject({
+		packageId: 'pkg-1',
+		kodyId: 'calendar-agent',
+		surface: 'export',
+		status: 'success',
+		name: './sync',
+		metadata: { topic: 'manual' },
+	})
+
+	const loaded = await getPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		runId: listed[0]?.id ?? '',
+	})
+	expect(loaded?.logs.map((log) => log.message)).toEqual([
+		'starting sync',
+		'finished sync',
+	])
+})
+
+test('records normalized error details', async () => {
+	const env = { APP_DB: createDebugDatabase() } as Env
+	const run = await beginPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		context: {
+			packageId: 'pkg-1',
+			kodyId: 'calendar-agent',
+			surface: 'service',
+			name: 'daemon',
+		},
+	})
+
+	await finishPackageRuntimeRun({
+		env,
+		handle: run,
+		status: 'error',
+		error: { name: 'ServiceError', message: 'boom' },
+	})
+
+	const listed = await listPackageRuntimeRuns({
+		env,
+		userId: 'user-1',
+	})
+	expect(listed[0]).toMatchObject({
+		status: 'error',
+		errorName: 'ServiceError',
+		errorMessage: 'boom',
+	})
+})
+
+test('truncates large UTF-8 log entries within the byte limit', async () => {
+	const env = { APP_DB: createDebugDatabase() } as Env
+	const run = await beginPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		context: {
 			packageId: 'pkg-1',
 			kodyId: 'calendar-agent',
 			surface: 'export',
-			status: 'success',
 			name: './sync',
-			metadata: { topic: 'manual' },
-		})
-
-		const loaded = await getPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			runId: listed[0]?.id ?? '',
-		})
-		expect(loaded?.logs.map((log) => log.message)).toEqual([
-			'starting sync',
-			'finished sync',
-		])
+		},
 	})
 
-	test('records normalized error details', async () => {
-		const env = { APP_DB: createDebugDatabase() } as Env
-		const run = await beginPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			context: {
-				packageId: 'pkg-1',
-				kodyId: 'calendar-agent',
-				surface: 'service',
-				name: 'daemon',
-			},
-		})
-
-		await finishPackageRuntimeRun({
-			env,
-			handle: run,
-			status: 'error',
-			error: { name: 'ServiceError', message: 'boom' },
-		})
-
-		const listed = await listPackageRuntimeRuns({
-			env,
-			userId: 'user-1',
-		})
-		expect(listed[0]).toMatchObject({
-			status: 'error',
-			errorName: 'ServiceError',
-			errorMessage: 'boom',
-		})
+	await finishPackageRuntimeRun({
+		env,
+		handle: run,
+		status: 'success',
+		logs: ['😀'.repeat(20_000)],
 	})
 
-	test('truncates large UTF-8 log entries within the byte limit', async () => {
-		const env = { APP_DB: createDebugDatabase() } as Env
-		const run = await beginPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			context: {
-				packageId: 'pkg-1',
-				kodyId: 'calendar-agent',
-				surface: 'export',
-				name: './sync',
-			},
-		})
-
-		await finishPackageRuntimeRun({
-			env,
-			handle: run,
-			status: 'success',
-			logs: ['😀'.repeat(20_000)],
-		})
-
-		const loaded = await getPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			runId: run?.id ?? '',
-		})
-		const message = loaded?.logs[0]?.message ?? ''
-		expect(new TextEncoder().encode(message).length).toBeLessThanOrEqual(
-			16 * 1024,
-		)
-		expect(message.endsWith('... [truncated]')).toBe(true)
+	const loaded = await getPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		runId: run?.id ?? '',
 	})
+	const message = loaded?.logs[0]?.message ?? ''
+	expect(new TextEncoder().encode(message).length).toBeLessThanOrEqual(
+		16 * 1024,
+	)
+	expect(message.endsWith('... [truncated]')).toBe(true)
+})
 
-	test('updates run status when log persistence fails', async () => {
-		const env = {
-			APP_DB: createDebugDatabase({ failLogInsert: true }),
-		} as Env
-		const run = await beginPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			context: {
-				packageId: 'pkg-1',
-				kodyId: 'calendar-agent',
-				surface: 'export',
-				name: './sync',
-			},
-		})
-
-		await finishPackageRuntimeRun({
-			env,
-			handle: run,
-			status: 'success',
-			logs: ['log write will fail'],
-		})
-
-		const listed = await listPackageRuntimeRuns({
-			env,
-			userId: 'user-1',
-		})
-		expect(listed[0]).toMatchObject({
-			status: 'success',
+test('updates run status when log persistence fails', async () => {
+	const env = {
+		APP_DB: createDebugDatabase({ failLogInsert: true }),
+	} as Env
+	const run = await beginPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		context: {
+			packageId: 'pkg-1',
+			kodyId: 'calendar-agent',
+			surface: 'export',
 			name: './sync',
-		})
-		const loaded = await getPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			runId: run?.id ?? '',
-		})
-		expect(loaded?.logs).toEqual([])
+		},
 	})
 
-	test('keeps truncated metadata parseable', async () => {
-		const env = { APP_DB: createDebugDatabase() } as Env
-		const run = await beginPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			context: {
-				packageId: 'pkg-1',
-				kodyId: 'calendar-agent',
-				surface: 'export',
-				name: './sync',
-				metadata: {
-					payload: 'x'.repeat(50_000),
-				},
-			},
-		})
-
-		await finishPackageRuntimeRun({
-			env,
-			handle: run,
-			status: 'success',
-		})
-
-		const listed = await listPackageRuntimeRuns({
-			env,
-			userId: 'user-1',
-		})
-		expect(listed[0]?.metadata).toMatchObject({
-			__truncated__: true,
-		})
-		expect(typeof listed[0]?.metadata['preview']).toBe('string')
+	await finishPackageRuntimeRun({
+		env,
+		handle: run,
+		status: 'success',
+		logs: ['log write will fail'],
 	})
 
-	test('retains the newest log entries when log count exceeds the cap', async () => {
-		const env = { APP_DB: createDebugDatabase() } as Env
-		const run = await beginPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			context: {
-				packageId: 'pkg-1',
-				kodyId: 'calendar-agent',
-				surface: 'export',
-				name: './sync',
+	const listed = await listPackageRuntimeRuns({
+		env,
+		userId: 'user-1',
+	})
+	expect(listed[0]).toMatchObject({
+		status: 'success',
+		name: './sync',
+	})
+	const loaded = await getPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		runId: run?.id ?? '',
+	})
+	expect(loaded?.logs).toEqual([])
+})
+
+test('keeps truncated metadata parseable', async () => {
+	const env = { APP_DB: createDebugDatabase() } as Env
+	const run = await beginPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		context: {
+			packageId: 'pkg-1',
+			kodyId: 'calendar-agent',
+			surface: 'export',
+			name: './sync',
+			metadata: {
+				payload: 'x'.repeat(50_000),
 			},
-		})
+		},
+	})
 
-		await finishPackageRuntimeRun({
-			env,
-			handle: run,
-			status: 'success',
-			logs: Array.from({ length: 205 }, (_, index) => `line-${index}`),
-		})
+	await finishPackageRuntimeRun({
+		env,
+		handle: run,
+		status: 'success',
+	})
 
-		const loaded = await getPackageRuntimeRun({
-			env,
-			userId: 'user-1',
-			runId: run?.id ?? '',
-		})
-		expect(loaded?.logs).toHaveLength(200)
-		expect(loaded?.logs[0]).toMatchObject({
-			sequence: 0,
-			message: 'line-5',
-		})
-		expect(loaded?.logs.at(-1)).toMatchObject({
-			sequence: 199,
-			message: 'line-204',
-		})
+	const listed = await listPackageRuntimeRuns({
+		env,
+		userId: 'user-1',
+	})
+	expect(listed[0]?.metadata).toMatchObject({
+		__truncated__: true,
+	})
+	expect(typeof listed[0]?.metadata['preview']).toBe('string')
+})
+
+test('retains the newest log entries when log count exceeds the cap', async () => {
+	const env = { APP_DB: createDebugDatabase() } as Env
+	const run = await beginPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		context: {
+			packageId: 'pkg-1',
+			kodyId: 'calendar-agent',
+			surface: 'export',
+			name: './sync',
+		},
+	})
+
+	await finishPackageRuntimeRun({
+		env,
+		handle: run,
+		status: 'success',
+		logs: Array.from({ length: 205 }, (_, index) => `line-${index}`),
+	})
+
+	const loaded = await getPackageRuntimeRun({
+		env,
+		userId: 'user-1',
+		runId: run?.id ?? '',
+	})
+	expect(loaded?.logs).toHaveLength(200)
+	expect(loaded?.logs[0]).toMatchObject({
+		sequence: 0,
+		message: 'line-5',
+	})
+	expect(loaded?.logs.at(-1)).toMatchObject({
+		sequence: 199,
+		message: 'line-204',
 	})
 })
