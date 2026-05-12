@@ -15,12 +15,13 @@ type CliOptions = {
 }
 
 const defaultTestEmail = 'me@kentcdodds.com'
+const defaultTestUsername = 'kentcdodds'
 const defaultTestPassword = 'iliketwix'
 
 export function parseArgs(argv: Array<string>): CliOptions {
 	const options: CliOptions = {
 		email: defaultTestEmail,
-		username: defaultTestEmail,
+		username: defaultTestUsername,
 		password: defaultTestPassword,
 		local: false,
 		remote: false,
@@ -98,7 +99,8 @@ export function parseArgs(argv: Array<string>): CliOptions {
 	}
 	const effectiveEmail = options.email
 	if (!usernameProvided) {
-		options.username = effectiveEmail
+		options.username =
+			effectiveEmail === defaultTestEmail ? defaultTestUsername : effectiveEmail
 	}
 	if (!options.username) {
 		fail('Missing required --username <username> value.')
