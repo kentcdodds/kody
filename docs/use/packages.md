@@ -91,13 +91,13 @@ exhaustive.
   current-version literal dynamic `import("kody:@...")` expressions do not need
   `kody.dependencies` declarations.
 - Computed dynamic Kody package imports, including template strings and
-  variables such as `import(packageSpecifier)`, are unsupported for now. Use a
+  variables such as `import(packageSpecifier)`, are unsupported. Use a
   string literal `import("kody:@scope/my-package/export")` when you want
   current-version runtime resolution.
 - `kody:runtime` is always host-owned and request-scoped. Static imports such as
   `import { codemode } from "kody:runtime"` stay valid, but saved package
   artifacts do not persist Kody's runtime implementation; execution always uses
-  the currently deployed host runtime.
+  the deployed host runtime.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that
@@ -166,14 +166,14 @@ const result = await packages.invokeChecked({
 Use bare `packages.invoke` only when the caller has already checked the contract
 or intentionally wants the older direct invoke behavior. Use static
 `kody:@scope/package/export` imports for library-like dependencies where
-bundling the currently published dependency with the caller is desired.
+bundling the published dependency snapshot with the caller is desired.
 
 `packages.check` returns `ok: false` with `message` and `problems` when the
 package, export, or params are invalid. On success it returns `contract`
 metadata, including package id/kody id/name, source id, published commit,
 normalized export name, runtime target, available JSDoc/type definition, and
 warnings on `check.contract.warnings`. Those warnings are important: Kody
-currently has JSDoc/type metadata but no machine-readable params schema for
+surfaces JSDoc/type metadata but not a machine-readable params schema for
 package exports, so params are only validated as a JSON object.
 
 `packages.invoke` and `packages.invokeChecked` return the target export's

@@ -96,7 +96,7 @@ The top-level saved identity is the package.
   a placeholder so author code can keep
   `import { codemode } from "kody:runtime"`, but published bundle artifacts must
   not persist the host runtime implementation. Execution loaders hydrate the
-  currently deployed host runtime module into every referenced
+  deployed host runtime module into every referenced
   `.__kody_virtual__/runtime.js` path, including nested static dependency
   artifacts and package-app workers.
 - Callable exports are resolved from package exports, not from a second Kody

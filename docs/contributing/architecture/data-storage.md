@@ -109,12 +109,11 @@ boundary by validating the authenticated user against the `McpCallerContext` /
 
 ## Per-user runtime context (no shared `globalThis`)
 
-Codemode `execute` calls and package-app worker entrypoints used to push the
-current request's runtime onto `globalThis.__kodyRuntime` with a try/finally
-save/restore. That is now an `AsyncLocalStorage` shared between the wrapper and
-the `kody:runtime` virtual module via `Symbol.for('kody.runtimeStorage')`. Two
+Codemode `execute` calls and package-app worker entrypoints store the current
+request's runtime in an `AsyncLocalStorage` shared between the wrapper and the
+`kody:runtime` virtual module via `Symbol.for('kody.runtimeStorage')`. Two
 concurrent calls in the same isolate observe their own runtime view through the
-ALS rather than racing on a single mutable globalThis slot. See
+ALS rather than racing on a shared mutable `globalThis` slot. See
 `packages/worker/src/package-runtime/module-graph.ts`,
 `packages/worker/src/mcp/run-codemode-registry.ts`, and
 `packages/worker/src/package-runtime/package-app.ts` for the wrapper
@@ -125,7 +124,7 @@ concurrent two-runtime test that pins this invariant.
 `kody:runtime` is also a host-external package-runtime module. Saved package
 bundle artifacts reserve `.__kody_virtual__/runtime.js` import paths but strip
 the runtime source before persistence. Execution loaders hydrate those paths
-with the currently deployed host runtime source for every package surface
+with the deployed host runtime source for every package surface
 (exports, subscriptions, jobs, services, package apps, workflows, and ad hoc
 execute). Static `kody:@...` package imports remain pinned snapshots, while
 literal dynamic `import("kody:@...")` imports are hydrated at execution time
