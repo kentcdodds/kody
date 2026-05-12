@@ -128,14 +128,6 @@ test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', 
 				},
 			},
 		},
-		files: {
-			'package.json': '{}',
-			'src/index.ts': 'export default async function run() { return "ok" }',
-			'src/on-email-received.ts':
-				'export default async function run() { return "received" }',
-			'src/on-email-quarantined.ts':
-				'export default async function run() { return "quarantined" }',
-		},
 		buildAppBundle,
 		buildModuleBundle,
 		buildImportableModuleBundle,
@@ -240,12 +232,6 @@ test('rebuildPublishedPackageArtifacts uses builder dependency metadata instead 
 				id: 'reachable-only',
 				description: 'Reachable-only dependency package',
 			},
-		},
-		files: {
-			'package.json': '{}',
-			'src/index.ts': 'export default async function run() { return "ok" }',
-			'src/dead.ts':
-				'import dead from "kody:@kentcdodds/missing-package"; export { dead }',
 		},
 		buildAppBundle,
 		buildModuleBundle,

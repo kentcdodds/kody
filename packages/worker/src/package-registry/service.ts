@@ -156,7 +156,6 @@ export async function refreshSavedPackageProjection(input: {
 			source: loaded.source,
 			savedPackage,
 			manifest: loaded.manifest,
-			files: loadedFiles,
 			buildAppBundle: async ({ entryPoint }) => {
 				const { buildKodyAppBundle } =
 					await import('#worker/package-runtime/module-graph.ts')

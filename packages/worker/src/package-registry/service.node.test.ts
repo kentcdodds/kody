@@ -241,7 +241,6 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 			createdAt: '2026-04-20T00:00:00.000Z',
 		}),
 		manifest,
-		files: { 'package.json': '{}' },
 		buildAppBundle: expect.any(Function),
 		buildModuleBundle: expect.any(Function),
 		buildImportableModuleBundle: expect.any(Function),
