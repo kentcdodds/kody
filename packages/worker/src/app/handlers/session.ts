@@ -29,10 +29,11 @@ export function createSessionHandler(env: Env) {
 				return jsonResponse({ ok: false })
 			}
 
-			const userId = Number.parseInt(session.id, 10)
-			const userRecord = Number.isFinite(userId)
-				? await db.findOne(usersTable, { where: { id: userId } })
-				: null
+			const userId = /^\d+$/.test(session.id) ? Number(session.id) : NaN
+			const userRecord =
+				Number.isSafeInteger(userId) && userId > 0
+					? await db.findOne(usersTable, { where: { id: userId } })
+					: null
 			if (!userRecord) {
 				return jsonResponse(
 					{ ok: false },

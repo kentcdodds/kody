@@ -158,3 +158,22 @@ test('session handler clears stale session cookies when the user row is gone', a
 	expect(await response.json()).toEqual({ ok: false })
 	expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')
 })
+
+test('session handler rejects partially numeric session ids', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const session = createSessionHandler(createEnv())
+	const cookie = await createAuthCookie(
+		{
+			id: '1abc',
+			email: 'user@example.com',
+			rememberMe: false,
+		},
+		false,
+	)
+
+	const response = await session.handler(createSessionRequestContext(cookie))
+
+	expect(response.status).toBe(200)
+	expect(await response.json()).toEqual({ ok: false })
+	expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')
+})

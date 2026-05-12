@@ -39,8 +39,26 @@ export const test = base.extend<{
 				headers: { 'Content-Type': 'application/json' },
 			})
 
-			if (!response.ok() && response.status() !== 409) {
-				throw new Error(`Failed to seed user (${response.status()}).`)
+			if (response.status() === 409) {
+				const detail = await readResponseDetail(response)
+				if (detail !== 'Email already registered.') {
+					throw new Error(
+						`Failed to seed user (${response.status()}): ${detail}`,
+					)
+				}
+				const loginResponse = await page.request.post('/auth', {
+					data: { email, password, mode: 'login' },
+					headers: { 'Content-Type': 'application/json' },
+				})
+				if (!loginResponse.ok()) {
+					throw new Error(
+						`Failed to seed user (${response.status()}): ${detail}`,
+					)
+				}
+			} else if (!response.ok()) {
+				throw new Error(
+					`Failed to seed user (${response.status()}): ${await readResponseDetail(response)}`,
+				)
 			}
 
 			return { email, username, password }
@@ -106,4 +124,16 @@ function usernameFromEmail(email: string) {
 		.slice(0, 32)
 		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
 	return truncated.length >= 3 ? truncated : `user-${truncated || 'test'}`
+}
+
+async function readResponseDetail(response: { json(): Promise<unknown> }) {
+	const payload = await response.json().catch(() => null)
+	if (
+		payload &&
+		typeof payload === 'object' &&
+		typeof (payload as Record<string, unknown>).error === 'string'
+	) {
+		return (payload as Record<string, string>).error
+	}
+	return 'Unknown error.'
 }

@@ -40,15 +40,13 @@ export function AccountRoute(handle: Handle) {
 		try {
 			const href =
 				typeof window === 'undefined' ? '/account' : window.location.href
+			const search = typeof window === 'undefined' ? '' : new URL(href).search
 			lastLoadedHref = href
-			const response = await fetch(
-				`${accountProfileApiPath}${new URL(href).search}`,
-				{
-					headers: { Accept: 'application/json' },
-					credentials: 'include',
-					signal,
-				},
-			)
+			const response = await fetch(`${accountProfileApiPath}${search}`, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
 			if (signal.aborted) return
 			if (response.status === 401) {
 				window.location.assign('/login')
@@ -140,6 +138,7 @@ export function AccountRoute(handle: Handle) {
 			handle.queueTask(loadAccountProfile)
 		}
 		const isSaving = saveStatus === 'saving'
+		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
 
 		return (
 			<section
@@ -215,7 +214,7 @@ export function AccountRoute(handle: Handle) {
 								<div>
 									<button
 										type="submit"
-										disabled={isSaving || draftUsername.trim() === username}
+										disabled={isSaving || normalizedDraftUsername === username}
 										mix={css(primaryButtonCss)}
 									>
 										{isSaving ? 'Saving...' : 'Save username'}
