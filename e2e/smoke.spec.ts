@@ -20,7 +20,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(
 		page.getByRole('link', {
-			name: primaryTestUser.email,
+			name: primaryTestUser.username,
 		}),
 	).toBeVisible()
 	await expect(
