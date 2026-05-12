@@ -111,9 +111,11 @@ export async function expandSecretPlaceholders(input: {
 			username: readResolvedSecretValue(resolvedValues, placeholder.username),
 			password: readResolvedSecretValue(resolvedValues, placeholder.password),
 		})
-		const prefixedPlaceholder = `Basic ${renderedPlaceholder}`
-		if (!replacements.has(prefixedPlaceholder)) {
-			replacements.set(prefixedPlaceholder, authHeader)
+		for (const scheme of ['Basic', 'basic', 'BASIC']) {
+			const prefixedPlaceholder = `${scheme} ${renderedPlaceholder}`
+			if (!replacements.has(prefixedPlaceholder)) {
+				replacements.set(prefixedPlaceholder, authHeader)
+			}
 		}
 		if (!replacements.has(renderedPlaceholder)) {
 			replacements.set(renderedPlaceholder, authHeader)
