@@ -151,6 +151,23 @@ function CheckIcon() {
 	)
 }
 
+async function writeClipboardText(value: string) {
+	const textArea = document.createElement('textarea')
+	textArea.value = value
+	textArea.setAttribute('readonly', '')
+	textArea.style.position = 'fixed'
+	textArea.style.opacity = '0'
+	document.body.append(textArea)
+	textArea.select()
+	try {
+		if (document.execCommand('copy')) return
+	} finally {
+		textArea.remove()
+	}
+
+	await navigator.clipboard.writeText(value)
+}
+
 function EyeIcon(props: { showSecret: boolean }) {
 	return props.showSecret ? (
 		<svg
@@ -206,16 +223,16 @@ function CopyToClipboard(handle: Handle<{ url: string }>) {
 				mix={[
 					on('click', async (_event, signal) => {
 						try {
-							await navigator.clipboard.writeText(handle.props.url)
+							await writeClipboardText(handle.props.url)
 							if (signal.aborted) return
 						} catch {
 							state = 'error'
-							handle.update()
+							await handle.update()
 							return
 						}
 
 						state = 'copied'
-						handle.update()
+						await handle.update()
 						setTimeout(() => {
 							if (signal.aborted) return
 							state = 'idle'
