@@ -206,6 +206,27 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 	})
 })
 
+test('already_published without a commit fails instead of silently skipping artifact rebuild', async () => {
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-old',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'already_published',
+		published_commit: null,
+	})
+
+	await expect(
+		publishExternalPushCapability.handler(
+			{ package_id: 'package-1' },
+			createContext(),
+		),
+	).rejects.toThrow(
+		'already published, but no published commit is available to rebuild artifacts',
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+})
+
 test('published output lists stale static dependents for the new dependency commit', async () => {
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',

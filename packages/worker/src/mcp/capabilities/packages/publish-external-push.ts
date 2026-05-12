@@ -282,16 +282,19 @@ export const publishExternalPushCapability = defineDomainCapability(
 						rebuildPackageArtifacts: false,
 					})
 					if (result.status === 'already_published') {
-						if (result.published_commit) {
-							await rebuildPublishedPackageArtifactsViaRepoSession({
-								env: ctx.env,
-								rpcSessionId: sessionId,
-								sourceId: source.id,
-								userId: user.userId,
-								publishedCommit: result.published_commit,
-								baseUrl: ctx.callerContext.baseUrl,
-							})
+						if (!result.published_commit) {
+							throw new Error(
+								`Package "${packageId}" is already published, but no published commit is available to rebuild artifacts.`,
+							)
 						}
+						await rebuildPublishedPackageArtifactsViaRepoSession({
+							env: ctx.env,
+							rpcSessionId: sessionId,
+							sourceId: source.id,
+							userId: user.userId,
+							publishedCommit: result.published_commit,
+							baseUrl: ctx.callerContext.baseUrl,
+						})
 						return {
 							...result,
 							static_dependents: await getPublishStaticDependents({
