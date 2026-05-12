@@ -101,7 +101,19 @@ beforeEach(() => {
 
 function createContext() {
 	return {
-		env: { APP_DB: {} } as Env,
+		env: {
+			APP_DB: {
+				prepare() {
+					return {
+						bind() {
+							return {
+								first: async () => ({ username: 'user' }),
+							}
+						},
+					}
+				},
+			},
+		} as unknown as Env,
 		callerContext: {
 			baseUrl: 'https://kody.test',
 			user: {
@@ -287,7 +299,7 @@ test('published output lists stale static dependents for the new dependency comm
 		}),
 	)
 	expect(mockModule.getStaticPackageDependentsSummary).toHaveBeenCalledWith({
-		db: {},
+		db: expect.any(Object),
 		userId: 'user-1',
 		sourceId: 'source-1',
 		currentDependencyCommit: 'commit-new',

@@ -38,10 +38,26 @@ const { repoRunCommandsCapability } = await import('./repo-run-commands.ts')
 
 function createCapabilityContext() {
 	return {
-		env: { APP_DB: {} } as Env,
+		env: {
+			APP_DB: {
+				prepare() {
+					return {
+						bind() {
+							return {
+								first: async () => ({ username: 'user' }),
+							}
+						},
+					}
+				},
+			},
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
-			user: { userId: 'user-1', email: 'user@example.com' },
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'user',
+			},
 		}),
 	}
 }
@@ -683,6 +699,7 @@ test('repo_publish_session rebuilds package artifacts after direct publish', asy
 		sessionId: 'session-1',
 		userId: 'user-1',
 		rebuildPackageArtifacts: false,
+		expectedPackageScope: 'user',
 	})
 	expect(rpc.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sessionId: 'session-1',
