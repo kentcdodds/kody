@@ -243,12 +243,6 @@ const appHandler = withCors({
 			return handlePackageAppRequest(request, env)
 		}
 
-		const connectorResponse = await handleUserScopedConnectorRequest(
-			request,
-			env,
-		)
-		if (connectorResponse) return connectorResponse
-
 		if (
 			isNamespacedAppEndpointPath(url.pathname) ||
 			isNamespacedPackageInvocationEndpointPath(url.pathname)

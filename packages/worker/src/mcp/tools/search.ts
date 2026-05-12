@@ -1791,11 +1791,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
-			const username = await resolvePublicUsername({
-				db: agent.getEnv().APP_DB,
-				username: callerContext.user?.username ?? null,
-				email: callerContext.user?.email ?? null,
-			})
 			if (!args.query && !args.entity) {
 				const timing = finishToolTiming(timingStart)
 				logMcpEvent({
@@ -1833,9 +1828,15 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const maxResponseSize = args.maxResponseSize ?? defaultMaxResponseSize
 			let warnings: Array<string> = []
 			let remoteConnectorDownStatuses: Array<RemoteConnectorStatus> = []
+			let username: string | null = null
 
 			const searchSpan = async () => {
 				const query = args.query?.trim() ?? ''
+				username = await resolvePublicUsername({
+					db: agent.getEnv().APP_DB,
+					username: callerContext.user?.username ?? null,
+					email: callerContext.user?.email ?? null,
+				})
 				const retrieverRunPromise =
 					userId && query
 						? (async () => {
