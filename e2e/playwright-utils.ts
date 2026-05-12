@@ -79,19 +79,27 @@ export const test = base.extend<{
 				headers: { 'Content-Type': 'application/json' },
 			})
 
-			if (!response.ok() && response.status() !== 409) {
-				throw new Error(`Failed to seed user (${response.status()}).`)
-			}
-
 			if (response.status() === 409) {
+				const detail = await readResponseDetail(response)
+				if (detail !== 'Email already registered.') {
+					throw new Error(
+						`Failed to seed user (${response.status()}): ${detail}`,
+					)
+				}
 				response = await page.request.post('/auth', {
 					data: { email, password, mode: 'login' },
 					headers: { 'Content-Type': 'application/json' },
 				})
 
 				if (!response.ok()) {
-					throw new Error(`Failed to login user (${response.status()}).`)
+					throw new Error(
+						`Failed to login user (${response.status()}): ${await readResponseDetail(response)}`,
+					)
 				}
+			} else if (!response.ok()) {
+				throw new Error(
+					`Failed to seed user (${response.status()}): ${await readResponseDetail(response)}`,
+				)
 			}
 
 			const setCookieHeader = response.headers()['set-cookie']
