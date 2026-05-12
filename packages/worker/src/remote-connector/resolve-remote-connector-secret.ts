@@ -1,8 +1,10 @@
 import {
-	hasRemoteConnectorSharedSecretForRef,
-	listRemoteConnectorSharedSecretsForRef,
 	normalizeRemoteConnectorInstanceId,
 	normalizeRemoteConnectorKind,
+} from '@kody-internal/shared/remote-connectors.ts'
+import {
+	hasRemoteConnectorSharedSecretForRef,
+	listRemoteConnectorSharedSecretsForRef,
 } from './settings-service.ts'
 
 const textEncoder = new TextEncoder()

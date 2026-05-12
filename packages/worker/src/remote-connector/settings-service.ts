@@ -1,4 +1,8 @@
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import {
+	normalizeRemoteConnectorInstanceId,
+	normalizeRemoteConnectorKind,
+	type RemoteConnectorRef,
+} from '@kody-internal/shared/remote-connectors.ts'
 import { decryptSecretValue, encryptSecretValue } from '#mcp/secrets/crypto.ts'
 import {
 	deleteRemoteConnectorSettingRow,
@@ -27,14 +31,6 @@ export type SaveRemoteConnectorSettingInput = {
 	enabled: boolean
 	attached: boolean
 	sharedSecret?: string | null
-}
-
-export function normalizeRemoteConnectorKind(kind: string) {
-	return kind.trim().toLowerCase()
-}
-
-export function normalizeRemoteConnectorInstanceId(instanceId: string) {
-	return instanceId.trim()
 }
 
 function toMetadata(
