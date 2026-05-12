@@ -428,7 +428,7 @@ function buildCapabilityExecuteExample(name: string) {
 	return `import { codemode } from 'kody:runtime'
 
 export default async function main(input = {}) {
-  return await ${buildCodemodeCapabilityAccessor(name)}(input)
+\treturn await ${buildCodemodeCapabilityAccessor(name)}(input)
 }`
 }
 
