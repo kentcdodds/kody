@@ -147,7 +147,7 @@ test('honors explicit read scope', async () => {
 		{ kody_id: 'unleashed-wifi', scope: 'read' },
 		createContext(),
 	)
-	expect(createToken).toHaveBeenCalledWith('read', 1800)
+	expect(createToken).toHaveBeenCalledWith('read', 3600)
 	expect(result.scope).toBe('read')
 })
 

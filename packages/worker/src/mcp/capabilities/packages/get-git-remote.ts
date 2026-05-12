@@ -14,7 +14,7 @@ const getGitRemoteInputSchema = z.object({
 	package_id: z.string().min(1).optional(),
 	kody_id: z.string().min(1).optional(),
 	scope: z.enum(['read', 'write']).default('write'),
-	ttl_seconds: z.number().int().min(60).max(86_400).default(1800),
+	ttl_seconds: z.number().int().min(60).max(86_400).default(3600),
 })
 
 const outputSchema = markSecretInputFields(
