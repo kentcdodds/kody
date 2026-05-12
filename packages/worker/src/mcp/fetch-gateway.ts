@@ -107,14 +107,17 @@ export async function expandSecretPlaceholders(input: {
 	for (const placeholder of basicAuthPlaceholders) {
 		const renderedPlaceholder =
 			buildBasicAuthSecretPlaceholderFromReference(placeholder)
-		if (replacements.has(renderedPlaceholder)) continue
-		replacements.set(
-			renderedPlaceholder,
-			buildBasicAuthHeader({
-				username: readResolvedSecretValue(resolvedValues, placeholder.username),
-				password: readResolvedSecretValue(resolvedValues, placeholder.password),
-			}),
-		)
+		const authHeader = buildBasicAuthHeader({
+			username: readResolvedSecretValue(resolvedValues, placeholder.username),
+			password: readResolvedSecretValue(resolvedValues, placeholder.password),
+		})
+		const prefixedPlaceholder = `Basic ${renderedPlaceholder}`
+		if (!replacements.has(prefixedPlaceholder)) {
+			replacements.set(prefixedPlaceholder, authHeader)
+		}
+		if (!replacements.has(renderedPlaceholder)) {
+			replacements.set(renderedPlaceholder, authHeader)
+		}
 	}
 	let requestedHost = ''
 	if (hasReferencedSecrets) {

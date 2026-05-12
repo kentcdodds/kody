@@ -211,6 +211,47 @@ test('fetch gateway derives Basic Auth header after approving both secrets', asy
 	}
 })
 
+test('fetch gateway accepts a pre-prefixed derived Basic Auth placeholder', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async ({ name }) => {
+			const values: Record<string, string> = {
+				paypalClientId: 'client-id',
+				paypalClientSecret: 'client-secret',
+			}
+			return {
+				found: name in values,
+				value: values[name] ?? null,
+				scope: name in values ? 'user' : null,
+				allowedHosts: name in values ? ['api-m.paypal.com'] : [],
+				allowedCapabilities: [],
+			}
+		})
+	const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
+		headers: {
+			Authorization: `Basic ${buildBasicAuthSecretPlaceholder({
+				usernameSecret: 'paypalClientId',
+				passwordSecret: 'paypalClientSecret',
+				scope: 'user',
+			})}`,
+		},
+	})
+
+	try {
+		const transformed = await expandSecretPlaceholders({
+			request,
+			props,
+			env,
+		})
+
+		expect(transformed.headers.get('Authorization')).toBe(
+			`Basic ${btoa('client-id:client-secret')}`,
+		)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
 test('fetch gateway reports missing secret for derived Basic Auth placeholders', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
