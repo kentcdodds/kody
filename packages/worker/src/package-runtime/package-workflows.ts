@@ -1041,6 +1041,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				user: {
 					userId: payload.userId,
 					email: '',
+					username: undefined,
 					displayName: `workflow:${payload.workflowName}`,
 				},
 				remoteConnectors,

@@ -235,10 +235,7 @@ function createPackageAppErrorResponse(input: {
 	)
 }
 
-export async function handlePackageAppRequest(
-	request: Request,
-	env: Env,
-) {
+export async function handlePackageAppRequest(request: Request, env: Env) {
 	const requestUrl = new URL(request.url)
 	const packagePath = parsePackageAppPath(requestUrl.pathname)
 	if (!packagePath) {

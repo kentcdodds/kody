@@ -128,6 +128,7 @@ async function invokeRetriever(input: {
 		user: {
 			userId: input.userId,
 			email: '',
+			username: undefined,
 			displayName: '',
 		},
 		storageContext: {

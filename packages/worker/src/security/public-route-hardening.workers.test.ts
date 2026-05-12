@@ -18,6 +18,14 @@ async function workerFetch(request: Request): Promise<Response> {
 
 test('user-scoped connector entrypoints reject unauthenticated HTTP access while allowing WebSocket upgrades', async () => {
 	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			username TEXT NOT NULL UNIQUE,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL
+		)`,
+	).run()
+	await env.APP_DB.prepare(
 		`INSERT OR IGNORE INTO users (username, email, password_hash)
 			VALUES ('connector-user', 'connector-user@example.com', 'hash')`,
 	).run()

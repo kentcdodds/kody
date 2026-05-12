@@ -105,7 +105,9 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 	resetMocks()
 
 	const response = await handlePackageAppRequest(
-		new Request('https://example.com/@test-user/packages/example/report?tab=errors'),
+		new Request(
+			'https://example.com/@test-user/packages/example/report?tab=errors',
+		),
 		{} as Env,
 	)
 

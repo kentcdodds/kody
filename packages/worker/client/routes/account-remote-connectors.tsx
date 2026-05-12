@@ -293,7 +293,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
 	let email = ''
-let username = ''
+	let username = ''
 	let connectorUrlOrigin = ''
 	let connectors: Array<RemoteConnectorListItem> = []
 	let editorState = createEmptyEditorState()

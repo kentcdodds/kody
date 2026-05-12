@@ -628,6 +628,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			user: {
 				userId: this.ctx.props.userId,
 				email: this.ctx.props.email,
+				username: undefined,
 				displayName: this.ctx.props.displayName,
 			},
 			storageContext: {

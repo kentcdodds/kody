@@ -157,6 +157,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					user: {
 						userId: context.user.userId,
 						email: context.user.email,
+						username: undefined,
 						displayName: '',
 					},
 					storageContext: {

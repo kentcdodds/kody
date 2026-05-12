@@ -1,5 +1,4 @@
 import { getUsernameValidationError } from '#app/username.ts'
-import { createDb, usersTable } from '#worker/db.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 export type PublicUserIdentity = {
@@ -16,10 +15,14 @@ export async function findPublicUserIdentityByUsername(input: {
 	const username = input.username.trim()
 	if (getUsernameValidationError(username)) return null
 
-	const db = createDb(input.db)
-	const userRecord = await db.findOne(usersTable, {
-		where: { username },
-	})
+	const userRecord = await input.db
+		.prepare(
+			`SELECT id, username, email
+				FROM users
+				WHERE username = ?`,
+		)
+		.bind(username)
+		.first<{ id: number; username: string; email: string }>()
 	if (!userRecord) return null
 
 	return {

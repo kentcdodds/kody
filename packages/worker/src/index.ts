@@ -68,6 +68,55 @@ export {
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
 
+function isNamespacedPackageInvocationEndpointPath(pathname: string) {
+	const parts = pathname.split('/').filter(Boolean)
+	return (
+		parts[0]?.startsWith('@') === true &&
+		parts[1] === 'api' &&
+		parts[2] === 'package-invocations'
+	)
+}
+
+function isNamespacedAppEndpointPath(pathname: string) {
+	const parts = pathname.split('/').filter(Boolean)
+	return (
+		parts[0]?.startsWith('@') === true &&
+		(parts[1] === 'packages' || parts[1] === 'connectors')
+	)
+}
+
+async function handleUserScopedConnectorRequest(request: Request, env: Env) {
+	const url = new URL(request.url)
+	const userScopedConnectorRoute = parseUserScopedConnectorRoutePath(
+		url.pathname,
+	)
+	if (!userScopedConnectorRoute) return null
+	if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+		return new Response('Not Found', { status: 404 })
+	}
+	const routeUser = await findPublicUserIdentityByUsername({
+		db: env.APP_DB,
+		username: userScopedConnectorRoute.username,
+	})
+	if (!routeUser) {
+		return new Response('Not Found', { status: 404 })
+	}
+	const sessionKey = userScopedConnectorSessionKey({
+		userId: routeUser.mcpUserId,
+		kind: userScopedConnectorRoute.kind,
+		instanceId: userScopedConnectorRoute.instanceId,
+	})
+	const stub = env.REMOTE_CONNECTOR_SESSION.get(
+		env.REMOTE_CONNECTOR_SESSION.idFromName(sessionKey),
+	)
+	const forwardUrl = new URL(request.url)
+	forwardUrl.pathname = userScopedConnectorRoute.rest || '/'
+	const forwardRequest = new Request(forwardUrl.toString(), request)
+	forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
+	forwardRequest.headers.set('X-Kody-Connector-User-Id', routeUser.mcpUserId)
+	return stub.fetch(forwardRequest)
+}
+
 function isAllowedGeneratedUiOrigin(origin: string, requestOrigin: string) {
 	if (origin === requestOrigin) {
 		return true
@@ -194,37 +243,17 @@ const appHandler = withCors({
 			return handlePackageAppRequest(request, env)
 		}
 
-		const userScopedConnectorRoute = parseUserScopedConnectorRoutePath(
-			url.pathname,
+		const connectorResponse = await handleUserScopedConnectorRequest(
+			request,
+			env,
 		)
-		if (userScopedConnectorRoute) {
-			if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
-				return new Response('Not Found', { status: 404 })
-			}
-			const routeUser = await findPublicUserIdentityByUsername({
-				db: env.APP_DB,
-				username: userScopedConnectorRoute.username,
-			})
-			if (!routeUser) {
-				return new Response('Not Found', { status: 404 })
-			}
-			const sessionKey = userScopedConnectorSessionKey({
-				userId: routeUser.mcpUserId,
-				kind: userScopedConnectorRoute.kind,
-				instanceId: userScopedConnectorRoute.instanceId,
-			})
-			const stub = env.REMOTE_CONNECTOR_SESSION.get(
-				env.REMOTE_CONNECTOR_SESSION.idFromName(sessionKey),
-			)
-			const forwardUrl = new URL(request.url)
-			forwardUrl.pathname = userScopedConnectorRoute.rest || '/'
-			const forwardRequest = new Request(forwardUrl.toString(), request)
-			forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
-			forwardRequest.headers.set(
-				'X-Kody-Connector-User-Id',
-				routeUser.mcpUserId,
-			)
-			return stub.fetch(forwardRequest)
+		if (connectorResponse) return connectorResponse
+
+		if (
+			isNamespacedAppEndpointPath(url.pathname) ||
+			isNamespacedPackageInvocationEndpointPath(url.pathname)
+		) {
+			return new Response('Not Found', { status: 404 })
 		}
 
 		if (url.pathname.startsWith('/connectors/')) {
@@ -318,10 +347,20 @@ function addOAuthDiscoveryCorsHeaders(
 }
 
 const workerHandler = {
-	fetch(request: Request, env: Env, ctx: ExecutionContext) {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
 		if (isPackageInvocationApiRequest(url.pathname)) {
 			return handlePackageInvocationApiRequest(request, env, ctx)
+		}
+
+		const connectorResponse = await handleUserScopedConnectorRequest(
+			request,
+			env,
+		)
+		if (connectorResponse) return connectorResponse
+
+		if (isNamespacedPackageInvocationEndpointPath(url.pathname)) {
+			return new Response('Not Found', { status: 404 })
 		}
 
 		// OAuthProvider serves this URL first and defaults `resource` to the origin only.

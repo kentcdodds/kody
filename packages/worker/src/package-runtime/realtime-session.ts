@@ -314,6 +314,7 @@ async function resolvePackageAppWorker(input: {
 		user: {
 			userId: input.binding.userId,
 			email: '',
+			username: undefined,
 			displayName: `package:${input.binding.packageId}`,
 		},
 		storageContext: {

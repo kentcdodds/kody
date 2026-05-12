@@ -104,8 +104,7 @@ test('remote connector settings API lists settings with plaintext secrets', asyn
 				id: 'connector-1',
 				kind: 'lights',
 				instanceId: 'default',
-				connectorUrl:
-					'wss://example.com/@test-user/connectors/lights/default',
+				connectorUrl: 'wss://example.com/@test-user/connectors/lights/default',
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,
@@ -155,8 +154,7 @@ test('remote connector settings API passes submitted secret to save service', as
 				id: 'connector-1',
 				kind: 'lights',
 				instanceId: 'default',
-				connectorUrl:
-					'wss://example.com/@test-user/connectors/lights/default',
+				connectorUrl: 'wss://example.com/@test-user/connectors/lights/default',
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,

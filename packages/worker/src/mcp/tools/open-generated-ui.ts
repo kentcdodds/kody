@@ -81,6 +81,13 @@ const inputSchema = z
 		path: ['code'],
 	})
 
+function requireSavedPackageAppUsername(username: string | null) {
+	if (!username) {
+		throw new Error('Username is required to open saved package apps.')
+	}
+	return username
+}
+
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 	registerAppTool(
 		agent.server,
@@ -119,14 +126,14 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					)
 				}
 			}
-			const username = callerContext.user?.username
+			const username = callerContext.user?.username ?? null
 			if (savedPackage && !username) {
 				throw new Error('Username is required to open saved package apps.')
 			}
 			const hostedUrl = savedPackage
 				? buildPackageAppUrl({
 						origin: agent.requireDomain(),
-						username,
+						username: requireSavedPackageAppUsername(username),
 						kodyId: savedPackage.kodyId,
 					})
 				: null

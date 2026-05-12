@@ -1041,6 +1041,7 @@ async function invokeSavedPackageModule(input: {
 			user: {
 				userId: input.actor.userId,
 				email: input.actor.email,
+				username: undefined,
 				displayName: input.actor.displayName,
 			},
 			storageContext: {

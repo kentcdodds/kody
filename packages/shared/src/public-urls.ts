@@ -8,9 +8,7 @@ export function buildPackageAppPath(input: {
 	restPath?: string | null
 }) {
 	const restPath = input.restPath?.trim()
-	const suffix = restPath
-		? `/${restPath.replace(/^\/+/, '')}`
-		: ''
+	const suffix = restPath ? `/${restPath.replace(/^\/+/, '')}` : ''
 	return `${buildUsernamePathPrefix(input.username)}/packages/${encodeURIComponent(
 		input.kodyId.trim(),
 	)}${suffix}`

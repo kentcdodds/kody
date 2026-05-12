@@ -406,11 +406,17 @@ export type SearchMatch =
 			type: 'retriever_result'
 	  })
 
-function buildPackageHostedUrl(baseUrl: string, username: string, kodyId: string) {
+function buildPackageHostedUrl(
+	baseUrl: string,
+	username: string,
+	kodyId: string,
+) {
 	return buildPackageAppUrl({ origin: baseUrl, username, kodyId })
 }
 
-function requireUsernameForHostedPackageUrl(username: string | null) {
+function requireUsernameForHostedPackageUrl(
+	username: string | null | undefined,
+) {
 	if (!username) {
 		throw new Error('Username is required to build hosted package app URLs.')
 	}

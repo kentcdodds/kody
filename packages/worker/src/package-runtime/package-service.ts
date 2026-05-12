@@ -526,6 +526,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			user: {
 				userId: binding.userId,
 				email: '',
+				username: undefined,
 				displayName: `package:${binding.packageId}`,
 			},
 			storageContext: {
