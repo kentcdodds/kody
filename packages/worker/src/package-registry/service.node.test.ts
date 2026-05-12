@@ -27,6 +27,7 @@ const mockModule = vi.hoisted(() => ({
 	insertSavedPackage: vi.fn(),
 	listSavedPackageServices: vi.fn(),
 	listJobRowsByUserId: vi.fn(),
+	loadPackageManifestBySourceId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	packageServiceRpc: vi.fn(),
 	syncJobManagerAlarm: vi.fn(),
@@ -81,6 +82,8 @@ vi.mock('./repo.ts', () => ({
 }))
 
 vi.mock('./source.ts', () => ({
+	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mockModule.loadPackageSourceBySourceId(...args),
 }))
@@ -270,6 +273,51 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 	).toBeGreaterThan(
 		mockModule.syncPackageJobsForPackage.mock.invocationCallOrder[0],
 	)
+})
+
+test('refreshSavedPackageProjection omits files when artifact rebuild is skipped', async () => {
+	const env = createEnv()
+	const manifest = {
+		name: '@kentcdodds/shade-automation',
+		kody: {
+			id: 'shade-automation',
+			description: 'Shade automation package',
+		},
+	}
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			entity_id: 'package-1',
+			entity_kind: 'package',
+		},
+		manifest,
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Shade automation package',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+
+	const refreshed = await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+		rebuildArtifacts: false,
+	})
+
+	expect(refreshed).not.toHaveProperty('files')
+	expect(mockModule.loadPackageSourceBySourceId).not.toHaveBeenCalled()
+	expect(mockModule.buildPublishedPackageArtifacts).not.toHaveBeenCalled()
 })
 
 test('deleteSavedPackageProjection resyncs the job manager after removing package jobs', async () => {

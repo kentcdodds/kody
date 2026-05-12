@@ -257,7 +257,7 @@ export async function refreshSavedPackageProjection(input: {
 				updatedAt: new Date().toISOString(),
 			} satisfies SavedPackageRecord),
 		manifest: loaded.manifest,
-		files: 'files' in loaded ? loaded.files : {},
+		...(loadedFiles ? { files: loadedFiles } : {}),
 	}
 }
 

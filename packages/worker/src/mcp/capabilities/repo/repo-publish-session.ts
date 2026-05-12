@@ -37,7 +37,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					await rebuildPublishedPackageArtifactsViaRepoSession({
 						env: ctx.env,
 						rpcSessionId: args.session_id,
-						sessionId: args.session_id,
+						repoSessionId: args.session_id,
 						sourceId: sessionInfo.source_id,
 						userId: user.userId,
 						publishedCommit: result.publishedCommit,

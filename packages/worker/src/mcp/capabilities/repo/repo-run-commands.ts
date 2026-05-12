@@ -116,7 +116,7 @@ export const repoRunCommandsCapability = defineDomainCapability(
 				await rebuildPublishedPackageArtifactsViaRepoSession({
 					env: ctx.env,
 					rpcSessionId: validatedSession.id,
-					sessionId: validatedSession.id,
+					repoSessionId: validatedSession.id,
 					sourceId: validatedSession.source_id,
 					userId: user.userId,
 					publishedCommit: publish.publishedCommit,
