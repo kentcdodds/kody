@@ -53,13 +53,16 @@ Capability detail shows the exact runtime pattern for **execute**:
 import { codemode } from 'kody:runtime'
 
 export default async function main(input = {}) {
-	return await codemode.<capability_id>(input)
+	return await codemode.kody_official_guide(input)
 }
 ```
 
 Use the capability id returned by **search** as the `codemode` method name, and
-pass an object matching the displayed input type. Use `{}` when the capability
-has no required fields.
+pass an object matching the displayed input type. Valid JavaScript identifier
+ids use dot notation such as `codemode.kody_official_guide(input)`. If a
+capability id is not a valid JavaScript identifier, use bracket notation such as
+`codemode["capability-id"](input)`. Capability detail emits the exact form to
+copy. Use `{}` when the capability has no required fields.
 
 ## When results look thin
 

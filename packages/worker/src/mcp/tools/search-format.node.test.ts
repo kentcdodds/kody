@@ -233,6 +233,53 @@ test('capability entity detail keeps type definitions stable without schema fiel
 	expect(detail.structured).not.toHaveProperty('outputSchema')
 })
 
+test('capability usage uses bracket notation for non-identifier ids', () => {
+	const [match] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'capability',
+				name: 'foo-bar',
+				description: 'Capability with a non-identifier id.',
+			},
+		],
+	})
+	expect(match).toMatchObject({
+		type: 'capability',
+		usage: 'execute with codemode["foo-bar"](args)',
+	})
+
+	const detail = formatEntityDetailMarkdown({
+		type: 'capability',
+		id: 'foo-bar',
+		title: 'foo-bar',
+		description: 'Capability with a non-identifier id.',
+		spec: {
+			name: 'foo-bar',
+			domain: 'meta',
+			description: 'Capability with a non-identifier id.',
+			keywords: [],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: [],
+			requiredInputFields: [],
+			outputFields: [],
+			inputSchema: { type: 'object', properties: {} },
+			inputTypeDefinition: 'type FooBarInput = Record<string, never>',
+		},
+	})
+
+	expect(detail.structured).toMatchObject({
+		type: 'capability',
+		usage: 'execute with codemode["foo-bar"](args)',
+		executeExample: expect.stringContaining(
+			'return await codemode["foo-bar"](input)',
+		),
+	})
+	expect(detail.markdown).toContain('return await codemode["foo-bar"](input)')
+})
+
 test('repo_run_commands capability detail keeps the structured capability contract', () => {
 	const registry = buildCapabilityRegistry(builtinDomains)
 	const repoRunCommands = registry.capabilitySpecs.repo_run_commands

@@ -19,7 +19,9 @@ Import runtime APIs from **`kody:runtime`** when you need Kody helpers. These
 helpers are runtime exports:
 
 - use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
-  discovered by **search** as **`await codemode.<capability_id>(input)`**
+  discovered by **search** as **`await codemode.capability_id(input)`** for
+  valid identifier names, or **`await codemode["capability-id"](input)`** for
+  non-identifier capability ids
 - use
   **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
   for integration OAuth helpers
@@ -96,7 +98,7 @@ To read field shapes while coding, use **search** with
 **`entity: "{name}:capability"`** for builtin capability type definitions, or
 inspect the relevant saved package with **`entity: "{kody_id}:package"`**.
 Capability detail includes a complete **execute** module snippet; the runtime
-call itself is always `codemode.<capability_id>(input)`.
+call itself is always through the imported `codemode` object.
 
 ## Saved packages
 

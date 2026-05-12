@@ -47,7 +47,7 @@ Saved package surface:
 
 Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.
-- \`import { codemode } from 'kody:runtime'\` for builtin capabilities discovered by \`search\`; call them as \`await codemode.<capability_id>(input)\`.
+- \`import { codemode } from 'kody:runtime'\` for builtin capabilities discovered by \`search\`; call valid identifier names as \`await codemode.capability_id(input)\`. If a capability id is not a valid JavaScript identifier, use bracket notation: \`await codemode["capability-id"](input)\`. Capability detail from \`search({ entity: "{name}:capability" })\` includes the exact snippet.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`. \`storage.sql\` returns \`{ columns, rows, rowCount, rowsRead, rowsWritten }\`; read query rows from \`.rows\`.
 - \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth integrations. Integration \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`integration_list\` first when the task involves a provider that may have multiple accounts connected.
 - \`import { workflows } from 'kody:runtime'\` for durable Cloudflare Workflows. \`workflows.create\` accepts either inline \`code\` or a saved-package \`exportName\`; use \`workflow_list\` to inspect recent runs.
