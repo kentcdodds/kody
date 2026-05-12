@@ -662,6 +662,7 @@ function createPackageJobCallerContext(input: {
 		user: {
 			userId: input.userId,
 			email: '',
+			username: undefined,
 			displayName: `package:${input.packageId}`,
 		},
 		storageContext: {
