@@ -77,9 +77,9 @@ When working in this repo, do not assume:
 - This project should evolve into a large catalog of explicitly declared MCP
   tools.
 - This project is trying to become a generic starter kit for others.
-- This is a single-user system. Per-user isolation is an invariant, not a
-  future direction; treat any code path that reads or writes data without a
-  `userId` (or that shares a Durable Object id across users) as a bug.
+- This is a single-user system. Per-user isolation is an invariant, not a future
+  direction; treat any code path that reads or writes data without a `userId`
+  (or that shares a Durable Object id across users) as a bug.
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes

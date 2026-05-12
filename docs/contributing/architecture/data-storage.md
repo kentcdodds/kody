@@ -124,11 +124,11 @@ concurrent two-runtime test that pins this invariant.
 `kody:runtime` is also a host-external package-runtime module. Saved package
 bundle artifacts reserve `.__kody_virtual__/runtime.js` import paths but strip
 the runtime source before persistence. Execution loaders hydrate those paths
-with the deployed host runtime source for every package surface
-(exports, subscriptions, jobs, services, package apps, workflows, and ad hoc
-execute). Static `kody:@...` package imports remain pinned snapshots, while
-literal dynamic `import("kody:@...")` imports are hydrated at execution time
-from the current published package export under the caller's `userId`.
+with the deployed host runtime source for every package surface (exports,
+subscriptions, jobs, services, package apps, workflows, and ad hoc execute).
+Static `kody:@...` package imports remain pinned snapshots, while literal
+dynamic `import("kody:@...")` imports are hydrated at execution time from the
+current published package export under the caller's `userId`.
 
 ## Configuration reference
 

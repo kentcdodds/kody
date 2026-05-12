@@ -91,8 +91,8 @@ exhaustive.
   current-version literal dynamic `import("kody:@...")` expressions do not need
   `kody.dependencies` declarations.
 - Computed dynamic Kody package imports, including template strings and
-  variables such as `import(packageSpecifier)`, are unsupported. Use a
-  string literal `import("kody:@scope/my-package/export")` when you want
+  variables such as `import(packageSpecifier)`, are unsupported. Use a string
+  literal `import("kody:@scope/my-package/export")` when you want
   current-version runtime resolution.
 - `kody:runtime` is always host-owned and request-scoped. Static imports such as
   `import { codemode } from "kody:runtime"` stay valid, but saved package
@@ -114,13 +114,13 @@ Package runtime code can invoke another package owned by the same user without
 statically importing it:
 
 ```ts
-import { packages } from "kody:runtime";
+import { packages } from 'kody:runtime'
 
 const result = await packages.invoke({
-  kodyId: "discord-general-chat",
-  exportName: "./handle-discord-message-created",
-  params: { event },
-});
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event },
+})
 ```
 
 Use `packages.invokeChecked` for event subscribers, workflow dispatchers,
@@ -137,30 +137,30 @@ Use `packages.check` when the caller wants to inspect the current contract
 before deciding whether to invoke:
 
 ```ts
-import { packages } from "kody:runtime";
+import { packages } from 'kody:runtime'
 
 const check = await packages.check({
-  kodyId: "discord-general-chat",
-  exportName: "./handle-discord-message-created",
-  params: { event, dryRun: true },
-});
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event, dryRun: true },
+})
 
-if (!check.ok) throw new Error(check.message);
-console.log(check.contract);
+if (!check.ok) throw new Error(check.message)
+console.log(check.contract)
 
-const result = await packages.invoke(check.invoke);
+const result = await packages.invoke(check.invoke)
 ```
 
 For the common check-then-invoke flow, use the combined helper:
 
 ```ts
-import { packages } from "kody:runtime";
+import { packages } from 'kody:runtime'
 
 const result = await packages.invokeChecked({
-  kodyId: "discord-general-chat",
-  exportName: "./handle-discord-message-created",
-  params: { event, dryRun: true },
-});
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event, dryRun: true },
+})
 ```
 
 Use bare `packages.invoke` only when the caller has already checked the contract
@@ -309,9 +309,9 @@ edit it with a normal git client without round-tripping each file change through
 
    ```json
    {
-     "package_id": "pkg_123",
-     "scope": "write",
-     "ttl_seconds": 1800
+   	"package_id": "pkg_123",
+   	"scope": "write",
+   	"ttl_seconds": 1800
    }
    ```
 
@@ -341,7 +341,7 @@ edit it with a normal git client without round-tripping each file change through
 
    ```json
    {
-     "package_id": "pkg_123"
+   	"package_id": "pkg_123"
    }
    ```
 

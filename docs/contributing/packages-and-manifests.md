@@ -109,13 +109,13 @@ Package runtime contexts also expose `packages.check`, `packages.invoke`, and
 `packages.invokeChecked` from `kody:runtime`:
 
 ```ts
-import { packages } from "kody:runtime";
+import { packages } from 'kody:runtime'
 
 await packages.invokeChecked({
-  kodyId: "discord-general-chat",
-  exportName: "./handle-discord-message-created",
-  params: { event },
-});
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event },
+})
 ```
 
 This path deliberately does not rewrite to a static `kody:@...` import during
@@ -134,13 +134,13 @@ warnings before deciding whether to invoke:
 
 ```ts
 const check = await packages.check({
-  kodyId: "discord-general-chat",
-  exportName: "./handle-discord-message-created",
-  params: { event, dryRun: true },
-});
+	kodyId: 'discord-general-chat',
+	exportName: './handle-discord-message-created',
+	params: { event, dryRun: true },
+})
 
-if (!check.ok) throw new Error(check.message);
-const result = await packages.invoke(check.invoke);
+if (!check.ok) throw new Error(check.message)
+const result = await packages.invoke(check.invoke)
 ```
 
 Continue to use static `kody:@scope/package/export` imports for library-like
@@ -221,14 +221,14 @@ Runtime code calls `workflows.create(...)` with the package export plus small
 parameters:
 
 ```ts
-import { workflows } from "kody:runtime";
+import { workflows } from 'kody:runtime'
 
 await workflows.create({
-  exportName: "./workflow-run-event",
-  runAt: "2026-05-03T12:00:00.000Z",
-  idempotencyKey: "shade-event:2026-05-03T12:00:00.000Z:office",
-  params: { eventId: "event-123", roomId: "office" },
-});
+	exportName: './workflow-run-event',
+	runAt: '2026-05-03T12:00:00.000Z',
+	idempotencyKey: 'shade-event:2026-05-03T12:00:00.000Z:office',
+	params: { eventId: 'event-123', roomId: 'office' },
+})
 ```
 
 In package runtime contexts (package jobs, subscription handlers, services,
@@ -274,18 +274,18 @@ Example:
 
 ```json
 {
-  "kody": {
-    "retrievers": {
-      "personal-inbox": {
-        "export": "./search",
-        "name": "Personal Inbox",
-        "description": "Searches saved notes and snippets.",
-        "scopes": ["search"],
-        "timeoutMs": 1000,
-        "maxResults": 5
-      }
-    }
-  }
+	"kody": {
+		"retrievers": {
+			"personal-inbox": {
+				"export": "./search",
+				"name": "Personal Inbox",
+				"description": "Searches saved notes and snippets.",
+				"scopes": ["search"],
+				"timeoutMs": 1000,
+				"maxResults": 5
+			}
+		}
+	}
 }
 ```
 
