@@ -35,7 +35,7 @@ export function createAppRouter(appEnv: AppEnv) {
 	const router = createRouter({
 		middleware: [],
 		async defaultHandler() {
-			return render(Layout({}))
+			return render(Layout({}), { status: 404 })
 		},
 	})
 

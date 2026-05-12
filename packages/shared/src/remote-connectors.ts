@@ -1,5 +1,6 @@
 import { type InferOutput } from 'remix/data-schema'
 import { type mcpCallerContextSchema } from './chat.ts'
+import { buildUsernamePathPrefix } from './public-urls.ts'
 
 type McpCallerContext = InferOutput<typeof mcpCallerContextSchema>
 
@@ -17,21 +18,20 @@ export function normalizeRemoteConnectorInstanceId(instanceId: string): string {
 }
 
 export function userScopedConnectorIngressPath(input: {
-	userId: string
+	username: string
 	kind: string
 	instanceId: string
 }) {
-	const userId = encodeURIComponent(input.userId.trim())
 	const kind = encodeURIComponent(normalizeRemoteConnectorKind(input.kind))
 	const instanceId = encodeURIComponent(
 		normalizeRemoteConnectorInstanceId(input.instanceId),
 	)
-	return `/connectors/u/${userId}/${kind}/${instanceId}`
+	return `${buildUsernamePathPrefix(input.username)}/connectors/${kind}/${instanceId}`
 }
 
 export function userScopedConnectorWebSocketUrl(input: {
 	origin: string
-	userId: string
+	username: string
 	kind: string
 	instanceId: string
 }) {

@@ -17,17 +17,21 @@ async function workerFetch(request: Request): Promise<Response> {
 }
 
 test('user-scoped connector entrypoints reject unauthenticated HTTP access while allowing WebSocket upgrades', async () => {
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO users (username, email, password_hash)
+			VALUES ('connector-user', 'connector-user@example.com', 'hash')`,
+	).run()
 	const unauthorizedRequests = [
-		createRequest('/connectors/u/user-1/lights/default/snapshot'),
-		createRequest('/connectors/u/user-1/lights/default/rpc/tools-list', {
+		createRequest('/@connector-user/connectors/lights/default/snapshot'),
+		createRequest('/@connector-user/connectors/lights/default/rpc/tools-list', {
 			method: 'POST',
 		}),
-		createRequest('/connectors/u/user-1/lights/default/rpc/tools-call', {
+		createRequest('/@connector-user/connectors/lights/default/rpc/tools-call', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: 'test', arguments: {} }),
 		}),
-		createRequest('/connectors/u/user-1/lights/default/rpc/jsonrpc', {
+		createRequest('/@connector-user/connectors/lights/default/rpc/jsonrpc', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -42,7 +46,7 @@ test('user-scoped connector entrypoints reject unauthenticated HTTP access while
 	}
 
 	const websocketRequest = createRequest(
-		'/connectors/u/user-1/lights/default',
+		'/@connector-user/connectors/lights/default',
 		{
 			headers: { Upgrade: 'websocket' },
 		},
@@ -55,8 +59,8 @@ test('user-scoped connector entrypoints reject unauthenticated HTTP access while
 
 test('unmatched connector ingress paths do not fall through to the SPA shell', async () => {
 	const requests = [
-		createRequest('/connectors/home/default'),
-		createRequest('/connectors/home/default', {
+		createRequest('/@connector-user/connectors'),
+		createRequest('/@connector-user/connectors/home', {
 			headers: { Upgrade: 'websocket' },
 		}),
 	]

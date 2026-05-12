@@ -45,9 +45,13 @@ import {
 	parseUserScopedConnectorRoutePath,
 	userScopedConnectorSessionKey,
 } from './remote-connector/connector-session-key.ts'
-import { handlePackageAppRequest } from '#app/handlers/package-app.ts'
+import {
+	handlePackageAppRequest,
+	isPackageAppRequestPath,
+} from '#app/handlers/package-app.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
+import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 
 export {
 	RepoSession,
@@ -186,7 +190,7 @@ const appHandler = withCors({
 			return handleGeneratedUiApiRequest(request, env)
 		}
 
-		if (url.pathname.startsWith('/packages/')) {
+		if (isPackageAppRequestPath(url.pathname)) {
 			return handlePackageAppRequest(request, env)
 		}
 
@@ -197,8 +201,15 @@ const appHandler = withCors({
 			if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
 				return new Response('Not Found', { status: 404 })
 			}
+			const routeUser = await findPublicUserIdentityByUsername({
+				db: env.APP_DB,
+				username: userScopedConnectorRoute.username,
+			})
+			if (!routeUser) {
+				return new Response('Not Found', { status: 404 })
+			}
 			const sessionKey = userScopedConnectorSessionKey({
-				userId: userScopedConnectorRoute.userId,
+				userId: routeUser.mcpUserId,
 				kind: userScopedConnectorRoute.kind,
 				instanceId: userScopedConnectorRoute.instanceId,
 			})
@@ -211,7 +222,7 @@ const appHandler = withCors({
 			forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
 			forwardRequest.headers.set(
 				'X-Kody-Connector-User-Id',
-				userScopedConnectorRoute.userId,
+				routeUser.mcpUserId,
 			)
 			return stub.fetch(forwardRequest)
 		}

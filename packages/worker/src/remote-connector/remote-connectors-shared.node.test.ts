@@ -34,13 +34,13 @@ test('normalizeRemoteConnectorRefs preserves an empty connector list', () => {
 	).toEqual([])
 })
 
-test('userScopedConnectorWebSocketUrl builds encoded user-scoped connector URLs', () => {
+test('userScopedConnectorWebSocketUrl builds encoded username-scoped connector URLs', () => {
 	expect(
 		userScopedConnectorWebSocketUrl({
 			origin: 'wss://kody.example.com/',
-			userId: 'user aaa',
+			username: 'user-aaa',
 			kind: 'Lights',
 			instanceId: 'living room',
 		}),
-	).toBe('wss://kody.example.com/connectors/u/user%20aaa/lights/living%20room')
+	).toBe('wss://kody.example.com/@user-aaa/connectors/lights/living%20room')
 })

@@ -6,7 +6,7 @@ import {
 export { userScopedConnectorIngressPath } from '@kody-internal/shared/remote-connectors.ts'
 
 export type UserScopedConnectorRouteMatch = {
-	userId: string
+	username: string
 	kind: string
 	instanceId: string
 	rest: string
@@ -43,23 +43,23 @@ export function parseUserScopedConnectorRoutePath(
 		}
 	}
 	if (
-		parts.length >= 5 &&
-		parts[0] === 'connectors' &&
-		parts[1] === 'u' &&
+		parts.length >= 4 &&
+		parts[0]?.startsWith('@') &&
+		parts[0].length > 1 &&
+		parts[1] === 'connectors' &&
 		parts[2] &&
-		parts[3] &&
-		parts[4]
+		parts[3]
 	) {
-		const decodedUserId = decodeSegment(parts[2])
-		const decodedKind = decodeSegment(parts[3])
-		const decodedInstanceId = decodeSegment(parts[4])
-		if (!decodedUserId || !decodedKind || !decodedInstanceId) return null
-		const userId = decodedUserId.trim()
+		const decodedUsername = decodeSegment(parts[0].slice(1))
+		const decodedKind = decodeSegment(parts[2])
+		const decodedInstanceId = decodeSegment(parts[3])
+		if (!decodedUsername || !decodedKind || !decodedInstanceId) return null
+		const username = decodedUsername.trim()
 		const kind = decodedKind.trim().toLowerCase()
 		const instanceId = decodedInstanceId.trim()
-		if (!userId || !kind || !instanceId) return null
-		const rest = parts.length > 5 ? `/${parts.slice(5).join('/')}` : ''
-		return { userId, kind, instanceId, rest }
+		if (!username || !kind || !instanceId) return null
+		const rest = parts.length > 4 ? `/${parts.slice(4).join('/')}` : ''
+		return { username, kind, instanceId, rest }
 	}
 	return null
 }

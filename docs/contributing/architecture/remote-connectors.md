@@ -8,7 +8,7 @@ calls to JSON-RPC on the socket.
 
 ## URLs and session keys
 
-`wss://<worker-origin>/connectors/u/<userId>/<kind>/<instanceId>`
+`wss://<worker-origin>/@<username>/connectors/<kind>/<instanceId>`
 
 Session key = JSON tuple `[userId, kind, instanceId]` where `kind` is lowercase
 after trim.
@@ -112,7 +112,7 @@ Source: `packages/shared/src/chat.ts`,
 ## Connector checklist
 
 1. **Outbound WebSocket** to your connector URL:
-   `wss://<worker-origin>/connectors/u/<userId>/<kind>/<instanceId>`.
+   `wss://<worker-origin>/@<username>/connectors/<kind>/<instanceId>`.
 2. **Hello first** with matching **`connectorKind`** + **`connectorId`** and a
    **valid `sharedSecret`** for that `kind:instanceId` pair.
 3. Implement **`tools/list`** and **`tools/call`** on the socket via

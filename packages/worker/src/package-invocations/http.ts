@@ -1,5 +1,6 @@
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 import {
 	invokePackageExport,
 	type PackageInvocationTokenScope,
@@ -9,8 +10,6 @@ import {
 	hashPackageInvocationBearerToken,
 	updatePackageInvocationTokenLastUsed,
 } from './repo.ts'
-
-const packageInvocationPathPrefix = '/api/package-invocations/'
 
 type PackageInvocationRequestBody = {
 	params?: Record<string, unknown>
@@ -82,20 +81,23 @@ function decodePathComponent(value: string) {
 }
 
 function parsePackageInvocationPath(pathname: string) {
-	if (!pathname.startsWith(packageInvocationPathPrefix)) {
+	const parts = pathname.split('/').filter(Boolean)
+	if (
+		parts.length < 5 ||
+		!parts[0]?.startsWith('@') ||
+		parts[0].length <= 1 ||
+		parts[1] !== 'api' ||
+		parts[2] !== 'package-invocations'
+	) {
 		return null
 	}
-	const rest = pathname.slice(packageInvocationPathPrefix.length)
-	const parts = rest.split('/')
-	if (parts.length < 2) {
+	const username = decodePathComponent(parts[0].slice(1))
+	const kodyId = decodePathComponent(parts[3] ?? '')
+	const exportName = decodePathComponent(parts.slice(4).join('/'))
+	if (!username || !kodyId || !exportName) {
 		return null
 	}
-	const packageIdOrKodyId = decodePathComponent(parts[0] ?? '')
-	const exportName = decodePathComponent(parts.slice(1).join('/'))
-	if (!packageIdOrKodyId || !exportName) {
-		return null
-	}
-	return { packageIdOrKodyId, exportName }
+	return { username, kodyId, exportName }
 }
 
 async function resolveTokenScope(input: {
@@ -168,7 +170,7 @@ async function readRequestBody(
 }
 
 export function isPackageInvocationApiRequest(pathname: string) {
-	return pathname.startsWith(packageInvocationPathPrefix)
+	return parsePackageInvocationPath(pathname) !== null
 }
 
 export async function handlePackageInvocationApiRequest(
@@ -219,6 +221,22 @@ export async function handlePackageInvocationApiRequest(
 			reason: 'invalid_private_token',
 		})
 		return unauthorizedResponse('Invalid package invocation token.')
+	}
+	const routeUser = await findPublicUserIdentityByUsername({
+		db: env.APP_DB,
+		username: route.username,
+	})
+	if (!routeUser || routeUser.mcpUserId !== tokenScope.userId) {
+		logPackageInvocationAudit(ctx, {
+			category: 'oauth',
+			action: 'package_invoke',
+			result: 'failure',
+			email: tokenScope.email,
+			ip: requestIp,
+			path: new URL(request.url).pathname,
+			reason: 'username_token_mismatch',
+		})
+		return notFoundResponse()
 	}
 	const parsedBody = await readRequestBody(request)
 	if (!parsedBody.ok) {
@@ -289,7 +307,7 @@ export async function handlePackageInvocationApiRequest(
 		}),
 		token: tokenScope,
 		request: {
-			packageIdOrKodyId: route.packageIdOrKodyId,
+			packageIdOrKodyId: route.kodyId,
 			exportName: route.exportName,
 			params: body.params,
 			idempotencyKey: body.idempotencyKey,

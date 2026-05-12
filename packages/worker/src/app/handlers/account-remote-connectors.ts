@@ -32,7 +32,7 @@ type AccountRemoteConnectorListItem = {
 type AccountRemoteConnectorsPayload = {
 	ok: true
 	email: string
-	userId: string
+	username: string
 	connectorUrlOrigin: string
 	connectors: Array<AccountRemoteConnectorListItem>
 }
@@ -191,17 +191,16 @@ async function buildPayload(input: {
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 	})
-	const userId = input.user.mcpUser.userId
 	return {
 		ok: true,
 		email: input.user.email,
-		userId,
+		username: input.user.username,
 		connectorUrlOrigin: input.connectorUrlOrigin,
 		connectors: connectors.map((connector) => ({
 			...connector,
 			connectorUrl: userScopedConnectorWebSocketUrl({
 				origin: input.connectorUrlOrigin,
-				userId,
+				username: input.user.username,
 				kind: connector.kind,
 				instanceId: connector.instanceId,
 			}),

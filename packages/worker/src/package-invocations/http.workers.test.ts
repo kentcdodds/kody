@@ -5,6 +5,7 @@ import {
 	isPackageInvocationApiRequest,
 } from './http.ts'
 import { hashPackageInvocationBearerToken } from './repo.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const invocationMockModule = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
@@ -33,10 +34,11 @@ async function createEnv(
 		touchError?: Error
 	} = {},
 ) {
+	const tokenUserId = await createStableUserIdFromEmail('me@example.com')
 	const tokenRows = [
 		{
 			id: 'discord-gateway',
-			user_id: 'user-123',
+			user_id: tokenUserId,
 			token_hash: await hashPackageInvocationBearerToken('private-token-123'),
 			name: 'Discord gateway',
 			email: 'me@example.com',
@@ -63,6 +65,19 @@ async function createEnv(
 					bind(...params: Array<unknown>) {
 						return {
 							async first<T = Record<string, unknown>>() {
+								if (query.includes('FROM users')) {
+									const username = String(params[0] ?? '')
+									return (username === 'me'
+										? {
+												id: 1,
+												username: 'me',
+												email: 'me@example.com',
+												password_hash: 'hash',
+												created_at: '2026-04-27T00:00:00.000Z',
+												updated_at: '2026-04-27T00:00:00.000Z',
+											}
+										: null) as T | null
+								}
 								if (query.includes('FROM package_invocation_tokens')) {
 									const tokenHash = String(params[0] ?? '')
 									return (tokenRows.find(
@@ -137,7 +152,7 @@ function createContext() {
 test('isPackageInvocationApiRequest matches the external package invocation route', () => {
 	expect(
 		isPackageInvocationApiRequest(
-			'/api/package-invocations/discord-gateway/dispatch-message-created',
+			'/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 		),
 	).toBe(true)
 	expect(isPackageInvocationApiRequest('/api/me')).toBe(false)
@@ -146,7 +161,7 @@ test('isPackageInvocationApiRequest matches the external package invocation rout
 test('package invocation API returns 401 when bearer token is missing', async () => {
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			'https://example.com/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -173,7 +188,7 @@ test('package invocation API returns 401 when bearer token is missing', async ()
 test('package invocation API returns 401 for invalid private tokens', async () => {
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			'https://example.com/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
 				method: 'POST',
 				headers: {
@@ -200,7 +215,7 @@ test('package invocation API returns 401 for invalid private tokens', async () =
 test('package invocation API fails closed when token touch loses revocation race', async () => {
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			'https://example.com/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
 				method: 'POST',
 				headers: {
@@ -228,7 +243,7 @@ test('package invocation API fails closed when token touch loses revocation race
 test('package invocation API fails closed when token scope JSON is malformed', async () => {
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			'https://example.com/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
 				method: 'POST',
 				headers: {
@@ -260,7 +275,7 @@ test('package invocation API fails closed when token scope JSON is malformed', a
 test('package invocation API validates the JSON body shape', async () => {
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			'https://example.com/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
 				method: 'POST',
 				headers: {
@@ -300,9 +315,10 @@ test('package invocation API invokes the package export with the scoped token co
 	})
 
 	const ctx = createContext()
+	const expectedUserId = await createStableUserIdFromEmail('me@example.com')
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
-			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			'https://example.com/@me/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
 				method: 'POST',
 				headers: {
@@ -326,7 +342,7 @@ test('package invocation API invokes the package export with the scoped token co
 		baseUrl: 'https://example.com',
 		token: {
 			tokenId: 'discord-gateway',
-			userId: 'user-123',
+			userId: expectedUserId,
 			email: 'me@example.com',
 			displayName: 'me',
 			packageIds: [],

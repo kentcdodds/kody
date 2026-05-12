@@ -16,17 +16,13 @@ socket lifecycle.
 
 ## Endpoint
 
-`POST /api/package-invocations/:packageIdOrKodyId/:exportName`
+`POST /@:username/api/package-invocations/:kodyId/:exportName`
 
 Examples:
 
-- `/api/package-invocations/pkg_123/dispatch-message-created`
-- `/api/package-invocations/discord-gateway/dispatch-message-created`
+- `/@kent/api/package-invocations/discord-gateway/dispatch-message-created`
 
-The path accepts either:
-
-- the saved package id
-- the package `kody.id`
+The path uses the owner's username and the package `kody.id`.
 
 The export name is normalized to package export form, so
 `dispatch-message-created` resolves as `./dispatch-message-created`.
@@ -193,7 +189,7 @@ curl --fail --silent \
 	-X POST \
 	-H "Authorization: Bearer $PACKAGE_INVOCATION_TOKEN" \
 	-H "Content-Type: application/json" \
-	"https://kody.example.com/api/package-invocations/discord-gateway/dispatch-message-created" \
+	"https://kody.example.com/@kent/api/package-invocations/discord-gateway/dispatch-message-created" \
 	-d '{
 		"params": {
 			"messageId": "123",

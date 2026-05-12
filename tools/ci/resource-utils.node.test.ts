@@ -82,7 +82,9 @@ test('writeGeneratedWranglerConfig copies production asset routing to the deploy
 			}
 		}>(generatedConfigText)
 
-		expect(generatedConfig.assets?.run_worker_first).toContain('/connectors/*')
+		expect(generatedConfig.assets?.run_worker_first).toContain(
+			'/@*/connectors/*',
+		)
 		expect(generatedConfig.assets).toEqual(
 			generatedConfig.env?.production?.assets,
 		)
@@ -115,7 +117,9 @@ test('writeGeneratedWranglerConfig copies preview asset routing to the deployed 
 			}
 		}>(generatedConfigText)
 
-		expect(generatedConfig.assets?.run_worker_first).toContain('/connectors/*')
+		expect(generatedConfig.assets?.run_worker_first).toContain(
+			'/@*/connectors/*',
+		)
 		expect(generatedConfig.assets).toEqual(generatedConfig.env?.preview?.assets)
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })

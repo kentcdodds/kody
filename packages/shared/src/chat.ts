@@ -34,6 +34,7 @@ const remoteConnectorInstanceIdFieldSchema = createSchema<unknown, string>(
 export const mcpUserContextSchema = object({
 	userId: string(),
 	email: string(),
+	username: optional(string()),
 	displayName: string(),
 })
 

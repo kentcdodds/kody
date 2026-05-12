@@ -93,8 +93,8 @@ that two different users always resolve to two different object ids:
   `packages/worker/src/package-runtime/`.
 - `RemoteConnectorSession` —
   `userScopedConnectorSessionKey(userId, kind, instanceId)`. Connectors must
-  connect through the new user-scoped ingress URL
-  `/connectors/u/{userId}/{kind}/{instanceId}`. The DO carries the ingress user
+  connect through the username-scoped ingress URL
+  `/@{username}/connectors/{kind}/{instanceId}`. The DO carries the ingress user
   id forward via headers + websocket attachment and verifies the shared secret
   against that user's row only.
 - `AgentTurnRunner` — `idFromName(JSON.stringify([userId, sessionId]))`. The

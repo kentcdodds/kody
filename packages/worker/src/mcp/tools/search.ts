@@ -46,6 +46,7 @@ import {
 	type RemoteConnectorStatus,
 } from '#worker/remote-connector/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
@@ -168,6 +169,13 @@ type SearchUnifiedResult = {
 	telemetry: SearchTelemetry
 	phaseTimings: SearchPhaseTimings
 	guidance?: string
+}
+
+function requireUsernameForHostedPackageUrl(username: string | null) {
+	if (!username) {
+		throw new Error('Username is required to build hosted package app URLs.')
+	}
+	return username
 }
 
 function flattenReferencedTypeFields(
@@ -1674,7 +1682,13 @@ async function resolveEntityDetail(input: {
 			manifest: loaded.manifest,
 			files: loaded.files,
 			hostedUrl: record.hasApp
-				? `${input.callerContext.baseUrl}/packages/${encodeURIComponent(record.kodyId)}`
+				? buildPackageAppUrl({
+						origin: input.callerContext.baseUrl,
+						username: requireUsernameForHostedPackageUrl(
+							input.callerContext.user?.username ?? null,
+						),
+						kodyId: record.kodyId,
+					})
 				: null,
 		}
 	}
@@ -2074,6 +2088,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					matches: toSlimStructuredMatches({
 						matches: trimmedPayload.matches,
 						baseUrl,
+						username: callerContext.user?.username ?? null,
 					}),
 				}
 				const timing = finishToolTiming(timingStart)

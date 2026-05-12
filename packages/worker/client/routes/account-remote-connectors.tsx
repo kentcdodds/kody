@@ -40,7 +40,7 @@ type RemoteConnectorListItem = {
 type AccountRemoteConnectorsPayload = {
 	ok: true
 	email: string
-	userId: string
+	username: string
 	connectorUrlOrigin: string
 	connectors: Array<RemoteConnectorListItem>
 	selectedConnectorId?: string
@@ -293,7 +293,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
 	let email = ''
-	let userId = ''
+let username = ''
 	let connectorUrlOrigin = ''
 	let connectors: Array<RemoteConnectorListItem> = []
 	let editorState = createEmptyEditorState()
@@ -344,7 +344,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountRemoteConnectorsPayload) {
 		email = payload.email
-		userId = payload.userId
+		username = payload.username
 		connectorUrlOrigin = payload.connectorUrlOrigin
 		connectors = payload.connectors
 		deleteConfirm = false
@@ -529,11 +529,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	}
 
 	function getEditorConnectorUrl() {
-		if (!userId || !connectorUrlOrigin) return null
+		if (!username || !connectorUrlOrigin) return null
 		if (!editorState.kind.trim() || !editorState.instanceId.trim()) return null
 		return userScopedConnectorWebSocketUrl({
 			origin: connectorUrlOrigin,
-			userId,
+			username,
 			kind: editorState.kind,
 			instanceId: editorState.instanceId,
 		})
@@ -797,7 +797,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									</p>
 								)}
 								<p mix={css(descriptionCss)}>
-									Includes your MCP user ID <code>{userId}</code> so connector
+									Includes your username <code>{username}</code> so connector
 									sessions stay isolated to your account.
 								</p>
 							</div>

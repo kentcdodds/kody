@@ -4,6 +4,7 @@ import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getUsernameValidationError } from '#app/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -15,19 +16,28 @@ import { wantsJson } from '#worker/utils.ts'
 
 function parsePackageAppPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
-	if (parts[0] !== 'packages') return null
-	const rawKodyId = parts[1]?.trim()
+	const rawUsername = parts[0]?.startsWith('@') ? parts[0].slice(1) : ''
+	if (!rawUsername || parts[1] !== 'packages') return null
+	const rawKodyId = parts[2]?.trim()
 	if (!rawKodyId) return null
+	let username: string
 	let kodyId: string
 	try {
+		username = decodeURIComponent(rawUsername)
 		kodyId = decodeURIComponent(rawKodyId)
 	} catch {
 		return null
 	}
+	if (getUsernameValidationError(username)) return null
 	return {
+		username,
 		kodyId,
-		restPath: parts.length > 2 ? `/${parts.slice(2).join('/')}` : '/',
+		restPath: parts.length > 3 ? `/${parts.slice(3).join('/')}` : '/',
 	}
+}
+
+export function isPackageAppRequestPath(pathname: string) {
+	return parsePackageAppPath(pathname) !== null
 }
 
 function parsePackageRealtimePath(restPath: string) {
@@ -228,23 +238,21 @@ function createPackageAppErrorResponse(input: {
 export async function handlePackageAppRequest(
 	request: Request,
 	env: Env,
-	explicitKodyId?: string | null,
 ) {
 	const requestUrl = new URL(request.url)
 	const packagePath = parsePackageAppPath(requestUrl.pathname)
-	const kodyId = explicitKodyId?.trim() || packagePath?.kodyId || null
-	if (!kodyId) {
+	if (!packagePath) {
 		return new Response('Saved package app not found.', { status: 404 })
 	}
-	const packageRealtimeRestPath =
-		packagePath?.kodyId === kodyId
-			? packagePath.restPath
-			: requestUrl.pathname || '/'
-	const forwardedPackageRestPath =
-		packagePath?.kodyId === kodyId ? packagePath.restPath : '/'
+	const { kodyId } = packagePath
+	const packageRealtimeRestPath = packagePath.restPath
+	const forwardedPackageRestPath = packagePath.restPath
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
 		return redirectToLogin(request)
+	}
+	if (user.username !== packagePath.username) {
+		return new Response('Saved package app not found.', { status: 404 })
 	}
 	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
 		userId: user.mcpUser.userId,
@@ -302,6 +310,7 @@ export async function handlePackageAppRequest(
 				userId: user.mcpUser.userId,
 				email: user.email,
 				displayName: user.displayName,
+				username: user.username,
 			},
 			packageId: savedPackage.id,
 		})

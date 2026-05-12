@@ -5,6 +5,7 @@ import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-ht
 import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
+import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -118,8 +119,16 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					)
 				}
 			}
+			const username = callerContext.user?.username
+			if (savedPackage && !username) {
+				throw new Error('Username is required to open saved package apps.')
+			}
 			const hostedUrl = savedPackage
-				? `${agent.requireDomain()}/packages/${encodeURIComponent(savedPackage.kodyId)}`
+				? buildPackageAppUrl({
+						origin: agent.requireDomain(),
+						username,
+						kodyId: savedPackage.kodyId,
+					})
 				: null
 			const inlineSourceCode = savedPackage
 				? [

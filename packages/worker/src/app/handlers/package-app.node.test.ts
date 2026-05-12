@@ -12,11 +12,13 @@ const mockModule = vi.hoisted(() => ({
 		setContext: vi.fn(),
 	},
 	readAuthenticatedAppUser: vi.fn(async () => ({
+		username: 'test-user',
 		email: 'user@example.com',
 		displayName: 'User',
 		mcpUser: {
 			userId: 'user-1',
 			email: 'user@example.com',
+			username: 'test-user',
 			displayName: 'User',
 		},
 	})),
@@ -103,7 +105,7 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 	resetMocks()
 
 	const response = await handlePackageAppRequest(
-		new Request('https://example.com/packages/example/report?tab=errors'),
+		new Request('https://example.com/@test-user/packages/example/report?tab=errors'),
 		{} as Env,
 	)
 
@@ -112,7 +114,7 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 	const body = await response.text()
 	expect(body).toContain('Package app could not be prepared')
 	expect(body).toContain('@kody/example')
-	expect(body).toContain('/packages/example/report')
+	expect(body).toContain('/@test-user/packages/example/report')
 	expect(mockModule.captureException).toHaveBeenCalledTimes(1)
 	expect(mockModule.captureException).toHaveBeenCalledWith(expect.any(Error))
 	expect(mockModule.sentryScope.setLevel).toHaveBeenCalledWith('error')
@@ -153,12 +155,12 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 			packageName: '@kody/example',
 			sourceId: 'source-1',
 			forwardedPath: '/report',
-			hostPath: '/packages/example/report',
+			hostPath: '/@test-user/packages/example/report',
 		}),
 	)
 
 	const apiResponse = await handlePackageAppRequest(
-		new Request('https://example.com/packages/example/api/data', {
+		new Request('https://example.com/@test-user/packages/example/api/data', {
 			headers: { accept: 'application/json' },
 		}),
 		{} as Env,
@@ -175,7 +177,7 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 			name: '@kody/example',
 			kody_id: 'example',
 		},
-		request_path: '/packages/example/api/data',
+		request_path: '/@test-user/packages/example/api/data',
 	})
 })
 
@@ -208,7 +210,7 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 	})
 
 	const response = await handlePackageAppRequest(
-		new Request('https://example.com/packages/example'),
+		new Request('https://example.com/@test-user/packages/example'),
 		{} as Env,
 	)
 
@@ -223,11 +225,14 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {
 	resetMocks()
 
-	const request = new Request('https://example.com/packages/example/ws/chat', {
-		headers: {
-			Upgrade: 'websocket',
+	const request = new Request(
+		'https://example.com/@test-user/packages/example/ws/chat',
+		{
+			headers: {
+				Upgrade: 'websocket',
+			},
 		},
-	})
+	)
 
 	const response = await handlePackageAppRequest(request, {} as Env)
 
@@ -240,62 +245,14 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
-test('handlePackageAppRequest routes websocket paths to realtime session manager when explicitKodyId is provided', async () => {
+test('handlePackageAppRequest returns not found when the URL username does not match the signed-in user', async () => {
 	resetMocks()
-
-	const request = new Request('https://example.com/ws/chat', {
-		headers: {
-			Upgrade: 'websocket',
-		},
-	})
-
-	const response = await handlePackageAppRequest(request, {} as Env, 'example')
-
-	expect(response.status).toBe(200)
-	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
-	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(
-		request,
-		'chat',
-	)
-	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
-})
-
-test('handlePackageAppRequest preserves root forwarding for non-websocket explicitKodyId requests', async () => {
-	resetMocks()
-
-	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
-		source: {
-			published_commit: 'commit-1',
-			manifest_path: 'package.json',
-			source_root: '/',
-		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@kody/example',
-				kody: { id: 'example', app: { entry: 'app.js' } },
-			}),
-			'app.js': 'export default {}',
-		},
-	})
-	const entrypointFetch = vi.fn(async (forwardedRequest: Request) => {
-		return Response.json({ pathname: new URL(forwardedRequest.url).pathname })
-	})
-	mockModule.buildPackageAppWorker.mockResolvedValueOnce({
-		entrypointName: 'entry',
-		stub: {
-			getEntrypoint: () => ({
-				fetch: entrypointFetch,
-			}),
-		},
-	})
 
 	const response = await handlePackageAppRequest(
-		new Request('https://example.com/custom/path'),
+		new Request('https://example.com/@other-user/packages/example'),
 		{} as Env,
-		'example',
 	)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({ pathname: '/' })
-	expect(entrypointFetch).toHaveBeenCalledTimes(1)
+	expect(response.status).toBe(404)
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })

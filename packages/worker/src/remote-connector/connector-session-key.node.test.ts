@@ -37,38 +37,38 @@ test('userScopedConnectorSessionKey unambiguously encodes "/" in any segment', (
 	expect(collidingA).not.toBe(collidingB)
 })
 
-test('userScopedConnectorIngressPath builds /connectors/u/... routes', () => {
+test('userScopedConnectorIngressPath builds username-scoped connector routes', () => {
 	expect(
 		userScopedConnectorIngressPath({
-			userId: 'user-aaa',
+			username: 'user-aaa',
 			kind: 'lights',
 			instanceId: 'living-room',
 		}),
-	).toBe('/connectors/u/user-aaa/lights/living-room')
+	).toBe('/@user-aaa/connectors/lights/living-room')
 	expect(
 		userScopedConnectorIngressPath({
-			userId: 'with space',
+			username: 'with space',
 			kind: 'CUSTOM',
 			instanceId: 'a b',
 		}),
-	).toBe('/connectors/u/with%20space/custom/a%20b')
+	).toBe('/@with%20space/connectors/custom/a%20b')
 })
 
-test('parseUserScopedConnectorRoutePath extracts userId, kind, and instanceId', () => {
+test('parseUserScopedConnectorRoutePath extracts username, kind, and instanceId', () => {
 	expect(
 		parseUserScopedConnectorRoutePath(
-			'/connectors/u/user-aaa/lights/default/snapshot',
+			'/@user-aaa/connectors/lights/default/snapshot',
 		),
 	).toEqual({
-		userId: 'user-aaa',
+		username: 'user-aaa',
 		kind: 'lights',
 		instanceId: 'default',
 		rest: '/snapshot',
 	})
 	expect(
-		parseUserScopedConnectorRoutePath('/connectors/u/user-bbb/custom/abc'),
+		parseUserScopedConnectorRoutePath('/@user-bbb/connectors/custom/abc'),
 	).toEqual({
-		userId: 'user-bbb',
+		username: 'user-bbb',
 		kind: 'custom',
 		instanceId: 'abc',
 		rest: '',
@@ -77,6 +77,6 @@ test('parseUserScopedConnectorRoutePath extracts userId, kind, and instanceId', 
 		parseUserScopedConnectorRoutePath('/connectors/lights/default'),
 	).toBeNull()
 	expect(
-		parseUserScopedConnectorRoutePath('/connectors/u/user-aaa/lights'),
+		parseUserScopedConnectorRoutePath('/@user-aaa/connectors/lights'),
 	).toBeNull()
 })

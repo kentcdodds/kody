@@ -25,7 +25,7 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 	await page.getByLabel('Kind').fill(kind)
 	await page.getByLabel('Instance ID').fill(instanceId)
 	const connectorUrl = page.getByText(
-		new RegExp(`/connectors/u/[^/]+/${kind}/${instanceId}$`),
+		new RegExp(`/@[^/]+/connectors/${kind}/${instanceId}$`),
 	)
 	await expect(connectorUrl).toBeVisible()
 	await page.getByRole('textbox', { name: 'Shared secret' }).fill(sharedSecret)
@@ -53,7 +53,7 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 	await page.getByRole('button', { name: /copy connector url/i }).click()
 	await expect
 		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
-		.toMatch(new RegExp(`/connectors/u/[^/]+/${kind}/${instanceId}$`))
+		.toMatch(new RegExp(`/@[^/]+/connectors/${kind}/${instanceId}$`))
 
 	await page.getByRole('button', { name: 'Show shared secret' }).click()
 	await expect(sharedSecretInput).toHaveAttribute('type', 'text')

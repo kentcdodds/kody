@@ -32,6 +32,7 @@ export const oauthScopes: Array<string> = ['profile', 'email']
 type OAuthProps = {
 	userId: string
 	email: string
+	username: string
 	displayName: string
 }
 
@@ -628,6 +629,7 @@ export async function handleAuthorizeRequest(
 	}
 
 	let approvedEmail = ''
+	let approvedUsername = ''
 	if (hasFormCredentials) {
 		const db = createDb(env.APP_DB)
 		const userRecord = await db.findOne(usersTable, {
@@ -653,14 +655,23 @@ export async function handleAuthorizeRequest(
 			return respondAuthorizeError(request, 'Invalid email or password.')
 		}
 		approvedEmail = normalizedEmail
+		approvedUsername = userRecord.username
 	} else if (sessionEmail) {
+		const db = createDb(env.APP_DB)
+		const userRecord = await db.findOne(usersTable, {
+			where: { email: sessionEmail },
+		})
+		if (!userRecord) {
+			return respondAuthorizeError(request, 'Signed-in user not found.', 401)
+		}
 		approvedEmail = sessionEmail
+		approvedUsername = userRecord.username
 	}
 
 	const resolvedScopes = resolveScopes(authRequest.scope)
 	if (Array.isArray(resolvedScopes)) {
 		const userId = await createStableUserIdFromEmail(approvedEmail)
-		const displayName = approvedEmail.split('@')[0] || 'user'
+		const displayName = approvedUsername
 		const { redirectTo } = await helpers.completeAuthorization({
 			request: authRequest,
 			userId,
@@ -672,6 +683,7 @@ export async function handleAuthorizeRequest(
 			props: {
 				userId,
 				email: approvedEmail,
+				username: approvedUsername,
 				displayName,
 			},
 		})

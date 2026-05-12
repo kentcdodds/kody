@@ -46,6 +46,8 @@ async function getOpenGeneratedUiHandler() {
 			user: {
 				userId: 'user-123',
 				email: 'user@example.com',
+				username: 'test-user',
+				displayName: 'test-user',
 			},
 		})),
 		requireDomain: vi.fn(() => 'https://example.com'),
@@ -91,6 +93,6 @@ test('open_generated_ui reopens saved package apps by kody_id', async () => {
 	)
 	expect(response.structuredContent).toMatchObject({
 		appId: 'package-123',
-		hostedUrl: 'https://example.com/packages/observed-package',
+		hostedUrl: 'https://example.com/@test-user/packages/observed-package',
 	})
 })

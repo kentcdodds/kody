@@ -59,6 +59,7 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 		mcpUser: {
 			userId: emailBasedUserId,
 			email: userRecord.email,
+			username: userRecord.username,
 			displayName,
 		},
 	} satisfies AuthenticatedAppUser

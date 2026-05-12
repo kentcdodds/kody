@@ -363,7 +363,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 				stringifyRemoteConnectorMessage({
 					type: 'server.error',
 					message:
-						'Connector ingress is missing the owning user id. Reconfigure the connector to use the /connectors/u/{userId}/{kind}/{instanceId} URL.',
+						'Connector ingress is missing the owning user id. Reconfigure the connector to use the /@{username}/connectors/{kind}/{instanceId} URL.',
 				}),
 			)
 			ws.close(4002, 'missing-user')

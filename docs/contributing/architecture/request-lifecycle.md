@@ -39,8 +39,8 @@ Requests are handled in this order:
 6. Remote connector session endpoints (internal-only Worker routes that proxy
    WebSocket upgrades and JSON-RPC helper requests to the remote connector
    session Durable Object):
-   - `/connectors/:kind/:instanceId...` — **`kind`** + instance (session key
-     `kind:instanceId`)
+   - `/@{username}/connectors/:kind/:instanceId...` — username + **`kind`** +
+     instance
 
    See [Remote connectors](./remote-connectors.md).
 
