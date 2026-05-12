@@ -1,7 +1,7 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 type AuditEvent = {
-	category: 'auth' | 'oauth'
+	category: 'account' | 'auth' | 'oauth'
 	action: string
 	result: 'success' | 'failure' | 'rate_limited'
 	email?: string

@@ -2,8 +2,10 @@ import { type BuildAction } from 'remix/fetch-router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
 import { createAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
+import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import {
 	createPasswordHash,
@@ -27,17 +29,6 @@ function isSignupAllowed(appEnv: AppEnv) {
 	if (runtime['WRANGLER_IS_LOCAL_DEV'] === 'true') return true
 	const sentryEnv = runtime['SENTRY_ENVIRONMENT']
 	return sentryEnv === 'test' || sentryEnv === 'preview'
-}
-
-function isUniqueConstraintError(error: unknown) {
-	let currentError = error
-	while (currentError instanceof Error) {
-		if (/unique constraint failed/i.test(currentError.message)) {
-			return true
-		}
-		currentError = currentError.cause
-	}
-	return false
 }
 
 const authRequestSchema = object({
@@ -77,6 +68,11 @@ export function createAuthHandler(appEnv: AppEnv) {
 			const normalizedEmail = normalizeEmail(parsedBody.value.email)
 			const normalizedPassword = parsedBody.value.password
 			const normalizedMode: AuthMode = parsedBody.value.mode
+			const normalizedUsername = normalizeUsername(
+				typeof body === 'object' && body !== null
+					? (body as Record<string, unknown>).username
+					: undefined,
+			)
 			const rememberMeValue =
 				typeof body === 'object' && body !== null
 					? (body as Record<string, unknown>).rememberMe
@@ -108,7 +104,6 @@ export function createAuthHandler(appEnv: AppEnv) {
 					{ status: 400 },
 				)
 			}
-
 			if (normalizedMode === 'signup' && !isSignupAllowed(appEnv)) {
 				void logAuditEvent({
 					category: 'auth',
@@ -123,6 +118,21 @@ export function createAuthHandler(appEnv: AppEnv) {
 					{ error: 'Signups are currently disabled.' },
 					{ status: 403 },
 				)
+			}
+			if (normalizedMode === 'signup') {
+				const usernameError = getUsernameValidationError(normalizedUsername)
+				if (usernameError) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'invalid_username',
+					})
+					return Response.json({ error: usernameError }, { status: 400 })
+				}
 			}
 
 			if (normalizedMode === 'signup') {
@@ -144,15 +154,32 @@ export function createAuthHandler(appEnv: AppEnv) {
 						{ status: 409 },
 					)
 				}
+				const existingUsername = await db.findOne(usersTable, {
+					where: { username: normalizedUsername },
+				})
+				if (existingUsername) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'username_exists',
+					})
+					return Response.json(
+						{ error: 'Username already registered.' },
+						{ status: 409 },
+					)
+				}
 
 				const passwordHash = await createPasswordHash(normalizedPassword)
-				const username = normalizedEmail
 				let record: { id: number } | null = null
 				try {
 					const createdUser = await db.create(
 						usersTable,
 						{
-							username,
+							username: normalizedUsername,
 							email: normalizedEmail,
 							password_hash: passwordHash,
 						},
@@ -162,7 +189,9 @@ export function createAuthHandler(appEnv: AppEnv) {
 					)
 					record = { id: createdUser.id }
 				} catch (error) {
-					if (isUniqueConstraintError(error)) {
+					const uniqueField = getUniqueConstraintField(error)
+					if (uniqueField === 'email' || uniqueField === 'username') {
+						const isUsernameConflict = uniqueField === 'username'
 						void logAuditEvent({
 							category: 'auth',
 							action: 'signup',
@@ -170,10 +199,14 @@ export function createAuthHandler(appEnv: AppEnv) {
 							email: normalizedEmail,
 							ip: requestIp,
 							path: url.pathname,
-							reason: 'email_exists',
+							reason: isUsernameConflict ? 'username_exists' : 'email_exists',
 						})
 						return Response.json(
-							{ error: 'Email already registered.' },
+							{
+								error: isUsernameConflict
+									? 'Username already registered.'
+									: 'Email already registered.',
+							},
 							{ status: 409 },
 						)
 					}

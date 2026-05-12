@@ -1,35 +1,48 @@
 import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	inputCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type AccountStatus,
-	accountSecretsApiPath,
+	accountProfileApiPath,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 
-type AccountSecretsPayload = {
+type AccountProfilePayload = {
 	ok: true
 	email: string
+	username: string
 }
+
+type SaveStatus = 'idle' | 'saving'
+type MessageTone = 'error' | 'info'
 
 export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
+	let saveStatus: SaveStatus = 'idle'
 	let email = ''
+	let username = ''
+	let draftUsername = ''
 	let message: string | null = null
+	let messageTone: MessageTone = 'info'
 	let lastLoadedHref = ''
 
-	async function loadAccountSecrets(signal: AbortSignal) {
+	async function loadAccountProfile(signal: AbortSignal) {
 		try {
 			const href =
 				typeof window === 'undefined' ? '/account' : window.location.href
 			lastLoadedHref = href
 			const response = await fetch(
-				`${accountSecretsApiPath}${new URL(href).search}`,
+				`${accountProfileApiPath}${new URL(href).search}`,
 				{
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
@@ -41,19 +54,78 @@ export function AccountRoute(handle: Handle) {
 				window.location.assign('/login')
 				return
 			}
-			const payload = await readJson<AccountSecretsPayload>(response)
+			const payload = await readJson<AccountProfilePayload>(response)
 			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load your account secrets.')
+				throw new Error('Unable to load your account.')
 			}
 			email = payload.email
+			username = payload.username
+			draftUsername = payload.username
 			status = 'ready'
 			message = null
+			messageTone = 'info'
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load your account.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
+	function updateDraftUsername(event: InputEvent) {
+		if (!(event.currentTarget instanceof HTMLInputElement)) return
+		draftUsername = event.currentTarget.value
+	}
+
+	async function handleUsernameSubmit(event: SubmitEvent) {
+		event.preventDefault()
+		const nextUsername = draftUsername.trim()
+		if (!nextUsername) {
+			message = 'Username is required.'
+			messageTone = 'error'
+			handle.update()
+			return
+		}
+
+		saveStatus = 'saving'
+		message = null
+		messageTone = 'info'
+		handle.update()
+
+		try {
+			const response = await fetch(accountProfileApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ username: nextUsername }),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountProfilePayload & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to save username.')
+			}
+			email = payload.email
+			username = payload.username
+			draftUsername = payload.username
+			message = 'Username saved.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to save username.'
+			messageTone = 'error'
+		} finally {
+			saveStatus = 'idle'
 			handle.update()
 		}
 	}
@@ -64,8 +136,9 @@ export function AccountRoute(handle: Handle) {
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
-			handle.queueTask(loadAccountSecrets)
+			handle.queueTask(loadAccountProfile)
 		}
+		const isSaving = saveStatus === 'saving'
 
 		return (
 			<section
@@ -85,10 +158,10 @@ export function AccountRoute(handle: Handle) {
 							margin: 0,
 						})}
 					>
-						{email ? `${email} account` : 'Account'}
+						{username ? `${username} account` : 'Account'}
 					</h1>
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Review approval requests and manage your stored secrets.
+						Manage your profile, approval requests, and stored secrets.
 					</p>
 				</header>
 
@@ -101,7 +174,7 @@ export function AccountRoute(handle: Handle) {
 					<p
 						role="alert"
 						mix={css({
-							color: status === 'error' ? colors.error : colors.text,
+							color: messageTone === 'error' ? colors.error : colors.text,
 						})}
 					>
 						{message}
@@ -110,6 +183,45 @@ export function AccountRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Profile</h2>
+							<p mix={css(descriptionCss)}>
+								Your username is unique and visible anywhere Kody needs a
+								display name. Your email stays on the account for login.
+							</p>
+							<form
+								mix={[
+									css({ display: 'grid', gap: spacing.md }),
+									on('submit', handleUsernameSubmit),
+								]}
+							>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Username</span>
+									<input
+										type="text"
+										name="username"
+										required
+										autoComplete="username"
+										pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,30}[A-Za-z0-9]"
+										title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
+										value={draftUsername}
+										mix={[css(inputCss), on('input', updateDraftUsername)]}
+									/>
+								</label>
+								<p mix={css({ color: colors.textMuted, margin: 0 })}>
+									Email: {email}
+								</p>
+								<div>
+									<button
+										type="submit"
+										disabled={isSaving || draftUsername.trim() === username}
+										mix={css(primaryButtonCss)}
+									>
+										{isSaving ? 'Saving...' : 'Save username'}
+									</button>
+								</div>
+							</form>
+						</section>
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Secret management</h2>
 							<p mix={css(descriptionCss)}>
@@ -140,3 +252,5 @@ export function AccountRoute(handle: Handle) {
 		)
 	}
 }
+
+const primaryButtonCss = getPrimaryButtonCss()

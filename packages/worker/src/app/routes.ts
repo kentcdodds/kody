@@ -19,6 +19,8 @@ export const routes = route({
 	accountSecretsApprove: '/account/secrets/approve',
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),
+	accountProfileApi: '/account/profile.json',
+	accountProfileApiPost: post('/account/profile.json'),
 	health: '/health',
 	login: '/login',
 	signup: '/signup',

@@ -104,10 +104,16 @@ export function LoginRoute(handle: Handle) {
 		const email = String(formData.get('email') ?? '').trim()
 		const password = String(formData.get('password') ?? '')
 		const mode = getCurrentAuthMode()
+		const username =
+			mode === 'signup' ? String(formData.get('username') ?? '').trim() : ''
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
 
 		if (!email || !password) {
 			setState('error', 'Email and password are required.')
+			return
+		}
+		if (mode === 'signup' && !username) {
+			setState('error', 'Username is required.')
 			return
 		}
 
@@ -118,7 +124,13 @@ export function LoginRoute(handle: Handle) {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ email, password, mode, rememberMe }),
+				body: JSON.stringify({
+					email,
+					password,
+					mode,
+					rememberMe,
+					...(mode === 'signup' ? { username } : {}),
+				}),
 			})
 			const payload = await response.json().catch(() => null)
 
@@ -168,13 +180,29 @@ export function LoginRoute(handle: Handle) {
 					<p mix={css(pageDescriptionCss)}>{description}</p>
 				</header>
 				<form mix={[css(cardCss), on('submit', handleSubmit)]}>
+					{isSignup ? (
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Username</span>
+							<input
+								type="text"
+								name="username"
+								required
+								autoFocus
+								autoComplete="username"
+								pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,30}[A-Za-z0-9]"
+								title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
+								placeholder="kent"
+								mix={css(inputCss)}
+							/>
+						</label>
+					) : null}
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Email</span>
 						<input
 							type="email"
 							name="email"
 							required
-							autoFocus
+							autoFocus={!isSignup}
 							autoComplete="email"
 							placeholder="you@example.com"
 							mix={css(inputCss)}

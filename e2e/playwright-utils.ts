@@ -7,16 +7,23 @@ export * from '@playwright/test'
 export const test = base.extend<{
 	insertNewUser(options?: {
 		email?: string
+		username?: string
 		password?: string
-	}): Promise<{ email: string; password: string }>
+	}): Promise<{ email: string; username: string; password: string }>
 	login(options?: {
 		email?: string
+		username?: string
 		password?: string
-	}): Promise<{ email: string; password: string }>
+	}): Promise<{ email: string; username: string; password: string }>
 }>({
 	insertNewUser: async ({ page }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
+			const username =
+				options?.username ??
+				(email === primaryTestUser.email
+					? primaryTestUser.username
+					: usernameFromEmail(email))
 			const password = options?.password ?? primaryTestUser.password
 
 			if (
@@ -24,11 +31,11 @@ export const test = base.extend<{
 				password === primaryTestUser.password
 			) {
 				await ensurePrimaryUserExists(page.request)
-				return { email, password }
+				return { email, username: primaryTestUser.username, password }
 			}
 
 			const response = await page.request.post('/auth', {
-				data: { email, password, mode: 'signup' },
+				data: { email, username, password, mode: 'signup' },
 				headers: { 'Content-Type': 'application/json' },
 			})
 
@@ -36,16 +43,21 @@ export const test = base.extend<{
 				throw new Error(`Failed to seed user (${response.status()}).`)
 			}
 
-			return { email, password }
+			return { email, username, password }
 		})
 	},
 	login: async ({ page }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
+			const username =
+				options?.username ??
+				(email === primaryTestUser.email
+					? primaryTestUser.username
+					: usernameFromEmail(email))
 			const password = options?.password ?? primaryTestUser.password
 
 			let response = await page.request.post('/auth', {
-				data: { email, password, mode: 'signup' },
+				data: { email, username, password, mode: 'signup' },
 				headers: { 'Content-Type': 'application/json' },
 			})
 
@@ -79,7 +91,19 @@ export const test = base.extend<{
 				await page.context().addCookies([cookieConfig])
 			}
 
-			return { email, password }
+			return { email, username, password }
 		})
 	},
 })
+
+function usernameFromEmail(email: string) {
+	const localPart = email.split('@')[0] ?? 'user'
+	const normalized = localPart
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/g, '-')
+		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+	const truncated = normalized
+		.slice(0, 32)
+		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+	return truncated.length >= 3 ? truncated : `user-${truncated || 'test'}`
+}

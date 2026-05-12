@@ -13,6 +13,7 @@ export type ApprovalView = {
 }
 
 export const accountSecretsApiPath = '/account/secrets.json'
+export const accountProfileApiPath = '/account/profile.json'
 
 export function getScopeLabel(scope: ApprovalScope) {
 	if (scope === 'app') return 'App'

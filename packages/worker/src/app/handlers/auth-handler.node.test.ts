@@ -67,12 +67,29 @@ function createTestDb() {
 						const email = String(params[0] ?? '').toLowerCase()
 						return users.get(email) ?? null
 					}
+					const readUserByUsername = () => {
+						const username = String(params[0] ?? '').toLowerCase()
+						return (
+							Array.from(users.values()).find(
+								(user) => user.username.toLowerCase() === username,
+							) ?? null
+						)
+					}
 
 					const insertUser = () => {
 						const [username, email, passwordHash] = params as Array<string>
 						const normalizedEmail = String(email).toLowerCase()
 						if (users.has(normalizedEmail)) {
 							throw new Error('UNIQUE constraint failed: users.email')
+						}
+						if (
+							Array.from(users.values()).some(
+								(user) =>
+									user.username.toLowerCase() ===
+									String(username).toLowerCase(),
+							)
+						) {
+							throw new Error('UNIQUE constraint failed: users.username')
 						}
 						const user: TestUser = {
 							id: nextId,
@@ -89,9 +106,20 @@ function createTestDb() {
 						if (
 							normalizedQuery.startsWith('select') &&
 							normalizedQuery.includes('from "users"') &&
-							normalizedQuery.includes('email')
+							/"email"\s*=/.test(normalizedQuery)
 						) {
 							const user = readUserByEmail()
+							return {
+								results: user ? [{ ...user }] : [],
+								meta: { changes: 0, last_row_id: 0 },
+							}
+						}
+						if (
+							normalizedQuery.startsWith('select') &&
+							normalizedQuery.includes('from "users"') &&
+							/"username"\s*=/.test(normalizedQuery)
+						) {
+							const user = readUserByUsername()
 							return {
 								results: user ? [{ ...user }] : [],
 								meta: { changes: 0, last_row_id: 0 },
@@ -136,12 +164,12 @@ function createTestDb() {
 		},
 	} as unknown as D1Database
 
-	async function addUser(email: string, password: string) {
+	async function addUser(email: string, password: string, username = email) {
 		const passwordHash = await createPasswordHash(password)
 		const user: TestUser = {
 			id: nextId,
 			email,
-			username: email,
+			username,
 			password_hash: passwordHash,
 		}
 		nextId += 1
@@ -191,6 +219,7 @@ test('auth handler rejects signups in production envs', async () => {
 
 	const response = await request({
 		email: 'new@example.com',
+		username: 'new-user',
 		password: 'secret',
 		mode: 'signup',
 	})
@@ -206,12 +235,52 @@ test('auth handler permits signups when the env opts in (local dev / preview / t
 
 	const response = await request({
 		email: 'allowed@example.com',
+		username: 'allowed-user',
 		password: 'secret',
 		mode: 'signup',
 	})
 	expect(response.status).toBe(200)
 	expect(await response.json()).toEqual({ ok: true, mode: 'signup' })
 	expect(testDb.users.has('allowed@example.com')).toBe(true)
+	expect(testDb.users.get('allowed@example.com')?.username).toBe('allowed-user')
+})
+
+test('auth handler requires a unique username for signup', async () => {
+	const { request, testDb } = createAuthTestContext({ signupEnabled: true })
+	await testDb.addUser('existing@example.com', 'secret', 'existing-user')
+
+	const missingUsernameResponse = await request({
+		email: 'missing@example.com',
+		password: 'secret',
+		mode: 'signup',
+	})
+	expect(missingUsernameResponse.status).toBe(400)
+	expect(await missingUsernameResponse.json()).toEqual({
+		error: 'Username is required.',
+	})
+
+	const invalidUsernameResponse = await request({
+		email: 'invalid@example.com',
+		username: 'no spaces',
+		password: 'secret',
+		mode: 'signup',
+	})
+	expect(invalidUsernameResponse.status).toBe(400)
+	expect(await invalidUsernameResponse.json()).toEqual({
+		error:
+			'Username must be 3 to 32 characters, use only letters, numbers, hyphens, or underscores, and start and end with a letter or number.',
+	})
+
+	const duplicateUsernameResponse = await request({
+		email: 'duplicate@example.com',
+		username: 'Existing-User',
+		password: 'secret',
+		mode: 'signup',
+	})
+	expect(duplicateUsernameResponse.status).toBe(409)
+	expect(await duplicateUsernameResponse.json()).toEqual({
+		error: 'Username already registered.',
+	})
 })
 
 test('auth handler issues the right session cookies for login flows', async () => {

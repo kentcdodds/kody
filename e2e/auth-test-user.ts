@@ -2,6 +2,7 @@ import { type APIRequestContext } from '@playwright/test'
 
 export const primaryTestUser = {
 	email: 'me@kentcdodds.com',
+	username: 'kentcdodds',
 	password: 'iliketwix',
 }
 

@@ -22,6 +22,7 @@ const maxPortBindRetries = 5
 
 type TestUser = {
 	email: string
+	username: string
 	password: string
 }
 
@@ -44,6 +45,7 @@ export async function createTestDatabase() {
 	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
 		email: primaryUserEmail,
+		username: 'kentcdodds',
 		password: testUserPassword,
 	} satisfies TestUser
 
@@ -436,6 +438,7 @@ async function authenticateAppUser(
 		},
 		body: JSON.stringify({
 			email: user.email,
+			...(mode === 'signup' ? { username: user.username } : {}),
 			password: user.password,
 			mode,
 		}),
