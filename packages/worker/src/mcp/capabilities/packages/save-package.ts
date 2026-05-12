@@ -9,10 +9,7 @@ import {
 	getSavedPackageByKodyId,
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
-import {
-	assertAuthoredPackageJsonNameScope,
-	parseAuthoredPackageJson,
-} from '#worker/package-registry/manifest.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
@@ -76,17 +73,14 @@ export const savePackageCapability = defineDomainCapability(
 			if (!packageJsonContent) {
 				throw new Error('Saved packages require a root package.json file.')
 			}
+			const expectedPackageScope = await getMcpUserPackageScope(
+				ctx.env.APP_DB,
+				user,
+			)
 			const manifest = parseAuthoredPackageJson({
 				content: packageJsonContent,
 				manifestPath: 'package.json',
-			})
-			assertAuthoredPackageJsonNameScope({
-				manifest,
-				expectedPackageScope: await getMcpUserPackageScope(
-					ctx.env.APP_DB,
-					user,
-				),
-				manifestPath: 'package.json',
+				expectedPackageScope,
 			})
 			const existing =
 				args.package_id !== undefined

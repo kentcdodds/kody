@@ -80,6 +80,10 @@ export const repoRunCommandsCapability = defineDomainCapability(
 						})
 			const validatedSession = repoOpenSessionOutputSchema.parse(session)
 			const sessionRpc = repoSessionRpc(ctx.env, validatedSession.id)
+			const expectedPackageScope =
+				validatedSession.entity_type === 'package' && args.run_checks === true
+					? await getMcpUserPackageScope(ctx.env.APP_DB, user)
+					: undefined
 			const result = await sessionRpc.runCommands({
 				sessionId: validatedSession.id,
 				userId: user.userId,
@@ -87,6 +91,7 @@ export const repoRunCommandsCapability = defineDomainCapability(
 				dryRun: args.dry_run,
 				runChecks: args.run_checks,
 				publish: false,
+				expectedPackageScope,
 			})
 			let publish = result.publish
 			if (args.publish === true) {
@@ -104,10 +109,7 @@ export const repoRunCommandsCapability = defineDomainCapability(
 						sessionId: validatedSession.id,
 						userId: user.userId,
 						rebuildPackageArtifacts: false,
-						expectedPackageScope:
-							validatedSession.entity_type === 'package'
-								? await getMcpUserPackageScope(ctx.env.APP_DB, user)
-								: undefined,
+						expectedPackageScope,
 					})
 				} else {
 					publish = { status: 'not_requested' as const }

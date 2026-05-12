@@ -301,6 +301,7 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 		dryRun: undefined,
 		runChecks: false,
 		publish: false,
+		expectedPackageScope: undefined,
 	})
 	expect(result.commands).toEqual([
 		{ line: 1, command: 'git status', ok: true, output: [] },
@@ -418,6 +419,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		dryRun: undefined,
 		runChecks: true,
 		publish: false,
+		expectedPackageScope: 'user',
 	})
 	expect(result.checks).toEqual({
 		status: 'failed',

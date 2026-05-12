@@ -1114,6 +1114,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		dryRun?: boolean
 		runChecks?: boolean
 		publish?: boolean
+		expectedPackageScope?: string
 	}): Promise<RepoRunCommandsResult> {
 		const { sessionRow } = await this.getSessionState(
 			input.sessionId,
@@ -1149,7 +1150,11 @@ class RepoSessionBase extends DurableObject<Env> {
 				publish: { status: 'not_requested' },
 			}
 		}
-		const checkRun = await this.runChecks(input)
+		const checkRun = await this.runChecks({
+			sessionId: input.sessionId,
+			userId: input.userId,
+			expectedPackageScope: input.expectedPackageScope,
+		})
 		if (!checkRun.ok) {
 			const publish = shouldPublish
 				? {

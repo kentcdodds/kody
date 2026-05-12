@@ -169,7 +169,19 @@ test('package_save rejects invalid package.json before persistence', async () =>
 				],
 			},
 			{
-				env: {} as Env,
+				env: {
+					APP_DB: {
+						prepare() {
+							return {
+								bind() {
+									return {
+										first: async () => ({ username: 'user' }),
+									}
+								},
+							}
+						},
+					},
+				} as unknown as Env,
 				callerContext: createMcpCallerContext({
 					baseUrl: 'https://example.com',
 					user: {

@@ -80,6 +80,7 @@ export type RepoSessionRpc = {
 		dryRun?: boolean
 		runChecks?: boolean
 		publish?: boolean
+		expectedPackageScope?: string
 	}) => Promise<RepoRunCommandsResult>
 	bootstrapSource: (payload: {
 		sessionId: string

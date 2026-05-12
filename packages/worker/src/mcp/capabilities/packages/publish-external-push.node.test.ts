@@ -163,6 +163,7 @@ test('publishes a new external Artifacts HEAD', async () => {
 			expectedHead: 'commit-new',
 			allowForce: false,
 			rebuildPackageArtifacts: false,
+			expectedPackageScope: 'user',
 		}),
 	)
 })
