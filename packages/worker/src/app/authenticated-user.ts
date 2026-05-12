@@ -32,8 +32,8 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 	const { session } = await readAuthSessionResult(request)
 	if (!session) return null
 
-	const userId = Number.parseInt(session.id, 10)
-	if (!Number.isFinite(userId)) return null
+	const userId = /^\d+$/.test(session.id) ? Number(session.id) : NaN
+	if (!Number.isSafeInteger(userId) || userId <= 0) return null
 
 	const db = createDb(env.APP_DB)
 	const userRecord = await db.findOne(usersTable, {
