@@ -54,6 +54,7 @@ const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const dynamicPackageImportProxyPrefix = '.__kody_virtual__/dynamic-imports'
 const dynamicPackageImportArtifactSegment = '.__kody_current__'
 const dynamicPackageImportSpecifierExportName = '__kodyDynamicPackageSpecifier'
+const dynamicPackageImportResolvedMarker = '__kodyDynamicPackageResolved'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
 
@@ -393,7 +394,10 @@ throw new Error(
 }
 
 function createDynamicPackageImportProxySource(input: { targetPath: string }) {
-	return createPackageImportProxySource(input)
+	return `
+// ${dynamicPackageImportResolvedMarker}
+${createPackageImportProxySource(input)}
+`.trim()
 }
 
 function createComputedDynamicImportGuardSource(input: { helperName: string }) {
@@ -808,6 +812,7 @@ function readDynamicPackageImportSpecifier(input: {
 						? input.module.text
 						: ''
 	if (!source.includes(dynamicPackageImportSpecifierExportName)) {
+		if (source.includes(dynamicPackageImportResolvedMarker)) return null
 		return createPackageSpecifierFromProxyPath(input.modulePath)
 	}
 	const markerIndex = source.indexOf(dynamicPackageImportSpecifierExportName)

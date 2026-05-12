@@ -1056,6 +1056,9 @@ throw new Error('unhydrated ${specifier}');
 			path.includes('/.__kody_current__/'),
 		),
 	).toEqual(currentArtifactModulePaths)
+	expect(
+		mockModule.loadPublishedBundleArtifactByIdentity,
+	).toHaveBeenCalledTimes(3)
 })
 
 test.each([
