@@ -17,10 +17,7 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 			userId: input.userId,
 		})
 		for (const target of targets) {
-			await repoSessionRpc(
-				input.env,
-				input.rpcSessionId,
-			).rebuildPublishedPackageArtifact({
+			await session.rebuildPublishedPackageArtifact({
 				sessionId: input.repoSessionId,
 				sourceId: input.sourceId,
 				userId: input.userId,
