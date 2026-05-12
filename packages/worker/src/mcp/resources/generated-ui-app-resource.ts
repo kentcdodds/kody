@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import {
 	RESOURCE_MIME_TYPE,
 	registerAppResource,
@@ -41,6 +42,10 @@ export async function registerGeneratedUiAppResource(
 			description: generatedUiAppResource.description,
 		},
 		async () => {
+			Sentry.getActiveSpan()?.setAttribute(
+				'mcp.resource.uri',
+				generatedUiRuntimeResourceUri,
+			)
 			const claudeWidgetDomain = await computeClaudeWidgetDomain(mcpServerUrl)
 			const uiResource = createUIResource({
 				uri: generatedUiRuntimeResourceUri,

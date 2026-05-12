@@ -53,6 +53,17 @@ export async function startSpan<TResult>(
 	})
 }
 
+export function getActiveSpan() {
+	return undefined
+}
+
+export function wrapMcpServerWithSentry<TServer>(
+	server: TServer,
+	_options?: unknown,
+) {
+	return server
+}
+
 export function withSentry<THandler>(
 	_optionsCallback: unknown,
 	handler: THandler,

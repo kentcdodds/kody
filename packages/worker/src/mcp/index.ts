@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type exports as workerExports } from 'cloudflare:workers'
 import { invariant } from '@epic-web/invariant'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
 import { buildSentryOptions } from '../sentry-options.ts'
@@ -13,6 +13,7 @@ import {
 	type RemoteConnectorInstructionSummary,
 } from './server-instructions.ts'
 import { registerTools } from './register-tools.ts'
+import { createKodyMcpServer } from './sentry-mcp-server.ts'
 import { getMcpUserServerInstructions } from './user-server-instructions-repo.ts'
 import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
 import { remoteConnectorDomainId } from '#worker/remote-connector/remote-domain-id.ts'
@@ -25,11 +26,6 @@ export type State = {
 export type Props = McpServerProps
 
 export { conversationIdGuidance }
-
-const serverImplementation = {
-	name: 'kody-mcp',
-	version: '1.0.0',
-} as const
 
 async function loadRemoteConnectorInstructionSummaries(input: {
 	env: Env
@@ -88,7 +84,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				caller,
 			}),
 		])
-		this.server = new McpServer(serverImplementation, {
+		this.server = createKodyMcpServer({
 			instructions: buildMcpServerInstructions({
 				userOverlay: overlay,
 				remoteConnectors,
