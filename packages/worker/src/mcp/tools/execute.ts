@@ -35,7 +35,7 @@ const executeTool = {
 	name: 'execute',
 	title: 'Execute Capabilities',
 	description: `
-Run one ephemeral ESM module string with a default export. Imports may be arbitrary npm packages compatible with the Cloudflare Workers runtime (e.g. \`p-retry\`, \`mailparser\`, \`remark\`); prefer existing packages over rewriting helpers. Discover capability names with \`search\`; for one capability’s TypeScript call shape, call \`search\` with \`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
+Run one ephemeral ESM module string with a default export. Imports may be arbitrary npm packages compatible with the Cloudflare Workers runtime (e.g. \`p-retry\`, \`mailparser\`, \`remark\`); prefer existing packages over rewriting helpers. Discover capability names with \`search\`; for one capability’s executable snippet and TypeScript call shape, call \`search\` with \`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
 
 Projection rule: you write the code -- if a call returns a large response, project the fields you need before returning. Never return raw API responses; extract a slim shape (e.g. \`{ id, subject, snippet }\`) or a summary.
 
@@ -47,7 +47,7 @@ Saved package surface:
 
 Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.
-- \`import { codemode } from 'kody:runtime'\` for builtin capabilities.
+- \`import { codemode } from 'kody:runtime'\` for builtin capabilities discovered by \`search\`; call them as \`await codemode.<capability_id>(input)\`.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`. \`storage.sql\` returns \`{ columns, rows, rowCount, rowsRead, rowsWritten }\`; read query rows from \`.rows\`.
 - \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth integrations. Integration \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`integration_list\` first when the task involves a provider that may have multiple accounts connected.
 - \`import { workflows } from 'kody:runtime'\` for durable Cloudflare Workflows. \`workflows.create\` accepts either inline \`code\` or a saved-package \`exportName\`; use \`workflow_list\` to inspect recent runs.

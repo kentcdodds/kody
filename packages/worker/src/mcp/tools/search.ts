@@ -1416,8 +1416,9 @@ If nothing useful returns, rephrase or call \`meta_list_capabilities\`; \`entity
 does not fix an empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
-| \`integration\` | \`package\` | \`secret\`). Capability detail includes
-TypeScript call-shape definitions by default.
+| \`integration\` | \`package\` | \`secret\`). Capability detail includes an
+exact \`execute\` module snippet plus TypeScript call-shape definitions by
+default.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
 Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.

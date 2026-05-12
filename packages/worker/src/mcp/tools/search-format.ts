@@ -206,6 +206,7 @@ export type SearchEntityDetailStructured =
 			title: string
 			description: string
 			usage: string
+			executeExample: string
 			requiredInputFields: Array<string>
 			readOnly: boolean
 			idempotent: boolean
@@ -413,7 +414,22 @@ function buildEntityRef(id: string, type: SearchEntityType) {
 }
 
 function buildCapabilityUsage(name: string) {
-	return `execute with codemode.${name}(args)`
+	return `execute with ${buildCodemodeCapabilityAccessor(name)}(args)`
+}
+
+function buildCodemodeCapabilityAccessor(name: string) {
+	if (/^[A-Za-z_$][\w$]*$/.test(name)) {
+		return `codemode.${name}`
+	}
+	return `codemode[${JSON.stringify(name)}]`
+}
+
+function buildCapabilityExecuteExample(name: string) {
+	return `import { codemode } from 'kody:runtime'
+
+export default async function main(input = {}) {
+  return await ${buildCodemodeCapabilityAccessor(name)}(input)
+}`
 }
 
 function buildPackageRootImportUsage(packageName: string) {
@@ -756,6 +772,16 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- Idempotent: ${detail.spec.idempotent ? 'yes' : 'no'}`,
 			`- Destructive: ${detail.spec.destructive ? 'yes' : 'no'}`,
 			'',
+			'## Execute from `execute`',
+			'',
+			'Built-in capabilities returned by `search` are available inside `execute` as methods on the imported `codemode` object.',
+			'',
+			'```ts',
+			buildCapabilityExecuteExample(detail.spec.name),
+			'```',
+			'',
+			'Pass concrete arguments that satisfy the input type below; use `{}` when there are no required fields.',
+			'',
 			'## Type definitions',
 			'',
 			'```ts',
@@ -775,6 +801,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				title: detail.title,
 				description: detail.description,
 				usage: buildCapabilityUsage(detail.spec.name),
+				executeExample: buildCapabilityExecuteExample(detail.spec.name),
 				requiredInputFields: detail.spec.requiredInputFields,
 				readOnly: detail.spec.readOnly,
 				idempotent: detail.spec.idempotent,

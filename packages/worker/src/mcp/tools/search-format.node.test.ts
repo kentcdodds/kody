@@ -217,9 +217,18 @@ test('capability entity detail keeps type definitions stable without schema fiel
 
 	expect(detail.structured).toMatchObject({
 		type: 'capability',
+		usage: 'execute with codemode.github_create_issue(args)',
+		executeExample: expect.stringContaining(
+			'return await codemode.github_create_issue(input)',
+		),
 		inputTypeDefinition: expect.any(String),
 		outputTypeDefinition: expect.any(String),
 	})
+	expect(detail.markdown).toContain('## Execute from `execute`')
+	expect(detail.markdown).toContain("import { codemode } from 'kody:runtime'")
+	expect(detail.markdown).toContain(
+		'return await codemode.github_create_issue(input)',
+	)
 	expect(detail.structured).not.toHaveProperty('inputSchema')
 	expect(detail.structured).not.toHaveProperty('outputSchema')
 })
@@ -247,6 +256,9 @@ test('repo_run_commands capability detail keeps the structured capability contra
 		title: 'repo_run_commands',
 		description: repoRunCommands.description,
 		usage: 'execute with codemode.repo_run_commands(args)',
+		executeExample: expect.stringContaining(
+			'return await codemode.repo_run_commands(input)',
+		),
 		requiredInputFields: ['commands'],
 		readOnly: expect.any(Boolean),
 		idempotent: expect.any(Boolean),
