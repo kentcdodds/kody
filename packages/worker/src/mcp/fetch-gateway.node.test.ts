@@ -1,6 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { expandSecretPlaceholders } from '#mcp/fetch-gateway.ts'
 import { parseHostApprovalRequiredBatchMessage } from '#mcp/secrets/errors.ts'
+import {
+	buildBasicAuthSecretPlaceholder,
+	parseBasicAuthSecretPlaceholders,
+} from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 
 const env = {
@@ -130,6 +134,175 @@ test('fetch gateway expands placeholders in form-urlencoded bodies', async () =>
 		resolveSpy.mockRestore()
 	}
 })
+
+test('fetch gateway parses derived Basic Auth secret placeholders', () => {
+	const placeholder = buildBasicAuthSecretPlaceholder({
+		usernameSecret: 'paypalClientId',
+		passwordSecret: 'paypalClientSecret',
+		scope: 'user',
+	})
+
+	expect(parseBasicAuthSecretPlaceholders(`Basic ${placeholder}`)).toEqual([
+		{
+			username: { name: 'paypalClientId', scope: 'user' },
+			password: { name: 'paypalClientSecret', scope: 'user' },
+			scope: 'user',
+		},
+	])
+})
+
+test('fetch gateway derives Basic Auth header after approving both secrets', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async ({ name }) => {
+			const values: Record<string, string> = {
+				paypalClientId: 'client-id',
+				paypalClientSecret: 'client-secret',
+			}
+			return {
+				found: name in values,
+				value: values[name] ?? null,
+				scope: name in values ? 'user' : null,
+				allowedHosts: name in values ? ['api-m.paypal.com'] : [],
+				allowedCapabilities: [],
+			}
+		})
+	const placeholder = buildBasicAuthSecretPlaceholder({
+		usernameSecret: 'paypalClientId',
+		passwordSecret: 'paypalClientSecret',
+		scope: 'user',
+	})
+	const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
+		method: 'POST',
+		headers: {
+			Authorization: placeholder,
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body: new URLSearchParams({
+			grant_type: 'client_credentials',
+		}).toString(),
+	})
+
+	try {
+		const transformed = await expandSecretPlaceholders({
+			request,
+			props,
+			env,
+		})
+
+		expect(transformed.headers.get('Authorization')).toBe(
+			`Basic ${btoa('client-id:client-secret')}`,
+		)
+		expect(await transformed.text()).toBe('grant_type=client_credentials')
+		expect(resolveSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: 'paypalClientId',
+				scope: 'user',
+			}),
+		)
+		expect(resolveSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: 'paypalClientSecret',
+				scope: 'user',
+			}),
+		)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
+test('fetch gateway reports missing secret for derived Basic Auth placeholders', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async ({ name }) => ({
+			found: name === 'paypalClientId',
+			value: name === 'paypalClientId' ? 'client-id' : null,
+			scope: name === 'paypalClientId' ? 'user' : null,
+			allowedHosts: name === 'paypalClientId' ? ['api-m.paypal.com'] : [],
+			allowedCapabilities: [],
+		}))
+	const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
+		headers: {
+			Authorization: buildBasicAuthSecretPlaceholder({
+				usernameSecret: 'paypalClientId',
+				passwordSecret: 'paypalClientSecret',
+				scope: 'user',
+			}),
+		},
+	})
+
+	try {
+		await expect(
+			expandSecretPlaceholders({ request, props, env }),
+		).rejects.toThrow('Secret "paypalClientSecret" was not found.')
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
+test.each([
+	{
+		blockedSecretName: 'paypalClientId',
+		allowedHosts: {
+			paypalClientId: [],
+			paypalClientSecret: ['api-m.paypal.com'],
+		},
+	},
+	{
+		blockedSecretName: 'paypalClientSecret',
+		allowedHosts: {
+			paypalClientId: ['api-m.paypal.com'],
+			paypalClientSecret: [],
+		},
+	},
+])(
+	'fetch gateway requires host approval for derived Basic Auth $blockedSecretName',
+	async ({ blockedSecretName, allowedHosts }) => {
+		const resolveSpy = vi
+			.spyOn(secretService, 'resolveSecret')
+			.mockImplementation(async ({ name }) => {
+				const values: Record<string, string> = {
+					paypalClientId: 'client-id',
+					paypalClientSecret: 'client-secret',
+				}
+				return {
+					found: name in values,
+					value: values[name] ?? null,
+					scope: name in values ? 'user' : null,
+					allowedHosts: allowedHosts[name as keyof typeof allowedHosts] ?? [],
+					allowedCapabilities: [],
+				}
+			})
+		const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
+			headers: {
+				Authorization: buildBasicAuthSecretPlaceholder({
+					usernameSecret: 'paypalClientId',
+					passwordSecret: 'paypalClientSecret',
+					scope: 'user',
+				}),
+			},
+		})
+
+		try {
+			await expandSecretPlaceholders({ request, props, env })
+			throw new Error('Expected host approval error.')
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			const approvals = parseHostApprovalRequiredBatchMessage(message)
+			expect(approvals).toEqual([
+				expect.objectContaining({
+					secretName: blockedSecretName,
+					host: 'api-m.paypal.com',
+					approvalUrl: expect.stringContaining(
+						`/account/secrets/user/${blockedSecretName}?allowed-host=api-m.paypal.com`,
+					),
+				}),
+			])
+		} finally {
+			resolveSpy.mockRestore()
+		}
+	},
+)
 
 test('fetch gateway resolves path-only URLs against baseUrl', async () => {
 	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.

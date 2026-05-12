@@ -285,6 +285,23 @@ type KodyStorageRuntime = {
   delete(key: string): Promise<unknown>;
   clear(): Promise<unknown>;
 };
+type KodySecretScope = 'user' | 'app' | 'session';
+type KodySecretHeadersRuntime = {
+  basic(input: {
+    usernameSecret: string;
+    passwordSecret: string;
+    scope?: KodySecretScope | null;
+  }): string;
+};
+type KodyOauthClientCredentialsInput = {
+  tokenUrl: string | URL;
+  clientIdSecret: string;
+  clientSecretSecret: string;
+  scope?: KodySecretScope | null;
+  authStyle?: 'basic';
+  body?: Record<string, string>;
+  headers?: Record<string, string>;
+};
 type KodyEmailRuntime = {
   getMessage(messageId: string): Promise<unknown>;
   getAttachment(attachmentId: string): Promise<unknown>;
@@ -303,6 +320,10 @@ declare function refreshAccessToken(providerName: string): Promise<string>;
 declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
+declare const secretHeaders: KodySecretHeadersRuntime;
+declare function oauthClientCredentials(
+  input: KodyOauthClientCredentialsInput,
+): Promise<Record<string, unknown>>;
 declare const packageContext: { packageId: string; kodyId: string } | null;
 declare const serviceContext: { serviceName: string } | null;
 declare const packages: KodyPackagesRuntime | null;
@@ -332,6 +353,10 @@ declare module "kody:runtime" {
   export function createAuthenticatedFetch(
     providerName: string,
   ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
+  export const secretHeaders: KodySecretHeadersRuntime;
+  export function oauthClientCredentials(
+    input: KodyOauthClientCredentialsInput,
+  ): Promise<Record<string, unknown>>;
   export const packageContext: { packageId: string; kodyId: string } | null;
   export const serviceContext: { serviceName: string } | null;
   export const packages: KodyPackagesRuntime | null;

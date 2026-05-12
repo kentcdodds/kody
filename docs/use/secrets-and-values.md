@@ -23,6 +23,31 @@ Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** in the URL, headers, or body. The host
 resolves them for **approved** destinations.
 
+When an API requires Basic Auth derived from two saved secrets, import
+**`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in
+the outbound fetch header:
+
+```ts
+import { secretHeaders } from 'kody:runtime'
+
+await fetch('https://api-m.paypal.com/v1/oauth2/token', {
+	method: 'POST',
+	headers: {
+		Authorization: secretHeaders.basic({
+			usernameSecret: 'paypalClientId',
+			passwordSecret: 'paypalClientSecret',
+			scope: 'user',
+		}),
+		'Content-Type': 'application/x-www-form-urlencoded',
+	},
+	body: new URLSearchParams({ grant_type: 'client_credentials' }),
+})
+```
+
+Kody resolves both secrets and sends only the derived `Basic ...` header to the
+approved host. The target host must be approved separately for both saved
+secrets.
+
 Some capability fields opt in with **`x-kody-secret: true`**; those accept the
 same placeholder form instead of raw credentials.
 

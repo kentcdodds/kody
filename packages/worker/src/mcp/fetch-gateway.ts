@@ -1,11 +1,15 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import {
+	buildBasicAuthSecretPlaceholderFromReference,
 	buildSecretPlaceholder,
+	parseBasicAuthSecretPlaceholders,
+	parseBasicAuthSecretPlaceholdersFromFormUrlEncoded,
 	parseSecretPlaceholders,
 	parseSecretPlaceholdersFromFormUrlEncoded,
 	replaceSecretPlaceholders,
 	replaceSecretPlaceholdersInFormUrlEncoded,
+	type ReferencedBasicAuthSecretPlaceholder,
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
 import {
@@ -50,16 +54,31 @@ export async function expandSecretPlaceholders(input: {
 		resolved: ResolvedSecret
 	}> = []
 	const replacements = new Map<string, string>()
+	const resolvedValues = new Map<string, string>()
 	const baseUrl = input.props.baseUrl.trim()
 	if (!baseUrl) {
 		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
 	}
+	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders([
+		...collectReferencedBasicAuthSecretPlaceholders([
+			input.request.url,
+			...Array.from(headers.values()),
+		]),
+		...collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
+			headers,
+			requestBody,
+		),
+	])
 	const referencedSecrets = dedupeReferencedSecrets([
 		...collectReferencedSecrets([
 			input.request.url,
 			...Array.from(headers.values()),
 		]),
 		...collectReferencedSecretsFromRequestBody(headers, requestBody),
+		...basicAuthPlaceholders.flatMap((placeholder) => [
+			placeholder.username,
+			placeholder.password,
+		]),
 	])
 	const hasReferencedSecrets = referencedSecrets.length > 0
 	if (hasReferencedSecrets) {
@@ -80,7 +99,22 @@ export async function expandSecretPlaceholders(input: {
 		if (!replacements.has(placeholder)) {
 			replacements.set(placeholder, resolved.value)
 		}
+		if (!resolvedValues.has(placeholder)) {
+			resolvedValues.set(placeholder, resolved.value)
+		}
 		resolvedSecrets.push({ referenced, resolved })
+	}
+	for (const placeholder of basicAuthPlaceholders) {
+		const renderedPlaceholder =
+			buildBasicAuthSecretPlaceholderFromReference(placeholder)
+		if (replacements.has(renderedPlaceholder)) continue
+		replacements.set(
+			renderedPlaceholder,
+			buildBasicAuthHeader({
+				username: readResolvedSecretValue(resolvedValues, placeholder.username),
+				password: readResolvedSecretValue(resolvedValues, placeholder.password),
+			}),
+		)
 	}
 	let requestedHost = ''
 	if (hasReferencedSecrets) {
@@ -216,6 +250,28 @@ function collectReferencedSecrets(values: Array<string | null | undefined>) {
 	)
 }
 
+function collectReferencedBasicAuthSecretPlaceholders(
+	values: Array<string | null | undefined>,
+) {
+	return dedupeBasicAuthSecretPlaceholders(
+		values.flatMap((value) =>
+			value ? parseBasicAuthSecretPlaceholders(value) : [],
+		),
+	)
+}
+
+function collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
+	headers: Headers,
+	requestBody: string | null,
+) {
+	if (!requestBody) return []
+	return isFormUrlEncodedRequest(headers)
+		? dedupeBasicAuthSecretPlaceholders(
+				parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(requestBody),
+			)
+		: collectReferencedBasicAuthSecretPlaceholders([requestBody])
+}
+
 function collectReferencedSecretsFromRequestBody(
 	headers: Headers,
 	requestBody: string | null,
@@ -232,6 +288,19 @@ function dedupeReferencedSecrets(referencedSecrets: Array<ReferencedSecret>) {
 	const deduped = new Map<string, ReferencedSecret>()
 	for (const referenced of referencedSecrets) {
 		deduped.set(buildSecretPlaceholder(referenced), referenced)
+	}
+	return Array.from(deduped.values())
+}
+
+function dedupeBasicAuthSecretPlaceholders(
+	placeholders: Array<ReferencedBasicAuthSecretPlaceholder>,
+) {
+	const deduped = new Map<string, ReferencedBasicAuthSecretPlaceholder>()
+	for (const placeholder of placeholders) {
+		deduped.set(
+			buildBasicAuthSecretPlaceholderFromReference(placeholder),
+			placeholder,
+		)
 	}
 	return Array.from(deduped.values())
 }
@@ -258,4 +327,31 @@ async function readRequestBody(request: Request) {
 
 function shouldSendBody(method: string) {
 	return method !== 'GET' && method !== 'HEAD'
+}
+
+function readResolvedSecretValue(
+	resolvedValues: ReadonlyMap<string, string>,
+	referenced: ReferencedSecret,
+) {
+	const placeholder = buildSecretPlaceholder(referenced)
+	const value = resolvedValues.get(placeholder)
+	if (value == null) {
+		throw new Error(createMissingSecretMessage(referenced.name))
+	}
+	return value
+}
+
+function buildBasicAuthHeader(input: { username: string; password: string }) {
+	return `Basic ${encodeBase64(`${input.username}:${input.password}`)}`
+}
+
+function encodeBase64(value: string) {
+	const bytes = new TextEncoder().encode(value)
+	let binary = ''
+	const chunkSize = 0x8000
+	for (let index = 0; index < bytes.length; index += chunkSize) {
+		const chunk = bytes.slice(index, index + chunkSize)
+		binary += String.fromCharCode(...chunk)
+	}
+	return btoa(binary)
 }

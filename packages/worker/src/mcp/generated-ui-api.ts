@@ -14,6 +14,7 @@ import {
 } from '#mcp/generated-ui-app-session.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
+import { containsSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 
 const generatedUiAllowedScopes = ['session', 'app'] as const
@@ -187,7 +188,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					{
 						ok: false,
 						error:
-							'Generated UI executeCode may not return unresolved `{{secret:...}}` placeholders. Secret placeholders only resolve inside secret-aware fetch requests or capability inputs that explicitly opt into `x-kody-secret`. Use persisted values for non-secret configuration, and call `kodyWidget.sendMessage(...)` (for example after `import { kodyWidget } from "@kody/ui-utils"`) when the user needs to intervene.',
+							'Generated UI executeCode may not return unresolved secret placeholders. Secret placeholders only resolve inside secret-aware fetch requests or capability inputs that explicitly opt into `x-kody-secret`. Use persisted values for non-secret configuration, and call `kodyWidget.sendMessage(...)` (for example after `import { kodyWidget } from "@kody/ui-utils"`) when the user needs to intervene.',
 						logs: result.logs ?? [],
 					},
 					400,
@@ -489,7 +490,7 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 
 function containsReturnedSecretPlaceholder(value: unknown): boolean {
 	if (typeof value === 'string') {
-		return /\{\{secret:[a-zA-Z0-9._-]+/.test(value)
+		return containsSecretPlaceholder(value)
 	}
 	if (Array.isArray(value)) {
 		return value.some((entry) => containsReturnedSecretPlaceholder(entry))

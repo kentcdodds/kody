@@ -2,6 +2,7 @@ import {
 	assertIntegrationHostAllowed,
 	IntegrationHostNotAllowedError,
 } from './integration-host-allowlist.ts'
+import { type SecretScope } from '#mcp/secrets/types.ts'
 
 export { IntegrationHostNotAllowedError }
 
@@ -42,6 +43,38 @@ type ValueGetResult = {
 } | null
 
 export type ExecuteRequestInput = string | URL | Request
+
+export type BasicAuthSecretHeaderInput = {
+	usernameSecret: string
+	passwordSecret: string
+	scope?: SecretScope | null
+}
+
+export type OAuthClientCredentialsInput = {
+	tokenUrl: string | URL
+	clientIdSecret: string
+	clientSecretSecret: string
+	scope?: SecretScope | null
+	authStyle?: 'basic'
+	body?: Record<string, string>
+	headers?: Record<string, string>
+}
+
+export const secretHeaders = {
+	basic(input: BasicAuthSecretHeaderInput) {
+		return buildBasicAuthSecretPlaceholder({
+			usernameSecret: normalizeSecretName(
+				input.usernameSecret,
+				'usernameSecret',
+			),
+			passwordSecret: normalizeSecretName(
+				input.passwordSecret,
+				'passwordSecret',
+			),
+			scope: normalizeOptionalSecretScope(input.scope),
+		})
+	},
+}
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
@@ -95,6 +128,47 @@ export async function createAuthenticatedFetch(
 			}),
 		)
 	}
+}
+
+export async function oauthClientCredentials(
+	input: OAuthClientCredentialsInput,
+): Promise<Record<string, unknown>> {
+	const authStyle = (input.authStyle ?? 'basic') as string
+	if (authStyle !== 'basic') {
+		throw new Error(
+			`Unsupported OAuth client_credentials authStyle "${authStyle}".`,
+		)
+	}
+	const body = new URLSearchParams(input.body ?? {})
+	body.set('grant_type', 'client_credentials')
+	const headers = new Headers(input.headers)
+	if (!headers.has('Accept')) {
+		headers.set('Accept', 'application/json')
+	}
+	headers.set('Content-Type', 'application/x-www-form-urlencoded')
+	headers.set(
+		'Authorization',
+		secretHeaders.basic({
+			usernameSecret: input.clientIdSecret,
+			passwordSecret: input.clientSecretSecret,
+			scope: input.scope,
+		}),
+	)
+	const response = await fetch(input.tokenUrl, {
+		method: 'POST',
+		headers,
+		body: body.toString(),
+	})
+	const payload = (await response.json().catch(() => null)) as unknown
+	if (!response.ok) {
+		throw new Error(
+			`OAuth client_credentials request failed with HTTP ${response.status}.`,
+		)
+	}
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+		throw new Error('OAuth client_credentials response was not a JSON object.')
+	}
+	return payload as Record<string, unknown>
 }
 
 async function readIntegrationConfig(
@@ -250,6 +324,32 @@ function buildSecretPlaceholder(
 	return `{{secret:${name}|scope=${scope}}}`
 }
 
+function buildBasicAuthSecretPlaceholder(input: {
+	usernameSecret: string
+	passwordSecret: string
+	scope?: SecretScope | null
+}) {
+	return input.scope
+		? `{{secret-basic:username=${input.usernameSecret},password=${input.passwordSecret}|scope=${input.scope}}}`
+		: `{{secret-basic:username=${input.usernameSecret},password=${input.passwordSecret}}}`
+}
+
+function normalizeSecretName(value: string, fieldName: string) {
+	const normalized = value.trim()
+	if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
+		throw new Error(
+			`${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens.`,
+		)
+	}
+	return normalized
+}
+
+function normalizeOptionalSecretScope(scope: SecretScope | null | undefined) {
+	if (scope == null) return null
+	if (scope === 'app' || scope === 'session' || scope === 'user') return scope
+	throw new Error(`Unsupported secret scope "${scope}".`)
+}
+
 function resolveRequestUrl(
 	input: ExecuteRequestInput,
 	integration: IntegrationConfig,
@@ -381,6 +481,33 @@ const __kodyAssertIntegrationHostAllowed = (integrationName, integration, url) =
 };
 const __kodyBuildSecretPlaceholder = (name, scope) =>
   \`{{secret:\${name}|scope=\${scope}}}\`;
+const __kodyNormalizeSecretName = (value, fieldName) => {
+  const normalized = String(value ?? '').trim();
+  if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
+    throw new Error(
+      \`\${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens.\`,
+    );
+  }
+  return normalized;
+};
+const __kodyNormalizeOptionalSecretScope = (scope) => {
+  if (scope == null) return null;
+  if (scope === 'app' || scope === 'session' || scope === 'user') return scope;
+  throw new Error(\`Unsupported secret scope "\${scope}".\`);
+};
+const __kodyBuildBasicAuthSecretPlaceholder = (input) => {
+  const usernameSecret = __kodyNormalizeSecretName(input.usernameSecret, 'usernameSecret');
+  const passwordSecret = __kodyNormalizeSecretName(input.passwordSecret, 'passwordSecret');
+  const scope = __kodyNormalizeOptionalSecretScope(input.scope);
+  return scope
+    ? \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}|scope=\${scope}}}\`
+    : \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}}}\`;
+};
+const secretHeaders = {
+  basic(input) {
+    return __kodyBuildBasicAuthSecretPlaceholder(input);
+  },
+};
 const __kodyReadIntegrationConfig = async (providerName) => {
   const integrationGet = codemode.integration_get;
   if (typeof integrationGet !== 'function') {
@@ -552,9 +679,47 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
     );
   };
 };
+const __kodyOauthClientCredentials = async (input) => {
+  const authStyle = input.authStyle ?? 'basic';
+  if (authStyle !== 'basic') {
+    throw new Error(\`Unsupported OAuth client_credentials authStyle "\${authStyle}".\`);
+  }
+  const body = new URLSearchParams(input.body ?? {});
+  body.set('grant_type', 'client_credentials');
+  const headers = new Headers(input.headers);
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json');
+  }
+  headers.set('Content-Type', 'application/x-www-form-urlencoded');
+  headers.set(
+    'Authorization',
+    secretHeaders.basic({
+      usernameSecret: input.clientIdSecret,
+      passwordSecret: input.clientSecretSecret,
+      scope: input.scope,
+    }),
+  );
+  const response = await fetch(input.tokenUrl, {
+    method: 'POST',
+    headers,
+    body: body.toString(),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      \`OAuth client_credentials request failed with HTTP \${response.status}.\`,
+    );
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('OAuth client_credentials response was not a JSON object.');
+  }
+  return payload;
+};
 const refreshAccessToken = async (providerName) =>
   __kodyRefreshAccessToken(providerName);
 const createAuthenticatedFetch = async (providerName) =>
   __kodyCreateAuthenticatedFetch(providerName);
+const oauthClientCredentials = async (input) =>
+  __kodyOauthClientCredentials(input);
 `.trim()
 }

@@ -6,7 +6,9 @@ import {
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
 	getExecuteHelperCapabilityNames,
+	oauthClientCredentials,
 	refreshAccessToken,
+	secretHeaders,
 } from './codemode-utils.ts'
 
 type SecretSetCall = {
@@ -22,6 +24,8 @@ type SandboxHelpers = {
 	) => Promise<
 		(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 	>
+	secretHeaders: typeof secretHeaders
+	oauthClientCredentials: typeof oauthClientCredentials
 }
 
 const spotifyIntegration = {
@@ -197,6 +201,112 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 	expect(fetchCalls).toHaveLength(3)
 	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
 		'Bearer new-access-token',
+	)
+})
+
+test('secretHeaders.basic returns an opaque Basic Auth placeholder', () => {
+	expect(
+		secretHeaders.basic({
+			usernameSecret: 'paypalClientId',
+			passwordSecret: 'paypalClientSecret',
+			scope: 'user',
+		}),
+	).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+})
+
+test('oauthClientCredentials posts a Basic placeholder through fetch', async () => {
+	const fetchCalls: Array<Request> = []
+	const fetchStub: typeof globalThis.fetch = async (
+		input: ExecuteRequestInput,
+		init?: RequestInit,
+	) => {
+		const request = new Request(input, init)
+		fetchCalls.push(request)
+		return new Response(
+			JSON.stringify({
+				access_token: 'paypal-access-token',
+				token_type: 'Bearer',
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			},
+		)
+	}
+
+	const tokenResponse = await withPatchedFetch(fetchStub, () =>
+		oauthClientCredentials({
+			tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
+			clientIdSecret: 'paypalClientId',
+			clientSecretSecret: 'paypalClientSecret',
+			scope: 'user',
+			body: {
+				scope: 'openid',
+			},
+		}),
+	)
+
+	expect(tokenResponse).toEqual({
+		access_token: 'paypal-access-token',
+		token_type: 'Bearer',
+	})
+	expect(fetchCalls).toHaveLength(1)
+	expect(fetchCalls[0]?.method).toBe('POST')
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+	expect(fetchCalls[0]?.headers.get('content-type')).toBe(
+		'application/x-www-form-urlencoded',
+	)
+	expect(await fetchCalls[0]?.text()).toBe(
+		new URLSearchParams({
+			scope: 'openid',
+			grant_type: 'client_credentials',
+		}).toString(),
+	)
+})
+
+test('createExecuteHelperPrelude exposes secret and client credentials helpers', async () => {
+	const prelude = createExecuteHelperPrelude()
+	const createSandboxHelpers = new Function(
+		'codemode',
+		`${prelude}; return { secretHeaders, oauthClientCredentials };`,
+	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
+	const fetchCalls: Array<Request> = []
+	const fetchStub: typeof globalThis.fetch = async (
+		input: ExecuteRequestInput,
+		init?: RequestInit,
+	) => {
+		const request = new Request(input, init)
+		fetchCalls.push(request)
+		return new Response(JSON.stringify({ access_token: 'access-token' }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}
+
+	const helpers = createSandboxHelpers({} satisfies CodemodeNamespace)
+	expect(
+		helpers.secretHeaders.basic({
+			usernameSecret: 'paypalClientId',
+			passwordSecret: 'paypalClientSecret',
+			scope: 'user',
+		}),
+	).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+	await withPatchedFetch(fetchStub, () =>
+		helpers.oauthClientCredentials({
+			tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
+			clientIdSecret: 'paypalClientId',
+			clientSecretSecret: 'paypalClientSecret',
+			scope: 'user',
+		}),
+	)
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
 })
 

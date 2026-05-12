@@ -2350,4 +2350,10 @@ test('buildKodyAppBundle runtime module exports package invocation helper', asyn
 	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
 		'export const packages = runtime.packages ?? null;',
 	)
+	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
+		'export const secretHeaders = runtime.secretHeaders;',
+	)
+	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
+		'export const oauthClientCredentials = runtime.oauthClientCredentials;',
+	)
 })

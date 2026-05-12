@@ -890,6 +890,8 @@ ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
     storage: typeof storage === 'undefined' ? undefined : storage,
     refreshAccessToken,
     createAuthenticatedFetch,
+    secretHeaders,
+    oauthClientCredentials,
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
     service: typeof service === 'undefined' ? null : service,

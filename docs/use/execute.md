@@ -23,8 +23,11 @@ helpers are runtime exports:
   valid identifier names, or **`await codemode["capability-id"](input)`** for
   non-identifier capability ids
 - use
-  **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
-  for integration OAuth helpers
+  **`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
+  for OAuth helpers
+- use **`import { secretHeaders } from 'kody:runtime'`** when an approved
+  `fetch` request needs host-derived auth headers from saved secrets, such as
+  Basic Auth from a saved client id and client secret
 - use **`import { storage } from 'kody:runtime'`** when the execute call is
   bound to a storage id
 - use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
@@ -230,9 +233,9 @@ reconnect the MCP client if the host caches server instructions.
 ## Network and OAuth helpers
 
 The sandbox exposes global **`fetch`** plus secret placeholders in approved
-contexts. OAuth helpers are imported from **`kody:runtime`**:
+contexts. OAuth and secret-header helpers are imported from **`kody:runtime`**:
 
-**`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
+**`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials, secretHeaders } from 'kody:runtime'`**
 
 `createAuthenticatedFetch(providerName)` is async. Await it before calling the
 returned fetch wrapper:
@@ -246,6 +249,55 @@ Integration names should usually follow `<provider>-<purpose>` when multiple
 accounts may exist, such as `google`, `google-business`, or
 `google-youtube-brand`. Call **`integration_list`** up front when a provider may
 have multiple accounts connected.
+
+For OAuth 2 `client_credentials` token exchanges that require
+`Authorization: Basic base64(client_id:client_secret)`, save the client id and
+client secret separately. Do **not** ask the user to precompute or save the
+derived Basic header. Use `secretHeaders.basic(...)` directly in a fetch header,
+or use `oauthClientCredentials(...)` for the token request:
+
+```ts
+import { oauthClientCredentials } from 'kody:runtime'
+
+export default async function main() {
+	const token = await oauthClientCredentials({
+		tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
+		clientIdSecret: 'paypalClientId',
+		clientSecretSecret: 'paypalClientSecret',
+		scope: 'user',
+	})
+
+	return { tokenType: token.token_type, hasAccessToken: !!token.access_token }
+}
+```
+
+The lower-level PayPal token request is:
+
+```ts
+import { secretHeaders } from 'kody:runtime'
+
+export default async function main() {
+	const body = new URLSearchParams({ grant_type: 'client_credentials' })
+	const response = await fetch('https://api-m.paypal.com/v1/oauth2/token', {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/x-www-form-urlencoded',
+			Authorization: secretHeaders.basic({
+				usernameSecret: 'paypalClientId',
+				passwordSecret: 'paypalClientSecret',
+				scope: 'user',
+			}),
+		},
+		body,
+	})
+	return await response.json()
+}
+```
+
+Kody resolves both saved secrets server-side, requires the token endpoint host
+to be approved for both secrets, and only sends the derived Basic header in the
+outbound request.
 
 See [Secrets, values, and host approval](./secrets-and-values.md) for
 placeholders, host approval, and **`codemode.secret_list`** / **`secret_set`**.
