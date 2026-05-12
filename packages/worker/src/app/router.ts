@@ -24,7 +24,7 @@ import {
 	createConnectSecretApiHandler,
 	createConnectSecretHandler,
 } from '#app/handlers/connect-secret.ts'
-import { session } from '#app/handlers/session.ts'
+import { createSessionHandler } from '#app/handlers/session.ts'
 import { signup } from '#app/handlers/signup.ts'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
@@ -95,7 +95,7 @@ export function createAppRouter(appEnv: AppEnv) {
 			),
 			connectOauth: createConnectOauthHandler(appEnv as unknown as Env),
 			auth: createAuthHandler(appEnv),
-			session,
+			session: createSessionHandler(appEnv as unknown as Env),
 			logout,
 			passwordResetRequest: createPasswordResetRequestHandler(appEnv),
 			passwordResetConfirm: createPasswordResetConfirmHandler(appEnv),

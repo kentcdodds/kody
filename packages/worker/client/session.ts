@@ -1,5 +1,6 @@
 export type SessionInfo = {
 	email: string
+	username: string
 }
 
 export type SessionStatus = 'idle' | 'loading' | 'ready'
@@ -19,7 +20,13 @@ export async function fetchSessionInfo(
 			response.ok && payload?.ok && typeof payload?.session?.email === 'string'
 				? payload.session.email.trim()
 				: ''
-		return email ? { email } : null
+		const username =
+			response.ok &&
+			payload?.ok &&
+			typeof payload?.session?.username === 'string'
+				? payload.session.username.trim()
+				: ''
+		return email ? { email, username } : null
 	} catch {
 		return null
 	}

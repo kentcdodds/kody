@@ -1,6 +1,11 @@
 import { type BuildAction } from 'remix/fetch-router'
-import { readAuthSessionResult } from '#app/auth-session.ts'
+import {
+	destroyAuthCookie,
+	isSecureRequest,
+	readAuthSessionResult,
+} from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
+import { createDb, usersTable } from '#worker/db.ts'
 
 function jsonResponse(data: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(data), {
@@ -13,26 +18,51 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 	})
 }
 
-export const session = {
-	middleware: [],
-	async handler({ request }) {
-		const { session, setCookie } = await readAuthSessionResult(request)
-		if (!session) {
-			return jsonResponse({ ok: false })
-		}
+export function createSessionHandler(env: Env) {
+	const db = createDb(env.APP_DB)
 
-		return jsonResponse(
-			{ ok: true, session: { email: session.email } },
-			setCookie
-				? {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const { session, setCookie } = await readAuthSessionResult(request)
+			if (!session) {
+				return jsonResponse({ ok: false })
+			}
+
+			const userId = Number.parseInt(session.id, 10)
+			const userRecord = Number.isFinite(userId)
+				? await db.findOne(usersTable, { where: { id: userId } })
+				: null
+			if (!userRecord) {
+				return jsonResponse(
+					{ ok: false },
+					{
 						headers: {
-							'Set-Cookie': setCookie,
+							'Set-Cookie': await destroyAuthCookie(isSecureRequest(request)),
 						},
-					}
-				: undefined,
-		)
-	},
-} satisfies BuildAction<
-	typeof routes.session.method,
-	typeof routes.session.pattern
->
+					},
+				)
+			}
+
+			return jsonResponse(
+				{
+					ok: true,
+					session: {
+						email: userRecord.email,
+						username: userRecord.username,
+					},
+				},
+				setCookie
+					? {
+							headers: {
+								'Set-Cookie': setCookie,
+							},
+						}
+					: undefined,
+			)
+		},
+	} satisfies BuildAction<
+		typeof routes.session.method,
+		typeof routes.session.pattern
+	>
+}
