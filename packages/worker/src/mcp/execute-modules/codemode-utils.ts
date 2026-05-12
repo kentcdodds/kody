@@ -2,11 +2,11 @@ import {
 	assertIntegrationHostAllowed,
 	IntegrationHostNotAllowedError,
 } from './integration-host-allowlist.ts'
-import { type SecretScope } from '#mcp/secrets/types.ts'
 
 export { IntegrationHostNotAllowedError }
 
 type CapabilityResult = unknown
+type SecretScope = 'session' | 'app' | 'user'
 
 export type CapabilityArgs = Record<string, unknown>
 
