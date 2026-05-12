@@ -78,6 +78,7 @@ export function AccountRoute(handle: Handle) {
 	function updateDraftUsername(event: InputEvent) {
 		if (!(event.currentTarget instanceof HTMLInputElement)) return
 		draftUsername = event.currentTarget.value
+		handle.update()
 	}
 
 	async function handleUsernameSubmit(event: SubmitEvent) {
