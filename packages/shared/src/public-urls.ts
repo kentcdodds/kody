@@ -22,3 +22,14 @@ export function buildPackageAppUrl(input: {
 }) {
 	return `${input.origin.trim().replace(/\/+$/, '')}${buildPackageAppPath(input)}`
 }
+
+export function requireUsernameForPublicUrl(
+	username: string | null | undefined,
+) {
+	if (!username) {
+		throw new Error(
+			'Username is required to build username-scoped public URLs.',
+		)
+	}
+	return username
+}

@@ -662,6 +662,15 @@ export async function handleAuthorizeRequest(
 			where: { email: sessionEmail },
 		})
 		if (!userRecord) {
+			void logAuditEvent({
+				category: 'oauth',
+				action: 'authorize',
+				result: 'failure',
+				email: sessionEmail,
+				ip: requestIp,
+				clientId: authRequest.clientId,
+				reason: 'session_user_not_found',
+			})
 			return respondAuthorizeError(request, 'Signed-in user not found.', 401)
 		}
 		approvedEmail = sessionEmail

@@ -575,6 +575,32 @@ test('package search formatting keeps runnable package actions in structured out
 	expect(packageMatch?.nextStep).toEqual(expect.any(String))
 })
 
+test('package search formatting omits hosted URLs when username is unavailable', () => {
+	const [packageMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-123',
+				kodyId: 'spotify-playback',
+				name: '@kody/spotify-playback',
+				title: '@kody/spotify-playback',
+				description: 'Saved package for Spotify playback controls.',
+				tags: ['spotify', 'playback'],
+				hasApp: true,
+				readmeSnippet: null,
+			},
+		],
+	})
+
+	expect(packageMatch).toMatchObject({
+		type: 'package',
+		hasApp: true,
+		hostedUrl: null,
+		openGeneratedUiUsage: 'open_generated_ui({ kody_id: "spotify-playback" })',
+	})
+})
+
 test('package search formatting surfaces matched action recipes compactly', () => {
 	const markdown = formatSearchMarkdown({
 		matches: [

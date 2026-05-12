@@ -414,15 +414,6 @@ function buildPackageHostedUrl(
 	return buildPackageAppUrl({ origin: baseUrl, username, kodyId })
 }
 
-function requireUsernameForHostedPackageUrl(
-	username: string | null | undefined,
-) {
-	if (!username) {
-		throw new Error('Username is required to build hosted package app URLs.')
-	}
-	return username
-}
-
 function buildEntityRef(id: string, type: SearchEntityType) {
 	return `${id}:${type}`
 }
@@ -697,13 +688,10 @@ export function toSlimStructuredMatches(input: {
 				openGeneratedUiUsage,
 				tags: match.tags,
 				hasApp: match.hasApp,
-				hostedUrl: match.hasApp
-					? buildPackageHostedUrl(
-							input.baseUrl,
-							requireUsernameForHostedPackageUrl(input.username),
-							match.kodyId,
-						)
-					: null,
+				hostedUrl:
+					match.hasApp && input.username
+						? buildPackageHostedUrl(input.baseUrl, input.username, match.kodyId)
+						: null,
 				readmeSnippet: match.readmeSnippet
 					? {
 							path: match.readmeSnippet.path,

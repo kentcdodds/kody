@@ -46,9 +46,13 @@ import {
 	type RemoteConnectorStatus,
 } from '#worker/remote-connector/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import {
+	buildPackageAppUrl,
+	requireUsernameForPublicUrl,
+} from '@kody-internal/shared/public-urls.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
+import { resolvePublicUsername } from '#app/user-lookup.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -169,13 +173,6 @@ type SearchUnifiedResult = {
 	telemetry: SearchTelemetry
 	phaseTimings: SearchPhaseTimings
 	guidance?: string
-}
-
-function requireUsernameForHostedPackageUrl(username: string | null) {
-	if (!username) {
-		throw new Error('Username is required to build hosted package app URLs.')
-	}
-	return username
 }
 
 function flattenReferencedTypeFields(
@@ -1637,6 +1634,7 @@ async function resolveEntityDetail(input: {
 	agent: McpRegistrationAgent
 	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
 	userId: string | null
+	username: string | null
 	entity: string
 	searchRows: SearchRowsAndRegistry
 }) {
@@ -1684,9 +1682,7 @@ async function resolveEntityDetail(input: {
 			hostedUrl: record.hasApp
 				? buildPackageAppUrl({
 						origin: input.callerContext.baseUrl,
-						username: requireUsernameForHostedPackageUrl(
-							input.callerContext.user?.username ?? null,
-						),
+						username: requireUsernameForPublicUrl(input.username),
 						kodyId: record.kodyId,
 					})
 				: null,
@@ -1797,6 +1793,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
+			const username = await resolvePublicUsername({
+				db: agent.getEnv().APP_DB,
+				username: callerContext.user?.username ?? null,
+				email: callerContext.user?.email ?? null,
+			})
 			if (!args.query && !args.entity) {
 				const timing = finishToolTiming(timingStart)
 				logMcpEvent({
@@ -1891,6 +1892,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							agent,
 							callerContext,
 							userId,
+							username,
 							entity: args.entity,
 							searchRows,
 						}),
@@ -2088,7 +2090,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					matches: toSlimStructuredMatches({
 						matches: trimmedPayload.matches,
 						baseUrl,
-						username: callerContext.user?.username ?? null,
+						username,
 					}),
 				}
 				const timing = finishToolTiming(timingStart)

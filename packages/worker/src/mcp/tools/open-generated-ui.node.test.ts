@@ -33,20 +33,23 @@ vi.mock('#mcp/generated-ui-app-session.ts', () => ({
 
 const { registerOpenGeneratedUiTool } = await import('./open-generated-ui.ts')
 
-async function getOpenGeneratedUiHandler() {
+async function getOpenGeneratedUiHandler(options?: {
+	username?: string
+	appDb?: D1Database
+}) {
 	mockModule.registerAppTool.mockClear()
 
 	await registerOpenGeneratedUiTool({
 		server: {} as never,
 		getEnv: vi.fn(() => ({
-			APP_DB: {} as D1Database,
+			APP_DB: options?.appDb ?? ({} as D1Database),
 		})),
 		getCallerContext: vi.fn(() => ({
 			baseUrl: 'https://example.com',
 			user: {
 				userId: 'user-123',
 				email: 'user@example.com',
-				username: 'test-user',
+				username: options?.username,
 				displayName: 'test-user',
 			},
 		})),
@@ -65,7 +68,7 @@ async function getOpenGeneratedUiHandler() {
 }
 
 test('open_generated_ui reopens saved package apps by kody_id', async () => {
-	const handler = await getOpenGeneratedUiHandler()
+	const handler = await getOpenGeneratedUiHandler({ username: 'test-user' })
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce({
 		id: 'package-123',
 		userId: 'user-123',
@@ -94,5 +97,38 @@ test('open_generated_ui reopens saved package apps by kody_id', async () => {
 	expect(response.structuredContent).toMatchObject({
 		appId: 'package-123',
 		hostedUrl: 'https://example.com/@test-user/packages/observed-package',
+	})
+})
+
+test('open_generated_ui resolves username from email for older caller contexts', async () => {
+	const handler = await getOpenGeneratedUiHandler({
+		appDb: {
+			prepare: () => ({
+				bind: () => ({
+					first: async () => ({ username: 'resolved-user' }),
+				}),
+			}),
+		} as unknown as D1Database,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce({
+		id: 'package-123',
+		userId: 'user-123',
+		name: '@kody/observed',
+		kodyId: 'observed-package',
+		description: 'Observed package app',
+		tags: ['ui'],
+		searchText: null,
+		sourceId: 'source-123',
+		hasApp: true,
+		createdAt: '2026-04-21T00:00:00.000Z',
+		updatedAt: '2026-04-21T00:00:00.000Z',
+	})
+
+	const response = await handler({
+		kody_id: 'observed-package',
+	})
+
+	expect(response.structuredContent).toMatchObject({
+		hostedUrl: 'https://example.com/@resolved-user/packages/observed-package',
 	})
 })

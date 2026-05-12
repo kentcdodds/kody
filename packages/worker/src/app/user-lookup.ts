@@ -32,3 +32,26 @@ export async function findPublicUserIdentityByUsername(input: {
 		mcpUserId: await createStableUserIdFromEmail(userRecord.email),
 	}
 }
+
+export async function resolvePublicUsername(input: {
+	db: D1Database
+	username?: string | null
+	email?: string | null
+}): Promise<string | null> {
+	const username = input.username?.trim()
+	if (username) return username
+
+	const email = input.email?.trim().toLowerCase()
+	if (!email) return null
+
+	const userRecord = await input.db
+		.prepare(
+			`SELECT username
+				FROM users
+				WHERE email = ?`,
+		)
+		.bind(email)
+		.first<{ username: string }>()
+
+	return userRecord?.username ?? null
+}

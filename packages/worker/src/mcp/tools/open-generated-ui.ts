@@ -5,7 +5,11 @@ import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-ht
 import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
-import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import {
+	buildPackageAppUrl,
+	requireUsernameForPublicUrl,
+} from '@kody-internal/shared/public-urls.ts'
+import { resolvePublicUsername } from '#app/user-lookup.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -81,13 +85,6 @@ const inputSchema = z
 		path: ['code'],
 	})
 
-function requireSavedPackageAppUsername(username: string | null) {
-	if (!username) {
-		throw new Error('Username is required to open saved package apps.')
-	}
-	return username
-}
-
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 	registerAppTool(
 		agent.server,
@@ -126,14 +123,15 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					)
 				}
 			}
-			const username = callerContext.user?.username ?? null
-			if (savedPackage && !username) {
-				throw new Error('Username is required to open saved package apps.')
-			}
+			const username = await resolvePublicUsername({
+				db: agent.getEnv().APP_DB,
+				username: callerContext.user?.username ?? null,
+				email: callerContext.user?.email ?? null,
+			})
 			const hostedUrl = savedPackage
 				? buildPackageAppUrl({
 						origin: agent.requireDomain(),
-						username: requireSavedPackageAppUsername(username),
+						username: requireUsernameForPublicUrl(username),
 						kodyId: savedPackage.kodyId,
 					})
 				: null
