@@ -7,6 +7,7 @@ import {
 } from './client-router.tsx'
 import {
 	fetchSessionInfo,
+	getSessionDisplayName,
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
@@ -92,6 +93,7 @@ export function App(handle: Handle) {
 			currentPathname.startsWith('/account/remote-connectors') ||
 			currentPathname.startsWith('/account/secrets')
 		const sessionEmail = session?.email ?? ''
+		const sessionDisplayName = getSessionDisplayName(session)
 		const isSessionReady = sessionStatus === 'ready'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
 		const showAuthLinks = isSessionReady && !isLoggedIn
@@ -175,7 +177,7 @@ export function App(handle: Handle) {
 					{isLoggedIn ? (
 						<>
 							<a href="/account" mix={css(navLinkCss)}>
-								{sessionEmail}
+								{sessionDisplayName}
 							</a>
 							<a href="/account/secrets" mix={css(navLinkCss)}>
 								Secrets

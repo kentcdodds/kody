@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
 	fetchSessionInfo,
+	getSessionDisplayName,
 	type SessionInfo,
 	type SessionStatus,
 } from '#client/session.ts'
@@ -220,6 +221,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const scopeLabel =
 			scopes.length > 0 ? scopes.join(', ') : 'No scopes requested.'
 		const sessionEmail = session?.email ?? ''
+		const sessionDisplayName = getSessionDisplayName(session)
 		const isSessionReady = sessionStatus === 'ready'
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
@@ -266,7 +268,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 								color: colors.text,
 							})}
 						>
-							Signed in as {sessionEmail}
+							Signed in as {sessionDisplayName}
 						</p>
 						<p mix={css(descriptionCss)}>
 							{resetCompleted

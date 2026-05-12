@@ -7,7 +7,10 @@ type QueueTask = Parameters<Handle['queueTask']>[0]
 const { fetchSessionInfoMock, navigationListeners, queuedSessionResponses } =
 	vi.hoisted(() => {
 		const navigationListeners: Array<() => void> = []
-		const queuedSessionResponses: Array<{ email: string } | null> = []
+		const queuedSessionResponses: Array<{
+			email: string
+			username: string
+		} | null> = []
 		const fetchSessionInfoMock = vi.fn(async () => {
 			return queuedSessionResponses.shift() ?? null
 		})
@@ -49,7 +52,11 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	navigationListeners.length = 0
 	queuedSessionResponses.length = 0
 	const sessionEmail = 'signed-in@example.com'
-	queuedSessionResponses.push({ email: sessionEmail }, null)
+	const sessionUsername = 'signed-in'
+	queuedSessionResponses.push(
+		{ email: sessionEmail, username: sessionUsername },
+		null,
+	)
 
 	const queuedTasks: Array<QueueTask> = []
 	const handle = {
@@ -73,7 +80,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 
 	const authenticatedUi = await renderToString(render())
 	expect(authenticatedUi).toContain('href="/account"')
-	expect(authenticatedUi).toContain(sessionEmail)
+	expect(authenticatedUi).toContain(sessionUsername)
 	expect(authenticatedUi).toContain('<form method="post" action="/logout"')
 
 	// Re-run refresh via navigation, then abort in-flight fetch.
@@ -82,6 +89,6 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 
 	const uiAfterAbort = await renderToString(render())
 	expect(uiAfterAbort).toContain('href="/account"')
-	expect(uiAfterAbort).toContain(sessionEmail)
+	expect(uiAfterAbort).toContain(sessionUsername)
 	expect(uiAfterAbort).toContain('<form method="post" action="/logout"')
 })

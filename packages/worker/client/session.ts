@@ -5,6 +5,10 @@ export type SessionInfo = {
 
 export type SessionStatus = 'idle' | 'loading' | 'ready'
 
+export function getSessionDisplayName(session: SessionInfo | null) {
+	return session?.username || session?.email || ''
+}
+
 export async function fetchSessionInfo(
 	signal?: AbortSignal,
 ): Promise<SessionInfo | null> {
