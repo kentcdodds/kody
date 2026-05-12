@@ -61,12 +61,24 @@ async function createDatabase(password: string) {
 					return {
 						async all() {
 							return {
-								results: [{ id: 1, password_hash: passwordHash }],
+								results: [
+									{
+										id: 1,
+										username: 'test-user',
+										email: 'user@example.com',
+										password_hash: passwordHash,
+									},
+								],
 								meta: { changes: 0, last_row_id: 0 },
 							}
 						},
 						async first() {
-							return { id: 1, password_hash: passwordHash }
+							return {
+								id: 1,
+								username: 'test-user',
+								email: 'user@example.com',
+								password_hash: passwordHash,
+							}
 						},
 						async run() {
 							return { meta: { changes: 1, last_row_id: 1 } }
@@ -243,7 +255,7 @@ test('authorize allows approval with an existing session', async () => {
 			{ decision: 'approve' },
 			{ Accept: 'application/json', Cookie: cookie },
 		),
-		createEnv(helpers),
+		createEnv(helpers, await createDatabase('password123')),
 	)
 
 	expect(response.status).toBe(200)
