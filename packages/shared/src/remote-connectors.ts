@@ -8,12 +8,35 @@ export type RemoteConnectorRef = {
 	instanceId: string
 }
 
-function normalizeKind(kind: string): string {
+export function normalizeRemoteConnectorKind(kind: string): string {
 	return kind.trim().toLowerCase()
 }
 
-function normalizeInstanceId(instanceId: string): string {
+export function normalizeRemoteConnectorInstanceId(instanceId: string): string {
 	return instanceId.trim()
+}
+
+export function userScopedConnectorIngressPath(input: {
+	userId: string
+	kind: string
+	instanceId: string
+}) {
+	const userId = encodeURIComponent(input.userId.trim())
+	const kind = encodeURIComponent(normalizeRemoteConnectorKind(input.kind))
+	const instanceId = encodeURIComponent(
+		normalizeRemoteConnectorInstanceId(input.instanceId),
+	)
+	return `/connectors/u/${userId}/${kind}/${instanceId}`
+}
+
+export function userScopedConnectorWebSocketUrl(input: {
+	origin: string
+	userId: string
+	kind: string
+	instanceId: string
+}) {
+	const origin = input.origin.trim().replace(/\/+$/, '')
+	return `${origin}${userScopedConnectorIngressPath(input)}`
 }
 
 export function normalizeRemoteConnectorRefs(
@@ -21,8 +44,8 @@ export function normalizeRemoteConnectorRefs(
 ): Array<RemoteConnectorRef> {
 	return (context.remoteConnectors ?? [])
 		.map((ref) => ({
-			kind: normalizeKind(ref.kind),
-			instanceId: normalizeInstanceId(ref.instanceId),
+			kind: normalizeRemoteConnectorKind(ref.kind),
+			instanceId: normalizeRemoteConnectorInstanceId(ref.instanceId),
 		}))
 		.filter((ref) => ref.kind.length > 0 && ref.instanceId.length > 0)
 }

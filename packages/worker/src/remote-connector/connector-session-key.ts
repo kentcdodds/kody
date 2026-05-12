@@ -1,4 +1,9 @@
-const userScopedConnectorIngressPrefix = '/connectors/u/'
+import {
+	normalizeRemoteConnectorInstanceId,
+	normalizeRemoteConnectorKind,
+} from '@kody-internal/shared/remote-connectors.ts'
+
+export { userScopedConnectorIngressPath } from '@kody-internal/shared/remote-connectors.ts'
 
 export type UserScopedConnectorRouteMatch = {
 	userId: string
@@ -21,20 +26,9 @@ export function userScopedConnectorSessionKey(input: {
 }) {
 	return JSON.stringify([
 		input.userId.trim(),
-		input.kind.trim().toLowerCase(),
-		input.instanceId.trim(),
+		normalizeRemoteConnectorKind(input.kind),
+		normalizeRemoteConnectorInstanceId(input.instanceId),
 	])
-}
-
-export function userScopedConnectorIngressPath(input: {
-	userId: string
-	kind: string
-	instanceId: string
-}) {
-	const userId = encodeURIComponent(input.userId.trim())
-	const kind = encodeURIComponent(input.kind.trim().toLowerCase())
-	const instanceId = encodeURIComponent(input.instanceId.trim())
-	return `${userScopedConnectorIngressPrefix}${userId}/${kind}/${instanceId}`
 }
 
 export function parseUserScopedConnectorRoutePath(

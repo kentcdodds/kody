@@ -1,9 +1,11 @@
 import { expect, test } from './playwright-utils.ts'
 
 test('remote connector form reloads, reveals, and generates shared secrets', async ({
+	context,
 	page,
 	login,
 }) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write'])
 	await login()
 
 	const nonce = Date.now().toString(36)
@@ -16,10 +18,18 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 		page.getByRole('heading', { level: 1, name: /remote connectors/i }),
 	).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Generate' })).toBeVisible()
-	await expect(page.getByRole('button', { name: 'Copy' })).toHaveCount(0)
+	await expect(
+		page.getByRole('button', { name: /copy connector url/i }),
+	).toHaveCount(0)
 
 	await page.getByLabel('Kind').fill(kind)
 	await page.getByLabel('Instance ID').fill(instanceId)
+	const connectorUrl = page
+		.locator('code')
+		.filter({ hasText: '/connectors/u/' })
+	await expect(connectorUrl).toHaveText(
+		new RegExp(`/connectors/u/[^/]+/${kind}/${instanceId}$`),
+	)
 	await page.getByRole('textbox', { name: 'Shared secret' }).fill(sharedSecret)
 	const saveResponse = page.waitForResponse(
 		(response) =>
@@ -39,7 +49,16 @@ test('remote connector form reloads, reveals, and generates shared secrets', asy
 	})
 	await expect(sharedSecretInput).toHaveAttribute('type', 'password')
 	await expect(sharedSecretInput).toHaveValue(sharedSecret)
-	await expect(page.getByRole('button', { name: 'Copy' })).toHaveCount(0)
+	await expect(
+		page.getByRole('button', { name: /copy connector url/i }),
+	).toBeVisible()
+	await page.getByRole('button', { name: /copy connector url/i }).click()
+	await expect(
+		page.getByRole('button', { name: /copied connector url/i }),
+	).toBeVisible()
+	await expect
+		.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+		.toMatch(new RegExp(`/connectors/u/[^/]+/${kind}/${instanceId}$`))
 
 	await page.getByRole('button', { name: 'Show shared secret' }).click()
 	await expect(sharedSecretInput).toHaveAttribute('type', 'text')

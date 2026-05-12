@@ -8,9 +8,10 @@ calls to JSON-RPC on the socket.
 
 ## URLs and session keys
 
-`wss://<worker-origin>/connectors/<kind>/<instanceId>`
+`wss://<worker-origin>/connectors/u/<userId>/<kind>/<instanceId>`
 
-Session key = `<kind>:<instanceId>` (lowercase compared after trim).
+Session key = JSON tuple `[userId, kind, instanceId]` where `kind` is lowercase
+after trim.
 
 The Worker sets header **`X-Kody-Connector-Session-Key`** on requests forwarded
 into the Durable Object. The connector’s **`connector.hello`** must declare a
@@ -95,15 +96,8 @@ saved remote connector settings. Operators can manage those settings at
   `connector.hello` for that ref.
 - **`attached`** controls whether the ref is included in normal Kody MCP/chat
   caller context.
-- **`sharedSecret`** is encrypted in D1 and is never returned by the account UI
-  API after saving. Enter a new value to replace it; leave it blank when editing
-  to keep the saved value.
-
-A connector WebSocket session is shared by **`kind:instanceId`** across users.
-Because `connector.hello` does not identify a user, any user's enabled saved
-secret for that ref can authenticate that shared session. To make connector
-hello authentication user-isolated in the future, thread user identity through
-the connector hello flow and filter stored secret lookup by `user_id`.
+- **`sharedSecret`** is encrypted in D1 and authenticates only the user-scoped
+  connector URL for the saved ref.
 
 Source: `packages/shared/src/chat.ts`,
 `packages/shared/src/remote-connectors.ts`, and
@@ -117,8 +111,8 @@ Source: `packages/shared/src/chat.ts`,
 
 ## Connector checklist
 
-1. **Outbound WebSocket** to the correct path for your **`kind`** and
-   **`instanceId`**.
+1. **Outbound WebSocket** to the full account page URL for your **`userId`**,
+   **`kind`**, and **`instanceId`**.
 2. **Hello first** with matching **`connectorKind`** + **`connectorId`** and a
    **valid `sharedSecret`** for that `kind:instanceId` pair.
 3. Implement **`tools/list`** and **`tools/call`** on the socket via

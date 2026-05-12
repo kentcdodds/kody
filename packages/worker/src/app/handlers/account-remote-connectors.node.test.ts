@@ -95,11 +95,15 @@ test('remote connector settings API lists settings with plaintext secrets', asyn
 	expect(JSON.parse(text)).toEqual({
 		ok: true,
 		email: 'user@example.com',
+		userId: 'stable-user-1',
+		connectorUrlOrigin: 'wss://example.com',
 		connectors: [
 			{
 				id: 'connector-1',
 				kind: 'lights',
 				instanceId: 'default',
+				connectorUrl:
+					'wss://example.com/connectors/u/stable-user-1/lights/default',
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,
@@ -141,12 +145,16 @@ test('remote connector settings API passes submitted secret to save service', as
 	expect(await response.json()).toEqual({
 		ok: true,
 		email: 'user@example.com',
+		userId: 'stable-user-1',
+		connectorUrlOrigin: 'wss://example.com',
 		selectedConnectorId: 'connector-1',
 		connectors: [
 			{
 				id: 'connector-1',
 				kind: 'lights',
 				instanceId: 'default',
+				connectorUrl:
+					'wss://example.com/connectors/u/stable-user-1/lights/default',
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,

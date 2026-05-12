@@ -22,11 +22,13 @@ import {
 	getSecondaryButtonCss,
 	inputCss,
 } from '#client/styles/style-primitives.ts'
+import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-connectors.ts'
 
 type RemoteConnectorListItem = {
 	id: string
 	kind: string
 	instanceId: string
+	connectorUrl: string
 	enabled: boolean
 	attached: boolean
 	hasSharedSecret: boolean
@@ -38,6 +40,8 @@ type RemoteConnectorListItem = {
 type AccountRemoteConnectorsPayload = {
 	ok: true
 	email: string
+	userId: string
+	connectorUrlOrigin: string
 	connectors: Array<RemoteConnectorListItem>
 	selectedConnectorId?: string
 }
@@ -108,6 +112,45 @@ function generateSharedSecret() {
 	return bytesToBase64Url(bytes)
 }
 
+function ClipboardIcon() {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="18"
+			height="18"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+			<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+		</svg>
+	)
+}
+
+function CheckIcon() {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="18"
+			height="18"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M20 6 9 17l-5-5" />
+		</svg>
+	)
+}
+
 function EyeIcon(props: { showSecret: boolean }) {
 	return props.showSecret ? (
 		<svg
@@ -144,6 +187,57 @@ function EyeIcon(props: { showSecret: boolean }) {
 	)
 }
 
+function CopyToClipboard(handle: Handle<{ url: string }>) {
+	let state: 'idle' | 'copied' | 'error' = 'idle'
+
+	return () => {
+		const label =
+			state === 'idle'
+				? 'Copy connector URL'
+				: state === 'copied'
+					? 'Copied connector URL'
+					: 'Could not copy connector URL'
+
+		return (
+			<button
+				type="button"
+				aria-label={label}
+				aria-live="polite"
+				mix={[
+					on('click', async (_event, signal) => {
+						try {
+							await navigator.clipboard.writeText(handle.props.url)
+							if (signal.aborted) return
+						} catch {
+							state = 'error'
+							handle.update()
+							return
+						}
+
+						state = 'copied'
+						handle.update()
+						setTimeout(() => {
+							if (signal.aborted) return
+							state = 'idle'
+							handle.update()
+						}, 2000)
+					}),
+					css({
+						...getSecondaryButtonCss(),
+						display: 'inline-flex',
+						alignItems: 'center',
+						gap: spacing.xs,
+						whiteSpace: 'nowrap',
+					}),
+				]}
+			>
+				{state === 'copied' ? CheckIcon() : ClipboardIcon()}
+				{state === 'copied' ? 'Copied' : state === 'error' ? 'Error' : 'Copy'}
+			</button>
+		)
+	}
+}
+
 const iconButtonCss = {
 	position: 'absolute' as const,
 	right: spacing.sm,
@@ -175,6 +269,8 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
 	let email = ''
+	let userId = ''
+	let connectorUrlOrigin = ''
 	let connectors: Array<RemoteConnectorListItem> = []
 	let editorState = createEmptyEditorState()
 	let message: string | null = null
@@ -224,6 +320,8 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountRemoteConnectorsPayload) {
 		email = payload.email
+		userId = payload.userId
+		connectorUrlOrigin = payload.connectorUrlOrigin
 		connectors = payload.connectors
 		deleteConfirm = false
 		if (payload.selectedConnectorId) {
@@ -406,6 +504,17 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		handle.update()
 	}
 
+	function getEditorConnectorUrl() {
+		if (!userId || !connectorUrlOrigin) return null
+		if (!editorState.kind.trim() || !editorState.instanceId.trim()) return null
+		return userScopedConnectorWebSocketUrl({
+			origin: connectorUrlOrigin,
+			userId,
+			kind: editorState.kind,
+			instanceId: editorState.instanceId,
+		})
+	}
+
 	return () => {
 		const currentHref =
 			typeof window === 'undefined'
@@ -422,6 +531,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			editorState.kind && editorState.instanceId
 				? `${editorState.kind}:${editorState.instanceId}`
 				: 'New remote connector'
+		const connectorUrl = getEditorConnectorUrl()
 
 		return (
 			<section
@@ -627,6 +737,46 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									]}
 								/>
 							</label>
+							<div mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Connector URL</span>
+								{connectorUrl ? (
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											alignItems: 'stretch',
+											flexWrap: 'wrap',
+										})}
+									>
+										<code
+											mix={css({
+												flex: '1 1 22rem',
+												minWidth: 0,
+												padding: spacing.sm,
+												borderRadius: radius.md,
+												border: `1px solid ${colors.border}`,
+												backgroundColor: colors.background,
+												color: colors.text,
+												fontFamily: 'monospace',
+												fontSize: typography.fontSize.sm,
+												overflowWrap: 'anywhere',
+											})}
+										>
+											{connectorUrl}
+										</code>
+										<CopyToClipboard key={connectorUrl} url={connectorUrl} />
+									</div>
+								) : (
+									<p mix={css(descriptionCss)}>
+										Enter a kind and instance ID to build the connector
+										WebSocket URL.
+									</p>
+								)}
+								<p mix={css(descriptionCss)}>
+									Includes your MCP user ID <code>{userId}</code> so connector
+									sessions stay isolated to your account.
+								</p>
+							</div>
 							<div mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>
 									Shared secret
