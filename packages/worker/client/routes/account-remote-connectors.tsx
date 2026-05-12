@@ -160,7 +160,14 @@ async function writeClipboardText(value: string) {
 	document.body.append(textArea)
 	textArea.select()
 	try {
-		if (document.execCommand('copy')) return
+		if (
+			typeof document.execCommand === 'function' &&
+			document.execCommand('copy')
+		) {
+			return
+		}
+	} catch {
+		// Ignore legacy clipboard failures and fall through to the modern API.
 	} finally {
 		textArea.remove()
 	}

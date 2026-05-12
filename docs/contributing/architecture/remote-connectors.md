@@ -111,8 +111,8 @@ Source: `packages/shared/src/chat.ts`,
 
 ## Connector checklist
 
-1. **Outbound WebSocket** to the full account page URL for your **`userId`**,
-   **`kind`**, and **`instanceId`**.
+1. **Outbound WebSocket** to your connector URL:
+   `wss://<worker-origin>/connectors/u/<userId>/<kind>/<instanceId>`.
 2. **Hello first** with matching **`connectorKind`** + **`connectorId`** and a
    **valid `sharedSecret`** for that `kind:instanceId` pair.
 3. Implement **`tools/list`** and **`tools/call`** on the socket via
