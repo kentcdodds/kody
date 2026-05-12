@@ -1049,20 +1049,37 @@ export async function hydrateKodyRuntimeModules(input: {
 }): Promise<WorkerLoaderModules> {
 	const modules = refreshKodyRuntimeModules(input.modules)
 	const installedArtifacts = new Map<string, string>()
+	const resolvedArtifacts = new Map<
+		string,
+		{
+			artifactKey: string
+			artifact: PublishedBundleArtifact
+			installedArtifactMainModule?: string
+		}
+	>()
 	while (true) {
 		let installedDynamicImport = false
 		for (const entry of collectDynamicPackageImportsFromModules(modules)) {
-			const artifact = await resolveCurrentDynamicPackageArtifact({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				specifier: entry.specifier,
-			})
-			const artifactKey = createDynamicPackageImportArtifactKey({
-				specifier: entry.specifier,
-				artifact,
-			})
-			const existingArtifactMainModule = installedArtifacts.get(artifactKey)
+			let resolved = resolvedArtifacts.get(entry.specifier)
+			if (!resolved) {
+				const artifact = await resolveCurrentDynamicPackageArtifact({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					specifier: entry.specifier,
+				})
+				resolved = {
+					artifactKey: createDynamicPackageImportArtifactKey({
+						specifier: entry.specifier,
+						artifact,
+					}),
+					artifact,
+				}
+				resolvedArtifacts.set(entry.specifier, resolved)
+			}
+			const existingArtifactMainModule =
+				resolved.installedArtifactMainModule ??
+				installedArtifacts.get(resolved.artifactKey)
 			if (existingArtifactMainModule) {
 				modules[entry.modulePath] = createDynamicPackageImportProxySource({
 					targetPath: createRelativeImportSpecifier(
@@ -1076,9 +1093,10 @@ export async function hydrateKodyRuntimeModules(input: {
 				modules,
 				modulePath: entry.modulePath,
 				specifier: entry.specifier,
-				artifact,
+				artifact: resolved.artifact,
 			})
-			installedArtifacts.set(artifactKey, installedArtifactMainModule)
+			resolved.installedArtifactMainModule = installedArtifactMainModule
+			installedArtifacts.set(resolved.artifactKey, installedArtifactMainModule)
 			installedDynamicImport = true
 		}
 		if (!installedDynamicImport) return refreshKodyRuntimeModules(modules)
@@ -1099,6 +1117,19 @@ function applyReplacements(
 	}
 	nextSource += source.slice(cursor)
 	return nextSource
+}
+
+function assertReplacementsDoNotOverlap(
+	replacements: Array<RewriteReplacement>,
+) {
+	for (let index = 1; index < replacements.length; index += 1) {
+		const previous = replacements[index - 1]
+		const current = replacements[index]
+		if (!previous || !current || current.start >= previous.end) continue
+		throw new Error(
+			'Nested dynamic import expressions involving Kody package imports are unsupported. Keep import("kody:@scope/package/export") as its own expression.',
+		)
+	}
 }
 
 async function ensurePackageLoaded(
@@ -1296,10 +1327,11 @@ async function rewriteKodyImports(input: {
 			)})`,
 		})
 	}
-	const rewritten = applyReplacements(
-		input.source,
-		replacements.sort((left, right) => left.start - right.start),
+	const sortedReplacements = replacements.sort(
+		(left, right) => left.start - right.start,
 	)
+	assertReplacementsDoNotOverlap(sortedReplacements)
+	const rewritten = applyReplacements(input.source, sortedReplacements)
 	return helperName
 		? `${createComputedDynamicImportGuardSource({ helperName })}\n${rewritten}`
 		: rewritten

@@ -1058,7 +1058,39 @@ throw new Error('unhydrated ${specifier}');
 	).toEqual(currentArtifactModulePaths)
 	expect(
 		mockModule.loadPublishedBundleArtifactByIdentity,
-	).toHaveBeenCalledTimes(3)
+	).toHaveBeenCalledTimes(2)
+})
+
+test('buildKodyModuleBundle rejects nested dynamic kody package import rewrites clearly', async () => {
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await expect(
+		buildKodyModuleBundle({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/local-package',
+					exports: {
+						'.': './index.js',
+					},
+					kody: {
+						id: 'local-package',
+						description: 'Local package',
+					},
+				}),
+				'index.js': `export default async function run() {
+	return await import(String(await import('kody:@kentcdodds/example-package/value')))
+}
+`,
+			},
+			entryPoint: 'index.js',
+		}),
+	).rejects.toThrow('Nested dynamic import expressions involving Kody package')
 })
 
 test.each([
