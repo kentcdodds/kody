@@ -267,7 +267,7 @@
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
-				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
+				"run_worker_first": ["/connectors/*", "/mcp-apps/*", "/styles.css"],
 			},
 			"durable_objects": {
 				"bindings": [

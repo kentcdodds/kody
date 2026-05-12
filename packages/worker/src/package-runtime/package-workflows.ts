@@ -1010,7 +1010,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				topic: payload.workflowName,
 			},
 		})
-		if (response.status < 200 || response.status >= 400) {
+		if (response.status < 200 || response.status >= 300) {
 			throw new Error(getWorkflowInvocationErrorMessage(response))
 		}
 		return {
