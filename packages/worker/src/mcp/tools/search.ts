@@ -46,10 +46,7 @@ import {
 	type RemoteConnectorStatus,
 } from '#worker/remote-connector/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import {
-	buildPackageAppUrl,
-	requireUsernameForPublicUrl,
-} from '@kody-internal/shared/public-urls.ts'
+import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import { resolvePublicUsername } from '#app/user-lookup.ts'
@@ -1679,13 +1676,14 @@ async function resolveEntityDetail(input: {
 			record,
 			manifest: loaded.manifest,
 			files: loaded.files,
-			hostedUrl: record.hasApp
-				? buildPackageAppUrl({
-						origin: input.callerContext.baseUrl,
-						username: requireUsernameForPublicUrl(input.username),
-						kodyId: record.kodyId,
-					})
-				: null,
+			hostedUrl:
+				record.hasApp && input.username
+					? buildPackageAppUrl({
+							origin: input.callerContext.baseUrl,
+							username: input.username,
+							kodyId: record.kodyId,
+						})
+					: null,
 		}
 	}
 

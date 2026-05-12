@@ -39,7 +39,7 @@ export async function resolvePublicUsername(input: {
 	email?: string | null
 }): Promise<string | null> {
 	const username = input.username?.trim()
-	if (username) return username
+	if (username && !getUsernameValidationError(username)) return username
 
 	const email = input.email?.trim().toLowerCase()
 	if (!email) return null
@@ -51,7 +51,10 @@ export async function resolvePublicUsername(input: {
 				WHERE email = ?`,
 		)
 		.bind(email)
-		.first<{ username: string }>()
+		.first<{ username: string | null }>()
 
-	return userRecord?.username ?? null
+	const resolvedUsername = userRecord?.username?.trim()
+	return resolvedUsername && !getUsernameValidationError(resolvedUsername)
+		? resolvedUsername
+		: null
 }

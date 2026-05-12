@@ -17,6 +17,7 @@ import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
+import { getUsernameValidationError } from '#app/username.ts'
 
 export const oauthPaths = {
 	authorize: '/oauth/authorize',
@@ -42,6 +43,12 @@ type OAuthEnv = Env & {
 
 type OAuthContext = ExecutionContext & {
 	props?: OAuthProps
+}
+
+function getValidOAuthUsername(value: unknown) {
+	return typeof value === 'string' && !getUsernameValidationError(value.trim())
+		? value.trim()
+		: null
 }
 
 type OAuthClientResetVerification = {
@@ -654,8 +661,21 @@ export async function handleAuthorizeRequest(
 			})
 			return respondAuthorizeError(request, 'Invalid email or password.')
 		}
+		const username = getValidOAuthUsername(userRecord.username)
+		if (!username) {
+			void logAuditEvent({
+				category: 'oauth',
+				action: 'authorize',
+				result: 'failure',
+				email: normalizedEmail,
+				ip: requestIp,
+				clientId: authRequest.clientId,
+				reason: 'username_missing',
+			})
+			return respondAuthorizeError(request, 'Username is required.', 401)
+		}
 		approvedEmail = normalizedEmail
-		approvedUsername = userRecord.username
+		approvedUsername = username
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
 		const userRecord = await db.findOne(usersTable, {
@@ -673,8 +693,21 @@ export async function handleAuthorizeRequest(
 			})
 			return respondAuthorizeError(request, 'Signed-in user not found.', 401)
 		}
+		const username = getValidOAuthUsername(userRecord.username)
+		if (!username) {
+			void logAuditEvent({
+				category: 'oauth',
+				action: 'authorize',
+				result: 'failure',
+				email: sessionEmail,
+				ip: requestIp,
+				clientId: authRequest.clientId,
+				reason: 'username_missing',
+			})
+			return respondAuthorizeError(request, 'Username is required.', 401)
+		}
 		approvedEmail = sessionEmail
-		approvedUsername = userRecord.username
+		approvedUsername = username
 	}
 
 	const resolvedScopes = resolveScopes(authRequest.scope)
