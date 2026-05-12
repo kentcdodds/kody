@@ -36,6 +36,9 @@ vi.mock('./client-router.tsx', () => ({
 
 vi.mock('./session.ts', () => ({
 	fetchSessionInfo: fetchSessionInfoMock,
+	getSessionDisplayName: (
+		session: { email: string; username: string } | null,
+	) => session?.username || session?.email || '',
 }))
 
 const { App } = await import('./app.tsx')
