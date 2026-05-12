@@ -201,6 +201,24 @@ function toSerializableJson(value: unknown): JsonValue {
 	}
 }
 
+function getWorkflowInvocationErrorMessage(response: {
+	status: number
+	body: unknown
+}) {
+	const body = response.body
+	const error =
+		body && typeof body === 'object'
+			? (body as Record<string, unknown>)['error']
+			: null
+	const message =
+		error && typeof error === 'object'
+			? (error as Record<string, unknown>)['message']
+			: null
+	return typeof message === 'string' && message.trim()
+		? message
+		: `Package workflow export failed with HTTP ${response.status}.`
+}
+
 function normalizeNonEmptyString(value: string, fieldName: string) {
 	const trimmed = value.trim()
 	if (!trimmed) {
@@ -992,6 +1010,9 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				topic: payload.workflowName,
 			},
 		})
+		if (response.status < 200 || response.status >= 400) {
+			throw new Error(getWorkflowInvocationErrorMessage(response))
+		}
 		return {
 			status: response.status,
 			body: toSerializableJson(response.body),

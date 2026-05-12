@@ -469,6 +469,62 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for packag
 	)
 })
 
+test('DynamicCallableWorkflowBase marks package export error responses as workflow errors', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'package-error-response-smoke',
+			params: { key: 'west-sensitive-reopen' },
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.invokePackageExport.mockReset()
+	invocationMocks.invokePackageExport.mockResolvedValueOnce({
+		status: 500,
+		body: {
+			ok: false,
+			error: {
+				message:
+					'Shade workflow event failed: Tool "home_default_bond_shade_set_position" not found',
+			},
+		},
+	})
+
+	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await expect(
+		workflow.run(
+			{
+				payload: queued.params as never,
+				timestamp: new Date(),
+				instanceId: created.id,
+			},
+			{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+		),
+	).rejects.toThrow('home_default_bond_shade_set_position')
+	expect(db.workflowRuns.get(created.id)).toMatchObject({
+		status: 'errored',
+		completed_at: expect.any(String),
+		last_error: expect.stringContaining('home_default_bond_shade_set_position'),
+	})
+})
+
 test('createDynamicCallableWorkflow verifies package ownership before queueing package exports', async () => {
 	const binding = createWorkflowBinding({ existing: null })
 	const db = createWorkflowRunsDatabase()
