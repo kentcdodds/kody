@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { parseJsonc, writeGeneratedWranglerConfig } from './resource-utils.ts'
 
@@ -118,6 +118,57 @@ test('writeGeneratedWranglerConfig copies preview asset routing to the deployed 
 		expect(generatedConfig.assets?.run_worker_first).toContain('/connectors/*')
 		expect(generatedConfig.assets).toEqual(generatedConfig.env?.preview?.assets)
 	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})
+
+test('writeGeneratedWranglerConfig rejects invalid environment asset config', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
+	const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit')
+	}) as typeof process.exit)
+	const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+	try {
+		const baseConfigPath = path.join(tempDir, 'wrangler.jsonc')
+		const outConfigPath = path.join(
+			tempDir,
+			'wrangler-production.generated.json',
+		)
+		await writeFile(
+			baseConfigPath,
+			JSON.stringify({
+				env: {
+					production: {
+						assets: [],
+						d1_databases: [{ binding: 'APP_DB' }],
+						kv_namespaces: [
+							{ binding: 'OAUTH_KV' },
+							{ binding: 'BUNDLE_ARTIFACTS_KV' },
+						],
+					},
+				},
+			}),
+			'utf8',
+		)
+
+		await expect(
+			writeGeneratedWranglerConfig({
+				baseConfigPath,
+				outConfigPath,
+				envName: 'production',
+				d1DatabaseName: 'kody',
+				d1DatabaseId: 'dry-run-kody',
+				oauthKvId: 'dry-run-kody-oauth',
+				bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+			}),
+		).rejects.toThrow('process.exit')
+		expect(error).toHaveBeenCalledWith(
+			`wrangler config "${baseConfigPath}" is missing "env.production.assets".`,
+		)
+	} finally {
+		exit.mockRestore()
+		error.mockRestore()
 		await rm(tempDir, { force: true, recursive: true })
 	}
 })

@@ -315,7 +315,11 @@ export async function writeGeneratedWranglerConfig({
 	}
 
 	const targetAssets = (targetEnv as Record<string, unknown>).assets
-	if (!targetAssets || typeof targetAssets !== 'object') {
+	if (
+		!targetAssets ||
+		typeof targetAssets !== 'object' ||
+		Array.isArray(targetAssets)
+	) {
 		fail(
 			`wrangler config "${baseConfigPath}" is missing "env.${envName}.assets".`,
 		)
