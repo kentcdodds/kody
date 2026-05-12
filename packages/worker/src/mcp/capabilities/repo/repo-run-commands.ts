@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { resolveRepoTargetFromSource } from './repo-resolve-target.ts'
 import { repoRunCommandsCapabilityDescription } from './repo-run-commands-text.ts'
 import {
@@ -103,6 +104,10 @@ export const repoRunCommandsCapability = defineDomainCapability(
 						sessionId: validatedSession.id,
 						userId: user.userId,
 						rebuildPackageArtifacts: false,
+						expectedPackageScope:
+							validatedSession.entity_type === 'package'
+								? await getMcpUserPackageScope(ctx.env.APP_DB, user)
+								: undefined,
 					})
 				} else {
 					publish = { status: 'not_requested' as const }

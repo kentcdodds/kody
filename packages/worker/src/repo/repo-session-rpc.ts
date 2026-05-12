@@ -91,6 +91,7 @@ export type RepoSessionRpc = {
 	runChecks: (payload: {
 		sessionId: string
 		userId: string
+		expectedPackageScope?: string
 	}) => Promise<RepoSessionCheckRun>
 	getCheckStatus: (payload: {
 		sessionId: string
@@ -122,6 +123,7 @@ export type RepoSessionRpc = {
 		userId: string
 		force?: boolean
 		rebuildPackageArtifacts?: boolean
+		expectedPackageScope?: string
 	}) => Promise<RepoSessionPublishResult>
 	publishFromExternalRef: (payload: {
 		sessionId: string
@@ -132,6 +134,7 @@ export type RepoSessionRpc = {
 		allowForce?: boolean
 		baseUrl?: string
 		rebuildPackageArtifacts?: boolean
+		expectedPackageScope?: string
 	}) => Promise<RepoExternalPublishResult>
 }
 
