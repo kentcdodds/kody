@@ -8,7 +8,7 @@ const serverImplementation = {
 
 export function createKodyMcpServer(
 	options: ConstructorParameters<typeof McpServer>[1],
-) {
+): McpServer {
 	return Sentry.wrapMcpServerWithSentry(
 		new McpServer(serverImplementation, options),
 		{

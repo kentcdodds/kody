@@ -1,4 +1,5 @@
 import type * as SentryCloudflare from '@sentry/cloudflare'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { expect, test, vi } from 'vitest'
 
 const sentryMock = vi.hoisted(() => ({
@@ -22,8 +23,11 @@ test('createKodyMcpServer applies Sentry MCP instrumentation without payload rec
 
 	expect(server).toBeDefined()
 	expect(sentryMock.wrapMcpServerWithSentry).toHaveBeenCalledTimes(1)
-	expect(sentryMock.wrapMcpServerWithSentry).toHaveBeenCalledWith(server, {
-		recordInputs: false,
-		recordOutputs: false,
-	})
+	expect(sentryMock.wrapMcpServerWithSentry).toHaveBeenCalledWith(
+		expect.any(McpServer),
+		{
+			recordInputs: false,
+			recordOutputs: false,
+		},
+	)
 })
