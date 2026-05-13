@@ -150,9 +150,9 @@ when the caller intentionally accepts direct runtime failure.
 
 `packages.check` returns the current package id/kody id/name, source id,
 published commit, normalized export name, runtime target, and available
-JSDoc/type definition. It also returns warnings when validation is weak.
-Package exports do not publish machine-readable params schemas, so Kody cannot
-validate field-level params shape beyond requiring `params` to be a JSON object.
+JSDoc/type definition. It also returns warnings when validation is weak. Package
+exports do not publish machine-readable params schemas, so Kody cannot validate
+field-level params shape beyond requiring `params` to be a JSON object.
 
 `packages.invoke` returns the target export's unwrapped result. Non-2xx package
 invocation responses reject with an error whose message starts with the
