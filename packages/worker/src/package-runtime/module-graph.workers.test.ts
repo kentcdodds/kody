@@ -76,6 +76,70 @@ test(
 	},
 )
 
+test('subscription bundles refresh stale nested runtime modules from static package dependencies', async () => {
+	const nestedRuntimeModule =
+		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-workers-test',
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: 'dist/subscription.js',
+			modules: {
+				'dist/subscription.js': [
+					"import runDependency from '../.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/index.js'",
+					'',
+					'export default async function subscription(input = {}) {',
+					'\treturn await runDependency(input)',
+					'}',
+				].join('\n'),
+				'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/index.js':
+					[
+						"import { codemode } from './.__kody_virtual__/runtime.js'",
+						'',
+						'export default async function runDependency(input = {}) {',
+						"\treturn await codemode.service_start({ source: input.source ?? 'email' })",
+						'}',
+					].join('\n'),
+				[nestedRuntimeModule]: [
+					'const runtime = {}',
+					'export const codemode = runtime.codemode',
+					'export default runtime',
+				].join('\n'),
+			},
+		},
+		{ source: 'email' },
+		{
+			additionalTools: {
+				service_start: async (args) => ({
+					ok: true,
+					args,
+				}),
+			},
+			packageContext: {
+				packageId: 'pkg-subscription',
+				kodyId: 'email-subscriber',
+				sourceId: 'source-subscription',
+			},
+			skipCapabilityRegistry: true,
+		},
+	)
+
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		ok: true,
+		args: {
+			source: 'email',
+		},
+	})
+})
+
 test('saved package execution passes input as the default export argument', async () => {
 	const packageJson = JSON.stringify({
 		name: '@kentcdodds/input-package',

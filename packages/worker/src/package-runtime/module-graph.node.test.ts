@@ -44,6 +44,7 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 const {
 	buildKodyAppBundle,
 	createPublishedPackageAppBundleCacheKey,
+	createRuntimeModuleSource,
 	hydrateKodyRuntimeModules,
 } = await import('./module-graph.ts')
 
@@ -701,6 +702,89 @@ export async function runWithRuntime(runtime) {
 		expect(result).toBe('current-host-runtime')
 	} finally {
 		await moduleGraph.cleanup()
+	}
+})
+
+test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static package artifacts', async () => {
+	const nestedRuntimePath =
+		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
+	const staleRuntimeSource = [
+		'const runtime = {}',
+		'export const codemode = runtime.codemode',
+		'export default runtime',
+	].join('\n')
+	const modules = {
+		'.__kody_virtual__/runtime.js': createRuntimeModuleSource(),
+		'entry.js': [
+			"import { __kodyRunInRuntime } from './.__kody_virtual__/runtime.js'",
+			"import runDependency from './.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/index.js'",
+			'',
+			'export async function runWithRuntime(runtime) {',
+			'\treturn await __kodyRunInRuntime(runtime, async () => runDependency())',
+			'}',
+		].join('\n'),
+		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/index.js':
+			[
+				"import { codemode } from './.__kody_virtual__/runtime.js'",
+				'',
+				'export default async function runDependency() {',
+				'\treturn await codemode.service_start({ source: "email" })',
+				'}',
+			].join('\n'),
+		[nestedRuntimePath]: staleRuntimeSource,
+	}
+	const staleModuleGraph = await createTemporaryModuleGraph(modules)
+	try {
+		const staleEntry = (await staleModuleGraph.importModule('entry.js')) as {
+			runWithRuntime: (runtime: Record<string, unknown>) => Promise<unknown>
+		}
+		await expect(
+			staleEntry.runWithRuntime({
+				codemode: {
+					async service_start() {
+						return { ok: true }
+					},
+				},
+			}),
+		).rejects.toThrow(
+			"Cannot read properties of undefined (reading 'service_start')",
+		)
+	} finally {
+		await staleModuleGraph.cleanup()
+	}
+
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules,
+	})
+	expect(hydratedModules[nestedRuntimePath]).not.toBe(staleRuntimeSource)
+	const hydratedModuleGraph = await createTemporaryModuleGraph(hydratedModules)
+	try {
+		const hydratedEntry = (await hydratedModuleGraph.importModule(
+			'entry.js',
+		)) as {
+			runWithRuntime: (runtime: Record<string, unknown>) => Promise<unknown>
+		}
+		const result = await hydratedEntry.runWithRuntime({
+			codemode: {
+				async service_start(args: unknown) {
+					return { ok: true, args }
+				},
+			},
+		})
+		expect(result).toEqual({
+			ok: true,
+			args: {
+				source: 'email',
+			},
+		})
+	} finally {
+		await hydratedModuleGraph.cleanup()
 	}
 })
 
