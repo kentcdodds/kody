@@ -41,6 +41,7 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 	})
 
 	expect(sent).toHaveLength(1)
+	expect(sent[0]?.to).toBe('recipient@example.com')
 	expect(sent[0]?.headers).toEqual({})
 	expect(result.status).toBe('sent')
 	expect(result.providerMessageId).toBe('provider-message-123')

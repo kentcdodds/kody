@@ -111,7 +111,7 @@ async function sendViaBinding(input: {
 	if (!binding) return { sent: false, messageId: null }
 	const result = await binding.send({
 		from: input.from,
-		to: input.to,
+		to: input.to.length === 1 ? input.to[0]! : input.to,
 		subject: input.subject,
 		...(input.replyTo ? { replyTo: input.replyTo } : {}),
 		headers: input.headers,
