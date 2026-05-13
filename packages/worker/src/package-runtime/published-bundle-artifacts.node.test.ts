@@ -109,6 +109,67 @@ test('loadPublishedBundleArtifactByIdentity rejects mismatched KV artifact paylo
 	})
 })
 
+test('loadPublishedBundleArtifactByIdentity treats malformed KV artifact payloads as cache misses', async () => {
+	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.readPublishedBundleArtifact.mockReset()
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue({
+		id: 'artifact-row-1',
+		userId: 'user-1',
+		sourceId: 'source-email-received-subscriber',
+		publishedCommit: 'commit-email-received-subscriber',
+		artifactKind: 'importable-module',
+		artifactName: './workflow-approved-email',
+		entryPoint: 'src/workflow-approved-email.ts',
+		kvKey: 'kv:workflow-approved-email',
+		dependenciesJson: '[]',
+		createdAt: '2026-05-13T00:00:00.000Z',
+		updatedAt: '2026-05-13T00:00:00.000Z',
+	})
+	mockModule.readPublishedBundleArtifact.mockResolvedValue({
+		version: 1,
+		kind: 'importable-module',
+		artifactName: './workflow-approved-email',
+		sourceId: 'source-email-received-subscriber',
+		publishedCommit: 'commit-email-received-subscriber',
+		entryPoint: '',
+		mainModule: 'dist/workflow-approved-email.js',
+		modules: {
+			'dist/workflow-approved-email.js':
+				'export default async function run() { return "ok" }',
+		},
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: {
+			packageId: 'pkg-email-received-subscriber',
+			kodyId: 'email-received-subscriber',
+			sourceId: 'source-email-received-subscriber',
+		},
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+
+	await expect(
+		loadPublishedBundleArtifactByIdentity({
+			env: {
+				APP_DB: {},
+				BUNDLE_ARTIFACTS_KV: {},
+			} as unknown as Env,
+			userId: 'user-1',
+			sourceId: 'source-email-received-subscriber',
+			kind: 'importable-module',
+			artifactName: './workflow-approved-email',
+			entryPoint: './src/workflow-approved-email.ts',
+		}),
+	).resolves.toEqual({
+		row: expect.objectContaining({
+			sourceId: 'source-email-received-subscriber',
+			artifactName: './workflow-approved-email',
+			entryPoint: 'src/workflow-approved-email.ts',
+		}),
+		artifact: null,
+	})
+})
+
 test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', async () => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getPublishedBundleArtifactByIdentity.mockReset()

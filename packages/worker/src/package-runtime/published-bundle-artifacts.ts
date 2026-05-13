@@ -116,12 +116,18 @@ function matchesPublishedBundleArtifactIdentity(input: {
 	artifactName: string | null
 	entryPoint: string
 }) {
+	let artifactEntryPoint: string
+	try {
+		artifactEntryPoint = normalizeEntryPoint(input.artifact.entryPoint)
+	} catch {
+		return false
+	}
 	return (
 		input.artifact.sourceId === input.sourceId &&
 		input.artifact.publishedCommit === input.publishedCommit &&
 		input.artifact.kind === input.kind &&
 		normalizeArtifactName(input.artifact.artifactName) === input.artifactName &&
-		normalizeEntryPoint(input.artifact.entryPoint) === input.entryPoint &&
+		artifactEntryPoint === input.entryPoint &&
 		input.artifact.modules[input.artifact.mainModule] != null
 	)
 }
