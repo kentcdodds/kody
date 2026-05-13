@@ -1315,9 +1315,8 @@ function collectDynamicPackageImportProxyModules(
 	files: Record<string, string>,
 	emittedModules: WorkerLoaderModules,
 ) {
-	const referencedProxyPaths = collectReferencedDynamicPackageImportProxyPaths(
-		emittedModules,
-	)
+	const referencedProxyPaths =
+		collectReferencedDynamicPackageImportProxyPaths(emittedModules)
 	return Object.fromEntries(
 		Object.entries(files).filter(([modulePath]) => {
 			const normalizedPath = normalizeWorkspaceModulePath(modulePath)
@@ -1343,7 +1342,9 @@ function collectReferencedDynamicPackageImportProxyPaths(
 	const proxyReferencePattern =
 		/["']((?:\.\.?\/)?[^"']*\.?__kody_virtual__\/dynamic-imports\/[^"']+?\.js)["']/g
 	for (const [modulePath, module] of iterateModuleSourceTexts(modules)) {
-		if (isDynamicPackageImportProxyPath(normalizeWorkspaceModulePath(modulePath))) {
+		if (
+			isDynamicPackageImportProxyPath(normalizeWorkspaceModulePath(modulePath))
+		) {
 			referencedPaths.add(normalizeWorkspaceModulePath(modulePath))
 		}
 		for (const match of module.matchAll(proxyReferencePattern)) {
