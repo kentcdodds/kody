@@ -1,12 +1,16 @@
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactRepo from '#worker/repo/published-bundle-artifacts-repo.ts'
 import type * as PublishedRuntimeArtifacts from './published-runtime-artifacts.ts'
-import { rebuildPublishedPackageArtifacts } from './published-bundle-artifacts.ts'
+import {
+	loadPublishedBundleArtifactByIdentity,
+	rebuildPublishedPackageArtifacts,
+} from './published-bundle-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	insertPublishedBundleArtifactRow: vi.fn(),
+	readPublishedBundleArtifact: vi.fn(),
 	updatePublishedBundleArtifactRow: vi.fn(),
 	writePublishedBundleArtifact: vi.fn(),
 }))
@@ -37,15 +41,79 @@ vi.mock('./published-runtime-artifacts.ts', async () => {
 	)
 	return {
 		...actual,
+		readPublishedBundleArtifact: (...args: Array<unknown>) =>
+			mockModule.readPublishedBundleArtifact(...args),
 		writePublishedBundleArtifact: (...args: Array<unknown>) =>
 			mockModule.writePublishedBundleArtifact(...args),
 	}
+})
+
+test('loadPublishedBundleArtifactByIdentity rejects mismatched KV artifact payloads', async () => {
+	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.readPublishedBundleArtifact.mockReset()
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue({
+		id: 'artifact-row-1',
+		userId: 'user-1',
+		sourceId: 'source-email-received-subscriber',
+		publishedCommit: 'commit-email-received-subscriber',
+		artifactKind: 'importable-module',
+		artifactName: './workflow-approved-email',
+		entryPoint: 'src/workflow-approved-email.ts',
+		kvKey: 'kv:workflow-approved-email',
+		dependenciesJson: '[]',
+		createdAt: '2026-05-13T00:00:00.000Z',
+		updatedAt: '2026-05-13T00:00:00.000Z',
+	})
+	mockModule.readPublishedBundleArtifact.mockResolvedValue({
+		version: 1,
+		kind: 'importable-module',
+		artifactName: '.',
+		sourceId: 'source-ai-chat',
+		publishedCommit: 'commit-ai-chat',
+		entryPoint: 'src/index.ts',
+		mainModule: 'dist/index.js',
+		modules: {
+			'dist/index.js':
+				'export default async function runAgentTurn() { throw new Error("messages must include at least one message.") }',
+		},
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: {
+			packageId: 'pkg-ai-chat',
+			kodyId: 'ai-chat',
+			sourceId: 'source-ai-chat',
+		},
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+
+	await expect(
+		loadPublishedBundleArtifactByIdentity({
+			env: {
+				APP_DB: {},
+				BUNDLE_ARTIFACTS_KV: {},
+			} as unknown as Env,
+			userId: 'user-1',
+			sourceId: 'source-email-received-subscriber',
+			kind: 'importable-module',
+			artifactName: './workflow-approved-email',
+			entryPoint: './src/workflow-approved-email.ts',
+		}),
+	).resolves.toEqual({
+		row: expect.objectContaining({
+			sourceId: 'source-email-received-subscriber',
+			artifactName: './workflow-approved-email',
+			entryPoint: 'src/workflow-approved-email.ts',
+		}),
+		artifact: null,
+	})
 })
 
 test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', async () => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
 	mockModule.insertPublishedBundleArtifactRow.mockReset()
+	mockModule.readPublishedBundleArtifact.mockReset()
 	mockModule.updatePublishedBundleArtifactRow.mockReset()
 	mockModule.writePublishedBundleArtifact.mockReset()
 	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(null)

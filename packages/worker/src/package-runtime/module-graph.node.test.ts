@@ -671,41 +671,144 @@ test('workflow-approved-email importable artifact can be inspected without invok
 			dependencies: [],
 		}),
 	)
-	mockModule.getSavedPackageByName.mockResolvedValue(
-		createSavedPackageRecord({
-			name: '@kentcdodds/email-received-subscriber',
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) =>
+			input.name === '@kentcdodds/email-received-subscriber'
+				? createSavedPackageRecord({
+						name: '@kentcdodds/email-received-subscriber',
+						kodyId: 'email-received-subscriber',
+						sourceId: 'source-email-received-subscriber',
+					})
+				: input.name === '@kentcdodds/ai-chat'
+					? createSavedPackageRecord({
+							name: '@kentcdodds/ai-chat',
+							kodyId: 'ai-chat',
+							sourceId: 'source-ai-chat',
+						})
+					: null,
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) =>
+			input.sourceId === 'source-email-received-subscriber'
+				? {
+						source: {
+							id: 'source-email-received-subscriber',
+							published_commit: 'commit-email-received-subscriber',
+						},
+						manifest: {
+							name: '@kentcdodds/email-received-subscriber',
+							exports: {
+								'./workflow-approved-email': './src/workflow-approved-email.ts',
+							},
+							kody: {
+								id: 'email-received-subscriber',
+								description: 'Email received subscriber',
+							},
+						},
+						files: {
+							'package.json': JSON.stringify({
+								name: '@kentcdodds/email-received-subscriber',
+								exports: {
+									'./workflow-approved-email':
+										'./src/workflow-approved-email.ts',
+								},
+								kody: {
+									id: 'email-received-subscriber',
+									description: 'Email received subscriber',
+								},
+							}),
+							'src/workflow-approved-email.ts': [
+								'import { processApprovedEmailWorkflow } from "./core.js"',
+								'export default function workflowApprovedEmail(input = {}) {',
+								'\treturn processApprovedEmailWorkflow(input)',
+								'}',
+							].join('\n'),
+						},
+					}
+				: input.sourceId === 'source-ai-chat'
+					? {
+							source: {
+								id: 'source-ai-chat',
+								published_commit: 'commit-ai-chat',
+							},
+							manifest: {
+								name: '@kentcdodds/ai-chat',
+								exports: {
+									'.': './src/index.ts',
+								},
+								kody: {
+									id: 'ai-chat',
+									description: 'AI chat',
+								},
+							},
+							files: {
+								'package.json': JSON.stringify({
+									name: '@kentcdodds/ai-chat',
+									exports: {
+										'.': './src/index.ts',
+									},
+									kody: {
+										id: 'ai-chat',
+										description: 'AI chat',
+									},
+								}),
+								'src/index.ts':
+									'export default async function runAgentTurn() { return { ok: true } }',
+							},
+						}
+					: null,
+	)
+	const createWorkflowArtifact = () => ({
+		version: 1,
+		kind: 'importable-module' as const,
+		artifactName: './workflow-approved-email',
+		sourceId: 'source-email-received-subscriber',
+		publishedCommit: 'commit-email-received-subscriber',
+		entryPoint: 'src/workflow-approved-email.ts',
+		mainModule: 'dist/workflow-approved-email.js',
+		modules: {
+			'dist/workflow-approved-email.js': [
+				'import { processApprovedEmailWorkflow } from "./core.js"',
+				'export default function workflowApprovedEmail(input = {}) {',
+				'\treturn processApprovedEmailWorkflow(input)',
+				'}',
+			].join('\n'),
+			'dist/core.js': [
+				'export async function processApprovedEmailWorkflow(input = {}) {',
+				"\tconst aiChat = await import('./.__kody_virtual__/dynamic-imports/ai-chat.js')",
+				'\treturn await aiChat.default({ messages: input.messages })',
+				'}',
+			].join('\n'),
+			'dist/.__kody_virtual__/dynamic-imports/ai-chat.js':
+				'export const __kodyDynamicPackageSpecifier = "kody:@kentcdodds/ai-chat";',
+		},
+		dependencies: [],
+		dynamicDependencies: [
+			{
+				specifier: 'kody:@kentcdodds/ai-chat',
+				packageName: '@kentcdodds/ai-chat',
+				exportName: '.',
+			},
+		],
+		packageContext: {
+			packageId: 'pkg-email-received-subscriber',
 			kodyId: 'email-received-subscriber',
 			sourceId: 'source-email-received-subscriber',
-		}),
-	)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: {
-			id: 'source-email-received-subscriber',
-			published_commit: 'commit-email-received-subscriber',
 		},
-		manifest: {
-			name: '@kentcdodds/email-received-subscriber',
-			exports: {
-				'./workflow-approved-email': './src/workflow-approved-email.ts',
-			},
-			kody: {
-				id: 'email-received-subscriber',
-				description: 'Email received subscriber',
-			},
-		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/email-received-subscriber',
-				exports: {
-					'./workflow-approved-email': './src/workflow-approved-email.ts',
-				},
-				kody: {
-					id: 'email-received-subscriber',
-					description: 'Email received subscriber',
-				},
-			}),
-			'src/workflow-approved-email.ts': [
-				'export default function workflowApprovedEmail(input = {}) {',
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+	const aiChatArtifact = {
+		version: 1,
+		kind: 'importable-module' as const,
+		artifactName: '.',
+		sourceId: 'source-ai-chat',
+		publishedCommit: 'commit-ai-chat',
+		entryPoint: 'src/index.ts',
+		mainModule: 'dist/index.js',
+		modules: {
+			'dist/index.js': [
+				'export default async function runAgentTurn(input = {}) {',
 				'\tif (!Array.isArray(input.messages) || input.messages.length === 0) {',
 				'\t\tthrow new Error("messages must include at least one message.")',
 				'\t}',
@@ -713,50 +816,51 @@ test('workflow-approved-email importable artifact can be inspected without invok
 				'}',
 			].join('\n'),
 		},
-	})
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: {
+			packageId: 'pkg-ai-chat',
+			kodyId: 'ai-chat',
+			sourceId: 'source-ai-chat',
+		},
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	}
 	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
 		async (input: {
 			kind: string
+			sourceId: string
 			artifactName?: string | null
 			entryPoint: string
-		}) =>
-			input.kind === 'importable-module' &&
-			input.artifactName === './workflow-approved-email' &&
-			input.entryPoint === 'src/workflow-approved-email.ts'
-				? {
-						row: {
-							id: 'artifact-workflow-approved-email',
-						},
-						artifact: {
-							version: 1,
-							kind: 'importable-module',
-							artifactName: './workflow-approved-email',
-							sourceId: 'source-email-received-subscriber',
-							publishedCommit: 'commit-email-received-subscriber',
-							entryPoint: 'src/workflow-approved-email.ts',
-							mainModule: 'dist/workflow-approved-email.js',
-							modules: {
-								'dist/workflow-approved-email.js': [
-									'export default function workflowApprovedEmail(input = {}) {',
-									'\tif (!Array.isArray(input.messages) || input.messages.length === 0) {',
-									'\t\tthrow new Error("messages must include at least one message.")',
-									'\t}',
-									'\treturn { ok: true }',
-									'}',
-								].join('\n'),
-							},
-							dependencies: [],
-							dynamicDependencies: [],
-							packageContext: {
-								packageId: 'pkg-email-received-subscriber',
-								kodyId: 'email-received-subscriber',
-								sourceId: 'source-email-received-subscriber',
-							},
-							serviceContext: null,
-							createdAt: '2026-05-13T00:00:00.000Z',
-						},
-					}
-				: null,
+		}) => {
+			if (
+				input.kind === 'importable-module' &&
+				input.sourceId === 'source-email-received-subscriber' &&
+				input.artifactName === './workflow-approved-email' &&
+				input.entryPoint === 'src/workflow-approved-email.ts'
+			) {
+				return {
+					row: {
+						id: 'artifact-workflow-approved-email',
+					},
+					artifact: createWorkflowArtifact(),
+				}
+			}
+			if (
+				input.kind === 'importable-module' &&
+				input.sourceId === 'source-ai-chat' &&
+				input.artifactName === '.' &&
+				input.entryPoint === 'src/index.ts'
+			) {
+				return {
+					row: {
+						id: 'artifact-ai-chat',
+					},
+					artifact: aiChatArtifact,
+				}
+			}
+			return null
+		},
 	)
 
 	const { buildKodyModuleBundle } = await import('./module-graph.ts')
