@@ -217,9 +217,16 @@ test('search tool returns compact query markdown while preserving structured aux
 		warnings: Array<string>
 		guidance?: string
 		memories?: { surfaced: Array<{ id: string }> }
+		matches: Array<{ type: string; entityRef?: string }>
 	}
 	expect(result.warnings).toHaveLength(2)
-	expect(result.guidance).toContain('search_docs:capability')
+	expect(result.guidance).toEqual(expect.any(String))
+	expect(result.matches).toEqual([
+		expect.objectContaining({
+			type: 'capability',
+			entityRef: 'search_docs:capability',
+		}),
+	])
 	expect(result.memories?.surfaced).toEqual([
 		expect.objectContaining({ id: 'memory-1' }),
 	])

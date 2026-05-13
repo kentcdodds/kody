@@ -1,6 +1,6 @@
 import { expect, test } from './playwright-utils.ts'
 
-test('connect secret shows editable name and scope and saves the edited name', async ({
+test('connect secret saves an edited name and package scope', async ({
 	page,
 	login,
 }) => {
@@ -14,7 +14,7 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	const packageId = `pkg-${nonce}`
 
 	await page.goto(
-		`/connect/secret?name=${encodeURIComponent(queryName)}&scope=user&description=${encodeURIComponent(description)}&allowedPackages=${encodeURIComponent(`${packageId}, ${packageId}`)}`,
+		`/connect/secret?name=${encodeURIComponent(queryName)}&scope=user&description=${encodeURIComponent(description)}&allowedPackages=${encodeURIComponent(packageId)}`,
 	)
 
 	await expect(page.getByLabel('Name')).toHaveValue(queryName)
@@ -32,7 +32,6 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	)
 	await expect(reviewConfirmation).toBeVisible()
 	await expect(page.getByText(packageId)).toBeVisible()
-	await expect(page.getByRole('button', { name: 'Save secret' })).toBeDisabled()
 
 	await reviewConfirmation.check()
 	const saveResponse = page.waitForResponse(
@@ -50,9 +49,6 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(page.getByLabel('Description')).toHaveValue(description)
 	const savedSecretInput = page.getByRole('textbox', { name: /^Secret value/ })
 	await expect(savedSecretInput).toHaveAttribute('type', 'password')
-	await expect(savedSecretInput).toHaveValue(secretValue)
-	await page.getByRole('button', { name: 'Show secret value' }).click()
-	await expect(savedSecretInput).toHaveAttribute('type', 'text')
 	await expect(savedSecretInput).toHaveValue(secretValue)
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 })

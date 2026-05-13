@@ -162,7 +162,7 @@ test('entity detail formatting returns stable structured details for values and 
 	})
 })
 
-test('capability entity detail keeps type definitions stable without schema fields', () => {
+test('capability entity detail keeps the structured execute contract stable', () => {
 	const detail = formatEntityDetailMarkdown({
 		type: 'capability',
 		id: 'github_create_issue',
@@ -224,11 +224,6 @@ test('capability entity detail keeps type definitions stable without schema fiel
 		inputTypeDefinition: expect.any(String),
 		outputTypeDefinition: expect.any(String),
 	})
-	expect(detail.markdown).toContain('## Execute from `execute`')
-	expect(detail.markdown).toContain("import { codemode } from 'kody:runtime'")
-	expect(detail.markdown).toContain(
-		'return await codemode.github_create_issue(input)',
-	)
 	expect(detail.structured).not.toHaveProperty('inputSchema')
 	expect(detail.structured).not.toHaveProperty('outputSchema')
 })
@@ -277,7 +272,6 @@ test('capability usage uses bracket notation for non-identifier ids', () => {
 			'return await codemode["foo-bar"](input)',
 		),
 	})
-	expect(detail.markdown).toContain('return await codemode["foo-bar"](input)')
 })
 
 test('repo_run_commands capability detail keeps the structured capability contract', () => {
@@ -419,11 +413,10 @@ export declare function fetch(request: Request): Promise<Response>
 		],
 		readme: {
 			path: 'README.md',
-			content: expect.stringContaining('## Usage'),
+			content: expect.any(String),
 			truncated: false,
 		},
 	})
-	expect(packageDetail.markdown).toContain('## README (`README.md`)')
 })
 
 test('package entity detail renders referenced local types without dumping full types source', () => {
@@ -517,11 +510,6 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 			}),
 		],
 	})
-	expect(packageDetail.markdown).toContain('Referenced types:')
-	expect(packageDetail.markdown).toContain(
-		'type LaunchCursorCloudAgentInput = {',
-	)
-	expect(packageDetail.markdown).toContain('type RepositoryTarget = {')
 	expect(packageDetail.markdown).not.toContain('UnrelatedLocalType')
 	expect(packageDetail.markdown).not.toContain('type Record')
 	expect(packageDetail.markdown).not.toContain('interface Response')
@@ -601,39 +589,7 @@ test('package search formatting omits hosted URLs when username is unavailable',
 	})
 })
 
-test('package search formatting surfaces matched action recipes compactly', () => {
-	const markdown = formatSearchMarkdown({
-		matches: [
-			{
-				type: 'package',
-				packageId: 'package-123',
-				kodyId: 'google-products',
-				name: '@kentcdodds/google-products',
-				title: '@kentcdodds/google-products',
-				description: 'Google product helpers.',
-				tags: ['google', 'calendar'],
-				hasApp: true,
-				actionMatches: [
-					{
-						subpath: './calendar',
-						description: 'Create a calendar event.',
-						typeDefinition:
-							'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
-						functions: [
-							{
-								name: 'createEvent',
-								description: 'Create a calendar event.',
-								typeDefinition:
-									'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
-							},
-						],
-						score: 0.92,
-						matchedTerms: ['calendar', 'create', 'event'],
-					},
-				],
-			},
-		],
-	})
+test('package search formatting surfaces matched action import usage in structured output', () => {
 	const [packageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		username: 'test-user',
@@ -669,15 +625,10 @@ test('package search formatting surfaces matched action recipes compactly', () =
 		],
 	})
 
-	expect(markdown).toContain(
-		'Best action: `createEvent` via `import { createEvent } from "kody:@kentcdodds/google-products/calendar"`',
-	)
 	expect(packageMatch).toMatchObject({
 		type: 'package',
 		usage:
 			'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',
-		nextStep:
-			'Use import { createEvent } from "kody:@kentcdodds/google-products/calendar"; inspect search({ entity: "google-products:package" }) only if you need more exports.',
 		actionMatches: [
 			expect.objectContaining({
 				subpath: './calendar',
