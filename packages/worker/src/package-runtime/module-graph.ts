@@ -444,6 +444,12 @@ function encodePathKey(value: string) {
 	).join('')
 }
 
+function encodePathKeyAsPath(value: string) {
+	const encoded = encodePathKey(value)
+	const chunks = encoded.match(/.{1,96}/g)
+	return chunks?.join('/') ?? encoded
+}
+
 function decodePathKey(value: string) {
 	const bytes = value.match(/[0-9a-f]{2}/gi)
 	if (!bytes || bytes.join('') !== value) return null
@@ -928,7 +934,7 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 	const artifactPrefix = joinPath(
 		input.loaded.prefix,
 		'.__published_bundle__',
-		encodePathKey(exportName),
+		encodePathKeyAsPath(exportName),
 	)
 	for (const [modulePath, module] of Object.entries(
 		materializePublishedArtifactModules({
@@ -1045,7 +1051,7 @@ function installDynamicPackageArtifactModules(input: {
 	const artifactPrefix = joinPath(
 		dirname(input.modulePath),
 		dynamicPackageImportArtifactSegment,
-		encodePathKey(
+		encodePathKeyAsPath(
 			`${input.specifier}#${input.artifact.sourceId}#${input.artifact.publishedCommit}`,
 		),
 	)

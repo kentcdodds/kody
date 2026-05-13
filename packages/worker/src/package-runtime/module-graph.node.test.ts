@@ -663,6 +663,163 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 	}
 })
 
+test('workflow-approved-email importable artifact can be inspected without invoking the workflow', async () => {
+	mockModule.createWorker.mockImplementation(
+		async (input: { files: Record<string, string>; entryPoint: string }) => ({
+			mainModule: input.entryPoint,
+			modules: input.files,
+			dependencies: [],
+		}),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/email-received-subscriber',
+			kodyId: 'email-received-subscriber',
+			sourceId: 'source-email-received-subscriber',
+		}),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-email-received-subscriber',
+			published_commit: 'commit-email-received-subscriber',
+		},
+		manifest: {
+			name: '@kentcdodds/email-received-subscriber',
+			exports: {
+				'./workflow-approved-email': './src/workflow-approved-email.ts',
+			},
+			kody: {
+				id: 'email-received-subscriber',
+				description: 'Email received subscriber',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/email-received-subscriber',
+				exports: {
+					'./workflow-approved-email': './src/workflow-approved-email.ts',
+				},
+				kody: {
+					id: 'email-received-subscriber',
+					description: 'Email received subscriber',
+				},
+			}),
+			'src/workflow-approved-email.ts': [
+				'export default function workflowApprovedEmail(input = {}) {',
+				'\tif (!Array.isArray(input.messages) || input.messages.length === 0) {',
+				'\t\tthrow new Error("messages must include at least one message.")',
+				'\t}',
+				'\treturn { ok: true }',
+				'}',
+			].join('\n'),
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: {
+			kind: string
+			artifactName?: string | null
+			entryPoint: string
+		}) =>
+			input.kind === 'importable-module' &&
+			input.artifactName === './workflow-approved-email' &&
+			input.entryPoint === 'src/workflow-approved-email.ts'
+				? {
+						row: {
+							id: 'artifact-workflow-approved-email',
+						},
+						artifact: {
+							version: 1,
+							kind: 'importable-module',
+							artifactName: './workflow-approved-email',
+							sourceId: 'source-email-received-subscriber',
+							publishedCommit: 'commit-email-received-subscriber',
+							entryPoint: 'src/workflow-approved-email.ts',
+							mainModule: 'dist/workflow-approved-email.js',
+							modules: {
+								'dist/workflow-approved-email.js': [
+									'export default function workflowApprovedEmail(input = {}) {',
+									'\tif (!Array.isArray(input.messages) || input.messages.length === 0) {',
+									'\t\tthrow new Error("messages must include at least one message.")',
+									'\t}',
+									'\treturn { ok: true }',
+									'}',
+								].join('\n'),
+							},
+							dependencies: [],
+							dynamicDependencies: [],
+							packageContext: {
+								packageId: 'pkg-email-received-subscriber',
+								kodyId: 'email-received-subscriber',
+								sourceId: 'source-email-received-subscriber',
+							},
+							serviceContext: null,
+							createdAt: '2026-05-13T00:00:00.000Z',
+						},
+					}
+				: null,
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	const staticBundle = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'entry.ts': [
+				"import workflowApprovedEmail from 'kody:@kentcdodds/email-received-subscriber/workflow-approved-email'",
+				'export default function main() {',
+				'\treturn Function.prototype.toString.call(workflowApprovedEmail)',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'entry.ts',
+	})
+	const staticModuleGraph = await createTemporaryModuleGraph(
+		staticBundle.modules,
+	)
+	try {
+		const entry = (await staticModuleGraph.importModule(
+			staticBundle.mainModule,
+		)) as {
+			default: () => Promise<string>
+		}
+		await expect(entry.default()).resolves.toContain('workflowApprovedEmail')
+	} finally {
+		await staticModuleGraph.cleanup()
+	}
+
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules: {
+			'entry.js': [
+				'export default async function main() {',
+				"\tconst module = await import('./.__kody_virtual__/dynamic-imports/workflow-approved-email.js')",
+				'\treturn Function.prototype.toString.call(module.default)',
+				'}',
+			].join('\n'),
+			'.__kody_virtual__/dynamic-imports/workflow-approved-email.js':
+				'export const __kodyDynamicPackageSpecifier = "kody:@kentcdodds/email-received-subscriber/workflow-approved-email";',
+		},
+	})
+	const dynamicModuleGraph = await createTemporaryModuleGraph(hydratedModules)
+	try {
+		const entry = (await dynamicModuleGraph.importModule('entry.js')) as {
+			default: () => Promise<string>
+		}
+		await expect(entry.default()).resolves.toContain('workflowApprovedEmail')
+	} finally {
+		await dynamicModuleGraph.cleanup()
+	}
+})
+
 test('hydrateKodyRuntimeModules replaces stale persisted kody runtime modules', async () => {
 	const staleRuntimeSource =
 		'export const codemode = { stale: true }; export default { codemode };'
