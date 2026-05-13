@@ -41,9 +41,7 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 	})
 
 	expect(sent).toHaveLength(1)
-	expect(sent[0]?.headers).toEqual({
-		'X-Kody-Email-Message-Id': result.message.messageIdHeader,
-	})
+	expect(sent[0]?.headers).toEqual({})
 	expect(result.status).toBe('sent')
 	expect(result.providerMessageId).toBe('provider-message-123')
 	const stored = await getEmailMessageById({
@@ -183,12 +181,14 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			html: 'Body',
 			replyTo: 'reply@example.com',
 			headers: {
-				'X-Kody-Email-Message-Id': result.message.messageIdHeader,
 				'In-Reply-To': original.message.messageIdHeader,
 				References: '<root@example.com>',
 			},
 		})
 		expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
+		expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
+			'X-Kody-Email-Message-Id',
+		)
 		const stored = await getEmailMessageById({
 			db: env.APP_DB,
 			userId,

@@ -65,6 +65,11 @@ export const emailReplyCapability = defineDomainCapability(
 				threadId: original.threadId,
 				inboxId: original.inboxId,
 			})
+			if (result.status === 'failed') {
+				throw new Error(
+					`Email reply delivery failed: ${result.error ?? 'Unknown provider error.'}`,
+				)
+			}
 			return toMessageSummary(result.message)
 		},
 	},

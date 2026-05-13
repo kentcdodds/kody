@@ -73,12 +73,9 @@ const cloudflareSendAllowedHeaders = new Set(['in-reply-to', 'references'])
 
 function buildProviderHeaders(headers: Record<string, string>) {
 	return Object.fromEntries(
-		Object.entries(headers).filter(([name]) => {
-			return (
-				name.startsWith('X-') ||
-				cloudflareSendAllowedHeaders.has(name.toLowerCase())
-			)
-		}),
+		Object.entries(headers).filter(([name]) =>
+			cloudflareSendAllowedHeaders.has(name.toLowerCase()),
+		),
 	)
 }
 
