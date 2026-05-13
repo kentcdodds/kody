@@ -430,6 +430,14 @@ const ${input.helperName} = async (specifier) => {
 `.trim()
 }
 
+function createDynamicPackageImportHelperSource(input: { helperName: string }) {
+	return `
+const ${input.helperName} = async (specifier) => {
+	return await import(specifier);
+};
+`.trim()
+}
+
 function createImportableEntrypointSource(input: { modulePath: string }) {
 	return `
 export * from ${JSON.stringify(input.modulePath)};
@@ -835,10 +843,19 @@ function materializePublishedArtifactModules(input: {
 	}) as Record<string, string>
 }
 
+function isStandaloneDynamicPackageImportPlaceholder(source: string) {
+	return source
+		.trimStart()
+		.startsWith(`export const ${dynamicPackageImportSpecifierExportName}`)
+}
+
 function readDynamicPackageImportSpecifier(input: {
 	modulePath: string
 	module: WorkerLoaderModules[string]
 }) {
+	const specifierFromProxyPath = createPackageSpecifierFromProxyPath(
+		input.modulePath,
+	)
 	const source =
 		typeof input.module === 'string'
 			? input.module
@@ -851,13 +868,18 @@ function readDynamicPackageImportSpecifier(input: {
 						: ''
 	if (!source.includes(dynamicPackageImportSpecifierExportName)) {
 		if (source.includes(dynamicPackageImportResolvedMarker)) return null
-		return createPackageSpecifierFromProxyPath(input.modulePath)
+		return specifierFromProxyPath
+	}
+	if (
+		!specifierFromProxyPath &&
+		!isStandaloneDynamicPackageImportPlaceholder(source)
+	) {
+		return null
 	}
 	const markerIndex = source.indexOf(dynamicPackageImportSpecifierExportName)
 	const match = source.slice(markerIndex).match(/=\s*("(?:[^"\\]|\\.)*")/)
 	const rawSpecifier = match?.[1]
-	if (!rawSpecifier)
-		return createPackageSpecifierFromProxyPath(input.modulePath)
+	if (!rawSpecifier) return specifierFromProxyPath
 	try {
 		const specifier = JSON.parse(rawSpecifier) as unknown
 		return typeof specifier === 'string' &&
@@ -865,7 +887,7 @@ function readDynamicPackageImportSpecifier(input: {
 			? specifier
 			: null
 	} catch {
-		return createPackageSpecifierFromProxyPath(input.modulePath)
+		return specifierFromProxyPath
 	}
 }
 
@@ -1289,6 +1311,20 @@ function ensureDynamicPackageImportProxy(
 	return proxyPath
 }
 
+function collectDynamicPackageImportProxyModules(
+	files: Record<string, string>,
+) {
+	return Object.fromEntries(
+		Object.entries(files).filter(([modulePath]) => {
+			const normalizedPath = normalizeWorkspaceModulePath(modulePath)
+			return (
+				normalizedPath.startsWith(`${dynamicPackageImportProxyPrefix}/`) ||
+				normalizedPath.includes(`/${dynamicPackageImportProxyPrefix}/`)
+			)
+		}),
+	)
+}
+
 function createUniqueHelperName(source: string, baseName: string) {
 	let candidate = baseName
 	let suffix = 0
@@ -1325,17 +1361,6 @@ async function rewriteKodyImports(input: {
 			continue
 		}
 		if (node.kind === 'dynamic') {
-			const proxyPath = ensureDynamicPackageImportProxy(
-				input.state,
-				node.specifier,
-			)
-			replacements.push({
-				start: node.start,
-				end: node.end,
-				value: JSON.stringify(
-					createRelativeImportSpecifier(input.modulePath, proxyPath),
-				),
-			})
 			continue
 		}
 		const proxyPath = await ensurePackageProxy(input.state, node.specifier)
@@ -1347,19 +1372,38 @@ async function rewriteKodyImports(input: {
 			),
 		})
 	}
-	const nonLiteralDynamicImports = dynamicImportNodes.filter(
-		(node) => node.literalSpecifier == null,
-	)
-	let helperName: string | null = null
-	for (const node of nonLiteralDynamicImports) {
-		helperName ??= createUniqueHelperName(
+	let computedImportHelperName: string | null = null
+	let dynamicPackageImportHelperName: string | null = null
+	for (const node of dynamicImportNodes) {
+		if (node.literalSpecifier?.startsWith(packageSpecifierPrefix)) {
+			const proxyPath = ensureDynamicPackageImportProxy(
+				input.state,
+				node.literalSpecifier,
+			)
+			input.state.files[joinPath(dirname(input.modulePath), proxyPath)] ??=
+				input.state.files[proxyPath] ?? ''
+			dynamicPackageImportHelperName ??= createUniqueHelperName(
+				input.source,
+				'__kodyDynamicPackageImport',
+			)
+			replacements.push({
+				start: node.start,
+				end: node.end,
+				value: `${dynamicPackageImportHelperName}(${JSON.stringify(
+					`./${proxyPath}`,
+				)})`,
+			})
+			continue
+		}
+		if (node.literalSpecifier != null) continue
+		computedImportHelperName ??= createUniqueHelperName(
 			input.source,
 			'__kodyDynamicImportGuard',
 		)
 		replacements.push({
 			start: node.start,
 			end: node.end,
-			value: `${helperName}(${input.source.slice(
+			value: `${computedImportHelperName}(${input.source.slice(
 				node.sourceStart,
 				node.sourceEnd,
 			)})`,
@@ -1370,9 +1414,19 @@ async function rewriteKodyImports(input: {
 	)
 	assertReplacementsDoNotOverlap(sortedReplacements)
 	const rewritten = applyReplacements(input.source, sortedReplacements)
-	return helperName
-		? `${createComputedDynamicImportGuardSource({ helperName })}\n${rewritten}`
-		: rewritten
+	const helpers = [
+		dynamicPackageImportHelperName
+			? createDynamicPackageImportHelperSource({
+					helperName: dynamicPackageImportHelperName,
+				})
+			: '',
+		computedImportHelperName
+			? createComputedDynamicImportGuardSource({
+					helperName: computedImportHelperName,
+				})
+			: '',
+	].filter(Boolean)
+	return helpers.length > 0 ? `${helpers.join('\n')}\n${rewritten}` : rewritten
 }
 
 export async function buildKodyModuleBundle(input: {
@@ -1406,7 +1460,10 @@ export async function buildKodyModuleBundle(input: {
 		files,
 		entryPoint: bootstrapPath,
 	})
-	const modules = stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules)
+	const modules = {
+		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
+		...collectDynamicPackageImportProxyModules(files),
+	}
 	assertBundleHasNoUnresolvedBareImports({
 		modules,
 		bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
@@ -1453,7 +1510,10 @@ export async function buildKodyImportableModuleBundle(input: {
 		files,
 		entryPoint: bootstrapPath,
 	})
-	const modules = stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules)
+	const modules = {
+		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
+		...collectDynamicPackageImportProxyModules(files),
+	}
 	assertBundleHasNoUnresolvedBareImports({
 		modules,
 		bundleLabel: `Saved package import "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
@@ -1569,9 +1629,10 @@ export async function buildKodyAppBundle(input: {
 			files,
 			entryPoint: bootstrapPath,
 		})
-		const modules = stripKodyRuntimeModules(
-			bundle.modules as WorkerLoaderModules,
-		)
+		const modules = {
+			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
+			...collectDynamicPackageImportProxyModules(files),
+		}
 		assertBundleHasNoUnresolvedBareImports({
 			modules,
 			bundleLabel: `Saved package app "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,

@@ -1,8 +1,122 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { createWorker } from '@cloudflare/worker-bundler'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { buildKodyModuleBundle } from './module-graph.ts'
+import {
+	buildKodyImportableModuleBundle,
+	buildKodyModuleBundle,
+} from './module-graph.ts'
+import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
+import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
+
+async function runSql(sql: string, ...values: Array<unknown>) {
+	await env.APP_DB.prepare(sql)
+		.bind(...values)
+		.run()
+}
+
+async function ensureSavedPackageArtifactSchema() {
+	await runSql(`CREATE TABLE IF NOT EXISTS entity_sources (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		entity_kind TEXT NOT NULL,
+		entity_id TEXT NOT NULL,
+		repo_id TEXT NOT NULL,
+		published_commit TEXT,
+		indexed_commit TEXT,
+		manifest_path TEXT NOT NULL DEFAULT 'package.json',
+		source_root TEXT NOT NULL DEFAULT '/',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`)
+	await runSql(`CREATE TABLE IF NOT EXISTS saved_packages (
+		id TEXT PRIMARY KEY NOT NULL,
+		user_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		kody_id TEXT NOT NULL,
+		description TEXT NOT NULL,
+		tags_json TEXT NOT NULL DEFAULT '[]',
+		search_text TEXT,
+		source_id TEXT NOT NULL,
+		has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
+		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+	)`)
+	await runSql(`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		source_id TEXT NOT NULL,
+		published_commit TEXT NOT NULL,
+		artifact_kind TEXT NOT NULL,
+		artifact_name TEXT,
+		entry_point TEXT NOT NULL,
+		kv_key TEXT NOT NULL,
+		dependencies_json TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`)
+}
+
+function createSourceRow(input: {
+	userId: string
+	packageId: string
+	sourceId: string
+	publishedCommit: string
+}) {
+	return {
+		id: input.sourceId,
+		user_id: input.userId,
+		entity_kind: 'package' as const,
+		entity_id: input.packageId,
+		repo_id: `repo-${input.sourceId}`,
+		published_commit: input.publishedCommit,
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		created_at: '2026-05-13T00:00:00.000Z',
+		updated_at: '2026-05-13T00:00:00.000Z',
+	}
+}
+
+async function insertSavedPackage(input: {
+	userId: string
+	packageId: string
+	kodyId: string
+	name: string
+	sourceId: string
+	publishedCommit: string
+}) {
+	const now = new Date().toISOString()
+	await runSql(
+		`INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, search_text,
+			source_id, has_app, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, '[]', NULL, ?, 0, ?, ?)`,
+		input.packageId,
+		input.userId,
+		input.name,
+		input.kodyId,
+		`${input.name} package`,
+		input.sourceId,
+		now,
+		now,
+	)
+	await runSql(
+		`INSERT INTO entity_sources (
+			id, user_id, entity_kind, entity_id, repo_id, published_commit,
+			indexed_commit, manifest_path, source_root, created_at, updated_at
+		) VALUES (?, ?, 'package', ?, ?, ?, NULL, 'package.json', '/', ?, ?)`,
+		input.sourceId,
+		input.userId,
+		input.packageId,
+		`repo-${input.sourceId}`,
+		input.publishedCommit,
+		now,
+		now,
+	)
+	return createSourceRow(input)
+}
 
 test(
 	'saved package bundles and executes npm dependencies declared in package.json',
@@ -75,6 +189,236 @@ test(
 		})
 	},
 )
+
+test('worker bundler executes the wrapper when multiple package artifact defaults are imported', async () => {
+	const bundle = await createWorker({
+		files: {
+			'.__kody_root__/.__kody_execute_entry__.js': [
+				'import userEntrypoint from "./entry.js"',
+				'export default async function __kodyExecuteEntrypoint(input) {',
+				'\treturn await userEntrypoint(input)',
+				'}',
+			].join('\n'),
+			'.__kody_root__/entry.js': [
+				'import listTraces from "../.__kody_virtual__/imports/list-traces.js"',
+				'import smokeTest from "../.__kody_virtual__/imports/smoke-test.js"',
+				'import workflowDiscord from "../.__kody_virtual__/imports/workflow-discord.js"',
+				'export default async function main() {',
+				'\treturn {',
+				'\t\tlistTraces: { staticType: typeof listTraces },',
+				'\t\tsmokeTest: { staticType: typeof smokeTest },',
+				'\t\tworkflowDiscord: { staticType: typeof workflowDiscord },',
+				'\t}',
+				'}',
+			].join('\n'),
+			'.__kody_virtual__/imports/list-traces.js': [
+				'export * from "../published/list-traces.js"',
+				'import * as module from "../published/list-traces.js"',
+				'export default module.default',
+			].join('\n'),
+			'.__kody_virtual__/imports/smoke-test.js': [
+				'export * from "../published/smoke-test.js"',
+				'import * as module from "../published/smoke-test.js"',
+				'export default module.default',
+			].join('\n'),
+			'.__kody_virtual__/imports/workflow-discord.js': [
+				'export * from "../published/workflow-discord.js"',
+				'import * as module from "../published/workflow-discord.js"',
+				'export default module.default',
+			].join('\n'),
+			'.__kody_virtual__/published/list-traces.js': [
+				'export default async function listTraces() {',
+				'\treturn { traces: [] }',
+				'}',
+			].join('\n'),
+			'.__kody_virtual__/published/smoke-test.js': [
+				'export default async function smokeTest() {',
+				'\treturn { smoke: true }',
+				'}',
+			].join('\n'),
+			'.__kody_virtual__/published/workflow-discord.js': [
+				'export default async function workflowDiscord() {',
+				'\treturn { discord: true }',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: '.__kody_root__/.__kody_execute_entry__.js',
+	})
+
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-workers-test',
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+		},
+		undefined,
+		{
+			skipCapabilityRegistry: true,
+		},
+	)
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		listTraces: {
+			staticType: 'function',
+		},
+		smokeTest: {
+			staticType: 'function',
+		},
+		workflowDiscord: {
+			staticType: 'function',
+		},
+	})
+})
+
+test('saved package artifact imports keep the execute wrapper as the runtime entrypoint', async () => {
+	await ensureSavedPackageArtifactSchema()
+	const unique = crypto.randomUUID()
+	const userId = `user-${unique}`
+	const sourceId = `source-${unique}`
+	const packageId = `pkg-${unique}`
+	const publishedCommit = `commit-${unique}`
+	const source = await insertSavedPackage({
+		userId,
+		packageId,
+		kodyId: 'email-received-subscriber',
+		name: '@kentcdodds/email-received-subscriber',
+		sourceId,
+		publishedCommit,
+	})
+	const sourceFiles = {
+		'package.json': JSON.stringify({
+			name: '@kentcdodds/email-received-subscriber',
+			exports: {
+				'./list-traces': './src/list-traces.ts',
+				'./smoke-test': './src/package-smoke-test.ts',
+				'./workflow-discord-message-created':
+					'./src/workflow-discord-message-created.ts',
+			},
+			kody: {
+				id: 'email-received-subscriber',
+				description: 'Email received subscriber',
+			},
+		}),
+		'src/list-traces.ts':
+			'export default async function listTraces() { return { traces: [] } }',
+		'src/package-smoke-test.ts':
+			'export default async function smokeTest() { return { smoke: true } }',
+		'src/workflow-discord-message-created.ts':
+			'export default async function workflowDiscord() { return { discord: true } }',
+	}
+	await persistPublishedSourceSnapshot({
+		env,
+		userId,
+		source,
+		snapshot: {
+			files: sourceFiles,
+		},
+	})
+	for (const target of [
+		{
+			artifactName: './list-traces',
+			entryPoint: 'src/list-traces.ts',
+		},
+		{
+			artifactName: './smoke-test',
+			entryPoint: 'src/package-smoke-test.ts',
+		},
+		{
+			artifactName: './workflow-discord-message-created',
+			entryPoint: 'src/workflow-discord-message-created.ts',
+		},
+	]) {
+		const artifactBundle = await buildKodyImportableModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles,
+			entryPoint: target.entryPoint,
+		})
+		await persistPublishedBundleArtifact({
+			env,
+			userId,
+			source,
+			kind: 'importable-module',
+			artifactName: target.artifactName,
+			entryPoint: target.entryPoint,
+			mainModule: artifactBundle.mainModule,
+			modules: artifactBundle.modules,
+			dependencies: artifactBundle.dependencies,
+			packageContext: {
+				packageId,
+				kodyId: 'email-received-subscriber',
+				sourceId,
+			},
+		})
+	}
+
+	const bundle = await buildKodyModuleBundle({
+		env,
+		baseUrl: 'https://kody.dev',
+		userId,
+		sourceFiles: {
+			'entry.ts': [
+				"import listTraces from 'kody:@kentcdodds/email-received-subscriber/list-traces'",
+				"import smokeTest from 'kody:@kentcdodds/email-received-subscriber/smoke-test'",
+				"import workflowDiscord from 'kody:@kentcdodds/email-received-subscriber/workflow-discord-message-created'",
+				'export default async function main() {',
+				"\tconst dynamicListTraces = await import('kody:@kentcdodds/email-received-subscriber/list-traces')",
+				'\treturn {',
+				'\t\tlistTraces: { staticType: typeof listTraces },',
+				'\t\tsmokeTest: { staticType: typeof smokeTest },',
+				'\t\tworkflowDiscord: { staticType: typeof workflowDiscord },',
+				'\t\tdynamicListTraces: { defaultType: typeof dynamicListTraces.default },',
+				'\t}',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'entry.ts',
+	})
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId,
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+		},
+		undefined,
+		{
+			skipCapabilityRegistry: true,
+		},
+	)
+
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		listTraces: {
+			staticType: 'function',
+		},
+		smokeTest: {
+			staticType: 'function',
+		},
+		workflowDiscord: {
+			staticType: 'function',
+		},
+		dynamicListTraces: {
+			defaultType: 'function',
+		},
+	})
+})
 
 test('subscription bundles refresh stale nested runtime modules from static package dependencies', async () => {
 	const nestedRuntimeModule =
