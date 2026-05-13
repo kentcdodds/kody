@@ -816,15 +816,15 @@ function materializePublishedArtifactModules(input: {
 	artifactPrefix: string
 	modules: WorkerLoaderModules
 }) {
-	const modules: Record<string, string> = {}
+	const materializedModules: Record<string, string> = {}
 	for (const [modulePath, module] of Object.entries(input.modules)) {
-		modules[joinPath(input.artifactPrefix, modulePath)] =
+		materializedModules[joinPath(input.artifactPrefix, modulePath)] =
 			materializeArtifactModuleSource({
 				modulePath,
 				module,
 			})
 	}
-	return refreshKodyRuntimeModules(modules, {
+	return refreshKodyRuntimeModules(materializedModules, {
 		includeDefaultRuntimePath: false,
 	}) as Record<string, string>
 }
