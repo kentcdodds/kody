@@ -788,6 +788,115 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 	}
 })
 
+test('buildKodyModuleBundle refreshes nested artifact runtimes before static import rebundling', async () => {
+	const staleRuntimeSource = [
+		'const runtime = {}',
+		'export const codemode = runtime.codemode',
+		'export default runtime',
+	].join('\n')
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('ai-chat-caller'),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/ai-chat',
+			kodyId: 'ai-chat',
+			sourceId: 'source-ai-chat',
+		}),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-ai-chat',
+			published_commit: 'commit-ai-chat',
+		},
+		manifest: {
+			name: '@kentcdodds/ai-chat',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'ai-chat',
+				description: 'AI chat helpers',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/ai-chat',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'ai-chat',
+					description: 'AI chat helpers',
+				},
+			}),
+			'src/index.ts':
+				'import { codemode } from "kody:runtime"\nexport async function runAgentTurnNonStreaming() { return await codemode.value_get({ name: "ai-chat" }) }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: {},
+		artifact: {
+			version: 1,
+			kind: 'importable-module',
+			artifactName: '.',
+			sourceId: 'source-ai-chat',
+			publishedCommit: 'commit-ai-chat',
+			entryPoint: './src/index.ts',
+			mainModule: 'dist/index.js',
+			modules: {
+				'dist/index.js': [
+					"import { codemode } from './.__kody_virtual__/runtime.js'",
+					'export async function runAgentTurnNonStreaming() {',
+					'\treturn await codemode.value_get({ name: "ai-chat" })',
+					'}',
+				].join('\n'),
+				'dist/.__kody_virtual__/runtime.js': staleRuntimeSource,
+			},
+			dependencies: [],
+			dynamicDependencies: [],
+			packageContext: {
+				packageId: 'pkg-ai-chat',
+				kodyId: 'ai-chat',
+				sourceId: 'source-ai-chat',
+			},
+			serviceContext: null,
+			createdAt: '2026-05-13T00:00:00.000Z',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'entry.ts': [
+				"import { runAgentTurnNonStreaming } from 'kody:@kentcdodds/ai-chat'",
+				'export default async function main() {',
+				'\treturn await runAgentTurnNonStreaming()',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'entry.ts',
+	})
+
+	const bundlerInput = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const nestedRuntimePath =
+		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/dist/.__kody_virtual__/runtime.js'
+	expect(bundlerInput?.files?.[nestedRuntimePath]).toContain(
+		'__kodyCreateRuntimeObjectProxy',
+	)
+	expect(bundlerInput?.files?.[nestedRuntimePath]).not.toBe(staleRuntimeSource)
+})
+
 test('buildKodyModuleBundle keeps static imports pinned while literal dynamic imports resolve current packages', async () => {
 	mockModule.createWorker.mockImplementation(
 		async (input: { files: Record<string, string>; entryPoint: string }) => ({

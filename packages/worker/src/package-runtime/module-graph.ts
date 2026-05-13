@@ -293,8 +293,15 @@ function isRuntimeModulePath(modulePath: string) {
 	)
 }
 
-function collectReferencedRuntimeModulePaths(modules: WorkerLoaderModules) {
-	const runtimePaths = new Set<string>([runtimeModulePath])
+function collectReferencedRuntimeModulePaths(
+	modules: WorkerLoaderModules,
+	options?: {
+		includeDefaultRuntimePath?: boolean
+	},
+) {
+	const runtimePaths = new Set<string>(
+		options?.includeDefaultRuntimePath === false ? [] : [runtimeModulePath],
+	)
 	for (const modulePath of Object.keys(modules)) {
 		if (isRuntimeModulePath(modulePath)) {
 			runtimePaths.add(modulePath)
@@ -313,9 +320,15 @@ function collectReferencedRuntimeModulePaths(modules: WorkerLoaderModules) {
 
 export function refreshKodyRuntimeModules(
 	modules: WorkerLoaderModules,
+	options?: {
+		includeDefaultRuntimePath?: boolean
+	},
 ): WorkerLoaderModules {
 	const refreshed: WorkerLoaderModules = { ...modules }
-	for (const modulePath of collectReferencedRuntimeModulePaths(modules)) {
+	for (const modulePath of collectReferencedRuntimeModulePaths(
+		modules,
+		options,
+	)) {
 		refreshed[modulePath] = createRuntimeModuleSource()
 	}
 	return refreshed
@@ -799,6 +812,23 @@ function materializeArtifactModuleSource(input: {
 	)
 }
 
+function materializePublishedArtifactModules(input: {
+	artifactPrefix: string
+	modules: WorkerLoaderModules
+}) {
+	const modules: Record<string, string> = {}
+	for (const [modulePath, module] of Object.entries(input.modules)) {
+		modules[joinPath(input.artifactPrefix, modulePath)] =
+			materializeArtifactModuleSource({
+				modulePath,
+				module,
+			})
+	}
+	return refreshKodyRuntimeModules(modules, {
+		includeDefaultRuntimePath: false,
+	}) as Record<string, string>
+}
+
 function readDynamicPackageImportSpecifier(input: {
 	modulePath: string
 	module: WorkerLoaderModules[string]
@@ -901,16 +931,13 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 		encodePathKey(exportName),
 	)
 	for (const [modulePath, module] of Object.entries(
-		artifact.artifact.modules,
+		materializePublishedArtifactModules({
+			artifactPrefix,
+			modules: artifact.artifact.modules,
+		}),
 	)) {
-		input.state.files[joinPath(artifactPrefix, modulePath)] =
-			materializeArtifactModuleSource({
-				modulePath,
-				module,
-			})
+		input.state.files[modulePath] = module
 	}
-	input.state.files[joinPath(artifactPrefix, runtimeModulePath)] =
-		createRuntimeModuleSource()
 	return joinPath(artifactPrefix, artifact.artifact.mainModule)
 }
 
@@ -1023,9 +1050,12 @@ function installDynamicPackageArtifactModules(input: {
 		),
 	)
 	for (const [artifactModulePath, module] of Object.entries(
-		input.artifact.modules,
+		materializePublishedArtifactModules({
+			artifactPrefix,
+			modules: input.artifact.modules,
+		}),
 	)) {
-		input.modules[joinPath(artifactPrefix, artifactModulePath)] = module
+		input.modules[artifactModulePath] = module
 	}
 	input.modules[input.modulePath] = createDynamicPackageImportProxySource({
 		targetPath: createRelativeImportSpecifier(
