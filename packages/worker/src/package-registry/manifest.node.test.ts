@@ -668,8 +668,6 @@ export declare function forecast(city: string): Promise<string>
 `,
 	})
 	const document = buildPackageSearchDocument(projection)
-	const [exportDetail] = projection.exports
-	const [exportedFunction] = exportDetail?.functions ?? []
 	const [retriever] = projection.retrievers
 
 	expect(document).toContain('package automation-hub')
@@ -677,6 +675,7 @@ export declare function forecast(city: string): Promise<string>
 	expect(document).not.toContain('workflow:')
 	expect(document).toContain('subscription:email.message.received')
 	expect(document).toContain('subscription:email.message.quarantined')
-	expect(document).toContain(exportDetail?.subpath ?? '')
-	expect(document).toContain(exportedFunction?.name ?? '')
+	expect(document).toContain('. src/index.ts src/index.d.ts')
+	expect(document).toContain('forecast')
+	expect(document).toContain('Look up the forecast for a city.')
 })
