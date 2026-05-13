@@ -1313,16 +1313,49 @@ function ensureDynamicPackageImportProxy(
 
 function collectDynamicPackageImportProxyModules(
 	files: Record<string, string>,
+	emittedModules: WorkerLoaderModules,
 ) {
+	const referencedProxyPaths = collectReferencedDynamicPackageImportProxyPaths(
+		emittedModules,
+	)
 	return Object.fromEntries(
 		Object.entries(files).filter(([modulePath]) => {
 			const normalizedPath = normalizeWorkspaceModulePath(modulePath)
 			return (
-				normalizedPath.startsWith(`${dynamicPackageImportProxyPrefix}/`) ||
-				normalizedPath.includes(`/${dynamicPackageImportProxyPrefix}/`)
+				isDynamicPackageImportProxyPath(normalizedPath) &&
+				referencedProxyPaths.has(normalizedPath)
 			)
 		}),
 	)
+}
+
+function isDynamicPackageImportProxyPath(modulePath: string) {
+	return (
+		modulePath.startsWith(`${dynamicPackageImportProxyPrefix}/`) ||
+		modulePath.includes(`/${dynamicPackageImportProxyPrefix}/`)
+	)
+}
+
+function collectReferencedDynamicPackageImportProxyPaths(
+	modules: WorkerLoaderModules,
+) {
+	const referencedPaths = new Set<string>()
+	const proxyReferencePattern =
+		/["']((?:\.\.?\/)?[^"']*\.?__kody_virtual__\/dynamic-imports\/[^"']+?\.js)["']/g
+	for (const [modulePath, module] of iterateModuleSourceTexts(modules)) {
+		if (isDynamicPackageImportProxyPath(normalizeWorkspaceModulePath(modulePath))) {
+			referencedPaths.add(normalizeWorkspaceModulePath(modulePath))
+		}
+		for (const match of module.matchAll(proxyReferencePattern)) {
+			const specifier = match[1]
+			if (!specifier) continue
+			const resolvedPath = resolveRelativeModulePath(modulePath, specifier)
+			referencedPaths.add(
+				resolvedPath ?? normalizeWorkspaceModulePath(specifier),
+			)
+		}
+	}
+	return referencedPaths
 }
 
 function createUniqueHelperName(source: string, baseName: string) {
@@ -1380,6 +1413,8 @@ async function rewriteKodyImports(input: {
 				input.state,
 				node.literalSpecifier,
 			)
+			input.state.files[joinPath(rootSourcePrefix, proxyPath)] ??=
+				input.state.files[proxyPath] ?? ''
 			input.state.files[joinPath(dirname(input.modulePath), proxyPath)] ??=
 				input.state.files[proxyPath] ?? ''
 			dynamicPackageImportHelperName ??= createUniqueHelperName(
@@ -1462,7 +1497,10 @@ export async function buildKodyModuleBundle(input: {
 	})
 	const modules = {
 		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
-		...collectDynamicPackageImportProxyModules(files),
+		...collectDynamicPackageImportProxyModules(
+			files,
+			bundle.modules as WorkerLoaderModules,
+		),
 	}
 	assertBundleHasNoUnresolvedBareImports({
 		modules,
@@ -1512,7 +1550,10 @@ export async function buildKodyImportableModuleBundle(input: {
 	})
 	const modules = {
 		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
-		...collectDynamicPackageImportProxyModules(files),
+		...collectDynamicPackageImportProxyModules(
+			files,
+			bundle.modules as WorkerLoaderModules,
+		),
 	}
 	assertBundleHasNoUnresolvedBareImports({
 		modules,
@@ -1631,7 +1672,10 @@ export async function buildKodyAppBundle(input: {
 		})
 		const modules = {
 			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
-			...collectDynamicPackageImportProxyModules(files),
+			...collectDynamicPackageImportProxyModules(
+				files,
+				bundle.modules as WorkerLoaderModules,
+			),
 		}
 		assertBundleHasNoUnresolvedBareImports({
 			modules,

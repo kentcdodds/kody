@@ -370,14 +370,23 @@ test('saved package artifact imports keep the execute wrapper as the runtime ent
 				"import listTraces from 'kody:@kentcdodds/email-received-subscriber/list-traces'",
 				"import smokeTest from 'kody:@kentcdodds/email-received-subscriber/smoke-test'",
 				"import workflowDiscord from 'kody:@kentcdodds/email-received-subscriber/workflow-discord-message-created'",
+				"import { inspectNestedImport } from './src/deep/nested.ts'",
 				'export default async function main() {',
 				"\tconst dynamicListTraces = await import('kody:@kentcdodds/email-received-subscriber/list-traces')",
+				'\tconst nestedImport = await inspectNestedImport()',
 				'\treturn {',
 				'\t\tlistTraces: { staticType: typeof listTraces },',
 				'\t\tsmokeTest: { staticType: typeof smokeTest },',
 				'\t\tworkflowDiscord: { staticType: typeof workflowDiscord },',
 				'\t\tdynamicListTraces: { defaultType: typeof dynamicListTraces.default },',
+				'\t\tnestedImport,',
 				'\t}',
+				'}',
+			].join('\n'),
+			'src/deep/nested.ts': [
+				'export async function inspectNestedImport() {',
+				"\tconst dynamicListTraces = await import('kody:@kentcdodds/email-received-subscriber/list-traces')",
+				'\treturn { defaultType: typeof dynamicListTraces.default }',
 				'}',
 			].join('\n'),
 		},
@@ -415,6 +424,9 @@ test('saved package artifact imports keep the execute wrapper as the runtime ent
 			staticType: 'function',
 		},
 		dynamicListTraces: {
+			defaultType: 'function',
+		},
+		nestedImport: {
 			defaultType: 'function',
 		},
 	})
