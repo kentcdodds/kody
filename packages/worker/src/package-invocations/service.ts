@@ -1457,45 +1457,44 @@ export function createPackageEventTools(input: {
 				idempotency_key: request.idempotencyKey,
 				payload: request.payload,
 			}
-			const subscribers = await Promise.all(
-				subscriptions.map(async ({ savedPackage, subscription }) => {
-					const response = await invokePackageSubscription({
-						env: input.env,
-						baseUrl: input.baseUrl,
-						savedPackage,
+			const subscribers = []
+			for (const { savedPackage, subscription } of subscriptions) {
+				const response = await invokePackageSubscription({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					savedPackage,
+					topic: request.topic,
+					params: envelope,
+					idempotencyKey: await buildPackageEventSubscriptionIdempotencyKey({
+						sourcePackageId: packageContext.packageId,
+						subscriberPackageId: savedPackage.id,
 						topic: request.topic,
-						params: envelope,
-						idempotencyKey: await buildPackageEventSubscriptionIdempotencyKey({
-							sourcePackageId: packageContext.packageId,
-							subscriberPackageId: savedPackage.id,
-							topic: request.topic,
-							idempotencyKey: request.idempotencyKey,
-						}),
-						source: `package:${packageContext.kodyId}`,
-						actorTokenId: `${internalPackageEventSubscriptionTokenId}:${packageContext.packageId}`,
-						actorDisplayName: `package:${packageContext.kodyId}`,
-						runtimeInvokeDepth: packageInvokeDepth + 1,
-					})
-					const replayed =
-						(response.body['idempotency'] as { replayed?: unknown } | undefined)
-							?.replayed === true
-					const status =
-						response.status >= 200 && response.status < 400
-							? replayed
-								? 'replayed'
-								: 'completed'
-							: 'failed'
-					return {
-						packageId: savedPackage.id,
-						kodyId: savedPackage.kodyId,
-						handler: subscription.handler,
-						status,
-						...(status === 'failed'
-							? { error: readInvocationError(response) }
-							: {}),
-					}
-				}),
-			)
+						idempotencyKey: request.idempotencyKey,
+					}),
+					source: `package:${packageContext.kodyId}`,
+					actorTokenId: `${internalPackageEventSubscriptionTokenId}:${packageContext.packageId}`,
+					actorDisplayName: `package:${packageContext.kodyId}`,
+					runtimeInvokeDepth: packageInvokeDepth + 1,
+				})
+				const replayed =
+					(response.body['idempotency'] as { replayed?: unknown } | undefined)
+						?.replayed === true
+				const status =
+					response.status >= 200 && response.status < 400
+						? replayed
+							? 'replayed'
+							: 'completed'
+						: 'failed'
+				subscribers.push({
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					handler: subscription.handler,
+					status,
+					...(status === 'failed'
+						? { error: readInvocationError(response) }
+						: {}),
+				})
+			}
 			const failed = subscribers.filter(
 				(subscriber) => subscriber.status === 'failed',
 			).length
