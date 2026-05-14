@@ -225,6 +225,12 @@ Use the package app model when the package needs:
 - hosted callback URLs
 - package-owned backend behavior
 
+When a package app depends on OAuth, saved secrets, or a third-party API, run
+the integration bootstrap first: use `search` for the saved integration or
+secret reference, load `kody_official_guide` with
+`guide: "integration_bootstrap"`, and complete a minimal authenticated `execute`
+smoke test before treating the app as ready.
+
 Treat package apps like Worker-style modules:
 
 - app code lives in the package repo

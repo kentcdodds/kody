@@ -1434,6 +1434,13 @@ Secrets: never raw in results; use
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Integrations
 use \`codemode.integration_get\` / \`codemode.integration_list\`.
 
+Integration-backed packages, package apps, and workflows: search for the provider
+and \`kody_official_guide\`, inspect exact \`integration\` or \`secret\` entities,
+load \`guide: "integration_bootstrap"\`, and continue only after a cheap
+authenticated \`execute\` smoke test succeeds. If setup is missing, use the guide
+that matches the auth path: \`oauth\`, \`connect_secret\`, or
+\`secret_backed_integration\`.
+
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_list_remote_connector_status\` (remote connectors).
 

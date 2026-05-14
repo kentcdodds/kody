@@ -8,6 +8,10 @@ This guide is about **ordering**. The goal is to finish the integration setup
 and prove it works **before** you save or present downstream packages or package
 apps that depend on it.
 
+Agents should use this guide with `search` results for saved integrations,
+secret references, and capability details before exploring local repository
+source for package-app patterns.
+
 ## What counts as an integration bootstrap
 
 Use this workflow when the requested result depends on any of the following:

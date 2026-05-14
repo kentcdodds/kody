@@ -66,6 +66,8 @@ Never ask the user to paste credentials in chat; use generated UI to collect or 
 
 Prefer one \`execute\` when the workflow is clear; split calls when you need new user input or a changed plan.
 
+For integration-backed packages, package apps, or workflows, use \`search\` and \`kody_official_guide({ guide: 'integration_bootstrap' })\` before building. Confirm the needed \`integration\` or \`secret\` entity exists, then run a cheap read-only authenticated smoke test in \`execute\` (for example a profile/viewer endpoint) before \`package_save\`, package app work, or workflow scheduling. If credentials are missing, load the matching official guide: \`oauth\`, \`connect_secret\`, or \`secret_backed_integration\`.
+
 Example:
 
 \`import { codemode } from 'kody:runtime'

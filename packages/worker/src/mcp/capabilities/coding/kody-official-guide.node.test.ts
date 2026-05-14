@@ -12,6 +12,24 @@ const ctx = {
 	},
 }
 
+test('kody_official_guide description surfaces integration bootstrap flow', () => {
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'Prefer this capability plus `search` results',
+	)
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'guide: "integration_bootstrap"',
+	)
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'saved `integration` / `secret` entities',
+	)
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'cheap authenticated smoke test before building',
+	)
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'Available guides (order matters',
+	)
+})
+
 test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	const originalFetch = globalThis.fetch
 	const url = buildKodyOfficialGuideUrlForTest('integration_bootstrap')

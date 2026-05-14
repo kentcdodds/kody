@@ -22,6 +22,11 @@ integration, value, or secret reference, then run work through **execute**.
   alias, `job_run_now` can trigger an existing job immediately for debugging or
   catch-up runs, and `job_update` / `job_delete` let you correct or remove an
   existing scheduled job by id.
+- **Bootstrap integration-backed work before building.** When a package, package
+  app, or workflow depends on OAuth, a saved secret, or a third-party API, use
+  `search` and the `kody_official_guide` `integration_bootstrap` guide first.
+  Confirm the integration or secret exists, run a cheap authenticated smoke test
+  in `execute`, then build the downstream artifact.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Do not paste secrets in chat.** Use saved secrets, generated UI, or the
