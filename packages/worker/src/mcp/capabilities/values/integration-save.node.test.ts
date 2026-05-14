@@ -134,7 +134,7 @@ test('parseIntegrationConfig keeps older rows readable when apiBaseUrl is missin
 	})
 })
 
-test('parseIntegrationConfig rejects unsafe authorization URLs and whitespace-only scopes', () => {
+test('parseIntegrationConfig drops invalid authorization metadata while preserving the integration', () => {
 	expect(
 		parseIntegrationConfig(
 			{
@@ -153,7 +153,10 @@ test('parseIntegrationConfig rejects unsafe authorization URLs and whitespace-on
 			},
 			null,
 		),
-	).toBeNull()
+	).toMatchObject({
+		name: 'spotify',
+		authorization: null,
+	})
 
 	expect(
 		parseIntegrationConfig(
@@ -173,7 +176,10 @@ test('parseIntegrationConfig rejects unsafe authorization URLs and whitespace-on
 			},
 			null,
 		),
-	).toBeNull()
+	).toMatchObject({
+		name: 'spotify',
+		authorization: null,
+	})
 })
 
 test('integration_save creates a new integration record', async () => {

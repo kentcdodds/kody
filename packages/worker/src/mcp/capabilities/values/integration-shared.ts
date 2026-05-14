@@ -139,7 +139,21 @@ export function parseIntegrationConfig(
 				? { ...record, name: fallbackName }
 				: record
 	const parsed = integrationConfigSchema.safeParse(configCandidate)
-	return parsed.success ? normalizeIntegrationConfig(parsed.data) : null
+	if (parsed.success) return normalizeIntegrationConfig(parsed.data)
+	if (
+		configCandidate &&
+		typeof configCandidate === 'object' &&
+		'authorization' in configCandidate
+	) {
+		const fallbackParsed = integrationConfigSchema.safeParse({
+			...configCandidate,
+			authorization: null,
+		})
+		if (fallbackParsed.success) {
+			return normalizeIntegrationConfig(fallbackParsed.data)
+		}
+	}
+	return null
 }
 
 export function parseIntegrationJson(raw: string) {

@@ -30,7 +30,7 @@ import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
 	buildIntegrationValueName,
-	normalizeIntegrationConfig,
+	parseIntegrationConfig,
 } from '#mcp/capabilities/values/integration-shared.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
@@ -590,23 +590,32 @@ async function saveIntegrationConfig(input: {
 	if (!providerKey) {
 		throw new Error('Provider must contain letters or numbers.')
 	}
-	const integration = normalizeIntegrationConfig({
-		name: input.provider,
-		tokenUrl: input.tokenUrl,
-		apiBaseUrl: input.apiBaseUrl,
-		flow: input.flow,
-		clientIdValueName: input.clientIdValueName,
-		clientSecretSecretName:
-			input.flow === 'confidential'
-				? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
+	const integration = parseIntegrationConfig(
+		{
+			name: input.provider,
+			tokenUrl: input.tokenUrl,
+			apiBaseUrl: input.apiBaseUrl,
+			flow: input.flow,
+			clientIdValueName: input.clientIdValueName,
+			clientSecretSecretName:
+				input.flow === 'confidential'
+					? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
+					: null,
+			accessTokenSecretName: input.accessTokenSecretName,
+			refreshTokenSecretName: readTokenField(
+				input.tokenPayload,
+				'refresh_token',
+			)
+				? input.refreshTokenSecretName
 				: null,
-		accessTokenSecretName: input.accessTokenSecretName,
-		refreshTokenSecretName: readTokenField(input.tokenPayload, 'refresh_token')
-			? input.refreshTokenSecretName
-			: null,
-		requiredHosts: input.allowedHosts,
-		...(input.authorization ? { authorization: input.authorization } : {}),
-	})
+			requiredHosts: input.allowedHosts,
+			...(input.authorization ? { authorization: input.authorization } : {}),
+		},
+		input.provider,
+	)
+	if (!integration) {
+		throw new Error('OAuth integration configuration is invalid.')
+	}
 	await saveValue({
 		env: input.env,
 		userId: input.userId,

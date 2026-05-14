@@ -288,6 +288,48 @@ test('connect oauth omits direct host approval links when hosts are already appr
 	expect(mockModule.buildSecretHostApprovalUrl).not.toHaveBeenCalled()
 })
 
+test('connect oauth drops invalid authorization metadata without hiding the integration', async () => {
+	mockModule.saveValue.mockClear()
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'GitHub',
+				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				scopes: ['repo'],
+				flow: 'pkce',
+				clientIdValueName: 'github-client-id',
+				accessTokenSecretName: 'githubAccessToken',
+				refreshTokenSecretName: 'githubRefreshToken',
+				allowedHosts: ['api.github.com'],
+				tokenPayload: {
+					access_token: 'access-token',
+					refresh_token: 'refresh-token',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		integrationName: 'GitHub',
+	})
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_integration:GitHub',
+			value: expect.not.stringContaining('ftp://'),
+		}),
+	)
+})
+
 test('host approval view is derived from allowed-host and selected secret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{

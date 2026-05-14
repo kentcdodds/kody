@@ -174,7 +174,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			return null
 		}
 		const authorizeHost = authorizeUrl ? safeParseHost(authorizeUrl) : null
-		if (authorizeUrl && !authorizeHost) {
+		if (authorizeUrl && (!isSafeExternalUrl(authorizeUrl) || !authorizeHost)) {
 			hasConfigError = true
 			setStatus('Authorize URL must be valid.', 'error')
 			return null
