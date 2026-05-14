@@ -39,3 +39,12 @@ test('surfaces remote connector identifiers and compacts long descriptions', () 
 	expect(longConnectorLine).not.toContain(longDescription)
 	expect(longConnectorDescription.length).toBeLessThanOrEqual(240)
 })
+
+test('surfaces package README Intent authoring guidance', () => {
+	const instructions = buildMcpServerInstructions()
+
+	expect(instructions).toContain('guide: "package_authoring"')
+	expect(instructions).toContain('README.md')
+	expect(instructions).toContain('## Intent')
+	expect(instructions).toContain('ask Kent if unclear')
+})

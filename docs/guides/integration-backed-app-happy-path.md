@@ -18,6 +18,8 @@ quickly.
      `GET /v1/me`.
 4. If the smoke test passes, proceed directly to building the package app.
    - Prefer a saved package with `package.json#kody.app.entry`.
+   - Load `guide: "package_authoring"` and keep the package README `## Intent`
+     section aligned with the user's goal.
    - Keep provider API calls and durable coordination in package-owned backend
      modules or internal Worker/DO implementation details.
 5. Open the hosted package app and iterate.

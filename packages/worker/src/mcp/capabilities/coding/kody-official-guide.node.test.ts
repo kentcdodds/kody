@@ -14,15 +14,15 @@ const ctx = {
 
 test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	const originalFetch = globalThis.fetch
-	const url = buildKodyOfficialGuideUrlForTest('integration_bootstrap')
-	expect(url).toMatch(/\/integration-bootstrap\.md$/)
+	const url = buildKodyOfficialGuideUrlForTest('package_authoring')
+	expect(url).toMatch(/\/package-authoring\.md$/)
 	globalThis.fetch = (async (input) => {
 		expect(String(input)).toBe(url)
 		return new Response('# Hello\n\nbody', { status: 200 })
 	}) as typeof fetch
 	try {
 		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'integration_bootstrap' },
+			{ guide: 'package_authoring' },
 			ctx,
 		)
 		expect(result.title).toBeTruthy()
@@ -30,6 +30,14 @@ test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	} finally {
 		globalThis.fetch = originalFetch
 	}
+})
+
+test('kody_official_guide description surfaces package Intent guidance', () => {
+	expect(kodyOfficialGuideCapability.description).toContain('package_authoring')
+	expect(kodyOfficialGuideCapability.description).toContain('README.md Intent')
+	expect(kodyOfficialGuideCapability.keywords).toEqual(
+		expect.arrayContaining(['readme intent', 'intent section']),
+	)
 })
 
 test('kody_official_guide surfaces fetch failures', async () => {

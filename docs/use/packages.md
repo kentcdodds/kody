@@ -288,6 +288,12 @@ first argument; `kody:runtime` does not export `params`.
 
 ## Save and edit packages
 
+When creating a package or materially changing an existing one, include or
+maintain a root `README.md` with a concise `## Intent` section. Use it to
+capture Kent's user-defined goal, ask Kent if the intent is unclear, and update
+it only when you are confident the goal changed or Kent expands the scope. This
+is guidance, not a new Kody primitive or manifest field.
+
 Use:
 
 - `package_save` to create or replace a saved package

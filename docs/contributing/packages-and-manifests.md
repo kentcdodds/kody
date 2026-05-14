@@ -25,6 +25,20 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 
 The package manifest is `package.json`.
 
+## README Intent
+
+When creating a package or materially changing an existing one, keep the root
+`README.md` aligned with the requested goal:
+
+- include or maintain a `## Intent` section
+- capture Kent's user-defined goal in concise language
+- ask Kent if intent is unclear
+- update intent only when you are confident the goal changed
+- update it when Kent expands the package scope
+
+This is package-authoring guidance, not a manifest field, runtime primitive,
+saved value, or separate top-level entity.
+
 ## npm dependencies
 
 Saved packages may declare npm runtime dependencies in

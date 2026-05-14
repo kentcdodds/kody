@@ -1428,6 +1428,8 @@ exact \`execute\` module snippet plus TypeScript call-shape definitions by
 default.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
+For package creation or material updates, load \`kody_official_guide\` with
+\`guide: "package_authoring"\` and maintain a root README.md Intent section.
 Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
 Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.

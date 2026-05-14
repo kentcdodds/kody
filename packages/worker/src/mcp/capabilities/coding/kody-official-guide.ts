@@ -16,6 +16,12 @@ export const KODY_GUIDES_REPO = {
 export type KodyOfficialGuideId = keyof typeof kodyOfficialGuideCatalog
 
 export const kodyOfficialGuideCatalog = {
+	package_authoring: {
+		file: 'package-authoring.md',
+		title: 'Package authoring guide',
+		summary:
+			'START HERE when creating or materially changing a Kody package: package shape, README.md Intent section, and scope-update guidance without adding new primitives.',
+	},
 	integration_bootstrap: {
 		file: 'integration-bootstrap.md',
 		title: 'Integration bootstrap guide',
@@ -111,9 +117,9 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **When creating or materially changing a package, use `guide: "package_authoring"` so README.md Intent guidance is visible.** For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` before saving the dependent package. For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
-		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
+		'Available guides (order matters—start with `package_authoring` for package work and `integration_bootstrap` before integration-dependent package work):',
 		...lines,
 		'',
 		'Requires network access to raw.githubusercontent.com; failures surface as errors (no offline copy).',
@@ -125,6 +131,7 @@ const guideFieldSchema = z
 	.describe(
 		[
 			'Which guide to load.',
+			'`package_authoring`: required package-authoring guidance for README.md Intent sections when creating or materially changing packages.',
 			'`integration_bootstrap`: required sequence before building packages/package apps that depend on a third-party integration.',
 			'`secret_backed_integration`: default non-OAuth recipe after bootstrap when the integration is driven by saved secrets.',
 			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
@@ -152,6 +159,12 @@ const allKeywords = [
 	...new Set([
 		'oauth',
 		'integration bootstrap',
+		'package authoring',
+		'package creation',
+		'package update',
+		'readme intent',
+		'intent section',
+		'user-defined goal',
 		'bootstrap',
 		'secret-backed integration',
 		'basic auth',
