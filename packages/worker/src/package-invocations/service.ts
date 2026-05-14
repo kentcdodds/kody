@@ -635,6 +635,7 @@ async function ensureModuleArtifact(input: {
 	const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
 		sourceFiles: packageSource.files,
 		entryPoints: [{ path: resolution.entryPoint, includeStorage: true }],
+		emittedEventTopics: Object.keys(packageSource.manifest.kody.emits ?? {}),
 	})
 	if (!typecheckResult.ok) {
 		throw new Error(typecheckResult.message)
@@ -1371,28 +1372,24 @@ async function loadMatchingPackageEventSubscriptions(input: {
 	})
 	const settled = await Promise.all(
 		savedPackages.map(async (savedPackage) => {
-			try {
-				const loaded = await loadPackageManifestBySourceId({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.userId,
-					sourceId: savedPackage.sourceId,
-				})
-				const subscription = listPackageSubscriptions(loaded.manifest).find(
-					(candidate) => candidate.topic === input.topic,
+			const loaded = await loadPackageManifestBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: savedPackage.sourceId,
+			}).catch((error) => {
+				throw new Error(
+					`Failed to load package manifest for package event dispatch: ${savedPackage.kodyId} (${savedPackage.id}).`,
+					{ cause: error },
 				)
-				if (!subscription) return null
-				return {
-					savedPackage,
-					subscription,
-				}
-			} catch (error) {
-				console.warn('Failed to load package manifest for package event', {
-					sourceId: savedPackage.sourceId,
-					packageId: savedPackage.id,
-					error,
-				})
-				return null
+			})
+			const subscription = listPackageSubscriptions(loaded.manifest).find(
+				(candidate) => candidate.topic === input.topic,
+			)
+			if (!subscription) return null
+			return {
+				savedPackage,
+				subscription,
 			}
 		}),
 	)

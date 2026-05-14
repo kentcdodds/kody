@@ -245,6 +245,7 @@ type PublishedJobSourceResolution = {
 	files: Record<string, string>
 	artifactName: string
 	entryPoint: string
+	emittedEventTopics: Array<string>
 	packageContext: {
 		packageId: string
 		kodyId: string
@@ -291,6 +292,7 @@ async function resolvePublishedJobSource(input: {
 			files: published.files,
 			artifactName,
 			entryPoint: getManifestEntrypointPath(manifest),
+			emittedEventTopics: [],
 			packageContext: null,
 		}
 	}
@@ -310,6 +312,7 @@ async function resolvePublishedJobSource(input: {
 		files: published.files,
 		artifactName,
 		entryPoint: normalizePackageWorkspacePath(jobDefinition.entry),
+		emittedEventTopics: Object.keys(manifest.kody.emits ?? {}),
 		packageContext: {
 			packageId: publishedSource.entity_id,
 			kodyId: manifest.kody.id,
@@ -372,6 +375,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 					includeStorage: true,
 				},
 			],
+			emittedEventTopics: resolved.emittedEventTopics,
 		})
 		if (!typecheckResult.ok) {
 			throw new Error(typecheckResult.message)

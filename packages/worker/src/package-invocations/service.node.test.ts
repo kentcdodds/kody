@@ -924,6 +924,41 @@ test('package runtime rejects dispatch for undeclared emitted event topics', asy
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
+test('package runtime fails dispatch when subscriber manifest discovery fails', async () => {
+	const db = createDatabase()
+	const { manifests, sources } = seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { ok: true },
+		logs: [],
+	})
+	repoMockModule.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			if (input.sourceId === 'source-subscriber') {
+				throw new Error('manifest unavailable')
+			}
+			return {
+				source: sources.get(input.sourceId),
+				manifest: manifests.get(input.sourceId),
+			}
+		},
+	)
+	const tools = createRuntimeEventTools(db)
+
+	await expect(
+		tools.dispatch({
+			topic: '@kentcdodds/discord.message.created',
+			idempotencyKey: 'discord:message-create:123',
+			payload: {
+				messageId: '123',
+			},
+		}),
+	).rejects.toThrow(
+		'Failed to load package manifest for package event dispatch: discord-general-chat (pkg-subscriber).',
+	)
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+})
+
 test('package runtime checks and invokes another package with current contract metadata', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
@@ -1832,6 +1867,7 @@ test('invokePackageExport asks for republish when a published artifact is missin
 				includeStorage: true,
 			},
 		],
+		emittedEventTopics: [],
 	})
 	expect(repoMockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()

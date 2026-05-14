@@ -763,6 +763,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		path: string
 		includeStorage?: boolean
 	}>
+	emittedEventTopics?: Array<string>
 }): Promise<{
 	ok: boolean
 	message: string
@@ -821,7 +822,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		targets: input.entryPoints.map((entryPoint) => ({
 			path: entryPoint.path,
 			includeStorage: entryPoint.includeStorage === true,
-			emittedEventTopics: [],
+			emittedEventTopics: input.emittedEventTopics ?? [],
 		})),
 		languageService,
 		fileSystem,
