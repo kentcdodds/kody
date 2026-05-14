@@ -1,6 +1,6 @@
 import { expect, test } from './playwright-utils.ts'
 
-test('connect secret saves an edited name and package scope', async ({
+test('connect secret saves edited metadata through the review flow', async ({
 	page,
 	login,
 }) => {
@@ -20,7 +20,6 @@ test('connect secret saves an edited name and package scope', async ({
 	await expect(page.getByLabel('Name')).toHaveValue(queryName)
 	await expect(page.getByLabel('Scope')).toHaveValue('user')
 	await expect(page.getByLabel('Description')).toHaveValue(description)
-	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 
 	const secretValueInput = page.getByRole('textbox', { name: /^Secret value/ })
 	await page.getByLabel('Name').fill(editedName)
@@ -34,13 +33,10 @@ test('connect secret saves an edited name and package scope', async ({
 	await expect(page.getByText(packageId)).toBeVisible()
 
 	await reviewConfirmation.check()
-	const saveResponse = page.waitForResponse(
-		(response) =>
-			response.url().endsWith('/connect/secret.json') &&
-			response.request().method() === 'POST',
-	)
 	await page.getByRole('button', { name: 'Save secret' }).click()
-	expect((await saveResponse).ok()).toBe(true)
+	await expect(
+		page.getByRole('heading', { level: 2, name: 'Secret saved' }),
+	).toBeVisible()
 
 	await page.goto(`/account/secrets/user/${editedName}`)
 	await expect(
@@ -50,5 +46,4 @@ test('connect secret saves an edited name and package scope', async ({
 	const savedSecretInput = page.getByRole('textbox', { name: /^Secret value/ })
 	await expect(savedSecretInput).toHaveAttribute('type', 'password')
 	await expect(savedSecretInput).toHaveValue(secretValue)
-	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 })

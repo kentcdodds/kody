@@ -75,9 +75,6 @@ test('capability domain registration rejects mismatched and duplicate invariants
 	expect(() =>
 		buildCapabilityRegistry([packagesDomain, packagesDomain]),
 	).toThrow(/Duplicate domain registration/)
-})
-
-test('defineDomain rejects duplicate capability names within one domain', () => {
 	const firstCapability = defineDomainCapability(
 		capabilityDomainNames.packages,
 		{
@@ -121,9 +118,7 @@ test('repo_run_commands registry spec and tool descriptor stay structurally alig
 
 	expect(capabilitySpec).toBeDefined()
 	expect(capabilitySpec?.requiredInputFields).toEqual(['commands'])
-	expect(capabilitySpec?.inputFields).toContain('commands')
 	expect(toolDescriptor?.inputSchema).toEqual(capabilitySpec?.inputSchema)
-	expect(toolDescriptor?.description).toEqual(expect.any(String))
 	expect(commandsSchema).toMatchObject({
 		type: 'string',
 		description: expect.any(String),

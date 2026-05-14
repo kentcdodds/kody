@@ -92,9 +92,7 @@ test('remote connector settings API lists settings with plaintext secrets', asyn
 
 	expect(response.status).toBe(200)
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
-	const text = await response.text()
-	expect(text).toContain('"hasSharedSecret":true')
-	expect(JSON.parse(text)).toEqual({
+	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',

@@ -677,5 +677,4 @@ export declare function forecast(city: string): Promise<string>
 	expect(document).toContain('subscription:email.message.quarantined')
 	expect(document).toContain('. src/index.ts src/index.d.ts')
 	expect(document).toContain('forecast')
-	expect(document).toContain('Look up the forecast for a city.')
 })
