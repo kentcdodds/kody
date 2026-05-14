@@ -20,6 +20,7 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.dependencies` — direct static saved package dependencies imported via
   `kody:@...`
 - `kody.app` — optional hosted package app config
+- `kody.subscriptions` — optional package-owned event subscriptions
 - `kody.jobs` — optional package-owned schedules
 - `kody.retrievers` — optional package-owned search/context retrievers
 
@@ -60,6 +61,7 @@ Think in terms of:
 - package apps
 - package-owned jobs
 - package-owned workflows
+- package-owned subscriptions
 - package-owned retrievers
 
 The top-level saved identity is the package.
@@ -211,6 +213,50 @@ Jobs belong to packages.
 - Treat schedule/runtime state as package-owned implementation detail
 
 Jobs are not their own top-level saved primitive.
+
+## Package-owned subscriptions
+
+Subscriptions belong to packages.
+
+- Define them under `package.json#kody.subscriptions`
+- Key the record by event topic, for example `email.message.received`
+- Reference a package-local `handler` module
+- Optionally include a human-readable `description`
+- Optionally include topic-specific `filters`
+
+Example:
+
+```json
+{
+	"kody": {
+		"subscriptions": {
+			"email.message.received": {
+				"handler": "./src/on-email-message-received.ts",
+				"description": "Process stored inbound mail."
+			}
+		}
+	}
+}
+```
+
+Kody normalizes handler paths during manifest parsing and rebuilds published
+bundle artifacts for subscription handlers during repo checks and package
+publish. At runtime, event dispatch invokes the handler through the package
+execution path with package context, package-owned storage, package secrets, and
+the host-owned `kody:runtime` module.
+
+The built-in `package_subscription_list` capability is the generic discovery
+surface for declared subscriptions. It reads the signed-in user's saved package
+manifests and returns package id, `kody.id`, package name, topic, handler,
+description, and filters, optionally narrowed by exact topic.
+
+For inbound email, `email.message.received` currently dispatches after a routed
+message is stored. The payload is intentionally metadata-first: message id,
+address metadata, headers useful for threading, processing status, timestamps,
+and attachment metadata. Do not embed parsed bodies or attachment bytes in the
+event. Handlers should fetch full bodies or bytes only when needed through
+`email_message_get`, `email_attachment_get`, or the package runtime `email`
+helper.
 
 ## Package-owned workflows
 

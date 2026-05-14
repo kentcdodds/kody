@@ -14,6 +14,7 @@ Think in terms of:
 - package exports
 - package apps
 - package services
+- package subscriptions
 - package-owned jobs
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
@@ -34,6 +35,8 @@ Important fields:
   `kody:@...` imports
 - `kody.app` — optional hosted package app config
 - `kody.services` — optional package-owned service runtimes
+- `kody.subscriptions` — optional event-topic subscriptions with package-local
+  handlers
 - `kody.jobs` — optional package-owned schedules
 
 `package.json` is the manifest.
@@ -265,6 +268,52 @@ Treat package services like package-owned runtime modules:
 - service code can inspect its own lifecycle through `serviceContext` and the
   `service` helper exposed by `kody:runtime`
 - services share the same saved package identity as package apps and jobs
+
+## Package subscriptions
+
+Package subscriptions let a saved package react to built-in Kody event topics.
+Define them under `package.json#kody.subscriptions` as a record keyed by topic:
+
+```json
+{
+	"kody": {
+		"subscriptions": {
+			"email.message.received": {
+				"handler": "./src/on-email-message-received.ts",
+				"description": "Process stored inbound mail.",
+				"filters": {
+					"inbox": "support"
+				}
+			}
+		}
+	}
+}
+```
+
+Each subscription has:
+
+- `handler` — required package-local module path for the event handler
+- `description` — optional human-readable purpose surfaced in package detail and
+  subscription listings
+- `filters` — optional topic-specific metadata reserved for event dispatchers
+
+Subscription handlers run as package runtime modules with the signed-in package
+user, package-owned storage, package context, secrets, and `kody:runtime`
+helpers. Published bundle artifacts are rebuilt for subscription handlers during
+package checks and publish, just like exports, services, jobs, and apps.
+
+Use the built-in `package_subscription_list` capability to discover the
+signed-in user's saved package subscriptions, optionally filtered by exact
+topic. This is the generic discovery step before building fan-out, debugging why
+an event did or did not dispatch, or checking which packages subscribe to
+`email.message.received`.
+
+For stored inbound email, the current topic is `email.message.received`. Its
+payload is metadata-first: handlers receive the stored message id, recipient and
+sender metadata, timestamps, processing status, and attachment metadata. Fetch
+parsed bodies or attachment bytes only when needed with `email_message_get`,
+`email_attachment_get`, or the `email` helper from `kody:runtime`. See
+[Email primitives](./email-primitives.md) for the full payload shape.
 
 ## Package-owned jobs
 

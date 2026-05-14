@@ -32,15 +32,15 @@ test('kody_official_guide description surfaces integration bootstrap flow', () =
 
 test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	const originalFetch = globalThis.fetch
-	const url = buildKodyOfficialGuideUrlForTest('package_authoring')
-	expect(url).toMatch(/\/package-authoring\.md$/)
+	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
+	expect(url).toMatch(/\/package-subscriptions\.md$/)
 	globalThis.fetch = (async (input) => {
 		expect(String(input)).toBe(url)
 		return new Response('# Hello\n\nbody', { status: 200 })
 	}) as typeof fetch
 	try {
 		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'package_authoring' },
+			{ guide: 'package_subscriptions' },
 			ctx,
 		)
 		expect(result.title).toBeTruthy()
