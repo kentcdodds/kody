@@ -2,19 +2,27 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { searchMemoryRecords } from '#mcp/memory/service.ts'
+import {
+	memorySearchMutationGuidance,
+	searchMemoryRecords,
+} from '#mcp/memory/service.ts'
 import {
 	memoryMatchSchema,
 	requireMcpUser,
 	verifyFirstWarning,
 } from './meta-memory-shared.ts'
 
+const mutableMemoryMatchSchema = memoryMatchSchema.extend({
+	can_mutate: z.boolean(),
+	mutation_guidance: z.string(),
+})
+
 export const metaMemorySearchCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'meta_memory_search',
 		description:
-			'Search stored memories for the signed-in user. Use this when you want to browse memory directly. If you are considering writing or deleting a memory, prefer meta_memory_verify first and review the related memories before taking action.',
+			'Search stored memories for the signed-in user. Returned matches are mutable for this signed-in user unless can_mutate is false. If you are considering writing or deleting a memory, prefer meta_memory_verify first and review the related memories before taking action.',
 		keywords: ['memory', 'search', 'lookup', 'related', 'verify'],
 		readOnly: true,
 		idempotent: true,
@@ -41,7 +49,7 @@ export const metaMemorySearchCapability = defineDomainCapability(
 		}),
 		outputSchema: z.object({
 			query: z.string(),
-			matches: z.array(memoryMatchSchema),
+			matches: z.array(mutableMemoryMatchSchema),
 			warning: z.string(),
 		}),
 		async handler(args, ctx: CapabilityContext) {
@@ -71,6 +79,8 @@ export const metaMemorySearchCapability = defineDomainCapability(
 					last_accessed_at: match.lastAccessedAt,
 					deleted_at: match.deletedAt,
 					score: match.score,
+					can_mutate: true,
+					mutation_guidance: memorySearchMutationGuidance,
 				})),
 				warning: verifyFirstWarning,
 			}

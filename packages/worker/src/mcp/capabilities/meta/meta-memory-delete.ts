@@ -2,7 +2,11 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteMemory, getMemory } from '#mcp/memory/service.ts'
+import {
+	deleteMemory,
+	getMemory,
+	getMemoryMutationNotFoundMessage,
+} from '#mcp/memory/service.ts'
 import {
 	memoryRecordSchema,
 	verifyFirstGuidance,
@@ -68,7 +72,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 				memoryId: args.memory_id,
 			})
 			if (!existing) {
-				throw new Error('Memory not found for this user.')
+				throw new Error(getMemoryMutationNotFoundMessage(args.memory_id))
 			}
 			const memory = await deleteMemory({
 				env: ctx.env,
