@@ -143,7 +143,7 @@ if (!check.ok) throw new Error(check.message)
 const result = await packages.invoke(check.invoke)
 ```
 
-Continue to use static `kody:@scope/package/export` imports for library-like
+Use static `kody:@scope/package/export` imports for library-like
 dependencies where the caller should keep the dependency bundle it was published
 with. Use bare `packages.invoke` only after a successful `packages.check` or
 when the caller intentionally accepts direct runtime failure.

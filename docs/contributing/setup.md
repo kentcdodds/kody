@@ -192,7 +192,7 @@ resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds
-`MCP_OBJECT`, so app previews continue to use per-PR Worker names. Mock Workers
+`MCP_OBJECT`, so app previews use per-PR Worker names. Mock Workers
 do not use Durable Objects, so their Wrangler configs opt into
 `preview_urls = true` and the workflow includes mock version preview links when
 Cloudflare returns them.

@@ -20,8 +20,8 @@ This repository is:
 - The foundation for a personal assistant rather than a general-purpose SaaS
   product.
 
-Some existing docs and code use starter-oriented conventions. When those
-conflict with the guidance here, treat this document as the project's intent.
+When docs or code reflect starter-oriented conventions and conflict with the
+guidance here, treat this document as the project's intent.
 
 ## Who this is for
 
