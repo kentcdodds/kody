@@ -32,9 +32,14 @@ test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	}
 })
 
-test('kody_official_guide description surfaces package Intent guidance', () => {
+test('kody_official_guide metadata routes package authoring discovery', () => {
 	expect(kodyOfficialGuideCapability.description).toContain('package_authoring')
-	expect(kodyOfficialGuideCapability.description).toContain('README.md Intent')
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'The `guide` input describes each available guide',
+	)
+	expect(kodyOfficialGuideCapability.description).not.toContain(
+		'README.md Intent',
+	)
 	expect(kodyOfficialGuideCapability.keywords).toEqual(
 		expect.arrayContaining(['readme intent', 'intent section']),
 	)

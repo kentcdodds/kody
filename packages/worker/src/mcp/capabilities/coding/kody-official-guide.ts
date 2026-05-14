@@ -112,17 +112,10 @@ async function fetchGuideMarkdown(guide: KodyOfficialGuideId): Promise<string> {
 }
 
 function buildCapabilityDescription(): string {
-	const lines = guideIds.map((id) => {
-		const g = kodyOfficialGuideCatalog[id]
-		return `- \`${id}\`: ${g.summary}`
-	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **When creating or materially changing a package, use `guide: "package_authoring"` so README.md Intent guidance is visible.** For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` before saving the dependent package. For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). Use `package_authoring` for package creation or material package updates, and `integration_bootstrap` before building integration-dependent packages, package apps, or workflows.',
 		'',
-		'Available guides (order matters—start with `package_authoring` for package work and `integration_bootstrap` before integration-dependent package work):',
-		...lines,
-		'',
-		'Requires network access to raw.githubusercontent.com; failures surface as errors (no offline copy).',
+		'The `guide` input describes each available guide and when to use it. If you are unsure, call this capability instead of guessing.',
 	].join('\n')
 }
 
