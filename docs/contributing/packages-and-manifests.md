@@ -31,10 +31,10 @@ When creating a package or materially changing an existing one, keep the root
 `README.md` aligned with the requested goal:
 
 - include or maintain a `## Intent` section
-- capture Kent's user-defined goal in concise language
-- ask Kent if intent is unclear
+- capture the user's goal in concise language
+- ask the user if intent is unclear
 - update intent only when you are confident the goal changed
-- update it when Kent expands the package scope
+- update it when the user expands the package scope
 
 This is package-authoring guidance, not a manifest field, runtime primitive,
 saved value, or separate top-level entity.

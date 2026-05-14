@@ -57,7 +57,7 @@ Conventions
 - ${conversationIdGuidance}
 - \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories and suppress repeats within the same \`conversationId\`.
 - Do not ask the user to paste secrets in chat; use saved secrets or \`open_generated_ui\`.
-- \`package_save\`: create or replace a repo-backed saved package rooted at \`package.json\`. Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs. When creating or materially changing a package, keep a root \`README.md\` \`## Intent\` section with the user-defined goal; ask Kent if unclear and update it when scope expands.
+- \`package_save\`: create or replace a repo-backed saved package rooted at \`package.json\`. Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs. When creating or materially changing a package, keep a root \`README.md\` \`## Intent\` section with the user's goal; ask the user if unclear and update it when scope expands.
 - \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
 - \`job_list\` / \`job_get\`: inspect the signed-in user's scheduled jobs, recent run outcomes, and current per-user alarm state when debugging scheduling issues. Pass \`includeCode: true\` to \`job_get\` when you need the stored repo-backed job source entrypoint and code.
 - \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. Supports one-off, interval, and cron schedules.

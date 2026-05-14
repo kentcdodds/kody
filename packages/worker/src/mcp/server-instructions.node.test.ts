@@ -46,5 +46,5 @@ test('surfaces package README Intent authoring guidance', () => {
 	expect(instructions).toContain('guide: "package_authoring"')
 	expect(instructions).toContain('README.md')
 	expect(instructions).toContain('## Intent')
-	expect(instructions).toContain('ask Kent if unclear')
+	expect(instructions).toContain('ask the user if unclear')
 })
