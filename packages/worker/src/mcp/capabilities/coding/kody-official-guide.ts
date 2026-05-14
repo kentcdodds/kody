@@ -113,7 +113,10 @@ async function fetchGuideMarkdown(guide: KodyOfficialGuideId): Promise<string> {
 
 function buildCapabilityDescription(): string {
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). Use `package_authoring` for package creation or material package updates, and `integration_bootstrap` before building integration-dependent packages, package apps, or workflows.',
+		'Load an official Kody guide from the kody GitHub repository (markdown).',
+		'Prefer this capability plus `search` results over local repo spelunking when Kody auth or integration behavior is already documented.',
+		'Use `guide: "package_authoring"` for package creation or material package updates, and `guide: "integration_bootstrap"` before building integration-dependent packages, package apps, or workflows.',
+		'Integration bootstrap covers checking saved `integration` / `secret` entities and running a cheap authenticated smoke test before building.',
 		'',
 		'The `guide` input describes each available guide and when to use it. If you are unsure, call this capability instead of guessing.',
 	].join('\n')

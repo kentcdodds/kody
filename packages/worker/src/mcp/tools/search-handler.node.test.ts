@@ -69,7 +69,7 @@ const { registerSearchTool } = await import('./search.ts')
 
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
-async function getSearchHandler() {
+async function getSearchRegistration() {
 	const registerTool = vi.fn()
 
 	await registerSearchTool({
@@ -85,9 +85,15 @@ async function getSearchHandler() {
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
-	const [name, , handler] = registerTool.mock.calls[0] ?? []
+	const [name, rawOptions, handler] = registerTool.mock.calls[0] ?? []
 	expect(name).toBe('search')
 	expect(typeof handler).toBe('function')
+	const options = rawOptions as { description: string }
+	return { options, handler }
+}
+
+async function getSearchHandler() {
+	const { handler } = await getSearchRegistration()
 	return handler as (input: {
 		query?: string
 		entity?: string
@@ -112,6 +118,17 @@ async function getSearchHandler() {
 		isError?: boolean
 	}>
 }
+
+test('search tool description surfaces integration-backed discovery flow', async () => {
+	vi.clearAllMocks()
+	const { options } = await getSearchRegistration()
+
+	expect(options.description).toContain('Integration-backed packages')
+	expect(options.description).toContain('kody_official_guide')
+	expect(options.description).toContain('guide: "integration_bootstrap"')
+	expect(options.description).toContain('integration` or `secret` entities')
+	expect(options.description).toContain('authenticated `execute` smoke test')
+})
 
 test('search tool reports timing metadata across success and error flows', async () => {
 	vi.clearAllMocks()

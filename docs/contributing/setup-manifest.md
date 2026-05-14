@@ -94,7 +94,7 @@ automatically:
   `npm run dev` targets the Cloudflare mock unless `SKIP_CLOUDFLARE_MOCK=1`. The
   internal Cloudflare API client expects paths under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
-  `POST /__maintenance/reindex-capabilities` to refresh builtin capability
+  `POST /__maintenance/reindex-capabilities` to refresh built-in capability
   embeddings in Vectorize. Saved package projections refresh when packages are
   saved or published.)
 
@@ -132,9 +132,9 @@ How to get/set each value:
 - `CLOUDFLARE_API_TOKEN`
   - In Cloudflare Dashboard, create an API Token with permissions to deploy
     Workers and edit D1 on the target account. This is the same token to reuse
-    for remote AI and Cloudflare API workflows that run with account secrets +
-    skills; when you do, also include the product permissions needed for those
-    APIs.
+    for remote AI and Cloudflare API workflows that run with account secrets and
+    saved packages; when you do, also include the product permissions needed for
+    those APIs.
   - In GitHub: `Settings` → `Secrets and variables` → `Actions` →
     `New repository secret`.
 - `COOKIE_SECRET`
@@ -175,9 +175,8 @@ How to get/set each value:
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to
-    `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-skills`
-    with `Authorization: Bearer …` to refresh capability and user-skill
-    embeddings.
+    `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` to
+    refresh built-in capability embeddings.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

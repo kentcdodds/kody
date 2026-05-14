@@ -144,7 +144,7 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 
 ## Repo-backed source and Artifacts
 
-Repo-backed saved packages, apps, skills, and jobs use Cloudflare Artifacts
+Repo-backed saved packages, package apps, and jobs use Cloudflare Artifacts
 repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 - Primary code lives under `packages/worker/src/repo/`.
@@ -157,17 +157,17 @@ repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 Canonical source contract:
 
-- Published repo source is the only canonical source for saved packages, apps,
-  skills, and jobs.
-- D1 keeps metadata and projections only. It does not store canonical app HTML,
-  app backend code, skill code, or job code.
+- Published repo source is the only canonical source for saved packages, package
+  apps, and jobs.
+- D1 keeps metadata and projections only. It does not store canonical package
+  export code, app backend code, or job code.
 - App rows keep display metadata, parameters, visibility, `has_server_code`, and
-  `source_id`.
+  `source_id` for app projections.
 - Job rows keep scheduling/execution metadata, params, storage id, caller
   context, repo check policy, `source_id`, and the published commit last synced
   into the job projection.
-- Skill rows keep display/search metadata, parameters, capability annotations,
-  collection metadata, and `source_id`.
+- Saved package rows keep display/search metadata, tags, app availability, and
+  `source_id` for Kody search and package discovery.
 - Projection updates are made from published repo state by the publish/reindex
   paths; stale D1 inline source fields are not a fallback.
 

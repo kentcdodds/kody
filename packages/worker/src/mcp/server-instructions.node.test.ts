@@ -48,3 +48,15 @@ test('surfaces package README Intent authoring guidance', () => {
 	expect(instructions).toContain('## Intent')
 	expect(instructions).toContain('ask the user if unclear')
 })
+
+test('surfaces integration-backed workflow before package construction', () => {
+	const instructions = buildMcpServerInstructions(null)
+
+	expect(instructions).toContain('Integration-backed work')
+	expect(instructions).toContain('guide: "integration_bootstrap"')
+	expect(instructions).toContain('integration` or `secret` entity')
+	expect(instructions).toContain('cheap authenticated `execute` smoke test')
+	expect(instructions).toContain('before local repo exploration')
+	expect(instructions).toContain('`oauth` for `/connect/oauth`')
+	expect(instructions).toContain('`secret_backed_integration`')
+})

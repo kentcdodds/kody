@@ -146,7 +146,8 @@ files.
 `repo_write_file` overwrites one or more files with full new content and returns
 a per-file diff plus a `changed` flag. Reach for it when:
 
-- replacing the entire body of a job, app server, or skill module
+- replacing the entire body of a package export module, job module, or app
+  server
 - writing a freshly generated package file that does not yet exist
 - patching a one-line config when you do not want to hand-craft a diff hunk
 
