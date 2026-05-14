@@ -7,7 +7,11 @@ export const packageFileSchema = z.object({
 		.describe(
 			'Package-relative file path to write into the saved package repo.',
 		),
-	content: z.string().describe('Full file contents for this package file.'),
+	content: z
+		.string()
+		.describe(
+			'Full file contents for this package file. For README.md, maintain a concise Intent section when creating or materially changing a package.',
+		),
 })
 
 export const packageSummarySchema = z.object({

@@ -17,6 +17,8 @@ Prefer one saved package with:
 - `package.json#kody.services.realtime-supervisor.entry` for the long-lived
   runtime
 - package exports for reusable helpers and formatting logic
+- a root `README.md` `## Intent` section that captures the user's goal for the
+  package; use `guide: "package_authoring"` for the full reminder
 
 Example manifest shape:
 

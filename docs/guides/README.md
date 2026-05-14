@@ -7,6 +7,7 @@ available `guide` ids).
 
 | File                                                                           | Topic                                                                                                       |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| [package-authoring.md](./package-authoring.md)                                 | General package-authoring guidance, including the README Intent section                                     |
 | [integration-bootstrap.md](./integration-bootstrap.md)                         | **Start here** for third-party integrations that must work before saving a dependent package or package app |
 | [secret-backed-integration.md](./secret-backed-integration.md)                 | Default recipe for non-OAuth integrations that use one or more saved secrets                                |
 | [integration-backed-app-happy-path.md](./integration-backed-app-happy-path.md) | Default package app pattern after integration smoke test passes                                             |

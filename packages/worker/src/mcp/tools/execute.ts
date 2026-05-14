@@ -44,6 +44,7 @@ Saved package surface:
 - repo-backed package editing with \`repo_run_commands\`; ${repoRunCommandsExecuteSummary}
 - cross-package imports with specifiers such as
    \`kody:@scope/my-package/export-name\`
+- When creating or materially changing a package, load \`kody_official_guide({ guide: 'package_authoring' })\` and keep a root \`README.md\` \`## Intent\` section with the user-defined goal.
 
 Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.

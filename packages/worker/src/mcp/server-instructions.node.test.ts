@@ -40,6 +40,15 @@ test('surfaces remote connector identifiers and compacts long descriptions', () 
 	expect(longConnectorDescription.length).toBeLessThanOrEqual(240)
 })
 
+test('surfaces package README Intent authoring guidance', () => {
+	const instructions = buildMcpServerInstructions()
+
+	expect(instructions).toContain('guide: "package_authoring"')
+	expect(instructions).toContain('README.md')
+	expect(instructions).toContain('## Intent')
+	expect(instructions).toContain('ask the user if unclear')
+})
+
 test('surfaces integration-backed workflow before package construction', () => {
 	const instructions = buildMcpServerInstructions(null)
 
