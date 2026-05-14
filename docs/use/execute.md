@@ -137,9 +137,12 @@ module-oriented runtime model:
 
 Static saved-package imports from ad hoc **execute** run under the ad hoc
 execute runtime. That means imported package modules can share exported helpers,
-but `packageContext` and `packages` remain **`null`** unless the module is
-entered through a true saved-package runtime surface such as package invocation,
-a package job, a package service, a package app, or a package subscription.
+but `packageContext` remains **`null`** because the imported module has not been
+entered as its own package runtime. Authenticated execute calls can still import
+`packages` from `kody:runtime` and use `packages.check`, `packages.invoke`, or
+`packages.invokeChecked`; prefer `packages.invokeChecked` when execute needs to
+enter a saved package export so that target code receives its package runtime
+context.
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
