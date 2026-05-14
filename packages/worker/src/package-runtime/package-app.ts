@@ -6,6 +6,7 @@ import {
 } from '#worker/package-registry/manifest.ts'
 import {
 	buildCodemodeFns,
+	type PackageEventTools,
 	type PackageInvokeTools,
 } from '#mcp/run-codemode-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
@@ -294,6 +295,13 @@ function createPackagesProxy(runtimeBridge) {
 	};
 }
 
+function createEventsProxy(runtimeBridge) {
+	return {
+		dispatch: async (input) =>
+			await runtimeBridge.packageEventDispatch(input ?? {}),
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -444,6 +452,7 @@ function createRuntime(runtimeBridge, packageContext) {
 		packageSecrets,
 		workflows: createWorkflowsProxy(runtimeBridge),
 		packages: createPackagesProxy(runtimeBridge),
+		events: createEventsProxy(runtimeBridge),
 		packageContext,
 	};
 }
@@ -621,6 +630,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	PackageAppRuntimeBridgeProps
 > {
 	private packageRuntimeInvokeTools: Promise<PackageInvokeTools> | null = null
+	private packageEventTools: Promise<PackageEventTools> | null = null
 
 	private createCallerContext(storageId: string | null) {
 		return createMcpCallerContext({
@@ -1022,6 +1032,32 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return await this.packageRuntimeInvokeTools
 	}
 
+	async createPackageEventTools() {
+		if (this.packageEventTools) return await this.packageEventTools
+
+		// Avoid a top-level package-app -> package-invocations cycle during worker
+		// startup; apps only need this helper when package code calls it.
+		this.packageEventTools =
+			import('#worker/package-invocations/service.ts').then(
+				({ createPackageEventTools }) => {
+					const packageContext = {
+						packageId: this.ctx.props.packageId,
+						kodyId: this.ctx.props.kodyId,
+						sourceId: this.ctx.props.sourceId,
+					}
+					return createPackageEventTools({
+						env: this.env,
+						baseUrl: this.ctx.props.baseUrl,
+						callerContext: this.createCallerContext(this.ctx.props.packageId),
+						packageContext,
+						parentRuntimeDebug: null,
+						packageInvokeDepth: 0,
+					})
+				},
+			)
+		return await this.packageEventTools
+	}
+
 	async packageInvoke(input: Record<string, unknown>) {
 		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.invoke(input)
@@ -1035,6 +1071,11 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	async packageInvokeChecked(input: Record<string, unknown>) {
 		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.invokeChecked(input)
+	}
+
+	async packageEventDispatch(input: Record<string, unknown>) {
+		const tools = await this.createPackageEventTools()
+		return await tools.dispatch(input)
 	}
 }
 

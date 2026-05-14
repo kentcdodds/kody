@@ -8,6 +8,8 @@ import {
 } from './types.ts'
 
 const packageManifestPath = 'package.json'
+const customPackageEventTopicPattern =
+	/^@[a-z0-9][a-z0-9._-]*\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/
 
 function isScopedPackageName(name: string) {
 	const trimmed = name.trim()
@@ -30,6 +32,26 @@ function getPackageNameScope(name: string) {
 	const separator = trimmed.indexOf('/')
 	if (separator <= 1) return null
 	return trimmed.slice(1, separator)
+}
+
+function assertPackageEmittedEventTopics(input: {
+	manifest: AuthoredPackageJson
+	manifestPath?: string
+}) {
+	const packageScope = getPackageNameScope(input.manifest.name)
+	for (const topic of Object.keys(input.manifest.kody.emits ?? {})) {
+		if (!customPackageEventTopicPattern.test(topic)) {
+			throw new Error(
+				`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.emits topic "${topic}" must use the scoped form "@scope/topic.name" with a lower-dot-case topic body.`,
+			)
+		}
+		const topicScope = getPackageNameScope(topic)
+		if (topicScope !== packageScope) {
+			throw new Error(
+				`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.emits topic "${topic}" must use the package scope "@${packageScope}".`,
+			)
+		}
+	}
 }
 
 export function assertAuthoredPackageJsonNameScope(input: {
@@ -102,6 +124,10 @@ export function parseAuthoredPackageJson(input: {
 			manifestPath: input.manifestPath,
 		})
 	}
+	assertPackageEmittedEventTopics({
+		manifest,
+		manifestPath: input.manifestPath,
+	})
 
 	return manifest
 }
@@ -195,6 +221,15 @@ export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
 
+export function listPackageEmittedEvents(manifest: AuthoredPackageJson) {
+	return Object.entries(manifest.kody.emits ?? {})
+		.map(([topic, emittedEvent]) => ({
+			topic,
+			description: emittedEvent.description.trim(),
+		}))
+		.sort((left, right) => left.topic.localeCompare(right.topic))
+}
+
 export type PackageRetrieverManifestEntry = {
 	key: string
 	exportName: string
@@ -275,6 +310,10 @@ export type PackageSearchProjection = {
 		handler: string
 		description: string | null
 		filters: Record<string, unknown> | null
+	}>
+	emits?: Array<{
+		topic: string
+		description: string
 	}>
 	retrievers: Array<PackageRetrieverManifestEntry>
 }
@@ -896,6 +935,7 @@ export function buildPackageSearchProjection(
 			.sort((left, right) => left.name.localeCompare(right.name)),
 		services: listPackageServices(manifest),
 		subscriptions: listPackageSubscriptions(manifest),
+		emits: listPackageEmittedEvents(manifest),
 		retrievers: listPackageRetrievers(manifest),
 	}
 }
@@ -931,6 +971,11 @@ export function buildPackageSearchDocument(
 			]
 				.filter((value) => value.length > 0)
 				.join(' '),
+	)
+	const emitsLines = (projection.emits ?? []).map((event) =>
+		[`emits:${event.topic}`, event.description]
+			.filter((value) => value.length > 0)
+			.join(' '),
 	)
 	const retrieverLines = projection.retrievers.map((retriever) =>
 		[
@@ -981,6 +1026,7 @@ export function buildPackageSearchDocument(
 		jobLines.join('\n'),
 		serviceLines.join('\n'),
 		subscriptionLines.join('\n'),
+		emitsLines.join('\n'),
 		retrieverLines.join('\n'),
 		projection.appEntry
 			? `app ${projection.appEntry}`

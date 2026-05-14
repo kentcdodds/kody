@@ -520,20 +520,24 @@ async function executePublishedJobArtifact(input: {
 				jobId: input.job.id,
 			}
 		: null
-	const packageInvokeTools = packageContext
+	const packageRuntimeTools = packageContext
 		? await (async () => {
 				// Avoid a top-level jobs -> package-invocations cycle during capability
 				// registry initialization.
-				const { createPackageRuntimeInvokeTools } =
+				const { createPackageEventTools, createPackageRuntimeInvokeTools } =
 					await import('#worker/package-invocations/service.ts')
-				return createPackageRuntimeInvokeTools({
+				const sharedInput = {
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
 					callerContext,
 					packageContext,
 					parentRuntimeDebug: runtimeDebug,
 					packageInvokeDepth: 0,
-				})
+				}
+				return {
+					packageInvokeTools: createPackageRuntimeInvokeTools(sharedInput),
+					packageEventTools: createPackageEventTools(sharedInput),
+				}
 			})()
 		: null
 	return await runBundledModuleWithRegistry(
@@ -552,11 +556,7 @@ async function executePublishedJobArtifact(input: {
 			},
 			...(packageContext ? { packageContext } : {}),
 			runtimeDebug,
-			...(packageContext && packageInvokeTools
-				? {
-						packageInvokeTools,
-					}
-				: {}),
+			...(packageRuntimeTools ?? {}),
 		},
 	).then((result) => ({
 		...result,

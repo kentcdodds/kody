@@ -97,6 +97,7 @@ function createPackageManifest(input: {
 		string,
 		{ handler: string; description?: string; filters?: Record<string, unknown> }
 	>
+	emits?: Record<string, { description: string }>
 	services?: Record<string, { entry: string }>
 	kodyDependencies?: Array<string>
 	retrievers?: Record<
@@ -128,6 +129,7 @@ function createPackageManifest(input: {
 				: undefined,
 			jobs: input.jobs,
 			subscriptions: input.subscriptions,
+			emits: input.emits,
 			services: input.services,
 			retrievers: input.retrievers,
 		},
@@ -428,6 +430,79 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_runtime__.d.ts',
 		expect.stringContaining('declare const storage'),
+	)
+})
+
+test('runRepoChecks constrains events.dispatch topics to package.json#kody.emits', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kentcdodds/discord-gateway',
+				kodyId: 'discord-gateway',
+				description: 'Discord gateway package',
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						description: 'A Discord message was created.',
+					},
+				},
+				jobs: {
+					runtime: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+		[
+			'src/job.ts',
+			`import { events } from 'kody:runtime'
+
+export default async () => {
+  await events.dispatch({
+    topic: '@kentcdodds/discord.message.created',
+    idempotencyKey: 'discord:message-create:123',
+  })
+}
+`,
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics: vi.fn(() => []),
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_runtime__.d.ts',
+		expect.stringContaining(
+			'type KodyDeclaredEventTopic = "@kentcdodds/discord.message.created";',
+		),
 	)
 })
 

@@ -200,6 +200,7 @@ function buildFallbackPackageSearchProjection(
 		jobs: [],
 		services: [],
 		subscriptions: [],
+		emits: [],
 		retrievers: [],
 	}
 }

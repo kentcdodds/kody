@@ -489,7 +489,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			{ runBundledModuleWithRegistry },
 			{ buildKodyModuleBundle },
 			{ loadPublishedBundleArtifactByIdentity },
-			{ createPackageRuntimeInvokeTools },
+			{ createPackageEventTools, createPackageRuntimeInvokeTools },
 		] = await Promise.all([
 			import('#mcp/run-codemode-registry.ts'),
 			import('./module-graph.ts'),
@@ -548,6 +548,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				mode: runtime.loaded.serviceDefinition?.mode ?? 'bounded',
 			},
 		}
+		const packageRuntimeToolsInput = {
+			env: this.env,
+			baseUrl: binding.baseUrl,
+			callerContext,
+			packageContext: runtime.packageContext,
+			parentRuntimeDebug: runtimeDebug,
+			packageInvokeDepth: 0,
+		}
 		const result = await runBundledModuleWithRegistry(
 			this.env,
 			callerContext,
@@ -573,14 +581,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					writable: true,
 				},
 				runtimeDebug,
-				packageInvokeTools: createPackageRuntimeInvokeTools({
-					env: this.env,
-					baseUrl: binding.baseUrl,
-					callerContext,
-					packageContext: runtime.packageContext,
-					parentRuntimeDebug: runtimeDebug,
-					packageInvokeDepth: 0,
-				}),
+				packageInvokeTools: createPackageRuntimeInvokeTools(
+					packageRuntimeToolsInput,
+				),
+				packageEventTools: createPackageEventTools(packageRuntimeToolsInput),
 				executorTimeoutMs: runtime.executorTimeoutMs,
 			},
 		)

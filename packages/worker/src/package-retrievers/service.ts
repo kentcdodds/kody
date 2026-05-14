@@ -158,8 +158,16 @@ async function invokeRetriever(input: {
 	}
 	// Avoid a top-level package-retrievers -> package-invocations cycle during
 	// capability registry initialization.
-	const { createPackageRuntimeInvokeTools } =
+	const { createPackageEventTools, createPackageRuntimeInvokeTools } =
 		await import('#worker/package-invocations/service.ts')
+	const packageRuntimeToolsInput = {
+		env: input.env,
+		baseUrl: input.baseUrl,
+		callerContext,
+		packageContext,
+		parentRuntimeDebug: runtimeDebug,
+		packageInvokeDepth: 0,
+	}
 	const executionResult = await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,
@@ -182,14 +190,10 @@ async function invokeRetriever(input: {
 			},
 			packageContext,
 			runtimeDebug,
-			packageInvokeTools: createPackageRuntimeInvokeTools({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				callerContext,
-				packageContext,
-				parentRuntimeDebug: runtimeDebug,
-				packageInvokeDepth: 0,
-			}),
+			packageInvokeTools: createPackageRuntimeInvokeTools(
+				packageRuntimeToolsInput,
+			),
+			packageEventTools: createPackageEventTools(packageRuntimeToolsInput),
 			executorTimeoutMs: clampTimeout(input.entry.timeoutMs, input.scope),
 		},
 	)

@@ -278,6 +278,7 @@ export const packageSecrets = runtime.packageSecrets ?? null;
 export const email = runtime.email ?? null;
 export const workflows = runtime.workflows ?? null;
 export const packages = runtime.packages ?? null;
+export const events = runtime.events ?? null;
 
 export default
 	__kodyInitialRuntime === undefined

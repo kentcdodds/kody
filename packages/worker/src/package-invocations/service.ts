@@ -6,6 +6,8 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 import {
 	runBundledModuleWithRegistry,
+	type PackageEventDispatchInput,
+	type PackageEventTools,
 	type PackageInvokeCheckResult,
 	type PackageInvokeContract,
 	type PackageInvokeInput,
@@ -17,6 +19,7 @@ import {
 	type PackageRuntimeSurface,
 } from '#worker/package-runtime/package-runtime-debug.ts'
 import {
+	listSavedPackagesByUserId,
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
@@ -27,6 +30,8 @@ import {
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	buildPackageSearchProjection,
+	listPackageEmittedEvents,
+	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
 	type PackageExportProjection,
@@ -108,7 +113,13 @@ type PackageRuntimeContext = {
 	sourceId?: string | null
 }
 
+type LoadedPackageEventSubscription = {
+	savedPackage: SavedPackageRecord
+	subscription: ReturnType<typeof listPackageSubscriptions>[number]
+}
+
 const internalEmailSubscriptionTokenId = 'internal:email-subscriptions'
+const internalPackageEventSubscriptionTokenId = 'internal:package-events'
 const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
 const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
 const maxPackageRuntimeInvokeDepth = 8
@@ -1198,6 +1209,14 @@ async function invokeSavedPackageModule(input: {
 					parentRuntimeDebug: runtimeDebug,
 					packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
 				}),
+				packageEventTools: createPackageEventTools({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					callerContext,
+					packageContext,
+					parentRuntimeDebug: runtimeDebug,
+					packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
+				}),
 			},
 		)
 		const response = executionResult.error
@@ -1278,6 +1297,225 @@ export function createPackageRuntimeInvokeTools(input: {
 		...input,
 		callerKind: 'package',
 	})
+}
+
+function parsePackageEventDispatchInput(rawInput: PackageEventDispatchInput) {
+	const input =
+		rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)
+			? rawInput
+			: {}
+	const topic =
+		typeof input.topic === 'string'
+			? normalizePackageSubscriptionTopic(input.topic)
+			: ''
+	if (!topic) {
+		throw new Error('events.dispatch requires a non-empty topic.')
+	}
+	const idempotencyKey =
+		typeof input.idempotencyKey === 'string' ? input.idempotencyKey.trim() : ''
+	if (!idempotencyKey) {
+		throw new Error('events.dispatch requires a non-empty idempotencyKey.')
+	}
+	const payload = input.payload ?? {}
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+		throw new Error(
+			'events.dispatch payload must be a JSON object when provided.',
+		)
+	}
+	return {
+		topic,
+		idempotencyKey,
+		payload: payload as Record<string, unknown>,
+	}
+}
+
+async function buildPackageEventSubscriptionIdempotencyKey(input: {
+	sourcePackageId: string
+	subscriberPackageId: string
+	topic: string
+	idempotencyKey: string
+}) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(canonicalJsonStringify(input)),
+	)
+	return [
+		'pkgevent',
+		input.sourcePackageId,
+		input.subscriberPackageId,
+		input.topic,
+		toHex(new Uint8Array(digest)).slice(0, 24),
+	].join(':')
+}
+
+function readInvocationError(response: PackageInvocationResponse) {
+	const errorRecord =
+		(response.body['error'] as Record<string, unknown> | undefined) ?? {}
+	return {
+		code: String(errorRecord['code'] ?? 'package_subscription_failed'),
+		message: String(
+			errorRecord['message'] ??
+				`Package subscription failed with HTTP ${response.status}.`,
+		),
+	}
+}
+
+async function loadMatchingPackageEventSubscriptions(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	topic: string
+}) {
+	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.userId,
+	})
+	const settled = await Promise.all(
+		savedPackages.map(async (savedPackage) => {
+			try {
+				const loaded = await loadPackageManifestBySourceId({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceId: savedPackage.sourceId,
+				})
+				const subscription = listPackageSubscriptions(loaded.manifest).find(
+					(candidate) => candidate.topic === input.topic,
+				)
+				if (!subscription) return null
+				return {
+					savedPackage,
+					subscription,
+				}
+			} catch (error) {
+				console.warn('Failed to load package manifest for package event', {
+					sourceId: savedPackage.sourceId,
+					packageId: savedPackage.id,
+					error,
+				})
+				return null
+			}
+		}),
+	)
+	return settled.filter(
+		(entry): entry is LoadedPackageEventSubscription => entry !== null,
+	)
+}
+
+export function createPackageEventTools(input: {
+	env: Env
+	baseUrl: string
+	callerContext: ReturnType<typeof createMcpCallerContext>
+	packageContext: PackageRuntimeContext | null
+	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	packageInvokeDepth?: number
+}): PackageEventTools {
+	return {
+		dispatch: async (rawInput) => {
+			const user = input.callerContext.user
+			if (!user?.userId) {
+				throw new Error('events.dispatch requires an authenticated user.')
+			}
+			if (!input.packageContext) {
+				throw new Error('events.dispatch requires a package runtime context.')
+			}
+			const packageContext = input.packageContext
+			const packageInvokeDepth = input.packageInvokeDepth ?? 0
+			if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
+				throw new Error(
+					`events.dispatch exceeded the maximum nested invocation depth (${maxPackageRuntimeInvokeDepth}).`,
+				)
+			}
+			const request = parsePackageEventDispatchInput(rawInput)
+			const sourceId = packageContext.sourceId?.trim()
+			if (!sourceId) {
+				throw new Error('events.dispatch requires a published package source.')
+			}
+			const sourceManifest = await loadPackageManifestBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: user.userId,
+				sourceId,
+			})
+			const declaredEvent = listPackageEmittedEvents(
+				sourceManifest.manifest,
+			).find((event) => event.topic === request.topic)
+			if (!declaredEvent) {
+				throw new Error(
+					`Package "${packageContext.kodyId}" does not declare emitted event "${request.topic}" in package.json#kody.emits.`,
+				)
+			}
+			const subscriptions = await loadMatchingPackageEventSubscriptions({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: user.userId,
+				topic: request.topic,
+			})
+			const envelope = {
+				event: request.topic,
+				source: {
+					type: 'package',
+					package_id: packageContext.packageId,
+					kody_id: packageContext.kodyId,
+				},
+				idempotency_key: request.idempotencyKey,
+				payload: request.payload,
+			}
+			const subscribers = await Promise.all(
+				subscriptions.map(async ({ savedPackage, subscription }) => {
+					const response = await invokePackageSubscription({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						savedPackage,
+						topic: request.topic,
+						params: envelope,
+						idempotencyKey: await buildPackageEventSubscriptionIdempotencyKey({
+							sourcePackageId: packageContext.packageId,
+							subscriberPackageId: savedPackage.id,
+							topic: request.topic,
+							idempotencyKey: request.idempotencyKey,
+						}),
+						source: `package:${packageContext.kodyId}`,
+						actorTokenId: `${internalPackageEventSubscriptionTokenId}:${packageContext.packageId}`,
+						actorDisplayName: `package:${packageContext.kodyId}`,
+						runtimeInvokeDepth: packageInvokeDepth + 1,
+					})
+					const replayed =
+						(response.body['idempotency'] as { replayed?: unknown } | undefined)
+							?.replayed === true
+					const status =
+						response.status >= 200 && response.status < 400
+							? replayed
+								? 'replayed'
+								: 'completed'
+							: 'failed'
+					return {
+						packageId: savedPackage.id,
+						kodyId: savedPackage.kodyId,
+						handler: subscription.handler,
+						status,
+						...(status === 'failed'
+							? { error: readInvocationError(response) }
+							: {}),
+					}
+				}),
+			)
+			const failed = subscribers.filter(
+				(subscriber) => subscriber.status === 'failed',
+			).length
+			return {
+				topic: request.topic,
+				source: {
+					type: 'package',
+					packageId: packageContext.packageId,
+					kodyId: packageContext.kodyId,
+				},
+				idempotencyKey: request.idempotencyKey,
+				subscribers,
+				delivered: subscribers.length - failed,
+				failed,
+			}
+		},
+	}
 }
 
 export function createExecutePackageInvokeTools(input: {
@@ -1662,6 +1900,9 @@ export async function invokePackageSubscription(input: {
 	params?: Record<string, unknown>
 	idempotencyKey: string
 	source?: string | null
+	actorTokenId?: string
+	actorDisplayName?: string
+	runtimeInvokeDepth?: number
 }) {
 	const topic = normalizePackageSubscriptionTopic(input.topic)
 	const idempotencyKey = input.idempotencyKey.trim()
@@ -1677,10 +1918,11 @@ export async function invokePackageSubscription(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
-			tokenId: internalEmailSubscriptionTokenId,
+			tokenId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
 			userId: input.savedPackage.userId,
 			email: '',
-			displayName: `package:${input.savedPackage.kodyId}`,
+			displayName:
+				input.actorDisplayName ?? `package:${input.savedPackage.kodyId}`,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: buildPackageSubscriptionArtifactName(topic),
@@ -1693,5 +1935,6 @@ export async function invokePackageSubscription(input: {
 		source: normalizeNullableString(input.source) ?? 'email',
 		topic,
 		notFoundCode: 'subscription_not_found',
+		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 	})
 }

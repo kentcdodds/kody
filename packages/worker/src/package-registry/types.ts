@@ -68,6 +68,14 @@ export type PackageSubscriptionDefinition = z.infer<
 	typeof packageSubscriptionDefinitionSchema
 >
 
+export const packageEmittedEventDefinitionSchema = z.object({
+	description: z.string().min(1),
+})
+
+export type PackageEmittedEventDefinition = z.infer<
+	typeof packageEmittedEventDefinitionSchema
+>
+
 export const packageRetrieverScopeValues = ['search', 'context'] as const
 export type PackageRetrieverScope = (typeof packageRetrieverScopeValues)[number]
 
@@ -151,6 +159,9 @@ export const authoredPackageKodySchema = z.object({
 		.optional(),
 	subscriptions: z
 		.record(z.string().min(1), packageSubscriptionDefinitionSchema)
+		.optional(),
+	emits: z
+		.record(z.string().min(1), packageEmittedEventDefinitionSchema)
 		.optional(),
 	app: packageAppDefinitionSchema.optional(),
 	services: z

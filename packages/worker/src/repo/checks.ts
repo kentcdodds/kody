@@ -202,7 +202,18 @@ function formatTypecheckDiagnostics(
 	})
 }
 
-function createExecuteTypecheckPrelude(input?: { includeStorage?: boolean }) {
+function formatTypeLiteralUnion(values: Array<string>) {
+	const uniqueValues = Array.from(new Set(values)).sort((left, right) =>
+		left.localeCompare(right),
+	)
+	if (uniqueValues.length === 0) return 'never'
+	return uniqueValues.map((value) => JSON.stringify(value)).join(' | ')
+}
+
+function createExecuteTypecheckPrelude(input?: {
+	includeStorage?: boolean
+	emittedEventTopics?: Array<string>
+}) {
 	return `type KodyJsonValue =
   | string
   | number
@@ -310,6 +321,14 @@ type KodyEmailRuntime = {
 type KodyWorkflowsRuntime = {
   create(input: KodyCapabilityArgs): Promise<unknown>;
 } | null;
+type KodyDeclaredEventTopic = ${formatTypeLiteralUnion(input?.emittedEventTopics ?? [])};
+type KodyEventsRuntime = {
+  dispatch(input: {
+    topic: KodyDeclaredEventTopic;
+    idempotencyKey: string;
+    payload?: Record<string, unknown>;
+  }): Promise<unknown>;
+};
 
 declare const codemode: Record<
   string,
@@ -329,6 +348,7 @@ declare const serviceContext: { serviceName: string } | null;
 declare const packages: KodyPackagesRuntime | null;
 declare const email: KodyEmailRuntime;
 declare const workflows: KodyWorkflowsRuntime;
+declare const events: KodyEventsRuntime;
 declare const packageSecrets:
   | {
       get(alias: string): Promise<string>;
@@ -367,6 +387,7 @@ declare module "kody:runtime" {
 	};
   export const email: KodyEmailRuntime;
   export const workflows: KodyWorkflowsRuntime;
+  export const events: KodyEventsRuntime;
   export const packageSecrets:
     | {
         get(alias: string): Promise<string>;
@@ -400,6 +421,7 @@ type PackageBundleTarget = {
 type PackageCallableTypecheckTarget = {
 	path: string
 	includeStorage: boolean
+	emittedEventTopics: Array<string>
 }
 
 function buildBundleTargetKey(target: PackageBundleTarget) {
@@ -465,6 +487,7 @@ function collectPackageCallableTypecheckTargets(
 	manifest: AuthoredPackageJson,
 ): Array<PackageCallableTypecheckTarget> {
 	const targets = new Map<string, PackageCallableTypecheckTarget>()
+	const emittedEventTopics = Object.keys(manifest.kody.emits ?? {})
 	const remember = (path: string, includeStorage: boolean) => {
 		const normalizedPath = normalizePackageWorkspacePath(path)
 		const existing = targets.get(normalizedPath)
@@ -476,6 +499,7 @@ function collectPackageCallableTypecheckTargets(
 		targets.set(normalizedPath, {
 			path: normalizedPath,
 			includeStorage,
+			emittedEventTopics,
 		})
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
@@ -685,6 +709,7 @@ function getPackageTypecheckDiagnostics(input: {
 			executeTypecheckPreludePath,
 			createExecuteTypecheckPrelude({
 				includeStorage: target.includeStorage,
+				emittedEventTopics: target.emittedEventTopics,
 			}),
 		)
 		input.fileSystem.write(
@@ -796,6 +821,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		targets: input.entryPoints.map((entryPoint) => ({
 			path: entryPoint.path,
 			includeStorage: entryPoint.includeStorage === true,
+			emittedEventTopics: [],
 		})),
 		languageService,
 		fileSystem,

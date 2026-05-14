@@ -221,6 +221,81 @@ test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
 	})
 })
 
+test('parseAuthoredPackageJson accepts scoped emitted event declarations', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway package',
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						description: 'A Discord message was created.',
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	expect(manifest.kody.emits).toEqual({
+		'@kentcdodds/discord.message.created': {
+			description: 'A Discord message was created.',
+		},
+	})
+})
+
+test('parseAuthoredPackageJson rejects emitted event topics that are not scoped to the package owner', () => {
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/discord-gateway',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord gateway package',
+					emits: {
+						'discord.message.created': {
+							description: 'A Discord message was created.',
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(
+		'kody.emits topic "discord.message.created" must use the scoped form "@scope/topic.name"',
+	)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/discord-gateway',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord gateway package',
+					emits: {
+						'@other/discord.message.created': {
+							description: 'A Discord message was created.',
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(
+		'kody.emits topic "@other/discord.message.created" must use the package scope "@kentcdodds"',
+	)
+})
+
 test('parseAuthoredPackageJson accepts retriever definitions and includes them in search projection', () => {
 	const manifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
@@ -639,6 +714,11 @@ test('buildPackageSearchDocument includes exported APIs and package discovery su
 			kody: {
 				id: 'automation-hub',
 				description: 'Automation package with retrievers and subscriptions',
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						description: 'Dispatches Discord message events',
+					},
+				},
 				retrievers: {
 					'notes-search': {
 						export: './search-notes',
@@ -675,6 +755,8 @@ export declare function forecast(city: string): Promise<string>
 	expect(document).not.toContain('workflow:')
 	expect(document).toContain('subscription:email.message.received')
 	expect(document).toContain('subscription:email.message.quarantined')
+	expect(document).toContain('emits:@kentcdodds/discord.message.created')
+	expect(document).toContain('Dispatches Discord message events')
 	expect(document).toContain('. src/index.ts src/index.d.ts')
 	expect(document).toContain('forecast')
 })

@@ -123,6 +123,16 @@ export type PackageInvokeTools = {
 	invokeChecked: (input: PackageInvokeInput) => Promise<unknown>
 }
 
+export type PackageEventDispatchInput = {
+	topic?: unknown
+	idempotencyKey?: unknown
+	payload?: unknown
+}
+
+export type PackageEventTools = {
+	dispatch: (input: PackageEventDispatchInput) => Promise<unknown>
+}
+
 export type PackageWorkflowTools = {
 	create: (input: PackageWorkflowCreateInput) => Promise<unknown>
 }
@@ -285,6 +295,7 @@ const workflows = {
 
 const packageInvokeRuntimeBridgeProviderName =
 	'__kodyPackageInvokeRuntimeBridge'
+const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
 
 function createPackagesHelperPrelude() {
 	return `
@@ -292,6 +303,14 @@ const packages = {
   check: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {}),
   invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
   invokeChecked: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {}),
+};
+	`.trim()
+}
+
+function createEventsHelperPrelude() {
+	return `
+const events = {
+  dispatch: async (input) => await ${packageEventRuntimeBridgeProviderName}.dispatch(input ?? {}),
 };
 	`.trim()
 }
@@ -536,6 +555,23 @@ function createPackageInvokeRuntimeBridgeProvider(
 	return resolveProvider(provider)
 }
 
+function createPackageEventRuntimeBridgeProvider(
+	packageEventTools: PackageEventTools,
+): ResolvedProvider {
+	const provider: ToolProvider = {
+		name: packageEventRuntimeBridgeProviderName,
+		tools: {
+			dispatch: {
+				execute: async (args: unknown) =>
+					await packageEventTools.dispatch(
+						(args ?? {}) as PackageEventDispatchInput,
+					),
+			},
+		},
+	}
+	return resolveProvider(provider)
+}
+
 function createCapabilityInputSecretResolver(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -595,6 +631,7 @@ export async function runCodemodeWithRegistry(
 		executorModules?: WorkerLoaderModules
 		executorTimeoutMs?: number | null
 		packageInvokeTools?: PackageInvokeTools
+		packageEventTools?: PackageEventTools
 	},
 ): Promise<ExecuteResult> {
 	const moduleSource = stripCodeFences(code.trim())
@@ -611,6 +648,7 @@ export async function runCodemodeWithRegistry(
 				packageContext: options?.packageContext ?? null,
 			}),
 			packageInvokeTools: options?.packageInvokeTools,
+			packageEventTools: options?.packageEventTools,
 			executorTimeoutMs: options?.executorTimeoutMs,
 		})
 	}
@@ -677,6 +715,9 @@ export async function runCodemodeWithRegistry(
 	const packagesHelperPrelude = options?.packageInvokeTools
 		? createPackagesHelperPrelude()
 		: ''
+	const eventsHelperPrelude = options?.packageEventTools
+		? createEventsHelperPrelude()
+		: ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
@@ -684,6 +725,7 @@ export async function runCodemodeWithRegistry(
 		emailHelperPrelude,
 		workflowsHelperPrelude,
 		packagesHelperPrelude,
+		eventsHelperPrelude,
 		options?.helperPrelude ?? '',
 	]
 		.filter((value) => value.trim().length > 0)
@@ -694,12 +736,17 @@ ${helperPrelude ? `${helperPrelude}\n` : ''}
   const __kodyUserCode = (${normalized});
   return await __kodyUserCode();
 }`
-	const providers = options?.packageInvokeTools
-		? [
-				provider,
-				createPackageInvokeRuntimeBridgeProvider(options.packageInvokeTools),
-			]
-		: [provider]
+	const providers: Array<ResolvedProvider> = [provider]
+	if (options?.packageInvokeTools) {
+		providers.push(
+			createPackageInvokeRuntimeBridgeProvider(options.packageInvokeTools),
+		)
+	}
+	if (options?.packageEventTools) {
+		providers.push(
+			createPackageEventRuntimeBridgeProvider(options.packageEventTools),
+		)
+	}
 	const result = await executor.execute(wrapped, providers)
 	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 	if (!result.error) return sanitizedResult
@@ -730,6 +777,7 @@ export async function runModuleWithRegistry(
 		workflowTools?: PackageWorkflowTools
 		executorTimeoutMs?: number | null
 		packageInvokeTools?: PackageInvokeTools
+		packageEventTools?: PackageEventTools
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -761,6 +809,7 @@ export async function runModuleWithRegistry(
 					packageContext: options?.packageContext ?? null,
 				}),
 			packageInvokeTools: options?.packageInvokeTools,
+			packageEventTools: options?.packageEventTools,
 		},
 	)
 }
@@ -795,6 +844,7 @@ export async function runBundledModuleWithRegistry(
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		packageInvokeTools?: PackageInvokeTools
+		packageEventTools?: PackageEventTools
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
 		runtimeDebug?: PackageRuntimeDebugContext | null
@@ -883,6 +933,9 @@ export async function runBundledModuleWithRegistry(
 		const packagesHelperPrelude = options?.packageInvokeTools
 			? createPackagesHelperPrelude()
 			: ''
+		const eventsHelperPrelude = options?.packageEventTools
+			? createEventsHelperPrelude()
+			: ''
 		const entrypointInputJson = JSON.stringify(params)
 		const entrypointInputSource =
 			entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
@@ -894,6 +947,7 @@ ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
 ${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
 ${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
 ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
+${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
   const { AsyncLocalStorage: __KodyAsyncLocalStorage } = await import('node:async_hooks');
   const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
   const __kodyGlobal = globalThis;
@@ -914,6 +968,7 @@ ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
     email: typeof email === 'undefined' ? null : email,
     workflows: typeof workflows === 'undefined' ? null : workflows,
     packages: typeof packages === 'undefined' ? null : packages,
+    events: typeof events === 'undefined' ? null : events,
   };
   return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
@@ -925,14 +980,17 @@ ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
   });
 }`
 		try {
-			const providers = options?.packageInvokeTools
-				? [
-						provider,
-						createPackageInvokeRuntimeBridgeProvider(
-							options.packageInvokeTools,
-						),
-					]
-				: [provider]
+			const providers: Array<ResolvedProvider> = [provider]
+			if (options?.packageInvokeTools) {
+				providers.push(
+					createPackageInvokeRuntimeBridgeProvider(options.packageInvokeTools),
+				)
+			}
+			if (options?.packageEventTools) {
+				providers.push(
+					createPackageEventRuntimeBridgeProvider(options.packageEventTools),
+				)
+			}
 			const result = await executor.execute(wrapped, providers)
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
