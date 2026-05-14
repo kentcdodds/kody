@@ -1059,7 +1059,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 						: 'none'
 				}`,
 				'',
-				'Reconnect with `/connect/oauth?provider=<integration-name>`; Kody derives the provider authorize URL from the saved integration metadata plus the current client credentials.',
+				`Reconnect with \`/connect/oauth?provider=${encodeURIComponent(detail.config.name)}\`; Kody derives the provider authorize URL from the saved integration metadata plus the current client credentials.`,
 			)
 		}
 		return {

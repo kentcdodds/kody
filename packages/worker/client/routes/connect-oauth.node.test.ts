@@ -48,6 +48,30 @@ test('parseStoredIntegrationConfig returns normalized integration config', () =>
 	})
 })
 
+test('parseStoredIntegrationConfig rejects non-http authorization URLs', () => {
+	const parsed = parseStoredIntegrationConfig(
+		JSON.stringify({
+			name: 'GitHub',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'confidential',
+			clientIdValueName: 'github-client-id',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: 'githubRefreshToken',
+			requiredHosts: ['github.com'],
+			authorization: {
+				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+				scopeSeparator: null,
+				extraAuthorizeParams: {},
+			},
+		}),
+		null,
+	)
+
+	expect(parsed?.authorization).toBeNull()
+})
+
 test('getIntegrationValueCandidates prefers provider and normalized key without duplicates', () => {
 	expect(getIntegrationValueCandidates('GitHub', 'github')).toEqual([
 		buildIntegrationValueName('GitHub'),
@@ -168,6 +192,54 @@ test('mergeConnectOauthConfig can derive reconnect authorization from stored int
 			prompt: 'consent',
 		},
 		allowedHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+	})
+})
+
+test('mergeConnectOauthConfig falls back to stored authorization when query values are empty defaults', () => {
+	const config = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'google-youtube-brand',
+			providerKey: 'google-youtube-brand',
+			authorizeHost: null,
+			authorizeUrl: null,
+			tokenUrl: null,
+			apiBaseUrl: null,
+			scopes: [],
+			flow: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: [],
+		},
+		storedIntegration: {
+			name: 'google-youtube-brand',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com/youtube/v3',
+			flow: 'confidential',
+			clientIdValueName: 'google-youtube-brand-client-id',
+			clientSecretSecretName: 'googleYoutubeBrandClientSecret',
+			accessTokenSecretName: 'googleYoutubeBrandAccessToken',
+			refreshTokenSecretName: 'googleYoutubeBrandRefreshToken',
+			requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+				scopeSeparator: null,
+				extraAuthorizeParams: {
+					access_type: 'offline',
+					prompt: 'consent',
+				},
+			},
+		},
+	})
+
+	expect(config).toMatchObject({
+		scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+		extraAuthorizeParams: {
+			access_type: 'offline',
+			prompt: 'consent',
+		},
 	})
 })
 

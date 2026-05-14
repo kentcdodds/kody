@@ -3,12 +3,21 @@ import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 export const integrationFlowValues = ['pkce', 'confidential'] as const
 
-export const defaultIntegrationScopeSeparator = ' '
+const defaultIntegrationScopeSeparator = ' '
 
 export const integrationAuthorizationSchema = z
 	.object({
-		authorizeUrl: z.string().url(),
-		scopes: z.array(z.string().min(1)),
+		authorizeUrl: z.string().url().refine(isHttpUrl, {
+			message: 'Authorize URL must use http or https.',
+		}),
+		scopes: z.array(
+			z
+				.string()
+				.min(1)
+				.refine((scope) => scope.trim().length > 0, {
+					message: 'Scope cannot be whitespace-only.',
+				}),
+		),
 		scopeSeparator: z.string().min(1).optional().nullable(),
 		extraAuthorizeParams: z.record(z.string(), z.string()).optional(),
 	})
@@ -28,9 +37,7 @@ export const integrationConfigSchema = z.object({
 })
 
 export type IntegrationConfig = z.infer<typeof integrationConfigSchema>
-export type IntegrationAuthorization = z.infer<
-	typeof integrationAuthorizationSchema
->
+type IntegrationAuthorization = z.infer<typeof integrationAuthorizationSchema>
 
 export const integrationSaveSchema = z
 	.object({
@@ -69,7 +76,7 @@ export function normalizeIntegrationConfig(
 	}
 }
 
-export function normalizeIntegrationAuthorization(
+function normalizeIntegrationAuthorization(
 	value: IntegrationAuthorization,
 ): IntegrationAuthorization {
 	const scopeSeparator =
@@ -140,5 +147,14 @@ export function parseIntegrationJson(raw: string) {
 		return JSON.parse(raw)
 	} catch {
 		return null
+	}
+}
+
+function isHttpUrl(raw: string) {
+	try {
+		const url = new URL(raw)
+		return url.protocol === 'http:' || url.protocol === 'https:'
+	} catch {
+		return false
 	}
 }

@@ -1259,7 +1259,13 @@ function parseStoredIntegrationAuthorization(
 	const parsed = raw as Record<string, unknown>
 	const authorizeUrl =
 		typeof parsed.authorizeUrl === 'string' ? parsed.authorizeUrl.trim() : ''
-	if (!authorizeUrl || !safeParseHost(authorizeUrl)) return null
+	if (
+		!authorizeUrl ||
+		!isSafeExternalUrl(authorizeUrl) ||
+		!safeParseHost(authorizeUrl)
+	) {
+		return null
+	}
 	const scopes = Array.isArray(parsed.scopes)
 		? parsed.scopes.filter(
 				(value): value is string => typeof value === 'string' && Boolean(value),
@@ -1318,6 +1324,8 @@ export function mergeConnectOauthConfig(input: {
 		return null
 	}
 	const flow = input.storedIntegration?.flow ?? input.queryConfig.flow ?? 'pkce'
+	const scopes = resolveConnectOauthScopes(input)
+	const extraAuthorizeParams = resolveConnectOauthExtraAuthorizeParams(input)
 	const allowedHosts = normalizeHosts([
 		tokenHost,
 		...input.queryConfig.allowedHosts,
@@ -1333,19 +1341,13 @@ export function mergeConnectOauthConfig(input: {
 		tokenUrl,
 		apiBaseUrl:
 			input.storedIntegration?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
-		scopes:
-			input.queryConfig.scopes ??
-			input.storedIntegration?.authorization?.scopes ??
-			[],
+		scopes,
 		flow,
 		scopeSeparator:
 			input.queryConfig.scopeSeparator ??
 			input.storedIntegration?.authorization?.scopeSeparator ??
 			' ',
-		extraAuthorizeParams:
-			input.queryConfig.extraAuthorizeParams ??
-			input.storedIntegration?.authorization?.extraAuthorizeParams ??
-			{},
+		extraAuthorizeParams,
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
 		clientIdValueName:
@@ -1363,6 +1365,27 @@ export function mergeConnectOauthConfig(input: {
 			`${providerKey}RefreshToken`,
 		allowedHosts,
 	}
+}
+
+function resolveConnectOauthScopes(input: {
+	queryConfig: ConnectOauthQueryConfig
+	storedIntegration: StoredIntegrationConfig | null
+}) {
+	if (input.queryConfig.scopes && input.queryConfig.scopes.length > 0) {
+		return input.queryConfig.scopes
+	}
+	return input.storedIntegration?.authorization?.scopes ?? []
+}
+
+function resolveConnectOauthExtraAuthorizeParams(input: {
+	queryConfig: ConnectOauthQueryConfig
+	storedIntegration: StoredIntegrationConfig | null
+}) {
+	const queryParams = input.queryConfig.extraAuthorizeParams
+	if (queryParams && Object.keys(queryParams).length > 0) {
+		return queryParams
+	}
+	return input.storedIntegration?.authorization?.extraAuthorizeParams ?? {}
 }
 
 export function summarizeStoredSetupState(input: {

@@ -134,6 +134,48 @@ test('parseIntegrationConfig keeps older rows readable when apiBaseUrl is missin
 	})
 })
 
+test('parseIntegrationConfig rejects unsafe authorization URLs and whitespace-only scopes', () => {
+	expect(
+		parseIntegrationConfig(
+			{
+				name: 'spotify',
+				tokenUrl: 'https://accounts.spotify.com/api/token',
+				flow: 'pkce',
+				clientIdValueName: 'spotify-client-id',
+				clientSecretSecretName: null,
+				accessTokenSecretName: 'spotifyAccessToken',
+				refreshTokenSecretName: 'spotifyRefreshToken',
+				requiredHosts: ['api.spotify.com'],
+				authorization: {
+					authorizeUrl: 'ftp://accounts.spotify.com/authorize',
+					scopes: ['user-read-email'],
+				},
+			},
+			null,
+		),
+	).toBeNull()
+
+	expect(
+		parseIntegrationConfig(
+			{
+				name: 'spotify',
+				tokenUrl: 'https://accounts.spotify.com/api/token',
+				flow: 'pkce',
+				clientIdValueName: 'spotify-client-id',
+				clientSecretSecretName: null,
+				accessTokenSecretName: 'spotifyAccessToken',
+				refreshTokenSecretName: 'spotifyRefreshToken',
+				requiredHosts: ['api.spotify.com'],
+				authorization: {
+					authorizeUrl: 'https://accounts.spotify.com/authorize',
+					scopes: [' '],
+				},
+			},
+			null,
+		),
+	).toBeNull()
+})
+
 test('integration_save creates a new integration record', async () => {
 	const testDb = createValueTestDb()
 

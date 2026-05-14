@@ -183,6 +183,7 @@ test('entity detail formatting returns stable structured details for values and 
 		},
 	})
 	expect(integrationDetail.markdown).toContain('OAuth authorization metadata')
+	expect(integrationDetail.markdown).toContain('/connect/oauth?provider=github')
 })
 
 test('capability entity detail keeps the structured execute contract stable', () => {
