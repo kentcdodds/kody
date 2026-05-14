@@ -58,6 +58,12 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'Build a package-native long-lived service using kody.services, package app realtime fanout, service-owned storage, background lifecycle helpers, and scheduled wake-ups.',
 	},
+	package_subscriptions: {
+		file: 'package-subscriptions.md',
+		title: 'Package subscription guide',
+		summary:
+			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscription_list and follow metadata-first email.message.received payload guidance.',
+	},
 } as const
 
 const guideIds = Object.keys(kodyOfficialGuideCatalog) as Array<
@@ -111,7 +117,7 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. For package-owned event subscriptions such as `email.message.received`, use `package_subscriptions`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
@@ -132,6 +138,7 @@ const guideFieldSchema = z
 			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
 			'`connect_secret`: /connect/secret for API keys, PATs, and other secret collection steps.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
+			'`package_subscriptions`: package-owned event subscriptions, package_subscription_list discovery, and email.message.received metadata-first handler payloads.',
 		].join(' '),
 	)
 
@@ -179,6 +186,14 @@ const allKeywords = [
 		'connect secret',
 		'package service',
 		'service package',
+		'package subscription',
+		'package subscriptions',
+		'package_subscription_list',
+		'package.json#kody.subscriptions',
+		'email.message.received',
+		'email message received',
+		'metadata-first payload',
+		'event handler',
 		'background service',
 		'long-lived service',
 		'outbound websocket',

@@ -14,15 +14,15 @@ const ctx = {
 
 test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	const originalFetch = globalThis.fetch
-	const url = buildKodyOfficialGuideUrlForTest('integration_bootstrap')
-	expect(url).toMatch(/\/integration-bootstrap\.md$/)
+	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
+	expect(url).toMatch(/\/package-subscriptions\.md$/)
 	globalThis.fetch = (async (input) => {
 		expect(String(input)).toBe(url)
 		return new Response('# Hello\n\nbody', { status: 200 })
 	}) as typeof fetch
 	try {
 		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'integration_bootstrap' },
+			{ guide: 'package_subscriptions' },
 			ctx,
 		)
 		expect(result.title).toBeTruthy()
