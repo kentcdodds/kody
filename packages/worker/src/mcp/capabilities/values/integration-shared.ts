@@ -77,17 +77,22 @@ export function normalizeIntegrationAuthorization(
 		value.scopeSeparator === defaultIntegrationScopeSeparator
 			? null
 			: value.scopeSeparator
-	const extraAuthorizeParams = Object.fromEntries(
-		Object.entries(value.extraAuthorizeParams ?? {})
-			.map(([key, paramValue]) => [key.trim(), paramValue])
-			.filter(([key]) => key.length > 0)
-			.sort(([left], [right]) => left.localeCompare(right)),
-	)
+	const extraAuthorizeParams: Record<string, string> = {}
+	for (const [rawKey, paramValue] of Object.entries(
+		value.extraAuthorizeParams ?? {},
+	)) {
+		const key = rawKey.trim()
+		if (key) extraAuthorizeParams[key] = paramValue
+	}
 	return {
 		authorizeUrl: value.authorizeUrl.trim(),
 		scopes: value.scopes.map((scope) => scope.trim()).filter(Boolean),
 		scopeSeparator,
-		extraAuthorizeParams,
+		extraAuthorizeParams: Object.fromEntries(
+			Object.keys(extraAuthorizeParams)
+				.sort((left, right) => left.localeCompare(right))
+				.map((key) => [key, extraAuthorizeParams[key] ?? '']),
+		),
 	}
 }
 
