@@ -89,3 +89,9 @@ Use **search** as the default way to discover whether an integration or secret
 already exists before switching to **execute**. Runtime code inside **execute**
 can call **`codemode.secret_list(...)`** when it needs secret metadata, but
 **search** is the primary discovery path.
+
+For integration-backed packages, package apps, or workflows, pair that discovery
+with the official `integration_bootstrap` guide. Inspect the relevant
+`integration` or `secret` entity, run one cheap authenticated **execute** smoke
+test, then build the downstream artifact. If setup is missing, load the official
+OAuth or secret-backed setup guide that matches the auth path.

@@ -6,7 +6,7 @@ export const repoCodemodeModuleTypecheckHarnessPath =
 	'.__kody_repo_module_check__.ts'
 
 export const repoBackedModuleEntrypointExportErrorMessage =
-	'Repo-backed job and skill entrypoints must default export a function so Kody can invoke them with execute semantics.'
+	'Repo-backed package export entrypoints and job entrypoints must default export a function so Kody can invoke them with execute semantics.'
 
 const repoCodemodeSourceReadConcurrency = 8
 const repoCodemodeSourceMaxFiles = 250

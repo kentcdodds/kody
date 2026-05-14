@@ -330,6 +330,88 @@ test('memory service upserts, verifies, and soft deletes', async () => {
 	])
 })
 
+test('memory search returns mutable user-owned ids that can be updated and deleted', async () => {
+	const testDb = createMemoryTestDb()
+	const runtimeEnv = env(testDb.db)
+
+	await upsertMemory({
+		env: runtimeEnv,
+		userId: 'user-123',
+		subject: 'Mutable memory id',
+		summary: 'Search results should return ids that mutation calls can reuse.',
+		category: 'workflow',
+		verificationReference: 'verify-3',
+	})
+	await upsertMemory({
+		env: runtimeEnv,
+		userId: 'other-user',
+		subject: 'Mutable memory id',
+		summary: 'This other-user memory must not leak through search.',
+		category: 'workflow',
+		verificationReference: 'verify-4',
+	})
+
+	const search = await searchMemoryRecords({
+		env: runtimeEnv,
+		userId: 'user-123',
+		query: 'mutable memory id mutation calls',
+	})
+
+	expect(search.matches).toHaveLength(1)
+	const match = search.matches[0]!
+	expect(match.subject).toBe('Mutable memory id')
+
+	const updated = await upsertMemory({
+		env: runtimeEnv,
+		userId: 'user-123',
+		memoryId: match.id,
+		subject: 'Mutable memory id',
+		summary: 'The exact search result id was accepted by upsert.',
+		category: 'workflow',
+		verificationReference: 'verify-5',
+	})
+	expect(updated.mode).toBe('updated')
+	expect(updated.memory.id).toBe(match.id)
+
+	const deleted = await deleteMemory({
+		env: runtimeEnv,
+		userId: 'user-123',
+		memoryId: match.id,
+	})
+	expect(deleted?.id).toBe(match.id)
+	expect(deleted?.status).toBe('deleted')
+})
+
+test('memory upsert explains rejected mutation ids', async () => {
+	const testDb = createMemoryTestDb()
+	const runtimeEnv = env(testDb.db)
+
+	await expect(
+		upsertMemory({
+			env: runtimeEnv,
+			userId: 'user-123',
+			memoryId: 'transcribed-memory-id',
+			subject: 'Preferred editor theme',
+			summary: 'User prefers a dark theme in editors.',
+			category: 'preference',
+			verificationReference: 'verify-6',
+		}),
+	).rejects.toThrow(
+		'Memory "transcribed-memory-id" was not found in mutable memory storage for this signed-in user.',
+	)
+	await expect(
+		upsertMemory({
+			env: runtimeEnv,
+			userId: 'user-123',
+			memoryId: 'transcribed-memory-id',
+			subject: 'Preferred editor theme',
+			summary: 'User prefers a dark theme in editors.',
+			category: 'preference',
+			verificationReference: 'verify-7',
+		}),
+	).rejects.toThrow('copy the full id exactly and retry')
+})
+
 test('memory surfacing suppresses repeated memories per conversation', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)

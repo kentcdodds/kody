@@ -29,6 +29,12 @@ const maxTagCount = 16
 const maxSourceUriLength = 2_048
 const maxSourceUriCount = 12
 const defaultSuppressionTtlMs = 30 * 24 * 60 * 60 * 1_000
+export const memorySearchMutationGuidance =
+	'This result is mutable for the signed-in user. Use this exact id as memory_id with meta_memory_upsert or meta_memory_delete after meta_memory_verify.'
+
+export function getMemoryMutationNotFoundMessage(memoryId: string) {
+	return `Memory ${JSON.stringify(memoryId)} was not found in mutable memory storage for this signed-in user. If this id came from meta_memory_search or meta_memory_verify, copy the full id exactly and retry. If the exact id still fails, rerun meta_memory_search/meta_memory_verify to find the current mutable memory or create a replacement by omitting memory_id; the original id may be stale, deleted, owned by another user, or from a legacy/non-mutable source.`
+}
 
 function logMemoryVectorSyncError(input: {
 	operation: 'upsert' | 'delete'
@@ -124,7 +130,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 		? await getMemoryById(input.env.APP_DB, input.userId, input.memoryId)
 		: null
 	if (input.memoryId && !existing) {
-		throw new Error('Memory not found for this user.')
+		throw new Error(getMemoryMutationNotFoundMessage(input.memoryId))
 	}
 	const status = input.status ?? 'active'
 	const row: McpMemoryRow = existing
@@ -171,7 +177,11 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 			last_accessed_at: row.last_accessed_at,
 			deleted_at: row.deleted_at,
 		})
-		if (!updated) throw new Error('Memory not found for this user.')
+		if (!updated) {
+			throw new Error(
+				getMemoryMutationNotFoundMessage(input.memoryId ?? row.id),
+			)
+		}
 	} else {
 		await insertMemory(input.env.APP_DB, row)
 	}
