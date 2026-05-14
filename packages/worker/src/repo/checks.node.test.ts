@@ -672,7 +672,7 @@ test('runRepoChecks rejects legacy async-arrow package job entrypoints', async (
 				kind: 'typecheck',
 				ok: false,
 				message: expect.stringContaining(
-					'Repo-backed job and skill entrypoints must default export a function',
+					'Repo-backed package export entrypoints and job entrypoints must default export a function',
 				),
 			}),
 		]),
@@ -750,7 +750,7 @@ test('published package entrypoint typecheck rejects legacy async-arrow job entr
 	expect(result).toEqual({
 		ok: false,
 		message: expect.stringContaining(
-			'Repo-backed job and skill entrypoints must default export a function',
+			'Repo-backed package export entrypoints and job entrypoints must default export a function',
 		),
 	})
 	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()

@@ -1330,7 +1330,7 @@ test('createJob rejects legacy async-arrow snippet code', async () => {
 			},
 		}),
 	).rejects.toThrow(
-		'Repo-backed job and skill entrypoints must default export a function',
+		'Repo-backed package export entrypoints and job entrypoints must default export a function',
 	)
 })
 
