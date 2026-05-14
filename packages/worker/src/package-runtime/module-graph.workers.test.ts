@@ -570,6 +570,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 				"import { codemode, packageContext, packages } from 'kody:runtime'",
 				'',
 				'export default async function main(input = {}) {',
+				'\t// Direct codemode.package_invoke_checked should reject; packages.invokeChecked is the public API.',
 				'\tlet directCodemodeInvokeChecked;',
 				'\ttry {',
 				'\t\tawait codemode.package_invoke_checked({',
@@ -669,6 +670,10 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 			},
 		},
 	})
+	expect(
+		(result.result as { directCodemodeInvokeChecked: unknown })
+			.directCodemodeInvokeChecked,
+	).not.toBe('resolved')
 	expect(invokedInputs).toEqual([
 		{
 			kodyId: 'target-package',
@@ -688,6 +693,7 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 				"import { codemode, packageContext, packages } from 'kody:runtime'",
 				'',
 				'export default async function main(input = {}) {',
+				'\t// Direct codemode.package_invoke_checked should reject; packages.invokeChecked is the public API.',
 				'\tlet directCodemodeInvokeChecked;',
 				'\ttry {',
 				'\t\tawait codemode.package_invoke_checked({',
@@ -779,6 +785,10 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 			},
 		},
 	})
+	expect(
+		(result.result as { directCodemodeInvokeChecked: unknown })
+			.directCodemodeInvokeChecked,
+	).not.toBe('resolved')
 	expect(invokedInputs).toEqual([
 		{
 			kodyId: 'target-package',

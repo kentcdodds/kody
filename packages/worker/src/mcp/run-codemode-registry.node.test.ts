@@ -1555,6 +1555,7 @@ test('runBundledModuleWithRegistry injects package invocation helper through pri
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
 			async execute(wrapped, providers) {
+				expect(providers).toHaveLength(2)
 				expect(wrapped).toContain('const packages = {')
 				expect(wrapped).toContain('__kodyPackageInvokeRuntimeBridge')
 				expect(wrapped).not.toContain('codemode.package_invoke')
