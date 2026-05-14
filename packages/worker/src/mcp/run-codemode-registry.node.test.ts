@@ -1525,7 +1525,7 @@ test('runBundledModuleWithRegistry injects workflow helper when custom workflow 
 	}
 })
 
-test('runBundledModuleWithRegistry injects package invocation helper when provided', async () => {
+test('runBundledModuleWithRegistry injects package invocation helper through private bridge when provided', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1547,16 +1547,27 @@ test('runBundledModuleWithRegistry injects package invocation helper when provid
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
 	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
 		null
+	let packageBridgeFns: Record<
+		string,
+		(args: unknown) => Promise<unknown>
+	> | null = null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
 			async execute(wrapped, providers) {
 				expect(wrapped).toContain('const packages = {')
+				expect(wrapped).toContain('__kodyPackageInvokeRuntimeBridge')
+				expect(wrapped).not.toContain('codemode.package_invoke')
 				expect(wrapped).toContain(
 					"packages: typeof packages === 'undefined' ? null : packages",
 				)
 				providerFns = (
 					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				packageBridgeFns = (
+					providers[1] as {
 						fns: Record<string, (args: unknown) => Promise<unknown>>
 					}
 				).fns
@@ -1605,8 +1616,12 @@ test('runBundledModuleWithRegistry injects package invocation helper when provid
 
 		expect(result.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
+		expect(providerFns?.package_invoke_check).toBeUndefined()
+		expect(providerFns?.package_invoke).toBeUndefined()
+		expect(providerFns?.package_invoke_checked).toBeUndefined()
+		expect(packageBridgeFns).not.toBeNull()
 		await expect(
-			providerFns?.package_invoke_check({
+			packageBridgeFns?.check({
 				kodyId: 'discord-general-chat',
 				exportName: './handle-discord-message-created',
 			}),
@@ -1618,7 +1633,7 @@ test('runBundledModuleWithRegistry injects package invocation helper when provid
 			},
 		})
 		await expect(
-			providerFns?.package_invoke({
+			packageBridgeFns?.invoke({
 				kodyId: 'discord-general-chat',
 				exportName: './handle-discord-message-created',
 			}),
@@ -1630,7 +1645,7 @@ test('runBundledModuleWithRegistry injects package invocation helper when provid
 			},
 		})
 		await expect(
-			providerFns?.package_invoke_checked({
+			packageBridgeFns?.invokeChecked({
 				kodyId: 'discord-general-chat',
 				exportName: './handle-discord-message-created',
 			}),

@@ -283,12 +283,15 @@ const workflows = {
 	`.trim()
 }
 
+const packageInvokeRuntimeBridgeProviderName =
+	'__kodyPackageInvokeRuntimeBridge'
+
 function createPackagesHelperPrelude() {
 	return `
 const packages = {
-  check: async (input) => await codemode.package_invoke_check(input ?? {}),
-  invoke: async (input) => await codemode.package_invoke(input ?? {}),
-  invokeChecked: async (input) => await codemode.package_invoke_checked(input ?? {}),
+  check: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {}),
+  invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
+  invokeChecked: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {}),
 };
 	`.trim()
 }
@@ -308,7 +311,6 @@ export async function buildCodemodeFns(
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
-		packageInvokeTools?: PackageInvokeTools
 		skipCapabilityRegistry?: boolean
 	},
 ) {
@@ -458,20 +460,6 @@ export async function buildCodemodeFns(
 			}
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, workflowCodemodeTools)
-	const packageInvokeTools = options?.packageInvokeTools
-	const packageInvokeCodemodeTools: AdditionalCodemodeTools = packageInvokeTools
-		? {
-				package_invoke_check: async (args: unknown) =>
-					await packageInvokeTools.check((args ?? {}) as PackageInvokeInput),
-				package_invoke: async (args: unknown) =>
-					await packageInvokeTools.invoke((args ?? {}) as PackageInvokeInput),
-				package_invoke_checked: async (args: unknown) =>
-					await packageInvokeTools.invokeChecked(
-						(args ?? {}) as PackageInvokeInput,
-					),
-			}
-		: {}
-	assertNoCapabilityCollisions(capabilityMap, packageInvokeCodemodeTools)
 	return {
 		...capabilityCodemodeTools,
 		...storageCodemodeTools,
@@ -479,7 +467,6 @@ export async function buildCodemodeFns(
 		...packageSecretCodemodeTools,
 		...emailCodemodeTools,
 		...workflowCodemodeTools,
-		...packageInvokeCodemodeTools,
 		...additionalTools,
 	}
 }
@@ -506,7 +493,6 @@ export async function buildCodemodeProvider(
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
-		packageInvokeTools?: PackageInvokeTools
 		skipCapabilityRegistry?: boolean
 	},
 ): Promise<ResolvedProvider> {
@@ -521,6 +507,31 @@ export async function buildCodemodeProvider(
 				},
 			]),
 		),
+	}
+	return resolveProvider(provider)
+}
+
+function createPackageInvokeRuntimeBridgeProvider(
+	packageInvokeTools: PackageInvokeTools,
+): ResolvedProvider {
+	const provider: ToolProvider = {
+		name: packageInvokeRuntimeBridgeProviderName,
+		tools: {
+			check: {
+				execute: async (args: unknown) =>
+					await packageInvokeTools.check((args ?? {}) as PackageInvokeInput),
+			},
+			invoke: {
+				execute: async (args: unknown) =>
+					await packageInvokeTools.invoke((args ?? {}) as PackageInvokeInput),
+			},
+			invokeChecked: {
+				execute: async (args: unknown) =>
+					await packageInvokeTools.invokeChecked(
+						(args ?? {}) as PackageInvokeInput,
+					),
+			},
+		},
 	}
 	return resolveProvider(provider)
 }
@@ -639,7 +650,6 @@ export async function runCodemodeWithRegistry(
 			: undefined,
 		emailTools: options?.emailTools,
 		workflowTools,
-		packageInvokeTools: options?.packageInvokeTools,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -684,7 +694,13 @@ ${helperPrelude ? `${helperPrelude}\n` : ''}
   const __kodyUserCode = (${normalized});
   return await __kodyUserCode();
 }`
-	const result = await executor.execute(wrapped, [provider])
+	const providers = options?.packageInvokeTools
+		? [
+				provider,
+				createPackageInvokeRuntimeBridgeProvider(options.packageInvokeTools),
+			]
+		: [provider]
+	const result = await executor.execute(wrapped, providers)
 	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 	if (!result.error) return sanitizedResult
 	const batchMessage = await rewriteCapabilitySecretError({
@@ -844,7 +860,6 @@ export async function runBundledModuleWithRegistry(
 				: undefined,
 			emailTools: options?.emailTools,
 			workflowTools,
-			packageInvokeTools: options?.packageInvokeTools,
 			skipCapabilityRegistry: options?.skipCapabilityRegistry,
 		})
 		const storageHelperPrelude = options?.storageTools
@@ -910,7 +925,15 @@ ${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
   });
 }`
 		try {
-			const result = await executor.execute(wrapped, [provider])
+			const providers = options?.packageInvokeTools
+				? [
+						provider,
+						createPackageInvokeRuntimeBridgeProvider(
+							options.packageInvokeTools,
+						),
+					]
+				: [provider]
+			const result = await executor.execute(wrapped, providers)
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
 				await finishPackageRuntimeRunBestEffort({

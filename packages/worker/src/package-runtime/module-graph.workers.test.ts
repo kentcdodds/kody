@@ -567,7 +567,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 		sourceFiles: {
 			'package.json': packageJson,
 			'src/index.ts': [
-				"import { packageContext, packages } from 'kody:runtime'",
+				"import { codemode, packageContext, packages } from 'kody:runtime'",
 				'',
 				'export default async function main(input = {}) {',
 				'\treturn {',
@@ -575,6 +575,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 				"\t\thasCheck: typeof packages?.check === 'function',",
 				"\t\thasInvoke: typeof packages?.invoke === 'function',",
 				"\t\thasInvokeChecked: typeof packages?.invokeChecked === 'function',",
+				'\t\tdirectCodemodeInvokeChecked: typeof codemode.package_invoke_checked,',
 				'\t\tinvoked: await packages?.invoke({',
 				"\t\t\tkodyId: 'target-package',",
 				"\t\t\texportName: './run',",
@@ -646,6 +647,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 		hasCheck: true,
 		hasInvoke: true,
 		hasInvokeChecked: true,
+		directCodemodeInvokeChecked: 'undefined',
 		invoked: {
 			ok: true,
 			input: {
@@ -671,12 +673,13 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 		userId: 'user-workers-test',
 		sourceFiles: {
 			'entry.ts': [
-				"import { packageContext, packages } from 'kody:runtime'",
+				"import { codemode, packageContext, packages } from 'kody:runtime'",
 				'',
 				'export default async function main(input = {}) {',
 				'\treturn {',
 				'\t\tpackageContextIsNull: packageContext === null,',
 				"\t\thasInvokeChecked: typeof packages?.invokeChecked === 'function',",
+				'\t\tdirectCodemodeInvokeChecked: typeof codemode.package_invoke_checked,',
 				'\t\tinvoked: await packages?.invokeChecked({',
 				"\t\t\tkodyId: 'target-package',",
 				"\t\t\texportName: './run',",
@@ -742,6 +745,7 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 	expect(result.result).toEqual({
 		packageContextIsNull: true,
 		hasInvokeChecked: true,
+		directCodemodeInvokeChecked: 'undefined',
 		invoked: {
 			ok: true,
 			input: {
