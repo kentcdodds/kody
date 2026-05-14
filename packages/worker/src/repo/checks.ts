@@ -328,7 +328,7 @@ type KodyEventsRuntime = {
     idempotencyKey: string;
     payload?: Record<string, unknown>;
   }): Promise<unknown>;
-};
+} | null;
 
 declare const codemode: Record<
   string,
