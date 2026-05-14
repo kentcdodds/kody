@@ -110,8 +110,27 @@ function buildCapabilityDescription(): string {
 		const g = kodyOfficialGuideCatalog[id]
 		return `- \`${id}\`: ${g.summary}`
 	})
+	const intro = [
+		'Load an official Kody guide from the kody GitHub repository (markdown).',
+		'Prefer this capability plus `search` results over local repo spelunking',
+		'when Kody auth or integration behavior is already documented.',
+		'**For third-party integrations that will power a package, package app, or workflow,',
+		'use `guide: "integration_bootstrap"` first.**',
+		'It covers checking saved `integration` / `secret` entities',
+		'and running the cheap authenticated smoke test before building.',
+		'For non-OAuth APIs backed by saved secrets,',
+		'then use `guide: "secret_backed_integration"` as the default recipe.',
+		'After the smoke test passes and you are ready to build a package app,',
+		'use `guide: "integration_backed_app"` for the default package-app pattern.',
+		'For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path).',
+		'Use `generated_ui_oauth` only for custom package-app OAuth.',
+		'For API keys/PATs, use `connect_secret` for secret collection.',
+		'For package-native long-lived service work built on `kody.services`,',
+		'use `package_service_pattern`.',
+		'If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+	].join(' ')
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). Prefer this capability plus `search` results over local repo spelunking when Kody auth or integration behavior is already documented. **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** It covers checking saved `integration` / `secret` entities and running the cheap authenticated smoke test before building. For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		intro,
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
