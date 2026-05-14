@@ -54,6 +54,21 @@ with `allowedHosts` when needed.
 Client ID, access token, and refresh token names are derived from a normalized
 slug of `provider`.
 
+After a successful connection, Kody saves the non-secret OAuth authorization
+metadata needed for future reconnects in the integration record:
+
+- `authorizeUrl`
+- requested `scopes`
+- non-default `scopeSeparator`
+- provider-specific `extraAuthorizeParams` such as Google `access_type=offline`
+  and `prompt=consent`
+
+For an existing integration, agents can call `integration_get` or
+`integration_list` to inspect this metadata. To reconnect without rebuilding the
+full authorize URL by hand, open `/connect/oauth?provider=<integration-name>`;
+the page derives the provider authorize URL from the saved integration config
+and the current client credentials.
+
 ## Integration naming convention
 
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may

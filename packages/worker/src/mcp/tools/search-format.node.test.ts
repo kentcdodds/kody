@@ -70,6 +70,12 @@ test('search formatting keeps value and integration entity refs in the structure
 				accessTokenSecretName: 'github_access_token',
 				refreshTokenSecretName: 'github_refresh_token',
 				requiredHosts: ['api.github.com'],
+				authorization: {
+					authorizeUrl: 'https://github.com/login/oauth/authorize',
+					scopes: ['repo', 'read:user'],
+					scopeSeparator: null,
+					extraAuthorizeParams: { prompt: 'consent' },
+				},
 				usage: 'Read with integration_get: {"name":"github"}.',
 				fusedScore: 0.9,
 			},
@@ -92,6 +98,10 @@ test('search formatting keeps value and integration entity refs in the structure
 		flow: 'confidential',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo', 'read:user'],
+		},
 		usage: expect.any(String),
 	})
 	expect(integrationMatch?.nextStep).toEqual(expect.any(String))
@@ -146,6 +156,12 @@ test('entity detail formatting returns stable structured details for values and 
 			accessTokenSecretName: 'github_access_token',
 			refreshTokenSecretName: 'github_refresh_token',
 			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo', 'read:user'],
+				scopeSeparator: null,
+				extraAuthorizeParams: { prompt: 'consent' },
+			},
 		},
 	})
 	expect(integrationDetail.structured).toMatchObject({
@@ -159,7 +175,14 @@ test('entity detail formatting returns stable structured details for values and 
 		accessTokenSecretName: 'github_access_token',
 		refreshTokenSecretName: 'github_refresh_token',
 		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo', 'read:user'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { prompt: 'consent' },
+		},
 	})
+	expect(integrationDetail.markdown).toContain('OAuth authorization metadata')
 })
 
 test('capability entity detail keeps the structured execute contract stable', () => {

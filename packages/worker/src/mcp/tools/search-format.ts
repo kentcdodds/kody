@@ -181,6 +181,7 @@ export type SlimSearchMatch =
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
+			authorization: IntegrationConfig['authorization'] | null
 			nextStep?: string
 	  }
 	| {
@@ -310,6 +311,7 @@ export type SearchEntityDetailStructured =
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
 			requiredHosts: Array<string>
+			authorization: IntegrationConfig['authorization'] | null
 	  }
 
 export type SearchEntityDetail =
@@ -396,6 +398,7 @@ export type SearchMatch =
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
+			authorization?: IntegrationConfig['authorization'] | null
 	  }
 	| {
 			type: 'secret'
@@ -733,6 +736,7 @@ export function toSlimStructuredMatches(input: {
 				clientSecretSecretName: match.clientSecretSecretName,
 				accessTokenSecretName: match.accessTokenSecretName,
 				refreshTokenSecretName: match.refreshTokenSecretName,
+				authorization: match.authorization ?? null,
 				nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
 			}
 		}
@@ -1013,6 +1017,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'integration') {
 		const requiredHosts = detail.config.requiredHosts ?? []
+		const authorization = detail.config.authorization ?? null
 		const lines = [
 			`# Integration — \`${detail.config.name}\``,
 			'',
@@ -1025,6 +1030,8 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- Token URL: \`${detail.config.tokenUrl}\``,
 			`- API base URL: ${detail.config.apiBaseUrl ? `\`${detail.config.apiBaseUrl}\`` : 'none'}`,
 			`- Required hosts: ${requiredHosts.length > 0 ? requiredHosts.map((host) => `\`${host}\``).join(', ') : 'none'}`,
+			`- Authorize URL: ${authorization ? `\`${authorization.authorizeUrl}\`` : 'none'}`,
+			`- Scopes: ${authorization && authorization.scopes.length > 0 ? authorization.scopes.map((scope) => `\`${scope}\``).join(', ') : 'none'}`,
 			'',
 			'## Read this integration',
 			'',
@@ -1038,6 +1045,23 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- Access token secret name: \`${detail.config.accessTokenSecretName}\``,
 			`- Refresh token secret name: ${detail.config.refreshTokenSecretName ? `\`${detail.config.refreshTokenSecretName}\`` : 'none'}`,
 		]
+		if (authorization) {
+			lines.push(
+				'',
+				'## OAuth authorization metadata',
+				'',
+				`- Scope separator: ${authorization.scopeSeparator ? `\`${authorization.scopeSeparator}\`` : 'default single space'}`,
+				`- Extra authorize params: ${
+					Object.keys(authorization.extraAuthorizeParams ?? {}).length > 0
+						? Object.entries(authorization.extraAuthorizeParams ?? {})
+								.map(([key, value]) => `\`${key}=${value}\``)
+								.join(', ')
+						: 'none'
+				}`,
+				'',
+				'Reconnect with `/connect/oauth?provider=<integration-name>`; Kody derives the provider authorize URL from the saved integration metadata plus the current client credentials.',
+			)
+		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
@@ -1056,6 +1080,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				accessTokenSecretName: detail.config.accessTokenSecretName,
 				refreshTokenSecretName: detail.config.refreshTokenSecretName ?? null,
 				requiredHosts,
+				authorization,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

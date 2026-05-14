@@ -265,6 +265,7 @@ async function handleConnectOauthAction(input: {
 	const provider = readString(input.body, 'provider')
 	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
 	const apiBaseUrl = readOptionalString(input.body, 'apiBaseUrl')
+	const authorizeUrl = readOptionalString(input.body, 'authorizeUrl')
 	const flow = readOptionalString(input.body, 'flow')
 	const clientIdValueName = readOptionalString(input.body, 'clientIdValueName')
 	const clientSecretSecretName = readOptionalString(
@@ -278,6 +279,12 @@ async function handleConnectOauthAction(input: {
 	)
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
+	)
+	const scopes = readStringArray(input.body, 'scopes')
+	const scopeSeparator = readRawOptionalString(input.body, 'scopeSeparator')
+	const extraAuthorizeParams = readStringRecord(
+		input.body,
+		'extraAuthorizeParams',
 	)
 	const tokenPayload =
 		(input.body as Record<string, unknown>)['tokenPayload'] ?? null
@@ -375,6 +382,14 @@ async function handleConnectOauthAction(input: {
 		refreshTokenSecretName,
 		tokenPayload: tokenRecord,
 		allowedHosts,
+		authorization: authorizeUrl
+			? {
+					authorizeUrl,
+					scopes,
+					scopeSeparator,
+					extraAuthorizeParams,
+				}
+			: null,
 	})
 	const approvalSecretNames = [
 		accessTokenSecretName,
@@ -564,6 +579,12 @@ async function saveIntegrationConfig(input: {
 	refreshTokenSecretName: string | null
 	tokenPayload: Record<string, unknown>
 	allowedHosts: Array<string>
+	authorization: {
+		authorizeUrl: string
+		scopes: Array<string>
+		scopeSeparator: string | null
+		extraAuthorizeParams: Record<string, string>
+	} | null
 }) {
 	const providerKey = normalizeProviderKey(input.provider)
 	if (!providerKey) {
@@ -584,6 +605,7 @@ async function saveIntegrationConfig(input: {
 			? input.refreshTokenSecretName
 			: null,
 		requiredHosts: input.allowedHosts,
+		...(input.authorization ? { authorization: input.authorization } : {}),
 	})
 	await saveValue({
 		env: input.env,
@@ -1247,6 +1269,11 @@ function readOptionalString(body: object, key: string) {
 	return typeof value === 'string' ? value.trim() : null
 }
 
+function readRawOptionalString(body: object, key: string) {
+	const value = (body as Record<string, unknown>)[key]
+	return typeof value === 'string' ? value : null
+}
+
 function safeParseHost(raw: string) {
 	try {
 		return new URL(raw).hostname
@@ -1259,6 +1286,18 @@ function readStringArray(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	if (!Array.isArray(value)) return []
 	return value.filter((item): item is string => typeof item === 'string')
+}
+
+function readStringRecord(body: object, key: string) {
+	const value = (body as Record<string, unknown>)[key]
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+	return Object.fromEntries(
+		Object.entries(value)
+			.filter(
+				(entry): entry is [string, string] => typeof entry[1] === 'string',
+			)
+			.map(([recordKey, recordValue]) => [recordKey, recordValue]),
+	)
 }
 
 function readAccountSecretScope(

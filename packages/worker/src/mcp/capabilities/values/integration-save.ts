@@ -95,6 +95,9 @@ function createNewIntegrationConfig(args: z.infer<typeof inputSchema>) {
 		accessTokenSecretName: args.accessTokenSecretName,
 		refreshTokenSecretName: args.refreshTokenSecretName ?? null,
 		requiredHosts: args.requiredHosts,
+		...(args.authorization !== undefined
+			? { authorization: args.authorization }
+			: {}),
 	})
 	if (!parsed.success) {
 		const details = parsed.error.issues

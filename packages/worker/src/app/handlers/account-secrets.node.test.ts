@@ -119,6 +119,7 @@ function createEnv() {
 }
 
 test('connect oauth returns direct host approval links for saved token secrets', async () => {
+	mockModule.saveValue.mockClear()
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -127,8 +128,12 @@ test('connect oauth returns direct host approval links for saved token secrets',
 			body: JSON.stringify({
 				action: 'connect_oauth',
 				provider: 'GitHub',
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
+				scopes: ['repo', 'read:user'],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: { prompt: 'consent' },
 				flow: 'pkce',
 				clientIdValueName: 'github-client-id',
 				accessTokenSecretName: 'githubAccessToken',
@@ -179,6 +184,28 @@ test('connect oauth returns direct host approval links for saved token secrets',
 	})
 	expect(mockModule.buildSecretHostApprovalUrl).toHaveBeenCalledTimes(4)
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_integration:GitHub',
+			value: JSON.stringify({
+				name: 'GitHub',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				flow: 'pkce',
+				clientIdValueName: 'github-client-id',
+				clientSecretSecretName: null,
+				accessTokenSecretName: 'githubAccessToken',
+				refreshTokenSecretName: 'githubRefreshToken',
+				requiredHosts: ['api.github.com', 'github.com'],
+				authorization: {
+					authorizeUrl: 'https://github.com/login/oauth/authorize',
+					scopes: ['repo', 'read:user'],
+					scopeSeparator: null,
+					extraAuthorizeParams: { prompt: 'consent' },
+				},
+			}),
+		}),
+	)
 })
 
 test('connect oauth omits direct host approval links when hosts are already approved', async () => {

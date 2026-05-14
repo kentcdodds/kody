@@ -25,6 +25,12 @@ type IntegrationConfig = {
 	accessTokenSecretName: string
 	refreshTokenSecretName?: string | null
 	requiredHosts?: Array<string>
+	authorization?: {
+		authorizeUrl: string
+		scopes: Array<string>
+		scopeSeparator?: string | null
+		extraAuthorizeParams?: Record<string, string>
+	} | null
 }
 
 type IntegrationGetResult = {

@@ -283,6 +283,8 @@ function buildIntegrationSearchDocument(input: {
 		input.config.tokenUrl,
 		input.config.apiBaseUrl ?? '',
 		input.config.flow,
+		input.config.authorization?.authorizeUrl ?? '',
+		...(input.config.authorization?.scopes ?? []),
 		...(input.config.requiredHosts ?? []),
 	]
 		.filter((value) => value.trim().length > 0)
@@ -1121,6 +1123,7 @@ function buildIntegrationCandidates(input: {
 						clientSecretSecretName: config.clientSecretSecretName ?? null,
 						accessTokenSecretName: config.accessTokenSecretName,
 						refreshTokenSecretName: config.refreshTokenSecretName ?? null,
+						authorization: config.authorization ?? null,
 					},
 					type: 'integration' as const,
 					id: integrationName,
@@ -1131,6 +1134,8 @@ function buildIntegrationCandidates(input: {
 						config.flow,
 						config.apiBaseUrl ?? '',
 						config.tokenUrl,
+						config.authorization?.authorizeUrl ?? '',
+						...(config.authorization?.scopes ?? []),
 						...(config.requiredHosts ?? []),
 					],
 					scoreComponents: buildCandidateBaseScore({

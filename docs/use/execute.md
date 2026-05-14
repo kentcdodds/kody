@@ -250,6 +250,12 @@ accounts may exist, such as `google`, `google-business`, or
 `google-youtube-brand`. Call **`integration_list`** up front when a provider may
 have multiple accounts connected.
 
+OAuth integrations may include `authorization` metadata with the saved
+`authorizeUrl`, requested `scopes`, any non-default `scopeSeparator`, and
+provider-specific `extraAuthorizeParams`. Use that metadata when a refresh token
+is stale and the user needs to reconnect; open
+`/connect/oauth?provider=<integration-name>` instead of guessing the scope set.
+
 For OAuth 2 `client_credentials` token exchanges that require
 `Authorization: Basic base64(client_id:client_secret)`, save the client id and
 client secret separately. Do **not** ask the user to precompute or save the

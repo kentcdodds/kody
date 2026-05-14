@@ -30,14 +30,14 @@ type OAuthFlow = 'pkce' | 'confidential'
 type ConnectOauthQueryConfig = {
 	provider: string
 	providerKey: string
-	authorizeHost: string
-	authorizeUrl: string
+	authorizeHost: string | null
+	authorizeUrl: string | null
 	tokenUrl: string | null
 	apiBaseUrl: string | null
-	scopes: Array<string>
+	scopes: Array<string> | null
 	flow: OAuthFlow | null
-	scopeSeparator: string
-	extraAuthorizeParams: Record<string, string>
+	scopeSeparator: string | null
+	extraAuthorizeParams: Record<string, string> | null
 	providerSetupInstructions: string | null
 	dashboardUrl: string | null
 	allowedHosts: Array<string>
@@ -74,6 +74,14 @@ type StoredIntegrationConfig = {
 	accessTokenSecretName: string
 	refreshTokenSecretName: string | null
 	requiredHosts: Array<string>
+	authorization?: StoredIntegrationAuthorization | null
+}
+
+type StoredIntegrationAuthorization = {
+	authorizeUrl: string
+	scopes: Array<string>
+	scopeSeparator: string | null
+	extraAuthorizeParams: Record<string, string>
 }
 
 type OAuthExchangeResult =
@@ -157,16 +165,16 @@ export function ConnectOauthRoute(handle: Handle) {
 			return value && value.trim() ? value.trim() : null
 		}
 		const provider = readRequired('provider')
-		const authorizeUrl = readRequired('authorizeUrl')
+		const authorizeUrl = readOptional('authorizeUrl')
 		const tokenUrl = readOptional('tokenUrl')
 		const apiBaseUrl = parseOptionalUrl(readOptional('apiBaseUrl'))
-		if (!provider || !authorizeUrl) {
+		if (!provider) {
 			hasConfigError = true
 			setStatus('Missing required OAuth configuration parameters.', 'error')
 			return null
 		}
-		const authorizeHost = safeParseHost(authorizeUrl)
-		if (!authorizeHost) {
+		const authorizeHost = authorizeUrl ? safeParseHost(authorizeUrl) : null
+		if (authorizeUrl && !authorizeHost) {
 			hasConfigError = true
 			setStatus('Authorize URL must be valid.', 'error')
 			return null
@@ -179,11 +187,14 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 		let flow = (readOptional('flow') ?? 'pkce').toLowerCase()
 		if (flow !== 'pkce' && flow !== 'confidential') flow = 'pkce'
-		const scopes = parseScopes(readOptional('scopes'))
-		const scopeSeparator = readOptional('scopeSeparator') ?? ' '
-		const extraAuthorizeParams = parseExtraParams(
-			readOptional('extraAuthorizeParams'),
-		)
+		const rawScopes = readOptional('scopes')
+		const scopes = rawScopes == null ? null : parseScopes(rawScopes)
+		const scopeSeparator = readOptional('scopeSeparator')
+		const rawExtraAuthorizeParams = readOptional('extraAuthorizeParams')
+		const extraAuthorizeParams =
+			rawExtraAuthorizeParams == null
+				? null
+				: parseExtraParams(rawExtraAuthorizeParams)
 		const dashboardUrl = parseOptionalUrl(readOptional('dashboardUrl'))
 		const providerKey = normalizeProviderKey(provider)
 		if (!providerKey) {
@@ -671,8 +682,12 @@ export function ConnectOauthRoute(handle: Handle) {
 				action: 'connect_oauth',
 				provider: config.provider,
 				callbackUrl,
+				authorizeUrl: config.authorizeUrl,
 				tokenUrl: config.tokenUrl,
 				apiBaseUrl: config.apiBaseUrl,
+				scopes: config.scopes,
+				scopeSeparator: config.scopeSeparator,
+				extraAuthorizeParams: config.extraAuthorizeParams,
 				flow: config.flow,
 				clientIdValueName: config.clientIdValueName,
 				clientSecretSecretName: config.clientSecretSecretName,
@@ -782,6 +797,27 @@ export function ConnectOauthRoute(handle: Handle) {
 						</code>
 					</div>
 				</div>
+				{existingIntegrationConfig.authorization ? (
+					<div mix={css(insetCardCss)}>
+						<strong mix={css(sectionTitleCss)}>Authorization metadata</strong>
+						<div mix={css(detailGridCss)}>
+							<div mix={css(detailItemCss)}>
+								<span mix={css(detailLabelCss)}>Authorize URL</span>
+								<code>
+									{existingIntegrationConfig.authorization.authorizeUrl}
+								</code>
+							</div>
+							<div mix={css(detailItemCss)}>
+								<span mix={css(detailLabelCss)}>Scopes</span>
+								<span mix={css(detailValueCss)}>
+									{existingIntegrationConfig.authorization.scopes.length
+										? existingIntegrationConfig.authorization.scopes.join(' ')
+										: 'None'}
+								</span>
+							</div>
+						</div>
+					</div>
+				) : null}
 				<div mix={css(insetCardCss)}>
 					<strong mix={css(sectionTitleCss)}>Required hosts</strong>
 					{existingIntegrationConfig.requiredHosts.length > 0 ? (
@@ -1190,6 +1226,9 @@ export function parseStoredIntegrationConfig(
 					(value): value is string => typeof value === 'string',
 				)
 			: []
+		const authorization = parseStoredIntegrationAuthorization(
+			parsed.authorization,
+		)
 		if (!name || !tokenUrl || !clientIdValueName || !accessTokenSecretName) {
 			return null
 		}
@@ -1206,9 +1245,48 @@ export function parseStoredIntegrationConfig(
 			accessTokenSecretName,
 			refreshTokenSecretName,
 			requiredHosts: normalizeHosts(requiredHosts),
+			authorization,
 		}
 	} catch {
 		return null
+	}
+}
+
+function parseStoredIntegrationAuthorization(
+	raw: unknown,
+): StoredIntegrationAuthorization | null {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+	const parsed = raw as Record<string, unknown>
+	const authorizeUrl =
+		typeof parsed.authorizeUrl === 'string' ? parsed.authorizeUrl.trim() : ''
+	if (!authorizeUrl || !safeParseHost(authorizeUrl)) return null
+	const scopes = Array.isArray(parsed.scopes)
+		? parsed.scopes.filter(
+				(value): value is string => typeof value === 'string' && Boolean(value),
+			)
+		: []
+	const scopeSeparator =
+		typeof parsed.scopeSeparator === 'string' && parsed.scopeSeparator
+			? parsed.scopeSeparator
+			: null
+	const extraAuthorizeParams =
+		parsed.extraAuthorizeParams &&
+		typeof parsed.extraAuthorizeParams === 'object' &&
+		!Array.isArray(parsed.extraAuthorizeParams)
+			? Object.fromEntries(
+					Object.entries(parsed.extraAuthorizeParams)
+						.filter(
+							(entry): entry is [string, string] =>
+								typeof entry[1] === 'string',
+						)
+						.map(([key, value]) => [key, value]),
+				)
+			: {}
+	return {
+		authorizeUrl,
+		scopes,
+		scopeSeparator,
+		extraAuthorizeParams,
 	}
 }
 
@@ -1221,11 +1299,22 @@ export function mergeConnectOauthConfig(input: {
 	const providerKey = normalizeProviderKey(
 		provider || input.queryConfig.providerKey,
 	)
-	const authorizeHost = safeParseHost(input.queryConfig.authorizeUrl)
+	const authorizeUrl =
+		input.queryConfig.authorizeUrl ??
+		input.storedIntegration?.authorization?.authorizeUrl ??
+		null
+	const authorizeHost = authorizeUrl ? safeParseHost(authorizeUrl) : null
 	const tokenUrl =
 		input.storedIntegration?.tokenUrl ?? input.queryConfig.tokenUrl
 	const tokenHost = tokenUrl ? safeParseHost(tokenUrl) : null
-	if (!provider || !authorizeHost || !tokenUrl || !tokenHost || !providerKey) {
+	if (
+		!provider ||
+		!authorizeUrl ||
+		!authorizeHost ||
+		!tokenUrl ||
+		!tokenHost ||
+		!providerKey
+	) {
 		return null
 	}
 	const flow = input.storedIntegration?.flow ?? input.queryConfig.flow ?? 'pkce'
@@ -1240,14 +1329,23 @@ export function mergeConnectOauthConfig(input: {
 		providerKey,
 		authorizeHost,
 		tokenHost,
-		authorizeUrl: input.queryConfig.authorizeUrl,
+		authorizeUrl,
 		tokenUrl,
 		apiBaseUrl:
 			input.storedIntegration?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
-		scopes: input.queryConfig.scopes,
+		scopes:
+			input.queryConfig.scopes ??
+			input.storedIntegration?.authorization?.scopes ??
+			[],
 		flow,
-		scopeSeparator: input.queryConfig.scopeSeparator,
-		extraAuthorizeParams: input.queryConfig.extraAuthorizeParams,
+		scopeSeparator:
+			input.queryConfig.scopeSeparator ??
+			input.storedIntegration?.authorization?.scopeSeparator ??
+			' ',
+		extraAuthorizeParams:
+			input.queryConfig.extraAuthorizeParams ??
+			input.storedIntegration?.authorization?.extraAuthorizeParams ??
+			{},
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
 		clientIdValueName:

@@ -80,17 +80,35 @@ test('mergeIntegrationConfig applies patch fields and preserves existing fields'
 		accessTokenSecretName: 'spotifyAccessToken',
 		refreshTokenSecretName: 'spotifyRefreshToken',
 		requiredHosts: ['accounts.spotify.com', 'api.spotify.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.spotify.com/authorize',
+			scopes: ['user-read-email'],
+			scopeSeparator: ' ',
+			extraAuthorizeParams: {},
+		},
 	})
 
 	const merged = mergeIntegrationConfig(current, {
 		name: 'spotify',
 		apiBaseUrl: 'https://api.spotify.com/v2/',
+		authorization: {
+			authorizeUrl: 'https://accounts.spotify.com/oauth2/authorize',
+			scopes: ['user-read-email', 'playlist-read-private'],
+			scopeSeparator: ' ',
+			extraAuthorizeParams: { prompt: 'consent' },
+		},
 		requiredHosts: ['api.spotify.com'],
 	})
 
 	expect(merged).toEqual({
 		...current,
 		apiBaseUrl: 'https://api.spotify.com/v2/',
+		authorization: {
+			authorizeUrl: 'https://accounts.spotify.com/oauth2/authorize',
+			scopes: ['user-read-email', 'playlist-read-private'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { prompt: 'consent' },
+		},
 		requiredHosts: ['api.spotify.com'],
 	})
 })
@@ -130,6 +148,12 @@ test('integration_save creates a new integration record', async () => {
 			accessTokenSecretName: 'spotifyAccessToken',
 			refreshTokenSecretName: 'spotifyRefreshToken',
 			requiredHosts: ['api.spotify.com'],
+			authorization: {
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				scopes: ['user-read-email', 'playlist-read-private'],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: { show_dialog: 'true' },
+			},
 		},
 		{
 			env: { APP_DB: testDb.db } as unknown as Env,
@@ -149,6 +173,12 @@ test('integration_save creates a new integration record', async () => {
 		accessTokenSecretName: 'spotifyAccessToken',
 		refreshTokenSecretName: 'spotifyRefreshToken',
 		requiredHosts: ['api.spotify.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.spotify.com/authorize',
+			scopes: ['user-read-email', 'playlist-read-private'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { show_dialog: 'true' },
+		},
 	})
 	expect(
 		JSON.parse(testDb.entries.get('_integration:spotify') ?? '{}'),
@@ -161,6 +191,12 @@ test('integration_save creates a new integration record', async () => {
 		accessTokenSecretName: 'spotifyAccessToken',
 		refreshTokenSecretName: 'spotifyRefreshToken',
 		requiredHosts: ['api.spotify.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.spotify.com/authorize',
+			scopes: ['user-read-email', 'playlist-read-private'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { show_dialog: 'true' },
+		},
 	})
 })
 

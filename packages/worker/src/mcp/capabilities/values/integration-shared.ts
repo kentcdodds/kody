@@ -3,6 +3,17 @@ import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 export const integrationFlowValues = ['pkce', 'confidential'] as const
 
+export const defaultIntegrationScopeSeparator = ' '
+
+export const integrationAuthorizationSchema = z
+	.object({
+		authorizeUrl: z.string().url(),
+		scopes: z.array(z.string().min(1)),
+		scopeSeparator: z.string().min(1).optional().nullable(),
+		extraAuthorizeParams: z.record(z.string(), z.string()).optional(),
+	})
+	.strict()
+
 export const integrationConfigSchema = z.object({
 	name: z.string().min(1),
 	tokenUrl: z.string().url(),
@@ -13,9 +24,13 @@ export const integrationConfigSchema = z.object({
 	accessTokenSecretName: z.string().min(1),
 	refreshTokenSecretName: z.string().min(1).optional().nullable(),
 	requiredHosts: z.array(z.string()).optional(),
+	authorization: integrationAuthorizationSchema.optional().nullable(),
 })
 
 export type IntegrationConfig = z.infer<typeof integrationConfigSchema>
+export type IntegrationAuthorization = z.infer<
+	typeof integrationAuthorizationSchema
+>
 
 export const integrationSaveSchema = z
 	.object({
@@ -28,6 +43,7 @@ export const integrationSaveSchema = z
 		accessTokenSecretName: z.string().min(1).optional(),
 		refreshTokenSecretName: z.string().min(1).nullable().optional(),
 		requiredHosts: z.array(z.string()).optional(),
+		authorization: integrationAuthorizationSchema.nullable().optional(),
 	})
 	.strict()
 
@@ -36,6 +52,9 @@ export type IntegrationSaveInput = z.infer<typeof integrationSaveSchema>
 export function normalizeIntegrationConfig(
 	value: IntegrationConfig,
 ): IntegrationConfig {
+	const authorization = value.authorization
+		? normalizeIntegrationAuthorization(value.authorization)
+		: null
 	return {
 		...value,
 		name: value.name.trim(),
@@ -46,6 +65,29 @@ export function normalizeIntegrationConfig(
 		accessTokenSecretName: value.accessTokenSecretName.trim(),
 		refreshTokenSecretName: value.refreshTokenSecretName?.trim() || null,
 		requiredHosts: normalizeAllowedHosts(value.requiredHosts ?? []),
+		...(authorization ? { authorization } : {}),
+	}
+}
+
+export function normalizeIntegrationAuthorization(
+	value: IntegrationAuthorization,
+): IntegrationAuthorization {
+	const scopeSeparator =
+		value.scopeSeparator == null ||
+		value.scopeSeparator === defaultIntegrationScopeSeparator
+			? null
+			: value.scopeSeparator
+	const extraAuthorizeParams = Object.fromEntries(
+		Object.entries(value.extraAuthorizeParams ?? {})
+			.map(([key, paramValue]) => [key.trim(), paramValue])
+			.filter(([key]) => key.length > 0)
+			.sort(([left], [right]) => left.localeCompare(right)),
+	)
+	return {
+		authorizeUrl: value.authorizeUrl.trim(),
+		scopes: value.scopes.map((scope) => scope.trim()).filter(Boolean),
+		scopeSeparator,
+		extraAuthorizeParams,
 	}
 }
 
