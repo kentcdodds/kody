@@ -186,19 +186,18 @@ The primary identifier is `kodyId`; `kody_id`, `packageId`, and `package_id` are
 accepted aliases for compatibility. `exportName` is required, and `export_name`
 is accepted as an alias.
 
-Only package runtime contexts can call `packages.invoke`, and resolution is
-scoped to packages owned by the current authenticated user. Package code does
-not need to mint or pass package-invocation bearer tokens. Nested package
-invocations are depth-limited to prevent runaway loops.
+Package runtime contexts and authenticated ad hoc MCP `execute` calls can call
+`packages.invoke`, and resolution is scoped to packages owned by the current
+authenticated user. Package code does not need to mint or pass
+package-invocation bearer tokens. Nested package invocations are depth-limited
+to prevent runaway loops.
 
-Ad hoc MCP `execute` code, including saved package modules imported from that
-execute call, does not get a package runtime context. In those runs
-`import { packages } from 'kody:runtime'` returns `null`; enter the package
-through package invocation, a package subscription, a package job, service, or
-app when the code needs `packages.check`, `packages.invoke`, or
-`packages.invokeChecked`. Inside package runtime code, the equivalent codemode
-helpers are `codemode.package_invoke_check`, `codemode.package_invoke`, and
-`codemode.package_invoke_checked`.
+Static package imports from ad hoc MCP `execute` code, such as
+`kody:@scope/package/export`, do not get a package runtime context. They run as
+library/snapshot imports in the execute caller's runtime. Use
+`packages.invokeChecked` from execute when you need to enter a saved package as
+that package so it receives `packageContext`, package-owned storage, package
+secrets, and its own `packages` helper.
 
 If `idempotencyKey` is omitted, Kody generates one. In package invocations that
 already have a parent idempotency key, the generated key is deterministic for

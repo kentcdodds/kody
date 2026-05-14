@@ -110,6 +110,7 @@ type PackageRuntimeContext = {
 
 const internalEmailSubscriptionTokenId = 'internal:email-subscriptions'
 const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
+const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
 const maxPackageRuntimeInvokeDepth = 8
 
 function normalizeExportName(exportName: string) {
@@ -289,11 +290,14 @@ function canonicalizeJsonValue(value: unknown): unknown {
 }
 
 async function createAutoPackageInvokeIdempotencyKey(input: {
-	callerPackageContext: PackageRuntimeContext
+	callerPackageContext: PackageRuntimeContext | null
 	parentRuntimeDebug: PackageRuntimeDebugContext | null
 	sequence: number
 	request: ReturnType<typeof parsePackageInvokeInput>
 }) {
+	if (!input.callerPackageContext) {
+		return `pkginvoke:${crypto.randomUUID()}`
+	}
 	const parentKey = input.parentRuntimeDebug?.idempotencyKey?.trim()
 	if (!parentKey) {
 		return `pkginvoke:${crypto.randomUUID()}`
@@ -1270,13 +1274,42 @@ export function createPackageRuntimeInvokeTools(input: {
 	parentRuntimeDebug?: PackageRuntimeDebugContext | null
 	packageInvokeDepth?: number
 }): PackageInvokeTools {
+	return createPackageInvokeTools({
+		...input,
+		callerKind: 'package',
+	})
+}
+
+export function createExecutePackageInvokeTools(input: {
+	env: Env
+	baseUrl: string
+	callerContext: ReturnType<typeof createMcpCallerContext>
+	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	packageInvokeDepth?: number
+}): PackageInvokeTools {
+	return createPackageInvokeTools({
+		...input,
+		packageContext: null,
+		callerKind: 'execute',
+	})
+}
+
+function createPackageInvokeTools(input: {
+	env: Env
+	baseUrl: string
+	callerContext: ReturnType<typeof createMcpCallerContext>
+	packageContext: PackageRuntimeContext | null
+	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	packageInvokeDepth?: number
+	callerKind: 'package' | 'execute'
+}): PackageInvokeTools {
 	let autoIdempotencySequence = 0
 	const requireRuntimeCaller = (operationName: string) => {
 		const user = input.callerContext.user
 		if (!user?.userId) {
 			throw new Error(`${operationName} requires an authenticated user.`)
 		}
-		if (!input.packageContext) {
+		if (input.callerKind === 'package' && !input.packageContext) {
 			throw new Error(`${operationName} requires a package runtime context.`)
 		}
 		return { user, packageContext: input.packageContext }
@@ -1299,26 +1332,45 @@ export function createPackageRuntimeInvokeTools(input: {
 				sequence: autoIdempotencySequence,
 				request,
 			}))
-		const response = await invokePackageExportForPackageRuntime({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			caller: {
-				userId: user.userId,
-				email: user.email ?? '',
-				displayName: user.displayName ?? '',
-				remoteConnectors: input.callerContext.remoteConnectors ?? null,
-				packageContext,
-			},
-			request: {
-				packageIdOrKodyId: request.packageIdOrKodyId,
-				exportName: request.exportName,
-				params: request.params,
-				idempotencyKey,
-				source: `package:${packageContext.kodyId}`,
-				topic: request.topic,
-			},
-			runtimeInvokeDepth: packageInvokeDepth + 1,
-		})
+		const response = packageContext
+			? await invokePackageExportForPackageRuntime({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					caller: {
+						userId: user.userId,
+						email: user.email ?? '',
+						displayName: user.displayName ?? '',
+						remoteConnectors: input.callerContext.remoteConnectors ?? null,
+						packageContext,
+					},
+					request: {
+						packageIdOrKodyId: request.packageIdOrKodyId,
+						exportName: request.exportName,
+						params: request.params,
+						idempotencyKey,
+						source: `package:${packageContext.kodyId}`,
+						topic: request.topic,
+					},
+					runtimeInvokeDepth: packageInvokeDepth + 1,
+				})
+			: await invokePackageExportForExecuteRuntime({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					caller: {
+						userId: user.userId,
+						email: user.email ?? '',
+						displayName: user.displayName ?? '',
+						remoteConnectors: input.callerContext.remoteConnectors ?? null,
+					},
+					request: {
+						packageIdOrKodyId: request.packageIdOrKodyId,
+						exportName: request.exportName,
+						params: request.params,
+						idempotencyKey,
+						topic: request.topic,
+					},
+					runtimeInvokeDepth: packageInvokeDepth + 1,
+				})
 		if (response.status >= 200 && response.status < 400) {
 			return response.body['result']
 		}
@@ -1372,6 +1424,73 @@ export function createPackageRuntimeInvokeTools(input: {
 			return await invoke(check.invoke)
 		},
 	}
+}
+
+async function invokePackageExportForExecuteRuntime(input: {
+	env: Env
+	baseUrl: string
+	caller: {
+		userId: string
+		email: string
+		displayName: string
+		remoteConnectors?: Array<RemoteConnectorRef> | null
+	}
+	request: PackageInvocationRequest
+	runtimeInvokeDepth?: number
+}): Promise<PackageInvocationResponse> {
+	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
+	if (!packageIdOrKodyId) {
+		return buildJsonErrorResponse({
+			status: 400,
+			code: 'invalid_package',
+			message: 'Package id or kody id is required.',
+		})
+	}
+	const exportName = normalizeExportName(input.request.exportName)
+	const idempotencyKey = input.request.idempotencyKey.trim()
+	if (!idempotencyKey) {
+		return buildJsonErrorResponse({
+			status: 400,
+			code: 'missing_idempotency_key',
+			message: 'Package invocations require a non-empty idempotencyKey.',
+		})
+	}
+	const savedPackage = await resolveSavedPackage({
+		db: input.env.APP_DB,
+		userId: input.caller.userId,
+		packageIdOrKodyId,
+	})
+	if (!savedPackage) {
+		return buildJsonErrorResponse({
+			status: 404,
+			code: 'package_not_found',
+			message: `Saved package "${packageIdOrKodyId}" was not found for this user.`,
+			idempotencyKey,
+		})
+	}
+	return await invokeSavedPackageModule({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		actor: {
+			tokenId: internalExecuteRuntimeInvokeTokenId,
+			userId: input.caller.userId,
+			email: input.caller.email,
+			displayName: input.caller.displayName || input.caller.email || 'execute',
+			remoteConnectors: input.caller.remoteConnectors ?? null,
+		},
+		savedPackage,
+		invocationName: exportName,
+		moduleSelector: {
+			kind: 'export',
+			exportName,
+		},
+		params: input.request.params,
+		idempotencyKey,
+		source: 'execute',
+		topic: normalizeNullableString(input.request.topic),
+		notFoundCode: 'export_not_found',
+		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
+	})
 }
 
 async function invokePackageExportForPackageRuntime(input: {

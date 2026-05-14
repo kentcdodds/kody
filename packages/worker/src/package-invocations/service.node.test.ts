@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
+	createExecutePackageInvokeTools,
 	createPackageRuntimeInvokeTools,
 	invokePackageExport,
 	invokePackageSubscription,
@@ -805,6 +806,70 @@ test('package runtime checks and invokes another package with current contract m
 
 	expect(result).toEqual({ handled: true, eventId: 'message-1' })
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('execute runtime invokeChecked invokes target package with execute provenance', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { handled: true, eventId: 'message-1' },
+		logs: [],
+	})
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.dev',
+		user: {
+			userId: 'user-123',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+	})
+	const tools = createExecutePackageInvokeTools({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		callerContext,
+	})
+
+	const result = await tools.invokeChecked({
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { event: { id: 'message-1' } },
+	})
+
+	expect(result).toEqual({ handled: true, eventId: 'message-1' })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	const runCall = repoMockModule.runBundledModuleWithRegistry.mock.calls[0]
+	expect(runCall?.[1]).toMatchObject({
+		user: {
+			userId: 'user-123',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+		storageContext: {
+			appId: 'pkg-subscriber',
+			storageId: 'package:pkg-subscriber',
+		},
+	})
+	expect(runCall?.[4]).toMatchObject({
+		packageContext: {
+			packageId: 'pkg-subscriber',
+			kodyId: 'discord-general-chat',
+			sourceId: 'source-subscriber',
+		},
+		runtimeDebug: {
+			packageId: 'pkg-subscriber',
+			kodyId: 'discord-general-chat',
+			surface: 'export',
+			metadata: {
+				exportName: './handle-discord-message-created',
+				source: 'execute',
+				topic: null,
+			},
+		},
+	})
+	expect(
+		(runCall?.[4] as { packageInvokeTools?: unknown } | undefined)
+			?.packageInvokeTools,
+	).toBeDefined()
 })
 
 test('package runtime check reads target package metadata changes without republishing caller', async () => {

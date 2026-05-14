@@ -36,12 +36,11 @@ helpers are runtime exports:
   [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
-- use **`import { packages } from 'kody:runtime'`** only inside saved package
-  runtime contexts when you need dynamic current-version invocation through
-  `packages.check(...)`, `packages.invoke(...)`, or
-  `packages.invokeChecked(...)`; it is **`null`** for ad hoc execute calls.
-  Prefer `invokeChecked` unless you already called `check` and are passing
-  `check.invoke` to `invoke`
+- use **`import { packages } from 'kody:runtime'`** inside saved package runtime
+  contexts or authenticated execute calls when you need dynamic current-version
+  invocation through `packages.check(...)`, `packages.invoke(...)`, or
+  `packages.invokeChecked(...)`. Prefer `invokeChecked` unless you already
+  called `check` and are passing `check.invoke` to `invoke`
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
   code when you need the current service identity; it is **`null`** outside
   package service runs

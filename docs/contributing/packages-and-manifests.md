@@ -105,8 +105,9 @@ The top-level saved identity is the package.
 
 ### Dynamic current-version invocation
 
-Package runtime contexts also expose `packages.check`, `packages.invoke`, and
-`packages.invokeChecked` from `kody:runtime`:
+Package runtime contexts and authenticated ad hoc execute calls expose
+`packages.check`, `packages.invoke`, and `packages.invokeChecked` from
+`kody:runtime`:
 
 ```ts
 import { packages } from 'kody:runtime'
@@ -175,8 +176,9 @@ Security and loop safeguards:
 
 - Resolution is same-user only; package code cannot invoke another user's saved
   package.
-- `packages.invoke` requires package runtime context, preserving package-owned
-  storage and caller metadata.
+- `packages.invoke` requires either package runtime context or authenticated
+  execute context. Static `kody:@...` imports remain library/snapshot imports;
+  use `packages.invokeChecked` when execute needs to enter a package runtime.
 - Nested dynamic package invocations are depth-limited to prevent runaway
   package-to-package loops.
 

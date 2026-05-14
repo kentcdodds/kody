@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
+	createExecutePackageInvokeTools: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityHandlers: {
 			kody_official_guide: true,
@@ -20,6 +21,11 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 		mockModule.getCapabilityRegistryForContext(...args),
 }))
 
+vi.mock('#worker/package-invocations/service.ts', () => ({
+	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
+		mockModule.createExecutePackageInvokeTools(...args),
+}))
+
 const { registerExecuteTool } = await import('./execute.ts')
 
 const mockPerformanceNow = vi.spyOn(performance, 'now')
@@ -33,7 +39,19 @@ function mockPerformanceSequence(...values: Array<number>) {
 	})
 }
 
-async function getExecuteHandler() {
+async function getExecuteHandler(
+	callerContext: {
+		baseUrl: string
+		user: null | {
+			userId: string
+			email?: string
+			displayName?: string
+		}
+	} = {
+		baseUrl: 'https://example.com',
+		user: null,
+	},
+) {
 	vi.clearAllMocks()
 	const registerTool = vi.fn()
 
@@ -42,10 +60,7 @@ async function getExecuteHandler() {
 			registerTool,
 		} as never,
 		getEnv: vi.fn(() => ({})),
-		getCallerContext: vi.fn(() => ({
-			baseUrl: 'https://example.com',
-			user: null,
-		})),
+		getCallerContext: vi.fn(() => callerContext),
 		requireDomain: vi.fn(),
 		getLoopbackExports: vi.fn(),
 	} as never)
@@ -213,6 +228,51 @@ test('execute tool binds storage id and writable flag when provided', async () =
 		result: { ok: true },
 		logs: [],
 	})
+})
+
+test('execute tool passes package invoke tools for authenticated callers', async () => {
+	const packageInvokeTools = {
+		check: vi.fn(),
+		invoke: vi.fn(),
+		invokeChecked: vi.fn(),
+	}
+	mockModule.createExecutePackageInvokeTools.mockReturnValueOnce(
+		packageInvokeTools,
+	)
+	const callerContext = {
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+	}
+	const handler = await getExecuteHandler(callerContext)
+	mockPerformanceSequence(9, 12)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+
+	await handler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-packages',
+	})
+
+	expect(mockModule.createExecutePackageInvokeTools).toHaveBeenCalledWith({
+		env: {},
+		baseUrl: 'https://example.com',
+		callerContext: expect.objectContaining(callerContext),
+	})
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining(callerContext),
+		'export default async () => ({ ok: true })',
+		undefined,
+		expect.objectContaining({
+			packageInvokeTools,
+		}),
+	)
 })
 
 test('execute tool truncates returned strings over responseLimit', async () => {

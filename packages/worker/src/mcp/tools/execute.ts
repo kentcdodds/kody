@@ -53,7 +53,7 @@ Sandbox surface:
 - \`import { workflows } from 'kody:runtime'\` for durable Cloudflare Workflows. \`workflows.create\` accepts either inline \`code\` or a saved-package \`exportName\`; use \`workflow_list\` to inspect recent runs.
 - Optional \`params\` are passed as the first argument to the module default export. Prefer \`export default async function main(input = {}) { ... }\`; pass \`input\` to shared helpers explicitly.
 - \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.
-- \`import { packages } from 'kody:runtime'\` exposes \`packages.check(...)\`, \`packages.invoke(...)\`, and \`packages.invokeChecked(...)\` only in saved package runtime contexts; it is \`null\` for ad hoc execute calls. Prefer \`invokeChecked\` for dynamic current-version package calls unless you already called \`check\` and pass \`check.invoke\` to \`invoke\`.
+- \`import { packages } from 'kody:runtime'\` exposes \`packages.check(...)\`, \`packages.invoke(...)\`, and \`packages.invokeChecked(...)\` in saved package runtime contexts and authenticated ad hoc execute calls. Prefer \`invokeChecked\` for dynamic current-version package calls unless you already called \`check\` and pass \`check.invoke\` to \`invoke\`.
 - \`fetch(...)\` is the host-provided network global; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` work in URL, headers, or body on approved hosts only. \`secretHeaders.basic(...)\` returns an opaque placeholder for fetch headers; the gateway resolves both referenced secrets, enforces host approval for both, and sends only the derived Basic header.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
 - Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
@@ -195,8 +195,18 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						'mcp.tool': 'execute',
 					},
 				},
-				async () =>
-					runModuleWithRegistry(env, callerContext, code, params, {
+				async () => {
+					const packageInvokeTools = callerContext.user?.userId
+						? await import('#worker/package-invocations/service.ts').then(
+								({ createExecutePackageInvokeTools }) =>
+									createExecutePackageInvokeTools({
+										env,
+										baseUrl: callerContext.baseUrl,
+										callerContext,
+									}),
+							)
+						: undefined
+					return await runModuleWithRegistry(env, callerContext, code, params, {
 						executorExports: agent.getLoopbackExports(),
 						storageTools: activeStorageId
 							? {
@@ -205,7 +215,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									writable: writable ?? false,
 								}
 							: undefined,
-					}),
+						packageInvokeTools,
+					})
+				},
 			)
 			const timing = finishToolTiming(timingStart)
 			const durationMs = timing.durationMs

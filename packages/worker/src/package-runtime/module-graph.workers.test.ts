@@ -664,6 +664,102 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 	])
 })
 
+test('ad hoc execute runtime exposes packages.invoke when package invoke tools are provided', async () => {
+	const bundle = await buildKodyModuleBundle({
+		env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-workers-test',
+		sourceFiles: {
+			'entry.ts': [
+				"import { packageContext, packages } from 'kody:runtime'",
+				'',
+				'export default async function main(input = {}) {',
+				'\treturn {',
+				'\t\tpackageContextIsNull: packageContext === null,',
+				"\t\thasInvokeChecked: typeof packages?.invokeChecked === 'function',",
+				'\t\tinvoked: await packages?.invokeChecked({',
+				"\t\t\tkodyId: 'target-package',",
+				"\t\t\texportName: './run',",
+				'\t\t\tparams: input,',
+				'\t\t}),',
+				'\t}',
+				'}',
+			].join('\n'),
+		},
+		entryPoint: 'entry.ts',
+	})
+	const invokedInputs: Array<Record<string, unknown>> = []
+	const result = await runBundledModuleWithRegistry(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId: 'user-workers-test',
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		}),
+		{
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+		},
+		{ eventId: 'event-1' },
+		{
+			packageContext: null,
+			packageInvokeTools: {
+				check: async (input) => ({
+					ok: true,
+					invoke: input as {
+						kodyId: string
+						exportName: string
+						params?: Record<string, unknown>
+					},
+					contract: {
+						packageId: 'pkg-target',
+						kodyId: 'target-package',
+						name: '@kentcdodds/target-package',
+						sourceId: 'source-target',
+						publishedCommit: 'commit-1',
+						exportName: './run',
+						runtimeTarget: 'src/run.ts',
+						warnings: [],
+					},
+				}),
+				invoke: async (input) => {
+					invokedInputs.push(input)
+					return { ok: true, input }
+				},
+				invokeChecked: async (input) => {
+					invokedInputs.push(input)
+					return { ok: true, input }
+				},
+			},
+			skipCapabilityRegistry: true,
+		},
+	)
+
+	expect(result.error).toBeUndefined()
+	expect(result.result).toEqual({
+		packageContextIsNull: true,
+		hasInvokeChecked: true,
+		invoked: {
+			ok: true,
+			input: {
+				kodyId: 'target-package',
+				exportName: './run',
+				params: { eventId: 'event-1' },
+			},
+		},
+	})
+	expect(invokedInputs).toEqual([
+		{
+			kodyId: 'target-package',
+			exportName: './run',
+			params: { eventId: 'event-1' },
+		},
+	])
+})
+
 test('ad hoc execute runtime exposes packages as null without package invoke tools', async () => {
 	const bundle = await buildKodyModuleBundle({
 		env,
