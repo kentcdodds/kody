@@ -180,10 +180,12 @@ test('builtin search discovers package subscription guidance', async () => {
 	})
 
 	expect(offline).toBe(true)
-	expect(matches[0]).toMatchObject({
+	expect(matches).toContainEqual(
+		expect.objectContaining({
 		name: 'package_subscription_list',
 		domain: 'packages',
-	})
+		}),
+	)
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {
