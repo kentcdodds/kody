@@ -2,9 +2,9 @@
 
 ## Secrets
 
-Secret **values** do not belong in chat. Prefer **saved secrets**, **generated
-UI** flows, or execution-time persistence when a token already exists inside
-trusted code.
+Credential setup uses **saved secrets**, **`/connect/oauth`** for OAuth,
+**`/connect/secret`** for API keys and PATs, or execution-time persistence when
+a token already exists inside trusted code.
 
 Use **search** first to discover saved secret references or integrations before
 switching to **execute**.

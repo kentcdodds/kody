@@ -39,14 +39,3 @@ test('surfaces remote connector identifiers and compacts long descriptions', () 
 	expect(longConnectorLine).not.toContain(longDescription)
 	expect(longConnectorDescription.length).toBeLessThanOrEqual(240)
 })
-
-test('prefers direct oauth reconnect links over generated ui', () => {
-	const instructions = buildMcpServerInstructions(null)
-
-	expect(instructions).toContain('OAuth reconnect/refresh requests')
-	expect(instructions).toContain('/connect/oauth?provider=<integration-name>')
-	expect(instructions).toContain(
-		'Do not use `open_generated_ui` just to present those links or buttons',
-	)
-	expect(instructions).toContain('first inspect the integration metadata')
-})

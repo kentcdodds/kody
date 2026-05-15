@@ -130,7 +130,7 @@ export type ExecutionErrorDetails =
 			nextStep: string
 			secretNames: Array<string>
 			suggestedAction: {
-				type: 'open_generated_ui'
+				type: 'connect_secret'
 				reason: 'collect_secret'
 			}
 	  }
@@ -248,11 +248,10 @@ export function getExecutionErrorDetails(
 		return {
 			kind: 'secret_required',
 			message,
-			nextStep:
-				'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
+			nextStep: `Send the user to /connect/secret?name=${encodeURIComponent(missingSecretDetails.secretName)} so they can provide and save this secret, then retry the workflow.`,
 			secretNames: [missingSecretDetails.secretName],
 			suggestedAction: {
-				type: 'open_generated_ui',
+				type: 'connect_secret',
 				reason: 'collect_secret',
 			},
 		}

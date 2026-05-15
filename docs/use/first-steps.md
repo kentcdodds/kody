@@ -29,8 +29,8 @@ integration, value, or secret reference, then run work through **execute**.
   in `execute`, then build the downstream artifact.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
-- **Do not paste secrets in chat.** Use saved secrets, generated UI, or the
-  flows described in
+- **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
+  `/connect/secret`, or the flows described in
   [Secrets, values, and host approval](./secrets-and-values.md).
 - **Confirm destructive work** before mutating GitHub, Cloudflare, or Cursor
   Cloud Agents. See [Mutating actions and confirmations](./mutating-actions.md).

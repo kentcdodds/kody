@@ -63,7 +63,7 @@ Sandbox surface:
 - No \`secret_get\` / \`secrets\` helpers in the sandbox.
 - \`value_get\` / \`value_list\` for non-secret persisted config.
 
-Never ask the user to paste credentials in chat; use generated UI to collect or rotate secrets. If a host is not approved, use the error’s approval path instead of blind retries.
+Credential collection and rotation use standard Kody connect pages: \`/connect/oauth\` for OAuth integrations and \`/connect/secret\` for API keys, PATs, and other user-provided secrets. If a host is not approved, use the error’s approval path instead of blind retries.
 
 Prefer one \`execute\` when the workflow is clear; split calls when you need new user input or a changed plan.
 

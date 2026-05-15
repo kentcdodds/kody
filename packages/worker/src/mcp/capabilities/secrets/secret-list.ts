@@ -12,7 +12,7 @@ export const secretListCapability = defineDomainCapability(
 	{
 		name: 'secret_list',
 		description:
-			'List available secret references for the signed-in user without revealing secret values. When scope is omitted, results include every accessible scope in precedence order. Use `codemode.secret_list({ scope })` inside execute-time code when you want the same metadata, including allowed hosts and allowed capabilities, from the sandbox. Never return a secret value from execute, and never ask the user to paste a secret, token, API key, password, or credential into chat; use generated UI to collect missing secrets safely.',
+			'List available secret references for the signed-in user without revealing secret values. When scope is omitted, results include every accessible scope in precedence order. Use `codemode.secret_list({ scope })` inside execute-time code when you want the same metadata, including allowed hosts and allowed capabilities, from the sandbox. Use `/connect/secret` to collect or rotate missing user-provided secrets such as API keys, tokens, or credentials.',
 		keywords: ['secret', 'list', 'discovery', 'metadata', 'credentials'],
 		readOnly: true,
 		idempotent: true,

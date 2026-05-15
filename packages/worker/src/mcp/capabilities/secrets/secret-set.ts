@@ -35,7 +35,7 @@ export const secretSetCapability = defineDomainCapability(
 	{
 		name: 'secret_set',
 		description:
-			'Create or update a stored secret reference for the signed-in user without ever returning the plaintext value. Use this only for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Never ask the user to paste a secret, token, API key, password, or credential into chat; use generated UI to collect missing user-provided secrets safely. Saving a secret value does not authorize outbound host use or direct capability access.',
+			'Create or update a stored secret reference for the signed-in user without ever returning the plaintext value. Use this only for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Use `/connect/secret` to collect or rotate missing user-provided secrets such as API keys, tokens, or credentials. Saving a secret value does not authorize outbound host use or direct capability access.',
 		keywords: ['secret', 'persist', 'store', 'oauth', 'token', 'credential'],
 		readOnly: false,
 		idempotent: false,

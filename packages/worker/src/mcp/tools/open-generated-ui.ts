@@ -32,12 +32,8 @@ const openGeneratedUiTool = {
 Open the MCP App runtime. Pass exactly one of \`code\` (inline HTML fragment or
 full document) or \`kody_id\` (saved package app identity).
 
-Use for sensitive input (never ask the user to paste credentials in chat).
-Do not use this tool just to render ordinary OAuth reconnect links or buttons.
-For OAuth reconnect/refresh requests, inspect integration metadata with
-\`search\`, then provide direct links such as
-\`/connect/oauth?provider=<integration-name>\` unless UI is explicitly requested
-or genuinely required.
+Use when a saved package app or inline MCP App workflow should be shown inside
+the host.
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
 If the package app depends on a third-party integration, load
 \`kody_official_guide\` (\`guide: "integration_bootstrap"\`) before building or

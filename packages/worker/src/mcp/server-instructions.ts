@@ -51,13 +51,12 @@ https://github.com/kentcdodds/kody/tree/main/docs/use
 Three-step flow:
 1. \`search\` — built-in capabilities, saved packages, persisted values, saved integrations, and secret references (metadata).
 2. \`execute\` — run one ephemeral module with imports/exports and runtime access through \`kody:runtime\`.
-3. \`open_generated_ui\` — open UI when a package app or inline UI flow genuinely needs interaction; do not use it merely to show normal links or buttons.
+3. \`open_generated_ui\` — open saved package apps or inline MCP App workflows.
 
 Conventions
 - ${conversationIdGuidance}
 - \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories and suppress repeats within the same \`conversationId\`.
-- Do not ask the user to paste secrets in chat; use saved secrets or \`open_generated_ui\`.
-- OAuth reconnect/refresh requests for existing integrations: first inspect the integration metadata with \`search\`, then provide direct links such as \`/connect/oauth?provider=<integration-name>\`. Do not use \`open_generated_ui\` just to present those links or buttons unless the user explicitly asks for UI or a genuinely interactive generated UI flow is required.
+- Credential setup uses the standard connect pages: \`/connect/oauth\` for OAuth integrations and reconnects, \`/connect/secret\` for API keys, PATs, and other user-provided secrets.
 - \`package_save\`: create or replace a repo-backed saved package rooted at \`package.json\`. Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs. When creating or materially changing a package, keep a root \`README.md\` \`## Intent\` section with the user's goal; ask the user if unclear and update it when scope expands.
 - \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
 - Integration-backed work: use \`search\` and official guides before local repo exploration. For packages, package apps, or workflows that depend on third-party auth, first call \`kody_official_guide\` with \`guide: "integration_bootstrap"\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, run a cheap authenticated \`execute\` smoke test, then build. If setup is missing, load \`oauth\` for \`/connect/oauth\`, \`connect_secret\` for secret collection, and \`secret_backed_integration\` for the default non-OAuth recipe.
@@ -98,7 +97,7 @@ execute
 - Do not save or present an auth-dependent package as complete until \`search\` shows the required integration or secret reference exists and a minimal authenticated \`execute\` smoke test succeeds.
 
 open_generated_ui
-- Use UI for sensitive input collection, saved package apps, or actually necessary interactive inline flows. For simple OAuth reconnect links, answer with \`/connect/oauth?provider=<integration-name>\` instead. Details: \`open_generated_ui\` tool description.
+- Opens saved package apps and inline MCP App workflows. Details: \`open_generated_ui\` tool description.
 	`.trim()
 }
 
