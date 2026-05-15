@@ -17,9 +17,12 @@ test('account new secret form saves query-prefilled metadata', async ({
 		`/account/secrets/new?name=${encodeURIComponent(queryName)}&scope=user&description=${encodeURIComponent(description)}&allowedHosts=API.LINEAR.APP&allowedCapabilities=linear_issue_list&allowedPackages=${encodeURIComponent(packageId)}`,
 	)
 
-	await expect(page.getByLabel('Name')).toHaveValue(queryName)
-	await expect(page.getByLabel('Scope')).toHaveValue('user')
-	await expect(page.getByLabel('Description')).toHaveValue(description)
+	const editorForm = page.locator('form').filter({
+		has: page.getByRole('heading', { name: 'New secret' }),
+	})
+	await expect(editorForm.getByLabel('Name')).toHaveValue(queryName)
+	await expect(editorForm.getByLabel('Scope')).toHaveValue('user')
+	await expect(editorForm.getByLabel('Description')).toHaveValue(description)
 	await expect(page.getByPlaceholder('api.example.com')).toHaveValue(
 		'api.linear.app',
 	)
@@ -28,7 +31,7 @@ test('account new secret form saves query-prefilled metadata', async ({
 	).toHaveValue('linear_issue_list')
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 
-	await page.getByLabel('Name').fill(editedName)
+	await editorForm.getByLabel('Name').fill(editedName)
 	await page.getByRole('textbox', { name: /^Secret value/ }).fill(secretValue)
 	await page.getByRole('button', { name: 'Save' }).click()
 

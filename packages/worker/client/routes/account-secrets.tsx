@@ -814,6 +814,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to save secret.')
 			}
 
+			const wasCreating = !editorState.currentId
 			const nextSelection: SelectionState = {
 				selectedSecretId: payload.selectedSecret?.id ?? null,
 				isCreating: false,
@@ -829,7 +830,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				navigate(
 					buildSecretHref(
 						payload.selectedSecret,
-						editorState.currentId ? getCurrentSearch() : '',
+						wasCreating ? '' : getCurrentSearch(),
 					),
 				)
 			}
