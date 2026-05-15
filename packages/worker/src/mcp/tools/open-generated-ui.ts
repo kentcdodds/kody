@@ -38,6 +38,7 @@ Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
 If the package app depends on a third-party integration, load
 \`kody_official_guide\` (\`guide: "integration_bootstrap"\`) before building or
 saving the downstream package.
+Credential collection and rotation use \`/connect/oauth\` for OAuth integrations and \`/connect/secret\` for API keys, PATs, and other user-provided secrets. Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.
 
 Persist packages with \`package_save\`; discover them with \`search\` or
 \`package_list\`.

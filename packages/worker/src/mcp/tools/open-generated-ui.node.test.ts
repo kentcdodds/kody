@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
 
+const secretChatProhibition =
+	'Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.'
+
 const mockModule = vi.hoisted(() => ({
 	registerAppTool: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
@@ -32,6 +35,29 @@ vi.mock('#mcp/generated-ui-app-session.ts', () => ({
 }))
 
 const { registerOpenGeneratedUiTool } = await import('./open-generated-ui.ts')
+
+test('open_generated_ui description keeps secret collection out of chat', async () => {
+	mockModule.registerAppTool.mockClear()
+
+	await registerOpenGeneratedUiTool({
+		server: {} as never,
+		getEnv: vi.fn(() => ({
+			APP_DB: {} as D1Database,
+		})),
+		getCallerContext: vi.fn(() => ({
+			baseUrl: 'https://example.com',
+			user: null,
+		})),
+		requireDomain: vi.fn(() => 'https://example.com'),
+	} as never)
+
+	const [, name, options] = mockModule.registerAppTool.mock.calls[0] ?? []
+	expect(name).toBe('open_generated_ui')
+	const description = (options as { description?: string }).description
+	expect(description).toContain('/connect/secret')
+	expect(description).toContain('/connect/oauth')
+	expect(description).toContain(secretChatProhibition)
+})
 
 async function getOpenGeneratedUiHandler(options?: {
 	username?: string

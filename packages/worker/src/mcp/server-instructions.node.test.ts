@@ -1,6 +1,17 @@
 import { expect, test } from 'vitest'
 import { buildMcpServerInstructions } from './server-instructions.ts'
 
+const secretChatProhibition =
+	'Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.'
+
+test('keeps secret collection out of chat in base instructions', () => {
+	const instructions = buildMcpServerInstructions(null)
+
+	expect(instructions).toContain('/connect/secret')
+	expect(instructions).toContain('/connect/oauth')
+	expect(instructions).toContain(secretChatProhibition)
+})
+
 test('surfaces remote connector identifiers and compacts long descriptions', () => {
 	const shortDescription = 'Local-network home automation for lights and media.'
 	const longDescription = 'a'.repeat(300)
