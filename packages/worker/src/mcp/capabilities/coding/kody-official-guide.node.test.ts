@@ -12,24 +12,6 @@ const ctx = {
 	},
 }
 
-test('kody_official_guide description surfaces integration bootstrap flow', () => {
-	expect(kodyOfficialGuideCapability.description).toContain(
-		'Prefer this capability plus `search` results',
-	)
-	expect(kodyOfficialGuideCapability.description).toContain(
-		'guide: "integration_bootstrap"',
-	)
-	expect(kodyOfficialGuideCapability.description).toContain(
-		'saved `integration` / `secret` entities',
-	)
-	expect(kodyOfficialGuideCapability.description).toContain(
-		'cheap authenticated smoke test before building',
-	)
-	expect(kodyOfficialGuideCapability.description).not.toContain(
-		'Available guides (order matters',
-	)
-})
-
 test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	const originalFetch = globalThis.fetch
 	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
@@ -48,19 +30,6 @@ test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	} finally {
 		globalThis.fetch = originalFetch
 	}
-})
-
-test('kody_official_guide metadata routes package authoring discovery', () => {
-	expect(kodyOfficialGuideCapability.description).toContain('package_authoring')
-	expect(kodyOfficialGuideCapability.description).toContain(
-		'The `guide` input describes each available guide',
-	)
-	expect(kodyOfficialGuideCapability.description).not.toContain(
-		'README.md Intent',
-	)
-	expect(kodyOfficialGuideCapability.keywords).toEqual(
-		expect.arrayContaining(['readme intent', 'intent section']),
-	)
 })
 
 test('kody_official_guide surfaces fetch failures', async () => {

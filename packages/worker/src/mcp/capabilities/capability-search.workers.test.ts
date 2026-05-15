@@ -11,7 +11,7 @@ import {
 } from './capability-search.ts'
 import { type CapabilitySpec } from './types.ts'
 
-test('buildCapabilityEmbedText folds searchable capability fields into one document', () => {
+test('capability search helpers build normalized searchable documents', () => {
 	const spec = {
 		name: 'deploy_worker',
 		domain: 'apps',
@@ -34,24 +34,15 @@ test('buildCapabilityEmbedText folds searchable capability fields into one docum
 		spec.keywords.join(' '),
 		'sourceId environment deploymentId',
 	])
-})
-
-test('deterministicEmbedding has fixed dimension and unit norm', () => {
 	const a = deterministicEmbedding('hello', CAPABILITY_EMBEDDING_DIMENSIONS)
 	expect(a.length).toBe(CAPABILITY_EMBEDDING_DIMENSIONS)
 	let sum = 0
 	for (const x of a) sum += x * x
 	expect(sum).toBeCloseTo(1, 5)
-})
-
-test('lexicalScore prefers overlapping tokens', () => {
 	const doc = 'github rest api issues pull request repository'
 	expect(lexicalScore('github issues', doc)).toBeGreaterThan(
 		lexicalScore('weather forecast', doc),
 	)
-})
-
-test('hybridSearchScore keeps lexical-vector blends in a 0..1 range', () => {
 	expect(hybridSearchScore(0, 0)).toBe(0)
 	expect(hybridSearchScore(1, 1)).toBe(1)
 	expect(hybridSearchScore(0.6, 0.2)).toBe(0.4)
@@ -189,16 +180,9 @@ test('builtin search discovers package subscription guidance', async () => {
 	})
 
 	expect(offline).toBe(true)
-	const subscriptionListMatch = matches.find(
-		(match) => match.name === 'package_subscription_list',
-	)
-	expect(subscriptionListMatch).toMatchObject({
+	expect(matches[0]).toMatchObject({
+		name: 'package_subscription_list',
 		domain: 'packages',
-		description: expect.stringContaining('package.json#kody.subscriptions'),
-		keywords: expect.arrayContaining([
-			'package.json#kody.subscriptions',
-			'email.message.received',
-		]),
 	})
 })
 

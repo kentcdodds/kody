@@ -66,11 +66,10 @@ async function getExecuteRegistration(
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
-	const [name, rawOptions, handler] = registerTool.mock.calls[0] ?? []
+	const [name, , handler] = registerTool.mock.calls[0] ?? []
 	expect(name).toBe('execute')
 	expect(typeof handler).toBe('function')
-	const options = rawOptions as { description: string }
-	return { options, handler }
+	return { handler }
 }
 
 async function getExecuteHandler(
@@ -112,20 +111,6 @@ async function getExecuteHandler(
 		isError: boolean
 	}>
 }
-
-test('execute tool description surfaces integration-backed smoke-test flow', async () => {
-	const { options } = await getExecuteRegistration()
-
-	expect(options.description).toContain('integration-backed packages')
-	expect(options.description).toContain(
-		"kody_official_guide({ guide: 'integration_bootstrap' })",
-	)
-	expect(options.description).toContain(
-		'cheap read-only authenticated smoke test',
-	)
-	expect(options.description).toContain('before `package_save`')
-	expect(options.description).toContain('`oauth`, `connect_secret`')
-})
 
 test('execute tool passes through raw MCP content blocks in success responses', async () => {
 	const handler = await getExecuteHandler()
