@@ -50,14 +50,14 @@ Packages subscribe in `package.json#kody.subscriptions`:
 
 ```json
 {
-  "kody": {
-    "subscriptions": {
-      "email.message.received": {
-        "handler": "./src/on-email-message-received.ts",
-        "description": "Process stored inbound mail."
-      }
-    }
-  }
+	"kody": {
+		"subscriptions": {
+			"email.message.received": {
+				"handler": "./src/on-email-message-received.ts",
+				"description": "Process stored inbound mail."
+			}
+		}
+	}
 }
 ```
 
@@ -65,42 +65,42 @@ Handlers receive a metadata-first payload:
 
 ```ts
 type EmailMessageReceivedEvent = {
-  event: "email.message.received";
-  message: {
-    id: string;
-    inbox_id: string | null;
-    from_address: string | null;
-    envelope_from: string | null;
-    to_addresses: Array<string>;
-    cc_addresses: Array<string>;
-    reply_to_addresses: Array<string>;
-    subject: string | null;
-    message_id_header: string | null;
-    in_reply_to_header: string | null;
-    references: Array<string>;
-    processing_status: "stored" | "sent" | "failed";
-    received_at: string | null;
-    created_at: string;
-  };
-  attachments: Array<{
-    id: string;
-    filename: string | null;
-    content_type: string | null;
-    content_id: string | null;
-    disposition: string | null;
-    size: number;
-    storage_kind: string;
-    storage_key: string | null;
-    created_at: string;
-  }>;
-};
+	event: 'email.message.received'
+	message: {
+		id: string
+		inbox_id: string | null
+		from_address: string | null
+		envelope_from: string | null
+		to_addresses: Array<string>
+		cc_addresses: Array<string>
+		reply_to_addresses: Array<string>
+		subject: string | null
+		message_id_header: string | null
+		in_reply_to_header: string | null
+		references: Array<string>
+		processing_status: 'stored' | 'sent' | 'failed'
+		received_at: string | null
+		created_at: string
+	}
+	attachments: Array<{
+		id: string
+		filename: string | null
+		content_type: string | null
+		content_id: string | null
+		disposition: string | null
+		size: number
+		storage_kind: string
+		storage_key: string | null
+		created_at: string
+	}>
+}
 ```
 
 The event does not include parsed bodies or attachment bytes. Fetch those only
 when the handler needs them with `email_message_get`, `email_attachment_get`, or
 the package runtime `email` helper. Use `package_subscription_list` with
-`topic: "email.message.received"` to discover which saved packages subscribe
-for the signed-in user.
+`topic: "email.message.received"` to discover which saved packages subscribe for
+the signed-in user.
 
 ## Local inbound testing
 

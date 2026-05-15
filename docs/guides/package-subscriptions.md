@@ -11,20 +11,20 @@ event topic:
 
 ```json
 {
-  "name": "@scope/email-automation",
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "kody": {
-    "id": "email-automation",
-    "description": "Automates stored inbound email.",
-    "subscriptions": {
-      "email.message.received": {
-        "handler": "./src/on-email-message-received.ts",
-        "description": "Process stored inbound mail."
-      }
-    }
-  }
+	"name": "@scope/email-automation",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"kody": {
+		"id": "email-automation",
+		"description": "Automates stored inbound email.",
+		"subscriptions": {
+			"email.message.received": {
+				"handler": "./src/on-email-message-received.ts",
+				"description": "Process stored inbound mail."
+			}
+		}
+	}
 }
 ```
 
@@ -48,7 +48,7 @@ subscriptions:
 
 ```json
 {
-  "topic": "email.message.received"
+	"topic": "email.message.received"
 }
 ```
 
@@ -58,42 +58,42 @@ fan-out, or deciding whether a package already subscribes to a topic.
 
 ## `email.message.received`
 
-Stored inbound email dispatches `email.message.received` after Kody
-stores the message and attachment metadata.
+Stored inbound email dispatches `email.message.received` after Kody stores the
+message and attachment metadata.
 
 Handlers receive a metadata-first payload:
 
 ```ts
 type EmailMessageReceivedEvent = {
-  event: "email.message.received";
-  message: {
-    id: string;
-    inbox_id: string | null;
-    from_address: string | null;
-    envelope_from: string | null;
-    to_addresses: Array<string>;
-    cc_addresses: Array<string>;
-    reply_to_addresses: Array<string>;
-    subject: string | null;
-    message_id_header: string | null;
-    in_reply_to_header: string | null;
-    references: Array<string>;
-    processing_status: "stored" | "sent" | "failed";
-    received_at: string | null;
-    created_at: string;
-  };
-  attachments: Array<{
-    id: string;
-    filename: string | null;
-    content_type: string | null;
-    content_id: string | null;
-    disposition: string | null;
-    size: number;
-    storage_kind: string;
-    storage_key: string | null;
-    created_at: string;
-  }>;
-};
+	event: 'email.message.received'
+	message: {
+		id: string
+		inbox_id: string | null
+		from_address: string | null
+		envelope_from: string | null
+		to_addresses: Array<string>
+		cc_addresses: Array<string>
+		reply_to_addresses: Array<string>
+		subject: string | null
+		message_id_header: string | null
+		in_reply_to_header: string | null
+		references: Array<string>
+		processing_status: 'stored' | 'sent' | 'failed'
+		received_at: string | null
+		created_at: string
+	}
+	attachments: Array<{
+		id: string
+		filename: string | null
+		content_type: string | null
+		content_id: string | null
+		disposition: string | null
+		size: number
+		storage_kind: string
+		storage_key: string | null
+		created_at: string
+	}>
+}
 ```
 
 Do not expect parsed bodies or attachment bytes in the event. Fetch full message
