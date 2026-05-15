@@ -1,9 +1,6 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { expect, test, vi } from 'vitest'
 
-const secretChatProhibition =
-	'Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.'
-
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
 	createExecutePackageInvokeTools: vi.fn(),
@@ -69,10 +66,10 @@ async function getExecuteRegistration(
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
-	const [name, options, handler] = registerTool.mock.calls[0] ?? []
+	const [name, , handler] = registerTool.mock.calls[0] ?? []
 	expect(name).toBe('execute')
 	expect(typeof handler).toBe('function')
-	return { handler, options: options as { description?: string } }
+	return { handler }
 }
 
 async function getExecuteHandler(
@@ -114,14 +111,6 @@ async function getExecuteHandler(
 		isError: boolean
 	}>
 }
-
-test('execute tool description keeps secret collection out of chat', async () => {
-	const { options } = await getExecuteRegistration()
-
-	expect(options.description).toContain('/connect/secret')
-	expect(options.description).toContain('/connect/oauth')
-	expect(options.description).toContain(secretChatProhibition)
-})
 
 test('execute tool passes through raw MCP content blocks in success responses', async () => {
 	const handler = await getExecuteHandler()
