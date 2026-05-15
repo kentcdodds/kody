@@ -33,6 +33,29 @@ vi.mock('#mcp/generated-ui-app-session.ts', () => ({
 
 const { registerOpenGeneratedUiTool } = await import('./open-generated-ui.ts')
 
+async function getOpenGeneratedUiRegistration() {
+	mockModule.registerAppTool.mockClear()
+
+	await registerOpenGeneratedUiTool({
+		server: {} as never,
+		getEnv: vi.fn(() => ({
+			APP_DB: {} as D1Database,
+		})),
+		getCallerContext: vi.fn(() => ({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-123',
+				email: 'user@example.com',
+				displayName: 'test-user',
+			},
+		})),
+		requireDomain: vi.fn(() => 'https://example.com'),
+	} as never)
+
+	expect(mockModule.registerAppTool).toHaveBeenCalledTimes(1)
+	return mockModule.registerAppTool.mock.calls[0] ?? []
+}
+
 async function getOpenGeneratedUiHandler(options?: {
 	username?: string
 	appDb?: D1Database
@@ -66,6 +89,24 @@ async function getOpenGeneratedUiHandler(options?: {
 		}
 	}>
 }
+
+test('open_generated_ui description excludes simple oauth reconnect links', async () => {
+	const [, , registration] = await getOpenGeneratedUiRegistration()
+
+	expect(registration).toMatchObject({
+		description: expect.stringContaining(
+			'Do not use this tool just to render ordinary OAuth reconnect links or buttons',
+		),
+	})
+	expect(registration).toMatchObject({
+		description: expect.stringContaining(
+			'/connect/oauth?provider=<integration-name>',
+		),
+	})
+	expect(registration).toMatchObject({
+		description: expect.stringContaining('inspect integration metadata'),
+	})
+})
 
 test('open_generated_ui reopens saved package apps by kody_id', async () => {
 	const handler = await getOpenGeneratedUiHandler({ username: 'test-user' })
