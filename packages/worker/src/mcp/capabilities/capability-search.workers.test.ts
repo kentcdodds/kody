@@ -182,8 +182,8 @@ test('builtin search discovers package subscription guidance', async () => {
 	expect(offline).toBe(true)
 	expect(matches).toContainEqual(
 		expect.objectContaining({
-		name: 'package_subscription_list',
-		domain: 'packages',
+			name: 'package_subscription_list',
+			domain: 'packages',
 		}),
 	)
 })
