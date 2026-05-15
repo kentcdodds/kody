@@ -20,10 +20,6 @@ import {
 	createPasswordResetConfirmHandler,
 	createPasswordResetRequestHandler,
 } from '#app/handlers/password-reset.ts'
-import {
-	createConnectSecretApiHandler,
-	createConnectSecretHandler,
-} from '#app/handlers/connect-secret.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
 import { signup } from '#app/handlers/signup.ts'
 import { Layout } from '#app/layout.ts'
@@ -86,11 +82,6 @@ export function createAppRouter(appEnv: AppEnv) {
 				appEnv as unknown as Env,
 			),
 			accountSecretsApiPost: createAccountSecretsApiHandler(
-				appEnv as unknown as Env,
-			),
-			connectSecret: createConnectSecretHandler(appEnv as unknown as Env),
-			connectSecretApi: createConnectSecretApiHandler(appEnv as unknown as Env),
-			connectSecretApiPost: createConnectSecretApiHandler(
 				appEnv as unknown as Env,
 			),
 			connectOauth: createConnectOauthHandler(appEnv as unknown as Env),

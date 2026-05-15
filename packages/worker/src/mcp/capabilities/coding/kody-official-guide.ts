@@ -32,7 +32,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'secret-backed-integration.md',
 		title: 'Secret-backed integration recipe',
 		summary:
-			'Default non-OAuth recipe for secret-backed integrations: research auth, collect secrets through /connect/secret, run a smoke test, then build the downstream package or workflow.',
+			'Default non-OAuth recipe for secret-backed integrations: research auth, collect secrets through /account/secrets/new, run a smoke test, then build the downstream package or workflow.',
 	},
 	integration_backed_app: {
 		file: 'integration-backed-app-happy-path.md',
@@ -53,10 +53,10 @@ export const kodyOfficialGuideCatalog = {
 			'Edge case: OAuth inside a hosted package app, kodyWidget callbacks, PKCE/exchange helpers—after reading guide `oauth`.',
 	},
 	connect_secret: {
-		file: 'connect-secret.md',
-		title: 'Connect secret guide',
+		file: 'account-secret-setup.md',
+		title: 'Account secret setup guide',
 		summary:
-			'Hosted /connect/secret URL shape, query params, and approval policy for API keys and PATs.',
+			'Hosted /account/secrets/new URL shape, query params, and approval policy for API keys and PATs.',
 	},
 	package_service_pattern: {
 		file: 'package-service-pattern.md',
@@ -139,7 +139,7 @@ const guideFieldSchema = z
 			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
 			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
-			'`connect_secret`: /connect/secret for API keys, PATs, and other secret collection steps.',
+			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
 			'`package_subscriptions`: package-owned event subscriptions, package_subscription_list discovery, and email.message.received metadata-first handler payloads.',
 		].join(' '),

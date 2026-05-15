@@ -15,7 +15,7 @@ This is the default path for many automation-oriented integrations:
 Keep the integration flow simple:
 
 1. research the provider's auth requirements
-2. collect the required secret values through `/connect/secret`
+2. collect the required secret values through `/account/secrets/new`
 3. run one real authenticated smoke test
 4. only then build the downstream package or workflow
 
@@ -34,7 +34,7 @@ smoke-test path is unclear.
    - Use `search` first for saved secret references.
    - Use `codemode.secret_list({})` inside `execute` only when you need the
      current runtime metadata.
-3. If any secret is missing, stop and send the user to `/connect/secret`.
+3. If any secret is missing, stop and send the user to `/account/secrets/new`.
    - Ask for each missing secret by name.
    - Include the provider dashboard URL and short creation steps when helpful.
    - Do **not** ask the user to paste the secret into chat.
@@ -70,9 +70,9 @@ contract:
 If the auth contract has multiple fields, save only the truly sensitive fields
 as secrets. Keep readable identifiers and defaults in values.
 
-## When `/connect/secret` is enough
+## When `/account/secrets/new` is enough
 
-In the common case, `/connect/secret` is the whole setup surface.
+In the common case, `/account/secrets/new` is the whole setup surface.
 
 Use it when:
 
@@ -90,10 +90,11 @@ Do **not** build one just to:
 
 - collect a normal API key or token
 - collect an account ID or other readable config
-- work around the need to ask the user for a secret through `/connect/secret`
+- work around the need to ask the user for a secret through
+  `/account/secrets/new`
 
 Generated UI is the exception when the setup requires something
-`/connect/secret` cannot express cleanly, such as:
+`/account/secrets/new` cannot express cleanly, such as:
 
 - browser-side OAuth or hosted callback handling
 - a provider-specific setup wizard with multiple non-secret choices
@@ -108,21 +109,23 @@ the post-setup smoke test.
 For a new secret-backed integration, the default response shape is:
 
 1. state the auth requirement you found
-2. ask the user to save the required secret or secrets through `/connect/secret`
+2. ask the user to save the required secret or secrets through
+   `/account/secrets/new`
 3. say you will run a smoke test after they confirm setup
 4. say you will build the package only after the smoke test passes
 
 Example:
 
 - \"This API uses an account ID plus a token. Please save `providerToken`
-  through `/connect/secret`. I will use `providerAccountId` as a value, run a
-  real authenticated smoke test, and then build the package.\"
+  through `/account/secrets/new`. I will use `providerAccountId` as a value, run
+  a real authenticated smoke test, and then build the package.\"
 
 ## Anti-patterns
 
 Avoid these mistakes:
 
-- building a generated UI before checking whether `/connect/secret` is enough
+- building a generated UI before checking whether `/account/secrets/new` is
+  enough
 - saving readable config as a secret
 - saving the downstream package before the smoke test passes
 - assuming a saved secret automatically approves outbound hosts

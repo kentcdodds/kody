@@ -3,8 +3,8 @@
 ## Secrets
 
 Credential setup uses **saved secrets**, **`/connect/oauth`** for OAuth,
-**`/connect/secret`** for API keys and PATs, or execution-time persistence when
-a token already exists inside trusted code.
+**`/account/secrets/new`** for API keys and PATs, or execution-time persistence
+when a token already exists inside trusted code.
 
 Use **search** first to discover saved secret references or integrations before
 switching to **execute**.

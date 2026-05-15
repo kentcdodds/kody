@@ -54,7 +54,7 @@ test('offline search returns provided specs without depending on global ranks', 
 			name: 'kody_official_guide',
 			domain: 'coding',
 			description:
-				'Load official Kody guides: integration_bootstrap, secret_backed_integration, integration_backed_app, oauth (/connect/oauth), generated_ui_oauth (hosted package app), connect_secret, package_service_pattern.',
+				'Load official Kody guides: integration_bootstrap, secret_backed_integration, integration_backed_app, oauth (/connect/oauth), generated_ui_oauth (hosted package app), connect_secret (/account/secrets/new), package_service_pattern.',
 			keywords: [
 				'integration bootstrap',
 				'secret backed integration',

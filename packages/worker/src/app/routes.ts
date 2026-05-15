@@ -2,9 +2,6 @@ import { post, route } from 'remix/fetch-router/routes'
 
 export const routes = route({
 	home: '/',
-	connectSecret: '/connect/secret',
-	connectSecretApi: '/connect/secret.json',
-	connectSecretApiPost: post('/connect/secret.json'),
 	connectOauth: '/connect/oauth',
 	accountRemoteConnectors: '/account/remote-connectors',
 	accountRemoteConnectorsApi: '/account/remote-connectors.json',

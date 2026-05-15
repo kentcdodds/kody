@@ -51,7 +51,7 @@ If those conditions are not met, stop and fix the integration first.
      `search({ entity: "{id}:integration" })` or
      `search({ entity: "{id}:secret" })`.
 3. If the required integration or secret is missing, **stop**.
-   - Surface the exact `/connect/oauth` or `/connect/secret` URL in chat.
+   - Surface the exact `/connect/oauth` or `/account/secrets/new` URL in chat.
    - Wait for the user to confirm they completed the connect flow.
    - Do not save a downstream auth-dependent package or package app until
      integration setup is complete.

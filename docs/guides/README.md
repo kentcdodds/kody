@@ -15,4 +15,4 @@ available `guide` ids).
 | [package-subscriptions.md](./package-subscriptions.md)                         | Package subscription manifest shape, discovery, and email.message.received payload guidance                 |
 | [oauth.md](./oauth.md)                                                         | **Start here** for third-party OAuth (`/connect/oauth`, redirect URI, params)                               |
 | [generated-ui-oauth.md](./generated-ui-oauth.md)                               | Edge case: OAuth in a hosted package app (`open_generated_ui` on a saved package)                           |
-| [connect-secret.md](./connect-secret.md)                                       | `/connect/secret` URL parameters and policies                                                               |
+| [account-secret-setup.md](./account-secret-setup.md)                           | `/account/secrets/new` URL parameters and policies                                                          |

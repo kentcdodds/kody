@@ -12,7 +12,7 @@ export const secretListCapability = defineDomainCapability(
 	{
 		name: 'secret_list',
 		description:
-			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, and allowed capabilities. Use `codemode.secret_list({ scope })` inside execute-time code when you want the same metadata from the sandbox. Use `/connect/secret` for user-provided API key, token, and credential entry or rotation.',
+			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, and allowed capabilities. Use `codemode.secret_list({ scope })` inside execute-time code when you want the same metadata from the sandbox. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation.',
 		keywords: ['secret', 'list', 'discovery', 'metadata', 'credentials'],
 		readOnly: true,
 		idempotent: true,
