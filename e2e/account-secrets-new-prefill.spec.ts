@@ -46,4 +46,13 @@ test('account new secret form saves query-prefilled metadata', async ({
 	await expect(savedSecretInput).toHaveAttribute('type', 'password')
 	await expect(savedSecretInput).toHaveValue(secretValue)
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
+
+	await page.goto(`/account/secrets/user/${editedName}?capability=secret_set`)
+	await expect(
+		page.getByRole('heading', { level: 2, name: editedName }),
+	).toBeVisible()
+	const capabilityInputs = page.getByPlaceholder('home_lutron_set_credentials')
+	await expect(capabilityInputs).toHaveCount(2)
+	await expect(capabilityInputs.nth(0)).toHaveValue('linear_issue_list')
+	await expect(capabilityInputs.nth(1)).toHaveValue('secret_set')
 })

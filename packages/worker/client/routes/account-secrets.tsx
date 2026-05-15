@@ -421,6 +421,22 @@ function getAlreadyAddedNotice(input: {
 	}
 }
 
+function applyCapabilityPrefill(state: EditorState, capability: string | null) {
+	if (!capability) return state
+	if (state.allowedCapabilities.some((entry) => entry.trim() === capability)) {
+		return state
+	}
+	const nextAllowedCapabilities =
+		state.allowedCapabilities.length === 1 &&
+		state.allowedCapabilities[0]?.trim() === ''
+			? [capability]
+			: [...state.allowedCapabilities, capability]
+	return {
+		...state,
+		allowedCapabilities: nextAllowedCapabilities,
+	}
+}
+
 function buildSecretHref(
 	secret: {
 		name: string
@@ -578,15 +594,25 @@ export function AccountSecretsRoute(handle: Handle) {
 	function syncEditorState(selection: SelectionState) {
 		deleteSecretCheck.reset()
 		showSecretValue = false
+		const capabilityPrefill = readCapabilityPrefill(getCurrentHref())
 		if (selection.isCreating) {
-			editorState = createEditorStateFromNewSecretQuery(apps, getCurrentHref())
+			editorState = applyCapabilityPrefill(
+				createEditorStateFromNewSecretQuery(apps, getCurrentHref()),
+				capabilityPrefill,
+			)
 			return
 		}
 		if (selectedSecret) {
-			editorState = createEditorStateFromSecret(selectedSecret)
+			editorState = applyCapabilityPrefill(
+				createEditorStateFromSecret(selectedSecret),
+				capabilityPrefill,
+			)
 			return
 		}
-		editorState = createEmptyEditorState(apps)
+		editorState = applyCapabilityPrefill(
+			createEmptyEditorState(apps),
+			capabilityPrefill,
+		)
 	}
 
 	function applyPayload(
