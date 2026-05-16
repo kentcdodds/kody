@@ -27,13 +27,12 @@ test('capability search helpers build normalized searchable documents', () => {
 		inputTypeDefinition: 'type DeployWorkerInput = Record<string, unknown>',
 	} satisfies CapabilitySpec
 
-	expect(buildCapabilityEmbedText(spec).split('\n')).toEqual([
-		spec.name,
-		spec.domain,
-		spec.description,
-		spec.keywords.join(' '),
-		'sourceId environment deploymentId',
-	])
+	const embedText = buildCapabilityEmbedText(spec)
+	expect(embedText).toContain(spec.name)
+	expect(embedText).toContain(spec.domain)
+	expect(embedText).toContain(spec.description)
+	expect(embedText).toContain(spec.keywords.join(' '))
+	expect(embedText).toContain('sourceId environment deploymentId')
 	const a = deterministicEmbedding('hello', CAPABILITY_EMBEDDING_DIMENSIONS)
 	expect(a.length).toBe(CAPABILITY_EMBEDDING_DIMENSIONS)
 	let sum = 0

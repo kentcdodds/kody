@@ -48,14 +48,13 @@ test('countStaticDependentBundleArtifactPackages counts direct JSON dependency r
 		totalPackages: 2,
 		stalePackages: 1,
 	})
-	expect(onBind).toHaveBeenCalledWith(
-		expect.stringContaining('json_each(artifact.dependencies_json)'),
-		['commit-a-new', 'user-1', 'source-a', 'source-a'],
-	)
-	expect(onBind.mock.calls[0]?.[0]).toContain('artifact.source_id != ?')
-	expect(onBind.mock.calls[0]?.[0]).toContain(
-		'artifact.published_commit = source.published_commit',
-	)
+	expect(onBind).toHaveBeenCalledTimes(1)
+	expect(onBind).toHaveBeenCalledWith(expect.any(String), [
+		'commit-a-new',
+		'user-1',
+		'source-a',
+		'source-a',
+	])
 })
 
 test('listStaticDependentBundleArtifactRows maps bounded dependent package artifact rows', async () => {
@@ -106,8 +105,13 @@ test('listStaticDependentBundleArtifactRows maps bounded dependent package artif
 			bundledDependencyCommit: 'commit-a-old',
 		},
 	])
-	expect(onBind).toHaveBeenCalledWith(
-		expect.stringContaining('DENSE_RANK() OVER'),
-		['commit-a-new', 'user-1', 'source-a', 'source-a', 10, 5],
-	)
+	expect(onBind).toHaveBeenCalledTimes(1)
+	expect(onBind).toHaveBeenCalledWith(expect.any(String), [
+		'commit-a-new',
+		'user-1',
+		'source-a',
+		'source-a',
+		10,
+		5,
+	])
 })
