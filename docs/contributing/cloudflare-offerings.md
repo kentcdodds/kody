@@ -7,15 +7,15 @@ kody ships with:
   `@cloudflare/workers-oauth-provider`)
 - Durable Objects (`MCP_OBJECT`) for MCP server state
 
-This guide covers how to add common Cloudflare offerings on top of the starter:
+This guide covers how to add common Cloudflare offerings to the repo:
 
 - R2 (object storage)
 - Workers AI
 - AI Gateway
 - An additional KV namespace for app data (separate from `OAUTH_KV`)
 
-All examples assume you are using the template's
-`packages/worker/wrangler.jsonc` and that you run commands from the repo root.
+All examples assume you are using this repo's `packages/worker/wrangler.jsonc`
+and that you run commands from the repo root.
 
 ## Authentication: `wrangler login` vs API tokens
 
@@ -37,7 +37,7 @@ Cloudflare's API token UI changes over time, but the shape is stable:
 - You grant **Read**/**Edit** per product area
 - Wrangler deploys, creates resources, and sets secrets via the API token
 
-Recommended baseline permissions for this template (deploy + existing D1/KV):
+Recommended baseline permissions for this repo (deploy + existing D1/KV):
 
 - `Workers Scripts:Edit` (deploy, update, delete preview Workers)
 - `Workers KV Storage:Edit` (OAuth/session KV)
@@ -187,8 +187,8 @@ Most provider SDKs support overriding the base URL:
 
 ## KV (app KV, separate from `OAUTH_KV`)
 
-This template already binds `OAUTH_KV` for OAuth/session state. Treat `OAUTH_KV`
-as "owned" by `@cloudflare/workers-oauth-provider`:
+This repo already binds `OAUTH_KV` for OAuth/session state. Treat `OAUTH_KV` as
+"owned" by `@cloudflare/workers-oauth-provider`:
 
 - Avoid mixing app data into `OAUTH_KV`
 - Avoid key prefix collisions with the OAuth library
@@ -233,7 +233,7 @@ If you're looking for a higher-level way to integrate AI (streaming responses,
 tool/function calling, typed outputs, and a clean client/server contract),
 consider TanStack AI.
 
-This starter is not a React app, so the main thing to know is: TanStack AI is
+This repo is not a React app, so the main thing to know is: TanStack AI is
 framework-agnostic at its core. You can use:
 
 - `@tanstack/ai` on the server (Workers) to run models and tools

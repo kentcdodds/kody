@@ -17,7 +17,7 @@ both the "happy" path and a cross-user denial path.
 
 Relational app data lives in D1.
 
-Current schema is defined by migrations in `packages/worker/migrations/`:
+The schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
@@ -45,7 +45,7 @@ OAuth provider state is stored in KV through the
 
 - Binding is configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
-  template)
+  checked-in config)
 - This supports OAuth client and token flows without custom storage code in the
   app handlers
 

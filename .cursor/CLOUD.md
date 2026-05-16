@@ -1,7 +1,6 @@
 # kody Cloud Agent Guide
 
-A full-stack web application starter built on Cloudflare Workers with Remix 3
-(alpha).
+A full-stack web application built on Cloudflare Workers with Remix 3 (alpha).
 
 ## Quick Reference
 

@@ -44,9 +44,9 @@ resources from bindings alone, so the deploy workflow runs
 
 ## Optional Cloudflare offerings
 
-The starter intentionally keeps the default footprint small. If you want to add
-additional Cloudflare offerings (R2, Workers AI, AI Gateway, or a separate KV
-namespace for app data), see:
+The default footprint stays intentionally small. If you want to add additional
+Cloudflare offerings (R2, Workers AI, AI Gateway, or a separate KV namespace for
+app data), see:
 
 - `docs/contributing/cloudflare-offerings.md`
 
