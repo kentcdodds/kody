@@ -84,7 +84,7 @@ beforeEach(() => {
 		truncated: false,
 		items: [],
 		recommended_next_action:
-			'No published bundle artifacts currently declare a static dependency on this package.',
+			'No published bundle artifacts declare a static dependency on this package.',
 	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([])
 	mockModule.rebuildPublishedPackageArtifact.mockResolvedValue({
@@ -201,7 +201,7 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 			truncated: false,
 			items: [],
 			recommended_next_action:
-				'No published bundle artifacts currently declare a static dependency on this package.',
+				'No published bundle artifacts declare a static dependency on this package.',
 		},
 	})
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
@@ -541,7 +541,7 @@ test('returns already_published when a retry observes that the reset attempt com
 				truncated: false,
 				items: [],
 				recommended_next_action:
-					'No published bundle artifacts currently declare a static dependency on this package.',
+					'No published bundle artifacts declare a static dependency on this package.',
 			},
 		})
 		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)

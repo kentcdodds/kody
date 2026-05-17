@@ -65,7 +65,7 @@ test('buildStaticPackageDependentsSummary returns an empty summary with no depen
 		truncated: false,
 		items: [],
 		recommended_next_action:
-			'No published bundle artifacts currently declare a static dependency on this package.',
+			'No published bundle artifacts declare a static dependency on this package.',
 	})
 })
 

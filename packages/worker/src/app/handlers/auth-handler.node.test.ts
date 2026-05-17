@@ -225,7 +225,7 @@ test('auth handler rejects signups in production envs', async () => {
 	})
 	expect(response.status).toBe(403)
 	expect(await response.json()).toEqual({
-		error: 'Signups are currently disabled.',
+		error: 'Signups are disabled.',
 	})
 	expect(testDb.users.has('new@example.com')).toBe(false)
 })

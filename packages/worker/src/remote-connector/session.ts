@@ -524,7 +524,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	): Promise<RemoteConnectorJsonRpcResponse> {
 		const socket = this.ctx.getWebSockets(connectorTag)[0]
 		if (!socket) {
-			throw new Error('No remote connector is currently connected.')
+			throw new Error('No remote connector is connected.')
 		}
 
 		const id = crypto.randomUUID()

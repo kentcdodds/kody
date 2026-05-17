@@ -115,7 +115,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 					reason: 'signup_disabled',
 				})
 				return Response.json(
-					{ error: 'Signups are currently disabled.' },
+					{ error: 'Signups are disabled.' },
 					{ status: 403 },
 				)
 			}

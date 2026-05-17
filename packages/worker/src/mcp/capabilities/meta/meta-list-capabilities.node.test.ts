@@ -46,7 +46,7 @@ const runtimeRokuTools = [
 	{
 		name: 'roku_get_active_app',
 		title: 'Get Active Roku App',
-		description: 'Get the currently active Roku app on an adopted device.',
+		description: 'Get the active Roku app on an adopted device.',
 		inputSchema: {
 			type: 'object',
 			properties: {

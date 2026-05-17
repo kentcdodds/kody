@@ -56,7 +56,7 @@ function createDisconnectedStatus(
 		connectedAt: null,
 		lastSeenAt: null,
 		toolCount: 0,
-		message: `The ${label} is not currently connected.`,
+		message: `The ${label} is not connected.`,
 		error: null,
 	}
 }

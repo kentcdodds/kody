@@ -64,7 +64,7 @@ type StaticDependentPackageAccumulator = {
 
 function createRecommendedNextAction(input: { total: number; stale: number }) {
 	if (input.total === 0) {
-		return 'No published bundle artifacts currently declare a static dependency on this package.'
+		return 'No published bundle artifacts declare a static dependency on this package.'
 	}
 	if (input.stale === 0) {
 		return 'Static dependents already reference the current published dependency commit; dependent republish is not indicated by bundle metadata.'
