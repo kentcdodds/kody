@@ -69,40 +69,42 @@ async function startCloudflareMock(token: string) {
 	}
 }
 
-test('CloudflareRestClient rawRequest reads accounts from the mock', async () => {
-	const token = 'cloudflare-client-mock-token'
+test('Cloudflare REST clients read mock responses and enforce API paths', async () => {
+	const token = 'cloudflare-client-env-token'
 	await using mock = await startCloudflareMock(token)
-	const client = new CloudflareRestClient({
+	const directClient = new CloudflareRestClient({
 		apiToken: mock.token,
 		baseUrl: mock.origin,
 	})
-	const response = await client.rawRequest({
+	const accountsResponse = await directClient.rawRequest({
 		method: 'GET',
 		path: '/client/v4/accounts',
 	})
-	expect(response.status).toBe(200)
-	const body = response.body as {
+	expect(accountsResponse.status).toBe(200)
+	const accountsBody = accountsResponse.body as {
 		success?: boolean
 		result?: Array<{ id?: string }>
 	}
-	expect(body.success).toBe(true)
+	expect(accountsBody.success).toBe(true)
 	expect(
-		body.result?.some((account) => account.id === 'cf_account_mock_123'),
+		accountsBody.result?.some((account) => account.id === 'cf_account_mock_123'),
 	).toBe(true)
-})
 
-test('createCloudflareRestClient uses CLOUDFLARE_API_BASE_URL for rawRequest', async () => {
-	const token = 'cloudflare-client-env-token'
-	await using mock = await startCloudflareMock(token)
-	const client = createCloudflareRestClient({
+	const envClient = createCloudflareRestClient({
 		CLOUDFLARE_API_TOKEN: mock.token,
 		CLOUDFLARE_API_BASE_URL: mock.origin,
 	} as Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'>)
-	const response = await client.rawRequest({
+	const verifyResponse = await envClient.rawRequest({
 		method: 'GET',
 		path: '/client/v4/user/tokens/verify',
 	})
-	expect(response.status).toBe(200)
+	expect(verifyResponse.status).toBe(200)
+	await expect(
+		envClient.rawRequest({
+			method: 'GET',
+			path: '/zones',
+		}),
+	).rejects.toThrow('path must start with `/client/v4/`')
 })
 
 test('CloudflareRestClient sends JSON body on PATCH', async () => {

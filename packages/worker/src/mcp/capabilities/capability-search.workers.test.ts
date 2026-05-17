@@ -49,22 +49,11 @@ test('capability search helpers build normalized searchable documents', () => {
 
 test('offline search returns provided specs without depending on global ranks', async () => {
 	const specs = {
-		kody_official_guide: {
-			name: 'kody_official_guide',
+		oauth_setup_guide: {
+			name: 'oauth_setup_guide',
 			domain: 'coding',
-			description:
-				'Load official Kody guides: integration_bootstrap, secret_backed_integration, integration_backed_app, oauth (/connect/oauth), generated_ui_oauth (hosted package app), connect_secret (/account/secrets/new), package_service_pattern.',
-			keywords: [
-				'integration bootstrap',
-				'secret backed integration',
-				'integration backed app',
-				'oauth',
-				'generated ui',
-				'redirect uri',
-				'provider registration',
-				'secret',
-				'package service',
-			],
+			description: 'Guide for configuring OAuth redirect URIs.',
+			keywords: ['oauth', 'redirect uri', 'provider registration'],
 			readOnly: true,
 			idempotent: true,
 			destructive: false,
@@ -74,23 +63,11 @@ test('offline search returns provided specs without depending on global ranks', 
 			inputSchema: {
 				type: 'object',
 				properties: {
-					guide: {
-						type: 'string',
-						enum: [
-							'integration_bootstrap',
-							'secret_backed_integration',
-							'integration_backed_app',
-							'oauth',
-							'generated_ui_oauth',
-							'connect_secret',
-							'package_service_pattern',
-						],
-					},
+					guide: { type: 'string' },
 				},
 				required: ['guide'],
 			},
-			inputTypeDefinition:
-				'type KodyOfficialGuideInput = {\n\tguide: "integration_bootstrap" | "secret_backed_integration" | "integration_backed_app" | "oauth" | "generated_ui_oauth" | "connect_secret" | "package_service_pattern"\n}',
+			inputTypeDefinition: 'type OAuthSetupGuideInput = {\n\tguide: string\n}',
 		},
 	} satisfies Record<string, CapabilitySpec>
 	const env = {
@@ -108,7 +85,7 @@ test('offline search returns provided specs without depending on global ranks', 
 
 	expect(offline).toBe(true)
 	expect(matches).toHaveLength(1)
-	expect(matches[0]?.name).toBe('kody_official_guide')
+	expect(matches[0]?.name).toBe('oauth_setup_guide')
 	expect(matches[0]?.keywords).toEqual(
 		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
 	)
