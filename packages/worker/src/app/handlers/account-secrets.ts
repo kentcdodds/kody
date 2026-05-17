@@ -602,12 +602,7 @@ async function saveIntegrationConfig(input: {
 					? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
 					: null,
 			accessTokenSecretName: input.accessTokenSecretName,
-			refreshTokenSecretName: readTokenField(
-				input.tokenPayload,
-				'refresh_token',
-			)
-				? input.refreshTokenSecretName
-				: null,
+			refreshTokenSecretName: input.refreshTokenSecretName,
 			requiredHosts: input.allowedHosts,
 			...(input.authorization ? { authorization: input.authorization } : {}),
 		},

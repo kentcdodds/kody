@@ -208,6 +208,53 @@ test('connect oauth returns direct host approval links for saved token secrets',
 	)
 })
 
+test('connect oauth keeps existing refresh token secret name when provider omits a rotated refresh token', async () => {
+	mockModule.saveValue.mockClear()
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'spotify',
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				tokenUrl: 'https://accounts.spotify.com/api/token',
+				apiBaseUrl: 'https://api.spotify.com/v1',
+				scopes: ['user-read-playback-state', 'playlist-modify-private'],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: { show_dialog: 'true' },
+				flow: 'pkce',
+				clientIdValueName: 'spotify-client-id',
+				accessTokenSecretName: 'spotifyAccessToken',
+				refreshTokenSecretName: 'spotifyRefreshToken',
+				allowedHosts: ['api.spotify.com'],
+				tokenPayload: {
+					access_token: 'newly-scoped-access-token',
+					scope: 'user-read-playback-state playlist-modify-private',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		accessTokenSaved: true,
+		refreshTokenSaved: false,
+		integrationName: 'spotify',
+	})
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_integration:spotify',
+			value: expect.stringContaining(
+				'"refreshTokenSecretName":"spotifyRefreshToken"',
+			),
+		}),
+	)
+})
+
 test('connect oauth omits direct host approval links when hosts are already approved', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{

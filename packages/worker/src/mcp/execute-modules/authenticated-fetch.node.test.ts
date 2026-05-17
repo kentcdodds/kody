@@ -24,6 +24,8 @@ type SandboxHelpers = {
 }
 
 const fakeAccessToken = 'test-access-token-abc123'
+const spotifyAccessTokenPlaceholder =
+	'Bearer {{secret:spotifyAccessToken|scope=user}}'
 
 const spotifyIntegration = {
 	name: 'spotify',
@@ -127,7 +129,7 @@ test('succeeds for apiBaseUrl host and attaches bearer token', async () => {
 	const lastCall = fetchCalls[fetchCalls.length - 1]!
 	expect(lastCall.url).toBe('https://api.spotify.com/v1/me')
 	expect(lastCall.headers.get('authorization')).toBe(
-		`Bearer ${fakeAccessToken}`,
+		spotifyAccessTokenPlaceholder,
 	)
 })
 
@@ -146,7 +148,7 @@ test('succeeds for a requiredHosts entry that is not apiBaseUrl', async () => {
 	const lastCall = fetchCalls[fetchCalls.length - 1]!
 	expect(lastCall.url).toBe('https://cdn.spotify.com/images/cover.jpg')
 	expect(lastCall.headers.get('authorization')).toBe(
-		`Bearer ${fakeAccessToken}`,
+		spotifyAccessTokenPlaceholder,
 	)
 })
 
@@ -215,7 +217,7 @@ test('prelude sandbox version allows requests to valid hosts', async () => {
 	expect(response.status).toBe(200)
 	const lastCall = fetchCalls[fetchCalls.length - 1]!
 	expect(lastCall.headers.get('authorization')).toBe(
-		`Bearer ${fakeAccessToken}`,
+		spotifyAccessTokenPlaceholder,
 	)
 })
 

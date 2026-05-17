@@ -28,6 +28,11 @@ type SandboxHelpers = {
 	oauthClientCredentials: typeof oauthClientCredentials
 }
 
+type ApiResponseSpec = {
+	status: number
+	body: Record<string, unknown>
+}
+
 const spotifyIntegration = {
 	name: 'spotify',
 	tokenUrl: 'https://accounts.spotify.test/api/token',
@@ -40,8 +45,16 @@ const spotifyIntegration = {
 	requiredHosts: ['api.spotify.test'],
 }
 
-function createCodemode(payload: Record<string, unknown>) {
+function createCodemode(
+	payload: Record<string, unknown>,
+	options: {
+		apiErrors?: Array<Error>
+		apiResponses?: Array<ApiResponseSpec>
+	} = {},
+) {
 	const secretSetCalls: Array<SecretSetCall> = []
+	const apiErrors = [...(options.apiErrors ?? [])]
+	const apiResponses = [...(options.apiResponses ?? [])]
 	const codemode = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
@@ -73,6 +86,15 @@ function createCodemode(payload: Record<string, unknown>) {
 		if (request.url === spotifyIntegration.tokenUrl) {
 			return new Response(JSON.stringify(payload), {
 				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
+		}
+		const apiError = apiErrors.shift()
+		if (apiError) throw apiError
+		const apiResponse = apiResponses.shift()
+		if (apiResponse) {
+			return new Response(JSON.stringify(apiResponse.body), {
+				status: apiResponse.status,
 				headers: { 'content-type': 'application/json' },
 			})
 		}
@@ -128,14 +150,36 @@ test('refreshAccessToken persists rotated refresh token and access token', async
 	)
 })
 
-test('createAuthenticatedFetch persists refreshed access token even without refresh token rotation', async () => {
+test('createAuthenticatedFetch uses the stored access token before refreshing', async () => {
 	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode({
-		access_token: 'new-access-token',
+		access_token: 'refreshed-access-token',
 	})
 
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		createAuthenticatedFetch(codemode, 'spotify'),
+	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
+	const response = await withPatchedFetch(fetchStub, () =>
+		authenticatedFetch('/me/playlists', { method: 'POST' }),
 	)
+
+	expect(secretSetCalls).toEqual([])
+	expect(fetchCalls).toHaveLength(1)
+	expect(fetchCalls[0]?.url).toBe('https://api.spotify.test/v1/me/playlists')
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+	)
+	expect(await response.json()).toEqual({ ok: true })
+})
+
+test('createAuthenticatedFetch refreshes when the stored access token secret is missing', async () => {
+	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode(
+		{
+			access_token: 'new-access-token',
+		},
+		{
+			apiErrors: [new Error('Secret "spotifyAccessToken" was not found.')],
+		},
+	)
+
+	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
 	const response = await withPatchedFetch(fetchStub, () =>
 		authenticatedFetch('/me?market=US'),
 	)
@@ -147,9 +191,50 @@ test('createAuthenticatedFetch persists refreshed access token even without refr
 			scope: 'user',
 		},
 	])
-	expect(fetchCalls).toHaveLength(2)
-	expect(fetchCalls[1]?.url).toBe('https://api.spotify.test/v1/me?market=US')
-	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+	expect(fetchCalls).toHaveLength(3)
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+	)
+	expect(fetchCalls[1]?.url).toBe('https://accounts.spotify.test/api/token')
+	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
+		'Bearer new-access-token',
+	)
+	expect(await response.json()).toEqual({ ok: true })
+})
+
+test('createAuthenticatedFetch persists refreshed access token even without refresh token rotation', async () => {
+	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode(
+		{
+			access_token: 'new-access-token',
+		},
+		{
+			apiResponses: [
+				{ status: 401, body: { error: 'expired' } },
+				{ status: 200, body: { ok: true } },
+			],
+		},
+	)
+
+	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
+	const response = await withPatchedFetch(fetchStub, () =>
+		authenticatedFetch('/me?market=US'),
+	)
+
+	expect(secretSetCalls).toEqual([
+		{
+			name: 'spotifyAccessToken',
+			value: 'new-access-token',
+			scope: 'user',
+		},
+	])
+	expect(fetchCalls).toHaveLength(3)
+	expect(fetchCalls[0]?.url).toBe('https://api.spotify.test/v1/me?market=US')
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+	)
+	expect(fetchCalls[1]?.url).toBe('https://accounts.spotify.test/api/token')
+	expect(fetchCalls[2]?.url).toBe('https://api.spotify.test/v1/me?market=US')
+	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
 		'Bearer new-access-token',
 	)
 	expect(await response.json()).toEqual({ ok: true })
@@ -187,20 +272,10 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 			value: 'new-access-token',
 			scope: 'user',
 		},
-		{
-			name: 'spotifyRefreshToken',
-			value: 'new-refresh-token',
-			scope: 'user',
-		},
-		{
-			name: 'spotifyAccessToken',
-			value: 'new-access-token',
-			scope: 'user',
-		},
 	])
-	expect(fetchCalls).toHaveLength(3)
-	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
-		'Bearer new-access-token',
+	expect(fetchCalls).toHaveLength(2)
+	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
+		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
 })
 

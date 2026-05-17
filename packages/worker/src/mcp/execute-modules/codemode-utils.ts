@@ -114,24 +114,42 @@ export async function createAuthenticatedFetch(
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
 	const integration = await readIntegrationConfig(codemode, providerName)
-	const accessToken = await refreshAccessTokenWithIntegration(
-		codemode,
-		providerName,
-		integration,
-	)
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
 		const resolvedUrl = resolveRequestUrl(input, integration)
 		assertIntegrationHostAllowed(providerName, integration, resolvedUrl)
 
 		const request = new Request(resolvedUrl, init)
-		const headers = new Headers(request.headers)
-		headers.set('Authorization', `Bearer ${accessToken}`)
+		const retryRequest = new Request(request)
+		let response: Response
+		try {
+			response = await fetch(
+				createBearerRequest(
+					request,
+					buildAccessTokenAuthorizationHeader(providerName, integration),
+				),
+			)
+		} catch (error) {
+			if (!isMissingAccessTokenSecretError(error, integration)) throw error
+			const refreshedAccessToken = await refreshAccessTokenWithIntegration(
+				codemode,
+				providerName,
+				integration,
+			)
+			return fetch(
+				createBearerRequest(retryRequest, `Bearer ${refreshedAccessToken}`),
+			)
+		}
+		if (response.status !== 401) return response
 
+		await response.body?.cancel()
+		const refreshedAccessToken = await refreshAccessTokenWithIntegration(
+			codemode,
+			providerName,
+			integration,
+		)
 		return fetch(
-			new Request(request, {
-				headers,
-			}),
+			createBearerRequest(retryRequest, `Bearer ${refreshedAccessToken}`),
 		)
 	}
 }
@@ -330,6 +348,37 @@ function buildSecretPlaceholder(
 	return `{{secret:${name}|scope=${scope}}}`
 }
 
+function buildAccessTokenAuthorizationHeader(
+	providerName: string,
+	integration: IntegrationConfig,
+) {
+	const accessTokenSecretName = integration.accessTokenSecretName.trim()
+	if (!accessTokenSecretName) {
+		throw new Error(
+			`Integration "${providerName}" does not define an access token secret name.`,
+		)
+	}
+	return `Bearer ${buildSecretPlaceholder(accessTokenSecretName, 'user')}`
+}
+
+function createBearerRequest(request: Request, authorization: string) {
+	const headers = new Headers(request.headers)
+	headers.set('Authorization', authorization)
+	return new Request(request, { headers })
+}
+
+function isMissingAccessTokenSecretError(
+	error: unknown,
+	integration: IntegrationConfig,
+) {
+	const accessTokenSecretName = integration.accessTokenSecretName.trim()
+	return (
+		error instanceof Error &&
+		accessTokenSecretName.length > 0 &&
+		error.message === `Secret "${accessTokenSecretName}" was not found.`
+	)
+}
+
 function buildBasicAuthSecretPlaceholder(input: {
 	usernameSecret: string
 	passwordSecret: string
@@ -487,6 +536,28 @@ const __kodyAssertIntegrationHostAllowed = (integrationName, integration, url) =
 };
 const __kodyBuildSecretPlaceholder = (name, scope) =>
   \`{{secret:\${name}|scope=\${scope}}}\`;
+const __kodyBuildAccessTokenAuthorizationHeader = (providerName, integration) => {
+  const accessTokenSecretName = integration.accessTokenSecretName.trim();
+  if (!accessTokenSecretName) {
+    throw new Error(
+      \`Integration "\${providerName}" does not define an access token secret name.\`,
+    );
+  }
+  return \`Bearer \${__kodyBuildSecretPlaceholder(accessTokenSecretName, 'user')}\`;
+};
+const __kodyCreateBearerRequest = (request, authorization) => {
+  const headers = new Headers(request.headers);
+  headers.set('Authorization', authorization);
+  return new Request(request, { headers });
+};
+const __kodyIsMissingAccessTokenSecretError = (error, integration) => {
+  const accessTokenSecretName = integration.accessTokenSecretName.trim();
+  return (
+    error instanceof Error &&
+    accessTokenSecretName.length > 0 &&
+    error.message === \`Secret "\${accessTokenSecretName}" was not found.\`
+  );
+};
 const __kodyNormalizeSecretName = (value, fieldName) => {
   const normalized = String(value ?? '').trim();
   if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
@@ -671,17 +742,31 @@ const __kodyRefreshAccessToken = async (providerName) => {
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
-  const accessToken = await __kodyRefreshAccessToken(providerName);
   return async (input, init) => {
     const resolvedUrl = __kodyResolveRequestUrl(input, integration);
     __kodyAssertIntegrationHostAllowed(providerName, integration, resolvedUrl);
     const request = new Request(resolvedUrl, init);
-    const headers = new Headers(request.headers);
-    headers.set('Authorization', \`Bearer \${accessToken}\`);
+    const retryRequest = request.clone();
+    let response;
+    try {
+      response = await fetch(
+        __kodyCreateBearerRequest(
+          request,
+          __kodyBuildAccessTokenAuthorizationHeader(providerName, integration),
+        ),
+      );
+    } catch (error) {
+      if (!__kodyIsMissingAccessTokenSecretError(error, integration)) throw error;
+      const refreshedAccessToken = await __kodyRefreshAccessToken(providerName);
+      return fetch(
+        __kodyCreateBearerRequest(retryRequest, \`Bearer \${refreshedAccessToken}\`),
+      );
+    }
+    if (response.status !== 401) return response;
+    await response.body?.cancel();
+    const refreshedAccessToken = await __kodyRefreshAccessToken(providerName);
     return fetch(
-      new Request(request, {
-        headers,
-      }),
+      __kodyCreateBearerRequest(retryRequest, \`Bearer \${refreshedAccessToken}\`),
     );
   };
 };
