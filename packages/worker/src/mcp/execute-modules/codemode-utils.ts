@@ -120,7 +120,7 @@ export async function createAuthenticatedFetch(
 		assertIntegrationHostAllowed(providerName, integration, resolvedUrl)
 
 		const request = new Request(resolvedUrl, init)
-		const retryRequest = new Request(request)
+		const retryRequest: Request = request.clone() as Request
 		let response: Response
 		try {
 			response = await fetch(
