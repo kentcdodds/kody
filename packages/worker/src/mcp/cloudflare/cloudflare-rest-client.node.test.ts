@@ -87,7 +87,9 @@ test('Cloudflare REST clients read mock responses and enforce API paths', async 
 	}
 	expect(accountsBody.success).toBe(true)
 	expect(
-		accountsBody.result?.some((account) => account.id === 'cf_account_mock_123'),
+		accountsBody.result?.some(
+			(account) => account.id === 'cf_account_mock_123',
+		),
 	).toBe(true)
 
 	const envClient = createCloudflareRestClient({
