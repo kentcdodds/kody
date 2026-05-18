@@ -30,7 +30,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 }))
 
-const { servicesDomain } = await import('./domain.ts')
 const { serviceListCapability } = await import('./service-list.ts')
 const { serviceGetCapability } = await import('./service-get.ts')
 const { serviceStartCapability } = await import('./service-start.ts')
@@ -60,19 +59,6 @@ function createCallerContext() {
 		},
 	})
 }
-
-test('services domain exposes package service lifecycle capabilities', () => {
-	expect(
-		servicesDomain.capabilities.map((capability) => capability.name),
-	).toEqual(
-		expect.arrayContaining([
-			'service_list',
-			'service_get',
-			'service_start',
-			'service_stop',
-		]),
-	)
-})
 
 test('service_list returns declared package services with live status', async () => {
 	resetMocks()

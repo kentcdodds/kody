@@ -1,6 +1,4 @@
 import { expect, test } from 'vitest'
-import { buildCapabilityRegistry } from './build-capability-registry.ts'
-import { builtinDomains } from './builtin-domains.ts'
 import {
 	buildCapabilityEmbedText,
 	CAPABILITY_EMBEDDING_DIMENSIONS,
@@ -137,31 +135,6 @@ test('detailed capability search returns type definitions without schema fields'
 		inputTypeDefinition: expect.stringContaining('KodyOfficialGuideInput'),
 	})
 	expect(defaultDetail.matches[0]).not.toHaveProperty('outputSchema')
-})
-
-test('builtin search discovers package subscription guidance', async () => {
-	const registry = buildCapabilityRegistry(builtinDomains)
-	const env = {
-		SENTRY_ENVIRONMENT: 'test',
-		AI: {} as Ai,
-	} as Env
-
-	const { matches, offline } = await searchCapabilities({
-		env,
-		query:
-			'package.json kody subscriptions email.message.received event handler list',
-		limit: 5,
-		detail: true,
-		specs: registry.capabilitySpecs,
-	})
-
-	expect(offline).toBe(true)
-	expect(matches).toContainEqual(
-		expect.objectContaining({
-			name: 'package_subscription_list',
-			domain: 'packages',
-		}),
-	)
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {

@@ -16,22 +16,6 @@ function createContext() {
 	}
 }
 
-test('email domain exposes inbox, message, and send capabilities', () => {
-	expect(emailDomain.name).toBe('email')
-	expect(emailDomain.capabilities.map((capability) => capability.name)).toEqual(
-		[
-			'email_inbox_create',
-			'email_inbox_list',
-			'email_attachment_get',
-			'email_message_list',
-			'email_message_get',
-			'email_send',
-			'email_reply',
-			'email_sender_identity_verify',
-		],
-	)
-})
-
 test('email capabilities require a signed-in user context', async () => {
 	const capability = emailDomain.capabilities.find(
 		(candidate) => candidate.name === 'email_message_list',

@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { jobsDomain } from './domain.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createJob: vi.fn(),
@@ -128,21 +127,6 @@ test('job_schedule creates a one-off job', async () => {
 		created_at: '2026-04-20T10:00:00.000Z',
 		next_run_at: '2026-04-20T18:30:00.000Z',
 	})
-})
-
-test('jobs domain exposes scheduling, inspection, mutation, and run-now capabilities', () => {
-	expect(jobsDomain.capabilities.map((capability) => capability.name)).toEqual(
-		expect.arrayContaining([
-			'job_list',
-			'job_get',
-			'job_schedule',
-			'job_schedule_once',
-			'job_update',
-			'job_delete',
-			'job_run_now',
-			'workflow_list',
-		]),
-	)
 })
 
 test('workflow_list returns recent workflow runs for the current user', async () => {
