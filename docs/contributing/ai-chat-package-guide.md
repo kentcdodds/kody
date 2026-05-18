@@ -129,7 +129,7 @@ export default async function main() {
 
 Expected: a `search` tool call either succeeds with output or returns a clear
 unavailable/fallback result for Kody instances that do not expose search as a
-package-callable capability yet.
+package-callable capability.
 
 ### Hosted app fetch handler
 

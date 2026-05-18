@@ -71,7 +71,7 @@ const helper = await import('kody:@scope/my-package/export-name')
 
 Kody resolves that literal import at runtime for the signed-in user. Computed
 dynamic Kody package imports, including variables and template strings, are not
-supported yet.
+supported.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers
@@ -138,7 +138,7 @@ module-oriented runtime model:
 Static saved-package imports from ad hoc **execute** run under the ad hoc
 execute runtime. That means imported package modules can share exported helpers,
 but `packageContext` remains **`null`** because the imported module has not been
-entered as its own package runtime. Authenticated execute calls can still import
+entered as its own package runtime. Authenticated execute calls may import
 `packages` from `kody:runtime` and use `packages.check`, `packages.invoke`, or
 `packages.invokeChecked`; prefer `packages.invokeChecked` when execute needs to
 enter a saved package export so that target code receives its package runtime
