@@ -36,9 +36,7 @@ test('meta_memory_delete uses the mutation not-found guidance for rejected ids',
 				}),
 			},
 		),
-	).rejects.toThrow(
-		getMemoryMutationNotFoundMessage('transcribed-memory-id'),
-	)
+	).rejects.toThrow(getMemoryMutationNotFoundMessage('transcribed-memory-id'))
 	expect(mockModule.getMemory).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-123',
