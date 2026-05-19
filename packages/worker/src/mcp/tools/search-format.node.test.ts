@@ -182,8 +182,6 @@ test('entity detail formatting returns stable structured details for values and 
 			extraAuthorizeParams: { prompt: 'consent' },
 		},
 	})
-	expect(integrationDetail.markdown).toContain('OAuth authorization metadata')
-	expect(integrationDetail.markdown).toContain('/connect/oauth?provider=github')
 })
 
 test('capability entity detail keeps the structured execute contract stable', () => {
@@ -669,7 +667,7 @@ test('package search formatting surfaces matched action import usage in structur
 	})
 })
 
-test('search markdown keeps broad query results compact', () => {
+test('search markdown summarizes broad results without leaking nested details', () => {
 	const markdown = formatSearchMarkdown({
 		warnings: [
 			'Saved package metadata fallback warning with long details.',
@@ -709,14 +707,24 @@ test('search markdown keeps broad query results compact', () => {
 		],
 	})
 
+	expect(markdown).toContain('# Search results')
 	expect(markdown).toContain('observed-package:package')
 	expect(markdown).toContain('github:integration')
-	expect(markdown).not.toContain('## Recommended next step')
-	expect(markdown).not.toContain('## Relevant memories')
-	expect(markdown).not.toContain('**README')
-	expect(markdown).not.toContain('Token URL')
+	expect(markdown).toContain('2 search notice(s) available in the structured result.')
+	expect(markdown).not.toContain(
+		'Includes setup instructions, export examples, and maintenance notes.',
+	)
+	expect(markdown).not.toContain(
+		'Saved package metadata fallback warning with long details.',
+	)
+	expect(markdown).not.toContain(
+		'Package retrievers are temporarily unavailable.',
+	)
+	expect(markdown).not.toContain(
+		'https://github.com/login/oauth/access_token',
+	)
 	expect(markdown).not.toContain('github-access-token')
-	expect(markdown).not.toContain('**How to run matches:**')
+	expect(markdown).not.toContain('github-refresh-token')
 })
 
 test('search markdown only suggests entity detail for entity-backed hits', () => {

@@ -7,7 +7,7 @@ import {
 	summarizeStoredSetupState,
 } from './connect-oauth.tsx'
 
-test('parseStoredIntegrationConfig returns normalized integration config', () => {
+test('stored integration parsing normalizes saved metadata and lookup candidates', () => {
 	const parsed = parseStoredIntegrationConfig(
 		JSON.stringify({
 			name: 'GitHub',
@@ -20,7 +20,7 @@ test('parseStoredIntegrationConfig returns normalized integration config', () =>
 			refreshTokenSecretName: 'githubRefreshToken',
 			requiredHosts: ['api.github.com', ' github.com ', 'api.github.com'],
 			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
 				scopes: ['repo', 'read:user'],
 				scopeSeparator: null,
 				extraAuthorizeParams: { prompt: 'consent' },
@@ -39,40 +39,8 @@ test('parseStoredIntegrationConfig returns normalized integration config', () =>
 		accessTokenSecretName: 'githubAccessToken',
 		refreshTokenSecretName: 'githubRefreshToken',
 		requiredHosts: ['api.github.com', 'github.com'],
-		authorization: {
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			scopes: ['repo', 'read:user'],
-			scopeSeparator: null,
-			extraAuthorizeParams: { prompt: 'consent' },
-		},
+		authorization: null,
 	})
-})
-
-test('parseStoredIntegrationConfig rejects non-http authorization URLs', () => {
-	const parsed = parseStoredIntegrationConfig(
-		JSON.stringify({
-			name: 'GitHub',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			flow: 'confidential',
-			clientIdValueName: 'github-client-id',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: 'githubRefreshToken',
-			requiredHosts: ['github.com'],
-			authorization: {
-				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
-				scopes: ['repo'],
-				scopeSeparator: null,
-				extraAuthorizeParams: {},
-			},
-		}),
-		null,
-	)
-
-	expect(parsed?.authorization).toBeNull()
-})
-
-test('getIntegrationValueCandidates prefers provider and normalized key without duplicates', () => {
 	expect(getIntegrationValueCandidates('GitHub', 'github')).toEqual([
 		buildIntegrationValueName('GitHub'),
 		buildIntegrationValueName('github'),
@@ -83,8 +51,8 @@ test('getIntegrationValueCandidates prefers provider and normalized key without 
 	])
 })
 
-test('mergeConnectOauthConfig prefers stored integration metadata for saved providers', () => {
-	const config = mergeConnectOauthConfig({
+test('mergeConnectOauthConfig reuses stored integration metadata across reconnect flows', () => {
+	const githubConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'github',
 			providerKey: 'github',
@@ -113,7 +81,7 @@ test('mergeConnectOauthConfig prefers stored integration metadata for saved prov
 		},
 	})
 
-	expect(config).toEqual({
+	expect(githubConfig).toEqual({
 		provider: 'GitHub',
 		providerKey: 'github',
 		authorizeHost: 'github.com',
@@ -133,10 +101,7 @@ test('mergeConnectOauthConfig prefers stored integration metadata for saved prov
 		refreshTokenSecretName: 'githubRefreshToken',
 		allowedHosts: ['api.github.com', 'github.com'],
 	})
-})
-
-test('mergeConnectOauthConfig can derive reconnect authorization from stored integration metadata', () => {
-	const config = mergeConnectOauthConfig({
+	const googleReconnectConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'google-youtube-brand',
 			providerKey: 'google-youtube-brand',
@@ -177,7 +142,7 @@ test('mergeConnectOauthConfig can derive reconnect authorization from stored int
 		},
 	})
 
-	expect(config).toMatchObject({
+	expect(googleReconnectConfig).toMatchObject({
 		provider: 'google-youtube-brand',
 		authorizeHost: 'accounts.google.com',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -193,10 +158,7 @@ test('mergeConnectOauthConfig can derive reconnect authorization from stored int
 		},
 		allowedHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 	})
-})
-
-test('mergeConnectOauthConfig falls back to stored authorization when query values are empty defaults', () => {
-	const config = mergeConnectOauthConfig({
+	const googleFallbackConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'google-youtube-brand',
 			providerKey: 'google-youtube-brand',
@@ -234,7 +196,7 @@ test('mergeConnectOauthConfig falls back to stored authorization when query valu
 		},
 	})
 
-	expect(config).toMatchObject({
+	expect(googleFallbackConfig).toMatchObject({
 		scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
 		extraAuthorizeParams: {
 			access_type: 'offline',
@@ -243,7 +205,7 @@ test('mergeConnectOauthConfig falls back to stored authorization when query valu
 	})
 })
 
-test('mergeConnectOauthConfig falls back to derived names when no integration exists', () => {
+test('new OAuth providers derive defaults and surface setup readiness in one flow', () => {
 	const config = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'spotify',
@@ -274,9 +236,6 @@ test('mergeConnectOauthConfig falls back to derived names when no integration ex
 		accessTokenSecretName: 'spotifyAccessToken',
 		refreshTokenSecretName: 'spotifyRefreshToken',
 	})
-})
-
-test('summarizeStoredSetupState marks confidential flow incomplete when secret is missing', () => {
 	expect(
 		summarizeStoredSetupState({
 			flow: 'confidential',

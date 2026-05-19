@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { buildMcpServerInstructions } from './server-instructions.ts'
 
-test('surfaces remote connector identifiers and compacts long descriptions', () => {
+test('formats remote connector summaries with bounded descriptions', () => {
 	const shortDescription = 'Local-network home automation for lights and media.'
 	const longDescription = 'a'.repeat(300)
 	const instructions = buildMcpServerInstructions({
@@ -30,12 +30,16 @@ test('surfaces remote connector identifiers and compacts long descriptions', () 
 	const longConnectorDescription =
 		longConnectorLine?.split(': ').slice(1).join(': ') ?? ''
 
-	expect(shortConnectorLine).toContain('home/default')
-	expect(shortConnectorLine).toContain('remote:home:default')
+	expect(connectorLines).toHaveLength(2)
+	expect(shortConnectorLine).toMatch(
+		/^- `home\/default` \(`remote:home:default`\): /,
+	)
 	expect(shortConnectorLine).toContain(shortDescription)
-	expect(longConnectorLine).toContain('tools/default')
-	expect(longConnectorLine).toContain('remote:tools:default')
-	expect(longConnectorLine).toContain('...')
+	expect(shortConnectorLine).not.toContain('...')
+	expect(longConnectorLine).toMatch(
+		/^- `tools\/default` \(`remote:tools:default`\): /,
+	)
+	expect(longConnectorDescription).toMatch(/\.\.\.$/)
 	expect(longConnectorLine).not.toContain(longDescription)
-	expect(longConnectorDescription.length).toBeLessThanOrEqual(240)
+	expect(longConnectorDescription).toHaveLength(240)
 })
