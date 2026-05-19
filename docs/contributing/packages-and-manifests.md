@@ -383,9 +383,9 @@ caller passes `allow_force: true`.
 When publish succeeds, `package_publish_external_push` decorates the response
 with `static_dependents`, a bounded summary of direct saved packages whose
 published bundle artifact dependency metadata references the published package.
-`already_published` responses include the same summary when the
-published commit is available. The stale count compares each dependent
-artifact's captured dependency commit to the current published commit.
+`already_published` responses include the same summary when the published commit
+is available. The stale count compares each dependent artifact's captured
+dependency commit to the current published commit.
 
 This summary is visibility only. Do not add automatic fanout republishing to the
 publish path. Agents should inspect and republish dependent packages only when

@@ -123,10 +123,10 @@ module-oriented runtime model:
 - **`codemode.job_update(...)`** updates an existing scheduled job by id for
   safe mutable fields such as name, ES module code with a default-exported
   function, params, schedule, timezone, enabled/disabled state, or kill switch
-  state. Providing `code` republishes the job's repo-backed source so
-  subsequent runs execute the updated module; the replacement must default
-  export a function that receives `params` from its first argument (there is no
-  `params` export from `kody:runtime`)
+  state. Providing `code` republishes the job's repo-backed source so subsequent
+  runs execute the updated module; the replacement must default export a
+  function that receives `params` from its first argument (there is no `params`
+  export from `kody:runtime`)
 - **`codemode.job_get({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored repo-backed entrypoint path and source code
   when you need to inspect the current module before changing it
