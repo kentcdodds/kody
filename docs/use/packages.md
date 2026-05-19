@@ -78,9 +78,9 @@ exhaustive.
 - Cross-package imports use the full package name such as
   `kody:@scope/my-package/export-name`.
 - Static `kody:@...` imports in saved package code are bundled into published
-  runtime artifacts as snapshots of the imported package's then-published
-  bundle. If the imported package is published again later, already-published
-  dependents keep using the older bundled snapshot until they are republished.
+  runtime artifacts as snapshots of the imported package's published bundle.
+  Republishing the imported package does not change already-published
+  dependents; they keep using the bundled snapshot until they are republished.
 - Literal dynamic imports such as
   `await import("kody:@scope/my-package/export")` are current-version package
   dependencies. Kody leaves them out of the saved bundle and resolves the target
@@ -167,7 +167,7 @@ const result = await packages.invokeChecked({
 ```
 
 Use bare `packages.invoke` only when the caller has already checked the contract
-or intentionally wants the older direct invoke behavior. Use static
+or intentionally accepts direct runtime failure. Use static
 `kody:@scope/package/export` imports for library-like dependencies where
 bundling the published dependency snapshot with the caller is desired.
 
@@ -334,7 +334,8 @@ kill-switch state, params, or ES module code with a default-exported function,
 trigger an existing scheduled job immediately for debugging or ad hoc runs.
 
 When `job_update` receives a replacement `code` string, Kody publishes a new
-commit on the job's repo-backed source and the next run uses the new module.
+commit on the job's repo-backed source, and subsequent runs execute the updated
+module.
 That is usually the easiest way to change the source of a non-package job, since
 there is no `package_get_git_remote` equivalent for non-package job sources. For
 multi-file edits, open the job's `source_id` with `repo_run_commands` instead.
@@ -414,10 +415,10 @@ edit it with a normal git client without round-tripping each file change through
    Successful `published` responses, and `already_published` responses when the
    metadata is available, include a bounded `static_dependents` summary of
    direct saved packages whose published bundle artifacts statically reference
-   this package. Stale entries mean the dependent bundle captured an older
-   dependency commit. Kody does not automatically republish those dependents;
-   inspect and republish only the ones whose static snapshot should pick up the
-   new publish.
+   this package. Stale entries mean the dependent bundle captured a dependency
+   commit that differs from the current published commit. Kody does not
+   automatically republish those dependents; inspect and republish only the ones
+   whose static snapshot should reference the current published commit.
 
 Dynamic package invocation is different from static bundled imports. When a
 runtime feature invokes another package dynamically through the package

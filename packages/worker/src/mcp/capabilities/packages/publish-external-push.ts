@@ -107,7 +107,7 @@ const staticDependentItemSchema = z
 		stale: z
 			.boolean()
 			.describe(
-				'True when at least one dependent bundle artifact captured an older dependency commit than the just-published package commit.',
+				"True when at least one dependent bundle artifact captured a dependency commit that differs from the package's current published commit.",
 			),
 		artifact_count: z
 			.number()
@@ -135,7 +135,7 @@ const staticDependentItemSchema = z
 		current_dependency_commit: z
 			.string()
 			.describe(
-				'Current published commit for the package that was just published.',
+				'Current published commit for the referenced dependency package.',
 			),
 		recommended_action: z
 			.string()

@@ -74,8 +74,8 @@ The top-level saved identity is the package.
   `kody:@scope/my-package/export-name`.
 - Static `kody:@...` imports are bundled snapshots. During checks and
   publish-time artifact rebuilds, Kody records the imported saved package's
-  published commit in bundle dependency metadata. A later publish of that
-  imported package does not rewrite already-published dependent bundles.
+  published commit in bundle dependency metadata. Republishing the imported
+  package does not rewrite already-published dependent bundles.
 - Literal dynamic imports such as `await import("kody:@scope/pkg/export")` are
   runtime/current package dependencies. Bundle artifacts persist only a
   host-resolved placeholder plus review metadata; just before execution, Kody
@@ -382,8 +382,8 @@ caller passes `allow_force: true`.
 
 When publish succeeds, `package_publish_external_push` decorates the response
 with `static_dependents`, a bounded summary of direct saved packages whose
-published bundle artifact dependency metadata references the package that was
-just published. `already_published` responses include the same summary when the
+published bundle artifact dependency metadata references the published package.
+`already_published` responses include the same summary when the
 published commit is available. The stale count compares each dependent
 artifact's captured dependency commit to the current published commit.
 
