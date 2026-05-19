@@ -23,11 +23,12 @@ test('formats remote connector summaries with bounded descriptions', () => {
 		.at(1)
 		?.split('\n\n')
 		.at(0)
-	const connectorLines = remoteConnectorSection
-		?.split('\n')
-		.filter((line) => line.startsWith('- `'))
-		.filter(Boolean)
-		.map((line) => line.trim()) ?? []
+	const connectorLines =
+		remoteConnectorSection
+			?.split('\n')
+			.filter((line) => line.startsWith('- `'))
+			.filter(Boolean)
+			.map((line) => line.trim()) ?? []
 	const shortConnectorLine = connectorLines.find((line) =>
 		line.includes('`home/default`'),
 	)

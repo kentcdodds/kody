@@ -710,7 +710,9 @@ test('search markdown summarizes broad results without leaking nested details', 
 	expect(markdown).toContain('# Search results')
 	expect(markdown).toContain('observed-package:package')
 	expect(markdown).toContain('github:integration')
-	expect(markdown).toContain('2 search notice(s) available in the structured result.')
+	expect(markdown).toContain(
+		'2 search notice(s) available in the structured result.',
+	)
 	expect(markdown).not.toContain(
 		'Includes setup instructions, export examples, and maintenance notes.',
 	)
@@ -720,9 +722,7 @@ test('search markdown summarizes broad results without leaking nested details', 
 	expect(markdown).not.toContain(
 		'Package retrievers are temporarily unavailable.',
 	)
-	expect(markdown).not.toContain(
-		'https://github.com/login/oauth/access_token',
-	)
+	expect(markdown).not.toContain('https://github.com/login/oauth/access_token')
 	expect(markdown).not.toContain('github-access-token')
 	expect(markdown).not.toContain('github-refresh-token')
 })
