@@ -75,7 +75,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to production
-    timeout-minutes: 4
+    timeout-minutes: 8
     needs: sha-guard
     if: needs.sha-guard.outputs.should_deploy == 'true'
     environment:
@@ -144,7 +144,46 @@ jobs:
         run: |
           set -euo pipefail
           DEPLOY_ARGS=(--config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}")
-          npm run deploy -- "${DEPLOY_ARGS[@]}" 2>&1 | tee deploy.log
+
+          is_retryable_deploy_failure() {
+            node <<'NODE'
+          const fs = require('node:fs')
+          const text = fs.readFileSync('deploy.log', 'utf8').replace(/\u001b\[[0-9;]*m/g, '')
+          const retryablePatterns = [
+            /workflows\.api\.error\.internal_server/i,
+            /Cloudflare API[\s\S]*\[code:\s*10001\]/i,
+          ]
+          process.exit(retryablePatterns.some((pattern) => pattern.test(text)) ? 0 : 1)
+          NODE
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- "${DEPLOY_ARGS[@]}" 2>&1 | tee deploy.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
 
           DEPLOY_URL="${APP_BASE_URL:-}"
           if [ -z "$DEPLOY_URL" ]; then
