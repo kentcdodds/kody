@@ -327,8 +327,14 @@ test('search memory context preserves caller context and otherwise falls back to
 	).toBeUndefined()
 })
 
-test('optional search rows fall back when saved packages lookup fails', async () => {
-	const result = await loadOptionalSearchRows({
+test('optional search rows load packages and values with graceful fallbacks', async () => {
+	const emptyRows = {
+		packageRows: [],
+		userSecretRows: [],
+		userValueRows: [],
+	}
+
+	const packageFailure = await loadOptionalSearchRows({
 		userId: 'user-123',
 		loadPackages: async () => {
 			throw new Error('packages unavailable')
@@ -336,15 +342,12 @@ test('optional search rows fall back when saved packages lookup fails', async ()
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
 	})
+	expect(packageFailure).toMatchObject({
+		...emptyRows,
+		warnings: [expect.any(String)],
+	})
 
-	expect(result.packageRows).toEqual([])
-	expect(result.userSecretRows).toEqual([])
-	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toHaveLength(1)
-})
-
-test('optional search rows include saved packages when lookup succeeds', async () => {
-	const result = await loadOptionalSearchRows({
+	const savedPackage = await loadOptionalSearchRows({
 		userId: 'user-123',
 		loadPackages: async () => [
 			{
@@ -380,15 +383,13 @@ test('optional search rows include saved packages when lookup succeeds', async (
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
 	})
+	expect(savedPackage.packageRows).toHaveLength(1)
+	expect(savedPackage.packageRows[0]?.record.kodyId).toBe('roku-remote')
+	expect(savedPackage.userSecretRows).toEqual([])
+	expect(savedPackage.userValueRows).toEqual([])
+	expect(savedPackage.warnings).toEqual([])
 
-	expect(result.packageRows).toHaveLength(1)
-	expect(result.userSecretRows).toEqual([])
-	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toEqual([])
-})
-
-test('optional search rows preserve package fallback warnings', async () => {
-	const result = await loadOptionalSearchRows({
+	const packageWarnings = await loadOptionalSearchRows({
 		userId: 'user-123',
 		loadPackages: async () => ({
 			rows: [
@@ -427,9 +428,36 @@ test('optional search rows preserve package fallback warnings', async () => {
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
 	})
+	expect(packageWarnings.packageRows).toHaveLength(1)
+	expect(packageWarnings.warnings).toEqual(['fallback warning'])
 
-	expect(result.packageRows).toHaveLength(1)
-	expect(result.warnings).toEqual(['fallback warning'])
+	const valuesFailure = await loadOptionalSearchRows({
+		userId: 'user-123',
+		loadPackages: async () => [],
+		loadUserSecrets: async () => [],
+		loadUserValues: async () => {
+			throw new Error('values unavailable')
+		},
+	})
+	expect(valuesFailure).toMatchObject({
+		...emptyRows,
+		warnings: [expect.any(String)],
+	})
+
+	const anonymous = await loadOptionalSearchRows({
+		userId: null,
+		loadPackages: async () => {
+			throw new Error('should not run')
+		},
+		loadUserSecrets: async () => [],
+		loadUserValues: async () => {
+			throw new Error('should not run')
+		},
+	})
+	expect(anonymous).toEqual({
+		...emptyRows,
+		warnings: [],
+	})
 })
 
 test('searchUnified ranks related packages and integrations for operate queries', async () => {
@@ -1081,44 +1109,16 @@ test('search guidance does not pair unrelated package and integration matches', 
 	expect(result.guidance).toBeDefined()
 })
 
-test('optional search rows fall back when persisted values lookup fails', async () => {
-	const result = await loadOptionalSearchRows({
-		userId: 'user-123',
-		loadPackages: async () => [],
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => {
-			throw new Error('values unavailable')
+test('down remote connector statuses surface only disconnected connectors for signed-in users', async () => {
+	const signedInContext = {
+		user: {
+			userId: 'user-1',
+			email: 'user-1@example.com',
+			displayName: 'user-1',
 		},
-	})
-
-	expect(result.packageRows).toEqual([])
-	expect(result.userSecretRows).toEqual([])
-	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toHaveLength(1)
-})
-
-test('optional search rows skip D1 access without a user', async () => {
-	const result = await loadOptionalSearchRows({
-		userId: null,
-		loadPackages: async () => {
-			throw new Error('should not run')
-		},
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => {
-			throw new Error('should not run')
-		},
-	})
-
-	expect(result).toEqual({
-		packageRows: [],
-		userSecretRows: [],
-		userValueRows: [],
-		warnings: [],
-	})
-})
-
-test('down remote connector status is returned when the connector is disconnected', async () => {
-	const statuses = await loadDownRemoteConnectorStatuses({
+		remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
+	}
+	const disconnected = await loadDownRemoteConnectorStatuses({
 		env: {
 			REMOTE_CONNECTOR_SESSION: {
 				idFromName(name: string) {
@@ -1133,27 +1133,18 @@ test('down remote connector status is returned when the connector is disconnecte
 				},
 			},
 		} as unknown as Env,
-		callerContext: {
-			user: {
-				userId: 'user-1',
-				email: 'user-1@example.com',
-				displayName: 'user-1',
-			},
-			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
-		},
+		callerContext: signedInContext,
 	})
+	expect(disconnected).toEqual([
+		expect.objectContaining({
+			state: 'disconnected',
+			connectorId: 'default',
+			connected: false,
+			toolCount: 0,
+		}),
+	])
 
-	expect(statuses).toHaveLength(1)
-	expect(statuses[0]).toMatchObject({
-		state: 'disconnected',
-		connectorId: 'default',
-		connected: false,
-		toolCount: 0,
-	})
-})
-
-test('down remote connector status stays hidden when the connector is up', async () => {
-	const statuses = await loadDownRemoteConnectorStatuses({
+	const connected = await loadDownRemoteConnectorStatuses({
 		env: {
 			REMOTE_CONNECTOR_SESSION: {
 				idFromName(name: string) {
@@ -1173,25 +1164,15 @@ test('down remote connector status stays hidden when the connector is up', async
 				},
 			},
 		} as unknown as Env,
-		callerContext: {
-			user: {
-				userId: 'user-1',
-				email: 'user-1@example.com',
-				displayName: 'user-1',
-			},
-			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
-		},
+		callerContext: signedInContext,
 	})
+	expect(connected).toEqual([])
 
-	expect(statuses).toEqual([])
-})
-
-test('loadDownRemoteConnectorStatuses returns no statuses when caller has no user', async () => {
-	const statuses = await loadDownRemoteConnectorStatuses({
+	const anonymous = await loadDownRemoteConnectorStatuses({
 		env: {} as unknown as Env,
 		callerContext: {
 			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
 		},
 	})
-	expect(statuses).toEqual([])
+	expect(anonymous).toEqual([])
 })

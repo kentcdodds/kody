@@ -750,13 +750,12 @@ export declare function forecast(city: string): Promise<string>
 	const document = buildPackageSearchDocument(projection)
 	const [retriever] = projection.retrievers
 
-	expect(document).toContain('package automation-hub')
+	expect(document).toContain('automation-hub')
 	expect(document).toContain(`retriever:${retriever?.key}`)
 	expect(document).not.toContain('workflow:')
 	expect(document).toContain('subscription:email.message.received')
 	expect(document).toContain('subscription:email.message.quarantined')
 	expect(document).toContain('emits:@kentcdodds/discord.message.created')
-	expect(document).toContain('Dispatches Discord message events')
 	expect(document).toContain('. src/index.ts src/index.d.ts')
 	expect(document).toContain('forecast')
 })

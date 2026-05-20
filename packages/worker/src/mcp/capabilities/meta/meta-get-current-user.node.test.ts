@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { metaGetCurrentUserCapability } from './meta-get-current-user.ts'
 
-test('meta_get_current_user returns safe signed-in user identity fields', async () => {
+test('meta_get_current_user returns signed-in identity and requires authentication', async () => {
 	const result = await metaGetCurrentUserCapability.handler(
 		{},
 		{
@@ -23,9 +23,7 @@ test('meta_get_current_user returns safe signed-in user identity fields', async 
 		email: 'user@example.com',
 		display_name: 'Ada Lovelace',
 	})
-})
 
-test('meta_get_current_user requires an authenticated MCP user', async () => {
 	await expect(
 		metaGetCurrentUserCapability.handler(
 			{},

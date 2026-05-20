@@ -12,7 +12,7 @@ const ctx = {
 	},
 }
 
-test('kody_official_guide returns markdown when fetch succeeds', async () => {
+test('kody_official_guide fetches markdown and surfaces fetch failures', async () => {
 	const originalFetch = globalThis.fetch
 	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
 	expect(url).toMatch(/\/package-subscriptions\.md$/)
@@ -25,37 +25,30 @@ test('kody_official_guide returns markdown when fetch succeeds', async () => {
 			{ guide: 'package_subscriptions' },
 			ctx,
 		)
-		expect(result.title).toBeTruthy()
 		expect(result.body).toBe('# Hello\n\nbody')
+		expect(typeof result.title).toBe('string')
+		expect(result.title.length).toBeGreaterThan(0)
 	} finally {
 		globalThis.fetch = originalFetch
 	}
-})
 
-test('kody_official_guide surfaces fetch failures', async () => {
-	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async () => {
+		return new Response('missing', { status: 404 })
+	}) as typeof fetch
 	try {
 		await expect(
-			(async () => {
-				globalThis.fetch = (async () => {
-					return new Response('missing', { status: 404 })
-				}) as typeof fetch
-				await kodyOfficialGuideCapability.handler(
-					{ guide: 'connect_secret' },
-					ctx,
-				)
-			})(),
+			kodyOfficialGuideCapability.handler({ guide: 'connect_secret' }, ctx),
 		).rejects.toThrow(/Kody guide fetch failed: HTTP 404/)
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+
+	globalThis.fetch = (async () => {
+		throw new Error('network down')
+	}) as typeof fetch
+	try {
 		await expect(
-			(async () => {
-				globalThis.fetch = (async () => {
-					throw new Error('network down')
-				}) as typeof fetch
-				await kodyOfficialGuideCapability.handler(
-					{ guide: 'generated_ui_oauth' },
-					ctx,
-				)
-			})(),
+			kodyOfficialGuideCapability.handler({ guide: 'generated_ui_oauth' }, ctx),
 		).rejects.toThrow(/Kody guide fetch failed: network down/)
 	} finally {
 		globalThis.fetch = originalFetch

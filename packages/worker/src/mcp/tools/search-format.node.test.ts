@@ -728,6 +728,7 @@ test('search markdown summarizes broad results without leaking nested details', 
 })
 
 test('search markdown only suggests entity detail for entity-backed hits', () => {
+	const entityHint = '`entity: "{id}:{type}"`'
 	const entityMarkdown = formatSearchMarkdown({
 		warnings: [],
 		matches: [
@@ -738,8 +739,6 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 			},
 		],
 	})
-	expect(entityMarkdown).toContain('`entity: "{id}:{type}"`')
-
 	const retrieverMarkdown = formatSearchMarkdown({
 		warnings: [],
 		matches: [
@@ -756,7 +755,9 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 			},
 		],
 	})
-	expect(retrieverMarkdown).not.toContain('`entity: "{id}:{type}"`')
+
+	expect(entityMarkdown).toContain(entityHint)
+	expect(retrieverMarkdown).not.toContain(entityHint)
 })
 
 test('search formatting surfaces package retriever results', () => {

@@ -87,15 +87,13 @@ function buildRemoteConnectorEnv() {
 	} as unknown as Env
 }
 
-test('meta_list_capabilities includes runtime remote connector capabilities with type definitions only', async () => {
-	const env = buildRemoteConnectorEnv()
-
-	const result = await metaListCapabilitiesCapability.handler(
+test('meta_list_capabilities lists runtime remote tools and filters by domain', async () => {
+	const remoteResult = await metaListCapabilitiesCapability.handler(
 		{
 			detail: true,
 		},
 		{
-			env,
+			env: buildRemoteConnectorEnv(),
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: {
@@ -108,55 +106,52 @@ test('meta_list_capabilities includes runtime remote connector capabilities with
 		},
 	)
 
-	expect(result.capabilities.length).toBeGreaterThan(0)
+	expect(remoteResult.capabilities.length).toBeGreaterThan(0)
 	expect(
-		result.capabilities.some(
+		remoteResult.capabilities.some(
 			(capability) => capability.name === 'meta_list_capabilities',
 		),
 	).toBe(true)
-	const pressKeyCapability = result.capabilities.find(
+	const pressKeyCapability = remoteResult.capabilities.find(
 		(capability) => capability.name === 'roku_default_roku_press_key',
 	)
-	const listAppsCapability = result.capabilities.find(
+	const listAppsCapability = remoteResult.capabilities.find(
 		(capability) => capability.name === 'roku_default_roku_list_apps',
 	)
-	const activeAppCapability = result.capabilities.find(
+	const activeAppCapability = remoteResult.capabilities.find(
 		(capability) => capability.name === 'roku_default_roku_get_active_app',
 	)
-	expect(pressKeyCapability).not.toBeUndefined()
-	expect(pressKeyCapability?.domain).toBe('remote:roku:default')
-	expect(pressKeyCapability?.requiredInputFields).toEqual(['deviceId', 'key'])
-	expect(pressKeyCapability?.inputTypeDefinition).toEqual(expect.any(String))
+	expect(pressKeyCapability).toMatchObject({
+		domain: 'remote:roku:default',
+		requiredInputFields: ['deviceId', 'key'],
+		inputTypeDefinition: expect.any(String),
+	})
 	expect(pressKeyCapability).not.toHaveProperty('inputSchema')
-	expect(listAppsCapability).not.toBeUndefined()
-	expect(listAppsCapability?.domain).toBe('remote:roku:default')
-	expect(listAppsCapability?.outputTypeDefinition).toEqual(expect.any(String))
+	expect(listAppsCapability).toMatchObject({
+		domain: 'remote:roku:default',
+		outputTypeDefinition: expect.any(String),
+	})
 	expect(listAppsCapability).not.toHaveProperty('outputSchema')
-	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability?.domain).toBe('remote:roku:default')
-})
 
-test('meta_list_capabilities filters by domain', async () => {
-	const env = {} as Env
-
-	const result = await metaListCapabilitiesCapability.handler(
+	const metaOnly = await metaListCapabilitiesCapability.handler(
 		{
 			domain: 'meta',
 		},
 		{
-			env,
+			env: {} as Env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 			}),
 		},
 	)
 
-	expect(result.total).toBeGreaterThan(0)
+	expect(metaOnly.total).toBeGreaterThan(0)
 	expect(
-		result.capabilities.every((capability) => capability.domain === 'meta'),
+		metaOnly.capabilities.every((capability) => capability.domain === 'meta'),
 	).toBe(true)
 	expect(
-		result.capabilities.some(
+		metaOnly.capabilities.some(
 			(capability) => capability.name === 'meta_list_capabilities',
 		),
 	).toBe(true)

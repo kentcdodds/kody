@@ -151,32 +151,29 @@ test('injectRuntimeStateIntoDocument exposes runtime bootstrap globals', () => {
 	})
 })
 
-test('readSavedPackageAppSourceFromHostToolResult reads a package app source payload', () => {
-	const result = readSavedPackageAppSourceFromHostToolResult({
-		structuredContent: {
-			app_id: 'app-123',
-			client_code: '<main>hello</main>',
-		},
-	})
-
-	expect(result).toEqual({
+test('readSavedPackageAppSourceFromHostToolResult handles success and host tool errors', () => {
+	expect(
+		readSavedPackageAppSourceFromHostToolResult({
+			structuredContent: {
+				app_id: 'app-123',
+				client_code: '<main>hello</main>',
+			},
+		}),
+	).toEqual({
 		handled: true,
 		runtime: 'html',
 		code: '<main>hello</main>',
 	})
-})
-
-test('readSavedPackageAppSourceFromHostToolResult preserves host tool errors', () => {
-	const result = readSavedPackageAppSourceFromHostToolResult({
-		isError: true,
-		structuredContent: {
-			error: {
-				message: 'Saved package app not found for this user.',
+	expect(
+		readSavedPackageAppSourceFromHostToolResult({
+			isError: true,
+			structuredContent: {
+				error: {
+					message: 'Saved package app not found for this user.',
+				},
 			},
-		},
-	})
-
-	expect(result).toEqual({
+		}),
+	).toEqual({
 		handled: true,
 		errorMessage: 'Saved package app not found for this user.',
 	})

@@ -45,27 +45,29 @@ function setupMemoryContextMocks() {
 	})
 }
 
-test('loadRelevantMemoriesForTool returns context retriever results alongside memories', async () => {
+test('loadRelevantMemoriesForTool surfaces retriever results and keeps memories when retrievers fail', async () => {
 	setupMemoryContextMocks()
-	const result = await loadRelevantMemoriesForTool({
-		env: { APP_DB: {}, AI: {} } as Env,
-		callerContext: {
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-			},
-			storageContext: null,
-			remoteConnectors: null,
-			repoContext: null,
+	const callerContext = {
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
 		},
+		storageContext: null,
+		remoteConnectors: null,
+		repoContext: null,
+	}
+	const request = {
+		env: { APP_DB: {}, AI: {} } as Env,
+		callerContext,
 		conversationId: 'conversation-1',
 		memoryContext: {
 			query: 'sprinkler instructions',
 		},
-	})
+	}
 
+	const withRetrievers = await loadRelevantMemoriesForTool(request)
 	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
 		expect.objectContaining({
 			baseUrl: 'https://heykody.dev',
@@ -75,18 +77,16 @@ test('loadRelevantMemoriesForTool returns context retriever results alongside me
 			maxProviders: 3,
 		}),
 	)
-	expect(result?.memories).toEqual([])
-	expect(result?.retrieverResults).toEqual([
+	expect(withRetrievers?.memories).toEqual([])
+	expect(withRetrievers?.retrieverResults).toEqual([
 		expect.objectContaining({
 			id: 'note-1',
 			kodyId: 'personal-inbox',
 			retrieverKey: 'notes',
 		}),
 	])
-	expect(result?.retrieverWarnings).toHaveLength(1)
-})
+	expect(withRetrievers?.retrieverWarnings).toHaveLength(1)
 
-test('loadRelevantMemoriesForTool keeps memories when context retrievers fail', async () => {
 	setupMemoryContextMocks()
 	mockModule.surfaceRelevantMemories.mockResolvedValue({
 		memories: [
@@ -109,33 +109,15 @@ test('loadRelevantMemoriesForTool keeps memories when context retrievers fail', 
 		new Error('retriever unavailable'),
 	)
 
-	const result = await loadRelevantMemoriesForTool({
-		env: { APP_DB: {}, AI: {} } as Env,
-		callerContext: {
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-			},
-			storageContext: null,
-			remoteConnectors: null,
-			repoContext: null,
-		},
-		conversationId: 'conversation-1',
-		memoryContext: {
-			query: 'sprinkler instructions',
-		},
-	})
-
-	expect(result?.memories).toEqual([
+	const withoutRetrievers = await loadRelevantMemoriesForTool(request)
+	expect(withoutRetrievers?.memories).toEqual([
 		expect.objectContaining({
 			id: 'memory-1',
 			subject: 'Sprinkler setup',
 		}),
 	])
-	expect(result?.retrieverResults).toEqual([])
-	expect(result?.retrieverWarnings).toEqual([])
+	expect(withoutRetrievers?.retrieverResults).toEqual([])
+	expect(withoutRetrievers?.retrieverWarnings).toEqual([])
 })
 
 test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-only context', () => {
