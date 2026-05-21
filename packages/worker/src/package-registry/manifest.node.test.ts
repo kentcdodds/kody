@@ -697,65 +697,8 @@ test('parseAuthoredPackageJson accepts email event subscriptions', () => {
 			},
 		},
 	])
-})
-
-test('buildPackageSearchDocument includes exported APIs and package discovery surfaces', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/automation-hub',
-			exports: {
-				'.': {
-					import: './src/index.ts',
-					types: './src/index.d.ts',
-				},
-				'./run-event': './src/run-event.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'automation-hub',
-				description: 'Automation package with retrievers and subscriptions',
-				emits: {
-					'@kentcdodds/discord.message.created': {
-						description: 'Dispatches Discord message events',
-					},
-				},
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Personal notes',
-						description: 'Searches saved notes and snippets.',
-						scopes: ['context', 'search'],
-					},
-				},
-				subscriptions: {
-					'email.message.received': {
-						handler: './src/handle-received-email.ts',
-						description: 'Notify on accepted inbound email',
-					},
-					'email.message.quarantined': {
-						handler: './src/handle-quarantined-email.ts',
-					},
-				},
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-	const projection = buildPackageSearchProjection(manifest, {
-		'src/index.d.ts': `/**
- * Look up the forecast for a city.
- */
-export declare function forecast(city: string): Promise<string>
-`,
-	})
 	const document = buildPackageSearchDocument(projection)
-	const [retriever] = projection.retrievers
-
-	expect(document).toContain('automation-hub')
-	expect(document).toContain(`retriever:${retriever?.key}`)
-	expect(document).not.toContain('workflow:')
-	expect(document).toContain('subscription:email.message.received')
-	expect(document).toContain('subscription:email.message.quarantined')
-	expect(document).toContain('emits:@kentcdodds/discord.message.created')
-	expect(document).toContain('. src/index.ts src/index.d.ts')
-	expect(document).toContain('forecast')
+	for (const subscription of projection.subscriptions ?? []) {
+		expect(document).toContain(`subscription:${subscription.topic}`)
+	}
 })

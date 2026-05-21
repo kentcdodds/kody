@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(),
@@ -18,13 +18,27 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 const { listPackageSubscriptionsCapability } =
 	await import('./list-package-subscriptions.ts')
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
-beforeEach(() => {
+function createCallerContext() {
+	return {
+		env: { APP_DB: {} } as Env,
+		callerContext: {
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId: 'user-1',
+				email: 'me@kentcdodds.com',
+				displayName: 'Kent',
+			},
+			remoteConnectors: null,
+			storageContext: null,
+			repoContext: null,
+		},
+	}
+}
+
+test('listPackageSubscriptionsCapability filters, sorts, and skips broken manifests', async () => {
 	mockModule.listSavedPackagesByUserId.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
-})
 
-test('listPackageSubscriptionsCapability returns declared subscriptions', async () => {
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'package-1',
@@ -53,7 +67,6 @@ test('listPackageSubscriptionsCapability returns declared subscriptions', async 
 			updatedAt: '2026-04-25T00:00:00.000Z',
 		},
 	])
-
 	mockModule.loadPackageManifestBySourceId.mockImplementationOnce(async () => ({
 		source: { id: 'source-1' },
 		manifest: {
@@ -90,25 +103,11 @@ test('listPackageSubscriptionsCapability returns declared subscriptions', async 
 		},
 	}))
 
-	const result = await listPackageSubscriptionsCapability.handler(
+	const filtered = await listPackageSubscriptionsCapability.handler(
 		{ topic: 'discord.message.created' },
-		{
-			env: { APP_DB: {} } as Env,
-			callerContext: {
-				baseUrl: 'https://heykody.dev',
-				user: {
-					userId: 'user-1',
-					email: 'me@kentcdodds.com',
-					displayName: 'Kent',
-				},
-				remoteConnectors: null,
-				storageContext: null,
-				repoContext: null,
-			},
-		},
+		createCallerContext(),
 	)
-
-	expect(result).toEqual({
+	expect(filtered).toEqual({
 		subscriptions: [
 			{
 				package_id: 'package-1',
@@ -123,9 +122,9 @@ test('listPackageSubscriptionsCapability returns declared subscriptions', async 
 			},
 		],
 	})
-})
 
-test('listPackageSubscriptionsCapability returns all subscriptions sorted without topic filter', async () => {
+	mockModule.listSavedPackagesByUserId.mockReset()
+	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'package-1',
@@ -189,25 +188,11 @@ test('listPackageSubscriptionsCapability returns all subscriptions sorted withou
 		},
 	}))
 
-	const result = await listPackageSubscriptionsCapability.handler(
+	const sorted = await listPackageSubscriptionsCapability.handler(
 		{},
-		{
-			env: { APP_DB: {} } as Env,
-			callerContext: {
-				baseUrl: 'https://heykody.dev',
-				user: {
-					userId: 'user-1',
-					email: 'me@kentcdodds.com',
-					displayName: 'Kent',
-				},
-				remoteConnectors: null,
-				storageContext: null,
-				repoContext: null,
-			},
-		},
+		createCallerContext(),
 	)
-
-	expect(result).toEqual({
+	expect(sorted).toEqual({
 		subscriptions: [
 			{
 				package_id: 'package-2',
@@ -229,10 +214,10 @@ test('listPackageSubscriptionsCapability returns all subscriptions sorted withou
 			},
 		],
 	})
-})
 
-test('listPackageSubscriptionsCapability skips packages whose manifest load fails', async () => {
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	mockModule.listSavedPackagesByUserId.mockReset()
+	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'package-1',
@@ -282,25 +267,11 @@ test('listPackageSubscriptionsCapability skips packages whose manifest load fail
 	})
 
 	try {
-		const result = await listPackageSubscriptionsCapability.handler(
+		const resilient = await listPackageSubscriptionsCapability.handler(
 			{},
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext: {
-					baseUrl: 'https://heykody.dev',
-					user: {
-						userId: 'user-1',
-						email: 'me@kentcdodds.com',
-						displayName: 'Kent',
-					},
-					remoteConnectors: null,
-					storageContext: null,
-					repoContext: null,
-				},
-			},
+			createCallerContext(),
 		)
-
-		expect(result).toEqual({
+		expect(resilient).toEqual({
 			subscriptions: [
 				{
 					package_id: 'package-1',

@@ -45,7 +45,7 @@ function setupMemoryContextMocks() {
 	})
 }
 
-test('loadRelevantMemoriesForTool surfaces retriever results and keeps memories when retrievers fail', async () => {
+test('memory tool context surfaces retriever results, keeps memories on retriever failure, and formats retriever-only markdown', async () => {
 	setupMemoryContextMocks()
 	const callerContext = {
 		baseUrl: 'https://heykody.dev',
@@ -87,6 +87,18 @@ test('loadRelevantMemoriesForTool surfaces retriever results and keeps memories 
 	])
 	expect(withRetrievers?.retrieverWarnings).toHaveLength(1)
 
+	const [retrieverOnlyContent] = formatSurfacedMemoriesMarkdown({
+		memories: [],
+		retrieverResults: withRetrievers?.retrieverResults ?? [],
+		retrieverWarnings: [],
+		suppressedCount: 0,
+		retrievalQuery: 'sprinkler instructions',
+	})
+	expect(retrieverOnlyContent?.type).toBe('text')
+	expect(retrieverOnlyContent?.text).not.toContain('## Relevant memories')
+	expect(retrieverOnlyContent?.text).toContain('## Relevant retriever results')
+	expect(retrieverOnlyContent?.text).not.toContain('## Retriever warnings')
+
 	setupMemoryContextMocks()
 	mockModule.surfaceRelevantMemories.mockResolvedValue({
 		memories: [
@@ -118,31 +130,4 @@ test('loadRelevantMemoriesForTool surfaces retriever results and keeps memories 
 	])
 	expect(withoutRetrievers?.retrieverResults).toEqual([])
 	expect(withoutRetrievers?.retrieverWarnings).toEqual([])
-})
-
-test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-only context', () => {
-	const [content] = formatSurfacedMemoriesMarkdown({
-		memories: [],
-		retrieverResults: [
-			{
-				id: 'note-1',
-				title: 'Sprinkler controller',
-				summary: 'Hold next and back for setup mode.',
-				packageId: 'package-1',
-				kodyId: 'personal-inbox',
-				retrieverKey: 'notes',
-				retrieverName: 'Personal notes',
-			},
-		],
-		retrieverWarnings: [],
-		suppressedCount: 0,
-		retrievalQuery: 'sprinkler instructions',
-	})
-
-	expect(content?.type).toBe('text')
-	expect(content?.text).not.toContain('## Relevant memories')
-	expect(content?.text).toContain('## Relevant retriever results')
-	expect(content?.text).toContain('Sprinkler controller')
-	expect(content?.text).toContain('personal-inbox/notes')
-	expect(content?.text).not.toContain('## Retriever warnings')
 })

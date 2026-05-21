@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -17,13 +17,9 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 const { getPackageCapability } = await import('./get-package.ts')
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this suite resets shared hoisted mocks between tests.
-beforeEach(() => {
+test('getPackageCapability returns ready-to-import package exports', async () => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
-})
-
-test('getPackageCapability returns ready-to-import package exports', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce({
 		id: 'package-1',
 		userId: 'user-1',

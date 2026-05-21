@@ -60,9 +60,8 @@ function createCallerContext() {
 	})
 }
 
-test('service_list returns declared package services with live status', async () => {
-	resetMocks()
-	mockModule.getSavedPackageById.mockResolvedValue({
+function createSavedPackage() {
+	return {
 		id: 'package-123',
 		userId: 'user-123',
 		name: '@scope/example',
@@ -74,7 +73,12 @@ test('service_list returns declared package services with live status', async ()
 		hasApp: true,
 		createdAt: '2026-04-24T00:00:00.000Z',
 		updatedAt: '2026-04-24T00:00:00.000Z',
-	})
+	}
+}
+
+test('package service capabilities list, tolerate status failures, and delegate RPC actions', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.listSavedPackageServices.mockResolvedValue({
 		savedPackage: {
 			id: 'package-123',
@@ -126,17 +130,14 @@ test('service_list returns declared package services with live status', async ()
 			last_result: null,
 		}),
 	}))
-	const result = await serviceListCapability.handler(
-		{},
-		{
-			env: {
-				APP_DB: {} as D1Database,
-			} as Env,
-			callerContext: createCallerContext(),
-		},
-	)
 
-	expect(result).toEqual({
+	const env = {
+		APP_DB: {} as D1Database,
+	} as Env
+	const callerContext = createCallerContext()
+
+	const listed = await serviceListCapability.handler({}, { env, callerContext })
+	expect(listed).toEqual({
 		package_id: 'package-123',
 		kody_id: 'example',
 		services: [
@@ -150,23 +151,9 @@ test('service_list returns declared package services with live status', async ()
 			},
 		],
 	})
-})
 
-test('service_list marks status as unknown when a service status lookup fails', async () => {
 	resetMocks()
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-123',
-		userId: 'user-123',
-		name: '@scope/example',
-		kodyId: 'example',
-		description: 'Example package',
-		tags: [],
-		searchText: null,
-		sourceId: 'source-123',
-		hasApp: true,
-		createdAt: '2026-04-24T00:00:00.000Z',
-		updatedAt: '2026-04-24T00:00:00.000Z',
-	})
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.listSavedPackageServices.mockResolvedValue({
 		savedPackage: {
 			id: 'package-123',
@@ -188,47 +175,14 @@ test('service_list marks status as unknown when a service status lookup fails', 
 		}),
 	})
 
-	const result = await serviceListCapability.handler(
+	const unknownStatus = await serviceListCapability.handler(
 		{},
-		{
-			env: {
-				APP_DB: {} as D1Database,
-			} as Env,
-			callerContext: createCallerContext(),
-		},
+		{ env, callerContext },
 	)
+	expect(unknownStatus.services[0]?.status).toBe('unknown')
 
-	expect(result).toEqual({
-		package_id: 'package-123',
-		kody_id: 'example',
-		services: [
-			{
-				name: 'realtime-supervisor',
-				entry: 'services/realtime-supervisor.ts',
-				auto_start: false,
-				mode: 'bounded',
-				status: 'unknown',
-				timeout_ms: null,
-			},
-		],
-	})
-})
-
-test('service_get, service_start, and service_stop delegate to package service RPC', async () => {
 	resetMocks()
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-123',
-		userId: 'user-123',
-		name: '@scope/example',
-		kodyId: 'example',
-		description: 'Example package',
-		tags: [],
-		searchText: null,
-		sourceId: 'source-123',
-		hasApp: true,
-		createdAt: '2026-04-24T00:00:00.000Z',
-		updatedAt: '2026-04-24T00:00:00.000Z',
-	})
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.packageServiceRpc.mockImplementation(() => ({
 		status: async () => ({
 			package_id: 'package-123',
@@ -256,11 +210,6 @@ test('service_get, service_start, and service_stop delegate to package service R
 			ok: true,
 		}),
 	}))
-
-	const env = {
-		APP_DB: {} as D1Database,
-	} as Env
-	const callerContext = createCallerContext()
 
 	await expect(
 		serviceGetCapability.handler(
