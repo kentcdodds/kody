@@ -29,7 +29,7 @@ function executeUsageSnippet(usage: string) {
 	return calls
 }
 
-test('parseEntityRef accepts value and integration entity types', () => {
+test('search formatting keeps value and integration entity refs in the structured contract', () => {
 	expect(parseEntityRef('user:preferred_repo:value')).toEqual({
 		id: 'user:preferred_repo',
 		type: 'value',
@@ -38,9 +38,7 @@ test('parseEntityRef accepts value and integration entity types', () => {
 		id: 'github',
 		type: 'integration',
 	})
-})
 
-test('search formatting keeps value and integration entity refs in the structured contract', () => {
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
@@ -667,7 +665,8 @@ test('package search formatting surfaces matched action import usage in structur
 	})
 })
 
-test('search markdown summarizes broad results without leaking nested details', () => {
+test('search markdown summarizes broad results and only suggests entity detail for entity-backed hits', () => {
+	const entityHint = '`entity: "{id}:{type}"`'
 	const markdown = formatSearchMarkdown({
 		warnings: [
 			'Saved package metadata fallback warning with long details.',
@@ -725,10 +724,7 @@ test('search markdown summarizes broad results without leaking nested details', 
 	expect(markdown).not.toContain('https://github.com/login/oauth/access_token')
 	expect(markdown).not.toContain('github-access-token')
 	expect(markdown).not.toContain('github-refresh-token')
-})
 
-test('search markdown only suggests entity detail for entity-backed hits', () => {
-	const entityHint = '`entity: "{id}:{type}"`'
 	const entityMarkdown = formatSearchMarkdown({
 		warnings: [],
 		matches: [
@@ -755,7 +751,6 @@ test('search markdown only suggests entity detail for entity-backed hits', () =>
 			},
 		],
 	})
-
 	expect(entityMarkdown).toContain(entityHint)
 	expect(retrieverMarkdown).not.toContain(entityHint)
 })

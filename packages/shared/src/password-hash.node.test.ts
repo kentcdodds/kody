@@ -2,16 +2,12 @@ import { expect, test } from 'vitest'
 
 import { createPasswordHash, verifyPassword } from './password-hash.ts'
 
-test('verifyPassword accepts valid hashes', async () => {
+test('verifyPassword accepts valid hashes and rejects tampered metadata', async () => {
 	const password = 'kodylovesyou'
 	const hash = await createPasswordHash(password)
 
 	await expect(verifyPassword(password, hash)).resolves.toBe(true)
-})
 
-test('verifyPassword rejects tampered hash metadata', async () => {
-	const password = 'kodylovesyou'
-	const hash = await createPasswordHash(password)
 	const [prefix, iterations, saltHex, hashHex] = hash.split('$')
 	const tamperedHashes = [
 		`${prefix}$${iterations}abc$${saltHex}$${hashHex}`,

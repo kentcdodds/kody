@@ -605,11 +605,12 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 	)
 })
 
-test('publishSession rolls back the D1 published commit when snapshot persistence fails', async () => {
-	// Matches the source-sync.ts revert behavior so a failed KV write never
-	// leaves an entity source pointing at a commit whose snapshot nobody can
-	// read. Without this, a partial failure would permanently break package
-	// jobs for the source until it is republished.
+test('publishSession handles snapshot collection and persistence failures without leaving inconsistent published commits', async () => {
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env
+
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-fail'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -623,20 +624,13 @@ test('publishSession rolls back the D1 published commit when snapshot persistenc
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"app"}')
 
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
-	} as Env
-	const repoSession = new RepoSession(createDurableObjectState(), env)
-
 	await expect(
-		repoSession.publishSession({
+		new RepoSession(createDurableObjectState(), env).publishSession({
 			sessionId: 'session-1',
 			userId: 'user-1',
 			force: true,
 		}),
 	).rejects.toThrow('kv write failed')
-
 	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
 		1,
 		expect.anything(),
@@ -653,13 +647,7 @@ test('publishSession rolls back the D1 published commit when snapshot persistenc
 			publishedCommit: 'commit-base',
 		}),
 	)
-})
 
-test('publishSession surfaces the original snapshot error even when the compensating revert also fails', async () => {
-	// If the KV snapshot write fails AND the compensating updateEntitySource
-	// revert subsequently fails, we must still rethrow the original KV error
-	// so operators see the real root cause instead of a misleading D1 error
-	// about the failed compensation.
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-double-fail'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -676,28 +664,15 @@ test('publishSession surfaces the original snapshot error even when the compensa
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"app"}')
 
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
-	} as Env
-	const repoSession = new RepoSession(createDurableObjectState(), env)
-
 	await expect(
-		repoSession.publishSession({
+		new RepoSession(createDurableObjectState(), env).publishSession({
 			sessionId: 'session-1',
 			userId: 'user-1',
 			force: true,
 		}),
 	).rejects.toThrow('kv write failed')
-
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
-})
 
-test('publishSession aborts before advancing the D1 published commit when snapshot collection fails', async () => {
-	// Snapshot collection must happen BEFORE the entity_sources.published_commit
-	// advance. Otherwise a glob/read failure (or a file that disappears between
-	// glob and read) would leave D1 pointing at a commit whose snapshot was
-	// never written — the exact failure mode the main regression is about.
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-collect-fail'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -707,12 +682,6 @@ test('publishSession aborts before advancing the D1 published commit when snapsh
 		{ type: 'file', path: '/session/kody.json' },
 		{ type: 'file', path: '/session/src/index.ts' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
-	// Simulate a file that vanished between glob and read. The manifest read
-	// from readManifestFromWorkspace still needs to resolve so publishSession
-	// reaches the snapshot-collection step; it is the follow-up collector's
-	// pass over the workspace that must treat the null content as a hard
-	// failure instead of silently dropping the file and writing an incomplete
-	// KV snapshot.
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
 		if (path === '/session/kody.json') {
 			return '{"version":1,"kind":"app"}'
@@ -720,20 +689,13 @@ test('publishSession aborts before advancing the D1 published commit when snapsh
 		return null
 	})
 
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
-	} as Env
-	const repoSession = new RepoSession(createDurableObjectState(), env)
-
 	await expect(
-		repoSession.publishSession({
+		new RepoSession(createDurableObjectState(), env).publishSession({
 			sessionId: 'session-1',
 			userId: 'user-1',
 			force: true,
 		}),
 	).rejects.toThrow(/Failed to read repo session file/)
-
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })

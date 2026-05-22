@@ -2,8 +2,8 @@ import { expect, test } from 'vitest'
 import { createSchemaTypeDefinition } from './schema-type-definitions.ts'
 import { type CapabilityJsonSchema } from './types.ts'
 
-test('parenthesizes union members when composing allOf intersections', () => {
-	const typeDefinition = createSchemaTypeDefinition({
+test('createSchemaTypeDefinition composes intersections and preserves escaped schema comments', () => {
+	const intersected = createSchemaTypeDefinition({
 		typeName: 'IntersectedInput',
 		jsonSchema: {
 			allOf: [
@@ -20,14 +20,11 @@ test('parenthesizes union members when composing allOf intersections', () => {
 			],
 		} as CapabilityJsonSchema,
 	})
-
-	expect(typeDefinition).toBe(
+	expect(intersected).toBe(
 		'type IntersectedInput = (string | number) & {\n\tid: string\n}',
 	)
-})
 
-test('preserves JSON Schema descriptions as type comments', () => {
-	const typeDefinition = createSchemaTypeDefinition({
+	const commented = createSchemaTypeDefinition({
 		typeName: 'CreateIssueInput',
 		jsonSchema: {
 			type: 'object',
@@ -50,12 +47,12 @@ test('preserves JSON Schema descriptions as type comments', () => {
 		} as CapabilityJsonSchema,
 	})
 
-	expect(typeDefinition).toContain('/** Root description. */')
-	expect(typeDefinition).toContain('\t/** Owner field. */\n\towner: string')
-	expect(typeDefinition).toContain(
+	expect(commented).toContain('/** Root description. */')
+	expect(commented).toContain('\t/** Owner field. */\n\towner: string')
+	expect(commented).toContain(
 		['\t/**', '\t * First line.', '\t * Second line.', '\t */'].join('\n'),
 	)
-	expect(typeDefinition).toContain('Closing marker * / should stay escaped.')
-	expect(typeDefinition).not.toContain('Closing marker */ should stay escaped.')
-	expect(typeDefinition).toContain('\tbody?: string')
+	expect(commented).toContain('Closing marker * / should stay escaped.')
+	expect(commented).not.toContain('Closing marker */ should stay escaped.')
+	expect(commented).toContain('\tbody?: string')
 })
