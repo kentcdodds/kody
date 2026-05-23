@@ -13,7 +13,17 @@ const { emailAttachmentGetCapability } =
 	await import('./email-attachment-get.ts')
 const { createMcpCallerContext } = await import('#mcp/context.ts')
 
-test('emailAttachmentGetCapability returns attachment content from repo helper', async () => {
+test('emailAttachmentGetCapability returns attachment content and rejects missing ids', async () => {
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	const env = { APP_DB: {} } as Env
+
 	mockModule.getEmailAttachmentById.mockResolvedValueOnce({
 		id: 'attachment-1',
 		messageId: 'message-1',
@@ -30,17 +40,7 @@ test('emailAttachmentGetCapability returns attachment content from repo helper',
 
 	const result = await emailAttachmentGetCapability.handler(
 		{ attachment_id: 'attachment-1' },
-		{
-			env: { APP_DB: {} } as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User Example',
-				},
-			}),
-		},
+		{ env, callerContext },
 	)
 
 	expect(mockModule.getEmailAttachmentById).toHaveBeenCalledWith({
@@ -58,25 +58,13 @@ test('emailAttachmentGetCapability returns attachment content from repo helper',
 		size: 12,
 		data_base64: 'QXR0YWNobWVudCB0ZXh0',
 	})
-})
 
-test('emailAttachmentGetCapability throws when attachment is missing', async () => {
 	mockModule.getEmailAttachmentById.mockResolvedValueOnce(null)
 
 	await expect(
 		emailAttachmentGetCapability.handler(
 			{ attachment_id: 'missing-attachment' },
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-					user: {
-						userId: 'user-1',
-						email: 'user@example.com',
-						displayName: 'User Example',
-					},
-				}),
-			},
+			{ env, callerContext },
 		),
 	).rejects.toThrow('Email attachment not found: missing-attachment')
 })

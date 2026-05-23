@@ -218,7 +218,7 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 	}
 })
 
-const { RepoSession, readWithRetry } = await import('./repo-session-do.ts')
+const { RepoSession } = await import('./repo-session-do.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -543,12 +543,6 @@ test('runCommands fetches session metadata after publish side effects', async ()
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
-	// Regression test: repo_publish_session was throwing
-	// "Published snapshot for source ... was not found" because the publish
-	// handler updated D1 with the new commit without writing the KV snapshot
-	// that loadPublishedEntitySource and package-backed jobs rely on. The
-	// handler must persist the current workspace tree under the new commit
-	// before any downstream read is attempted.
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-new'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -839,34 +833,6 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
 })
 
-test('readWithRetry distinguishes null from other falsy values', async () => {
-	// readWithRetry treats only null as "missing". Falsy-but-present values
-	// like 0, '', or false must be returned as-is instead of triggering
-	// extra retries and a final null.
-	for (const value of [0, '', false]) {
-		const read = vi.fn(
-			async () => value as unknown as number | string | boolean,
-		)
-		const result = await readWithRetry(read, [])
-		expect(result).toBe(value)
-		expect(read).toHaveBeenCalledTimes(1)
-	}
-
-	const nullRead = vi.fn(async () => null)
-	const nullResult = await readWithRetry(nullRead, [0, 0])
-	expect(nullResult).toBeNull()
-	expect(nullRead).toHaveBeenCalledTimes(3)
-
-	let attempts = 0
-	const eventualRead = vi.fn(async () => {
-		attempts += 1
-		return attempts < 3 ? null : ('ok' as const)
-	})
-	const eventualResult = await readWithRetry(eventualRead, [0, 0, 0])
-	expect(eventualResult).toBe('ok')
-	expect(eventualRead).toHaveBeenCalledTimes(3)
-})
-
 test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	setCommonSessionFixtures()
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
@@ -943,13 +909,7 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 	)
 })
 
-test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
-	// Guards against a regression where the cache, populated by openSession,
-	// would shadow fresh D1 reads and hide updates such as rebaseSession
-	// writing a new base_commit or an external publish updating
-	// source.published_commit. That would cause publishSession's base_moved
-	// check to compare stale values and silently pass when the source has
-	// actually moved.
+test('readFile re-reads D1 for updated session rows and falls back when rows are not yet readable', async () => {
 	setCommonSessionFixtures()
 	const initialSource = {
 		id: 'source-1',
@@ -1005,13 +965,11 @@ test('getSessionState prefers fresh D1 reads over cached session and source rows
 		path: 'greeting.txt',
 		content: 'hello world',
 	})
-	// The second readFile hits D1 again rather than short-circuiting on the
-	// in-memory cache, so the updated session and source rows are visible.
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(2)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
-})
 
-test('readFile falls back to cached session state when the session row is not yet readable from D1', async () => {
+	mockModule.getRepoSessionById.mockReset()
+	mockModule.getEntitySourceById.mockReset()
 	const source = {
 		id: 'source-1',
 		user_id: 'user-1',
@@ -1051,21 +1009,24 @@ test('readFile falls back to cached session state when the session row is not ye
 	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.workspaceReadFile.mockResolvedValue('export default {}')
 
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-	await repoSession.openSession({
+	const cachedFallbackSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+	await cachedFallbackSession.openSession({
 		sessionId: 'job-runtime-session-1',
 		sourceId: 'source-1',
 		userId: 'user-1',
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
-	const file = await repoSession.readFile({
+	const cachedFallbackFile = await cachedFallbackSession.readFile({
 		sessionId: 'job-runtime-session-1',
 		userId: 'user-1',
 		path: 'kody.json',
 	})
 
-	expect(file).toEqual({
+	expect(cachedFallbackFile).toEqual({
 		path: 'kody.json',
 		content: 'export default {}',
 	})

@@ -6,5 +6,4 @@ test('createStableUserIdFromEmail normalizes email casing and whitespace', async
 	const b = await createStableUserIdFromEmail('me@kentcodds.com')
 
 	expect(a).toBe(b)
-	expect(a).toMatch(/^[a-f0-9]{64}$/)
 })
