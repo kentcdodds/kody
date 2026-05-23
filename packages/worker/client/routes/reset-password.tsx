@@ -99,7 +99,7 @@ export function ResetPasswordRoute(handle: Handle) {
 				setState('error', errorMessage)
 				return
 			}
-			setState('success', 'Password updated. You can sign in now.')
+			setState('success', 'Password updated. You can sign in.')
 		} catch {
 			setState('error', 'Network error. Please try again.')
 		}

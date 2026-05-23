@@ -297,7 +297,7 @@ export const repoRunCommandsInputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Optional conversation id for newly opened sessions.'),
+			.describe('Optional conversation id for opened sessions.'),
 		source_root: z
 			.string()
 			.min(1)
