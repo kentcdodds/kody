@@ -266,7 +266,7 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 	if (memorySummary.suppressedCount > 0) {
 		lines.push(
 			'',
-			`Suppressed ${memorySummary.suppressedCount} previously surfaced memories for this conversation.`,
+			`Suppressed ${memorySummary.suppressedCount} memories surfaced earlier in this conversation.`,
 		)
 	}
 	return lines.join('\n')

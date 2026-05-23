@@ -76,7 +76,7 @@ function createRecommendedItemAction(input: { stale: boolean }) {
 	if (!input.stale) {
 		return 'No action indicated by bundle metadata; this dependent already references the current dependency commit.'
 	}
-	return 'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the newly published dependency commit.'
+	return 'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the published dependency commit.'
 }
 
 function createAccumulator(

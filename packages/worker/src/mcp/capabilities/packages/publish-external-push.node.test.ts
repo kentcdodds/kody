@@ -270,7 +270,7 @@ test('published output lists stale static dependents for the new dependency comm
 				bundled_dependency_commit: 'commit-a-old',
 				current_dependency_commit: 'commit-new',
 				recommended_action:
-					'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the newly published dependency commit.',
+					'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the published dependency commit.',
 			},
 		],
 		recommended_next_action:
