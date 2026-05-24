@@ -11,7 +11,19 @@ This repository maintains two audiences:
 
 **Describe how things work.** Write in the present tense. Avoid changelog-style
 phrases (“now we…”, “we no longer…”, “previously…”) in both usage and
-contributing docs; those belong in commit messages or release notes.
+contributing docs; those belong in commit messages or release notes. Describe
+the system as it works today (“Kody stores…”, “The manifest rejects…”) instead
+of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
+
+Docs-like product copy follows the same rule: MCP server instructions, tool and
+schema descriptions, and user-visible UI strings should not read like release
+notes.
+
+**Exceptions.** Migration and rotation guides (for example
+[`secret-rotation.md`](./secret-rotation.md)) may use ordered steps across
+deploy phases. Outside those procedures, still describe the current design in
+plain language. Quoted validation errors and runtime messages should match what
+the product returns, even when the wording contrasts with older manifest shapes.
 
 **Stay lightweight but valuable.** Prefer small, accurate pages over large stale
 ones. **Garden** docs when behavior changes: update or delete sections in the
