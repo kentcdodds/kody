@@ -41,7 +41,7 @@ test('capability search helpers build normalized searchable documents', () => {
 	expect(hybridSearchScore(0.6, 0.2)).toBe(0.4)
 })
 
-test('offline search returns provided specs without depending on global ranks', async () => {
+test('offline detailed search returns structured capability matches without schema fields', async () => {
 	const specs = {
 		oauth_setup_guide: {
 			name: 'oauth_setup_guide',
@@ -63,34 +63,6 @@ test('offline search returns provided specs without depending on global ranks', 
 			},
 			inputTypeDefinition: 'type OAuthSetupGuideInput = {\n\tguide: string\n}',
 		},
-	} satisfies Record<string, CapabilitySpec>
-	const env = {
-		SENTRY_ENVIRONMENT: 'test',
-		AI: {} as Ai,
-	} as Env
-
-	const { matches, offline } = await searchCapabilities({
-		env,
-		query: 'oauth redirect uri provider registration',
-		limit: 8,
-		detail: true,
-		specs,
-	})
-
-	expect(offline).toBe(true)
-	expect(matches).toHaveLength(1)
-	expect(matches[0]?.name).toBe('oauth_setup_guide')
-	expect(matches[0]?.keywords).toEqual(
-		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
-	)
-	expect(matches[0]?.outputFields).toEqual(['title', 'body'])
-	expect(matches[0]).not.toHaveProperty('inputSchema')
-	expect(matches[0]?.lexicalRank).toBe(1)
-	expect(matches[0]?.vectorRank).toBe(1)
-})
-
-test('detailed capability search returns type definitions without schema fields', async () => {
-	const specs = {
 		kody_official_guide: {
 			name: 'kody_official_guide',
 			domain: 'coding',
@@ -118,19 +90,46 @@ test('detailed capability search returns type definitions without schema fields'
 		AI: {} as Ai,
 	} as Env
 
-	const defaultDetail = await searchCapabilities({
+	const oauthSpecs = {
+		oauth_setup_guide: specs.oauth_setup_guide,
+	} satisfies Record<string, CapabilitySpec>
+	const oauthGuide = await searchCapabilities({
+		env,
+		query: 'oauth redirect uri provider registration',
+		limit: 8,
+		detail: true,
+		specs: oauthSpecs,
+	})
+
+	expect(oauthGuide.offline).toBe(true)
+	expect(oauthGuide.matches).toHaveLength(1)
+	expect(oauthGuide.matches[0]).toMatchObject({
+		name: 'oauth_setup_guide',
+		outputFields: ['title', 'body'],
+		lexicalRank: 1,
+		vectorRank: 1,
+	})
+	expect(oauthGuide.matches[0]?.keywords).toEqual(
+		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
+	)
+	expect(oauthGuide.matches[0]).not.toHaveProperty('inputSchema')
+
+	const guideSpecs = {
+		kody_official_guide: specs.kody_official_guide,
+	} satisfies Record<string, CapabilitySpec>
+	const guideMatch = await searchCapabilities({
 		env,
 		query: 'guide',
 		limit: 1,
 		detail: true,
-		specs,
+		specs: guideSpecs,
 	})
 
-	expect(defaultDetail.matches[0]).not.toHaveProperty('inputSchema')
-	expect(defaultDetail.matches[0]).toMatchObject({
+	expect(guideMatch.matches[0]).not.toHaveProperty('inputSchema')
+	expect(guideMatch.matches[0]).toMatchObject({
 		inputTypeDefinition: expect.stringContaining('KodyOfficialGuideInput'),
 	})
-	expect(defaultDetail.matches[0]).not.toHaveProperty('outputSchema')
+	expect(guideMatch.matches[0]).not.toHaveProperty('outputSchema')
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {

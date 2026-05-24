@@ -45,7 +45,7 @@ function resetRepoPersistenceMocks() {
 	)
 }
 
-test('errorFields normalizes Error and non-Error values', () => {
+test('observability helpers normalize errors and emit resilient mcp-event logs', () => {
 	expect(errorFields(new TypeError('bad'))).toEqual({
 		errorName: 'TypeError',
 		errorMessage: 'bad',
@@ -54,10 +54,9 @@ test('errorFields normalizes Error and non-Error values', () => {
 		errorName: 'Unknown',
 		errorMessage: 'plain',
 	})
-})
 
-test('logMcpEvent writes mcp-event with JSON payload', () => {
 	const originalInfo = console.info
+	const originalWarn = console.warn
 	let tagArg: unknown
 	let jsonArg: unknown
 	console.info = ((tag: unknown, json?: unknown) => {
@@ -86,11 +85,7 @@ test('logMcpEvent writes mcp-event with JSON payload', () => {
 	expect(parsed.outcome).toBe('success')
 	expect(parsed.durationMs).toBe(42)
 	expect(typeof parsed.timestamp).toBe('string')
-})
 
-test('logMcpEvent swallows failures from console.info', () => {
-	const originalInfo = console.info
-	const originalWarn = console.warn
 	console.info = (() => {
 		throw new Error('console boom')
 	}) as typeof console.info
@@ -111,6 +106,23 @@ test('logMcpEvent swallows failures from console.info', () => {
 			}),
 		).not.toThrow()
 		expect(Array.isArray(warnArgs) && warnArgs[0]).toBe('mcp-event-failed')
+
+		console.info = () => {}
+		expect(() =>
+			logMcpEvent({
+				category: 'mcp',
+				tool: 'search',
+				toolName: 'search',
+				outcome: 'failure',
+				durationMs: 1,
+				baseUrl: 'https://example.com',
+				hasUser: false,
+				sandboxError: true,
+				errorName: 'Error',
+				errorMessage: 'user code failed',
+				cause: new Error('user code failed'),
+			}),
+		).not.toThrow()
 	} finally {
 		console.info = originalInfo
 		console.warn = originalWarn
@@ -250,30 +262,6 @@ test('package_save rejects package names outside the signed-in username scope', 
 		'package.json name "@other/observed-package" must use the authenticated user\'s package scope "@user/*".',
 	)
 	expect(repoMockModule.ensureEntitySource).not.toHaveBeenCalled()
-})
-
-test('logMcpEvent reports failure without throwing when Sentry is off', () => {
-	const originalInfo = console.info
-	console.info = () => {}
-	try {
-		expect(() =>
-			logMcpEvent({
-				category: 'mcp',
-				tool: 'search',
-				toolName: 'search',
-				outcome: 'failure',
-				durationMs: 1,
-				baseUrl: 'https://example.com',
-				hasUser: false,
-				sandboxError: true,
-				errorName: 'Error',
-				errorMessage: 'user code failed',
-				cause: new Error('user code failed'),
-			}),
-		).not.toThrow()
-	} finally {
-		console.info = originalInfo
-	}
 })
 
 test('package_save capability logs success for valid invocation', async () => {

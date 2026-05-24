@@ -4,39 +4,21 @@ import {
 	summarizeSchedulerJobOutcomes,
 } from './scheduler-logging.ts'
 
-test('summarizeSchedulerJobOutcomes keeps full fields while limiting count', () => {
-	const longMessage = 'x'.repeat(1300)
-
-	const result = summarizeSchedulerJobOutcomes([
-		{
-			jobId: 'job-123',
-			scheduleType: 'once',
-			outcome: 'failure',
-			nextRunAt: null,
-			deleted: true,
-			error: longMessage,
-			rescheduleError: longMessage,
-		},
-	])
-
-	expect(result).toEqual({
-		jobOutcomes: [
-			{
-				jobId: 'job-123',
-				scheduleType: 'once',
-				outcome: 'failure',
-				nextRunAt: null,
-				deleted: true,
-				error: longMessage,
-				rescheduleError: longMessage,
-			},
-		],
-	})
-})
-
-test('logJobSchedulerError truncates oversized fields and always emits a timestamp', () => {
+test('logJobSchedulerError truncates oversized fields, caps outcome count, and always emits a timestamp', () => {
 	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 	try {
+		const manyOutcomes = Array.from({ length: 11 }, (_, index) => ({
+			jobId: `job-${index}`,
+			scheduleType: 'once' as const,
+			outcome: 'success' as const,
+			nextRunAt: null,
+			deleted: false,
+		}))
+		expect(summarizeSchedulerJobOutcomes(manyOutcomes)).toEqual({
+			jobOutcomes: manyOutcomes.slice(0, 10),
+			truncatedJobOutcomeCount: 1,
+		})
+
 		logJobSchedulerError({
 			event: 'sync_alarm_failed',
 			userId: 'user-123',
