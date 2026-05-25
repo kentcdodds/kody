@@ -281,6 +281,19 @@ test('job_update updates safe mutable fields on an existing job', async () => {
 	expect(
 		mockModule.updateJob.mock.calls.at(-1)?.[0].body.schedule,
 	).not.toHaveProperty('run_at')
+
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Provide at least one mutable field to update.')
+	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
 })
 
 test('job_delete removes an existing job by id for the signed-in user', async () => {
@@ -320,7 +333,7 @@ test('job_delete removes an existing job by id for the signed-in user', async ()
 	})
 })
 
-test('job_run_now executes an existing job through the job manager', async () => {
+test('job_run_now executes jobs immediately and preserves failed one-off jobs for inspection', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -335,7 +348,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 			appId: 'app-123',
 		},
 	})
-	mockModule.runJobNowViaManager.mockResolvedValue({
+	mockModule.runJobNowViaManager.mockResolvedValueOnce({
 		job: {
 			id: 'job-123',
 			name: 'Immediate run',
@@ -379,7 +392,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 		deletedAfterRun: false,
 	})
 
-	const result = await jobRunNowCapability.handler(
+	const successResult = await jobRunNowCapability.handler(
 		{
 			id: 'job-123',
 		},
@@ -395,7 +408,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 		jobId: 'job-123',
 		callerContext,
 	})
-	expect(result).toEqual({
+	expect(successResult).toEqual({
 		job: {
 			job_id: 'job-123',
 			name: 'Immediate run',
@@ -438,20 +451,8 @@ test('job_run_now executes an existing job through the job manager', async () =>
 		},
 		deleted_after_run: false,
 	})
-})
 
-test('job_run_now preserves failed one-off jobs for inspection', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.runJobNowViaManager.mockResolvedValue({
+	mockModule.runJobNowViaManager.mockResolvedValueOnce({
 		job: {
 			id: 'job-once',
 			name: 'One-off run',
@@ -494,7 +495,7 @@ test('job_run_now preserves failed one-off jobs for inspection', async () => {
 		deletedAfterRun: false,
 	})
 
-	const result = await jobRunNowCapability.handler(
+	const failedOneOffResult = await jobRunNowCapability.handler(
 		{
 			id: 'job-once',
 		},
@@ -504,13 +505,13 @@ test('job_run_now preserves failed one-off jobs for inspection', async () => {
 		},
 	)
 
-	expect(result.deleted_after_run).toBe(false)
-	expect(result.execution).toEqual({
+	expect(failedOneOffResult.deleted_after_run).toBe(false)
+	expect(failedOneOffResult.execution).toEqual({
 		ok: false,
 		error: 'boom',
 		logs: ['ran job'],
 	})
-	expect(result.job.last_run_error).toBe('boom')
+	expect(failedOneOffResult.job.last_run_error).toBe('boom')
 })
 
 test('job_schedule covers recurring schedules and the one-off helper flow', async () => {
@@ -747,32 +748,6 @@ test('job capabilities require an authenticated user for scheduling, mutation, a
 	expect(mockModule.updateJob).not.toHaveBeenCalled()
 	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
-})
-
-test('job_update rejects requests without any mutable fields', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Provide at least one mutable field to update.')
-	expect(mockModule.updateJob).not.toHaveBeenCalled()
 })
 
 test('job inspection capabilities expose due-now state, history, and alarm status', async () => {

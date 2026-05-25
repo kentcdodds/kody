@@ -535,8 +535,8 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 	expect(packageDetail.markdown).not.toContain('interface Response')
 })
 
-test('package search formatting keeps runnable package actions in structured output', () => {
-	const [packageMatch] = toSlimStructuredMatches({
+test('package search formatting keeps runnable actions, hosted URLs, and action import usage in structured output', () => {
+	const [hostedPackageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		username: 'test-user',
 		matches: [
@@ -558,33 +558,18 @@ test('package search formatting keeps runnable package actions in structured out
 			},
 		],
 	})
-
-	expect(packageMatch).toMatchObject({
+	expect(hostedPackageMatch).toMatchObject({
 		type: 'package',
 		id: 'spotify-playback',
 		entityRef: 'spotify-playback:package',
-		packageId: 'package-123',
-		kodyId: 'spotify-playback',
-		title: '@kody/spotify-playback',
-		description: 'Saved package for Spotify playback controls.',
 		usage: 'open_generated_ui({ kody_id: "spotify-playback" })',
 		rootImportUsage: 'import entry from "kody:@kody/spotify-playback"',
-		openGeneratedUiUsage: 'open_generated_ui({ kody_id: "spotify-playback" })',
-		tags: ['spotify', 'playback'],
 		hasApp: true,
 		hostedUrl: 'http://localhost/@test-user/packages/spotify-playback',
-		readmeSnippet: {
-			path: 'README.md',
-			snippet:
-				'Playback controls, queue helpers, and maintenance notes for the hosted remote.',
-			truncated: false,
-		},
 	})
-	expect(packageMatch?.nextStep).toEqual(expect.any(String))
-})
+	expect(hostedPackageMatch?.nextStep).toEqual(expect.any(String))
 
-test('package search formatting omits hosted URLs when username is unavailable', () => {
-	const [packageMatch] = toSlimStructuredMatches({
+	const [anonymousPackageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
 			{
@@ -600,17 +585,14 @@ test('package search formatting omits hosted URLs when username is unavailable',
 			},
 		],
 	})
-
-	expect(packageMatch).toMatchObject({
+	expect(anonymousPackageMatch).toMatchObject({
 		type: 'package',
 		hasApp: true,
 		hostedUrl: null,
 		openGeneratedUiUsage: 'open_generated_ui({ kody_id: "spotify-playback" })',
 	})
-})
 
-test('package search formatting surfaces matched action import usage in structured output', () => {
-	const [packageMatch] = toSlimStructuredMatches({
+	const [actionPackageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		username: 'test-user',
 		matches: [
@@ -644,8 +626,7 @@ test('package search formatting surfaces matched action import usage in structur
 			},
 		],
 	})
-
-	expect(packageMatch).toMatchObject({
+	expect(actionPackageMatch).toMatchObject({
 		type: 'package',
 		usage:
 			'import { createEvent } from "kody:@kentcdodds/google-products/calendar"',

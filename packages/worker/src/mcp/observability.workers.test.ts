@@ -162,8 +162,33 @@ test('package_save capability logs parse_input failure and rethrows', async () =
 	expect(event.failurePhase).toBe('parse_input')
 })
 
-test('package_save rejects invalid package.json before persistence', async () => {
+test('package_save rejects invalid manifests before persistence', async () => {
+	resetRepoPersistenceMocks()
 	const handler = capabilityMap['package_save'].handler
+	const signedInContext = {
+		env: {
+			APP_DB: {
+				prepare() {
+					return {
+						bind() {
+							return {
+								first: async () => ({ username: 'user' }),
+							}
+						},
+					}
+				},
+			},
+		} as unknown as Env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'user',
+			},
+		}),
+	}
+
 	await expect(
 		handler(
 			{
@@ -180,36 +205,10 @@ test('package_save rejects invalid package.json before persistence', async () =>
 					},
 				],
 			},
-			{
-				env: {
-					APP_DB: {
-						prepare() {
-							return {
-								bind() {
-									return {
-										first: async () => ({ username: 'user' }),
-									}
-								},
-							}
-						},
-					},
-				} as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-					user: {
-						userId: 'user-1',
-						email: 'user@example.com',
-						displayName: 'user',
-					},
-				}),
-			},
+			signedInContext,
 		),
 	).rejects.toThrow('Invalid package.json')
-})
 
-test('package_save rejects package names outside the signed-in username scope', async () => {
-	resetRepoPersistenceMocks()
-	const handler = capabilityMap['package_save'].handler
 	await expect(
 		handler(
 			{
@@ -234,29 +233,7 @@ test('package_save rejects package names outside the signed-in username scope', 
 					},
 				],
 			},
-			{
-				env: {
-					APP_DB: {
-						prepare() {
-							return {
-								bind() {
-									return {
-										first: async () => ({ username: 'user' }),
-									}
-								},
-							}
-						},
-					},
-				} as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-					user: {
-						userId: 'user-1',
-						email: 'user@example.com',
-						displayName: 'user',
-					},
-				}),
-			},
+			signedInContext,
 		),
 	).rejects.toThrow(
 		'package.json name "@other/observed-package" must use the authenticated user\'s package scope "@user/*".',
