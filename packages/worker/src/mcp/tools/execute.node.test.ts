@@ -39,7 +39,7 @@ function mockPerformanceSequence(...values: Array<number>) {
 	})
 }
 
-async function getExecuteRegistration(
+async function getExecuteHandler(
 	callerContext: {
 		baseUrl: string
 		user: null | {
@@ -66,26 +66,8 @@ async function getExecuteRegistration(
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
-	const [name, , handler] = registerTool.mock.calls[0] ?? []
-	expect(name).toBe('execute')
+	const [, , handler] = registerTool.mock.calls[0] ?? []
 	expect(typeof handler).toBe('function')
-	return { handler }
-}
-
-async function getExecuteHandler(
-	callerContext: {
-		baseUrl: string
-		user: null | {
-			userId: string
-			email?: string
-			displayName?: string
-		}
-	} = {
-		baseUrl: 'https://example.com',
-		user: null,
-	},
-) {
-	const { handler } = await getExecuteRegistration(callerContext)
 	return handler as (input: {
 		code: string
 		storageId?: string
@@ -107,14 +89,14 @@ async function getExecuteHandler(
 			}
 			result: unknown
 			logs: Array<unknown>
+			error?: string
 		}
 		isError: boolean
 	}>
 }
 
-test('execute tool passes through raw MCP content blocks in success responses', async () => {
+test('execute tool serializes successes, binds storage, passes package invoke tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
-	mockPerformanceSequence(100, 142)
 	const rawContent: Array<ContentBlock> = [
 		{
 			type: 'image',
@@ -126,6 +108,7 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 			text: 'Screenshot of https://example.com',
 		},
 	]
+	mockPerformanceSequence(100, 142)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: {
 			__mcpContent: rawContent,
@@ -136,20 +119,20 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 		JSON.stringify({ __mcpContent: rawContent }),
 	).byteLength
 
-	const response = await handler({
+	const mcpContentResponse = await handler({
 		code: 'async () => ({ __mcpContent: [] })',
 		conversationId: 'conv-123',
 	})
 
-	expect(response.isError).toBe(false)
-	expect(response.content).toEqual([
+	expect(mcpContentResponse.isError).toBe(false)
+	expect(mcpContentResponse.content).toEqual([
 		{
 			type: 'text',
 			text: 'conversationId: conv-123',
 		},
 		...rawContent,
 	])
-	expect(response.structuredContent).toEqual({
+	expect(mcpContentResponse.structuredContent).toEqual({
 		conversationId: 'conv-123',
 		timing: {
 			startedAt: expect.any(String),
@@ -160,23 +143,20 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 		result: null,
 		logs: [{ level: 'info', message: 'captured screenshot' }],
 	})
-})
 
-test('execute tool keeps serializing normal success results as text', async () => {
-	const handler = await getExecuteHandler()
 	mockPerformanceSequence(10, 19)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
 	})
 
-	const response = await handler({
+	const jsonResponse = await handler({
 		code: 'async () => ({ ok: true })',
 		conversationId: 'conv-456',
 	})
 
-	expect(response.isError).toBe(false)
-	expect(response.content).toEqual([
+	expect(jsonResponse.isError).toBe(false)
+	expect(jsonResponse.content).toEqual([
 		{
 			type: 'text',
 			text: 'conversationId: conv-456',
@@ -186,7 +166,7 @@ test('execute tool keeps serializing normal success results as text', async () =
 			text: '{\n  "ok": true\n}',
 		},
 	])
-	expect(response.structuredContent).toEqual({
+	expect(jsonResponse.structuredContent).toEqual({
 		conversationId: 'conv-456',
 		timing: {
 			startedAt: expect.any(String),
@@ -197,24 +177,21 @@ test('execute tool keeps serializing normal success results as text', async () =
 		result: { ok: true },
 		logs: [],
 	})
-})
 
-test('execute tool binds storage id and writable flag when provided', async () => {
-	const handler = await getExecuteHandler()
 	mockPerformanceSequence(1, 8)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
 	})
 
-	const response = await handler({
+	const storageResponse = await handler({
 		code: 'async () => ({ ok: true })',
 		storageId: 'job:lights-off',
 		writable: true,
 		conversationId: 'conv-789',
 	})
 
-	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			storageContext: {
@@ -233,7 +210,7 @@ test('execute tool binds storage id and writable flag when provided', async () =
 			},
 		}),
 	)
-	expect(response.structuredContent).toEqual({
+	expect(storageResponse.structuredContent).toEqual({
 		conversationId: 'conv-789',
 		storage: { id: 'job:lights-off' },
 		timing: {
@@ -245,9 +222,7 @@ test('execute tool binds storage id and writable flag when provided', async () =
 		result: { ok: true },
 		logs: [],
 	})
-})
 
-test('execute tool passes package invoke tools for authenticated callers', async () => {
 	const packageInvokeTools = {
 		check: vi.fn(),
 		invoke: vi.fn(),
@@ -264,14 +239,14 @@ test('execute tool passes package invoke tools for authenticated callers', async
 			displayName: 'Me',
 		},
 	}
-	const handler = await getExecuteHandler(callerContext)
+	const authenticatedHandler = await getExecuteHandler(callerContext)
 	mockPerformanceSequence(9, 12)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
 	})
 
-	await handler({
+	await authenticatedHandler({
 		code: 'export default async () => ({ ok: true })',
 		conversationId: 'conv-packages',
 	})
@@ -281,7 +256,7 @@ test('execute tool passes package invoke tools for authenticated callers', async
 		baseUrl: 'https://example.com',
 		callerContext: expect.objectContaining(callerContext),
 	})
-	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.objectContaining(callerContext),
 		'export default async () => ({ ok: true })',
@@ -290,24 +265,21 @@ test('execute tool passes package invoke tools for authenticated callers', async
 			packageInvokeTools,
 		}),
 	)
-})
 
-test('execute tool truncates returned strings over responseLimit', async () => {
-	const handler = await getExecuteHandler()
 	mockPerformanceSequence(20, 25)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: 'hello world',
 		logs: [],
 	})
 
-	const response = await handler({
+	const truncatedStringResponse = await handler({
 		code: 'async () => "hello world"',
 		responseLimit: 5,
 		conversationId: 'conv-truncated-string',
 	})
 
-	expect(response.isError).toBe(false)
-	expect(response.content).toEqual([
+	expect(truncatedStringResponse.isError).toBe(false)
+	expect(truncatedStringResponse.content).toEqual([
 		{
 			type: 'text',
 			text: 'conversationId: conv-truncated-string',
@@ -317,7 +289,7 @@ test('execute tool truncates returned strings over responseLimit', async () => {
 			text: 'hello\n\n--- TRUNCATED ---\nReturned value was 11 bytes, exceeding responseLimit 5 bytes; output was truncated. Project fields before returning.',
 		},
 	])
-	expect(response.structuredContent).toEqual({
+	expect(truncatedStringResponse.structuredContent).toEqual({
 		conversationId: 'conv-truncated-string',
 		timing: {
 			startedAt: expect.any(String),
@@ -330,24 +302,21 @@ test('execute tool truncates returned strings over responseLimit', async () => {
 		result: 'hello',
 		logs: [],
 	})
-})
 
-test('execute tool replaces non-string returns over responseLimit with a sentinel', async () => {
-	const handler = await getExecuteHandler()
 	mockPerformanceSequence(30, 40)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { rows: [{ id: 'message-1', payload: 'abcdef' }] },
 		logs: [],
 	})
 
-	const response = await handler({
+	const truncatedObjectResponse = await handler({
 		code: 'async () => ({ rows: [{ id: "message-1", payload: "abcdef" }] })',
 		responseLimit: 10,
 		conversationId: 'conv-truncated-object',
 	})
 
-	expect(response.isError).toBe(false)
-	expect(response.structuredContent).toEqual({
+	expect(truncatedObjectResponse.isError).toBe(false)
+	expect(truncatedObjectResponse.structuredContent).toEqual({
 		conversationId: 'conv-truncated-object',
 		timing: {
 			startedAt: expect.any(String),

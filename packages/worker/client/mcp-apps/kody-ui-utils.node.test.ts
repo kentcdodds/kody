@@ -387,7 +387,38 @@ test('runtime-backed helpers time out if the runtime never becomes ready', async
 	}
 })
 
-test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and only includes the module script when needed', () => {
+test('generated UI runtime head injection bootstraps state, defers entry init until ready, and only includes the module script when needed', () => {
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'hosted',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'mcp',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(false)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'interactive',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'complete',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
+
 	const defaultHead = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
 		params: {},
@@ -423,37 +454,4 @@ test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and o
 		params: {},
 	})
 	expect(shellRenderedHead).not.toMatch(/<script type="module"/)
-})
-
-test('hosted and mcp runtimes initialize immediately on import', () => {
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'loading',
-			bootstrapMode: 'hosted',
-		}),
-	).toBe(true)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'loading',
-			bootstrapMode: 'mcp',
-		}),
-	).toBe(true)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'loading',
-			bootstrapMode: 'entry',
-		}),
-	).toBe(false)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'interactive',
-			bootstrapMode: 'entry',
-		}),
-	).toBe(true)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'complete',
-			bootstrapMode: 'entry',
-		}),
-	).toBe(true)
 })

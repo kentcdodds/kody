@@ -160,79 +160,72 @@ test('isPackageInvocationApiRequest matches the external package invocation rout
 	expect(isPackageInvocationApiRequest('/api/me')).toBe(false)
 })
 
-test('package invocation API returns 401 when bearer token is missing', async () => {
-	const response = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
-			},
-		),
+test('package invocation API rejects missing, invalid, and unsafe tokens before invoking exports', async () => {
+	const route =
+		'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created'
+	const body = JSON.stringify({ idempotencyKey: 'evt-1' })
+
+	const missingTokenResponse = await handlePackageInvocationApiRequest(
+		new Request(route, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body,
+		}),
 		await createEnv(),
 		createContext(),
 	)
 
-	expect(response.status).toBe(401)
-	expect(response.headers.get('WWW-Authenticate')).toBe(
+	expect(missingTokenResponse.status).toBe(401)
+	expect(missingTokenResponse.headers.get('WWW-Authenticate')).toBe(
 		'Bearer realm="package-invocations"',
 	)
-	await expect(response.json()).resolves.toEqual({
+	await expect(missingTokenResponse.json()).resolves.toEqual({
 		ok: false,
 		error: {
 			code: 'unauthorized',
 			message: 'Unauthorized',
 		},
 	})
-})
 
-test('package invocation API returns 401 for invalid private tokens', async () => {
-	const response = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer wrong-token',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
+	const invalidTokenResponse = await handlePackageInvocationApiRequest(
+		new Request(route, {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer wrong-token',
+				'Content-Type': 'application/json',
 			},
-		),
+			body,
+		}),
 		await createEnv(),
 		createContext(),
 	)
 
-	expect(response.status).toBe(401)
-	await expect(response.json()).resolves.toEqual({
+	expect(invalidTokenResponse.status).toBe(401)
+	await expect(invalidTokenResponse.json()).resolves.toEqual({
 		ok: false,
 		error: {
 			code: 'unauthorized',
 			message: 'Invalid package invocation token.',
 		},
 	})
-})
 
-test('package invocation API fails closed when token touch loses revocation race', async () => {
-	const response = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
+	invocationMockModule.invokePackageExport.mockClear()
+
+	const revocationRaceResponse = await handlePackageInvocationApiRequest(
+		new Request(route, {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer private-token-123',
+				'Content-Type': 'application/json',
 			},
-		),
+			body,
+		}),
 		await createEnv({ touchChanges: 0 }),
 		createContext(),
 	)
 
-	expect(response.status).toBe(401)
-	await expect(response.json()).resolves.toEqual({
+	expect(revocationRaceResponse.status).toBe(401)
+	await expect(revocationRaceResponse.json()).resolves.toEqual({
 		ok: false,
 		error: {
 			code: 'unauthorized',
@@ -240,21 +233,16 @@ test('package invocation API fails closed when token touch loses revocation race
 		},
 	})
 	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
-})
 
-test('package invocation API fails closed when token scope JSON is malformed', async () => {
-	const response = await handlePackageInvocationApiRequest(
-		new Request(
-			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer private-token-123',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
+	const malformedScopeResponse = await handlePackageInvocationApiRequest(
+		new Request(route, {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer private-token-123',
+				'Content-Type': 'application/json',
 			},
-		),
+			body,
+		}),
 		await createEnv({
 			tokenRow: {
 				package_kody_ids_json: '{bad json',
@@ -263,8 +251,8 @@ test('package invocation API fails closed when token scope JSON is malformed', a
 		createContext(),
 	)
 
-	expect(response.status).toBe(401)
-	await expect(response.json()).resolves.toEqual({
+	expect(malformedScopeResponse.status).toBe(401)
+	await expect(malformedScopeResponse.json()).resolves.toEqual({
 		ok: false,
 		error: {
 			code: 'unauthorized',

@@ -5,7 +5,7 @@ import {
 	normalizeSkillParameters,
 } from './skill-parameters.ts'
 
-test('module parameter definitions normalize names and resolve one workflow end to end', () => {
+test('module parameter definitions normalize names, validate inputs, and run parameterized skill code', async () => {
 	const definitions = normalizeSkillParameters([
 		{
 			name: ' owner ',
@@ -46,18 +46,18 @@ test('module parameter definitions normalize names and resolve one workflow end 
 		}),
 	).toThrow('Unknown module parameter(s): extra.')
 
-	expect(
-		applySkillParameters({ definitions, values: { owner: 'kody' } }),
-	).toEqual({
+	const resolved = applySkillParameters({
+		definitions,
+		values: { owner: 'kody' },
+	})
+	expect(resolved).toEqual({
 		owner: 'kody',
 		limit: 5,
 	})
-})
 
-test('buildParameterizedSkillCode applies params through the generated wrapper', async () => {
 	const code = await buildParameterizedSkillCode(
 		'async (params) => params.owner',
-		{ owner: 'kody' },
+		resolved,
 	)
 	const module = Function(`return (${code})`)() as () => Promise<unknown>
 	await expect(module()).resolves.toBe('kody')
