@@ -22,8 +22,11 @@ request routing, package runtime plumbing, and OAuth-protected MCP endpoints.
 The project favors a compact MCP surface with powerful `search` and Code Mode
 `execute` flows over a large static tool catalog.
 
-This project is intentionally single-user and is scoped to `me@kentcdodds.com`.
-The repo follows several [epicflare](https://github.com/epicweb-dev/epicflare)
+Kody is a multi-user personal assistant: each signed-in user gets a fully
+isolated assistant (packages, jobs, secrets, values, memories, and related
+state). Tests and fixtures often reference `me@kentcdodds.com` as the
+maintainer's primary account; that address is not privileged at runtime. The
+repo follows several [epicflare](https://github.com/epicweb-dev/epicflare)
 starter conventions.
 
 The repo is organized as an Nx monorepo, with shared modules in
