@@ -37,6 +37,7 @@
     "lint:fix": "oxlint . --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
+    "docs:present-tense": "node tools/present-tense-documentation.ts",
     "migrate:local": "node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local",
     "migrate:e2e": "node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local --persist-to .wrangler/state/e2e",
     "preview": "nx run worker:build-client && npm run migrate:local && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local",

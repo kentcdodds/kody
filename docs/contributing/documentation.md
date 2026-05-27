@@ -25,6 +25,11 @@ deploy phases. Outside those procedures, still describe the current design in
 plain language. Quoted validation errors and runtime messages should match what
 the product returns, even when the wording contrasts with older manifest shapes.
 
+**Regression check.** `tools/present-tense-documentation.node.test.ts` scans
+usage and contributing markdown, MCP server instructions, and client UI copy for
+changelog-style phrases. Run `node tools/present-tense-documentation.ts` for a
+standalone report.
+
 **Stay lightweight but valuable.** Prefer small, accurate pages over large stale
 ones. **Garden** docs when behavior changes: update or delete sections in the
 same change as the code when possible. Remove duplication between pages by
