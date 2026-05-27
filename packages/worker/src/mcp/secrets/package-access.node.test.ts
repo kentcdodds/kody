@@ -28,21 +28,30 @@ const {
 	resolvePackageMountedSecret,
 } = await import('./package-access.ts')
 
-test('resolvePackageMountedSecret rejects calls without package appId context', async () => {
+test('resolvePackageMountedSecret rejects package runtime calls without a matching appId', async () => {
+	const runtimeError =
+		'Package secret access is only available inside server-side package runtime contexts.'
+	const baseInput = {
+		env: {} as Env,
+		packageId: 'pkg-1',
+		alias: 'discordBotToken',
+		callerContext: {
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
+			remoteConnectors: null,
+			repoContext: null,
+		},
+	}
+
 	await expect(
 		resolvePackageMountedSecret({
-			env: {} as Env,
-			packageId: 'pkg-1',
-			alias: 'discordBotToken',
+			...baseInput,
 			callerContext: {
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-				},
-				remoteConnectors: null,
-				repoContext: null,
+				...baseInput.callerContext,
 				storageContext: {
 					sessionId: null,
 					appId: null,
@@ -50,26 +59,13 @@ test('resolvePackageMountedSecret rejects calls without package appId context', 
 				},
 			},
 		}),
-	).rejects.toThrow(
-		'Package secret access is only available inside server-side package runtime contexts.',
-	)
-})
+	).rejects.toThrow(runtimeError)
 
-test('resolvePackageMountedSecret rejects mismatched package appId context', async () => {
 	await expect(
 		resolvePackageMountedSecret({
-			env: {} as Env,
-			packageId: 'pkg-1',
-			alias: 'discordBotToken',
+			...baseInput,
 			callerContext: {
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-				},
-				remoteConnectors: null,
-				repoContext: null,
+				...baseInput.callerContext,
 				storageContext: {
 					sessionId: null,
 					appId: 'pkg-2',
@@ -77,9 +73,7 @@ test('resolvePackageMountedSecret rejects mismatched package appId context', asy
 				},
 			},
 		}),
-	).rejects.toThrow(
-		'Package secret access is only available inside server-side package runtime contexts.',
-	)
+	).rejects.toThrow(runtimeError)
 })
 
 test('resolvePackageMountedSecret resolves mounted secret when package appId matches', async () => {
@@ -170,7 +164,6 @@ test('package access helpers treat missing approvals consistently', () => {
 			},
 		],
 	})
-	expect(approvalMessage).toBeTypeOf('string')
 	expect(parsePackageAccessRequiredMessage(approvalMessage ?? '')).toEqual({
 		secretName: 'discordBotTokenKentPersonalAutomation',
 		packageName: 'discord-gateway',

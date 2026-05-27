@@ -318,7 +318,7 @@ test('keeps truncated metadata parseable', async () => {
 	expect(listed[0]?.metadata).toMatchObject({
 		__truncated__: true,
 	})
-	expect(typeof listed[0]?.metadata['preview']).toBe('string')
+	expect(listed[0]?.metadata['preview']).toEqual(expect.any(String))
 })
 
 test('retains the newest log entries when log count exceeds the cap', async () => {

@@ -4,7 +4,7 @@ import {
 	parseRepoGitCommands,
 } from './repo-session-commands.ts'
 
-test('parseRepoGitCommands parses a git apply heredoc and follow-up commands', () => {
+test('parseRepoGitCommands handles heredocs, delimiters, errors, and quoted operands', () => {
 	const commands = [
 		"git apply <<'PATCH'",
 		'--- a/src/index.ts',
@@ -38,9 +38,7 @@ test('parseRepoGitCommands parses a git apply heredoc and follow-up commands', (
 			message: 'update package',
 		},
 	])
-})
 
-test('parseRepoGitCommands reports line-specific unsupported command errors', () => {
 	expect(() => parseRepoGitCommands('git status\nnpm test')).toThrow(
 		new RepoCommandParseError({
 			line: 2,
@@ -48,10 +46,8 @@ test('parseRepoGitCommands reports line-specific unsupported command errors', ()
 			reason: 'commands must start with "git".',
 		}),
 	)
-})
 
-test('parseRepoGitCommands does not treat indented delimiter text as heredoc close', () => {
-	const commands = [
+	const indentedDelimiterCommands = [
 		"git apply <<'PATCH'",
 		'--- a/src/index.ts',
 		'+++ b/src/index.ts',
@@ -61,21 +57,16 @@ test('parseRepoGitCommands does not treat indented delimiter text as heredoc clo
 		'+new',
 		'PATCH',
 	].join('\n')
+	const parsedIndented = parseRepoGitCommands(indentedDelimiterCommands)
+	expect(parsedIndented).toHaveLength(1)
+	expect(parsedIndented[0]).toMatchObject({ kind: 'apply' })
+	expect(
+		parsedIndented[0]?.kind === 'apply' ? parsedIndented[0].patch : '',
+	).toContain(' PATCH')
 
-	const parsed = parseRepoGitCommands(commands)
-
-	expect(parsed).toHaveLength(1)
-	expect(parsed[0]).toMatchObject({ kind: 'apply' })
-	expect(parsed[0]?.kind === 'apply' ? parsed[0].patch : '').toContain(' PATCH')
-})
-
-test('parseRepoGitCommands explains malformed git apply usage', () => {
 	expect(() => parseRepoGitCommands('git apply patch.diff')).toThrow(
 		/git apply requires heredoc form/,
 	)
-})
-
-test('parseRepoGitCommands rejects empty quoted operands without misparsing flags', () => {
 	expect(() => parseRepoGitCommands('git checkout -b ""')).toThrow(
 		/branch name cannot be empty/,
 	)

@@ -79,7 +79,7 @@ test('logJobSchedulerError truncates oversized fields, caps outcome count, and a
 		const timestampPayload = JSON.parse(
 			(errorSpy.mock.calls[2] ?? [])[1] as string,
 		) as Record<string, unknown>
-		expect(typeof timestampPayload.timestamp).toBe('string')
+		expect(timestampPayload.timestamp).toEqual(expect.any(String))
 		expect(timestampPayload.timestamp).not.toBe('')
 	} finally {
 		errorSpy.mockRestore()

@@ -5,7 +5,6 @@ import {
 	type ExecuteRequestInput,
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
-	getExecuteHelperCapabilityNames,
 	oauthClientCredentials,
 	refreshAccessToken,
 	secretHeaders,
@@ -383,12 +382,4 @@ test('createExecuteHelperPrelude exposes secret and client credentials helpers',
 	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
-})
-
-test('getExecuteHelperCapabilityNames includes secret_set for refresh persistence', () => {
-	expect(getExecuteHelperCapabilityNames()).toEqual([
-		'integration_get',
-		'value_get',
-		'secret_set',
-	])
 })

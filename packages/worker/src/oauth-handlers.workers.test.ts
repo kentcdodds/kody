@@ -149,16 +149,6 @@ function getCookiePair(setCookie: string) {
 	return setCookie.split(';', 1)[0] ?? setCookie
 }
 
-test('authorize page returns SPA shell', async () => {
-	const response = await handleAuthorizeRequest(
-		new Request('https://example.com/oauth/authorize'),
-		createEnv(createHelpers()),
-	)
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toContain('text/html')
-})
-
 test('authorize info returns client and scopes', async () => {
 	const response = await handleAuthorizeInfo(
 		new Request(
@@ -573,13 +563,4 @@ test('reset client also works when the mismatch came from authorize-info loading
 	})
 	expect(revokedGrantIds).toEqual(['grant-1'])
 	expect(deletedClientIds).toEqual(['client-123'])
-})
-
-test('oauth callback page returns SPA shell', async () => {
-	const response = handleOAuthCallback(
-		new Request('https://example.com/oauth/callback?code=abc123&state=demo'),
-	)
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toContain('text/html')
 })

@@ -219,8 +219,6 @@ test('async helpers read installed runtime state', async () => {
 
 	expect(kodyWidget.params).toEqual({})
 	expect(kodyWidget.appBackend).toBeNull()
-	expect(typeof kodyWidget.sendMessage).toBe('function')
-	expect(typeof kodyWidget.executeCode).toBe('function')
 
 	runtimeState.install({
 		mode: 'mcp',

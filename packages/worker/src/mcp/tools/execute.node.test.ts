@@ -67,7 +67,6 @@ async function getExecuteHandler(
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
 	const [, , handler] = registerTool.mock.calls[0] ?? []
-	expect(typeof handler).toBe('function')
 	return handler as (input: {
 		code: string
 		storageId?: string

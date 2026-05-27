@@ -26,7 +26,6 @@ test('kody_official_guide fetches markdown and surfaces fetch failures', async (
 			ctx,
 		)
 		expect(result.body).toBe('# Hello\n\nbody')
-		expect(typeof result.title).toBe('string')
 		expect(result.title.length).toBeGreaterThan(0)
 	} finally {
 		globalThis.fetch = originalFetch

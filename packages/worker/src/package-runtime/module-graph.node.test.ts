@@ -653,7 +653,6 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 	try {
 		const proxyModule = await moduleGraph.importModule(proxyEntry?.[0] ?? '')
 		expect(proxyModule.marker).toBe('provider')
-		expect(typeof proxyModule.default).toBe('function')
 		expect(proxyModule.default({ value: 'from-published-artifact' })).toEqual({
 			ok: true,
 			value: 'from-published-artifact',

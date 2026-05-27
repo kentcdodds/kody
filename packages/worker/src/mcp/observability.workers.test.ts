@@ -78,13 +78,12 @@ test('observability helpers normalize errors and emit resilient mcp-event logs',
 	}
 
 	expect(tagArg).toBe('mcp-event')
-	expect(typeof jsonArg).toBe('string')
 	const parsed = JSON.parse(jsonArg as string) as Record<string, unknown>
 	expect(parsed.category).toBe('mcp')
 	expect(parsed.tool).toBe('search')
 	expect(parsed.outcome).toBe('success')
 	expect(parsed.durationMs).toBe(42)
-	expect(typeof parsed.timestamp).toBe('string')
+	expect(parsed.timestamp).toEqual(expect.any(String))
 
 	console.info = (() => {
 		throw new Error('console boom')
@@ -447,7 +446,7 @@ test('package_save capability logs success for valid invocation', async () => {
 				}),
 			},
 		)
-		expect(typeof (result as { package_id: string }).package_id).toBe('string')
+		expect((result as { package_id: string }).package_id).toBeTruthy()
 		expect((result as { has_app: boolean }).has_app).toBe(true)
 	} finally {
 		console.info = originalInfo

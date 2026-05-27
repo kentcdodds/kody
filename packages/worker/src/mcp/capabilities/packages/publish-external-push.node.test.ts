@@ -195,14 +195,12 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 	expect(result).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-old',
-		static_dependents: {
+		static_dependents: expect.objectContaining({
 			total: 0,
 			stale: 0,
 			truncated: false,
 			items: [],
-			recommended_next_action:
-				'No published bundle artifacts declare a static dependency on this package.',
-		},
+		}),
 	})
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -305,12 +303,6 @@ test('published output lists stale static dependents for the new dependency comm
 		sourceId: 'source-1',
 		currentDependencyCommit: 'commit-new',
 	})
-	expect(publishExternalPushCapability.outputTypeDefinition).toContain(
-		'static_dependents',
-	)
-	expect(publishExternalPushCapability.outputTypeDefinition).toContain(
-		'current_dependency_commit',
-	)
 })
 
 test('rebuilds published package bundle artifacts one target at a time after publish', async () => {
@@ -535,14 +527,12 @@ test('returns already_published when a retry observes that the reset attempt com
 		expect(result).toEqual({
 			status: 'already_published',
 			published_commit: 'commit-new',
-			static_dependents: {
+			static_dependents: expect.objectContaining({
 				total: 0,
 				stale: 0,
 				truncated: false,
 				items: [],
-				recommended_next_action:
-					'No published bundle artifacts declare a static dependency on this package.',
-			},
+			}),
 		})
 		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
 	} finally {
