@@ -454,49 +454,38 @@ test('reset client deletes stale client registrations after invalid client misma
 	expect(deletedClientIds).toEqual(['client-123'])
 })
 
-test('reset client rejects invalid client mismatch without verification cookie', async () => {
-	const response = await handleAuthorizeRequest(
-		new Request(
-			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
-			{
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/x-www-form-urlencoded',
+test('reset client rejects requests without a stale or mismatched client registration', async () => {
+	const env = createEnv(createHelpers())
+	const postReset = (errorDescription: string) =>
+		handleAuthorizeRequest(
+			new Request(
+				`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(errorDescription)}`,
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/x-www-form-urlencoded',
+					},
+					body: new URLSearchParams({ decision: 'reset-client' }),
 				},
-				body: new URLSearchParams({ decision: 'reset-client' }),
-			},
-		),
-		createEnv(createHelpers()),
-	)
+			),
+			env,
+		)
 
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
+	const withoutVerificationCookie = await postReset(
+		invalidClientIdMismatchMessage,
+	)
+	expect(withoutVerificationCookie.status).toBe(400)
+	await expect(withoutVerificationCookie.json()).resolves.toEqual({
 		ok: false,
 		error:
 			'Stored client cleanup is only available for stale or mismatched client registrations.',
 		code: 'invalid_request',
 	})
-})
 
-test('reset client is rejected when the request is not a redirect mismatch', async () => {
-	const response = await handleAuthorizeRequest(
-		new Request(
-			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=Authorization%20error`,
-			{
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: new URLSearchParams({ decision: 'reset-client' }),
-			},
-		),
-		createEnv(createHelpers()),
-	)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
+	const unrelatedAuthorizationError = await postReset('Authorization error')
+	expect(unrelatedAuthorizationError.status).toBe(400)
+	await expect(unrelatedAuthorizationError.json()).resolves.toEqual({
 		ok: false,
 		error:
 			'Stored client cleanup is only available for stale or mismatched client registrations.',

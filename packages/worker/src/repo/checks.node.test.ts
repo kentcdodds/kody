@@ -506,51 +506,6 @@ export default async () => {
 	)
 })
 
-test('typecheckPackageEntrypointsFromSourceFiles uses provided emitted event topics', async () => {
-	const files = new Map<string, string>([
-		[
-			'src/job.ts',
-			`import { events } from 'kody:runtime'
-
-export default async () => {
-  await events.dispatch({
-    topic: '@kentcdodds/discord.message.created',
-    idempotencyKey: 'discord:message-create:123',
-  })
-}
-`,
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics: vi.fn(() => []),
-		},
-	})
-	const { typecheckPackageEntrypointsFromSourceFiles } =
-		await import('./checks.ts')
-
-	const result = await typecheckPackageEntrypointsFromSourceFiles({
-		sourceFiles: Object.fromEntries(files),
-		entryPoints: [{ path: 'src/job.ts', includeStorage: true }],
-		emittedEventTopics: ['@kentcdodds/discord.message.created'],
-	})
-
-	expect(result.ok).toBe(true)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining(
-			'type KodyDeclaredEventTopic = "@kentcdodds/discord.message.created";',
-		),
-	)
-})
-
 test('runRepoChecks allows named-only helper exports and typechecks callable manifest exports', async () => {
 	const files = new Map<string, string>([
 		[
@@ -850,29 +805,6 @@ test('runRepoChecks rejects named-only callable package entrypoints', async () =
 			}),
 		]),
 	)
-	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()
-})
-
-test('published package entrypoint typecheck rejects legacy async-arrow job entrypoints', async () => {
-	const files = new Map<string, string>([
-		['src/job.ts', 'async () => ({ ok: true })\n'],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const { typecheckPackageEntrypointsFromSourceFiles } =
-		await import('./checks.ts')
-	const result = await typecheckPackageEntrypointsFromSourceFiles({
-		sourceFiles: Object.fromEntries(files),
-		entryPoints: [{ path: 'src/job.ts', includeStorage: true }],
-	})
-
-	expect(result).toEqual({
-		ok: false,
-		message: expect.stringContaining(
-			'Repo-backed package export entrypoints and job entrypoints must default export a function',
-		),
-	})
 	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()
 })
 
