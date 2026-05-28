@@ -276,7 +276,9 @@ export function buildPublishGitNote(input: {
 		sessionId: input.sessionId ?? null,
 		conversationId: input.conversationId ?? null,
 		previousPublishedCommit:
-			input.previousPublishedCommit ?? input.source.published_commit,
+			input.previousPublishedCommit !== undefined
+				? input.previousPublishedCommit
+				: input.source.published_commit,
 		baseCommit: input.baseCommit ?? null,
 		checks: input.checks ?? null,
 	}
@@ -465,7 +467,9 @@ function isMissingPublishGitNoteError(error: unknown) {
 		return true
 	}
 	const message = error instanceof Error ? error.message : String(error)
-	return /refs\/notes\/commits|could not find|not found/i.test(message)
+	return /refs\/notes\/commits|could not find refs\/notes\/commits/i.test(
+		message,
+	)
 }
 
 export function parsePublishGitNote(raw: string): KodyPublishGitNote | null {

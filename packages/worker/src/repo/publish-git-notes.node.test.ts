@@ -93,6 +93,23 @@ test('buildPublishGitNote captures publish provenance and checks', () => {
 	})
 })
 
+test('buildPublishGitNote preserves explicit null previousPublishedCommit', () => {
+	const note = buildPublishGitNote({
+		publishedBy: 'source_bootstrap',
+		source: {
+			id: 'source-1',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'package-pkg-1',
+			published_commit: 'commit-stale',
+		},
+		commit: 'commit-new',
+		previousPublishedCommit: null,
+	})
+
+	expect(note.previousPublishedCommit).toBeNull()
+})
+
 test('parsePublishGitNote validates versioned publish notes', async () => {
 	const { parsePublishGitNote } = await import('./publish-git-notes.ts')
 	expect(
@@ -219,6 +236,18 @@ test('readPublishGitNoteFromArtifactsRepo propagates fetch auth failures', async
 			commitOid: 'commit-1',
 		}),
 	).rejects.toThrow('401 Unauthorized')
+})
+
+test('readPublishGitNoteFromArtifactsRepo propagates repository-not-found fetch failures', async () => {
+	mockGit.fetch.mockRejectedValueOnce(new Error('Repository not found'))
+
+	await expect(
+		readPublishGitNoteFromArtifactsRepo({
+			env: {} as Env,
+			repoId: 'package-pkg-1',
+			commitOid: 'commit-1',
+		}),
+	).rejects.toThrow('Repository not found')
 })
 
 test('readPublishGitNoteFromArtifactsRepo propagates readNote failures that are not missing-note errors', async () => {
