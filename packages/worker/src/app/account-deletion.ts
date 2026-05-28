@@ -414,6 +414,10 @@ export async function deleteUserAccount(input: {
 		env: input.env,
 		userId: input.mcpUserId,
 		warnings,
+	}).catch((error) => {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`Artifact repo cleanup failed unexpectedly: ${message}`)
+		return 0
 	})
 
 	result.clearedDurableObjects.storageRunners = await clearStorageRunners({

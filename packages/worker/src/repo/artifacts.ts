@@ -63,6 +63,11 @@ export type ArtifactGetRepoResult =
 	| { status: 'importing'; retryAfter: number }
 	| { status: 'forking'; retryAfter: number }
 
+export type ArtifactDeleteRepoResult = {
+	id: string | null
+	alreadyDeleted: boolean
+}
+
 export type ArtifactNamespaceBinding = {
 	create(
 		name: string,
