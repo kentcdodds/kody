@@ -1654,10 +1654,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			repo: sourceRepo,
 			scope: 'read',
 		})
-		const sourceWriteAccess = await ensureArtifactRepoRemote({
-			repo: sourceRepo,
-			scope: 'write',
-		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
 		if (input.expectedHead) {
 			const currentHead = await resolveArtifactDefaultBranchHead({
@@ -1714,6 +1710,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			expectedPackageScope: input.expectedPackageScope,
 		})
 		if (publishResult.status === 'published') {
+			const sourceWriteAccess = await ensureArtifactRepoRemote({
+				repo: sourceRepo,
+				scope: 'write',
+			})
 			await this.attachSourcePublishGitNote({
 				source,
 				commitOid: input.newCommit,

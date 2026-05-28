@@ -169,6 +169,14 @@ test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits'
 	expect(String(mockGit.addNote.mock.calls[0]?.[0]?.note)).toContain(
 		'"publishedBy": "external_push"',
 	)
+	expect(mockGit.fetch).toHaveBeenCalledWith(
+		expect.objectContaining({
+			dir: '/session',
+			remote: 'source',
+			url: 'https://example.com/repo.git',
+			ref: 'refs/notes/commits',
+		}),
+	)
 	expect(mockGit.push).toHaveBeenCalledWith(
 		expect.objectContaining({
 			dir: '/session',
@@ -176,6 +184,7 @@ test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits'
 			url: 'https://example.com/repo.git',
 			ref: 'refs/notes/commits',
 			remoteRef: 'refs/notes/commits',
+			force: true,
 		}),
 	)
 })

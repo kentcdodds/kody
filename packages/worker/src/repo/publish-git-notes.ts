@@ -292,6 +292,23 @@ export async function writeAndPushPublishGitNote(input: {
 	note: KodyPublishGitNote
 }) {
 	const fs = createIsomorphicGitFs(input.filesystem)
+	const remoteName = input.remoteName ?? 'source'
+	const onAuth = () => buildArtifactsGitAuth({ token: input.token })
+	try {
+		await git.fetch({
+			fs,
+			http,
+			dir: input.dir,
+			remote: remoteName,
+			url: input.remote,
+			ref: kodyPublishGitNotesRef,
+			onAuth,
+		})
+	} catch (error) {
+		if (!isMissingPublishGitNoteError(error)) {
+			throw error
+		}
+	}
 	const noteText = `${JSON.stringify(input.note, null, 2)}\n`
 	await git.addNote({
 		fs,
@@ -307,13 +324,12 @@ export async function writeAndPushPublishGitNote(input: {
 		fs,
 		http,
 		dir: input.dir,
-		remote: input.remoteName ?? 'source',
+		remote: remoteName,
 		url: input.remote,
 		ref: kodyPublishGitNotesRef,
 		remoteRef: kodyPublishGitNotesRef,
-		onAuth() {
-			return buildArtifactsGitAuth({ token: input.token })
-		},
+		force: true,
+		onAuth,
 	})
 }
 
