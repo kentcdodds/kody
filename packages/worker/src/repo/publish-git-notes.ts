@@ -136,7 +136,7 @@ class GitStat {
 		this.mode =
 			stat.mode ??
 			(this.type === 'directory'
-				? 16_777
+				? 16_384
 				: this.type === 'symlink'
 					? 40_960
 					: 33_188)
@@ -439,6 +439,19 @@ function createEphemeralGitWorkspace(): EphemeralGitWorkspace {
 	}
 }
 
+function isMissingPublishGitNoteError(error: unknown) {
+	if (
+		error instanceof Error &&
+		'code' in error &&
+		typeof error.code === 'string' &&
+		error.code === 'NotFoundError'
+	) {
+		return true
+	}
+	const message = error instanceof Error ? error.message : String(error)
+	return /refs\/notes\/commits|could not find|not found/i.test(message)
+}
+
 export function parsePublishGitNote(raw: string): KodyPublishGitNote | null {
 	const trimmed = raw.trim()
 	if (!trimmed) return null
@@ -494,7 +507,10 @@ export async function readPublishGitNoteFromArtifactsRepo(input: {
 				return auth
 			},
 		})
-	} catch {
+	} catch (error) {
+		if (!isMissingPublishGitNoteError(error)) {
+			throw error
+		}
 		return {
 			found: false,
 			commit: input.commitOid,
@@ -516,7 +532,10 @@ export async function readPublishGitNoteFromArtifactsRepo(input: {
 			rawNote,
 			note: parsePublishGitNote(rawNote),
 		}
-	} catch {
+	} catch (error) {
+		if (!isMissingPublishGitNoteError(error)) {
+			throw error
+		}
 		return {
 			found: false,
 			commit: input.commitOid,

@@ -3,6 +3,9 @@ import { expect, test, vi } from 'vitest'
 const mockGit = vi.hoisted(() => ({
 	addNote: vi.fn(async () => 'note-commit-1'),
 	push: vi.fn(async () => ({ ok: true, refs: {} })),
+	clone: vi.fn(async () => undefined),
+	fetch: vi.fn(async () => ({ ok: true, refs: {} })),
+	readNote: vi.fn(async () => new TextEncoder().encode('{"v":1}\n')),
 }))
 
 vi.mock('isomorphic-git', () => ({
@@ -17,8 +20,31 @@ vi.mock('@sentry/cloudflare', () => ({
 	captureException: vi.fn(),
 }))
 
-const { buildPublishGitNote, writeAndPushPublishGitNote } =
-	await import('./publish-git-notes.ts')
+vi.mock('./artifacts.ts', () => ({
+	buildArtifactsGitAuth: vi.fn(() => ({
+		username: 'x-access-token',
+		password: 'token',
+	})),
+	buildAuthenticatedArtifactsRemote: vi.fn(
+		(input: { remote: string; token: string }) => input.remote,
+	),
+	resolveArtifactSourceRepo: vi.fn(async () => ({
+		info: async () => ({
+			remote: 'https://example.com/repo.git',
+			defaultBranch: 'main',
+		}),
+		createToken: async () => ({
+			plaintext: 'token-1',
+			expiresAt: '2099-01-01T00:00:00.000Z',
+		}),
+	})),
+}))
+
+const {
+	buildPublishGitNote,
+	readPublishGitNoteFromArtifactsRepo,
+	writeAndPushPublishGitNote,
+} = await import('./publish-git-notes.ts')
 
 test('buildPublishGitNote captures publish provenance and checks', () => {
 	const note = buildPublishGitNote({
@@ -152,4 +178,49 @@ test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits'
 			remoteRef: 'refs/notes/commits',
 		}),
 	)
+})
+
+test('readPublishGitNoteFromArtifactsRepo returns found false when notes ref is absent', async () => {
+	mockGit.clone.mockClear()
+	mockGit.fetch.mockClear()
+	mockGit.readNote.mockClear()
+	mockGit.fetch.mockRejectedValueOnce(
+		Object.assign(new Error('Could not find refs/notes/commits.'), {
+			code: 'NotFoundError',
+		}),
+	)
+
+	const result = await readPublishGitNoteFromArtifactsRepo({
+		env: {} as Env,
+		repoId: 'package-pkg-1',
+		commitOid: 'commit-1',
+	})
+
+	expect(result.found).toBe(false)
+	expect(mockGit.readNote).not.toHaveBeenCalled()
+})
+
+test('readPublishGitNoteFromArtifactsRepo propagates fetch auth failures', async () => {
+	mockGit.fetch.mockRejectedValueOnce(new Error('HTTP Error: 401 Unauthorized'))
+
+	await expect(
+		readPublishGitNoteFromArtifactsRepo({
+			env: {} as Env,
+			repoId: 'package-pkg-1',
+			commitOid: 'commit-1',
+		}),
+	).rejects.toThrow('401 Unauthorized')
+})
+
+test('readPublishGitNoteFromArtifactsRepo propagates readNote failures that are not missing-note errors', async () => {
+	mockGit.fetch.mockResolvedValueOnce({ ok: true, refs: {} })
+	mockGit.readNote.mockRejectedValueOnce(new Error('filesystem corruption'))
+
+	await expect(
+		readPublishGitNoteFromArtifactsRepo({
+			env: {} as Env,
+			repoId: 'package-pkg-1',
+			commitOid: 'commit-1',
+		}),
+	).rejects.toThrow('filesystem corruption')
 })
