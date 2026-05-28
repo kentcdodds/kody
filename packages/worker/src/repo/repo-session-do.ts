@@ -1710,32 +1710,48 @@ class RepoSessionBase extends DurableObject<Env> {
 			expectedPackageScope: input.expectedPackageScope,
 		})
 		if (publishResult.status === 'published') {
-			const sourceWriteAccess = await ensureArtifactRepoRemote({
-				repo: sourceRepo,
-				scope: 'write',
-			})
-			await this.attachSourcePublishGitNote({
-				source,
-				commitOid: input.newCommit,
-				remote: sourceWriteAccess.remote,
-				token: sourceWriteAccess.token,
-				remoteName: 'origin',
-				publishedBy: 'external_push',
-				sessionId: input.sessionId,
-				previousPublishedCommit: publishResult.previous_commit,
-				checks: {
-					runId,
-					treeHash: null,
-					checkedAt: new Date().toISOString(),
-					ok: true,
-					results: publishResult.checks.map((entry) => ({
-						kind: entry.kind,
-						ok: entry.ok,
-						message: entry.message,
-					})),
-				},
-				scope: 'repo.publishFromExternalRef.publish-git-note',
-			})
+			try {
+				const sourceWriteAccess = await ensureArtifactRepoRemote({
+					repo: sourceRepo,
+					scope: 'write',
+				})
+				await this.attachSourcePublishGitNote({
+					source,
+					commitOid: input.newCommit,
+					remote: sourceWriteAccess.remote,
+					token: sourceWriteAccess.token,
+					remoteName: 'origin',
+					publishedBy: 'external_push',
+					sessionId: input.sessionId,
+					previousPublishedCommit: publishResult.previous_commit,
+					checks: {
+						runId,
+						treeHash: null,
+						checkedAt: new Date().toISOString(),
+						ok: true,
+						results: publishResult.checks.map((entry) => ({
+							kind: entry.kind,
+							ok: entry.ok,
+							message: entry.message,
+						})),
+					},
+					scope: 'repo.publishFromExternalRef.publish-git-note',
+				})
+			} catch (error) {
+				Sentry.captureException(error, {
+					tags: { scope: 'repo.publishFromExternalRef.publish-git-note-setup' },
+					extra: {
+						sourceId: source.id,
+						commit: input.newCommit,
+					},
+				})
+				console.warn('publish_git_note setup failed', {
+					scope: 'repo.publishFromExternalRef.publish-git-note-setup',
+					sourceId: source.id,
+					commit: input.newCommit,
+					error: error instanceof Error ? error.message : String(error),
+				})
+			}
 		}
 		return publishResult
 	}
