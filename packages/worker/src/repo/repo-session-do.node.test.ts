@@ -219,6 +219,7 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 })
 
 const { RepoSession } = await import('./repo-session-do.ts')
+const { insertRepoSession } = await import('./repo-sessions.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -761,6 +762,56 @@ test('openSession strips unsupported characters from derived session repo names'
 		}),
 	)
 })
+
+test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async () => {
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'package-event-runner',
+		published_commit: 'commit-base',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
+		fork: vi.fn(async ({ name }: { name: string }) => ({
+			id: 'session-repo-1',
+			name,
+			description: null,
+			defaultBranch: 'main',
+			remote: `https://acct.artifacts.cloudflare.net/git/preview/${name}.git`,
+			token: 'art_session_secret?expires=1760000200',
+			expiresAt: '2026-10-09T08:16:40.000Z',
+			repo: {
+				info: vi.fn(),
+				createToken: vi.fn(),
+				fork: vi.fn(),
+			},
+		})),
+	})
+	mockModule.workspaceExists.mockResolvedValue(false)
+	vi.mocked(insertRepoSession).mockClear()
+
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		ARTIFACTS_NAMESPACE: 'preview',
+	} as Env)
+	await repoSession.openSession({
+		sessionId: 'session-preview-namespace',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+		sourceRoot: '/',
+	})
+
+	expect(insertRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			session_repo_namespace: 'preview',
+		}),
+	)
+})
+
 
 test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
 	// This test covers the alarm-driven scheduled-job failure mode where a fresh
