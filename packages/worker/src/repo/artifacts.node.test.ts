@@ -20,7 +20,9 @@ test('artifacts REST client uses configured namespace in API paths', async () =>
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
 			const method = init?.method ?? 'GET'
-			expect(url.pathname).toContain('/artifacts/namespaces/preview/repos/repo-1')
+			expect(url.pathname).toContain(
+				'/artifacts/namespaces/preview/repos/repo-1',
+			)
 			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
 				return new Response(
 					JSON.stringify({
@@ -72,10 +74,7 @@ test('resolveSessionRepo uses stored namespace instead of env default', async ()
 			expect(url.pathname).toContain(
 				'/artifacts/namespaces/legacy-default/repos/session-repo',
 			)
-			if (
-				method === 'GET' &&
-				url.pathname.endsWith('/repos/session-repo')
-			) {
+			if (method === 'GET' && url.pathname.endsWith('/repos/session-repo')) {
 				return new Response(
 					JSON.stringify({
 						success: true,

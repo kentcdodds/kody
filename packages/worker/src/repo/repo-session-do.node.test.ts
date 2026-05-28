@@ -812,7 +812,6 @@ test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async
 	)
 })
 
-
 test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
 	// This test covers the alarm-driven scheduled-job failure mode where a fresh
 	// DO instance handles a follow-up RPC call before the in-memory cache from

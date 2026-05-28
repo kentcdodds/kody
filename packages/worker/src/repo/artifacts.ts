@@ -94,10 +94,7 @@ export type ArtifactNamespaceBinding = {
 	}>
 }
 
-export function resolveArtifactsNamespace(
-	env: Env,
-	namespace?: string | null,
-) {
+export function resolveArtifactsNamespace(env: Env, namespace?: string | null) {
 	const trimmed = namespace?.trim()
 	return trimmed && trimmed.length > 0 ? trimmed : getArtifactsNamespace(env)
 }
