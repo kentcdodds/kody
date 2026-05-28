@@ -1,7 +1,12 @@
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
 import * as Sentry from '@sentry/cloudflare'
-import { buildArtifactsGitAuth } from './artifacts.ts'
+import { z } from 'zod'
+import {
+	buildArtifactsGitAuth,
+	buildAuthenticatedArtifactsRemote,
+	resolveArtifactSourceRepo,
+} from './artifacts.ts'
 import { type EntityKind } from './types.ts'
 
 export const kodyPublishGitNoteVersion = 1 as const
@@ -40,6 +45,37 @@ export type KodyPublishGitNote = {
 }
 
 export const kodyPublishGitNotesRef = 'refs/notes/commits'
+
+export const kodyPublishGitNoteSchema = z.object({
+	v: z.literal(kodyPublishGitNoteVersion),
+	publishedAt: z.string(),
+	publishedBy: z.enum(['repo_session', 'source_bootstrap', 'external_push']),
+	sourceId: z.string(),
+	entityKind: z.enum(['skill', 'app', 'job', 'package']),
+	entityId: z.string(),
+	repoId: z.string(),
+	commit: z.string(),
+	sessionId: z.string().nullable().optional(),
+	conversationId: z.string().nullable().optional(),
+	previousPublishedCommit: z.string().nullable().optional(),
+	baseCommit: z.string().nullable().optional(),
+	checks: z
+		.object({
+			runId: z.string(),
+			treeHash: z.string().nullable(),
+			checkedAt: z.string().nullable(),
+			ok: z.boolean(),
+			results: z.array(
+				z.object({
+					kind: z.string(),
+					ok: z.boolean(),
+					message: z.string(),
+				}),
+			),
+		})
+		.nullable()
+		.optional(),
+})
 
 const kodyNoteAuthor = {
 	name: 'Kody',
@@ -305,5 +341,183 @@ export async function attachPublishGitNoteBestEffort(input: {
 			publishedBy: input.note.publishedBy,
 			error: error instanceof Error ? error.message : String(error),
 		})
+	}
+}
+
+type EphemeralGitWorkspace = {
+	fs: ReturnType<typeof createIsomorphicGitFs>
+	dir: string
+}
+
+function createEphemeralGitWorkspace(): EphemeralGitWorkspace {
+	const store = new Map<string, Uint8Array>()
+	const textDecoder = new TextDecoder()
+	const textEncoder = new TextEncoder()
+	const filesystem: PublishGitNoteFileSystem = {
+		readFile: async (path) => {
+			const bytes = store.get(path)
+			if (!bytes) {
+				throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
+			}
+			return textDecoder.decode(bytes)
+		},
+		readFileBytes: async (path) => {
+			const bytes = store.get(path)
+			if (!bytes) {
+				throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
+			}
+			return bytes
+		},
+		writeFile: async (path, data) => {
+			store.set(path, textEncoder.encode(data))
+		},
+		writeFileBytes: async (path, data) => {
+			store.set(path, data)
+		},
+		rm: async (path, options) => {
+			if (options?.recursive) {
+				for (const key of [...store.keys()]) {
+					if (key === path || key.startsWith(`${path}/`)) {
+						store.delete(key)
+					}
+				}
+				return
+			}
+			store.delete(path)
+		},
+		mkdir: async (path, options) => {
+			if (options?.recursive) {
+				const parts = path.split('/').filter(Boolean)
+				let current = ''
+				for (const part of parts) {
+					current = `${current}/${part}`
+					store.set(current, new Uint8Array())
+				}
+				return
+			}
+			store.set(path, new Uint8Array())
+		},
+		readdir: async (path) => {
+			const prefix = path.endsWith('/') ? path : `${path}/`
+			const names = new Set<string>()
+			for (const key of store.keys()) {
+				if (!key.startsWith(prefix)) continue
+				const rest = key.slice(prefix.length)
+				const [name] = rest.split('/')
+				if (name) names.add(name)
+			}
+			return [...names]
+		},
+		stat: async (path) => {
+			if (!store.has(path)) {
+				throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
+			}
+			const isDirectory = [...store.keys()].some(
+				(key) => key.startsWith(`${path}/`) && key !== path,
+			)
+			return {
+				type: isDirectory ? ('directory' as const) : ('file' as const),
+				size: store.get(path)?.byteLength ?? 0,
+				mtime: new Date(),
+			}
+		},
+		lstat: async (path) => filesystem.stat(path),
+		readlink: async () => {
+			throw new Error('readlink is not supported in ephemeral git workspace.')
+		},
+		symlink: async (target, path) => {
+			await filesystem.writeFile(path, target)
+		},
+	}
+	return {
+		fs: createIsomorphicGitFs(filesystem),
+		dir: '/repo',
+	}
+}
+
+export function parsePublishGitNote(raw: string): KodyPublishGitNote | null {
+	const trimmed = raw.trim()
+	if (!trimmed) return null
+	try {
+		return kodyPublishGitNoteSchema.parse(JSON.parse(trimmed))
+	} catch {
+		return null
+	}
+}
+
+export async function readPublishGitNoteFromArtifactsRepo(input: {
+	env: Env
+	repoId: string
+	commitOid: string
+}): Promise<{
+	found: boolean
+	commit: string
+	rawNote: string | null
+	note: KodyPublishGitNote | null
+}> {
+	const repo = await resolveArtifactSourceRepo(input.env, input.repoId)
+	const info = await repo.info()
+	if (!info?.remote) {
+		throw new Error('Artifact repo remote URL is unavailable.')
+	}
+	const token = await repo.createToken('read', 300)
+	const remote = buildAuthenticatedArtifactsRemote({
+		remote: info.remote,
+		token: token.plaintext,
+	})
+	const workspace = createEphemeralGitWorkspace()
+	const auth = buildArtifactsGitAuth({ token: token.plaintext })
+	await git.clone({
+		fs: workspace.fs,
+		http,
+		dir: workspace.dir,
+		url: remote,
+		depth: 1,
+		singleBranch: true,
+		ref: info.defaultBranch || 'main',
+		onAuth() {
+			return auth
+		},
+	})
+	try {
+		await git.fetch({
+			fs: workspace.fs,
+			http,
+			dir: workspace.dir,
+			remote: 'origin',
+			ref: kodyPublishGitNotesRef,
+			onAuth() {
+				return auth
+			},
+		})
+	} catch {
+		return {
+			found: false,
+			commit: input.commitOid,
+			rawNote: null,
+			note: null,
+		}
+	}
+	try {
+		const noteBytes = await git.readNote({
+			fs: workspace.fs,
+			dir: workspace.dir,
+			ref: kodyPublishGitNotesRef,
+			oid: input.commitOid,
+		})
+		const rawNote = new TextDecoder().decode(noteBytes)
+		return {
+			found: true,
+			commit: input.commitOid,
+			rawNote,
+			note: parsePublishGitNote(rawNote),
+		}
+	} catch {
+		return {
+			found: false,
+			commit: input.commitOid,
+			rawNote: null,
+			note: null,
+		}
 	}
 }

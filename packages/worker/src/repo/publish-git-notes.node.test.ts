@@ -68,6 +68,25 @@ test('buildPublishGitNote captures publish provenance and checks', () => {
 	})
 })
 
+test('parsePublishGitNote validates versioned publish notes', async () => {
+	const { parsePublishGitNote } = await import('./publish-git-notes.ts')
+	expect(
+		parsePublishGitNote(
+			JSON.stringify({
+				v: 1,
+				publishedAt: '2026-05-28T12:00:00.000Z',
+				publishedBy: 'external_push',
+				sourceId: 'source-1',
+				entityKind: 'job',
+				entityId: 'job-1',
+				repoId: 'job-job-1',
+				commit: 'commit-new',
+			}),
+		)?.publishedBy,
+	).toBe('external_push')
+	expect(parsePublishGitNote('not-json')).toBeNull()
+})
+
 test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits', async () => {
 	mockGit.addNote.mockClear()
 	mockGit.push.mockClear()
