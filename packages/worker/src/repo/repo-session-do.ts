@@ -63,6 +63,11 @@ import {
 	publishFromExternalRef as publishExternalRefSource,
 } from './external-publish.ts'
 import {
+	attachPublishGitNoteBestEffort,
+	buildPublishGitNote,
+	type KodyPublishGitNoteChecks,
+} from './publish-git-notes.ts'
+import {
 	type RepoGitCommand,
 	type RepoRunCommandsResult,
 	parseRepoGitCommands,
@@ -492,6 +497,60 @@ class RepoSessionBase extends DurableObject<Env> {
 		)
 	}
 
+	private buildPublishGitNoteChecks(
+		checkStatus: RepoSessionCheckStatus,
+	): KodyPublishGitNoteChecks | null {
+		if (!checkStatus.runId || checkStatus.ok == null) {
+			return null
+		}
+		return {
+			runId: checkStatus.runId,
+			treeHash: checkStatus.treeHash,
+			checkedAt: checkStatus.checkedAt,
+			ok: checkStatus.ok,
+			results: (checkStatus.results ?? []).map((entry) => ({
+				kind: entry.kind,
+				ok: entry.ok,
+				message: entry.message,
+			})),
+		}
+	}
+
+	private async attachSourcePublishGitNote(input: {
+		source: EntitySourceRow
+		commitOid: string
+		remote: string
+		token: string
+		remoteName?: string
+		publishedBy: 'repo_session' | 'source_bootstrap' | 'external_push'
+		sessionId?: string | null
+		conversationId?: string | null
+		baseCommit?: string | null
+		previousPublishedCommit?: string | null
+		checks?: KodyPublishGitNoteChecks | null
+		scope: string
+	}) {
+		await attachPublishGitNoteBestEffort({
+			filesystem: this.fileSystem,
+			dir: repoSessionWorkspacePrefix,
+			commitOid: input.commitOid,
+			remote: input.remote,
+			token: input.token,
+			remoteName: input.remoteName,
+			note: buildPublishGitNote({
+				publishedBy: input.publishedBy,
+				source: input.source,
+				commit: input.commitOid,
+				sessionId: input.sessionId,
+				conversationId: input.conversationId,
+				baseCommit: input.baseCommit,
+				previousPublishedCommit: input.previousPublishedCommit,
+				checks: input.checks,
+			}),
+			scope: input.scope,
+		})
+	}
+
 	private async resolvePublishSource(input: {
 		sessionId?: string
 		sourceId?: string
@@ -822,6 +881,17 @@ class RepoSessionBase extends DurableObject<Env> {
 			remote: 'source',
 			ref: targetBranch,
 			...buildArtifactsGitAuth({ token: sourceAccess.token }),
+		})
+		await this.attachSourcePublishGitNote({
+			source,
+			commitOid: publishedCommit,
+			remote: sourceAccess.remote,
+			token: sourceAccess.token,
+			remoteName: 'source',
+			publishedBy: 'source_bootstrap',
+			sessionId: input.sessionId,
+			previousPublishedCommit: null,
+			scope: 'repo.bootstrapSource.publish-git-note',
 		})
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
@@ -1532,6 +1602,21 @@ class RepoSessionBase extends DurableObject<Env> {
 			baseUrl: source.source_root,
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 		})
+		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		await this.attachSourcePublishGitNote({
+			source,
+			commitOid: publishedCommit,
+			remote: sourceAccess.remote,
+			token: sourceAccess.token,
+			remoteName: 'source',
+			publishedBy: 'repo_session',
+			sessionId: sessionRow.id,
+			conversationId: sessionRow.conversation_id,
+			baseCommit: sessionRow.base_commit,
+			previousPublishedCommit: source.published_commit,
+			checks: this.buildPublishGitNoteChecks(checkStatus),
+			scope: 'repo.publishSession.publish-git-note',
+		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
@@ -1569,6 +1654,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			repo: sourceRepo,
 			scope: 'read',
 		})
+		const sourceWriteAccess = await ensureArtifactRepoRemote({
+			repo: sourceRepo,
+			scope: 'write',
+		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
 		if (input.expectedHead) {
 			const currentHead = await resolveArtifactDefaultBranchHead({
@@ -1598,11 +1687,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: input.newCommit,
 			force: true,
 		})
-		return publishExternalRefSource({
+		const runId = crypto.randomUUID()
+		const publishResult = await publishExternalRefSource({
 			env: this.env,
 			sourceId: source.id,
 			userId: input.userId,
 			newCommit: input.newCommit,
+			runId,
 			isFastForward: async ({ previousCommit }) =>
 				await this.isAncestorCommit({
 					ancestor: previousCommit,
@@ -1622,6 +1713,31 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
 		})
+		if (publishResult.status === 'published') {
+			await this.attachSourcePublishGitNote({
+				source,
+				commitOid: input.newCommit,
+				remote: sourceWriteAccess.remote,
+				token: sourceWriteAccess.token,
+				remoteName: 'origin',
+				publishedBy: 'external_push',
+				sessionId: input.sessionId,
+				previousPublishedCommit: publishResult.previous_commit,
+				checks: {
+					runId,
+					treeHash: null,
+					checkedAt: new Date().toISOString(),
+					ok: true,
+					results: publishResult.checks.map((entry) => ({
+						kind: entry.kind,
+						ok: entry.ok,
+						message: entry.message,
+					})),
+				},
+				scope: 'repo.publishFromExternalRef.publish-git-note',
+			})
+		}
+		return publishResult
 	}
 }
 
