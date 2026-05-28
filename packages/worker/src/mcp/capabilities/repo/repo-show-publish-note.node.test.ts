@@ -25,7 +25,8 @@ vi.mock('#worker/repo/publish-git-notes.ts', async () => {
 	}
 })
 
-const { repoShowPublishNoteCapability } = await import('./repo-show-publish-note.ts')
+const { repoShowPublishNoteCapability } =
+	await import('./repo-show-publish-note.ts')
 
 function createContext(userId = 'user-1') {
 	return {

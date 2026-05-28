@@ -17,9 +17,8 @@ vi.mock('@sentry/cloudflare', () => ({
 	captureException: vi.fn(),
 }))
 
-const { buildPublishGitNote, writeAndPushPublishGitNote } = await import(
-	'./publish-git-notes.ts'
-)
+const { buildPublishGitNote, writeAndPushPublishGitNote } =
+	await import('./publish-git-notes.ts')
 
 test('buildPublishGitNote captures publish provenance and checks', () => {
 	const note = buildPublishGitNote({

@@ -156,7 +156,11 @@ class GitStat {
 }
 
 function fsError(path: string, cause: unknown) {
-	if (cause instanceof Error && 'code' in cause && typeof cause.code === 'string') {
+	if (
+		cause instanceof Error &&
+		'code' in cause &&
+		typeof cause.code === 'string'
+	) {
 		return cause
 	}
 	const err = new Error(
