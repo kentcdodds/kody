@@ -123,6 +123,22 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 					},
 				)
 			}
+			if (method === 'DELETE' && url.pathname.endsWith('/repos/repo-1')) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: {
+							id: 'repo_1',
+						},
+						errors: [],
+						messages: [],
+					}),
+					{
+						status: 202,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
@@ -164,8 +180,12 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
 		token: 'art_v1_fork?expires=1760000200',
 	})
+	await expect(binding.delete('repo-1')).resolves.toEqual({
+		id: 'repo_1',
+		alreadyDeleted: false,
+	})
 
-	expect(fetchMock).toHaveBeenCalledTimes(6)
+	expect(fetchMock).toHaveBeenCalledTimes(7)
 })
 
 test('artifacts REST client uses fallback API error text when envelope errors are missing', async () => {

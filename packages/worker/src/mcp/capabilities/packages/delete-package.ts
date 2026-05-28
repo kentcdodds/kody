@@ -10,7 +10,7 @@ export const deletePackageCapability = defineDomainCapability(
 	{
 		name: 'package_delete',
 		description:
-			'Delete a saved package projection for the signed-in user. This removes the saved package from discovery. Repo-backed source cleanup is handled separately.',
+			'Delete a saved package projection for the signed-in user. This removes the saved package from discovery and cleans up associated Artifacts repos.',
 		keywords: ['package', 'delete', 'remove'],
 		readOnly: false,
 		idempotent: false,

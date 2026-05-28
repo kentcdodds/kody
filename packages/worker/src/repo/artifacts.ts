@@ -81,6 +81,7 @@ export type ArtifactNamespaceBinding = {
 		expiresAt: string
 	}>
 	get(name: string): Promise<ArtifactGetRepoResult>
+	delete(name: string): Promise<ArtifactDeleteRepoResult>
 	list(opts?: { limit?: number; cursor?: string }): Promise<{
 		repos: Array<Omit<ArtifactRepoInfo, 'remote'>>
 		total: number
@@ -302,6 +303,23 @@ function createArtifactsRestBinding(env: Env) {
 			return {
 				status: 'ready' as const,
 				repo: repoHandle(name),
+			}
+		},
+		delete: async (name) => {
+			const envelope = await requestArtifactsEnvelope<{ id: string }>(client, {
+				method: 'DELETE',
+				path: `${basePath}/repos/${encodeURIComponent(name)}`,
+				treat404AsNull: true,
+			})
+			if (!envelope.result) {
+				return {
+					id: null,
+					alreadyDeleted: true,
+				}
+			}
+			return {
+				id: envelope.result.id,
+				alreadyDeleted: false,
 			}
 		},
 		list: async (opts) => {
