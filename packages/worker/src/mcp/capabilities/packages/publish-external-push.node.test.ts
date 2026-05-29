@@ -53,11 +53,8 @@ vi.mock('#worker/package-runtime/static-package-dependents.ts', () => ({
 const { publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default capability mocks after global mockReset.
 beforeEach(() => {
-	for (const value of Object.values(mockModule)) {
-		value.mockReset()
-	}
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		kodyId: 'demo-package',

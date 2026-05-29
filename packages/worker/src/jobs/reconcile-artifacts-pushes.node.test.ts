@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	listEntitySourcesForExternalReconcile: vi.fn(),
@@ -53,16 +53,6 @@ function source(overrides: Record<string, unknown> = {}) {
 		...overrides,
 	}
 }
-
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
-beforeEach(() => {
-	mockModule.listEntitySourcesForExternalReconcile.mockReset()
-	mockModule.updateEntitySource.mockClear()
-	mockModule.resolveArtifactSourceHead.mockReset()
-	mockModule.revokeStaleArtifactsTokens.mockClear()
-	mockModule.publishFromExternalRef.mockReset()
-	mockModule.repoSessionRpc.mockClear()
-})
 
 test('publishes changed Artifacts HEADs and records reconcile checks', async () => {
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([

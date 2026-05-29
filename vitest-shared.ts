@@ -44,5 +44,6 @@ export const sharedProjectConfig = {
 		hookTimeout: testTimeout,
 		fileParallelism: false,
 		clearMocks: true,
+		mockReset: true,
 	},
 } satisfies UserConfig

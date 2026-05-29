@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 
@@ -47,15 +47,6 @@ const {
 	createRuntimeModuleSource,
 	hydrateKodyRuntimeModules,
 } = await import('./module-graph.ts')
-
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
-beforeEach(() => {
-	mockModule.createWorker.mockReset()
-	mockModule.getSavedPackageByName.mockReset()
-	mockModule.getSavedPackageByKodyId.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
-})
 
 function createBundleResult(suffix: string) {
 	return {

@@ -138,11 +138,8 @@ function createProjection() {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default service mocks after global mockReset.
 beforeEach(() => {
-	for (const value of Object.values(mockModule)) {
-		value.mockReset()
-	}
 	mockModule.buildPackageSearchProjection.mockReturnValue(createProjection())
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('saved package embed')
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)

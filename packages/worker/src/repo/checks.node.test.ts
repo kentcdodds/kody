@@ -43,13 +43,8 @@ function createSnapshotFromFiles(files: Map<string, string>): MockSnapshot {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default bundle mocks after global mockReset.
 beforeEach(() => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
-	mockModule.buildKodyAppBundle.mockReset()
-	mockModule.buildKodyImportableModuleBundle.mockReset()
-	mockModule.buildKodyModuleBundle.mockReset()
 	mockModule.buildKodyAppBundle.mockResolvedValue({
 		mainModule: 'dist/app.js',
 		modules: {

@@ -59,15 +59,10 @@ function workspace() {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite shares a large mocked repository surface.
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default mock behavior after global mockReset.
 beforeEach(() => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.updateEntitySource.mockClear()
-	mockModule.runRepoChecks.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockClear()
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
-	mockModule.refreshSavedPackageProjection.mockClear()
 })
 
 test('publishes an external fast-forward ref after checks pass', async () => {

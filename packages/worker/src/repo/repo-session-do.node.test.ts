@@ -116,6 +116,100 @@ const mockModule = vi.hoisted(() => {
 	}
 })
 
+function restoreRepoSessionMockBaseline() {
+	const { git, gitState } = mockModule
+
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.workspaceReadFile.mockImplementation(
+		async (path: string) =>
+			mockModule.workspaceFiles.get(path) ?? '{"version":1,"kind":"app"}',
+	)
+	mockModule.workspaceWriteFile.mockResolvedValue(undefined)
+	mockModule.workspaceMkdir.mockResolvedValue(undefined)
+	mockModule.workspaceRm.mockResolvedValue(undefined)
+	mockModule.workspaceGlob.mockResolvedValue([])
+	mockModule.storageGet.mockResolvedValue({
+		runId: 'run-1',
+		treeHash: '',
+		checkedAt: '2026-04-18T00:00:00.000Z',
+		ok: true,
+		results: [],
+	})
+	mockModule.storagePut.mockResolvedValue(undefined)
+	mockModule.updateRepoSession.mockResolvedValue(undefined)
+	mockModule.updateEntitySource.mockResolvedValue(undefined)
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
+		defaultBranch: 'main',
+		commit: 'commit-published-new',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+	mockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
+		manifest: {
+			name: '@kody/demo',
+			exports: { '.': './index.ts' },
+			kody: { id: 'demo', description: 'Demo package' },
+		},
+		sourceFiles: {
+			'package.json': '{"name":"@kody/demo"}',
+			'index.ts': 'export const ready = true\n',
+		},
+	})
+	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+
+	git.clone.mockResolvedValue({ cloned: 'ok', dir: '/session' })
+	git.remote.mockImplementation(
+		async (opts?: {
+			list?: boolean
+			add?: { name: string; url: string }
+			remove?: string
+		}) => {
+			if (opts?.list) {
+				return gitState.remotes
+			}
+			if (opts?.remove) {
+				gitState.remotes = gitState.remotes.filter(
+					(remote) => remote.remote !== opts.remove,
+				)
+				return { removed: opts.remove }
+			}
+			if (opts?.add) {
+				gitState.remotes = [
+					...gitState.remotes.filter(
+						(remote) => remote.remote !== opts.add?.name,
+					),
+					{ remote: opts.add.name, url: opts.add.url },
+				]
+				return { added: opts.add.name, url: opts.add.url }
+			}
+			return []
+		},
+	)
+	git.init.mockResolvedValue({ initialized: '/session' })
+	git.status.mockImplementation(async () => gitState.statusEntries)
+	git.add.mockResolvedValue({ added: '.' })
+	git.rm.mockResolvedValue({ removed: 'src/old.ts' })
+	git.commit.mockImplementation(async () => ({
+		oid: gitState.headCommit,
+		message: 'commit',
+	}))
+	git.log.mockImplementation(async () => [{ oid: gitState.headCommit }])
+	git.branch.mockImplementation(async () => ({
+		branches: [gitState.currentBranch],
+		current: gitState.currentBranch,
+	}))
+	git.checkout.mockImplementation(async () => ({ ref: gitState.currentBranch }))
+	git.fetch.mockImplementation(async () => ({
+		fetchHead: gitState.headCommit,
+		fetchHeadDescription: 'main',
+	}))
+	git.pull.mockResolvedValue({ pulled: true })
+	git.push.mockResolvedValue({ ok: true, refs: {} })
+	git.diff.mockResolvedValue([])
+}
+
 vi.mock('cloudflare:workers', async (importOriginal) => {
 	const actual = await importOriginal<CloudflareWorkers>()
 	return {
@@ -242,6 +336,7 @@ function createEnv() {
 }
 
 function setCommonSessionFixtures() {
+	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue({
 		id: 'session-1',
 		user_id: 'user-1',
@@ -696,6 +791,7 @@ test('publishSession handles snapshot collection and persistence failures withou
 })
 
 test('openSession strips unsupported characters from derived session repo names', async () => {
+	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -738,7 +834,6 @@ test('openSession strips unsupported characters from derived session repo names'
 	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
 		fork,
 	})
-	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.git.clone.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
@@ -764,6 +859,7 @@ test('openSession strips unsupported characters from derived session repo names'
 })
 
 test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async () => {
+	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -789,7 +885,6 @@ test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async
 			},
 		})),
 	})
-	mockModule.workspaceExists.mockResolvedValue(false)
 	vi.mocked(insertRepoSession).mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), {
@@ -813,6 +908,7 @@ test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async
 })
 
 test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
+	restoreRepoSessionMockBaseline()
 	// This test covers the alarm-driven scheduled-job failure mode where a fresh
 	// DO instance handles a follow-up RPC call before the in-memory cache from
 	// openSession is available, and D1 read replicas have not yet caught up to
@@ -865,7 +961,6 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 			plaintext: 'art_session_secret?expires=1760000200',
 		})),
 	})
-	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
