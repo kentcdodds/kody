@@ -14,8 +14,14 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-test('artifacts REST client uses configured namespace in API paths', async () => {
-	const fetchMock = vi
+test('artifacts REST client scopes API paths to configured or stored namespaces', async () => {
+	const envBinding = {
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+		ARTIFACTS_NAMESPACE: 'preview',
+	} as Env
+	const bindingFetch = vi
 		.spyOn(globalThis, 'fetch')
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
@@ -52,21 +58,21 @@ test('artifacts REST client uses configured namespace in API paths', async () =>
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
-	const env = {
+	await expect(
+		getArtifactsBinding(envBinding).get('repo-1'),
+	).resolves.toMatchObject({
+		status: 'ready',
+	})
+	expect(bindingFetch).toHaveBeenCalledTimes(1)
+	bindingFetch.mockRestore()
+
+	const envSession = {
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token-123',
 		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-		ARTIFACTS_NAMESPACE: 'preview',
+		ARTIFACTS_NAMESPACE: 'production',
 	} as Env
-
-	await expect(getArtifactsBinding(env).get('repo-1')).resolves.toMatchObject({
-		status: 'ready',
-	})
-	expect(fetchMock).toHaveBeenCalledTimes(1)
-})
-
-test('resolveSessionRepo uses stored namespace instead of env default', async () => {
-	const fetchMock = vi
+	const sessionFetch = vi
 		.spyOn(globalThis, 'fetch')
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
@@ -103,22 +109,15 @@ test('resolveSessionRepo uses stored namespace instead of env default', async ()
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-		ARTIFACTS_NAMESPACE: 'production',
-	} as Env
-
 	await expect(
-		resolveSessionRepo(env, {
+		resolveSessionRepo(envSession, {
 			namespace: 'legacy-default',
 			name: 'session-repo',
 		}),
 	).resolves.toMatchObject({
 		info: expect.any(Function),
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(1)
+	expect(sessionFetch).toHaveBeenCalledTimes(1)
 })
 
 test('getArtifactsNamespace defaults to default and trims configured values', () => {

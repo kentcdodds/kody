@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
@@ -27,6 +27,12 @@ vi.mock('#worker/repo/publish-git-notes.ts', async () => {
 
 const { repoShowPublishNoteCapability } =
 	await import('./repo-show-publish-note.ts')
+
+function resetMocks() {
+	for (const fn of Object.values(mockModule)) {
+		fn.mockReset()
+	}
+}
 
 function createContext(userId = 'user-1') {
 	return {
@@ -76,14 +82,8 @@ const sampleNote = {
 	checks: null,
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- shared hoisted mocks reset between tests.
-beforeEach(() => {
-	for (const fn of Object.values(mockModule)) {
-		fn.mockReset()
-	}
-})
-
-test('repo_show_publish_note reads the note for a source id', async () => {
+test('repo_show_publish_note reads notes by source or package identity and rejects cross-user access', async () => {
+	resetMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(sampleSource)
 	mockModule.readPublishGitNoteFromArtifactsRepo.mockResolvedValue({
 		found: true,
@@ -92,7 +92,7 @@ test('repo_show_publish_note reads the note for a source id', async () => {
 		note: sampleNote,
 	})
 
-	const result = await repoShowPublishNoteCapability.handler(
+	const bySource = await repoShowPublishNoteCapability.handler(
 		{ source_id: 'source-1' },
 		createContext(),
 	)
@@ -102,11 +102,10 @@ test('repo_show_publish_note reads the note for a source id', async () => {
 		repoId: 'package-package-1',
 		commitOid: 'commit-published',
 	})
-	expect(result.found).toBe(true)
-	expect(result.note?.publishedBy).toBe('repo_session')
-})
+	expect(bySource.found).toBe(true)
+	expect(bySource.note?.publishedBy).toBe('repo_session')
 
-test('repo_show_publish_note resolves package identity and explicit commit', async () => {
+	resetMocks()
 	mockModule.resolveOwnedPackageSource.mockResolvedValue({
 		packageId: 'package-1',
 		kodyId: 'demo',
@@ -120,16 +119,15 @@ test('repo_show_publish_note resolves package identity and explicit commit', asy
 		note: null,
 	})
 
-	const result = await repoShowPublishNoteCapability.handler(
+	const byPackage = await repoShowPublishNoteCapability.handler(
 		{ kody_id: 'demo', commit: 'commit-old' },
 		createContext(),
 	)
 
-	expect(result.found).toBe(false)
-	expect(result.commit).toBe('commit-old')
-})
+	expect(byPackage.found).toBe(false)
+	expect(byPackage.commit).toBe('commit-old')
 
-test('repo_show_publish_note rejects cross-user sources', async () => {
+	resetMocks()
 	mockModule.getEntitySourceById.mockResolvedValue({
 		...sampleSource,
 		user_id: 'other-user',

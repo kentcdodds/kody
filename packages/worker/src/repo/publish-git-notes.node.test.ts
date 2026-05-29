@@ -69,6 +69,18 @@ test('buildPublishGitNote captures publish provenance and checks', () => {
 			results: [{ kind: 'lint', ok: true, message: 'ok' }],
 		},
 	})
+	const bootstrapNote = buildPublishGitNote({
+		publishedBy: 'source_bootstrap',
+		source: {
+			id: 'source-1',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'package-pkg-1',
+			published_commit: 'commit-stale',
+		},
+		commit: 'commit-new',
+		previousPublishedCommit: null,
+	})
 
 	expect(note).toEqual({
 		v: 1,
@@ -91,23 +103,7 @@ test('buildPublishGitNote captures publish provenance and checks', () => {
 			results: [{ kind: 'lint', ok: true, message: 'ok' }],
 		},
 	})
-})
-
-test('buildPublishGitNote preserves explicit null previousPublishedCommit', () => {
-	const note = buildPublishGitNote({
-		publishedBy: 'source_bootstrap',
-		source: {
-			id: 'source-1',
-			entity_kind: 'package',
-			entity_id: 'pkg-1',
-			repo_id: 'package-pkg-1',
-			published_commit: 'commit-stale',
-		},
-		commit: 'commit-new',
-		previousPublishedCommit: null,
-	})
-
-	expect(note.previousPublishedCommit).toBeNull()
+	expect(bootstrapNote.previousPublishedCommit).toBeNull()
 })
 
 test('parsePublishGitNote validates versioned publish notes', async () => {
@@ -226,9 +222,8 @@ test('readPublishGitNoteFromArtifactsRepo returns found false when notes ref is 
 	expect(mockGit.readNote).not.toHaveBeenCalled()
 })
 
-test('readPublishGitNoteFromArtifactsRepo propagates fetch auth failures', async () => {
+test('readPublishGitNoteFromArtifactsRepo propagates fetch and readNote failures', async () => {
 	mockGit.fetch.mockRejectedValueOnce(new Error('HTTP Error: 401 Unauthorized'))
-
 	await expect(
 		readPublishGitNoteFromArtifactsRepo({
 			env: {} as Env,
@@ -236,11 +231,8 @@ test('readPublishGitNoteFromArtifactsRepo propagates fetch auth failures', async
 			commitOid: 'commit-1',
 		}),
 	).rejects.toThrow('401 Unauthorized')
-})
 
-test('readPublishGitNoteFromArtifactsRepo propagates repository-not-found fetch failures', async () => {
 	mockGit.fetch.mockRejectedValueOnce(new Error('Repository not found'))
-
 	await expect(
 		readPublishGitNoteFromArtifactsRepo({
 			env: {} as Env,
@@ -248,12 +240,9 @@ test('readPublishGitNoteFromArtifactsRepo propagates repository-not-found fetch 
 			commitOid: 'commit-1',
 		}),
 	).rejects.toThrow('Repository not found')
-})
 
-test('readPublishGitNoteFromArtifactsRepo propagates readNote failures that are not missing-note errors', async () => {
 	mockGit.fetch.mockResolvedValueOnce({ ok: true, refs: {} })
 	mockGit.readNote.mockRejectedValueOnce(new Error('filesystem corruption'))
-
 	await expect(
 		readPublishGitNoteFromArtifactsRepo({
 			env: {} as Env,
