@@ -19,8 +19,20 @@ const props = {
 	storageContext: null,
 }
 
-test('fetch gateway blocks placeholders when allowed hosts are empty', async () => {
-	const resolveSpy = vi
+test('fetch gateway blocks or expands secret placeholders based on host approval', async () => {
+	const createRequest = () =>
+		new Request('https://example.com/api', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: 'Bearer {{secret:spotifyRefreshToken|scope=user}}',
+			},
+			body: JSON.stringify({
+				token: '{{secret:spotifyRefreshToken|scope=user}}',
+			}),
+		})
+
+	const blockedResolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue({
 			found: true,
@@ -29,19 +41,8 @@ test('fetch gateway blocks placeholders when allowed hosts are empty', async () 
 			allowedHosts: [],
 			allowedCapabilities: [],
 		})
-	const request = new Request('https://example.com/api', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: 'Bearer {{secret:spotifyRefreshToken|scope=user}}',
-		},
-		body: JSON.stringify({
-			token: '{{secret:spotifyRefreshToken|scope=user}}',
-		}),
-	})
-
 	try {
-		await expandSecretPlaceholders({ request, props, env })
+		await expandSecretPlaceholders({ request: createRequest(), props, env })
 		throw new Error('Expected host approval error.')
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
@@ -56,12 +57,10 @@ test('fetch gateway blocks placeholders when allowed hosts are empty', async () 
 			}),
 		])
 	} finally {
-		resolveSpy.mockRestore()
+		blockedResolveSpy.mockRestore()
 	}
-})
 
-test('fetch gateway allows placeholders for approved hosts', async () => {
-	const resolveSpy = vi
+	const allowedResolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue({
 			found: true,
@@ -70,20 +69,9 @@ test('fetch gateway allows placeholders for approved hosts', async () => {
 			allowedHosts: ['example.com'],
 			allowedCapabilities: [],
 		})
-	const request = new Request('https://example.com/api', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: 'Bearer {{secret:spotifyRefreshToken|scope=user}}',
-		},
-		body: JSON.stringify({
-			token: '{{secret:spotifyRefreshToken|scope=user}}',
-		}),
-	})
-
 	try {
 		const transformed = await expandSecretPlaceholders({
-			request,
+			request: createRequest(),
 			props,
 			env,
 		})
@@ -92,7 +80,7 @@ test('fetch gateway allows placeholders for approved hosts', async () => {
 			JSON.stringify({ token: 'secret-value' }),
 		)
 	} finally {
-		resolveSpy.mockRestore()
+		allowedResolveSpy.mockRestore()
 	}
 })
 

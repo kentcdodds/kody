@@ -202,7 +202,13 @@ test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits'
 	)
 })
 
-test('readPublishGitNoteFromArtifactsRepo returns found false when notes ref is absent', async () => {
+test('readPublishGitNoteFromArtifactsRepo handles missing notes and propagates fetch or read failures', async () => {
+	const readInput = {
+		env: {} as Env,
+		repoId: 'package-pkg-1',
+		commitOid: 'commit-1',
+	}
+
 	mockGit.clone.mockClear()
 	mockGit.fetch.mockClear()
 	mockGit.readNote.mockClear()
@@ -212,42 +218,23 @@ test('readPublishGitNoteFromArtifactsRepo returns found false when notes ref is 
 		}),
 	)
 
-	const result = await readPublishGitNoteFromArtifactsRepo({
-		env: {} as Env,
-		repoId: 'package-pkg-1',
-		commitOid: 'commit-1',
-	})
-
-	expect(result.found).toBe(false)
+	const missingNotesRef = await readPublishGitNoteFromArtifactsRepo(readInput)
+	expect(missingNotesRef.found).toBe(false)
 	expect(mockGit.readNote).not.toHaveBeenCalled()
-})
 
-test('readPublishGitNoteFromArtifactsRepo propagates fetch and readNote failures', async () => {
 	mockGit.fetch.mockRejectedValueOnce(new Error('HTTP Error: 401 Unauthorized'))
-	await expect(
-		readPublishGitNoteFromArtifactsRepo({
-			env: {} as Env,
-			repoId: 'package-pkg-1',
-			commitOid: 'commit-1',
-		}),
-	).rejects.toThrow('401 Unauthorized')
+	await expect(readPublishGitNoteFromArtifactsRepo(readInput)).rejects.toThrow(
+		'401 Unauthorized',
+	)
 
 	mockGit.fetch.mockRejectedValueOnce(new Error('Repository not found'))
-	await expect(
-		readPublishGitNoteFromArtifactsRepo({
-			env: {} as Env,
-			repoId: 'package-pkg-1',
-			commitOid: 'commit-1',
-		}),
-	).rejects.toThrow('Repository not found')
+	await expect(readPublishGitNoteFromArtifactsRepo(readInput)).rejects.toThrow(
+		'Repository not found',
+	)
 
 	mockGit.fetch.mockResolvedValueOnce({ ok: true, refs: {} })
 	mockGit.readNote.mockRejectedValueOnce(new Error('filesystem corruption'))
-	await expect(
-		readPublishGitNoteFromArtifactsRepo({
-			env: {} as Env,
-			repoId: 'package-pkg-1',
-			commitOid: 'commit-1',
-		}),
-	).rejects.toThrow('filesystem corruption')
+	await expect(readPublishGitNoteFromArtifactsRepo(readInput)).rejects.toThrow(
+		'filesystem corruption',
+	)
 })

@@ -896,69 +896,71 @@ test('runRepoChecks typechecks ESM package job entrypoints', async () => {
 	)
 })
 
-test('runRepoChecks injects a synthetic tsconfig that allows optional .ts imports for package entrypoints', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/ts-extension-job',
-				kodyId: 'ts-extension-job',
-				description: 'Imports a sibling .ts module',
-				jobs: {
-					tsExtension: {
-						entry: 'src/job.ts',
-						schedule: {
-							type: 'once',
-							runAt: '2026-04-17T15:00:00Z',
-						},
-					},
+test('runRepoChecks injects package tsconfig overlays that allow optional .ts imports', async () => {
+	const jobManifest = {
+		packageName: '@kody/ts-extension-job',
+		kodyId: 'ts-extension-job',
+		description: 'Imports a sibling .ts module',
+		jobs: {
+			tsExtension: {
+				entry: 'src/job.ts',
+				schedule: {
+					type: 'once',
+					runAt: '2026-04-17T15:00:00Z',
 				},
-			}),
-		],
+			},
+		},
+	} as const
+	const sharedSources = [
 		['src/index.ts', 'export const ready = true\n'],
 		['src/job.ts', 'export { default } from "./helper.ts"\n'],
 		['src/helper.ts', 'export default async () => ({ ok: true })\n'],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
+	] as const
+
+	async function runTsExtensionChecks(files: Map<string, string>) {
+		const snapshot = createSnapshotFromFiles(files)
+		const typeScriptFileSystem: MockTypeScriptFileSystem = {
+			...snapshot,
+			write: vi.fn(),
+		}
+		mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+		mockModule.createTypescriptLanguageService.mockResolvedValue({
+			fileSystem: typeScriptFileSystem,
+			languageService: {
+				getSemanticDiagnostics: vi.fn(() => []),
+			},
+		})
+
+		const result = await runRepoChecks({
+			workspace: {
+				async readFile(path: string) {
+					return files.get(path) ?? null
+				},
+				async glob() {
+					return Array.from(files.keys()).map((path) => ({
+						path,
+						type: 'file',
+					}))
+				},
+			},
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		})
+
+		return { result, typeScriptFileSystem }
 	}
-	const getSemanticDiagnostics = vi.fn(() => [])
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics,
-		},
-	})
 
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(mockModule.createTypescriptLanguageService).toHaveBeenCalledWith({
-		fileSystem: expect.objectContaining({
-			read: expect.any(Function),
-			write: expect.any(Function),
-			delete: expect.any(Function),
-			list: expect.any(Function),
-			flush: expect.any(Function),
-		}),
-	})
-	const typecheckInput = mockModule.createTypescriptLanguageService.mock
-		.calls[0]?.[0] as { fileSystem: MockTypeScriptFileSystem }
-	expect(typecheckInput.fileSystem.read('tsconfig.json')).toBe(
+	const withoutRepoTsconfig = new Map<string, string>([
+		['package.json', createPackageManifest(jobManifest)],
+		...sharedSources,
+	])
+	const syntheticOnly = await runTsExtensionChecks(withoutRepoTsconfig)
+	expect(syntheticOnly.result.ok).toBe(true)
+	const syntheticTypecheckInput =
+		mockModule.createTypescriptLanguageService.mock.calls.at(-1)?.[0] as {
+			fileSystem: MockTypeScriptFileSystem
+		}
+	expect(syntheticTypecheckInput.fileSystem.read('tsconfig.json')).toBe(
 		JSON.stringify({
 			compilerOptions: {
 				allowImportingTsExtensions: true,
@@ -967,19 +969,11 @@ test('runRepoChecks injects a synthetic tsconfig that allows optional .ts import
 		}),
 	)
 	expect(
-		typecheckInput.fileSystem.read('./.__kody_repo_tsconfig_base__.json'),
+		syntheticTypecheckInput.fileSystem.read(
+			'./.__kody_repo_tsconfig_base__.json',
+		),
 	).toBe(null)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job"'),
-	)
-	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/index"'),
-	)
-})
 
-test('runRepoChecks preserves repo tsconfig via extends while enabling optional .ts imports for packages', async () => {
 	const repoTsconfig = JSON.stringify({
 		compilerOptions: {
 			module: 'NodeNext',
@@ -987,60 +981,18 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 			strict: true,
 		},
 	})
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/ts-extension-job',
-				kodyId: 'ts-extension-job',
-				description: 'Preserves repo tsconfig',
-				jobs: {
-					tsExtension: {
-						entry: 'src/job.ts',
-						schedule: {
-							type: 'once',
-							runAt: '2026-04-17T15:00:00Z',
-						},
-					},
-				},
-			}),
-		],
+	const withRepoTsconfig = new Map<string, string>([
+		['package.json', createPackageManifest(jobManifest)],
 		['tsconfig.json', repoTsconfig],
-		['src/index.ts', 'export const ready = true\n'],
-		['src/job.ts', 'export { default } from "./helper.ts"\n'],
-		['src/helper.ts', 'export default async () => ({ ok: true })\n'],
+		...sharedSources,
 	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	const getSemanticDiagnostics = vi.fn(() => [])
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics,
-		},
-	})
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	const typecheckInput = mockModule.createTypescriptLanguageService.mock
-		.calls[0]?.[0] as { fileSystem: MockTypeScriptFileSystem }
-	expect(typecheckInput.fileSystem.read('tsconfig.json')).toBe(
+	const extendsRepoBase = await runTsExtensionChecks(withRepoTsconfig)
+	expect(extendsRepoBase.result.ok).toBe(true)
+	const extendsTypecheckInput =
+		mockModule.createTypescriptLanguageService.mock.calls.at(-1)?.[0] as {
+			fileSystem: MockTypeScriptFileSystem
+		}
+	expect(extendsTypecheckInput.fileSystem.read('tsconfig.json')).toBe(
 		JSON.stringify({
 			extends: './.__kody_repo_tsconfig_base__.json',
 			compilerOptions: {
@@ -1050,19 +1002,19 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 		}),
 	)
 	expect(
-		typecheckInput.fileSystem.read('.__kody_repo_tsconfig_base__.json'),
+		extendsTypecheckInput.fileSystem.read('.__kody_repo_tsconfig_base__.json'),
 	).toBe(repoTsconfig)
-	expect(
-		typecheckInput.fileSystem.read('/.__kody_repo_tsconfig_base__.json'),
-	).toBe(repoTsconfig)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job"'),
-	)
-	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/index"'),
-	)
+
+	for (const { typeScriptFileSystem } of [syntheticOnly, extendsRepoBase]) {
+		expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+			'.__kody_repo_module_check__.ts',
+			expect.stringContaining('import userEntrypoint from "./src/job"'),
+		)
+		expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
+			'.__kody_repo_module_check__.ts',
+			expect.stringContaining('import userEntrypoint from "./src/index"'),
+		)
+	}
 })
 
 test('runRepoChecks reports declared npm dependencies in package.json', async () => {

@@ -626,11 +626,8 @@ test('searchUnified annotates high-confidence package action matches', async () 
 		],
 	})
 	expect(result.guidance).toEqual(expect.any(String))
-})
 
-test('searchUnified leaves broad package queries flexible without action matches', async () => {
-	const registry = buildCapabilityRegistry([])
-	const result = await searchUnified({
+	const broadQuery = await searchUnified({
 		env: {} as Env,
 		query: 'google products helpers',
 		limit: 5,
@@ -676,16 +673,15 @@ test('searchUnified leaves broad package queries flexible without action matches
 			userValueRows: [],
 		},
 	})
-
-	expect(result.matches[0]).toMatchObject({
+	expect(broadQuery.matches[0]).toMatchObject({
 		type: 'package',
 		kodyId: 'google-products',
 		actionMatches: [],
 	})
-	expect(result.guidance).toEqual(expect.any(String))
+	expect(broadQuery.guidance).toEqual(expect.any(String))
 })
 
-test('searchUnified prefers safer package wrappers over raw low-level capabilities', async () => {
+test('searchUnified ranks package wrappers and exact capability matches ahead of weaker alternatives', async () => {
 	const registry = buildCapabilityRegistry([
 		{
 			name: 'network_access',
@@ -810,10 +806,8 @@ test('searchUnified prefers safer package wrappers over raw low-level capabiliti
 			}),
 		]),
 	)
-})
 
-test('searchUnified preserves exact capability matches without a relevant wrapper', async () => {
-	const registry = buildCapabilityRegistry([
+	const exactCapabilityRegistry = buildCapabilityRegistry([
 		{
 			name: 'meta',
 			description: 'Meta capabilities',
@@ -838,11 +832,11 @@ test('searchUnified preserves exact capability matches without a relevant wrappe
 			],
 		},
 	])
-	const result = await searchUnified({
+	const exactCapabilityMatch = await searchUnified({
 		env: {} as Env,
 		query: 'meta_memory_verify memory storage',
 		limit: 3,
-		registry,
+		registry: exactCapabilityRegistry,
 		optionalRows: {
 			packageRows: [
 				{
@@ -880,8 +874,7 @@ test('searchUnified preserves exact capability matches without a relevant wrappe
 			userValueRows: [],
 		},
 	})
-
-	expect(result.matches[0]).toMatchObject({
+	expect(exactCapabilityMatch.matches[0]).toMatchObject({
 		type: 'capability',
 		name: 'meta_memory_verify',
 	})

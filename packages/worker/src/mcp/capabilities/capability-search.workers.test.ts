@@ -63,27 +63,6 @@ test('offline detailed search returns structured capability matches without sche
 			},
 			inputTypeDefinition: 'type OAuthSetupGuideInput = {\n\tguide: string\n}',
 		},
-		kody_official_guide: {
-			name: 'kody_official_guide',
-			domain: 'coding',
-			description: 'Load official Kody guides.',
-			keywords: ['guide'],
-			readOnly: true,
-			idempotent: true,
-			destructive: false,
-			inputFields: ['guide'],
-			requiredInputFields: ['guide'],
-			outputFields: [],
-			inputSchema: {
-				type: 'object',
-				properties: {
-					guide: { type: 'string' },
-				},
-				required: ['guide'],
-			},
-			inputTypeDefinition:
-				'type KodyOfficialGuideInput = {\n\tguide: string\n}',
-		},
 	} satisfies Record<string, CapabilitySpec>
 	const env = {
 		SENTRY_ENVIRONMENT: 'test',
@@ -113,23 +92,10 @@ test('offline detailed search returns structured capability matches without sche
 		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
 	)
 	expect(oauthGuide.matches[0]).not.toHaveProperty('inputSchema')
-
-	const guideSpecs = {
-		kody_official_guide: specs.kody_official_guide,
-	} satisfies Record<string, CapabilitySpec>
-	const guideMatch = await searchCapabilities({
-		env,
-		query: 'guide',
-		limit: 1,
-		detail: true,
-		specs: guideSpecs,
+	expect(oauthGuide.matches[0]).toMatchObject({
+		inputTypeDefinition: expect.stringContaining('OAuthSetupGuideInput'),
 	})
-
-	expect(guideMatch.matches[0]).not.toHaveProperty('inputSchema')
-	expect(guideMatch.matches[0]).toMatchObject({
-		inputTypeDefinition: expect.stringContaining('KodyOfficialGuideInput'),
-	})
-	expect(guideMatch.matches[0]).not.toHaveProperty('outputSchema')
+	expect(oauthGuide.matches[0]).not.toHaveProperty('outputSchema')
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {

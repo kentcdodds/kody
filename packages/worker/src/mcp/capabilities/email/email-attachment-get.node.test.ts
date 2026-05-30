@@ -13,7 +13,19 @@ const { emailAttachmentGetCapability } =
 	await import('./email-attachment-get.ts')
 const { createMcpCallerContext } = await import('#mcp/context.ts')
 
-test('emailAttachmentGetCapability returns attachment content and rejects missing ids', async () => {
+test('email capabilities require a signed-in user and return attachment content or reject missing ids', async () => {
+	await expect(
+		emailAttachmentGetCapability.handler(
+			{ attachment_id: 'attachment-1' },
+			{
+				env: { APP_DB: {} } as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+				}),
+			},
+		),
+	).rejects.toThrow(/Authenticated MCP user/)
+
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {

@@ -1202,80 +1202,51 @@ test('package runtime invokeChecked fails before invocation when check fails', a
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
-test('package runtime invocation errors clearly when the target package is missing', async () => {
+test('package runtime invocation errors clearly when the target package or export is missing', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
-	repoMockModule.getSavedPackageByKodyId.mockResolvedValue(null)
-
-	const tools = createPackageRuntimeInvokeTools({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		callerContext: createMcpCallerContext({
+	const createTools = () =>
+		createPackageRuntimeInvokeTools({
+			env: createEnv(db),
 			baseUrl: 'https://kody.dev',
-			user: {
-				userId: 'user-123',
-				email: 'me@example.com',
-				displayName: 'Me',
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://kody.dev',
+				user: {
+					userId: 'user-123',
+					email: 'me@example.com',
+					displayName: 'Me',
+				},
+			}),
+			packageContext: {
+				packageId: 'pkg-gateway',
+				kodyId: 'discord-gateway',
+				sourceId: 'source-gateway',
 			},
-		}),
-		packageContext: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-		},
-		parentRuntimeDebug: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-			surface: 'export',
-			name: './dispatch-message-created',
-			idempotencyKey: 'message-1',
-		},
-		packageInvokeDepth: 0,
-	})
+			parentRuntimeDebug: {
+				packageId: 'pkg-gateway',
+				kodyId: 'discord-gateway',
+				sourceId: 'source-gateway',
+				surface: 'export',
+				name: './dispatch-message-created',
+				idempotencyKey: 'message-1',
+			},
+			packageInvokeDepth: 0,
+		})
 
+	repoMockModule.getSavedPackageByKodyId.mockResolvedValue(null)
 	await expect(
-		tools.invoke({
+		createTools().invoke({
 			kodyId: 'missing-package',
 			exportName: './handle-discord-message-created',
 		}),
 	).rejects.toThrow(
 		'[package_not_found] Saved package "missing-package" was not found for this user.',
 	)
-})
 
-test('package runtime invocation errors clearly when the target export is missing', async () => {
-	const db = createDatabase()
+	repoMockModule.getSavedPackageByKodyId.mockReset()
 	seedRuntimeDispatchPackages()
-	const tools = createPackageRuntimeInvokeTools({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://kody.dev',
-			user: {
-				userId: 'user-123',
-				email: 'me@example.com',
-				displayName: 'Me',
-			},
-		}),
-		packageContext: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-		},
-		parentRuntimeDebug: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-			surface: 'export',
-			name: './dispatch-message-created',
-			idempotencyKey: 'message-1',
-		},
-		packageInvokeDepth: 0,
-	})
-
 	await expect(
-		tools.invoke({
+		createTools().invoke({
 			kodyId: 'discord-general-chat',
 			exportName: './missing-export',
 			params: { event: { id: 'message-1' } },
