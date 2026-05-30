@@ -122,6 +122,12 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   control-plane endpoints used by `packages/worker/src/repo/artifacts.ts`
   (`repos`, `tokens`, and `fork`), so local repo create/get/list/token/fork
   calls do not need the live Artifacts REST API.
+- `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
+  Defaults to `default` when unset (local dev and tests). Wrangler sets
+  `production` and `preview` per environment in
+  `packages/worker/wrangler.jsonc`. New repo sessions persist this value in D1
+  as `session_repo_namespace` so follow-up lookups resolve the correct namespace
+  even after env changes.
 
 ## Why Zod?
 

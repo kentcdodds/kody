@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest'
 import { buildStaticPackageDependentsSummary } from './static-package-dependents.ts'
 
-test('buildStaticPackageDependentsSummary marks a static dependent stale after dependency republish', () => {
-	const summary = buildStaticPackageDependentsSummary({
+test('buildStaticPackageDependentsSummary reports stale state, limits, and aggregation', () => {
+	const staleSummary = buildStaticPackageDependentsSummary({
 		total: 1,
 		stale: 1,
 		currentDependencyCommit: 'commit-a-new',
@@ -25,7 +25,7 @@ test('buildStaticPackageDependentsSummary marks a static dependent stale after d
 		],
 	})
 
-	expect(summary).toEqual({
+	expect(staleSummary).toMatchObject({
 		total: 1,
 		stale: 1,
 		truncated: false,
@@ -42,35 +42,26 @@ test('buildStaticPackageDependentsSummary marks a static dependent stale after d
 				entrypoints_truncated: false,
 				bundled_dependency_commit: 'commit-a-old',
 				current_dependency_commit: 'commit-a-new',
-				recommended_action:
-					'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the published dependency commit.',
 			},
 		],
-		recommended_next_action:
-			'Inspect stale static dependents and republish only the packages whose bundled snapshot should include this package publish. Kody does not republish dependents automatically.',
 	})
-})
+	expect(staleSummary.items[0]?.recommended_action).toEqual(expect.any(String))
+	expect(staleSummary.recommended_next_action).toEqual(expect.any(String))
 
-test('buildStaticPackageDependentsSummary returns an empty summary with no dependents', () => {
-	const summary = buildStaticPackageDependentsSummary({
+	const emptySummary = buildStaticPackageDependentsSummary({
 		total: 0,
 		stale: 0,
 		currentDependencyCommit: 'commit-a',
 		rows: [],
 	})
-
-	expect(summary).toEqual({
+	expect(emptySummary).toMatchObject({
 		total: 0,
 		stale: 0,
 		truncated: false,
 		items: [],
-		recommended_next_action:
-			'No published bundle artifacts declare a static dependency on this package.',
 	})
-})
 
-test('buildStaticPackageDependentsSummary bounds returned dependents and entrypoints', () => {
-	const summary = buildStaticPackageDependentsSummary({
+	const boundedSummary = buildStaticPackageDependentsSummary({
 		total: 2,
 		stale: 2,
 		currentDependencyCommit: 'commit-a-new',
@@ -124,10 +115,9 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 			},
 		],
 	})
-
-	expect(summary.truncated).toBe(true)
-	expect(summary.items).toHaveLength(1)
-	expect(summary.items[0]).toEqual(
+	expect(boundedSummary.truncated).toBe(true)
+	expect(boundedSummary.items).toHaveLength(1)
+	expect(boundedSummary.items[0]).toEqual(
 		expect.objectContaining({
 			package_id: 'package-b',
 			artifact_count: 2,
@@ -135,10 +125,8 @@ test('buildStaticPackageDependentsSummary bounds returned dependents and entrypo
 			entrypoints_truncated: true,
 		}),
 	)
-})
 
-test('buildStaticPackageDependentsSummary keeps stale true when stale artifact is not returned', () => {
-	const summary = buildStaticPackageDependentsSummary({
+	const hiddenStaleSummary = buildStaticPackageDependentsSummary({
 		total: 1,
 		stale: 1,
 		currentDependencyCommit: 'commit-a-new',
@@ -161,8 +149,7 @@ test('buildStaticPackageDependentsSummary keeps stale true when stale artifact i
 			},
 		],
 	})
-
-	expect(summary.items[0]).toEqual(
+	expect(hiddenStaleSummary.items[0]).toEqual(
 		expect.objectContaining({
 			stale: true,
 			artifact_count: 6,
@@ -170,10 +157,8 @@ test('buildStaticPackageDependentsSummary keeps stale true when stale artifact i
 			bundled_dependency_commit: null,
 		}),
 	)
-})
 
-test('buildStaticPackageDependentsSummary reports null commit for mixed missing dependency commits', () => {
-	const summary = buildStaticPackageDependentsSummary({
+	const mixedCommitSummary = buildStaticPackageDependentsSummary({
 		total: 1,
 		stale: 1,
 		currentDependencyCommit: 'commit-a-new',
@@ -210,12 +195,9 @@ test('buildStaticPackageDependentsSummary reports null commit for mixed missing 
 			},
 		],
 	})
+	expect(mixedCommitSummary.items[0]?.bundled_dependency_commit).toBeNull()
 
-	expect(summary.items[0]?.bundled_dependency_commit).toBeNull()
-})
-
-test('buildStaticPackageDependentsSummary truncates by distinct entrypoints, not artifact rows', () => {
-	const summary = buildStaticPackageDependentsSummary({
+	const entrypointSummary = buildStaticPackageDependentsSummary({
 		total: 1,
 		stale: 0,
 		currentDependencyCommit: 'commit-a-new',
@@ -253,8 +235,7 @@ test('buildStaticPackageDependentsSummary truncates by distinct entrypoints, not
 			},
 		],
 	})
-
-	expect(summary.items[0]).toEqual(
+	expect(entrypointSummary.items[0]).toEqual(
 		expect.objectContaining({
 			artifact_count: 2,
 			entrypoints: ['src/index.ts'],

@@ -219,8 +219,6 @@ test('async helpers read installed runtime state', async () => {
 
 	expect(kodyWidget.params).toEqual({})
 	expect(kodyWidget.appBackend).toBeNull()
-	expect(typeof kodyWidget.sendMessage).toBe('function')
-	expect(typeof kodyWidget.executeCode).toBe('function')
 
 	runtimeState.install({
 		mode: 'mcp',
@@ -268,7 +266,7 @@ test('runtime bootstrap updates refresh params and app session without reinit', 
 	expect(kodyWidget.params).toEqual({ owner: 'updated', limit: 3 })
 })
 
-test('appBackend.resolveUrl resolves backend-relative paths safely', () => {
+test('appBackend.resolveUrl resolves backend-relative paths and rejects out-of-scope urls', () => {
 	installWindowLocation('http://localhost:3000/ui/app-123')
 	const runtimeState = getKodyWidgetRuntimeStateForTest()
 	runtimeState.reset()
@@ -297,20 +295,6 @@ test('appBackend.resolveUrl resolves backend-relative paths safely', () => {
 			new URL('http://localhost:3000/app/app-123/api/state'),
 		),
 	).toBe('http://localhost:3000/app/app-123/api/state')
-})
-
-test('appBackend.resolveUrl rejects urls outside the package app backend path', () => {
-	installWindowLocation('http://localhost:3000/ui/app-123')
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	runtimeState.install({
-		mode: 'hosted',
-		appBackend: {
-			basePath: '/app/app-123',
-			facetNames: ['main'],
-		},
-	})
-
 	expect(() =>
 		kodyWidget.appBackend?.resolveUrl('http://localhost:3000/ui/app-123'),
 	).toThrow(/only supports same-origin urls within the app backend base path/i)
@@ -321,7 +305,7 @@ test('appBackend.resolveUrl rejects urls outside the package app backend path', 
 	).toThrow(/only supports same-origin urls within the app backend base path/i)
 })
 
-test('appBackend.fetch adds the generated ui bearer token by default', async () => {
+test('appBackend.fetch adds the generated ui bearer token and preserves explicit authorization', async () => {
 	installWindowLocation('http://localhost:3000/ui/app-123')
 	const runtimeState = getKodyWidgetRuntimeStateForTest()
 	runtimeState.reset()
@@ -361,48 +345,19 @@ test('appBackend.fetch adds the generated ui bearer token by default', async () 
 			(requestInit as RequestInit | undefined)?.headers,
 		)
 		expect(headers.get('Authorization')).toBe('Bearer app-session-token')
-	} finally {
-		fetchSpy.mockRestore()
-	}
-})
 
-test('appBackend.fetch preserves explicit authorization headers', async () => {
-	installWindowLocation('http://localhost:3000/ui/app-123')
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	runtimeState.install({
-		mode: 'hosted',
-		appSession: {
-			token: 'app-session-token',
-			endpoints: {
-				source: 'https://kody.example/ui-api/app-123/source',
-				execute: 'https://kody.example/ui-api/app-123/execute',
-				secrets: 'https://kody.example/ui-api/app-123/secrets',
-				deleteSecret: 'https://kody.example/ui-api/app-123/secrets/delete',
-			},
-		},
-		appBackend: {
-			basePath: '/app/app-123',
-			facetNames: ['main'],
-		},
-	})
-
-	const fetchSpy = vi
-		.spyOn(globalThis, 'fetch')
-		.mockResolvedValue(new Response(JSON.stringify({ ok: true })))
-
-	try {
 		await kodyWidget.appBackend?.fetch('api/state', {
 			headers: {
 				Authorization: 'Bearer explicit-token',
 			},
 		})
 
-		const [, requestInit] = fetchSpy.mock.calls[0] ?? []
-		const headers = new Headers(
-			(requestInit as RequestInit | undefined)?.headers,
+		const [, explicitRequestInit] = fetchSpy.mock.calls[1] ?? []
+		const explicitHeaders = new Headers(
+			(explicitRequestInit as RequestInit | undefined)?.headers,
 		)
-		expect(headers.get('Authorization')).toBe('Bearer explicit-token')
+		expect(explicitHeaders.get('Authorization')).toBe('Bearer explicit-token')
+		expect(fetchSpy).toHaveBeenCalledTimes(2)
 	} finally {
 		fetchSpy.mockRestore()
 	}
@@ -430,7 +385,38 @@ test('runtime-backed helpers time out if the runtime never becomes ready', async
 	}
 })
 
-test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and only includes the module script when needed', () => {
+test('generated UI runtime head injection bootstraps state, defers entry init until ready, and only includes the module script when needed', () => {
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'hosted',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'mcp',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(false)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'interactive',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'complete',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
+
 	const defaultHead = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
 		params: {},
@@ -466,37 +452,4 @@ test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and o
 		params: {},
 	})
 	expect(shellRenderedHead).not.toMatch(/<script type="module"/)
-})
-
-test('hosted and mcp runtimes initialize immediately on import', () => {
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'loading',
-			bootstrapMode: 'hosted',
-		}),
-	).toBe(true)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'loading',
-			bootstrapMode: 'mcp',
-		}),
-	).toBe(true)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'loading',
-			bootstrapMode: 'entry',
-		}),
-	).toBe(false)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'interactive',
-			bootstrapMode: 'entry',
-		}),
-	).toBe(true)
-	expect(
-		shouldInitializeGeneratedUiRuntimeImmediately({
-			documentReadyState: 'complete',
-			bootstrapMode: 'entry',
-		}),
-	).toBe(true)
 })

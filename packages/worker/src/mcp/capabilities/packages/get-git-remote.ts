@@ -87,6 +87,9 @@ export const getGitRemoteCapability = defineDomainCapability(
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(info.remote)} ${shellQuote(cloneDirectory)}`,
 					`cd ${shellQuote(cloneDirectory)}`,
 					`git remote add kody ${shellQuote(info.remote)}`,
+					`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
+					`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,
+					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} fetch kody 'refs/notes/*:refs/notes/*'`,
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(info.defaultBranch ?? 'main')}`,
 				],
 			}

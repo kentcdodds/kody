@@ -126,11 +126,28 @@ test('protected resource metadata and auth challenge resolve origin consistently
 	)
 })
 
-test('mcp request rejects invalid tokens', async () => {
+test('mcp request enforces token audience and forwards caller props with connector fallback', async () => {
 	const request = new Request(`https://example.com${mcpResourcePath}`, {
-		headers: { Authorization: 'Bearer invalid' },
+		headers: { Authorization: 'Bearer token' },
 	})
-	const response = await handleMcpRequest({
+	const tokenWithoutAudience: TokenSummary = {
+		id: 'token',
+		grantId: 'grant',
+		userId: 'user',
+		createdAt: 0,
+		expiresAt: 999999,
+		grant: {
+			clientId: 'client',
+			scope: oauthScopes,
+			props: { userId: 'user' },
+		},
+	}
+	const validToken: TokenSummary = {
+		...tokenWithoutAudience,
+		audience: `https://example.com${mcpResourcePath}`,
+	}
+
+	const invalidResponse = await handleMcpRequest({
 		request,
 		env: createEnv(
 			createHelpers({
@@ -140,61 +157,26 @@ test('mcp request rejects invalid tokens', async () => {
 		ctx: createContext(),
 		fetchMcp: () => new Response('ok'),
 	})
+	expect(invalidResponse.status).toBe(401)
 
-	expect(response.status).toBe(401)
-})
-
-test('mcp request rejects tokens without resource audience', async () => {
-	const tokenSummary: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId: 'user',
-		createdAt: 0,
-		expiresAt: 999999,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: 'user' },
-		},
-	}
-	const response = await handleMcpRequest({
-		request: new Request(`https://example.com${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer valid' },
-		}),
+	const missingAudienceResponse = await handleMcpRequest({
+		request,
 		env: createEnv(
 			createHelpers({
-				unwrapToken: async () => tokenSummary,
+				unwrapToken: async () => tokenWithoutAudience,
 			}),
 		),
 		ctx: createContext(),
 		fetchMcp: () => new Response('ok'),
 	})
+	expect(missingAudienceResponse.status).toBe(401)
 
-	expect(response.status).toBe(401)
-})
-
-test('mcp request forwards when token is valid', async () => {
-	const tokenSummary: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId: 'user',
-		createdAt: 0,
-		expiresAt: 999999,
-		audience: `https://example.com${mcpResourcePath}`,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: 'user' },
-		},
-	}
 	let receivedProps: unknown = null
-	const response = await handleMcpRequest({
-		request: new Request(`https://example.com${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer valid' },
-		}),
+	const validResponse = await handleMcpRequest({
+		request,
 		env: createEnv(
 			createHelpers({
-				unwrapToken: async () => tokenSummary,
+				unwrapToken: async () => validToken,
 			}),
 		),
 		ctx: createContext(),
@@ -203,31 +185,15 @@ test('mcp request forwards when token is valid', async () => {
 			return new Response('ok')
 		},
 	})
-
-	expect(response.status).toBe(200)
+	expect(validResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
 		baseUrl: 'https://example.com',
 		remoteConnectors: [],
 		storageContext: null,
 		user: { userId: 'user' },
 	})
-})
 
-test('mcp request includes persisted attached remote connector refs', async () => {
-	const tokenSummary: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId: 'user',
-		createdAt: 0,
-		expiresAt: 999999,
-		audience: `https://example.com${mcpResourcePath}`,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: 'user' },
-		},
-	}
-	const appDb = {
+	const appDbWithConnector = {
 		prepare: () => ({
 			bind: () => ({
 				all: async () => ({
@@ -249,16 +215,13 @@ test('mcp request includes persisted attached remote connector refs', async () =
 			}),
 		}),
 	} as unknown as D1Database
-	let receivedProps: unknown = null
-	const response = await handleMcpRequest({
-		request: new Request(`https://example.com${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer valid' },
-		}),
+	const withConnectorResponse = await handleMcpRequest({
+		request,
 		env: createEnv(
 			createHelpers({
-				unwrapToken: async () => tokenSummary,
+				unwrapToken: async () => validToken,
 			}),
-			{ APP_DB: appDb },
+			{ APP_DB: appDbWithConnector },
 		),
 		ctx: createContext(),
 		fetchMcp: (_request, _env, ctx) => {
@@ -266,42 +229,23 @@ test('mcp request includes persisted attached remote connector refs', async () =
 			return new Response('ok')
 		},
 	})
-
-	expect(response.status).toBe(200)
+	expect(withConnectorResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
 		remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
 	})
-})
 
-test('mcp request still forwards when attached connector lookup fails', async () => {
-	const tokenSummary: TokenSummary = {
-		id: 'token',
-		grantId: 'grant',
-		userId: 'user',
-		createdAt: 0,
-		expiresAt: 999999,
-		audience: `https://example.com${mcpResourcePath}`,
-		grant: {
-			clientId: 'client',
-			scope: oauthScopes,
-			props: { userId: 'user' },
-		},
-	}
-	const appDb = {
+	const appDbUnavailable = {
 		prepare: () => {
 			throw new Error('D1 unavailable')
 		},
 	} as unknown as D1Database
-	let receivedProps: unknown = null
-	const response = await handleMcpRequest({
-		request: new Request(`https://example.com${mcpResourcePath}`, {
-			headers: { Authorization: 'Bearer valid' },
-		}),
+	const degradedResponse = await handleMcpRequest({
+		request,
 		env: createEnv(
 			createHelpers({
-				unwrapToken: async () => tokenSummary,
+				unwrapToken: async () => validToken,
 			}),
-			{ APP_DB: appDb },
+			{ APP_DB: appDbUnavailable },
 		),
 		ctx: createContext(),
 		fetchMcp: (_request, _env, ctx) => {
@@ -309,8 +253,7 @@ test('mcp request still forwards when attached connector lookup fails', async ()
 			return new Response('ok')
 		},
 	})
-
-	expect(response.status).toBe(200)
+	expect(degradedResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
 		remoteConnectors: [],
 	})

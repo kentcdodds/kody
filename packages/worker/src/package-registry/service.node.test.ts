@@ -34,6 +34,7 @@ const mockModule = vi.hoisted(() => ({
 	syncPackageJobsForPackage: vi.fn(),
 	updateSavedPackage: vi.fn(),
 	upsertSavedPackageVector: vi.fn(),
+	cleanupArtifactReposForPackage: vi.fn(),
 }))
 
 vi.mock('./manifest.ts', () => ({
@@ -111,6 +112,11 @@ vi.mock('#worker/jobs/service.ts', () => ({
 		mockModule.syncPackageJobsForPackage(...args),
 }))
 
+vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
+	cleanupArtifactReposForPackage: (...args: Array<unknown>) =>
+		mockModule.cleanupArtifactReposForPackage(...args),
+}))
+
 const { deleteSavedPackageProjection, refreshSavedPackageProjection } =
 	await import('./service.ts')
 
@@ -132,11 +138,8 @@ function createProjection() {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default service mocks after global mockReset.
 beforeEach(() => {
-	for (const value of Object.values(mockModule)) {
-		value.mockReset()
-	}
 	mockModule.buildPackageSearchProjection.mockReturnValue(createProjection())
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('saved package embed')
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
@@ -152,6 +155,7 @@ beforeEach(() => {
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.deleteJobRow.mockResolvedValue(undefined)
+	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
 	mockModule.listSavedPackageServices.mockResolvedValue({
 		savedPackage: {
 			id: 'package-1',
@@ -352,6 +356,11 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		packageId: 'package-1',
 	})
 
+	expect(mockModule.cleanupArtifactReposForPackage).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		sourceId: 'source-1',
+	})
 	expect(mockModule.packageServiceRpc).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',

@@ -101,7 +101,7 @@ function createState({
 	}
 }
 
-test('resolveJobManagerAlarmState treats equivalent UTC formats as in sync', () => {
+test('resolveJobManagerAlarmState covers armed, out-of-sync, and idle states', () => {
 	expect(
 		resolveJobManagerAlarmState({
 			alarmTimestamp: Date.parse('2026-04-20T18:30:00.000Z'),
@@ -112,9 +112,6 @@ test('resolveJobManagerAlarmState treats equivalent UTC formats as in sync', () 
 		alarmInSync: true,
 		status: 'armed',
 	})
-})
-
-test('resolveJobManagerAlarmState marks mismatched alarm times as out of sync', () => {
 	expect(
 		resolveJobManagerAlarmState({
 			alarmTimestamp: Date.parse('2026-04-20T19:00:00.000Z'),
@@ -125,9 +122,6 @@ test('resolveJobManagerAlarmState marks mismatched alarm times as out of sync', 
 		alarmInSync: false,
 		status: 'out_of_sync',
 	})
-})
-
-test('resolveJobManagerAlarmState reports idle when no alarm or next runnable job exists', () => {
 	expect(
 		resolveJobManagerAlarmState({
 			alarmTimestamp: null,

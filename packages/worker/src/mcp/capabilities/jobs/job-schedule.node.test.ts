@@ -50,85 +50,6 @@ function resetMocks() {
 	mockModule.updateJob.mockReset()
 }
 
-test('job_schedule creates a one-off job', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-123',
-		},
-	})
-	mockModule.createJob.mockResolvedValue({
-		id: 'job-123',
-		name: 'Turn lights off',
-		sourceId: 'source-123',
-		storageId: 'job:job-123',
-		schedule: {
-			type: 'once',
-			runAt: '2026-04-20T18:30:00.000Z',
-		},
-		scheduleSummary: 'Runs once at 2026-04-20T18:30:00.000Z',
-		createdAt: '2026-04-20T10:00:00.000Z',
-		nextRunAt: '2026-04-20T18:30:00.000Z',
-	} as const)
-
-	const result = await jobScheduleCapability.handler(
-		{
-			name: 'Turn lights off',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'once',
-				run_at: '2026-04-20T18:30:00Z',
-			},
-			params: {
-				room: 'office',
-			},
-			timezone: 'America/Denver',
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.createJob).toHaveBeenCalledWith({
-		env,
-		callerContext,
-		body: {
-			name: 'Turn lights off',
-			code: 'export default async () => ({ ok: true })',
-			params: {
-				room: 'office',
-			},
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-20T18:30:00Z',
-			},
-			timezone: 'America/Denver',
-		},
-	})
-	expect(result).toEqual({
-		job_id: 'job-123',
-		name: 'Turn lights off',
-		source_id: 'source-123',
-		storage_id: 'job:job-123',
-		schedule: {
-			type: 'once',
-			run_at: '2026-04-20T18:30:00.000Z',
-		},
-		schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
-		created_at: '2026-04-20T10:00:00.000Z',
-		next_run_at: '2026-04-20T18:30:00.000Z',
-	})
-})
-
 test('workflow_list returns recent workflow runs for the current user', async () => {
 	resetMocks()
 	const env = {} as Env
@@ -313,20 +234,8 @@ test('job_update updates safe mutable fields on an existing job', async () => {
 			},
 		],
 	})
-})
 
-test('job_update maps one-off schedule run_at to runAt in the service payload', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.updateJob.mockResolvedValue({
+	mockModule.updateJob.mockResolvedValueOnce({
 		id: 'job-once',
 		name: 'One-off cleanup',
 		sourceId: 'source-once',
@@ -348,7 +257,6 @@ test('job_update maps one-off schedule run_at to runAt in the service payload', 
 		errorCount: 0,
 		runHistory: [],
 	})
-
 	await jobUpdateCapability.handler(
 		{
 			id: 'job-once',
@@ -357,31 +265,35 @@ test('job_update maps one-off schedule run_at to runAt in the service payload', 
 				run_at: '2026-04-22T18:30:00Z',
 			},
 		},
-		{
-			env,
-			callerContext,
-		},
+		{ env, callerContext },
 	)
-
-	expect(mockModule.updateJob).toHaveBeenCalledWith({
+	expect(mockModule.updateJob).toHaveBeenLastCalledWith({
 		env,
 		callerContext,
-		body: {
+		body: expect.objectContaining({
 			id: 'job-once',
-			name: undefined,
-			code: undefined,
-			params: undefined,
 			schedule: {
 				type: 'once',
 				runAt: '2026-04-22T18:30:00Z',
 			},
-			timezone: undefined,
-			enabled: undefined,
-			killSwitchEnabled: undefined,
-		},
+		}),
 	})
-	const call = mockModule.updateJob.mock.calls.at(-1)?.[0]
-	expect(call?.body.schedule).not.toHaveProperty('run_at')
+	expect(
+		mockModule.updateJob.mock.calls.at(-1)?.[0].body.schedule,
+	).not.toHaveProperty('run_at')
+
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Provide at least one mutable field to update.')
+	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
 })
 
 test('job_delete removes an existing job by id for the signed-in user', async () => {
@@ -421,7 +333,7 @@ test('job_delete removes an existing job by id for the signed-in user', async ()
 	})
 })
 
-test('job_run_now executes an existing job through the job manager', async () => {
+test('job_run_now executes jobs immediately and preserves failed one-off jobs for inspection', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -436,7 +348,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 			appId: 'app-123',
 		},
 	})
-	mockModule.runJobNowViaManager.mockResolvedValue({
+	mockModule.runJobNowViaManager.mockResolvedValueOnce({
 		job: {
 			id: 'job-123',
 			name: 'Immediate run',
@@ -480,7 +392,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 		deletedAfterRun: false,
 	})
 
-	const result = await jobRunNowCapability.handler(
+	const successResult = await jobRunNowCapability.handler(
 		{
 			id: 'job-123',
 		},
@@ -496,7 +408,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 		jobId: 'job-123',
 		callerContext,
 	})
-	expect(result).toEqual({
+	expect(successResult).toEqual({
 		job: {
 			job_id: 'job-123',
 			name: 'Immediate run',
@@ -539,20 +451,8 @@ test('job_run_now executes an existing job through the job manager', async () =>
 		},
 		deleted_after_run: false,
 	})
-})
 
-test('job_run_now preserves failed one-off jobs for inspection', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.runJobNowViaManager.mockResolvedValue({
+	mockModule.runJobNowViaManager.mockResolvedValueOnce({
 		job: {
 			id: 'job-once',
 			name: 'One-off run',
@@ -595,7 +495,7 @@ test('job_run_now preserves failed one-off jobs for inspection', async () => {
 		deletedAfterRun: false,
 	})
 
-	const result = await jobRunNowCapability.handler(
+	const failedOneOffResult = await jobRunNowCapability.handler(
 		{
 			id: 'job-once',
 		},
@@ -605,13 +505,13 @@ test('job_run_now preserves failed one-off jobs for inspection', async () => {
 		},
 	)
 
-	expect(result.deleted_after_run).toBe(false)
-	expect(result.execution).toEqual({
+	expect(failedOneOffResult.deleted_after_run).toBe(false)
+	expect(failedOneOffResult.execution).toEqual({
 		ok: false,
 		error: 'boom',
 		logs: ['ran job'],
 	})
-	expect(result.job.last_run_error).toBe('boom')
+	expect(failedOneOffResult.job.last_run_error).toBe('boom')
 })
 
 test('job_schedule covers recurring schedules and the one-off helper flow', async () => {
@@ -848,32 +748,6 @@ test('job capabilities require an authenticated user for scheduling, mutation, a
 	expect(mockModule.updateJob).not.toHaveBeenCalled()
 	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
-})
-
-test('job_update rejects requests without any mutable fields', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Provide at least one mutable field to update.')
-	expect(mockModule.updateJob).not.toHaveBeenCalled()
 })
 
 test('job inspection capabilities expose due-now state, history, and alarm status', async () => {

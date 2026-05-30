@@ -9,7 +9,7 @@ const testEnv = {
 	COOKIE_SECRET: 'test-cookie-secret-at-least-32-characters-long!!',
 }
 
-test('generated UI app sessions mint minimal user payloads and honor TTL boundaries', async () => {
+test('generated UI app sessions mint minimal payloads, honor TTL boundaries, and enforce session ids', async () => {
 	const session = await createGeneratedUiAppSession({
 		env: testEnv,
 		baseUrl: 'https://example.com',
@@ -49,23 +49,15 @@ test('generated UI app sessions mint minimal user payloads and honor TTL boundar
 	).rejects.toThrow('expired')
 
 	vi.useRealTimers()
-})
-
-test('verifyGeneratedUiAppSession enforces expected session ids', async () => {
-	const session = await createGeneratedUiAppSession({
-		env: testEnv,
-		baseUrl: 'https://example.com',
-		user: { userId: 'u1', email: 'e@x.com', displayName: '' },
-	})
 
 	await expect(
 		verifyGeneratedUiAppSession(testEnv, session.token, 'wrong-session-id'),
 	).rejects.toThrow('does not match')
 
-	const payload = await verifyGeneratedUiAppSession(
+	const matchedPayload = await verifyGeneratedUiAppSession(
 		testEnv,
 		session.token,
 		session.sessionId,
 	)
-	expect(payload.session_id).toBe(session.sessionId)
+	expect(matchedPayload.session_id).toBe(session.sessionId)
 })

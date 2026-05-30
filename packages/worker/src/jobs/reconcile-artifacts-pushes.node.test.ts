@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	listEntitySourcesForExternalReconcile: vi.fn(),
@@ -53,16 +53,6 @@ function source(overrides: Record<string, unknown> = {}) {
 		...overrides,
 	}
 }
-
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
-beforeEach(() => {
-	mockModule.listEntitySourcesForExternalReconcile.mockReset()
-	mockModule.updateEntitySource.mockClear()
-	mockModule.resolveArtifactSourceHead.mockReset()
-	mockModule.revokeStaleArtifactsTokens.mockClear()
-	mockModule.publishFromExternalRef.mockReset()
-	mockModule.repoSessionRpc.mockClear()
-})
 
 test('publishes changed Artifacts HEADs and records reconcile checks', async () => {
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
@@ -119,17 +109,17 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
 })
 
-test('records reconcile checks even when a source fails', async () => {
+test('reconcile records source checks and continues the batch when a source or its check write fails', async () => {
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
 	mockModule.resolveArtifactSourceHead.mockRejectedValueOnce(new Error('boom'))
 
-	const result = await reconcileArtifactsPushes({
+	const singleFailure = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://kody.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
 	})
 
-	expect(result.errors).toBe(1)
+	expect(singleFailure.errors).toBe(1)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		{
@@ -138,9 +128,9 @@ test('records reconcile checks even when a source fails', async () => {
 			lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
 		},
 	)
-})
 
-test('continues the batch when recording a failed source check also fails', async () => {
+	mockModule.resolveArtifactSourceHead.mockClear()
+	mockModule.updateEntitySource.mockClear()
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
 		source(),
 		source({
@@ -156,13 +146,13 @@ test('continues the batch when recording a failed source check also fails', asyn
 		.mockRejectedValueOnce(new Error('d1 unavailable'))
 		.mockResolvedValueOnce(true)
 
-	const result = await reconcileArtifactsPushes({
+	const batchFailure = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://kody.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
 	})
 
-	expect(result).toEqual({
+	expect(batchFailure).toEqual({
 		checked: 2,
 		published: 0,
 		alreadyPublished: 1,
@@ -176,7 +166,7 @@ test('continues the batch when recording a failed source check also fails', asyn
 	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(2)
 })
 
-test('runs token cleanup during the 03:00 UTC cron window', async () => {
+test('reconcile runs token cleanup in the 03:00 UTC window without blocking publish on cleanup failure', async () => {
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
@@ -187,21 +177,19 @@ test('runs token cleanup during the 03:00 UTC cron window', async () => {
 		revoked: 2,
 	})
 
-	const result = await reconcileArtifactsPushes({
+	const cleanupResult = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://kody.test',
 		now: new Date('2026-05-04T03:02:00.000Z'),
 	})
 
-	expect(result.tokensRevoked).toBe(2)
+	expect(cleanupResult.tokensRevoked).toBe(2)
 	expect(mockModule.revokeStaleArtifactsTokens).toHaveBeenCalledWith(
 		expect.anything(),
 		'repo-1',
 		{ keepAfter: new Date('2026-05-04T03:02:00.000Z') },
 	)
-})
 
-test('token cleanup failures do not block source reconciliation', async () => {
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
@@ -218,13 +206,13 @@ test('token cleanup failures do not block source reconciliation', async () => {
 		checks: [],
 	})
 
-	const result = await reconcileArtifactsPushes({
+	const publishDespiteCleanupFailure = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://kody.test',
 		now: new Date('2026-05-04T03:02:00.000Z'),
 	})
 
-	expect(result).toEqual(
+	expect(publishDespiteCleanupFailure).toEqual(
 		expect.objectContaining({
 			published: 1,
 			errors: 0,

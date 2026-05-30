@@ -140,40 +140,33 @@ test('session handler only renews remembered sessions after the renewal window',
 	}
 })
 
-test('session handler clears stale session cookies when the user row is gone', async () => {
+test('session handler clears invalid session cookies for missing users and malformed ids', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session = createSessionHandler(createEnv())
-	const cookie = await createAuthCookie(
-		{
-			id: '404',
-			email: 'missing@example.com',
-			rememberMe: false,
-		},
-		false,
-	)
+	const invalidCookies = await Promise.all([
+		createAuthCookie(
+			{
+				id: '404',
+				email: 'missing@example.com',
+				rememberMe: false,
+			},
+			false,
+		),
+		createAuthCookie(
+			{
+				id: '1abc',
+				email: 'user@example.com',
+				rememberMe: false,
+			},
+			false,
+		),
+	])
 
-	const response = await session.handler(createSessionRequestContext(cookie))
+	for (const cookie of invalidCookies) {
+		const response = await session.handler(createSessionRequestContext(cookie))
 
-	expect(response.status).toBe(200)
-	expect(await response.json()).toEqual({ ok: false })
-	expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')
-})
-
-test('session handler rejects partially numeric session ids', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const session = createSessionHandler(createEnv())
-	const cookie = await createAuthCookie(
-		{
-			id: '1abc',
-			email: 'user@example.com',
-			rememberMe: false,
-		},
-		false,
-	)
-
-	const response = await session.handler(createSessionRequestContext(cookie))
-
-	expect(response.status).toBe(200)
-	expect(await response.json()).toEqual({ ok: false })
-	expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')
+		expect(response.status).toBe(200)
+		expect(await response.json()).toEqual({ ok: false })
+		expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')
+	}
 })

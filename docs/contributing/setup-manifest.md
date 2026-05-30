@@ -93,6 +93,9 @@ automatically:
   Production email uses the default public API base when this is unset. Local
   `npm run dev` targets the Cloudflare mock unless `SKIP_CLOUDFLARE_MOCK=1`. The
   internal Cloudflare API client expects paths under `/client/v4/`.)
+- `ARTIFACTS_NAMESPACE` (optional Worker var; defaults to `default`. Set per
+  Wrangler environment in `packages/worker/wrangler.jsonc` — e.g. `production`
+  and `preview` — so Artifacts repos are partitioned by deploy environment.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities` to refresh built-in capability
   embeddings in Vectorize. Saved package projections refresh when packages are

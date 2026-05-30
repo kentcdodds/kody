@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 
@@ -47,15 +47,6 @@ const {
 	createRuntimeModuleSource,
 	hydrateKodyRuntimeModules,
 } = await import('./module-graph.ts')
-
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
-beforeEach(() => {
-	mockModule.createWorker.mockReset()
-	mockModule.getSavedPackageByName.mockReset()
-	mockModule.getSavedPackageByKodyId.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
-})
 
 function createBundleResult(suffix: string) {
 	return {
@@ -653,7 +644,6 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 	try {
 		const proxyModule = await moduleGraph.importModule(proxyEntry?.[0] ?? '')
 		expect(proxyModule.marker).toBe('provider')
-		expect(typeof proxyModule.default).toBe('function')
 		expect(proxyModule.default({ value: 'from-published-artifact' })).toEqual({
 			ok: true,
 			value: 'from-published-artifact',
@@ -2704,110 +2694,76 @@ test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript
 	)
 })
 
-test('buildKodyAppBundle runtime module exports service helper', async () => {
+test('buildKodyAppBundle runtime module exports service and package invocation helpers', async () => {
+	const appBundleInput = {
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+					app: {
+						entry: 'app.ts',
+					},
+				},
+			}),
+			'app.ts': `export default {
+	async fetch() {
+		return Response.json({ ok: true })
+	},
+}
+`,
+			'index.ts': 'export const value = "ok"',
+		},
+		entryPoint: 'app.ts',
+		cacheKey: null,
+	}
+
 	mockModule.createWorker.mockResolvedValue(
 		createBundleResult('runtime-service-helper'),
 	)
-
-	await buildKodyAppBundle({
-		env: {
-			APP_DB: {},
-			REPO_SESSION: {},
-		} as Env,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		sourceFiles: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-					app: {
-						entry: 'app.ts',
-					},
-				},
-			}),
-			'app.ts': `export default {
-	async fetch() {
-		return Response.json({ ok: true })
-	},
-}
-`,
-			'index.ts': 'export const value = "ok"',
-		},
-		entryPoint: 'app.ts',
-		cacheKey: null,
-	})
-
-	const firstCall = mockModule.createWorker.mock.calls.at(-1)?.[0] as
-		| {
-				files?: Record<string, string>
-		  }
-		| undefined
-	const runtimeSource = firstCall?.files?.['.__kody_virtual__/runtime.js'] ?? ''
-	expect(runtimeSource).toContain(
+	await buildKodyAppBundle(appBundleInput)
+	const serviceRuntime =
+		(
+			mockModule.createWorker.mock.calls.at(-1)?.[0] as
+				| { files?: Record<string, string> }
+				| undefined
+		)?.files?.['.__kody_virtual__/runtime.js'] ?? ''
+	expect(serviceRuntime).toContain(
 		'export const service = runtime.service ?? null;',
 	)
-	expect(runtimeSource).toContain(
+	expect(serviceRuntime).toContain(
 		"import { AsyncLocalStorage } from 'node:async_hooks';",
 	)
-	expect(runtimeSource).toContain('export function __kodyRunInRuntime')
-	expect(runtimeSource).not.toContain('params')
-})
+	expect(serviceRuntime).toContain('export function __kodyRunInRuntime')
+	expect(serviceRuntime).not.toContain('params')
 
-test('buildKodyAppBundle runtime module exports package invocation helper', async () => {
 	mockModule.createWorker.mockResolvedValue(
 		createBundleResult('runtime-packages-helper'),
 	)
-
-	await buildKodyAppBundle({
-		env: {
-			APP_DB: {},
-			REPO_SESSION: {},
-		} as Env,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		sourceFiles: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-					app: {
-						entry: 'app.ts',
-					},
-				},
-			}),
-			'app.ts': `export default {
-	async fetch() {
-		return Response.json({ ok: true })
-	},
-}
-`,
-			'index.ts': 'export const value = "ok"',
-		},
-		entryPoint: 'app.ts',
-		cacheKey: null,
-	})
-
-	const firstCall = mockModule.createWorker.mock.calls.at(-1)?.[0] as
-		| {
-				files?: Record<string, string>
-		  }
-		| undefined
-	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
+	await buildKodyAppBundle(appBundleInput)
+	const packageRuntime =
+		(
+			mockModule.createWorker.mock.calls.at(-1)?.[0] as
+				| { files?: Record<string, string> }
+				| undefined
+		)?.files?.['.__kody_virtual__/runtime.js'] ?? ''
+	expect(packageRuntime).toContain(
 		'export const packages = runtime.packages ?? null;',
 	)
-	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
+	expect(packageRuntime).toContain(
 		'export const secretHeaders = runtime.secretHeaders;',
 	)
-	expect(firstCall?.files?.['.__kody_virtual__/runtime.js']).toContain(
+	expect(packageRuntime).toContain(
 		'export const oauthClientCredentials = runtime.oauthClientCredentials;',
 	)
 })

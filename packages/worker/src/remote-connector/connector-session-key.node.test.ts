@@ -5,25 +5,20 @@ import {
 	userScopedConnectorSessionKey,
 } from './connector-session-key.ts'
 
-test('userScopedConnectorSessionKey isolates connectors by user', () => {
-	const a = userScopedConnectorSessionKey({
+test('connector session keys and ingress routes round-trip without segment collisions', () => {
+	const userA = userScopedConnectorSessionKey({
 		userId: 'user-aaa',
 		kind: 'lights',
 		instanceId: 'default',
 	})
-	const b = userScopedConnectorSessionKey({
+	const userB = userScopedConnectorSessionKey({
 		userId: 'user-bbb',
 		kind: 'lights',
 		instanceId: 'default',
 	})
-	expect(a).not.toBe(b)
-	expect(a).toBe('["user-aaa","lights","default"]')
-	expect(b).toBe('["user-bbb","lights","default"]')
-})
+	expect(userA).not.toBe(userB)
+	expect(userA).toBe('["user-aaa","lights","default"]')
 
-test('userScopedConnectorSessionKey unambiguously encodes "/" in any segment', () => {
-	// Two distinct tuples must never collapse onto the same DO id, even when a
-	// component contains the segment delimiter.
 	const collidingA = userScopedConnectorSessionKey({
 		userId: 'user-aaa',
 		kind: 'lights',
@@ -35,9 +30,7 @@ test('userScopedConnectorSessionKey unambiguously encodes "/" in any segment', (
 		instanceId: 'b',
 	})
 	expect(collidingA).not.toBe(collidingB)
-})
 
-test('userScopedConnectorIngressPath builds username-scoped connector routes', () => {
 	expect(
 		userScopedConnectorIngressPath({
 			username: 'user-aaa',
@@ -52,9 +45,7 @@ test('userScopedConnectorIngressPath builds username-scoped connector routes', (
 			instanceId: 'a b',
 		}),
 	).toBe('/@with%20space/connectors/custom/a%20b')
-})
 
-test('parseUserScopedConnectorRoutePath extracts username, kind, and instanceId', () => {
 	expect(
 		parseUserScopedConnectorRoutePath(
 			'/@user-aaa/connectors/lights/default/snapshot',

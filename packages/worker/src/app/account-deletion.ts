@@ -3,6 +3,7 @@ import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { memoryVectorId } from '#mcp/memory/memory-vectorize.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
 import { getCapabilityVectorIndex } from '#mcp/capabilities/capability-search.ts'
+import { cleanupAllUserArtifactRepos } from '#worker/repo/artifact-repo-cleanup.ts'
 
 // Imported manually instead of via `@cloudflare/workers-oauth-provider` so
 // node-only unit tests can require this module without dragging in
@@ -27,6 +28,7 @@ type AccountDeletionEnv = Env & {
 export type AccountDeletionResult = {
 	deletedRowCounts: Record<string, number>
 	deletedKvKeys: number
+	deletedArtifactRepos: number
 	revokedOAuthGrants: number
 	clearedDurableObjects: Record<string, number>
 	deletedVectors: number
@@ -377,6 +379,7 @@ export async function deleteUserAccount(input: {
 	const result: AccountDeletionResult = {
 		deletedRowCounts: {},
 		deletedKvKeys: 0,
+		deletedArtifactRepos: 0,
 		revokedOAuthGrants: 0,
 		clearedDurableObjects: {},
 		deletedVectors: 0,
@@ -405,6 +408,16 @@ export async function deleteUserAccount(input: {
 		env: input.env,
 		ids: vectorIds,
 		warnings,
+	})
+
+	result.deletedArtifactRepos = await cleanupAllUserArtifactRepos({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	}).catch((error) => {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`Artifact repo cleanup failed unexpectedly: ${message}`)
+		return 0
 	})
 
 	result.clearedDurableObjects.storageRunners = await clearStorageRunners({

@@ -59,50 +59,10 @@ function workspace() {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite shares a large mocked repository surface.
+// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default mock behavior after global mockReset.
 beforeEach(() => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.updateEntitySource.mockClear()
-	mockModule.runRepoChecks.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockClear()
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
-	mockModule.refreshSavedPackageProjection.mockClear()
-})
-
-test('does not fail publish when package projection refresh fails after commit advance', async () => {
-	mockModule.getEntitySourceById.mockResolvedValue(source())
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-	})
-	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
-		new Error('projection failed'),
-	)
-
-	const result = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
-	})
-
-	expect(result.status).toBe('published')
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			publishedCommit: 'commit-new',
-		}),
-	)
 })
 
 test('publishes an external fast-forward ref after checks pass', async () => {
@@ -331,7 +291,40 @@ test('check failure leaves D1 untouched', async () => {
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
-test('projection refresh failure does not fail an already-committed publish', async () => {
+test('publishFromExternalRef succeeds when projection refresh fails after commit', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+	})
+	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
+		new Error('projection failed'),
+	)
+
+	const withoutSnapshot = await publishFromExternalRef({
+		env: { APP_DB: {} } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: async () => true,
+		workspace: workspace(),
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(withoutSnapshot.status).toBe('published')
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-new',
+		}),
+	)
+
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -347,7 +340,7 @@ test('projection refresh failure does not fail an already-committed publish', as
 		new Error('projection unavailable'),
 	)
 
-	const result = await publishFromExternalRef({
+	const withSnapshot = await publishFromExternalRef({
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
 		sourceId: 'source-1',
 		userId: 'user-1',
@@ -358,12 +351,6 @@ test('projection refresh failure does not fail an already-committed publish', as
 		baseUrl: 'https://kody.test',
 	})
 
-	expect(result.status).toBe('published')
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			publishedCommit: 'commit-new',
-		}),
-	)
+	expect(withSnapshot.status).toBe('published')
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
 })

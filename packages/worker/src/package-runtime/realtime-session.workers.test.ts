@@ -25,8 +25,17 @@ function createBinding(
 	}
 }
 
-test('package realtime session DO can list, emit, and broadcast with no active sessions', async () => {
-	const rpc = packageRealtimeSessionRpc(createBinding())
+function getStub(binding: ReturnType<typeof createBinding>) {
+	return env.PACKAGE_REALTIME_SESSION.get(
+		env.PACKAGE_REALTIME_SESSION.idFromName(
+			JSON.stringify([binding.userId, binding.packageId]),
+		),
+	)
+}
+
+test('package realtime session DO lists empty sessions and is addressable as a durable object', async () => {
+	const binding = createBinding()
+	const rpc = packageRealtimeSessionRpc(binding)
 
 	await expect(rpc.listSessions()).resolves.toEqual({ sessions: [] })
 	await expect(rpc.emit('missing-session', { type: 'hello' })).resolves.toEqual(
@@ -41,15 +50,8 @@ test('package realtime session DO can list, emit, and broadcast with no active s
 			sessionIds: [],
 		},
 	)
-})
 
-test('package realtime session DO is addressable as a durable object', async () => {
-	const binding = createBinding()
-	const stub = env.PACKAGE_REALTIME_SESSION.get(
-		env.PACKAGE_REALTIME_SESSION.idFromName(
-			JSON.stringify([binding.userId, binding.packageId]),
-		),
-	)
+	const stub = getStub(binding)
 
 	await runInDurableObject(
 		stub,
@@ -60,13 +62,9 @@ test('package realtime session DO is addressable as a durable object', async () 
 	)
 })
 
-test('package realtime session broadcast only returns delivered session ids', async () => {
+test('package realtime session broadcast and disconnect paths tolerate partial delivery and socket close errors', async () => {
 	const binding = createBinding()
-	const stub = env.PACKAGE_REALTIME_SESSION.get(
-		env.PACKAGE_REALTIME_SESSION.idFromName(
-			JSON.stringify([binding.userId, binding.packageId]),
-		),
-	)
+	const stub = getStub(binding)
 
 	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
 		const anyInstance = instance as unknown as {
@@ -78,11 +76,25 @@ test('package realtime session broadcast only returns delivered session ids', as
 				sessionId: string,
 				data: unknown,
 			) => Promise<{ delivered: boolean }>
+			getSocketBySessionId: (sessionId: string) => {
+				send: (data: string) => void
+				close: () => void
+			}
+			stateSnapshot: {
+				sessions: Record<string, { id: string; topics?: Array<string> }>
+			}
+			persistState: () => Promise<void>
 			broadcast: (input: {
 				facet?: string | null
 				topic?: string | null
 				data: unknown
 			}) => Promise<{ deliveredCount: number; sessionIds: Array<string> }>
+			applyHookActions: (
+				sessionId: string,
+				actions: Array<{ type: 'close'; code?: number; reason?: string }>,
+			) => Promise<void>
+			initializeBinding: (bindingState: unknown) => Promise<void>
+			fetch: (request: Request) => Promise<Response>
 		}
 
 		anyInstance.listSessions = () => [
@@ -101,41 +113,7 @@ test('package realtime session broadcast only returns delivered session ids', as
 			deliveredCount: 1,
 			sessionIds: ['session-1'],
 		})
-	})
-})
 
-test('package realtime session broadcast skips sessions whose send throws', async () => {
-	const binding = createBinding()
-	const stub = env.PACKAGE_REALTIME_SESSION.get(
-		env.PACKAGE_REALTIME_SESSION.idFromName(
-			JSON.stringify([binding.userId, binding.packageId]),
-		),
-	)
-
-	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
-		const anyInstance = instance as unknown as {
-			listSessions: (input?: {
-				facet?: string | null
-				topic?: string | null
-			}) => Array<{ session_id: string }>
-			getSocketBySessionId: (sessionId: string) => {
-				send: (data: string) => void
-			}
-			stateSnapshot: {
-				sessions: Record<string, { id: string }>
-			}
-			persistState: () => Promise<void>
-			broadcast: (input: {
-				facet?: string | null
-				topic?: string | null
-				data: unknown
-			}) => Promise<{ deliveredCount: number; sessionIds: Array<string> }>
-		}
-
-		anyInstance.listSessions = () => [
-			{ session_id: 'session-1' },
-			{ session_id: 'session-2' },
-		]
 		anyInstance.stateSnapshot = {
 			sessions: {
 				'session-1': { id: 'session-1' },
@@ -149,6 +127,9 @@ test('package realtime session broadcast skips sessions whose send throws', asyn
 					throw new Error('socket closing')
 				}
 			},
+			close: () => {
+				throw new Error('socket already closing')
+			},
 		})
 
 		await expect(
@@ -159,39 +140,12 @@ test('package realtime session broadcast skips sessions whose send throws', asyn
 			deliveredCount: 1,
 			sessionIds: ['session-1'],
 		})
-	})
-})
-
-test('package realtime session close action swallows socket close errors', async () => {
-	const binding = createBinding()
-	const stub = env.PACKAGE_REALTIME_SESSION.get(
-		env.PACKAGE_REALTIME_SESSION.idFromName(
-			JSON.stringify([binding.userId, binding.packageId]),
-		),
-	)
-
-	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
-		const anyInstance = instance as unknown as {
-			stateSnapshot: {
-				sessions: Record<string, { id: string; topics: Array<string> }>
-			}
-			getSocketBySessionId: (sessionId: string) => { close: () => void }
-			applyHookActions: (
-				sessionId: string,
-				actions: Array<{ type: 'close'; code?: number; reason?: string }>,
-			) => Promise<void>
-		}
 
 		anyInstance.stateSnapshot = {
 			sessions: {
 				'session-1': { id: 'session-1', topics: [] },
 			},
 		}
-		anyInstance.getSocketBySessionId = () => ({
-			close: () => {
-				throw new Error('socket already closing')
-			},
-		})
 
 		await expect(
 			anyInstance.applyHookActions('session-1', [
@@ -200,30 +154,8 @@ test('package realtime session close action swallows socket close errors', async
 				},
 			]),
 		).resolves.toBeUndefined()
-	})
-})
-
-test('package realtime disconnect endpoint swallows socket close errors', async () => {
-	const binding = createBinding()
-	const stub = env.PACKAGE_REALTIME_SESSION.get(
-		env.PACKAGE_REALTIME_SESSION.idFromName(
-			JSON.stringify([binding.userId, binding.packageId]),
-		),
-	)
-
-	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
-		const anyInstance = instance as unknown as {
-			initializeBinding: (bindingState: unknown) => Promise<void>
-			getSocketBySessionId: (sessionId: string) => { close: () => void }
-			fetch: (request: Request) => Promise<Response>
-		}
 
 		anyInstance.initializeBinding = async () => undefined
-		anyInstance.getSocketBySessionId = () => ({
-			close: () => {
-				throw new Error('socket already closing')
-			},
-		})
 
 		const response = await anyInstance.fetch(
 			new Request('https://package-realtime.invalid/session/disconnect', {

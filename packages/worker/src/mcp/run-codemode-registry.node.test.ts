@@ -1163,26 +1163,33 @@ export default async function run() {
 	}
 })
 
-test('runBundledModuleWithRegistry injects service helpers and custom timeout', async () => {
+test('runBundledModuleWithRegistry injects service and email helpers with custom timeout', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: { userId: 'user-123' },
 	})
+	const emptyRegistry = {
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {} as Record<string, string>,
+		capabilityHandlers: {},
+		capabilityList: [],
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
 	const getRegistrySpy = vi
 		.spyOn(
 			await import('#mcp/capabilities/registry.ts'),
 			'getCapabilityRegistryForContext',
 		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+		.mockResolvedValue(emptyRegistry)
 	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
 		null
 	const createExecuteExecutorSpy = vi
@@ -1205,15 +1212,10 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 		})
 
 	try {
-		const result = await runBundledModuleWithRegistry(
+		const serviceResult = await runBundledModuleWithRegistry(
 			env,
 			callerContext,
-			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js': 'export default async () => "ok"',
-				},
-			},
+			bundle,
 			undefined,
 			{
 				serviceContext: {
@@ -1231,8 +1233,7 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 				executorTimeoutMs: 300_000,
 			},
 		)
-
-		expect(result.result).toBe('ok')
+		expect(serviceResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(providerFns?.service_get_status({})).resolves.toEqual({
 			status: 'running',
@@ -1249,60 +1250,28 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 		await expect(providerFns?.service_clear_alarm({})).resolves.toEqual({
 			ok: true,
 		})
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
-})
 
-test('runBundledModuleWithRegistry injects email helpers', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
+		createExecuteExecutorSpy.mockImplementation(
+			() =>
+				({
+					async execute(_source, providers) {
+						providerFns = (
+							providers[0] as {
+								fns: Record<string, (args: unknown) => Promise<unknown>>
+							}
+						).fns
+						return {
+							result: 'ok',
+							logs: [],
+						}
+					},
+				}) as never,
 		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(_source, providers) {
-				providerFns = (
-					providers[0] as {
-						fns: Record<string, (args: unknown) => Promise<unknown>>
-					}
-				).fns
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
 
-	try {
-		const result = await runBundledModuleWithRegistry(
+		const emailResult = await runBundledModuleWithRegistry(
 			env,
 			callerContext,
-			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js': 'export default async () => "ok"',
-				},
-			},
+			bundle,
 			undefined,
 			{
 				emailTools: {
@@ -1317,8 +1286,7 @@ test('runBundledModuleWithRegistry injects email helpers', async () => {
 				},
 			},
 		)
-
-		expect(result.result).toBe('ok')
+		expect(emailResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(
 			providerFns?.email_message_get({

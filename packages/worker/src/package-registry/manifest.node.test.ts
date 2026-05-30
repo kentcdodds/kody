@@ -80,21 +80,52 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 	)
 })
 
-test('parseAuthoredPackageJson accepts package service definitions', () => {
+test('parseAuthoredPackageJson accepts services, subscriptions, emits, retrievers, and secret mounts', () => {
 	const manifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
-			name: '@kentcdodds/realtime-supervisor',
+			name: '@kentcdodds/discord-gateway',
 			exports: {
 				'.': './index.ts',
 			},
 			kody: {
-				id: 'realtime-supervisor',
-				description: 'Realtime supervisor package',
+				id: 'discord-gateway',
+				description: 'Discord gateway package',
+				secretMounts: {
+					discordBotToken: {
+						name: 'discordBotTokenKentPersonalAutomation',
+						scope: 'user',
+					},
+				},
 				services: {
-					'realtime-supervisor': {
-						entry: './services/realtime-supervisor.ts',
+					'gateway-supervisor': {
+						entry: './src/gateway-supervisor.ts',
 						autoStart: true,
+						mode: 'persistent',
 						timeoutMs: 300000,
+					},
+				},
+				subscriptions: {
+					'discord.message.created': {
+						handler: './src/handle-discord-message-created.ts',
+						description: 'Personal-history subscriber',
+						filters: {
+							channelIds: ['1470913684598423592'],
+						},
+					},
+				},
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						description: 'A Discord message was created.',
+					},
+				},
+				retrievers: {
+					'notes-search': {
+						export: './search-notes',
+						name: 'Personal notes',
+						description: 'Searches saved notes and snippets.',
+						scopes: ['context', 'search'],
+						timeoutMs: 250,
+						maxResults: 3,
 					},
 				},
 			},
@@ -102,16 +133,48 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 		manifestPath: 'package.json',
 	})
 
+	expect(manifest.kody.secretMounts).toEqual({
+		discordBotToken: {
+			name: 'discordBotTokenKentPersonalAutomation',
+			scope: 'user',
+		},
+	})
 	expect(manifest.kody.services).toEqual({
-		'realtime-supervisor': {
-			entry: './services/realtime-supervisor.ts',
+		'gateway-supervisor': {
+			entry: './src/gateway-supervisor.ts',
 			autoStart: true,
+			mode: 'persistent',
 			timeoutMs: 300000,
 		},
 	})
+	expect(manifest.kody.subscriptions).toEqual({
+		'discord.message.created': {
+			handler: './src/handle-discord-message-created.ts',
+			description: 'Personal-history subscriber',
+			filters: {
+				channelIds: ['1470913684598423592'],
+			},
+		},
+	})
+	expect(manifest.kody.emits).toEqual({
+		'@kentcdodds/discord.message.created': {
+			description: 'A Discord message was created.',
+		},
+	})
+	expect(buildPackageSearchProjection(manifest).retrievers).toEqual([
+		{
+			key: 'notes-search',
+			exportName: './search-notes',
+			name: 'Personal notes',
+			description: 'Searches saved notes and snippets.',
+			scopes: ['context', 'search'],
+			timeoutMs: 250,
+			maxResults: 3,
+		},
+	])
 })
 
-test('parseAuthoredPackageJson rejects legacy kody.workflows declarations with a clear migration error', () => {
+test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest extensions', () => {
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({
@@ -134,9 +197,7 @@ test('parseAuthoredPackageJson rejects legacy kody.workflows declarations with a
 	).toThrow(
 		'kody.workflows is not a supported field; use workflows.create({ packageId, exportName }) from any runtime context.',
 	)
-})
 
-test('parseAuthoredPackageJson rejects service timeoutMs values above the supported maximum', () => {
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({
@@ -158,97 +219,7 @@ test('parseAuthoredPackageJson rejects service timeoutMs values above the suppor
 			manifestPath: 'package.json',
 		}),
 	).toThrow('expected number to be <=300000')
-})
 
-test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/discord-gateway',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway package',
-				secretMounts: {
-					discordBotToken: {
-						name: 'discordBotTokenKentPersonalAutomation',
-						scope: 'user',
-					},
-				},
-				services: {
-					'gateway-supervisor': {
-						entry: './src/gateway-supervisor.ts',
-						autoStart: true,
-						mode: 'persistent',
-					},
-				},
-				subscriptions: {
-					'discord.message.created': {
-						handler: './src/handle-discord-message-created.ts',
-						description: 'Personal-history subscriber',
-						filters: {
-							channelIds: ['1470913684598423592'],
-						},
-					},
-				},
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-
-	expect(manifest.kody.secretMounts).toEqual({
-		discordBotToken: {
-			name: 'discordBotTokenKentPersonalAutomation',
-			scope: 'user',
-		},
-	})
-	expect(manifest.kody.services).toEqual({
-		'gateway-supervisor': {
-			entry: './src/gateway-supervisor.ts',
-			autoStart: true,
-			mode: 'persistent',
-		},
-	})
-	expect(manifest.kody.subscriptions).toEqual({
-		'discord.message.created': {
-			handler: './src/handle-discord-message-created.ts',
-			description: 'Personal-history subscriber',
-			filters: {
-				channelIds: ['1470913684598423592'],
-			},
-		},
-	})
-})
-
-test('parseAuthoredPackageJson accepts scoped emitted event declarations', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/discord-gateway',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway package',
-				emits: {
-					'@kentcdodds/discord.message.created': {
-						description: 'A Discord message was created.',
-					},
-				},
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-
-	expect(manifest.kody.emits).toEqual({
-		'@kentcdodds/discord.message.created': {
-			description: 'A Discord message was created.',
-		},
-	})
-})
-
-test('parseAuthoredPackageJson rejects emitted event topics that are not scoped to the package owner', () => {
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({
@@ -294,51 +265,35 @@ test('parseAuthoredPackageJson rejects emitted event topics that are not scoped 
 	).toThrow(
 		'kody.emits topic "@other/discord.message.created" must use the package scope "@kentcdodds"',
 	)
-})
 
-test('parseAuthoredPackageJson accepts retriever definitions and includes them in search projection', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox for random notes',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Personal notes',
-						description: 'Searches saved notes and snippets.',
-						scopes: ['context', 'search'],
-						timeoutMs: 250,
-						maxResults: 3,
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/personal-inbox',
+				exports: {
+					'.': './index.ts',
+					'./search-notes': './src/search-notes.ts',
+				},
+				kody: {
+					id: 'personal-inbox',
+					description: 'Personal inbox for random notes',
+					retrievers: {
+						'notes-search': {
+							export: './search-notes',
+							name: 'Personal notes',
+							description: 'Searches saved notes and snippets.',
+							scopes: [],
+						},
 					},
 				},
-			},
+			}),
+			manifestPath: 'package.json',
 		}),
-		manifestPath: 'package.json',
-	})
-
-	const projection = buildPackageSearchProjection(manifest)
-
-	expect(projection.retrievers).toEqual([
-		{
-			key: 'notes-search',
-			exportName: './search-notes',
-			name: 'Personal notes',
-			description: 'Searches saved notes and snippets.',
-			scopes: ['context', 'search'],
-			timeoutMs: 250,
-			maxResults: 3,
-		},
-	])
+	).toThrow('Too small')
 })
 
-test('buildPackageSearchProjection includes exported function signatures and jsdoc', () => {
-	const manifest = parseAuthoredPackageJson({
+test('buildPackageSearchProjection extracts export metadata, referenced types, and search documents', () => {
+	const weatherManifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/weather-tools',
 			exports: {
@@ -355,7 +310,7 @@ test('buildPackageSearchProjection includes exported function signatures and jsd
 		manifestPath: 'package.json',
 	})
 
-	const projection = buildPackageSearchProjection(manifest, {
+	const weatherProjection = buildPackageSearchProjection(weatherManifest, {
 		'src/index.ts':
 			'export const ignored = "types file should be preferred for metadata"',
 		'src/index.d.ts': `/**
@@ -370,7 +325,7 @@ export declare const celsiusToFahrenheit: (value: number) => number
 `,
 	})
 
-	expect(projection.exports).toEqual([
+	expect(weatherProjection.exports).toEqual([
 		expect.objectContaining({
 			subpath: '.',
 			runtimeTarget: 'src/index.ts',
@@ -395,10 +350,8 @@ export declare const celsiusToFahrenheit: (value: number) => number
 			referencedTypes: [],
 		}),
 	])
-})
 
-test('buildPackageSearchProjection includes only referenced local named types', () => {
-	const manifest = parseAuthoredPackageJson({
+	const cursorManifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/cursor-cloud-agents',
 			exports: {
@@ -415,7 +368,7 @@ test('buildPackageSearchProjection includes only referenced local named types', 
 		manifestPath: 'package.json',
 	})
 
-	const projection = buildPackageSearchProjection(manifest, {
+	const cursorProjection = buildPackageSearchProjection(cursorManifest, {
 		'src/launch-cursor-cloud-agent.d.ts': `type LaunchCursorCloudAgentInput = {
 	prompt: string
 	repository: RepositoryTarget
@@ -445,7 +398,7 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 `,
 	})
 
-	const [exportDetail] = projection.exports
+	const [exportDetail] = cursorProjection.exports
 	expect(exportDetail).toMatchObject({
 		subpath: './launch-cursor-cloud-agent',
 		functions: [
@@ -496,10 +449,8 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 	expect(referencedTypeText).not.toContain('type Record')
 	expect(referencedTypeText).not.toContain('type Date')
 	expect(referencedTypeText).not.toContain('interface Response')
-})
 
-test('buildPackageSearchProjection uses local declaration kind for exported const signatures', () => {
-	const manifest = parseAuthoredPackageJson({
+	const mixedManifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/mixed-runtime-tools',
 			exports: {
@@ -513,7 +464,7 @@ test('buildPackageSearchProjection uses local declaration kind for exported cons
 		manifestPath: 'package.json',
 	})
 
-	const projection = buildPackageSearchProjection(manifest, {
+	const mixedProjection = buildPackageSearchProjection(mixedManifest, {
 		'src/index.ts': `type GenericBound = {
 	value: string
 }
@@ -540,7 +491,7 @@ export const genericFormat = <T extends GenericBound>(input: T): string => input
 `,
 	})
 
-	expect(projection.exports[0]?.functions).toEqual([
+	expect(mixedProjection.exports[0]?.functions).toEqual([
 		{
 			name: 'typed',
 			description: null,
@@ -576,12 +527,10 @@ export const genericFormat = <T extends GenericBound>(input: T): string => input
 		},
 	])
 	expect(
-		projection.exports[0]?.referencedTypes.map((type) => type.name),
+		mixedProjection.exports[0]?.referencedTypes.map((type) => type.name),
 	).toEqual(['RenderedInput'])
-})
 
-test('buildPackageSearchProjection skips referenced types that exceed the size budget', () => {
-	const manifest = parseAuthoredPackageJson({
+	const largeManifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/large-type-tools',
 			exports: {
@@ -599,7 +548,7 @@ test('buildPackageSearchProjection skips referenced types that exceed the size b
 		(_, index) => `	field${index}: string`,
 	).join('\n')
 
-	const projection = buildPackageSearchProjection(manifest, {
+	const largeProjection = buildPackageSearchProjection(largeManifest, {
 		'src/index.ts': `type HugeInput = {
 ${oversizedFields}
 }
@@ -614,7 +563,7 @@ export function run(huge: HugeInput, small: SmallInput): string {
 `,
 	})
 
-	expect(projection.exports[0]?.referencedTypes).toEqual([
+	expect(largeProjection.exports[0]?.referencedTypes).toEqual([
 		{
 			name: 'SmallInput',
 			kind: 'type',
@@ -623,37 +572,8 @@ export function run(huge: HugeInput, small: SmallInput): string {
 }`,
 		},
 	])
-})
 
-test('parseAuthoredPackageJson rejects retriever definitions with no scopes', () => {
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/personal-inbox',
-				exports: {
-					'.': './index.ts',
-					'./search-notes': './src/search-notes.ts',
-				},
-				kody: {
-					id: 'personal-inbox',
-					description: 'Personal inbox for random notes',
-					retrievers: {
-						'notes-search': {
-							export: './search-notes',
-							name: 'Personal notes',
-							description: 'Searches saved notes and snippets.',
-							scopes: [],
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow('Too small')
-})
-
-test('parseAuthoredPackageJson accepts email event subscriptions', () => {
-	const manifest = parseAuthoredPackageJson({
+	const emailManifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/email-notifier',
 			exports: {
@@ -679,9 +599,9 @@ test('parseAuthoredPackageJson accepts email event subscriptions', () => {
 		manifestPath: 'package.json',
 	})
 
-	const projection = buildPackageSearchProjection(manifest)
+	const emailProjection = buildPackageSearchProjection(emailManifest)
 
-	expect(projection.subscriptions).toEqual([
+	expect(emailProjection.subscriptions).toEqual([
 		{
 			topic: 'email.message.quarantined',
 			handler: 'src/handle-quarantined-email.ts',
@@ -697,8 +617,8 @@ test('parseAuthoredPackageJson accepts email event subscriptions', () => {
 			},
 		},
 	])
-	const document = buildPackageSearchDocument(projection)
-	for (const subscription of projection.subscriptions ?? []) {
+	const document = buildPackageSearchDocument(emailProjection)
+	for (const subscription of emailProjection.subscriptions ?? []) {
 		expect(document).toContain(`subscription:${subscription.topic}`)
 	}
 })

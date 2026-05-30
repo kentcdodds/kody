@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -29,6 +29,12 @@ vi.mock('#worker/repo/artifacts.ts', async () => {
 })
 
 const { getGitRemoteCapability } = await import('./get-git-remote.ts')
+
+function resetMocks() {
+	for (const fn of Object.values(mockModule)) {
+		fn.mockReset()
+	}
+}
 
 function createContext(userId = 'user-1') {
 	return {
@@ -91,34 +97,19 @@ function mockPackageSource(sourceUserId = 'user-1') {
 	return { createToken }
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite resets shared hoisted mocks between tests.
-beforeEach(() => {
-	for (const fn of Object.values(mockModule)) {
-		fn.mockReset()
-	}
-})
+test('get_git_remote returns scoped artifact remotes and rejects invalid input', async () => {
+	resetMocks()
+	await expect(
+		getGitRemoteCapability.handler({}, createContext()),
+	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
 
-test('returns a write remote token expiring within the requested ttl', async () => {
-	const { createToken } = mockPackageSource()
-	const before = Date.now()
-	const result = await getGitRemoteCapability.handler(
-		{ package_id: 'package-1', ttl_seconds: 1800 },
-		createContext(),
-	)
-	const expiresAt = new Date(result.expires_at).getTime()
-	expect(createToken).toHaveBeenCalledWith('write', 1800)
-	expect(result.scope).toBe('write')
-	expect(expiresAt).toBeGreaterThanOrEqual(before + 1799 * 1000)
-	expect(expiresAt).toBeLessThanOrEqual(Date.now() + 1801 * 1000)
-	expect(result.authenticated_remote).toContain('https://x:art_v1_write_token@')
-	expect(result.git_extra_header).toBe(
-		'Authorization: Bearer art_v1_write_token',
-	)
-	expect(result.setup_commands[0]).toContain('-c http.extraHeader=')
-	expect(result.setup_commands[1]).toBe(`cd 'package-1'`)
-})
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	await expect(
+		getGitRemoteCapability.handler({ package_id: 'missing' }, createContext()),
+	).rejects.toThrow('Saved package "missing" was not found.')
 
-test('rejects a package source owned by another user', async () => {
+	resetMocks()
 	mockPackageSource('other-user')
 	await expect(
 		getGitRemoteCapability.handler(
@@ -126,32 +117,38 @@ test('rejects a package source owned by another user', async () => {
 			createContext(),
 		),
 	).rejects.toThrow('Repo source was not found for this user.')
-})
 
-test('rejects an unknown package id', async () => {
-	mockModule.getSavedPackageById.mockResolvedValue(null)
-	await expect(
-		getGitRemoteCapability.handler({ package_id: 'missing' }, createContext()),
-	).rejects.toThrow('Saved package "missing" was not found.')
-})
-
-test('requires exactly one package identity', async () => {
-	await expect(
-		getGitRemoteCapability.handler({}, createContext()),
-	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
-})
-
-test('honors explicit read scope', async () => {
+	resetMocks()
 	const { createToken } = mockPackageSource()
-	const result = await getGitRemoteCapability.handler(
+	const before = Date.now()
+	const writeResult = await getGitRemoteCapability.handler(
+		{ package_id: 'package-1', ttl_seconds: 1800 },
+		createContext(),
+	)
+	const writeExpiresAt = new Date(writeResult.expires_at).getTime()
+	expect(createToken).toHaveBeenCalledWith('write', 1800)
+	expect(writeResult.scope).toBe('write')
+	expect(writeExpiresAt).toBeGreaterThanOrEqual(before + 1799 * 1000)
+	expect(writeExpiresAt).toBeLessThanOrEqual(Date.now() + 1801 * 1000)
+	expect(writeResult.authenticated_remote).toContain(
+		'https://x:art_v1_write_token@',
+	)
+	expect(writeResult.git_extra_header).toBe(
+		'Authorization: Bearer art_v1_write_token',
+	)
+	expect(writeResult.setup_commands[0]).toContain('-c http.extraHeader=')
+	expect(writeResult.setup_commands[1]).toBe(`cd 'package-1'`)
+
+	resetMocks()
+	const readSetup = mockPackageSource()
+	const readResult = await getGitRemoteCapability.handler(
 		{ kody_id: 'unleashed-wifi', scope: 'read' },
 		createContext(),
 	)
-	expect(createToken).toHaveBeenCalledWith('read', 3600)
-	expect(result.scope).toBe('read')
-})
+	expect(readSetup.createToken).toHaveBeenCalledWith('read', 3600)
+	expect(readResult.scope).toBe('read')
 
-test('validates ttl bounds', async () => {
+	resetMocks()
 	mockPackageSource()
 	await expect(
 		getGitRemoteCapability.handler(

@@ -120,6 +120,21 @@ export async function listRepoSessionsBySource(
 	return (results ?? []).map(mapRepoSessionRow)
 }
 
+export async function listRepoSessionsByUser(
+	db: D1Database,
+	userId: string,
+): Promise<Array<RepoSessionRow>> {
+	const { results } = await db
+		.prepare(
+			`SELECT * FROM repo_sessions
+			WHERE user_id = ?
+			ORDER BY updated_at DESC`,
+		)
+		.bind(userId)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapRepoSessionRow)
+}
+
 export async function updateRepoSession(
 	db: D1Database,
 	input: {

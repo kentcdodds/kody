@@ -7,29 +7,21 @@ import {
 	resolveWranglerConfigPath,
 } from './wrangler-env-config.ts'
 
-test('getDefaultWranglerConfigPath defaults to the repository worker config', () => {
+test('wrangler config path helpers default, honor env overrides, and resolve paths', () => {
 	expect(getDefaultWranglerConfigPath({})).toBe(defaultWranglerConfigPath)
-})
-
-test('getDefaultWranglerConfigPath honors WRANGLER_CONFIG for deploy wrappers', () => {
 	expect(
 		getDefaultWranglerConfigPath({
 			WRANGLER_CONFIG:
 				'/workspace/packages/worker/wrangler-production.generated.json',
 		}),
 	).toBe('/workspace/packages/worker/wrangler-production.generated.json')
-})
 
-test('resolveWranglerConfigPath preserves absolute generated config paths', () => {
 	expect(
 		resolveWranglerConfigPath(
 			'/workspace/packages/worker/wrangler-production.generated.json',
 			'/workspace',
 		),
 	).toBe('/workspace/packages/worker/wrangler-production.generated.json')
-})
-
-test('resolveWranglerConfigPath resolves relative config paths from cwd', () => {
 	expect(
 		resolveWranglerConfigPath(
 			'packages/worker/wrangler-production.generated.json',

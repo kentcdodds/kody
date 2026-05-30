@@ -48,6 +48,11 @@ when that makes a single test longer and more assertion-heavy.
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
+- Vitest is configured with `clearMocks` and `mockReset` globally
+  (`vitest-shared.ts`). Each test starts with a clean mock slate; inline the
+  setup a test needs rather than relying on leftover state from a prior case.
+  Keep explicit mid-test resets only when one workflow test runs multiple
+  scenarios in a single `test(...)`.
 
 ## Examples
 

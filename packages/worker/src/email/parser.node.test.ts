@@ -73,8 +73,8 @@ test('parseForwardableEmailMessage extracts headers, bodies, and attachment meta
 	])
 })
 
-test('parseForwardableEmailMessage deduplicates overlapping to addresses and parses alternate reply token header', async () => {
-	const raw = [
+test('parseForwardableEmailMessage resolves reply tokens from headers and recipient addresses', async () => {
+	const headerTokenRaw = [
 		'From: Sender <sender@example.com>',
 		'To: Support <support@example.com>',
 		'X-Reply-Token: alternate-token',
@@ -82,39 +82,27 @@ test('parseForwardableEmailMessage deduplicates overlapping to addresses and par
 		'',
 		'Plain body',
 	].join('\r\n')
+	const headerTokenParsed = await parseForwardableEmailMessage(
+		createMessage(headerTokenRaw),
+	)
+	expect(headerTokenParsed.replyToken).toBe('alternate-token')
+	expect(headerTokenParsed.to).toEqual([
+		{ name: null, address: 'support@example.com' },
+	])
 
-	const parsed = await parseForwardableEmailMessage(createMessage(raw))
-
-	expect(parsed.replyToken).toBe('alternate-token')
-	expect(parsed.to).toEqual([{ name: null, address: 'support@example.com' }])
-})
-
-test('parseForwardableEmailMessage parses kody-r reply tokens from recipients', async () => {
-	const raw = [
+	const recipientTokenRaw = [
 		'From: Sender <sender@example.com>',
 		'To: Support <kody-r-0123456789abcdef@example.com>',
 		'Subject: Reply token',
 		'',
 		'Body',
 	].join('\r\n')
-
-	const parsed = await parseForwardableEmailMessage(
-		createMessage(raw, 'kody-r-0123456789abcdef@example.com'),
+	const recipientTokenParsed = await parseForwardableEmailMessage(
+		createMessage(recipientTokenRaw, 'kody-r-0123456789abcdef@example.com'),
 	)
+	expect(recipientTokenParsed.replyToken).toBe('0123456789abcdef')
 
-	expect(parsed.replyToken).toBe('0123456789abcdef')
-})
-
-test('parseForwardableEmailMessage rejects oversized raw MIME', async () => {
-	await expect(
-		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {
-			maxRawSize: 5,
-		}),
-	).rejects.toThrow(/too large/)
-})
-
-test('parseForwardableEmailMessage accepts both explicit reply token headers', async () => {
-	const raw = [
+	const explicitTokenRaw = [
 		'From: Sender <sender@example.com>',
 		'To: Support <support@example.com>',
 		'Subject: Reply token',
@@ -122,8 +110,14 @@ test('parseForwardableEmailMessage accepts both explicit reply token headers', a
 		'',
 		'Body',
 	].join('\r\n')
+	const explicitTokenParsed = await parseForwardableEmailMessage(
+		createMessage(explicitTokenRaw),
+	)
+	expect(explicitTokenParsed.replyToken).toBe('token-123')
 
-	const parsed = await parseForwardableEmailMessage(createMessage(raw))
-
-	expect(parsed.replyToken).toBe('token-123')
+	await expect(
+		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {
+			maxRawSize: 5,
+		}),
+	).rejects.toThrow(/too large/)
 })

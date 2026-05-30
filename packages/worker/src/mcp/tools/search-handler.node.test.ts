@@ -87,7 +87,6 @@ async function getSearchRegistration() {
 	expect(registerTool).toHaveBeenCalledTimes(1)
 	const [name, , handler] = registerTool.mock.calls[0] ?? []
 	expect(name).toBe('search')
-	expect(typeof handler).toBe('function')
 	return { handler }
 }
 

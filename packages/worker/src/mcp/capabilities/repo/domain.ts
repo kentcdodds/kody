@@ -9,6 +9,7 @@ import { repoReadFileCapability } from './repo-read-file.ts'
 import { repoRebaseSessionCapability } from './repo-rebase-session.ts'
 import { repoRunChecksCapability } from './repo-run-checks.ts'
 import { repoRunCommandsCapability } from './repo-run-commands.ts'
+import { repoShowPublishNoteCapability } from './repo-show-publish-note.ts'
 import { repoSearchCapability } from './repo-search.ts'
 import { repoTreeCapability } from './repo-tree.ts'
 import { repoWriteFileCapability } from './repo-write-file.ts'
@@ -28,6 +29,7 @@ export const repoDomain = defineDomain({
 		repoSearchCapability,
 		repoRunChecksCapability,
 		repoGetCheckStatusCapability,
+		repoShowPublishNoteCapability,
 		repoPublishSessionCapability,
 		repoRebaseSessionCapability,
 		repoDiscardSessionCapability,

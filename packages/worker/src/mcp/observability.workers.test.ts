@@ -45,7 +45,7 @@ function resetRepoPersistenceMocks() {
 	)
 }
 
-test('errorFields normalizes Error and non-Error values', () => {
+test('observability helpers normalize errors and emit resilient mcp-event logs', () => {
 	expect(errorFields(new TypeError('bad'))).toEqual({
 		errorName: 'TypeError',
 		errorMessage: 'bad',
@@ -54,10 +54,9 @@ test('errorFields normalizes Error and non-Error values', () => {
 		errorName: 'Unknown',
 		errorMessage: 'plain',
 	})
-})
 
-test('logMcpEvent writes mcp-event with JSON payload', () => {
 	const originalInfo = console.info
+	const originalWarn = console.warn
 	let tagArg: unknown
 	let jsonArg: unknown
 	console.info = ((tag: unknown, json?: unknown) => {
@@ -79,18 +78,13 @@ test('logMcpEvent writes mcp-event with JSON payload', () => {
 	}
 
 	expect(tagArg).toBe('mcp-event')
-	expect(typeof jsonArg).toBe('string')
 	const parsed = JSON.parse(jsonArg as string) as Record<string, unknown>
 	expect(parsed.category).toBe('mcp')
 	expect(parsed.tool).toBe('search')
 	expect(parsed.outcome).toBe('success')
 	expect(parsed.durationMs).toBe(42)
-	expect(typeof parsed.timestamp).toBe('string')
-})
+	expect(parsed.timestamp).toEqual(expect.any(String))
 
-test('logMcpEvent swallows failures from console.info', () => {
-	const originalInfo = console.info
-	const originalWarn = console.warn
 	console.info = (() => {
 		throw new Error('console boom')
 	}) as typeof console.info
@@ -111,6 +105,23 @@ test('logMcpEvent swallows failures from console.info', () => {
 			}),
 		).not.toThrow()
 		expect(Array.isArray(warnArgs) && warnArgs[0]).toBe('mcp-event-failed')
+
+		console.info = () => {}
+		expect(() =>
+			logMcpEvent({
+				category: 'mcp',
+				tool: 'search',
+				toolName: 'search',
+				outcome: 'failure',
+				durationMs: 1,
+				baseUrl: 'https://example.com',
+				hasUser: false,
+				sandboxError: true,
+				errorName: 'Error',
+				errorMessage: 'user code failed',
+				cause: new Error('user code failed'),
+			}),
+		).not.toThrow()
 	} finally {
 		console.info = originalInfo
 		console.warn = originalWarn
@@ -150,8 +161,33 @@ test('package_save capability logs parse_input failure and rethrows', async () =
 	expect(event.failurePhase).toBe('parse_input')
 })
 
-test('package_save rejects invalid package.json before persistence', async () => {
+test('package_save rejects invalid manifests before persistence', async () => {
+	resetRepoPersistenceMocks()
 	const handler = capabilityMap['package_save'].handler
+	const signedInContext = {
+		env: {
+			APP_DB: {
+				prepare() {
+					return {
+						bind() {
+							return {
+								first: async () => ({ username: 'user' }),
+							}
+						},
+					}
+				},
+			},
+		} as unknown as Env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'user',
+			},
+		}),
+	}
+
 	await expect(
 		handler(
 			{
@@ -168,36 +204,10 @@ test('package_save rejects invalid package.json before persistence', async () =>
 					},
 				],
 			},
-			{
-				env: {
-					APP_DB: {
-						prepare() {
-							return {
-								bind() {
-									return {
-										first: async () => ({ username: 'user' }),
-									}
-								},
-							}
-						},
-					},
-				} as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-					user: {
-						userId: 'user-1',
-						email: 'user@example.com',
-						displayName: 'user',
-					},
-				}),
-			},
+			signedInContext,
 		),
 	).rejects.toThrow('Invalid package.json')
-})
 
-test('package_save rejects package names outside the signed-in username scope', async () => {
-	resetRepoPersistenceMocks()
-	const handler = capabilityMap['package_save'].handler
 	await expect(
 		handler(
 			{
@@ -222,58 +232,12 @@ test('package_save rejects package names outside the signed-in username scope', 
 					},
 				],
 			},
-			{
-				env: {
-					APP_DB: {
-						prepare() {
-							return {
-								bind() {
-									return {
-										first: async () => ({ username: 'user' }),
-									}
-								},
-							}
-						},
-					},
-				} as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-					user: {
-						userId: 'user-1',
-						email: 'user@example.com',
-						displayName: 'user',
-					},
-				}),
-			},
+			signedInContext,
 		),
 	).rejects.toThrow(
 		'package.json name "@other/observed-package" must use the authenticated user\'s package scope "@user/*".',
 	)
 	expect(repoMockModule.ensureEntitySource).not.toHaveBeenCalled()
-})
-
-test('logMcpEvent reports failure without throwing when Sentry is off', () => {
-	const originalInfo = console.info
-	console.info = () => {}
-	try {
-		expect(() =>
-			logMcpEvent({
-				category: 'mcp',
-				tool: 'search',
-				toolName: 'search',
-				outcome: 'failure',
-				durationMs: 1,
-				baseUrl: 'https://example.com',
-				hasUser: false,
-				sandboxError: true,
-				errorName: 'Error',
-				errorMessage: 'user code failed',
-				cause: new Error('user code failed'),
-			}),
-		).not.toThrow()
-	} finally {
-		console.info = originalInfo
-	}
 })
 
 test('package_save capability logs success for valid invocation', async () => {
@@ -482,7 +446,7 @@ test('package_save capability logs success for valid invocation', async () => {
 				}),
 			},
 		)
-		expect(typeof (result as { package_id: string }).package_id).toBe('string')
+		expect((result as { package_id: string }).package_id).toBeTruthy()
 		expect((result as { has_app: boolean }).has_app).toBe(true)
 	} finally {
 		console.info = originalInfo

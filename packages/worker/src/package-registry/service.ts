@@ -31,6 +31,7 @@ import {
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
+import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -270,6 +271,21 @@ export async function deleteSavedPackageProjection(input: {
 		packageId: input.packageId,
 	})
 	if (savedPackage) {
+		await cleanupArtifactReposForPackage({
+			env: input.env,
+			userId: input.userId,
+			sourceId: savedPackage.sourceId,
+		}).catch((error) => {
+			console.warn(
+				JSON.stringify({
+					message: 'package artifact repo cleanup failed',
+					userId: input.userId,
+					packageId: input.packageId,
+					sourceId: savedPackage.sourceId,
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			)
+		})
 		const listedServices = await listSavedPackageServices({
 			env: input.env,
 			userId: input.userId,

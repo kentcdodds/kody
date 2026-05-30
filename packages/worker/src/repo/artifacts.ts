@@ -63,6 +63,11 @@ export type ArtifactGetRepoResult =
 	| { status: 'importing'; retryAfter: number }
 	| { status: 'forking'; retryAfter: number }
 
+export type ArtifactDeleteRepoResult = {
+	id: string | null
+	alreadyDeleted: boolean
+}
+
 export type ArtifactNamespaceBinding = {
 	create(
 		name: string,
@@ -81,6 +86,7 @@ export type ArtifactNamespaceBinding = {
 		expiresAt: string
 	}>
 	get(name: string): Promise<ArtifactGetRepoResult>
+	delete(name: string): Promise<ArtifactDeleteRepoResult>
 	list(opts?: { limit?: number; cursor?: string }): Promise<{
 		repos: Array<Omit<ArtifactRepoInfo, 'remote'>>
 		total: number
@@ -88,10 +94,19 @@ export type ArtifactNamespaceBinding = {
 	}>
 }
 
+export function resolveArtifactsNamespace(env: Env, namespace?: string | null) {
+	const trimmed = namespace?.trim()
+	return trimmed && trimmed.length > 0 ? trimmed : getArtifactsNamespace(env)
+}
+
 export function getArtifactsBinding(
 	env: Env,
+	namespace?: string | null,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
-	const restBinding = createArtifactsRestBinding(env)
+	const restBinding = createArtifactsRestBinding(
+		env,
+		resolveArtifactsNamespace(env, namespace),
+	)
 	if (!restBinding) {
 		throw new Error(
 			'Cloudflare Artifacts REST access requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
@@ -110,10 +125,8 @@ export function hasArtifactsAccess(env: Env) {
 }
 
 export function getArtifactsNamespace(env: Env) {
-	return (
-		(env as Env & { ARTIFACTS_NAMESPACE?: string | undefined })
-			.ARTIFACTS_NAMESPACE ?? 'default'
-	)
+	const configured = env.ARTIFACTS_NAMESPACE?.trim()
+	return configured && configured.length > 0 ? configured : 'default'
 }
 
 type ArtifactApiEnvelope<T> = {
@@ -174,14 +187,13 @@ type ArtifactRestForkRepoResult = ArtifactRestCreateRepoResult & {
 	objects?: number
 }
 
-function createArtifactsRestBinding(env: Env) {
+function createArtifactsRestBinding(env: Env, namespace: string) {
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) {
 		return null
 	}
 	const client = createCloudflareRestClient(env)
-	const namespace = getArtifactsNamespace(env)
 	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
 	const getRepoInfo = async (
 		name: string,
@@ -302,6 +314,23 @@ function createArtifactsRestBinding(env: Env) {
 			return {
 				status: 'ready' as const,
 				repo: repoHandle(name),
+			}
+		},
+		delete: async (name) => {
+			const envelope = await requestArtifactsEnvelope<{ id: string }>(client, {
+				method: 'DELETE',
+				path: `${basePath}/repos/${encodeURIComponent(name)}`,
+				treat404AsNull: true,
+			})
+			if (!envelope.result) {
+				return {
+					id: null,
+					alreadyDeleted: true,
+				}
+			}
+			return {
+				id: envelope.result.id,
+				alreadyDeleted: false,
 			}
 		},
 		list: async (opts) => {
@@ -620,8 +649,7 @@ export async function resolveSessionRepo(
 	env: Env,
 	input: { namespace?: string | null; name: string },
 ) {
-	const binding = getArtifactsBinding(env)
-	void input.namespace
+	const binding = getArtifactsBinding(env, input.namespace)
 	const result = await binding.get(input.name)
 	if (result.status !== 'ready') {
 		throw new Error(

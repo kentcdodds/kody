@@ -130,13 +130,15 @@ test('storage runner supports raw SQL with explicit writable access', async () =
 	})
 })
 
-test('storage runner blocks mutating SQL when writable is false', async () => {
+test('storage runner enforces read-only SQL policy for mutations, multi-statement queries, and literal semicolons', async () => {
 	const storageId = createExecuteStorageId()
 	const runner = storageRunnerRpc({
 		env,
 		userId: 'user-123',
 		storageId,
 	})
+	const readOnlyError =
+		'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.'
 
 	try {
 		await runner.sqlQuery({
@@ -146,19 +148,8 @@ test('storage runner blocks mutating SQL when writable is false', async () => {
 		throw new Error('Expected read-only SQL mutation to fail.')
 	} catch (error) {
 		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(
-			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
-		)
+		expect((error as Error).message).toBe(readOnlyError)
 	}
-})
-
-test('storage runner blocks multi-statement SQL in read-only mode', async () => {
-	const storageId = createExecuteStorageId()
-	const runner = storageRunnerRpc({
-		env,
-		userId: 'user-123',
-		storageId,
-	})
 
 	await runner.setValue({
 		key: 'counter',
@@ -173,9 +164,7 @@ test('storage runner blocks multi-statement SQL in read-only mode', async () => 
 		throw new Error('Expected multi-statement read-only SQL to fail.')
 	} catch (error) {
 		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(
-			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
-		)
+		expect((error as Error).message).toBe(readOnlyError)
 	}
 
 	await expect(
@@ -185,15 +174,6 @@ test('storage runner blocks multi-statement SQL in read-only mode', async () => 
 	).resolves.toEqual({
 		key: 'counter',
 		value: 1,
-	})
-})
-
-test('storage runner allows semicolons inside string literals in read-only SQL', async () => {
-	const storageId = createExecuteStorageId()
-	const runner = storageRunnerRpc({
-		env,
-		userId: 'user-123',
-		storageId,
 	})
 
 	await expect(

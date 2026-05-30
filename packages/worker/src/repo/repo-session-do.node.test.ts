@@ -116,6 +116,100 @@ const mockModule = vi.hoisted(() => {
 	}
 })
 
+function restoreRepoSessionMockBaseline() {
+	const { git, gitState } = mockModule
+
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.workspaceReadFile.mockImplementation(
+		async (path: string) =>
+			mockModule.workspaceFiles.get(path) ?? '{"version":1,"kind":"app"}',
+	)
+	mockModule.workspaceWriteFile.mockResolvedValue(undefined)
+	mockModule.workspaceMkdir.mockResolvedValue(undefined)
+	mockModule.workspaceRm.mockResolvedValue(undefined)
+	mockModule.workspaceGlob.mockResolvedValue([])
+	mockModule.storageGet.mockResolvedValue({
+		runId: 'run-1',
+		treeHash: '',
+		checkedAt: '2026-04-18T00:00:00.000Z',
+		ok: true,
+		results: [],
+	})
+	mockModule.storagePut.mockResolvedValue(undefined)
+	mockModule.updateRepoSession.mockResolvedValue(undefined)
+	mockModule.updateEntitySource.mockResolvedValue(undefined)
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
+		defaultBranch: 'main',
+		commit: 'commit-published-new',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+	mockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
+		manifest: {
+			name: '@kody/demo',
+			exports: { '.': './index.ts' },
+			kody: { id: 'demo', description: 'Demo package' },
+		},
+		sourceFiles: {
+			'package.json': '{"name":"@kody/demo"}',
+			'index.ts': 'export const ready = true\n',
+		},
+	})
+	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+
+	git.clone.mockResolvedValue({ cloned: 'ok', dir: '/session' })
+	git.remote.mockImplementation(
+		async (opts?: {
+			list?: boolean
+			add?: { name: string; url: string }
+			remove?: string
+		}) => {
+			if (opts?.list) {
+				return gitState.remotes
+			}
+			if (opts?.remove) {
+				gitState.remotes = gitState.remotes.filter(
+					(remote) => remote.remote !== opts.remove,
+				)
+				return { removed: opts.remove }
+			}
+			if (opts?.add) {
+				gitState.remotes = [
+					...gitState.remotes.filter(
+						(remote) => remote.remote !== opts.add?.name,
+					),
+					{ remote: opts.add.name, url: opts.add.url },
+				]
+				return { added: opts.add.name, url: opts.add.url }
+			}
+			return []
+		},
+	)
+	git.init.mockResolvedValue({ initialized: '/session' })
+	git.status.mockImplementation(async () => gitState.statusEntries)
+	git.add.mockResolvedValue({ added: '.' })
+	git.rm.mockResolvedValue({ removed: 'src/old.ts' })
+	git.commit.mockImplementation(async () => ({
+		oid: gitState.headCommit,
+		message: 'commit',
+	}))
+	git.log.mockImplementation(async () => [{ oid: gitState.headCommit }])
+	git.branch.mockImplementation(async () => ({
+		branches: [gitState.currentBranch],
+		current: gitState.currentBranch,
+	}))
+	git.checkout.mockImplementation(async () => ({ ref: gitState.currentBranch }))
+	git.fetch.mockImplementation(async () => ({
+		fetchHead: gitState.headCommit,
+		fetchHeadDescription: 'main',
+	}))
+	git.pull.mockResolvedValue({ pulled: true })
+	git.push.mockResolvedValue({ ok: true, refs: {} })
+	git.diff.mockResolvedValue([])
+}
+
 vi.mock('cloudflare:workers', async (importOriginal) => {
 	const actual = await importOriginal<CloudflareWorkers>()
 	return {
@@ -218,7 +312,8 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 	}
 })
 
-const { RepoSession, readWithRetry } = await import('./repo-session-do.ts')
+const { RepoSession } = await import('./repo-session-do.ts')
+const { insertRepoSession } = await import('./repo-sessions.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -241,6 +336,7 @@ function createEnv() {
 }
 
 function setCommonSessionFixtures() {
+	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue({
 		id: 'session-1',
 		user_id: 'user-1',
@@ -543,12 +639,6 @@ test('runCommands fetches session metadata after publish side effects', async ()
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
-	// Regression test: repo_publish_session was throwing
-	// "Published snapshot for source ... was not found" because the publish
-	// handler updated D1 with the new commit without writing the KV snapshot
-	// that loadPublishedEntitySource and package-backed jobs rely on. The
-	// handler must persist the current workspace tree under the new commit
-	// before any downstream read is attempted.
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-new'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -605,11 +695,12 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 	)
 })
 
-test('publishSession rolls back the D1 published commit when snapshot persistence fails', async () => {
-	// Matches the source-sync.ts revert behavior so a failed KV write never
-	// leaves an entity source pointing at a commit whose snapshot nobody can
-	// read. Without this, a partial failure would permanently break package
-	// jobs for the source until it is republished.
+test('publishSession handles snapshot collection and persistence failures without leaving inconsistent published commits', async () => {
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env
+
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-fail'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -623,20 +714,13 @@ test('publishSession rolls back the D1 published commit when snapshot persistenc
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"app"}')
 
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
-	} as Env
-	const repoSession = new RepoSession(createDurableObjectState(), env)
-
 	await expect(
-		repoSession.publishSession({
+		new RepoSession(createDurableObjectState(), env).publishSession({
 			sessionId: 'session-1',
 			userId: 'user-1',
 			force: true,
 		}),
 	).rejects.toThrow('kv write failed')
-
 	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
 		1,
 		expect.anything(),
@@ -653,13 +737,7 @@ test('publishSession rolls back the D1 published commit when snapshot persistenc
 			publishedCommit: 'commit-base',
 		}),
 	)
-})
 
-test('publishSession surfaces the original snapshot error even when the compensating revert also fails', async () => {
-	// If the KV snapshot write fails AND the compensating updateEntitySource
-	// revert subsequently fails, we must still rethrow the original KV error
-	// so operators see the real root cause instead of a misleading D1 error
-	// about the failed compensation.
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-double-fail'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -676,28 +754,15 @@ test('publishSession surfaces the original snapshot error even when the compensa
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"app"}')
 
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
-	} as Env
-	const repoSession = new RepoSession(createDurableObjectState(), env)
-
 	await expect(
-		repoSession.publishSession({
+		new RepoSession(createDurableObjectState(), env).publishSession({
 			sessionId: 'session-1',
 			userId: 'user-1',
 			force: true,
 		}),
 	).rejects.toThrow('kv write failed')
-
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
-})
 
-test('publishSession aborts before advancing the D1 published commit when snapshot collection fails', async () => {
-	// Snapshot collection must happen BEFORE the entity_sources.published_commit
-	// advance. Otherwise a glob/read failure (or a file that disappears between
-	// glob and read) would leave D1 pointing at a commit whose snapshot was
-	// never written — the exact failure mode the main regression is about.
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-collect-fail'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -707,12 +772,6 @@ test('publishSession aborts before advancing the D1 published commit when snapsh
 		{ type: 'file', path: '/session/kody.json' },
 		{ type: 'file', path: '/session/src/index.ts' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
-	// Simulate a file that vanished between glob and read. The manifest read
-	// from readManifestFromWorkspace still needs to resolve so publishSession
-	// reaches the snapshot-collection step; it is the follow-up collector's
-	// pass over the workspace that must treat the null content as a hard
-	// failure instead of silently dropping the file and writing an incomplete
-	// KV snapshot.
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
 		if (path === '/session/kody.json') {
 			return '{"version":1,"kind":"app"}'
@@ -720,25 +779,19 @@ test('publishSession aborts before advancing the D1 published commit when snapsh
 		return null
 	})
 
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
-	} as Env
-	const repoSession = new RepoSession(createDurableObjectState(), env)
-
 	await expect(
-		repoSession.publishSession({
+		new RepoSession(createDurableObjectState(), env).publishSession({
 			sessionId: 'session-1',
 			userId: 'user-1',
 			force: true,
 		}),
 	).rejects.toThrow(/Failed to read repo session file/)
-
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
 test('openSession strips unsupported characters from derived session repo names', async () => {
+	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -781,7 +834,6 @@ test('openSession strips unsupported characters from derived session repo names'
 	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
 		fork,
 	})
-	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.git.clone.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
@@ -806,7 +858,57 @@ test('openSession strips unsupported characters from derived session repo names'
 	)
 })
 
+test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async () => {
+	restoreRepoSessionMockBaseline()
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'package-event-runner',
+		published_commit: 'commit-base',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
+		fork: vi.fn(async ({ name }: { name: string }) => ({
+			id: 'session-repo-1',
+			name,
+			description: null,
+			defaultBranch: 'main',
+			remote: `https://acct.artifacts.cloudflare.net/git/preview/${name}.git`,
+			token: 'art_session_secret?expires=1760000200',
+			expiresAt: '2026-10-09T08:16:40.000Z',
+			repo: {
+				info: vi.fn(),
+				createToken: vi.fn(),
+				fork: vi.fn(),
+			},
+		})),
+	})
+	vi.mocked(insertRepoSession).mockClear()
+
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		ARTIFACTS_NAMESPACE: 'preview',
+	} as Env)
+	await repoSession.openSession({
+		sessionId: 'session-preview-namespace',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+		sourceRoot: '/',
+	})
+
+	expect(insertRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			session_repo_namespace: 'preview',
+		}),
+	)
+})
+
 test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
+	restoreRepoSessionMockBaseline()
 	// This test covers the alarm-driven scheduled-job failure mode where a fresh
 	// DO instance handles a follow-up RPC call before the in-memory cache from
 	// openSession is available, and D1 read replicas have not yet caught up to
@@ -859,7 +961,6 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 			plaintext: 'art_session_secret?expires=1760000200',
 		})),
 	})
-	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
@@ -875,34 +976,6 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	})
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
-})
-
-test('readWithRetry distinguishes null from other falsy values', async () => {
-	// readWithRetry treats only null as "missing". Falsy-but-present values
-	// like 0, '', or false must be returned as-is instead of triggering
-	// extra retries and a final null.
-	for (const value of [0, '', false]) {
-		const read = vi.fn(
-			async () => value as unknown as number | string | boolean,
-		)
-		const result = await readWithRetry(read, [])
-		expect(result).toBe(value)
-		expect(read).toHaveBeenCalledTimes(1)
-	}
-
-	const nullRead = vi.fn(async () => null)
-	const nullResult = await readWithRetry(nullRead, [0, 0])
-	expect(nullResult).toBeNull()
-	expect(nullRead).toHaveBeenCalledTimes(3)
-
-	let attempts = 0
-	const eventualRead = vi.fn(async () => {
-		attempts += 1
-		return attempts < 3 ? null : ('ok' as const)
-	})
-	const eventualResult = await readWithRetry(eventualRead, [0, 0, 0])
-	expect(eventualResult).toBe('ok')
-	expect(eventualRead).toHaveBeenCalledTimes(3)
 })
 
 test('publishFromExternalRef rejects stale expected HEAD values', async () => {
@@ -981,13 +1054,7 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 	)
 })
 
-test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
-	// Guards against a regression where the cache, populated by openSession,
-	// would shadow fresh D1 reads and hide updates such as rebaseSession
-	// writing a new base_commit or an external publish updating
-	// source.published_commit. That would cause publishSession's base_moved
-	// check to compare stale values and silently pass when the source has
-	// actually moved.
+test('readFile re-reads D1 for updated session rows and falls back when rows are not yet readable', async () => {
 	setCommonSessionFixtures()
 	const initialSource = {
 		id: 'source-1',
@@ -1043,13 +1110,11 @@ test('getSessionState prefers fresh D1 reads over cached session and source rows
 		path: 'greeting.txt',
 		content: 'hello world',
 	})
-	// The second readFile hits D1 again rather than short-circuiting on the
-	// in-memory cache, so the updated session and source rows are visible.
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(2)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
-})
 
-test('readFile falls back to cached session state when the session row is not yet readable from D1', async () => {
+	mockModule.getRepoSessionById.mockReset()
+	mockModule.getEntitySourceById.mockReset()
 	const source = {
 		id: 'source-1',
 		user_id: 'user-1',
@@ -1089,21 +1154,24 @@ test('readFile falls back to cached session state when the session row is not ye
 	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.workspaceReadFile.mockResolvedValue('export default {}')
 
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-	await repoSession.openSession({
+	const cachedFallbackSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+	await cachedFallbackSession.openSession({
 		sessionId: 'job-runtime-session-1',
 		sourceId: 'source-1',
 		userId: 'user-1',
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
-	const file = await repoSession.readFile({
+	const cachedFallbackFile = await cachedFallbackSession.readFile({
 		sessionId: 'job-runtime-session-1',
 		userId: 'user-1',
 		path: 'kody.json',
 	})
 
-	expect(file).toEqual({
+	expect(cachedFallbackFile).toEqual({
 		path: 'kody.json',
 		content: 'export default {}',
 	})

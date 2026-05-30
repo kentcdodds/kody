@@ -135,13 +135,12 @@ test('fetch gateway expands placeholders in form-urlencoded bodies', async () =>
 	}
 })
 
-test('fetch gateway parses derived Basic Auth secret placeholders', () => {
+test('fetch gateway derives Basic Auth header after approving both secrets', async () => {
 	const placeholder = buildBasicAuthSecretPlaceholder({
 		usernameSecret: 'paypalClientId',
 		passwordSecret: 'paypalClientSecret',
 		scope: 'user',
 	})
-
 	expect(parseBasicAuthSecretPlaceholders(`Basic ${placeholder}`)).toEqual([
 		{
 			username: { name: 'paypalClientId', scope: 'user' },
@@ -149,9 +148,6 @@ test('fetch gateway parses derived Basic Auth secret placeholders', () => {
 			scope: 'user',
 		},
 	])
-})
-
-test('fetch gateway derives Basic Auth header after approving both secrets', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockImplementation(async ({ name }) => {
@@ -167,11 +163,6 @@ test('fetch gateway derives Basic Auth header after approving both secrets', asy
 				allowedCapabilities: [],
 			}
 		})
-	const placeholder = buildBasicAuthSecretPlaceholder({
-		usernameSecret: 'paypalClientId',
-		passwordSecret: 'paypalClientSecret',
-		scope: 'user',
-	})
 	const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
 		method: 'POST',
 		headers: {
@@ -206,54 +197,27 @@ test('fetch gateway derives Basic Auth header after approving both secrets', asy
 				scope: 'user',
 			}),
 		)
+
+		const schemePrefixedRequest = new Request(
+			'https://api-m.paypal.com/v1/oauth2/token',
+			{
+				headers: {
+					Authorization: `basic ${placeholder}`,
+				},
+			},
+		)
+		const schemePrefixed = await expandSecretPlaceholders({
+			request: schemePrefixedRequest,
+			props,
+			env,
+		})
+		expect(schemePrefixed.headers.get('Authorization')).toBe(
+			`Basic ${btoa('client-id:client-secret')}`,
+		)
 	} finally {
 		resolveSpy.mockRestore()
 	}
 })
-
-test.each(['Basic', 'basic', 'BASIC'])(
-	'fetch gateway accepts a pre-prefixed derived Basic Auth placeholder with %s scheme',
-	async (scheme) => {
-		const resolveSpy = vi
-			.spyOn(secretService, 'resolveSecret')
-			.mockImplementation(async ({ name }) => {
-				const values: Record<string, string> = {
-					paypalClientId: 'client-id',
-					paypalClientSecret: 'client-secret',
-				}
-				return {
-					found: name in values,
-					value: values[name] ?? null,
-					scope: name in values ? 'user' : null,
-					allowedHosts: name in values ? ['api-m.paypal.com'] : [],
-					allowedCapabilities: [],
-				}
-			})
-		const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
-			headers: {
-				Authorization: `${scheme} ${buildBasicAuthSecretPlaceholder({
-					usernameSecret: 'paypalClientId',
-					passwordSecret: 'paypalClientSecret',
-					scope: 'user',
-				})}`,
-			},
-		})
-
-		try {
-			const transformed = await expandSecretPlaceholders({
-				request,
-				props,
-				env,
-			})
-
-			expect(transformed.headers.get('Authorization')).toBe(
-				`Basic ${btoa('client-id:client-secret')}`,
-			)
-		} finally {
-			resolveSpy.mockRestore()
-		}
-	},
-)
 
 test('fetch gateway reports missing secret for derived Basic Auth placeholders', async () => {
 	const resolveSpy = vi
@@ -350,37 +314,32 @@ test.each([
 
 test('fetch gateway resolves path-only URLs against baseUrl', async () => {
 	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
-	const request = {
-		url: '/',
-		method: 'GET',
-		headers: new Headers(),
-		redirect: 'follow',
-		credentials: 'same-origin',
-		mode: 'cors',
-		cache: 'default',
-		integrity: '',
-		keepalive: false,
-		signal: undefined,
-		text: async () => '',
-	} as unknown as Request
-	const transformed = await expandSecretPlaceholders({ request, props, env })
-	expect(transformed.url).toBe('https://example.com/')
-})
+	const createPathOnlyRequest = (url: string) =>
+		({
+			url,
+			method: 'GET',
+			headers: new Headers(),
+			redirect: 'follow',
+			credentials: 'same-origin',
+			mode: 'cors',
+			cache: 'default',
+			integrity: '',
+			keepalive: false,
+			signal: undefined,
+			text: async () => '',
+		}) as unknown as Request
 
-test('fetch gateway resolves nested path-only URLs against baseUrl', async () => {
-	const request = {
-		url: '/core/log',
-		method: 'GET',
-		headers: new Headers(),
-		redirect: 'follow',
-		credentials: 'same-origin',
-		mode: 'cors',
-		cache: 'default',
-		integrity: '',
-		keepalive: false,
-		signal: undefined,
-		text: async () => '',
-	} as unknown as Request
-	const transformed = await expandSecretPlaceholders({ request, props, env })
-	expect(transformed.url).toBe('https://example.com/core/log')
+	const root = await expandSecretPlaceholders({
+		request: createPathOnlyRequest('/'),
+		props,
+		env,
+	})
+	expect(root.url).toBe('https://example.com/')
+
+	const nested = await expandSecretPlaceholders({
+		request: createPathOnlyRequest('/core/log'),
+		props,
+		env,
+	})
+	expect(nested.url).toBe('https://example.com/core/log')
 })
