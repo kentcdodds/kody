@@ -177,6 +177,22 @@ test('readSavedPackageAppSourceFromHostToolResult handles success and host tool 
 		handled: true,
 		errorMessage: 'Saved package app not found for this user.',
 	})
+	expect(
+		readSavedPackageAppSourceFromHostToolResult({
+			isError: true,
+			structuredContent: {
+				error: 'Secret "cloudflareToken" was not found.',
+				errorDetails: {
+					nextStep:
+						'Send the user to /account/secrets/new?name=cloudflareToken so they can provide and save this secret, then retry the workflow.',
+				},
+			},
+		}),
+	).toEqual({
+		handled: true,
+		errorMessage:
+			'Secret "cloudflareToken" was not found.\n\nNext step: Send the user to /account/secrets/new?name=cloudflareToken so they can provide and save this secret, then retry the workflow.',
+	})
 })
 
 test('buildCodemodeCapabilityExecuteCode runs the intended capability with the original args', async () => {

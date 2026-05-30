@@ -309,12 +309,31 @@ function getHostToolErrorMessage(result: HostToolResult | null) {
 	const structuredContent = isRecord(result.structuredContent)
 		? result.structuredContent
 		: null
-	const error = isRecord(structuredContent?.error)
-		? structuredContent.error
+	const errorMessage = getStructuredErrorMessage(structuredContent?.error)
+	const errorDetails = isRecord(structuredContent?.errorDetails)
+		? structuredContent.errorDetails
 		: null
-	return typeof error?.message === 'string'
+	const nextStep =
+		typeof errorDetails?.nextStep === 'string' &&
+		errorDetails.nextStep.trim().length > 0
+			? errorDetails.nextStep
+			: null
+	const message = errorMessage ?? 'Code execution failed.'
+	return nextStep && !message.includes(nextStep)
+		? `${message}\n\nNext step: ${nextStep}`
+		: message
+}
+
+function getStructuredErrorMessage(error: unknown) {
+	if (typeof error === 'string' && error.trim().length > 0) {
+		return error
+	}
+	if (!isRecord(error)) {
+		return null
+	}
+	return typeof error.message === 'string' && error.message.trim().length > 0
 		? error.message
-		: 'Code execution failed.'
+		: null
 }
 
 export function readSavedPackageAppSourceFromHostToolResult(
@@ -367,11 +386,14 @@ async function executeCodeWithHostTool(
 		},
 		timeoutMs: 90_000,
 	})) as HostToolResult | null
+	if (!result) {
+		throw new Error('Code execution failed before the host returned a result.')
+	}
 	const errorMessage = getHostToolErrorMessage(result)
 	if (errorMessage) {
 		throw new Error(errorMessage)
 	}
-	const structuredContent = isRecord(result?.structuredContent)
+	const structuredContent = isRecord(result.structuredContent)
 		? result.structuredContent
 		: null
 	return structuredContent?.result ?? null
@@ -1144,7 +1166,17 @@ async function initializeShellHostDocument() {
 				await renderError('The tool result did not include renderable HTML.')
 				return
 			}
-			await renderCode(envelope.code, envelope.runtime ?? 'html')
+			try {
+				await renderCode(envelope.code, envelope.runtime ?? 'html')
+			} catch (error) {
+				if (isStaleRender(renderId)) {
+					return
+				}
+				const errorMessage = getStructuredErrorMessage(error)
+				await renderError(
+					`Unable to render generated UI.\n\n${errorMessage ?? 'Unknown error'}`,
+				)
+			}
 			return
 		}
 	}
