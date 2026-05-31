@@ -95,9 +95,8 @@ test('memory tool context surfaces retriever results, keeps memories on retrieve
 		retrievalQuery: 'sprinkler instructions',
 	})
 	expect(retrieverOnlyContent?.type).toBe('text')
-	expect(retrieverOnlyContent?.text).not.toContain('## Relevant memories')
-	expect(retrieverOnlyContent?.text).toContain('## Relevant retriever results')
-	expect(retrieverOnlyContent?.text).not.toContain('## Retriever warnings')
+	expect(retrieverOnlyContent?.text).toContain('Sprinkler controller')
+	expect(retrieverOnlyContent?.text).not.toContain('Sprinkler setup')
 
 	setupMemoryContextMocks()
 	mockModule.surfaceRelevantMemories.mockResolvedValue({

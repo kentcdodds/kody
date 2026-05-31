@@ -56,17 +56,17 @@ test('writeGeneratedWranglerConfig keeps migrations ordered by tag version', asy
 	}
 })
 
-test('writeGeneratedWranglerConfig copies production asset routing to the deployed top-level config', async () => {
+test('writeGeneratedWranglerConfig copies environment asset routing to the deployed top-level config', async () => {
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
 
 	try {
-		const outConfigPath = path.join(
+		const productionOutPath = path.join(
 			tempDir,
 			'wrangler-production.generated.json',
 		)
 		await writeGeneratedWranglerConfig({
 			baseConfigPath: workerWranglerConfigPath,
-			outConfigPath,
+			outConfigPath: productionOutPath,
 			envName: 'production',
 			d1DatabaseName: 'kody',
 			d1DatabaseId: 'dry-run-kody',
@@ -74,33 +74,23 @@ test('writeGeneratedWranglerConfig copies production asset routing to the deploy
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 		})
 
-		const generatedConfigText = await readFile(outConfigPath, 'utf8')
-		const generatedConfig = parseJsonc<{
+		const productionConfig = parseJsonc<{
 			assets?: { run_worker_first?: Array<string> }
 			env?: {
 				production?: { assets?: { run_worker_first?: Array<string> } }
 			}
-		}>(generatedConfigText)
-
-		expect(generatedConfig.assets?.run_worker_first).toContain(
+		}>(await readFile(productionOutPath, 'utf8'))
+		expect(productionConfig.assets?.run_worker_first).toContain(
 			'/@*/connectors/*',
 		)
-		expect(generatedConfig.assets).toEqual(
-			generatedConfig.env?.production?.assets,
+		expect(productionConfig.assets).toEqual(
+			productionConfig.env?.production?.assets,
 		)
-	} finally {
-		await rm(tempDir, { force: true, recursive: true })
-	}
-})
 
-test('writeGeneratedWranglerConfig copies preview asset routing to the deployed top-level config', async () => {
-	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
-
-	try {
-		const outConfigPath = path.join(tempDir, 'wrangler-preview.generated.json')
+		const previewOutPath = path.join(tempDir, 'wrangler-preview.generated.json')
 		await writeGeneratedWranglerConfig({
 			baseConfigPath: workerWranglerConfigPath,
-			outConfigPath,
+			outConfigPath: previewOutPath,
 			envName: 'preview',
 			workerName: 'kody-pr-123',
 			d1DatabaseName: 'kody-pr-123-db',
@@ -109,18 +99,14 @@ test('writeGeneratedWranglerConfig copies preview asset routing to the deployed 
 			bundleArtifactsKvId: 'dry-run-kody-pr-123-bundle-artifacts',
 		})
 
-		const generatedConfigText = await readFile(outConfigPath, 'utf8')
-		const generatedConfig = parseJsonc<{
+		const previewConfig = parseJsonc<{
 			assets?: { run_worker_first?: Array<string> }
 			env?: {
 				preview?: { assets?: { run_worker_first?: Array<string> } }
 			}
-		}>(generatedConfigText)
-
-		expect(generatedConfig.assets?.run_worker_first).toContain(
-			'/@*/connectors/*',
-		)
-		expect(generatedConfig.assets).toEqual(generatedConfig.env?.preview?.assets)
+		}>(await readFile(previewOutPath, 'utf8'))
+		expect(previewConfig.assets?.run_worker_first).toContain('/@*/connectors/*')
+		expect(previewConfig.assets).toEqual(previewConfig.env?.preview?.assets)
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

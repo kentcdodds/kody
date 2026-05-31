@@ -46,7 +46,7 @@ const {
 	writeAndPushPublishGitNote,
 } = await import('./publish-git-notes.ts')
 
-test('buildPublishGitNote captures publish provenance and checks', () => {
+test('publish git notes build, parse, write, and read from artifacts repos', async () => {
 	const note = buildPublishGitNote({
 		publishedBy: 'repo_session',
 		source: {
@@ -104,9 +104,7 @@ test('buildPublishGitNote captures publish provenance and checks', () => {
 		},
 	})
 	expect(bootstrapNote.previousPublishedCommit).toBeNull()
-})
 
-test('parsePublishGitNote validates versioned publish notes', async () => {
 	const { parsePublishGitNote } = await import('./publish-git-notes.ts')
 	expect(
 		parsePublishGitNote(
@@ -123,12 +121,9 @@ test('parsePublishGitNote validates versioned publish notes', async () => {
 		)?.publishedBy,
 	).toBe('external_push')
 	expect(parsePublishGitNote('not-json')).toBeNull()
-})
 
-test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits', async () => {
 	mockGit.addNote.mockClear()
 	mockGit.push.mockClear()
-
 	const filesystem = {
 		readFile: vi.fn(async () => ''),
 		readFileBytes: vi.fn(async () => new Uint8Array()),
@@ -200,9 +195,7 @@ test('writeAndPushPublishGitNote writes JSON note and pushes refs/notes/commits'
 			force: true,
 		}),
 	)
-})
 
-test('readPublishGitNoteFromArtifactsRepo handles missing notes and propagates fetch or read failures', async () => {
 	const readInput = {
 		env: {} as Env,
 		repoId: 'package-pkg-1',

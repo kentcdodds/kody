@@ -4,15 +4,19 @@ import {
 	userScopedConnectorWebSocketUrl,
 } from '@kody-internal/shared/remote-connectors.ts'
 
-test('normalizeRemoteConnectorRefs returns empty when remoteConnectors unset', () => {
+test('normalizeRemoteConnectorRefs normalizes connector lists and userScopedConnectorWebSocketUrl builds scoped URLs', () => {
 	expect(
 		normalizeRemoteConnectorRefs({
 			remoteConnectors: undefined,
 		}),
 	).toEqual([])
-})
 
-test('normalizeRemoteConnectorRefs normalizes remoteConnectors when provided', () => {
+	expect(
+		normalizeRemoteConnectorRefs({
+			remoteConnectors: [],
+		}),
+	).toEqual([])
+
 	expect(
 		normalizeRemoteConnectorRefs({
 			remoteConnectors: [
@@ -24,17 +28,7 @@ test('normalizeRemoteConnectorRefs normalizes remoteConnectors when provided', (
 		{ kind: 'lights', instanceId: 'a' },
 		{ kind: 'custom', instanceId: 'x' },
 	])
-})
 
-test('normalizeRemoteConnectorRefs preserves an empty connector list', () => {
-	expect(
-		normalizeRemoteConnectorRefs({
-			remoteConnectors: [],
-		}),
-	).toEqual([])
-})
-
-test('userScopedConnectorWebSocketUrl builds encoded username-scoped connector URLs', () => {
 	expect(
 		userScopedConnectorWebSocketUrl({
 			origin: 'wss://kody.example.com/',

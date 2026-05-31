@@ -271,7 +271,7 @@ test('websocket heartbeat work is returned so the runtime can wait for persisten
 	).not.toBe('2026-04-26T05:01:00.000Z')
 })
 
-test('websocket error clears connected state when the socket is gone', async () => {
+test('websocket error clears connected state when the socket is gone and only disconnects once per socket', async () => {
 	captureMessageMock.mockReset()
 	const { state, persistedEntries } = createState({
 		storedState: {
@@ -312,12 +312,10 @@ test('websocket error clears connected state when the socket is gone', async () 
 		},
 		tools: [],
 	})
-})
 
-test('websocket error and close only disconnect once for the same socket', async () => {
 	captureMessageMock.mockReset()
 	const socket = {} as WebSocket
-	const { state, persistedEntries } = createState({
+	const dedupeState = createState({
 		storedState: {
 			persisted: {
 				connectorId: 'default',
@@ -329,24 +327,26 @@ test('websocket error and close only disconnect once for the same socket', async
 		},
 		webSockets: [socket],
 	})
-	const session = new RemoteConnectorSession(
+	const dedupeSession = new RemoteConnectorSession(
 		{
-			storage: state.storage,
-			getWebSockets: state.getWebSockets,
-			acceptWebSocket: state.acceptWebSocket,
-			blockConcurrencyWhile: state.blockConcurrencyWhile,
+			storage: dedupeState.state.storage,
+			getWebSockets: dedupeState.state.getWebSockets,
+			acceptWebSocket: dedupeState.state.acceptWebSocket,
+			blockConcurrencyWhile: dedupeState.state.blockConcurrencyWhile,
 		} as unknown as DurableObjectState,
 		{} as Env,
 	)
 
-	await waitForRestoreState(state)
-	state.getWebSockets.mockReturnValue([])
-	await session.webSocketError(socket, new Error('abnormal close'))
-	await session.webSocketClose(socket, 1006, 'runtime close', false)
+	await waitForRestoreState(dedupeState.state)
+	dedupeState.state.getWebSockets.mockReturnValue([])
+	await dedupeSession.webSocketError(socket, new Error('abnormal close'))
+	await dedupeSession.webSocketClose(socket, 1006, 'runtime close', false)
 
 	expect(captureMessageMock).toHaveBeenCalledTimes(1)
-	expect(state.storage.put).toHaveBeenCalledTimes(1)
-	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
+	expect(dedupeState.state.storage.put).toHaveBeenCalledTimes(1)
+	expect(
+		dedupeState.persistedEntries.get('remote-connector-session-state'),
+	).toMatchObject({
 		persisted: {
 			connectorId: 'default',
 			connectedAt: null,

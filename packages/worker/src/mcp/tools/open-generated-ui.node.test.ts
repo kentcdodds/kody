@@ -66,23 +66,27 @@ async function getOpenGeneratedUiHandler(options?: {
 	}>
 }
 
-test('open_generated_ui reopens saved package apps by kody_id', async () => {
-	const handler = await getOpenGeneratedUiHandler({ username: 'test-user' })
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce({
-		id: 'package-123',
-		userId: 'user-123',
-		name: '@kody/observed',
-		kodyId: 'observed-package',
-		description: 'Observed package app',
-		tags: ['ui'],
-		searchText: null,
-		sourceId: 'source-123',
-		hasApp: true,
-		createdAt: '2026-04-21T00:00:00.000Z',
-		updatedAt: '2026-04-21T00:00:00.000Z',
-	})
+const savedPackage = {
+	id: 'package-123',
+	userId: 'user-123',
+	name: '@kody/observed',
+	kodyId: 'observed-package',
+	description: 'Observed package app',
+	tags: ['ui'],
+	searchText: null,
+	sourceId: 'source-123',
+	hasApp: true,
+	createdAt: '2026-04-21T00:00:00.000Z',
+	updatedAt: '2026-04-21T00:00:00.000Z',
+}
 
-	const response = await handler({
+test('open_generated_ui reopens saved package apps and resolves hosted URLs from username or email', async () => {
+	const handlerWithUsername = await getOpenGeneratedUiHandler({
+		username: 'test-user',
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(savedPackage)
+
+	const withUsername = await handlerWithUsername({
 		kody_id: 'observed-package',
 	})
 
@@ -93,14 +97,13 @@ test('open_generated_ui reopens saved package apps by kody_id', async () => {
 			kodyId: 'observed-package',
 		},
 	)
-	expect(response.structuredContent).toMatchObject({
+	expect(withUsername.structuredContent).toMatchObject({
 		appId: 'package-123',
 		hostedUrl: 'https://example.com/@test-user/packages/observed-package',
 	})
-})
 
-test('open_generated_ui resolves username from email for older caller contexts', async () => {
-	const handler = await getOpenGeneratedUiHandler({
+	mockModule.getSavedPackageByKodyId.mockClear()
+	const handlerWithEmailLookup = await getOpenGeneratedUiHandler({
 		appDb: {
 			prepare: () => ({
 				bind: () => ({
@@ -109,25 +112,13 @@ test('open_generated_ui resolves username from email for older caller contexts',
 			}),
 		} as unknown as D1Database,
 	})
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce({
-		id: 'package-123',
-		userId: 'user-123',
-		name: '@kody/observed',
-		kodyId: 'observed-package',
-		description: 'Observed package app',
-		tags: ['ui'],
-		searchText: null,
-		sourceId: 'source-123',
-		hasApp: true,
-		createdAt: '2026-04-21T00:00:00.000Z',
-		updatedAt: '2026-04-21T00:00:00.000Z',
-	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(savedPackage)
 
-	const response = await handler({
+	const withResolvedUsername = await handlerWithEmailLookup({
 		kody_id: 'observed-package',
 	})
 
-	expect(response.structuredContent).toMatchObject({
+	expect(withResolvedUsername.structuredContent).toMatchObject({
 		hostedUrl: 'https://example.com/@resolved-user/packages/observed-package',
 	})
 })
