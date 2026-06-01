@@ -32,6 +32,7 @@ import {
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
+import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -285,6 +286,10 @@ export async function deleteSavedPackageProjection(input: {
 					error: error instanceof Error ? error.message : String(error),
 				}),
 			)
+		})
+		await deleteEntitySource(input.env.APP_DB, {
+			id: savedPackage.sourceId,
+			userId: input.userId,
 		})
 		const listedServices = await listSavedPackageServices({
 			env: input.env,

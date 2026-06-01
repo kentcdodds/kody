@@ -635,14 +635,26 @@ export async function readMockArtifactSnapshot(input: {
 export async function resolveArtifactSourceRepo(env: Env, repoId: string) {
 	const binding = getArtifactsBinding(env)
 	const result = await binding.get(repoId)
-	if (result.status !== 'ready') {
+	if (result.status === 'ready') {
+		return result.repo
+	}
+	if (result.status === 'not_found') {
+		const created = await binding.create(repoId, { readOnly: false })
+		const createdResult = await binding.get(created.name)
+		if (createdResult.status === 'ready') {
+			return createdResult.repo
+		}
 		throw new Error(
-			`Artifacts repo "${repoId}" is ${result.status}${
-				'retryAfter' in result ? ` (retry after ${result.retryAfter}s)` : ''
-			}.`,
+			`Artifacts repo "${created.name}" is ${createdResult.status} after create.`,
 		)
 	}
-	return result.repo
+	if (result.status === 'importing' || result.status === 'forking') {
+		throw new Error(
+			`Artifacts repo "${repoId}" is ${result.status} (retry after ${result.retryAfter}s).`,
+		)
+	}
+	const exhaustive: never = result
+	throw new Error(`Unexpected Artifacts repo status: ${String(exhaustive)}.`)
 }
 
 export async function resolveSessionRepo(

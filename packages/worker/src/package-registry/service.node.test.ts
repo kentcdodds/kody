@@ -21,6 +21,7 @@ const mockModule = vi.hoisted(() => ({
 	refreshPackageRetrieverManifestCache: vi.fn(),
 	removePackageRetrieverManifestCacheEntries: vi.fn(),
 	deleteJobRow: vi.fn(),
+	deleteEntitySource: vi.fn(),
 	deleteSavedPackage: vi.fn(),
 	deleteSavedPackageVector: vi.fn(),
 	getSavedPackageById: vi.fn(),
@@ -117,6 +118,11 @@ vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
 		mockModule.cleanupArtifactReposForPackage(...args),
 }))
 
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	deleteEntitySource: (...args: Array<unknown>) =>
+		mockModule.deleteEntitySource(...args),
+}))
+
 const { deleteSavedPackageProjection, refreshSavedPackageProjection } =
 	await import('./service.ts')
 
@@ -152,6 +158,7 @@ beforeEach(() => {
 	)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
 	mockModule.insertSavedPackage.mockResolvedValue(undefined)
+	mockModule.deleteEntitySource.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.deleteJobRow.mockResolvedValue(undefined)
@@ -361,6 +368,13 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		userId: 'user-1',
 		sourceId: 'source-1',
 	})
+	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(
+		{},
+		{
+			id: 'source-1',
+			userId: 'user-1',
+		},
+	)
 	expect(mockModule.packageServiceRpc).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',
@@ -397,6 +411,40 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
 	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+})
+
+test('deleteSavedPackageProjection removes the entity source row for the package source', async () => {
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.cleanupArtifactReposForPackage).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		sourceId: 'source-1',
+	})
+	expect(
+		mockModule.deleteEntitySource.mock.invocationCallOrder[0],
+	).toBeGreaterThan(
+		mockModule.cleanupArtifactReposForPackage.mock.invocationCallOrder[0],
+	)
+	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(
+		{},
+		{
+			id: 'source-1',
+			userId: 'user-1',
+		},
+	)
 })
 
 test('refreshSavedPackageProjection continues when retriever cache refresh fails', async () => {

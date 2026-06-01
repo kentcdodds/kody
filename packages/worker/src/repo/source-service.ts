@@ -15,6 +15,10 @@ export type EnsuredEntitySource = EntitySourceRow & {
 	bootstrapAccess?: ArtifactBootstrapAccess | null
 }
 
+export type ArtifactRepoReadyResult =
+	| { recreated: false }
+	| { recreated: true; bootstrapAccess: ArtifactBootstrapAccess }
+
 function buildEntitySourceRow(input: {
 	id?: string
 	userId: string
@@ -91,7 +95,14 @@ export async function ensureEntitySource(input: {
 		entityKind: input.entityKind,
 		entityId: input.entityId,
 	})
-	if (existing) return existing
+	if (existing) {
+		const repoReady = await ensureArtifactRepoReady(input.env, existing.repo_id)
+		if (!repoReady.recreated) return existing
+		return {
+			...existing,
+			bootstrapAccess: repoReady.bootstrapAccess,
+		}
+	}
 	const row = buildEntitySourceRow({
 		id: input.id,
 		userId: input.userId,
@@ -101,14 +112,11 @@ export async function ensureEntitySource(input: {
 		manifestPath: input.manifestPath,
 		sourceRoot: input.sourceRoot,
 	})
-	const bootstrapAccess = await createArtifactsRepoIfMissing(
-		input.env,
-		row.repo_id,
-	)
+	const repoReady = await ensureArtifactRepoReady(input.env, row.repo_id)
 	await insertEntitySource(input.db, row)
 	return {
 		...row,
-		bootstrapAccess,
+		bootstrapAccess: repoReady.recreated ? repoReady.bootstrapAccess : null,
 	}
 }
 
@@ -130,13 +138,13 @@ function missingPersistenceRequirements(input: {
 	return missing
 }
 
-async function createArtifactsRepoIfMissing(
+export async function ensureArtifactRepoReady(
 	env: Env,
 	repoId: string,
 	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
-): Promise<ArtifactBootstrapAccess | null> {
+): Promise<ArtifactRepoReadyResult> {
 	const existing = await binding.get(repoId)
-	if (existing.status === 'ready') return null
+	if (existing.status === 'ready') return { recreated: false }
 	if (existing.status === 'importing' || existing.status === 'forking') {
 		throw new Error(
 			`Artifacts repo "${repoId}" is ${existing.status}. Retry after ${existing.retryAfter}s.`,
@@ -149,10 +157,14 @@ async function createArtifactsRepoIfMissing(
 			`Artifacts repo "${created.name}" is ${getResult.status} after create.`,
 		)
 	}
-	return {
+	const bootstrapAccess = {
 		defaultBranch: created.defaultBranch,
 		remote: created.remote,
 		token: created.token,
 		expiresAt: created.expiresAt,
+	}
+	return {
+		recreated: true,
+		bootstrapAccess,
 	}
 }

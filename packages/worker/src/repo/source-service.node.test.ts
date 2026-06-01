@@ -6,6 +6,23 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
+function createEntitySourceRow() {
+	return {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
+		published_commit: 'abc123',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	}
+}
+
 test('ensureEntitySource fails closed when durable persistence is required without Artifacts REST credentials', async () => {
 	const db = {
 		prepare() {
@@ -157,4 +174,203 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		token: 'art_v1_create?expires=1760000000',
 		expiresAt: '2025-10-09T08:53:20.000Z',
 	})
+})
+
+test('ensureEntitySource recreates a missing Artifacts repo for an existing entity source', async () => {
+	const existingRow = createEntitySourceRow()
+	const runMock = vi.fn()
+	const db = {
+		prepare(query: string) {
+			return {
+				bind() {
+					return {
+						async first() {
+							if (query.includes('FROM entity_sources')) {
+								return existingRow
+							}
+							return null
+						},
+						run: runMock,
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	let getRepoCount = 0
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			if (
+				method === 'GET' &&
+				url.pathname.endsWith('/repos/package-package-1')
+			) {
+				getRepoCount += 1
+				if (getRepoCount === 1) {
+					return new Response(
+						JSON.stringify({
+							success: false,
+							result: null,
+							errors: [{ code: 1000, message: 'Repo not found' }],
+							messages: [],
+						}),
+						{
+							status: 404,
+							headers: { 'content-type': 'application/json' },
+						},
+					)
+				}
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: {
+							id: 'repo-1',
+							name: 'package-package-1',
+							description: null,
+							default_branch: 'main',
+							created_at: '2026-04-18T00:00:00.000Z',
+							updated_at: '2026-04-18T00:00:00.000Z',
+							last_push_at: null,
+							source: null,
+							read_only: false,
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+						},
+						errors: [],
+						messages: [],
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			if (method === 'POST' && url.pathname.endsWith('/repos')) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: {
+							id: 'repo-1',
+							name: 'package-package-1',
+							description: null,
+							default_branch: 'main',
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+							token: 'art_v1_create?expires=1760000000',
+						},
+						errors: [],
+						messages: [],
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+		})
+
+	const source = await ensureEntitySource({
+		db,
+		env: {
+			APP_DB: db,
+			CLOUDFLARE_ACCOUNT_ID: 'acct',
+			CLOUDFLARE_API_TOKEN: 'token-123',
+			CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+		} as Env,
+		userId: 'user-1',
+		entityKind: 'package',
+		entityId: 'package-1',
+		sourceRoot: '/',
+	})
+
+	expect(fetchMock).toHaveBeenCalledTimes(3)
+	expect(runMock).not.toHaveBeenCalled()
+	expect(source).toMatchObject(existingRow)
+	expect(source.bootstrapAccess).toEqual({
+		defaultBranch: 'main',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+		token: 'art_v1_create?expires=1760000000',
+		expiresAt: '2025-10-09T08:53:20.000Z',
+	})
+})
+
+test('ensureEntitySource reuses an existing entity source when its Artifacts repo is ready', async () => {
+	const existingRow = createEntitySourceRow()
+	const runMock = vi.fn()
+	const db = {
+		prepare(query: string) {
+			return {
+				bind() {
+					return {
+						async first() {
+							if (query.includes('FROM entity_sources')) {
+								return existingRow
+							}
+							return null
+						},
+						run: runMock,
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			if (
+				method === 'GET' &&
+				url.pathname.endsWith('/repos/package-package-1')
+			) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: {
+							id: 'repo-1',
+							name: 'package-package-1',
+							description: null,
+							default_branch: 'main',
+							created_at: '2026-04-18T00:00:00.000Z',
+							updated_at: '2026-04-18T00:00:00.000Z',
+							last_push_at: null,
+							source: null,
+							read_only: false,
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+						},
+						errors: [],
+						messages: [],
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+		})
+
+	const source = await ensureEntitySource({
+		db,
+		env: {
+			APP_DB: db,
+			CLOUDFLARE_ACCOUNT_ID: 'acct',
+			CLOUDFLARE_API_TOKEN: 'token-123',
+			CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+		} as Env,
+		userId: 'user-1',
+		entityKind: 'package',
+		entityId: 'package-1',
+		sourceRoot: '/',
+	})
+
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	expect(runMock).not.toHaveBeenCalled()
+	expect(source).toEqual(existingRow)
+	expect(source.bootstrapAccess).toBeUndefined()
 })
