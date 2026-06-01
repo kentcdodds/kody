@@ -290,6 +290,16 @@ export async function deleteSavedPackageProjection(input: {
 		await deleteEntitySource(input.env.APP_DB, {
 			id: savedPackage.sourceId,
 			userId: input.userId,
+		}).catch((error) => {
+			console.warn(
+				JSON.stringify({
+					message: 'package entity source cleanup failed',
+					userId: input.userId,
+					packageId: input.packageId,
+					sourceId: savedPackage.sourceId,
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			)
 		})
 		const listedServices = await listSavedPackageServices({
 			env: input.env,

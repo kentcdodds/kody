@@ -447,6 +447,41 @@ test('deleteSavedPackageProjection removes the entity source row for the package
 	)
 })
 
+test('deleteSavedPackageProjection continues when entity source removal fails', async () => {
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
+	mockModule.deleteEntitySource.mockRejectedValueOnce(
+		new Error('d1 unavailable'),
+	)
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			packageId: 'package-1',
+		},
+	)
+	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
+		env,
+		'package-1',
+	)
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+})
+
 test('refreshSavedPackageProjection continues when retriever cache refresh fails', async () => {
 	const env = createEnv()
 	const manifest = {

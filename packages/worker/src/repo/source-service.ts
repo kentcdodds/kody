@@ -1,9 +1,8 @@
 import {
 	buildEntityRepoId,
-	getArtifactsBinding,
 	hasArtifactsAccess,
+	ensureArtifactRepoReady,
 	type ArtifactBootstrapAccess,
-	type ArtifactNamespaceBinding,
 } from './artifacts.ts'
 import {
 	getEntitySourceByEntity,
@@ -11,13 +10,14 @@ import {
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
 
+export {
+	ensureArtifactRepoReady,
+	type ArtifactRepoReadyResult,
+} from './artifacts.ts'
+
 export type EnsuredEntitySource = EntitySourceRow & {
 	bootstrapAccess?: ArtifactBootstrapAccess | null
 }
-
-export type ArtifactRepoReadyResult =
-	| { recreated: false }
-	| { recreated: true; bootstrapAccess: ArtifactBootstrapAccess }
 
 function buildEntitySourceRow(input: {
 	id?: string
@@ -136,35 +136,4 @@ function missingPersistenceRequirements(input: {
 		missing.push('CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN')
 	}
 	return missing
-}
-
-export async function ensureArtifactRepoReady(
-	env: Env,
-	repoId: string,
-	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
-): Promise<ArtifactRepoReadyResult> {
-	const existing = await binding.get(repoId)
-	if (existing.status === 'ready') return { recreated: false }
-	if (existing.status === 'importing' || existing.status === 'forking') {
-		throw new Error(
-			`Artifacts repo "${repoId}" is ${existing.status}. Retry after ${existing.retryAfter}s.`,
-		)
-	}
-	const created = await binding.create(repoId, { readOnly: false })
-	const getResult = await binding.get(created.name)
-	if (getResult.status !== 'ready') {
-		throw new Error(
-			`Artifacts repo "${created.name}" is ${getResult.status} after create.`,
-		)
-	}
-	const bootstrapAccess = {
-		defaultBranch: created.defaultBranch,
-		remote: created.remote,
-		token: created.token,
-		expiresAt: created.expiresAt,
-	}
-	return {
-		recreated: true,
-		bootstrapAccess,
-	}
 }
