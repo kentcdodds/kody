@@ -178,7 +178,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 
 test('ensureEntitySource recreates a missing Artifacts repo for an existing entity source', async () => {
 	const existingRow = createEntitySourceRow()
-	const runMock = vi.fn()
+	const runMock = vi.fn(async () => ({ meta: { changes: 1 } }))
 	const db = {
 		prepare(query: string) {
 			return {
@@ -287,8 +287,12 @@ test('ensureEntitySource recreates a missing Artifacts repo for an existing enti
 	})
 
 	expect(fetchMock).toHaveBeenCalledTimes(3)
-	expect(runMock).not.toHaveBeenCalled()
-	expect(source).toMatchObject(existingRow)
+	expect(runMock).toHaveBeenCalledTimes(1)
+	expect(source).toMatchObject({
+		...existingRow,
+		published_commit: null,
+		indexed_commit: null,
+	})
 	expect(source.bootstrapAccess).toEqual({
 		defaultBranch: 'main',
 		remote:

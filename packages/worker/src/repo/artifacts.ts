@@ -645,12 +645,22 @@ export async function readMockArtifactSnapshot(input: {
 }
 
 function isArtifactRepoAlreadyExistsError(error: unknown) {
-	const text = error instanceof Error ? error.message : String(error)
-	const cause = error instanceof Error ? error.cause : undefined
-	const causeText =
-		cause && typeof cause === 'object' ? JSON.stringify(cause) : String(cause)
-	return /already[\s_-]*exists|already_exists|10201|conflict|409/i.test(
-		`${text} ${causeText}`,
+	if (!(error instanceof Error)) {
+		return false
+	}
+	const text = error.message
+	const cause = error.cause
+	const causeMessage =
+		cause && typeof cause === 'object' && 'message' in cause
+			? String(cause.message)
+			: ''
+	const causeCode =
+		cause && typeof cause === 'object' && 'code' in cause
+			? Number(cause.code)
+			: null
+	return (
+		causeCode === 10201 ||
+		/already[\s_-]*exists|already_exists/i.test(`${text} ${causeMessage}`)
 	)
 }
 

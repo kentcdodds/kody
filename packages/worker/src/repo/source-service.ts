@@ -7,6 +7,7 @@ import {
 import {
 	getEntitySourceByEntity,
 	insertEntitySource,
+	updateEntitySource,
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
 
@@ -93,8 +94,16 @@ export async function ensureEntitySource(input: {
 	if (existing) {
 		const repoReady = await ensureArtifactRepoReady(input.env, existing.repo_id)
 		if (!repoReady.recreated) return existing
+		await updateEntitySource(input.db, {
+			id: existing.id,
+			userId: existing.user_id,
+			publishedCommit: null,
+			indexedCommit: null,
+		})
 		return {
 			...existing,
+			published_commit: null,
+			indexed_commit: null,
 			bootstrapAccess: repoReady.bootstrapAccess,
 		}
 	}
