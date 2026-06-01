@@ -301,7 +301,7 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 		alreadyDeleted: false,
 	})
 
-	expect(fetchMock).toHaveBeenCalledTimes(8)
+	expect(fetchMock).toHaveBeenCalledTimes(7)
 })
 
 test('resolveArtifactSourceRepo recreates missing source repos', async () => {
@@ -385,7 +385,7 @@ test('resolveArtifactSourceRepo recreates missing source repos', async () => {
 	const repo = await resolveArtifactSourceRepo(env, 'repo-1')
 
 	expect(repo).toHaveProperty('info', expect.any(Function))
-	expect(fetchMock).toHaveBeenCalledTimes(4)
+	expect(fetchMock).toHaveBeenCalledTimes(3)
 })
 
 test('ensureArtifactRepoReady rereads after concurrent create conflicts', async () => {
@@ -458,8 +458,9 @@ test('ensureArtifactRepoReady rereads after concurrent create conflicts', async 
 		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
 	} as Env
 
-	await expect(ensureArtifactRepoReady(env, 'repo-1')).resolves.toEqual({
+	await expect(ensureArtifactRepoReady(env, 'repo-1')).resolves.toMatchObject({
 		recreated: false,
+		repo: expect.any(Object),
 	})
 	expect(fetchMock).toHaveBeenCalledTimes(3)
 })

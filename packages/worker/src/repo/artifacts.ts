@@ -28,8 +28,12 @@ export type ArtifactBootstrapAccess = {
 }
 
 export type ArtifactRepoReadyResult =
-	| { recreated: false }
-	| { recreated: true; bootstrapAccess: ArtifactBootstrapAccess }
+	| { recreated: false; repo: ArtifactRepoHandle }
+	| {
+			recreated: true
+			bootstrapAccess: ArtifactBootstrapAccess
+			repo: ArtifactRepoHandle
+	  }
 
 export type ArtifactRepoInfo = {
 	id: string
@@ -666,7 +670,7 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
 		const result = await input.binding.get(input.repoId)
 		if (result.status === 'ready') {
-			return { recreated: false }
+			return { recreated: false, repo: result.repo }
 		}
 		lastStatus = result.status
 		if (result.status === 'importing' || result.status === 'forking') {
@@ -689,7 +693,9 @@ export async function ensureArtifactRepoReady(
 	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
 ): Promise<ArtifactRepoReadyResult> {
 	const existing = await binding.get(repoId)
-	if (existing.status === 'ready') return { recreated: false }
+	if (existing.status === 'ready') {
+		return { recreated: false, repo: existing.repo }
+	}
 	if (existing.status === 'importing' || existing.status === 'forking') {
 		throw new Error(
 			`Artifacts repo "${repoId}" is ${existing.status}. Retry after ${existing.retryAfter}s.`,
@@ -722,22 +728,14 @@ export async function ensureArtifactRepoReady(
 	return {
 		recreated: true,
 		bootstrapAccess,
+		repo: getResult.repo,
 	}
 }
 
 export async function resolveArtifactSourceRepo(env: Env, repoId: string) {
 	const binding = getArtifactsBinding(env)
-	await ensureArtifactRepoReady(env, repoId, binding)
-	const result = await binding.get(repoId)
-	if (result.status === 'ready') {
-		return result.repo
-	}
-	if (result.status === 'importing' || result.status === 'forking') {
-		throw new Error(
-			`Artifacts repo "${repoId}" is ${result.status} (retry after ${result.retryAfter}s).`,
-		)
-	}
-	throw new Error(`Artifacts repo "${repoId}" is ${result.status}.`)
+	const result = await ensureArtifactRepoReady(env, repoId, binding)
+	return result.repo
 }
 
 export async function resolveSessionRepo(

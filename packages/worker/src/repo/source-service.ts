@@ -10,11 +10,6 @@ import {
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
 
-export {
-	ensureArtifactRepoReady,
-	type ArtifactRepoReadyResult,
-} from './artifacts.ts'
-
 export type EnsuredEntitySource = EntitySourceRow & {
 	bootstrapAccess?: ArtifactBootstrapAccess | null
 }
