@@ -274,18 +274,20 @@ test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async ()
 	expect(mockModule.logJobSchedulerError).not.toHaveBeenCalled()
 })
 
-test('syncAlarm logs source-tagged errors when getNextRunnableJob fails', async () => {
+test('syncAlarm and alarm log source-tagged scheduler errors for operational failures', async () => {
 	resetMocks()
 	mockModule.getNextRunnableJob.mockRejectedValue(
 		new Error('next job lookup failed'),
 	)
-	const { state } = createState()
-	const manager = new JobManagerBase(state, {} as Env)
+	const lookupFailureState = createState()
+	const lookupFailureManager = new JobManagerBase(
+		lookupFailureState.state,
+		{} as Env,
+	)
 
 	await expect(
-		manager.syncAlarm({ userId: 'user-123', source: 'alarm' }),
+		lookupFailureManager.syncAlarm({ userId: 'user-123', source: 'alarm' }),
 	).rejects.toThrow('next job lookup failed')
-
 	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
 		event: 'sync_alarm_failed',
 		userId: 'user-123',
@@ -293,24 +295,24 @@ test('syncAlarm logs source-tagged errors when getNextRunnableJob fails', async 
 		errorName: 'Error',
 		errorMessage: 'next job lookup failed',
 	})
-})
 
-test('syncAlarm logs source-tagged errors when deleteAlarm fails', async () => {
 	resetMocks()
 	mockModule.getNextRunnableJob.mockResolvedValue(null)
-	const { state } = createState()
+	const deleteFailureState = createState()
 	const deleteAlarm = vi.mocked(
-		state.storage.deleteAlarm as unknown as (
+		deleteFailureState.state.storage.deleteAlarm as unknown as (
 			...args: Array<unknown>
 		) => Promise<void>,
 	)
 	deleteAlarm.mockRejectedValueOnce(new Error('delete alarm failed'))
-	const manager = new JobManagerBase(state, {} as Env)
+	const deleteFailureManager = new JobManagerBase(
+		deleteFailureState.state,
+		{} as Env,
+	)
 
 	await expect(
-		manager.syncAlarm({ userId: 'user-123', source: 'rpc' }),
+		deleteFailureManager.syncAlarm({ userId: 'user-123', source: 'rpc' }),
 	).rejects.toThrow('delete alarm failed')
-
 	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
 		event: 'sync_alarm_failed',
 		userId: 'user-123',
@@ -318,27 +320,24 @@ test('syncAlarm logs source-tagged errors when deleteAlarm fails', async () => {
 		errorName: 'Error',
 		errorMessage: 'delete alarm failed',
 	})
-})
 
-test('syncAlarm logs source-tagged errors when setAlarm fails', async () => {
 	resetMocks()
 	mockModule.getNextRunnableJob.mockResolvedValue({
 		id: 'job-123',
 		nextRunAt: '2026-04-20T18:30:00.000Z',
 	})
-	const { state } = createState()
+	const setFailureState = createState()
 	const setAlarm = vi.mocked(
-		state.storage.setAlarm as unknown as (
+		setFailureState.state.storage.setAlarm as unknown as (
 			...args: Array<unknown>
 		) => Promise<void>,
 	)
 	setAlarm.mockRejectedValueOnce(new Error('set alarm failed'))
-	const manager = new JobManagerBase(state, {} as Env)
+	const setFailureManager = new JobManagerBase(setFailureState.state, {} as Env)
 
 	await expect(
-		manager.syncAlarm({ userId: 'user-123', source: 'run_now' }),
+		setFailureManager.syncAlarm({ userId: 'user-123', source: 'run_now' }),
 	).rejects.toThrow('set alarm failed')
-
 	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
 		event: 'sync_alarm_failed',
 		userId: 'user-123',
@@ -346,38 +345,35 @@ test('syncAlarm logs source-tagged errors when setAlarm fails', async () => {
 		errorName: 'Error',
 		errorMessage: 'set alarm failed',
 	})
-})
 
-test('alarm logs missing_user_id when no user id was persisted', async () => {
 	resetMocks()
-	const { state } = createState()
+	const missingUserState = createState()
 	vi.mocked(
-		state.storage.get as unknown as (
+		missingUserState.state.storage.get as unknown as (
 			key: string,
 		) => Promise<string | undefined>,
 	).mockResolvedValueOnce(undefined)
-	const manager = new JobManagerBase(state, {} as Env)
+	const missingUserManager = new JobManagerBase(
+		missingUserState.state,
+		{} as Env,
+	)
 
-	await expect(manager.alarm()).resolves.toBeUndefined()
-
+	await expect(missingUserManager.alarm()).resolves.toBeUndefined()
 	expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
 		event: 'alarm_fired',
 		reason: 'missing_user_id',
 		retryCount: undefined,
 		isRetry: undefined,
 	})
-})
 
-test('alarm logs run_due_jobs failure details', async () => {
 	resetMocks()
 	mockModule.runDueJobsForUser.mockRejectedValue(
 		new Error('run due jobs failed'),
 	)
-	const { state } = createState()
-	const manager = new JobManagerBase(state, {} as Env)
+	const runFailureState = createState()
+	const runFailureManager = new JobManagerBase(runFailureState.state, {} as Env)
 
-	await expect(manager.alarm()).rejects.toThrow('run due jobs failed')
-
+	await expect(runFailureManager.alarm()).rejects.toThrow('run due jobs failed')
 	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
 		event: 'alarm_run_due_jobs_failed',
 		userId: 'user-123',
@@ -386,9 +382,7 @@ test('alarm logs run_due_jobs failure details', async () => {
 		errorName: 'Error',
 		errorMessage: 'run due jobs failed',
 	})
-})
 
-test('alarm logs resync failure details after due jobs run', async () => {
 	resetMocks()
 	mockModule.runDueJobsForUser.mockResolvedValue({
 		dueJobCount: 0,
@@ -396,14 +390,16 @@ test('alarm logs resync failure details after due jobs run', async () => {
 		errorCount: 0,
 		jobOutcomes: [],
 	})
-	const { state } = createState()
-	const manager = new JobManagerBase(state, {} as Env)
+	const resyncFailureState = createState()
+	const resyncFailureManager = new JobManagerBase(
+		resyncFailureState.state,
+		{} as Env,
+	)
 	const syncAlarmSpy = vi
-		.spyOn(manager, 'syncAlarm')
+		.spyOn(resyncFailureManager, 'syncAlarm')
 		.mockRejectedValueOnce(new Error('resync failed'))
 
-	await expect(manager.alarm()).rejects.toThrow('resync failed')
-
+	await expect(resyncFailureManager.alarm()).rejects.toThrow('resync failed')
 	expect(syncAlarmSpy).toHaveBeenCalledWith({
 		userId: 'user-123',
 		source: 'alarm',

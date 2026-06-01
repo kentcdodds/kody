@@ -107,6 +107,26 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 		}),
 	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
+
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: null,
+	})
+
+	const missingHead = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+	})
+
+	expect(missingHead).toEqual(
+		expect.objectContaining({
+			alreadyPublished: 0,
+			missingHead: 1,
+		}),
+	)
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 })
 
 test('reconcile records source checks and continues the batch when a source or its check write fails', async () => {
@@ -220,26 +240,4 @@ test('reconcile runs token cleanup in the 03:00 UTC window without blocking publ
 		}),
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
-})
-
-test('missing Artifacts HEAD is counted separately from already published', async () => {
-	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: null,
-	})
-
-	const result = await reconcileArtifactsPushes({
-		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
-		now: new Date('2026-05-04T02:00:00.000Z'),
-	})
-
-	expect(result).toEqual(
-		expect.objectContaining({
-			alreadyPublished: 0,
-			missingHead: 1,
-		}),
-	)
-	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
 })

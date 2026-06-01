@@ -1,10 +1,6 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const { ensureEntitySource } = await import('./source-service.ts')
-
-afterEach(() => {
-	vi.restoreAllMocks()
-})
 
 function createEntitySourceRow() {
 	return {
@@ -151,29 +147,33 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
-	const source = await ensureEntitySource({
-		db,
-		env: {
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct',
-			CLOUDFLARE_API_TOKEN: 'token-123',
-			CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-		} as Env,
-		userId: 'user-1',
-		entityKind: 'skill',
-		entityId: 'skill-1',
-		sourceRoot: '/',
-	})
+	try {
+		const source = await ensureEntitySource({
+			db,
+			env: {
+				APP_DB: db,
+				CLOUDFLARE_ACCOUNT_ID: 'acct',
+				CLOUDFLARE_API_TOKEN: 'token-123',
+				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+			} as Env,
+			userId: 'user-1',
+			entityKind: 'skill',
+			entityId: 'skill-1',
+			sourceRoot: '/',
+		})
 
-	expect(fetchMock).toHaveBeenCalledTimes(3)
-	expect(source.repo_id).toBe('skill-skill-1')
-	expect(source.bootstrapAccess).toEqual({
-		defaultBranch: 'main',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
-		token: 'art_v1_create?expires=1760000000',
-		expiresAt: '2025-10-09T08:53:20.000Z',
-	})
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+		expect(source.repo_id).toBe('skill-skill-1')
+		expect(source.bootstrapAccess).toEqual({
+			defaultBranch: 'main',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
+			token: 'art_v1_create?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		})
+	} finally {
+		fetchMock.mockRestore()
+	}
 })
 
 test('ensureEntitySource recreates a missing Artifacts repo for an existing entity source', async () => {
@@ -272,34 +272,38 @@ test('ensureEntitySource recreates a missing Artifacts repo for an existing enti
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
-	const source = await ensureEntitySource({
-		db,
-		env: {
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct',
-			CLOUDFLARE_API_TOKEN: 'token-123',
-			CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-		} as Env,
-		userId: 'user-1',
-		entityKind: 'package',
-		entityId: 'package-1',
-		sourceRoot: '/',
-	})
+	try {
+		const source = await ensureEntitySource({
+			db,
+			env: {
+				APP_DB: db,
+				CLOUDFLARE_ACCOUNT_ID: 'acct',
+				CLOUDFLARE_API_TOKEN: 'token-123',
+				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+			} as Env,
+			userId: 'user-1',
+			entityKind: 'package',
+			entityId: 'package-1',
+			sourceRoot: '/',
+		})
 
-	expect(fetchMock).toHaveBeenCalledTimes(3)
-	expect(runMock).toHaveBeenCalledTimes(1)
-	expect(source).toMatchObject({
-		...existingRow,
-		published_commit: null,
-		indexed_commit: null,
-	})
-	expect(source.bootstrapAccess).toEqual({
-		defaultBranch: 'main',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
-		token: 'art_v1_create?expires=1760000000',
-		expiresAt: '2025-10-09T08:53:20.000Z',
-	})
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+		expect(runMock).toHaveBeenCalledTimes(1)
+		expect(source).toMatchObject({
+			...existingRow,
+			published_commit: null,
+			indexed_commit: null,
+		})
+		expect(source.bootstrapAccess).toEqual({
+			defaultBranch: 'main',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+			token: 'art_v1_create?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		})
+	} finally {
+		fetchMock.mockRestore()
+	}
 })
 
 test('ensureEntitySource reuses an existing entity source when its Artifacts repo is ready', async () => {
@@ -359,22 +363,26 @@ test('ensureEntitySource reuses an existing entity source when its Artifacts rep
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
-	const source = await ensureEntitySource({
-		db,
-		env: {
-			APP_DB: db,
-			CLOUDFLARE_ACCOUNT_ID: 'acct',
-			CLOUDFLARE_API_TOKEN: 'token-123',
-			CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-		} as Env,
-		userId: 'user-1',
-		entityKind: 'package',
-		entityId: 'package-1',
-		sourceRoot: '/',
-	})
+	try {
+		const source = await ensureEntitySource({
+			db,
+			env: {
+				APP_DB: db,
+				CLOUDFLARE_ACCOUNT_ID: 'acct',
+				CLOUDFLARE_API_TOKEN: 'token-123',
+				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+			} as Env,
+			userId: 'user-1',
+			entityKind: 'package',
+			entityId: 'package-1',
+			sourceRoot: '/',
+		})
 
-	expect(fetchMock).toHaveBeenCalledTimes(1)
-	expect(runMock).not.toHaveBeenCalled()
-	expect(source).toEqual(existingRow)
-	expect(source.bootstrapAccess).toBeUndefined()
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(runMock).not.toHaveBeenCalled()
+		expect(source).toEqual(existingRow)
+		expect(source.bootstrapAccess).toBeUndefined()
+	} finally {
+		fetchMock.mockRestore()
+	}
 })

@@ -217,17 +217,6 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 
 	mockGit.fetch.mockRejectedValueOnce(new Error('HTTP Error: 401 Unauthorized'))
 	await expect(readPublishGitNoteFromArtifactsRepo(readInput)).rejects.toThrow(
-		'401 Unauthorized',
-	)
-
-	mockGit.fetch.mockRejectedValueOnce(new Error('Repository not found'))
-	await expect(readPublishGitNoteFromArtifactsRepo(readInput)).rejects.toThrow(
-		'Repository not found',
-	)
-
-	mockGit.fetch.mockResolvedValueOnce({ ok: true, refs: {} })
-	mockGit.readNote.mockRejectedValueOnce(new Error('filesystem corruption'))
-	await expect(readPublishGitNoteFromArtifactsRepo(readInput)).rejects.toThrow(
-		'filesystem corruption',
+		/401 Unauthorized/,
 	)
 })

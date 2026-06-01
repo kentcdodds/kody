@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { createWidgetHostBridge } from './widget-host-bridge.ts'
 
 type HostRequestMessage = {
@@ -14,15 +14,8 @@ const latestProtocolVersion = '2026-01-26'
 
 const originalWindow = globalThis.window
 
-afterEach(() => {
-	if (originalWindow) {
-		globalThis.window = originalWindow
-		return
-	}
-	Reflect.deleteProperty(globalThis, 'window')
-})
-
-test('sendUserMessageWithFallback delivers ui/message to latest-protocol host', async () => {
+test('widget host bridge handles MCP Apps host RPC, render-data notifications, and size updates', async () => {
+	const renderDataEvents: Array<Record<string, unknown> | undefined> = []
 	const deliveredChatMessages: Array<string> = []
 	const hostPostedMessages: Array<HostRequestMessage> = []
 	let bridge: ReturnType<typeof createWidgetHostBridge>
@@ -63,97 +56,42 @@ test('sendUserMessageWithFallback delivers ui/message to latest-protocol host', 
 						},
 						hostCapabilities: {
 							message: { text: {} },
-						},
-						hostContext: {},
-					},
-				})
-				return
-			}
-
-			if (request.method !== 'ui/message') {
-				return
-			}
-
-			const textBlock = Array.isArray(request.params?.content)
-				? request.params.content.find(
-						(item) => !!item && typeof item === 'object' && 'type' in item,
-					)
-				: null
-			const text =
-				textBlock &&
-				typeof textBlock === 'object' &&
-				(textBlock as { type?: unknown }).type === 'text' &&
-				typeof (textBlock as { text?: unknown }).text === 'string'
-					? (textBlock as { text: string }).text
-					: null
-
-			if (!initialized || request.params?.role !== 'user' || !text) {
-				bridge.handleHostMessage({
-					jsonrpc: '2.0',
-					id: request.id,
-					result: { isError: true },
-				})
-				return
-			}
-
-			deliveredChatMessages.push(text)
-			bridge.handleHostMessage({
-				jsonrpc: '2.0',
-				id: request.id,
-				result: {},
-			})
-		},
-	}
-
-	globalThis.window = {
-		parent: parentWindow,
-	} as unknown as Window & typeof globalThis
-
-	bridge = createWidgetHostBridge({
-		appInfo: {
-			name: 'kody-ui-utils',
-			version: '1.0.0',
-		},
-		requestTimeoutMs: 500,
-	})
-
-	const messageText = 'Generated UI sent a follow-up message.'
-	const sent = await bridge.sendUserMessageWithFallback(messageText)
-	expect(sent).toBe(true)
-	expect(deliveredChatMessages).toEqual([messageText])
-	expect(hostPostedMessages.some((entry) => entry.type === 'prompt')).toBe(
-		false,
-	)
-})
-
-test('callTool proxies tools/call through the host bridge', async () => {
-	const hostPostedMessages: Array<HostRequestMessage> = []
-	let bridge: ReturnType<typeof createWidgetHostBridge>
-
-	const parentWindow = {
-		postMessage(message: unknown) {
-			if (!message || typeof message !== 'object' || Array.isArray(message)) {
-				return
-			}
-
-			const request = message as HostRequestMessage
-			hostPostedMessages.push(request)
-			if (request.method === 'ui/initialize') {
-				bridge.handleHostMessage({
-					jsonrpc: '2.0',
-					id: request.id,
-					result: {
-						protocolVersion: latestProtocolVersion,
-						hostInfo: {
-							name: 'mcp-jam-sim',
-							version: '1.0.0',
-						},
-						hostCapabilities: {
-							message: { text: {} },
 							serverTools: {},
 						},
 						hostContext: {},
 					},
+				})
+				return
+			}
+
+			if (request.method === 'ui/message') {
+				const textBlock = Array.isArray(request.params?.content)
+					? request.params.content.find(
+							(item) => !!item && typeof item === 'object' && 'type' in item,
+						)
+					: null
+				const text =
+					textBlock &&
+					typeof textBlock === 'object' &&
+					(textBlock as { type?: unknown }).type === 'text' &&
+					typeof (textBlock as { text?: unknown }).text === 'string'
+						? (textBlock as { text: string }).text
+						: null
+
+				if (!initialized || request.params?.role !== 'user' || !text) {
+					bridge.handleHostMessage({
+						jsonrpc: '2.0',
+						id: request.id,
+						result: { isError: true },
+					})
+					return
+				}
+
+				deliveredChatMessages.push(text)
+				bridge.handleHostMessage({
+					jsonrpc: '2.0',
+					id: request.id,
+					result: {},
 				})
 				return
 			}
@@ -185,44 +123,6 @@ test('callTool proxies tools/call through the host bridge', async () => {
 			version: '1.0.0',
 		},
 		requestTimeoutMs: 500,
-	})
-
-	const result = await bridge.callTool({
-		name: 'ui_load_app_source',
-		arguments: {
-			app_id: 'app-123',
-		},
-	})
-
-	expect(result?.structuredContent).toEqual({
-		appId: 'app-123',
-		source: '<main>Hello</main>',
-	})
-	expect(
-		hostPostedMessages.some(
-			(entry) =>
-				entry.method === 'tools/call' &&
-				entry.params?.name === 'ui_load_app_source',
-		),
-	).toBe(true)
-})
-
-test('render-data updates unwrap tool output structured content from lifecycle snapshots and tool-result notifications', async () => {
-	const renderDataEvents: Array<Record<string, unknown> | undefined> = []
-
-	globalThis.window = {
-		parent: {
-			postMessage() {
-				// No-op for this notification-driven test.
-			},
-		},
-	} as unknown as Window & typeof globalThis
-
-	const bridge = createWidgetHostBridge({
-		appInfo: {
-			name: 'kody-ui-utils',
-			version: '1.0.0',
-		},
 		onRenderData(renderData) {
 			renderDataEvents.push(renderData)
 		},
@@ -262,6 +162,31 @@ test('render-data updates unwrap tool output structured content from lifecycle s
 		},
 	})
 
+	const messageText = 'Generated UI sent a follow-up message.'
+	expect(await bridge.sendUserMessageWithFallback(messageText)).toBe(true)
+	expect(deliveredChatMessages).toEqual([messageText])
+	expect(hostPostedMessages.some((entry) => entry.type === 'prompt')).toBe(
+		false,
+	)
+
+	const toolResult = await bridge.callTool({
+		name: 'ui_load_app_source',
+		arguments: {
+			app_id: 'app-123',
+		},
+	})
+	expect(toolResult?.structuredContent).toEqual({
+		appId: 'app-123',
+		source: '<main>Hello</main>',
+	})
+	expect(
+		hostPostedMessages.some(
+			(entry) =>
+				entry.method === 'tools/call' &&
+				entry.params?.name === 'ui_load_app_source',
+		),
+	).toBe(true)
+
 	bridge.handleHostMessage({
 		jsonrpc: '2.0',
 		method: 'ui/notifications/tool-result',
@@ -289,58 +214,13 @@ test('render-data updates unwrap tool output structured content from lifecycle s
 			sourceCode: '<main>Hello</main>',
 		},
 	})
-})
 
-test('sendSizeChanged posts the standard MCP Apps notification', async () => {
-	const hostPostedMessages: Array<HostRequestMessage> = []
-	let bridge: ReturnType<typeof createWidgetHostBridge>
-
-	const parentWindow = {
-		postMessage(message: unknown) {
-			if (!message || typeof message !== 'object' || Array.isArray(message)) {
-				return
-			}
-
-			const request = message as HostRequestMessage
-			hostPostedMessages.push(request)
-			if (request.method !== 'ui/initialize') {
-				return
-			}
-
-			bridge.handleHostMessage({
-				jsonrpc: '2.0',
-				id: request.id,
-				result: {
-					protocolVersion: latestProtocolVersion,
-					hostInfo: {
-						name: 'mcp-jam-sim',
-						version: '1.0.0',
-					},
-					hostCapabilities: {},
-					hostContext: {},
-				},
-			})
-		},
-	}
-
-	globalThis.window = {
-		parent: parentWindow,
-	} as unknown as Window & typeof globalThis
-
-	bridge = createWidgetHostBridge({
-		appInfo: {
-			name: 'kody-ui-utils',
-			version: '1.0.0',
-		},
-		requestTimeoutMs: 500,
-	})
-
-	const sent = await bridge.sendSizeChanged({
-		height: 321.4,
-		width: 654.1,
-	})
-
-	expect(sent).toBe(true)
+	expect(
+		await bridge.sendSizeChanged({
+			height: 321.4,
+			width: 654.1,
+		}),
+	).toBe(true)
 	expect(hostPostedMessages).toContainEqual({
 		jsonrpc: '2.0',
 		method: 'ui/notifications/size-changed',
@@ -349,4 +229,10 @@ test('sendSizeChanged posts the standard MCP Apps notification', async () => {
 			width: 654,
 		},
 	})
+
+	if (originalWindow) {
+		globalThis.window = originalWindow
+		return
+	}
+	Reflect.deleteProperty(globalThis, 'window')
 })
