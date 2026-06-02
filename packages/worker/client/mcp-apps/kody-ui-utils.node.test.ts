@@ -226,7 +226,7 @@ test('buildCodemodeCapabilityExecuteCode runs the intended capability with the o
 	])
 })
 
-test('async helpers read installed runtime state', async () => {
+test('kodyWidget runtime installs helpers, refreshes bootstrap state, and routes hosted app backend requests', async () => {
 	const runtimeState = getKodyWidgetRuntimeStateForTest()
 	runtimeState.reset()
 
@@ -239,18 +239,6 @@ test('async helpers read installed runtime state', async () => {
 		hooks: {
 			executeCode: async () => 'ok',
 		},
-	})
-
-	expect(kodyWidget.params).toEqual({ owner: 'kody' })
-	await expect(kodyWidget.executeCode('return "ok"')).resolves.toBe('ok')
-})
-
-test('runtime bootstrap updates refresh params and app session without reinit', () => {
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	runtimeState.install({
-		mode: 'mcp',
-		params: { owner: 'kody' },
 		appSession: {
 			token: 'token-1',
 			endpoints: {
@@ -261,6 +249,9 @@ test('runtime bootstrap updates refresh params and app session without reinit', 
 			},
 		},
 	})
+
+	expect(kodyWidget.params).toEqual({ owner: 'kody' })
+	await expect(kodyWidget.executeCode('return "ok"')).resolves.toBe('ok')
 
 	updateGeneratedUiRuntimeBootstrap({
 		mode: 'mcp',
@@ -275,16 +266,21 @@ test('runtime bootstrap updates refresh params and app session without reinit', 
 			},
 		},
 	})
-
 	expect(kodyWidget.params).toEqual({ owner: 'updated', limit: 3 })
-})
 
-test('appBackend.resolveUrl resolves backend-relative paths and rejects out-of-scope urls', () => {
 	installWindowLocation('http://localhost:3000/ui/app-123')
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
 	runtimeState.reset()
 	runtimeState.install({
 		mode: 'hosted',
+		appSession: {
+			token: 'app-session-token',
+			endpoints: {
+				source: 'https://kody.example/ui-api/app-123/source',
+				execute: 'https://kody.example/ui-api/app-123/execute',
+				secrets: 'https://kody.example/ui-api/app-123/secrets',
+				deleteSecret: 'https://kody.example/ui-api/app-123/secrets/delete',
+			},
+		},
 		appBackend: {
 			basePath: '/app/app-123',
 			facetNames: ['main'],
@@ -316,28 +312,6 @@ test('appBackend.resolveUrl resolves backend-relative paths and rejects out-of-s
 			'https://example.com/app/app-123/api/state',
 		),
 	).toThrow(/only supports same-origin urls within the app backend base path/i)
-})
-
-test('appBackend.fetch adds the generated ui bearer token and preserves explicit authorization', async () => {
-	installWindowLocation('http://localhost:3000/ui/app-123')
-	const runtimeState = getKodyWidgetRuntimeStateForTest()
-	runtimeState.reset()
-	runtimeState.install({
-		mode: 'hosted',
-		appSession: {
-			token: 'app-session-token',
-			endpoints: {
-				source: 'https://kody.example/ui-api/app-123/source',
-				execute: 'https://kody.example/ui-api/app-123/execute',
-				secrets: 'https://kody.example/ui-api/app-123/secrets',
-				deleteSecret: 'https://kody.example/ui-api/app-123/secrets/delete',
-			},
-		},
-		appBackend: {
-			basePath: '/app/app-123',
-			facetNames: ['main'],
-		},
-	})
 
 	const fetchSpy = vi
 		.spyOn(globalThis, 'fetch')

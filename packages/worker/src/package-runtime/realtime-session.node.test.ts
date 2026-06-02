@@ -39,7 +39,7 @@ vi.mock('./package-app.ts', () => ({
 		mockModule.buildPackageAppWorker(...args),
 }))
 
-const { PackageRealtimeSession, resolvePackageAppWorkerCacheKey } =
+const { resolvePackageAppWorkerCacheKey } =
 	await import('./realtime-session.ts')
 
 test('resolvePackageAppWorkerCacheKey includes latest published commit when available', async () => {
@@ -162,8 +162,4 @@ test('resolvePackageAppWorkerCacheKey can skip source refresh and reuse cached b
 		]),
 	)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
-})
-
-test('PackageRealtimeSession is exported for runtime consumers', () => {
-	expect(PackageRealtimeSession).toBeDefined()
 })

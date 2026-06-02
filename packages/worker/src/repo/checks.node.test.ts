@@ -79,6 +79,23 @@ async function collectSnapshotFiles(
 	return snapshotFiles
 }
 
+async function runChecksOnWorkspaceFiles(files: Map<string, string>) {
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	return runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+}
+
 function createPackageManifest(input: {
 	packageName: string
 	kodyId: string
@@ -1076,39 +1093,25 @@ test('runRepoChecks reports declared npm dependencies in package.json', async ()
 	)
 })
 
-test('runRepoChecks requires static kody package imports to be declared', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/uses-static-package',
-				kodyId: 'uses-static-package',
-				description: 'Uses a static Kody package import',
-			}),
-		],
-		[
-			'src/index.ts',
-			'import helper from "kody:@kentcdodds/helper/run"\nexport const ready = helper\n',
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(false)
-	expect(result.results).toEqual(
+test('runRepoChecks validates static kody package import declarations across missing, declared, type-only, declaration files, mixed exports, dynamic imports, invalid declarations, and unused declarations', async () => {
+	const missingDeclaration = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/uses-static-package',
+					kodyId: 'uses-static-package',
+					description: 'Uses a static Kody package import',
+				}),
+			],
+			[
+				'src/index.ts',
+				'import helper from "kody:@kentcdodds/helper/run"\nexport const ready = helper\n',
+			],
+		]),
+	)
+	expect(missingDeclaration.ok).toBe(false)
+	expect(missingDeclaration.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
@@ -1119,47 +1122,31 @@ test('runRepoChecks requires static kody package imports to be declared', async 
 			}),
 		]),
 	)
-})
 
-test('runRepoChecks accepts declared static kody package imports and ignores type-only imports', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/declared-static-package',
-				kodyId: 'declared-static-package',
-				description: 'Declares static Kody package imports',
-				kodyDependencies: ['@kentcdodds/helper'],
-			}),
-		],
-		[
-			'src/index.ts',
+	const declaredImports = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
 			[
-				'import helper from "kody:@kentcdodds/helper/run"',
-				'import type { HelperConfig } from "kody:@kentcdodds/types/config"',
-				'export { type HelperResult } from "kody:@kentcdodds/types/result"',
-				'export const ready: HelperConfig | unknown = helper',
-			].join('\n'),
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(result.results).toEqual(
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/declared-static-package',
+					kodyId: 'declared-static-package',
+					description: 'Declares static Kody package imports',
+					kodyDependencies: ['@kentcdodds/helper'],
+				}),
+			],
+			[
+				'src/index.ts',
+				[
+					'import helper from "kody:@kentcdodds/helper/run"',
+					'import type { HelperConfig } from "kody:@kentcdodds/types/config"',
+					'export { type HelperResult } from "kody:@kentcdodds/types/result"',
+					'export const ready: HelperConfig | unknown = helper',
+				].join('\n'),
+			],
+		]),
+	)
+	expect(declaredImports.ok).toBe(true)
+	expect(declaredImports.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
@@ -1170,48 +1157,32 @@ test('runRepoChecks accepts declared static kody package imports and ignores typ
 			}),
 		]),
 	)
-})
 
-test('runRepoChecks ignores kody imports in declaration files', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/declaration-file-types',
-				kodyId: 'declaration-file-types',
-				description: 'Exports declaration-only types',
-				exports: {
-					'.': {
-						import: './src/index.ts',
-						types: './src/index.d.ts',
+	const declarationFileTypes = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/declaration-file-types',
+					kodyId: 'declaration-file-types',
+					description: 'Exports declaration-only types',
+					exports: {
+						'.': {
+							import: './src/index.ts',
+							types: './src/index.d.ts',
+						},
 					},
-				},
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-		[
-			'src/index.d.ts',
-			'import { HelperConfig } from "kody:@kentcdodds/types/config"\nexport type Options = HelperConfig\n',
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(result.results).toEqual(
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+			[
+				'src/index.d.ts',
+				'import { HelperConfig } from "kody:@kentcdodds/types/config"\nexport type Options = HelperConfig\n',
+			],
+		]),
+	)
+	expect(declarationFileTypes.ok).toBe(true)
+	expect(declarationFileTypes.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
@@ -1222,41 +1193,25 @@ test('runRepoChecks ignores kody imports in declaration files', async () => {
 			}),
 		]),
 	)
-})
 
-test('runRepoChecks requires mixed value export-from kody package imports to be declared', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/mixed-export-package',
-				kodyId: 'mixed-export-package',
-				description: 'Exports a value from another Kody package',
-			}),
-		],
-		[
-			'src/index.ts',
-			'export { run, type RunInput } from "kody:@kentcdodds/runner"\n',
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(false)
-	expect(result.results).toEqual(
+	const mixedExport = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/mixed-export-package',
+					kodyId: 'mixed-export-package',
+					description: 'Exports a value from another Kody package',
+				}),
+			],
+			[
+				'src/index.ts',
+				'export { run, type RunInput } from "kody:@kentcdodds/runner"\n',
+			],
+		]),
+	)
+	expect(mixedExport.ok).toBe(false)
+	expect(mixedExport.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
@@ -1265,40 +1220,24 @@ test('runRepoChecks requires mixed value export-from kody package imports to be 
 			}),
 		]),
 	)
-})
 
-test('runRepoChecks does not require current-resolved literal dynamic kody package imports to be declared', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/dynamic-import-package',
-				kodyId: 'dynamic-import-package',
-				description: 'Dynamically imports another Kody package',
-			}),
-		],
-		[
-			'src/index.ts',
-			'export async function load() { return await import("kody:@kentcdodds/dynamic/run") }\n',
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.results).toEqual(
+	const dynamicImport = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/dynamic-import-package',
+					kodyId: 'dynamic-import-package',
+					description: 'Dynamically imports another Kody package',
+				}),
+			],
+			[
+				'src/index.ts',
+				'export async function load() { return await import("kody:@kentcdodds/dynamic/run") }\n',
+			],
+		]),
+	)
+	expect(dynamicImport.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
@@ -1306,79 +1245,47 @@ test('runRepoChecks does not require current-resolved literal dynamic kody packa
 			}),
 		]),
 	)
-})
-
-test('runRepoChecks rejects invalid static kody package dependency declarations', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			JSON.stringify({
-				name: '@kody/invalid-dependency-declaration',
-				exports: {
-					'.': './src/index.ts',
-				},
-				kody: {
-					id: 'invalid-dependency-declaration',
-					description: 'Declares an invalid Kody dependency',
-					dependencies: ['@kentcdodds/helper/run'],
-				},
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-	])
 
 	await expect(
-		runRepoChecks({
-			workspace: {
-				async readFile(path: string) {
-					return files.get(path) ?? null
-				},
-				async glob() {
-					return Array.from(files.keys()).map((path) => ({
-						path,
-						type: 'file',
-					}))
-				},
-			},
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		}),
+		runChecksOnWorkspaceFiles(
+			new Map<string, string>([
+				[
+					'package.json',
+					JSON.stringify({
+						name: '@kody/invalid-dependency-declaration',
+						exports: {
+							'.': './src/index.ts',
+						},
+						kody: {
+							id: 'invalid-dependency-declaration',
+							description: 'Declares an invalid Kody dependency',
+							dependencies: ['@kentcdodds/helper/run'],
+						},
+					}),
+				],
+				['src/index.ts', 'export const ready = true\n'],
+			]),
+		),
 	).rejects.toThrow(
 		'Static Kody package dependencies must be scoped package names like "@scope/package".',
 	)
-})
 
-test('runRepoChecks rejects unused static kody package dependency declarations', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/unused-static-package',
-				kodyId: 'unused-static-package',
-				description: 'Declares an unused Kody package dependency',
-				kodyDependencies: ['@kentcdodds/unused'],
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(false)
-	expect(result.results).toEqual(
+	const unusedDeclaration = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/unused-static-package',
+					kodyId: 'unused-static-package',
+					description: 'Declares an unused Kody package dependency',
+					kodyDependencies: ['@kentcdodds/unused'],
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+		]),
+	)
+	expect(unusedDeclaration.ok).toBe(false)
+	expect(unusedDeclaration.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',
