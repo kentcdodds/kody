@@ -66,7 +66,7 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/architecture/authentication.md](./docs/contributing/architecture/authentication.md)
   - [docs/contributing/architecture/data-storage.md](./docs/contributing/architecture/data-storage.md)
 
-## Cursor Cloud specific instructions
+## Cursor Cloud-specific instructions
 
 Kody is a single Cloudflare Workers app (Remix 3 UI + OAuth-protected MCP). See
 [`docs/contributing/setup.md`](./docs/contributing/setup.md) for the full local
