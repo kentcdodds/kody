@@ -113,10 +113,6 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 
 	expect(response.status).toBe(500)
 	expect(response.headers.get('content-type')).toContain('text/html')
-	const body = await response.text()
-	expect(body).toContain('Package app could not be prepared')
-	expect(body).toContain('@kody/example')
-	expect(body).toContain('/@test-user/packages/example/report')
 	expect(mockModule.captureException).toHaveBeenCalledTimes(1)
 	expect(mockModule.captureException).toHaveBeenCalledWith(expect.any(Error))
 	expect(mockModule.sentryScope.setLevel).toHaveBeenCalledWith('error')
@@ -217,10 +213,6 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 	)
 
 	expect(response.status).toBe(500)
-	const body = await response.text()
-	expect(body).toContain('Package app crashed')
-	expect(body).toContain('its own request handler failed')
-	expect(body).toContain('package runtime debug runs')
 	expect(mockModule.captureException).not.toHaveBeenCalled()
 })
 

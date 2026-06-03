@@ -47,12 +47,20 @@ test('createSchemaTypeDefinition composes intersections and preserves escaped sc
 		} as CapabilityJsonSchema,
 	})
 
-	expect(commented).toContain('/** Root description. */')
-	expect(commented).toContain('\t/** Owner field. */\n\towner: string')
-	expect(commented).toContain(
-		['\t/**', '\t * First line.', '\t * Second line.', '\t */'].join('\n'),
+	expect(commented).toBe(
+		[
+			'/** Root description. */',
+			'type CreateIssueInput = {',
+			'\t/** Owner field. */',
+			'\towner: string',
+			'\t/**',
+			'\t * First line.',
+			'\t * Second line.',
+			'\t */',
+			'\trepo: string',
+			'\t/** Closing marker * / should stay escaped. */',
+			'\tbody?: string',
+			'}',
+		].join('\n'),
 	)
-	expect(commented).toContain('Closing marker * / should stay escaped.')
-	expect(commented).not.toContain('Closing marker */ should stay escaped.')
-	expect(commented).toContain('\tbody?: string')
 })

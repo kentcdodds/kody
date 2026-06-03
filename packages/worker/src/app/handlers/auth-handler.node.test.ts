@@ -184,26 +184,25 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-test('auth handler rejects malformed request payloads', async () => {
-	const { request } = createAuthTestContext()
+test('auth handler login and signup workflow', async () => {
+	const productionContext = createAuthTestContext()
+	const signupContext = createAuthTestContext({ signupEnabled: true })
 
-	const invalidJsonResponse = await request('{')
+	const invalidJsonResponse = await productionContext.request('{')
 	expect(invalidJsonResponse.status).toBe(400)
 	expect(await invalidJsonResponse.json()).toEqual({
 		error: 'Invalid JSON payload.',
 	})
 
-	const missingFieldsResponse = await request({ email: 'a@b.com' })
+	const missingFieldsResponse = await productionContext.request({
+		email: 'a@b.com',
+	})
 	expect(missingFieldsResponse.status).toBe(400)
 	expect(await missingFieldsResponse.json()).toEqual({
 		error: 'Invalid request body.',
 	})
-})
 
-test('auth handler returns invalid credentials for unknown logins', async () => {
-	const { request } = createAuthTestContext()
-
-	const unknownUserLoginResponse = await request({
+	const unknownUserLoginResponse = await productionContext.request({
 		email: 'someone@example.com',
 		password: 'secret',
 		mode: 'login',
@@ -212,44 +211,42 @@ test('auth handler returns invalid credentials for unknown logins', async () => 
 	expect(await unknownUserLoginResponse.json()).toEqual({
 		error: 'Invalid email or password.',
 	})
-})
 
-test('auth handler rejects signups in production envs', async () => {
-	const { request, testDb } = createAuthTestContext()
-
-	const response = await request({
+	const blockedSignupResponse = await productionContext.request({
 		email: 'new@example.com',
 		username: 'new-user',
 		password: 'secret',
 		mode: 'signup',
 	})
-	expect(response.status).toBe(403)
-	expect(await response.json()).toEqual({
+	expect(blockedSignupResponse.status).toBe(403)
+	expect(await blockedSignupResponse.json()).toEqual({
 		error: 'Signups are disabled.',
 	})
-	expect(testDb.users.has('new@example.com')).toBe(false)
-})
+	expect(productionContext.testDb.users.has('new@example.com')).toBe(false)
 
-test('auth handler permits signups when the env opts in (local dev / preview / test)', async () => {
-	const { request, testDb } = createAuthTestContext({ signupEnabled: true })
-
-	const response = await request({
+	const allowedSignupResponse = await signupContext.request({
 		email: 'allowed@example.com',
 		username: 'allowed-user',
 		password: 'secret',
 		mode: 'signup',
 	})
-	expect(response.status).toBe(200)
-	expect(await response.json()).toEqual({ ok: true, mode: 'signup' })
-	expect(testDb.users.has('allowed@example.com')).toBe(true)
-	expect(testDb.users.get('allowed@example.com')?.username).toBe('allowed-user')
-})
+	expect(allowedSignupResponse.status).toBe(200)
+	expect(await allowedSignupResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+	})
+	expect(signupContext.testDb.users.has('allowed@example.com')).toBe(true)
+	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
+		'allowed-user',
+	)
 
-test('auth handler requires a unique username for signup', async () => {
-	const { request, testDb } = createAuthTestContext({ signupEnabled: true })
-	await testDb.addUser('existing@example.com', 'secret', 'existing-user')
+	await signupContext.testDb.addUser(
+		'existing@example.com',
+		'secret',
+		'existing-user',
+	)
 
-	const missingUsernameResponse = await request({
+	const missingUsernameResponse = await signupContext.request({
 		email: 'missing@example.com',
 		password: 'secret',
 		mode: 'signup',
@@ -259,7 +256,7 @@ test('auth handler requires a unique username for signup', async () => {
 		error: 'Username is required.',
 	})
 
-	const invalidUsernameResponse = await request({
+	const invalidUsernameResponse = await signupContext.request({
 		email: 'invalid@example.com',
 		username: 'no spaces',
 		password: 'secret',
@@ -271,7 +268,7 @@ test('auth handler requires a unique username for signup', async () => {
 			'Username must be 3 to 32 characters, use only letters, numbers, hyphens, or underscores, and start and end with a letter or number.',
 	})
 
-	const duplicateUsernameResponse = await request({
+	const duplicateUsernameResponse = await signupContext.request({
 		email: 'duplicate@example.com',
 		username: 'Existing-User',
 		password: 'secret',
@@ -281,14 +278,11 @@ test('auth handler requires a unique username for signup', async () => {
 	expect(await duplicateUsernameResponse.json()).toEqual({
 		error: 'Username already registered.',
 	})
-})
 
-test('auth handler issues the right session cookies for login flows', async () => {
-	const { request, testDb } = createAuthTestContext()
 	const email = 'session-user@example.com'
-	await testDb.addUser(email, 'secret')
+	await productionContext.testDb.addUser(email, 'secret')
 
-	const loginResponse = await request({
+	const loginResponse = await productionContext.request({
 		email,
 		password: 'secret',
 		mode: 'login',
@@ -299,7 +293,7 @@ test('auth handler issues the right session cookies for login flows', async () =
 	expect(loginCookie).toContain('kody_session=')
 	expect(loginCookie).toContain('Max-Age=604800')
 
-	const rememberMeResponse = await request({
+	const rememberMeResponse = await productionContext.request({
 		email,
 		password: 'secret',
 		mode: 'login',
@@ -311,7 +305,7 @@ test('auth handler issues the right session cookies for login flows', async () =
 	expect(rememberMeCookie).toContain('kody_session=')
 	expect(rememberMeCookie).toContain('Max-Age=2592000')
 
-	const secureCookieResponse = await request(
+	const secureCookieResponse = await productionContext.request(
 		{ email, password: 'secret', mode: 'login' },
 		'https://example.com/auth',
 	)
