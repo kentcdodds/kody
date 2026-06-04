@@ -34,11 +34,22 @@ function decodeJwtPart(value: string) {
 	) as Record<string, unknown>
 }
 
-test('jwt_sign signs caller-provided claims with an approved secret key', async () => {
+test('jwt_sign resolves keys, enforces secret approval, and never leaks key material', async () => {
 	const { privateKey, publicKey } = createKeyPair()
-	const resolveSecretSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const env = {} as Env
+	const approvalMessage = createCapabilitySecretAccessDeniedMessage(
+		'serviceAccountKey',
+		'jwt_sign',
+		'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=jwt_sign',
+	)
+
+	try {
+		resolveSecretSpy.mockResolvedValue({
 			found: true,
 			value: privateKey,
 			scope: 'user',
@@ -47,8 +58,7 @@ test('jwt_sign signs caller-provided claims with an approved secret key', async 
 			allowedPackages: [],
 		})
 
-	try {
-		const result = await jwtSignCapability.handler(
+		const signed = await jwtSignCapability.handler(
 			{
 				privateKeySecretName: 'serviceAccountKey',
 				algorithm: 'RS256',
@@ -61,20 +71,14 @@ test('jwt_sign signs caller-provided claims with an approved secret key', async 
 					exp: 3601,
 				},
 			},
-			{
-				env: {} as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-123' },
-				}),
-			},
+			{ env, callerContext },
 		)
 		const [encodedHeader, encodedClaims, encodedSignature] =
-			result.jwt.split('.')
+			signed.jwt.split('.')
 		expect(encodedHeader).toBeTruthy()
 		expect(encodedClaims).toBeTruthy()
 		expect(encodedSignature).toBeTruthy()
-		expect(result.algorithm).toBe('RS256')
+		expect(signed.algorithm).toBe('RS256')
 		expect(decodeJwtPart(encodedHeader ?? '')).toMatchObject({
 			alg: 'RS256',
 			typ: 'JWT',
@@ -93,17 +97,9 @@ test('jwt_sign signs caller-provided claims with an approved secret key', async 
 				Buffer.from(encodedSignature ?? '', 'base64url'),
 			),
 		).toBe(true)
-		expect(result.jwt).not.toContain('PRIVATE KEY')
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
-})
+		expect(signed.jwt).not.toContain('PRIVATE KEY')
 
-test('jwt_sign can extract a private key from a JSON secret field', async () => {
-	const { privateKey } = createKeyPair()
-	const resolveSecretSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+		resolveSecretSpy.mockResolvedValue({
 			found: true,
 			value: JSON.stringify({
 				client_email: 'service@example.com',
@@ -114,34 +110,18 @@ test('jwt_sign can extract a private key from a JSON secret field', async () => 
 			allowedCapabilities: ['jwt_sign'],
 			allowedPackages: [],
 		})
-
-	try {
-		const result = await jwtSignCapability.handler(
+		const jsonSigned = await jwtSignCapability.handler(
 			{
 				privateKeySecretName: 'serviceAccountJson',
 				privateKeyJsonField: 'private_key',
 				algorithm: 'RS256',
 				claims: { iss: 'service@example.com' },
 			},
-			{
-				env: {} as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-123' },
-				}),
-			},
+			{ env, callerContext },
 		)
-		expect(result.jwt.split('.')).toHaveLength(3)
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
-})
+		expect(jsonSigned.jwt.split('.')).toHaveLength(3)
 
-test('jwt_sign requires the secret to approve the capability', async () => {
-	const { privateKey } = createKeyPair()
-	const resolveSecretSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+		resolveSecretSpy.mockResolvedValue({
 			found: true,
 			value: privateKey,
 			scope: 'user',
@@ -149,8 +129,6 @@ test('jwt_sign requires the secret to approve the capability', async () => {
 			allowedCapabilities: [],
 			allowedPackages: [],
 		})
-
-	try {
 		await expect(
 			jwtSignCapability.handler(
 				{
@@ -158,31 +136,11 @@ test('jwt_sign requires the secret to approve the capability', async () => {
 					algorithm: 'RS256',
 					claims: { iss: 'service@example.com' },
 				},
-				{
-					env: {} as Env,
-					callerContext: createMcpCallerContext({
-						baseUrl: 'https://heykody.dev',
-						user: { userId: 'user-123' },
-					}),
-				},
+				{ env, callerContext },
 			),
-		).rejects.toThrow(
-			createCapabilitySecretAccessDeniedMessage(
-				'serviceAccountKey',
-				'jwt_sign',
-				'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=jwt_sign',
-			),
-		)
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
-})
+		).rejects.toThrow(approvalMessage)
 
-test('jwt_sign approval URL falls back to user scope when scope metadata is absent', async () => {
-	const { privateKey } = createKeyPair()
-	const resolveSecretSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+		resolveSecretSpy.mockResolvedValue({
 			found: true,
 			value: privateKey,
 			scope: null,
@@ -190,8 +148,6 @@ test('jwt_sign approval URL falls back to user scope when scope metadata is abse
 			allowedCapabilities: [],
 			allowedPackages: [],
 		})
-
-	try {
 		await expect(
 			jwtSignCapability.handler(
 				{
@@ -199,30 +155,11 @@ test('jwt_sign approval URL falls back to user scope when scope metadata is abse
 					algorithm: 'RS256',
 					claims: { iss: 'service@example.com' },
 				},
-				{
-					env: {} as Env,
-					callerContext: createMcpCallerContext({
-						baseUrl: 'https://heykody.dev',
-						user: { userId: 'user-123' },
-					}),
-				},
+				{ env, callerContext },
 			),
-		).rejects.toThrow(
-			createCapabilitySecretAccessDeniedMessage(
-				'serviceAccountKey',
-				'jwt_sign',
-				'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=jwt_sign',
-			),
-		)
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
-})
+		).rejects.toThrow(approvalMessage)
 
-test('jwt_sign reports missing secrets without leaking key material', async () => {
-	const resolveSecretSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+		resolveSecretSpy.mockResolvedValue({
 			found: false,
 			value: null,
 			scope: null,
@@ -230,8 +167,6 @@ test('jwt_sign reports missing secrets without leaking key material', async () =
 			allowedCapabilities: [],
 			allowedPackages: [],
 		})
-
-	try {
 		await expect(
 			jwtSignCapability.handler(
 				{
@@ -239,27 +174,19 @@ test('jwt_sign reports missing secrets without leaking key material', async () =
 					algorithm: 'RS256',
 					claims: { iss: 'service@example.com' },
 				},
-				{
-					env: {} as Env,
-					callerContext: createMcpCallerContext({
-						baseUrl: 'https://heykody.dev',
-						user: { userId: 'user-123' },
-					}),
-				},
+				{ env, callerContext },
 			),
 		).rejects.toThrow(createMissingSecretMessage('missingKey'))
+
+		expect(() =>
+			extractPrivateKeyPem({
+				secretValue: JSON.stringify({ private_key: 'super-secret-key' }),
+				jsonField: 'missing_key',
+			}),
+		).toThrow(
+			'Private key secret JSON field "missing_key" must be a non-empty string.',
+		)
 	} finally {
 		resolveSecretSpy.mockRestore()
 	}
-})
-
-test('extractPrivateKeyPem rejects missing JSON fields without echoing secret', () => {
-	expect(() =>
-		extractPrivateKeyPem({
-			secretValue: JSON.stringify({ private_key: 'super-secret-key' }),
-			jsonField: 'missing_key',
-		}),
-	).toThrow(
-		'Private key secret JSON field "missing_key" must be a non-empty string.',
-	)
 })

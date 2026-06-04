@@ -69,7 +69,7 @@ function createValueTestDb() {
 	return { db, entries }
 }
 
-test('mergeIntegrationConfig applies patch fields and preserves existing fields', () => {
+test('integration config helpers merge patches, tolerate legacy rows, and drop invalid authorization metadata', () => {
 	const current = integrationConfigSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -88,19 +88,19 @@ test('mergeIntegrationConfig applies patch fields and preserves existing fields'
 		},
 	})
 
-	const merged = mergeIntegrationConfig(current, {
-		name: 'spotify',
-		apiBaseUrl: 'https://api.spotify.com/v2/',
-		authorization: {
-			authorizeUrl: 'https://accounts.spotify.com/oauth2/authorize',
-			scopes: ['user-read-email', 'playlist-read-private'],
-			scopeSeparator: ' ',
-			extraAuthorizeParams: { prompt: 'consent' },
-		},
-		requiredHosts: ['api.spotify.com'],
-	})
-
-	expect(merged).toEqual({
+	expect(
+		mergeIntegrationConfig(current, {
+			name: 'spotify',
+			apiBaseUrl: 'https://api.spotify.com/v2/',
+			authorization: {
+				authorizeUrl: 'https://accounts.spotify.com/oauth2/authorize',
+				scopes: ['user-read-email', 'playlist-read-private'],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: { prompt: 'consent' },
+			},
+			requiredHosts: ['api.spotify.com'],
+		}),
+	).toEqual({
 		...current,
 		apiBaseUrl: 'https://api.spotify.com/v2/',
 		authorization: {
@@ -111,30 +111,26 @@ test('mergeIntegrationConfig applies patch fields and preserves existing fields'
 		},
 		requiredHosts: ['api.spotify.com'],
 	})
-})
 
-test('parseIntegrationConfig keeps older rows readable when apiBaseUrl is missing', () => {
-	const parsed = parseIntegrationConfig(
-		{
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			flow: 'pkce',
-			clientIdValueName: 'spotify-client-id',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'spotifyAccessToken',
-			refreshTokenSecretName: 'spotifyRefreshToken',
-			requiredHosts: ['api.spotify.com'],
-		},
-		null,
-	)
-
-	expect(parsed).toMatchObject({
+	expect(
+		parseIntegrationConfig(
+			{
+				name: 'spotify',
+				tokenUrl: 'https://accounts.spotify.com/api/token',
+				flow: 'pkce',
+				clientIdValueName: 'spotify-client-id',
+				clientSecretSecretName: null,
+				accessTokenSecretName: 'spotifyAccessToken',
+				refreshTokenSecretName: 'spotifyRefreshToken',
+				requiredHosts: ['api.spotify.com'],
+			},
+			null,
+		),
+	).toMatchObject({
 		name: 'spotify',
 		apiBaseUrl: null,
 	})
-})
 
-test('parseIntegrationConfig drops invalid authorization metadata while preserving the integration', () => {
 	expect(
 		parseIntegrationConfig(
 			{
@@ -182,7 +178,7 @@ test('parseIntegrationConfig drops invalid authorization metadata while preservi
 	})
 })
 
-test('integration_save creates a new integration record', async () => {
+test('integration_save creates, validates, and upserts integration records', async () => {
 	const testDb = createValueTestDb()
 
 	const result = await integrationSaveCapability.handler(
@@ -246,11 +242,8 @@ test('integration_save creates a new integration record', async () => {
 			extraAuthorizeParams: { show_dialog: 'true' },
 		},
 	})
-})
 
-test('integration_save reports missing fields for new integration records', async () => {
-	const testDb = createValueTestDb()
-
+	const invalidDb = createValueTestDb()
 	await expect(
 		integrationSaveCapability.handler(
 			{
@@ -259,7 +252,7 @@ test('integration_save reports missing fields for new integration records', asyn
 				clientIdValueName: 'spotify-client-id',
 			},
 			{
-				env: { APP_DB: testDb.db } as unknown as Env,
+				env: { APP_DB: invalidDb.db } as unknown as Env,
 				callerContext: createMcpCallerContext({
 					baseUrl: 'https://heykody.dev',
 					user: { userId: 'user-123' },
@@ -269,12 +262,10 @@ test('integration_save reports missing fields for new integration records', asyn
 	).rejects.toThrow(
 		'Cannot create integration "spotify": missing or invalid required fields',
 	)
-	expect(testDb.entries.has('_integration:spotify')).toBe(false)
-})
+	expect(invalidDb.entries.has('_integration:spotify')).toBe(false)
 
-test('integration_save upserts an existing integration record', async () => {
-	const testDb = createValueTestDb()
-	testDb.entries.set(
+	const upsertDb = createValueTestDb()
+	upsertDb.entries.set(
 		'_integration:spotify',
 		JSON.stringify({
 			name: 'spotify',
@@ -289,7 +280,7 @@ test('integration_save upserts an existing integration record', async () => {
 		}),
 	)
 
-	const result = await integrationSaveCapability.handler(
+	const upserted = await integrationSaveCapability.handler(
 		{
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -302,7 +293,7 @@ test('integration_save upserts an existing integration record', async () => {
 			requiredHosts: ['api.spotify.com'],
 		},
 		{
-			env: { APP_DB: testDb.db } as unknown as Env,
+			env: { APP_DB: upsertDb.db } as unknown as Env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: { userId: 'user-123' },
@@ -310,13 +301,13 @@ test('integration_save upserts an existing integration record', async () => {
 		},
 	)
 
-	expect(result.integration).toMatchObject({
+	expect(upserted.integration).toMatchObject({
 		name: 'spotify',
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],
 	})
 	expect(
-		JSON.parse(testDb.entries.get('_integration:spotify') ?? '{}'),
+		JSON.parse(upsertDb.entries.get('_integration:spotify') ?? '{}'),
 	).toMatchObject({
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],
