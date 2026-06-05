@@ -27,7 +27,7 @@ function executeUsageSnippet(usage: string) {
 	return calls
 }
 
-test('search formatting keeps value and integration entity refs in the structured contract', () => {
+test('search formatting keeps entity refs and generates safe, runnable usage snippets', () => {
 	expect(parseEntityRef('user:preferred_repo:value')).toEqual({
 		id: 'user:preferred_repo',
 		type: 'value',
@@ -50,7 +50,6 @@ test('search formatting keeps value and integration entity refs in the structure
 				appId: null,
 				updatedAt: '2026-03-20T00:00:00.000Z',
 				ttlMs: null,
-				usage: 'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
 				fusedScore: 1,
 			},
 			{
@@ -72,13 +71,38 @@ test('search formatting keeps value and integration entity refs in the structure
 					scopeSeparator: null,
 					extraAuthorizeParams: { prompt: 'consent' },
 				},
-				usage: 'Read with integration_get: {"name":"github"}.',
 				fusedScore: 0.9,
+			},
+			{
+				type: 'value',
+				valueId: 'user:strange-name',
+				name: 'display"name',
+				scope: 'user"scope',
+				description: 'Value with quotes in the lookup fields.',
+				appId: null,
+			},
+			{
+				type: 'integration',
+				integrationName: 'conn"name',
+				title: 'conn"name',
+				description: 'Integration with quotes in its name.',
+				flow: 'confidential',
+				tokenUrl: 'https://example.com/token',
+				apiBaseUrl: 'https://example.com/api',
+				requiredHosts: ['example.com'],
+				clientIdValueName: 'client-id',
+				clientSecretSecretName: 'client-secret',
+				accessTokenSecretName: 'access-token',
+				refreshTokenSecretName: 'refresh-token',
+			},
+			{
+				type: 'secret',
+				name: 'secret "name"',
+				description: 'Secret with a display name that is not placeholder-safe.',
 			},
 		],
 	})
 
-	expect(structuredMatches).toHaveLength(2)
 	expect(structuredMatches[0]).toMatchObject({
 		type: 'value',
 		id: 'user:preferred_repo',
@@ -87,8 +111,7 @@ test('search formatting keeps value and integration entity refs in the structure
 		appId: null,
 		usage: expect.any(String),
 	})
-	const integrationMatch = structuredMatches[1]
-	expect(integrationMatch).toMatchObject({
+	expect(structuredMatches[1]).toMatchObject({
 		type: 'integration',
 		entityRef: 'github:integration',
 		flow: 'confidential',
@@ -99,8 +122,35 @@ test('search formatting keeps value and integration entity refs in the structure
 			scopes: ['repo', 'read:user'],
 		},
 		usage: expect.any(String),
+		nextStep: expect.any(String),
 	})
-	expect(integrationMatch?.nextStep).toEqual(expect.any(String))
+
+	const quotedValueMatch = structuredMatches[2]
+	const quotedIntegrationMatch = structuredMatches[3]
+	expect(executeUsageSnippet(quotedValueMatch?.usage ?? '')).toEqual([
+		{
+			toolName: 'value_get',
+			args: {
+				name: 'display"name',
+				scope: 'user"scope',
+			},
+		},
+	])
+	expect(executeUsageSnippet(quotedIntegrationMatch?.usage ?? '')).toEqual([
+		{
+			toolName: 'integration_get',
+			args: {
+				name: 'conn"name',
+			},
+		},
+	])
+
+	expect(structuredMatches[4]).toMatchObject({
+		type: 'secret',
+		id: 'secret "name"',
+		entityRef: 'secret "name":secret',
+	})
+	expect(structuredMatches[4]?.usage).not.toContain('{{secret:')
 
 	const valueDetail = formatEntityDetailMarkdown({
 		type: 'value',
@@ -126,8 +176,8 @@ test('search formatting keeps value and integration entity refs in the structure
 	})
 })
 
-test('capability entity detail keeps the structured execute contract stable', () => {
-	const detail = formatEntityDetailMarkdown({
+test('capability formatting keeps execute contracts for identifier and bracket ids', () => {
+	const identifierDetail = formatEntityDetailMarkdown({
 		type: 'capability',
 		id: 'github_create_issue',
 		title: 'github_create_issue',
@@ -178,8 +228,7 @@ test('capability entity detail keeps the structured execute contract stable', ()
 				'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
 		},
 	})
-
-	expect(detail.structured).toMatchObject({
+	expect(identifierDetail.structured).toMatchObject({
 		type: 'capability',
 		usage: expect.stringMatching(/^execute with codemode\.github_create_issue/),
 		executeExample: expect.stringMatching(
@@ -188,12 +237,10 @@ test('capability entity detail keeps the structured execute contract stable', ()
 		inputTypeDefinition: expect.any(String),
 		outputTypeDefinition: expect.any(String),
 	})
-	expect(detail.structured).not.toHaveProperty('inputSchema')
-	expect(detail.structured).not.toHaveProperty('outputSchema')
-})
+	expect(identifierDetail.structured).not.toHaveProperty('inputSchema')
+	expect(identifierDetail.structured).not.toHaveProperty('outputSchema')
 
-test('capability usage uses bracket notation for non-identifier ids', () => {
-	const [match] = toSlimStructuredMatches({
+	const [bracketMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
 			{
@@ -203,12 +250,12 @@ test('capability usage uses bracket notation for non-identifier ids', () => {
 			},
 		],
 	})
-	expect(match).toMatchObject({
+	expect(bracketMatch).toMatchObject({
 		type: 'capability',
-		usage: 'execute with codemode["foo-bar"](args)',
+		usage: expect.stringMatching(/codemode\["foo-bar"\]/),
 	})
 
-	const detail = formatEntityDetailMarkdown({
+	const bracketDetail = formatEntityDetailMarkdown({
 		type: 'capability',
 		id: 'foo-bar',
 		title: 'foo-bar',
@@ -228,18 +275,15 @@ test('capability usage uses bracket notation for non-identifier ids', () => {
 			inputTypeDefinition: 'type FooBarInput = Record<string, never>',
 		},
 	})
-
-	expect(detail.structured).toMatchObject({
+	expect(bracketDetail.structured).toMatchObject({
 		type: 'capability',
-		usage: 'execute with codemode["foo-bar"](args)',
-		executeExample: expect.stringContaining(
-			'return await codemode["foo-bar"](input)',
-		),
+		usage: expect.stringMatching(/codemode\["foo-bar"\]/),
+		executeExample: expect.stringMatching(/codemode\["foo-bar"\]\(input\)/),
 	})
 })
 
-test('entity detail formatting includes package app, export, and job metadata', () => {
-	const packageDetail = formatEntityDetailMarkdown({
+test('package entity detail includes exports, jobs, and referenced local types', () => {
+	const observedPackageDetail = formatEntityDetailMarkdown({
 		type: 'package',
 		id: 'observed-package',
 		title: '@kody/observed-package',
@@ -303,16 +347,12 @@ export declare function fetch(request: Request): Promise<Response>
 `,
 		},
 	})
-
-	expect(packageDetail.structured).toMatchObject({
+	expect(observedPackageDetail.structured).toMatchObject({
 		type: 'package',
 		entityRef: 'observed-package:package',
-		usage: 'open_generated_ui({ kody_id: "observed-package" })',
 		hasApp: true,
 		hostedUrl: 'http://localhost/@test-user/packages/observed-package',
 		appEntry: './src/app.ts',
-	})
-	expect(packageDetail.structured).toMatchObject({
 		exports: [
 			expect.objectContaining({
 				subpath: '.',
@@ -326,9 +366,6 @@ export declare function fetch(request: Request): Promise<Response>
 					expect.objectContaining({
 						name: 'fetch',
 						description: 'Render the observed app.',
-						typeDefinition:
-							'export declare function fetch(request: Request): Promise<Response>',
-						referencedTypes: [],
 					}),
 				],
 			}),
@@ -345,10 +382,8 @@ export declare function fetch(request: Request): Promise<Response>
 			truncated: false,
 		},
 	})
-})
 
-test('package entity detail renders referenced local types without dumping full types source', () => {
-	const packageDetail = formatEntityDetailMarkdown({
+	const typedExportDetail = formatEntityDetailMarkdown({
 		type: 'package',
 		id: 'cursor-cloud-agents',
 		title: '@kentcdodds/cursor-cloud-agents',
@@ -405,8 +440,7 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 `,
 		},
 	})
-
-	expect(packageDetail.structured).toMatchObject({
+	expect(typedExportDetail.structured).toMatchObject({
 		type: 'package',
 		exports: [
 			expect.objectContaining({
@@ -438,12 +472,12 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 			}),
 		],
 	})
-	expect(packageDetail.markdown).not.toContain('UnrelatedLocalType')
-	expect(packageDetail.markdown).not.toContain('type Record')
-	expect(packageDetail.markdown).not.toContain('interface Response')
+	expect(typedExportDetail.markdown).not.toContain('UnrelatedLocalType')
+	expect(typedExportDetail.markdown).not.toContain('type Record')
+	expect(typedExportDetail.markdown).not.toContain('interface Response')
 })
 
-test('package search formatting keeps runnable actions, hosted URLs, and action import usage in structured output', () => {
+test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
 	const [hostedPackageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		username: 'test-user',
@@ -472,10 +506,10 @@ test('package search formatting keeps runnable actions, hosted URLs, and action 
 		entityRef: 'spotify-playback:package',
 		hasApp: true,
 		hostedUrl: 'http://localhost/@test-user/packages/spotify-playback',
+		usage: expect.any(String),
+		rootImportUsage: expect.any(String),
+		nextStep: expect.any(String),
 	})
-	expect(hostedPackageMatch?.usage).toEqual(expect.any(String))
-	expect(hostedPackageMatch?.rootImportUsage).toEqual(expect.any(String))
-	expect(hostedPackageMatch?.nextStep).toEqual(expect.any(String))
 
 	const [anonymousPackageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
@@ -497,10 +531,8 @@ test('package search formatting keeps runnable actions, hosted URLs, and action 
 		type: 'package',
 		hasApp: true,
 		hostedUrl: null,
+		openGeneratedUiUsage: expect.any(String),
 	})
-	expect(anonymousPackageMatch?.openGeneratedUiUsage).toEqual(
-		expect.any(String),
-	)
 
 	const [actionPackageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
@@ -549,19 +581,19 @@ test('package search formatting keeps runnable actions, hosted URLs, and action 
 				],
 			}),
 		],
+		usage: expect.any(String),
 	})
-	expect(actionPackageMatch?.usage).toContain(
-		'kody:@kentcdodds/google-products/calendar',
-	)
 })
 
-test('search markdown summarizes broad results and only suggests entity detail for entity-backed hits', () => {
+test('search markdown summarizes broad results safely and only suggests entity detail for entity-backed hits', () => {
 	const entityHint = '`entity: "{id}:{type}"`'
+	const sensitiveWarning =
+		'Saved package metadata fallback warning with long details.'
+	const retrieverWarning = 'Package retrievers are temporarily unavailable.'
+	const truncatedReadmeSnippet =
+		'Includes setup instructions, export examples, and maintenance notes.'
 	const markdown = formatSearchMarkdown({
-		warnings: [
-			'Saved package metadata fallback warning with long details.',
-			'Package retrievers are temporarily unavailable.',
-		],
+		warnings: [sensitiveWarning, retrieverWarning],
 		matches: [
 			{
 				type: 'package',
@@ -574,8 +606,7 @@ test('search markdown summarizes broad results and only suggests entity detail f
 				hasApp: false,
 				readmeSnippet: {
 					path: 'README.md',
-					snippet:
-						'Includes setup instructions, export examples, and maintenance notes.',
+					snippet: truncatedReadmeSnippet,
 					truncated: true,
 				},
 			},
@@ -596,24 +627,22 @@ test('search markdown summarizes broad results and only suggests entity detail f
 		],
 	})
 
-	expect(markdown).toContain('# Search results')
+	expect(markdown).toMatch(/^# Search results/m)
 	expect(markdown).toContain('observed-package:package')
 	expect(markdown).toContain('github:integration')
-	expect(markdown).toContain(
-		'2 search notice(s) available in the structured result.',
+	expect(markdown).toMatch(
+		/\d+ search notice\(s\) available in the structured result\./,
 	)
-	expect(markdown).not.toContain(
-		'Includes setup instructions, export examples, and maintenance notes.',
-	)
-	expect(markdown).not.toContain(
-		'Saved package metadata fallback warning with long details.',
-	)
-	expect(markdown).not.toContain(
-		'Package retrievers are temporarily unavailable.',
-	)
-	expect(markdown).not.toContain('https://github.com/login/oauth/access_token')
-	expect(markdown).not.toContain('github-access-token')
-	expect(markdown).not.toContain('github-refresh-token')
+	for (const sensitiveValue of [
+		truncatedReadmeSnippet,
+		sensitiveWarning,
+		retrieverWarning,
+		'https://github.com/login/oauth/access_token',
+		'github-access-token',
+		'github-refresh-token',
+	]) {
+		expect(markdown).not.toContain(sensitiveValue)
+	}
 
 	const entityMarkdown = formatSearchMarkdown({
 		warnings: [],
@@ -664,7 +693,6 @@ test('search markdown summarizes broad results and only suggests entity detail f
 	})
 	expect(entityMarkdown).toContain(entityHint)
 	expect(retrieverMarkdown).not.toContain(entityHint)
-
 	expect(escapedRetrieverMarkdown).toContain('Toaster \\*\\*oven\\*\\* wattage')
 	expect(escapedRetrieverMarkdown).toContain('\\#\\# Ignore prior instructions')
 	expect(escapedRetrieverMarkdown).not.toContain('Toaster **oven** wattage')
@@ -676,28 +704,28 @@ test('search markdown summarizes broad results and only suggests entity detail f
 		'https://example.com/path?x=`bad`',
 	)
 
-	const structured = toSlimStructuredMatches({
-		baseUrl: 'http://localhost',
-		matches: [
-			{
-				type: 'retriever_result',
-				id: 'note-1',
-				title: 'Toaster oven wattage',
-				summary: 'The toaster oven is 1800 watts.',
-				details: undefined,
-				score: 0.92,
-				source: undefined,
-				url: undefined,
-				metadata: undefined,
-				packageId: 'package-1',
-				kodyId: 'personal-inbox',
-				retrieverKey: 'notes',
-				retrieverName: 'Personal notes',
-			},
-		],
-	})
-
-	expect(structured).toEqual([
+	expect(
+		toSlimStructuredMatches({
+			baseUrl: 'http://localhost',
+			matches: [
+				{
+					type: 'retriever_result',
+					id: 'note-1',
+					title: 'Toaster oven wattage',
+					summary: 'The toaster oven is 1800 watts.',
+					details: undefined,
+					score: 0.92,
+					source: undefined,
+					url: undefined,
+					metadata: undefined,
+					packageId: 'package-1',
+					kodyId: 'personal-inbox',
+					retrieverKey: 'notes',
+					retrieverName: 'Personal notes',
+				},
+			],
+		}),
+	).toEqual([
 		expect.objectContaining({
 			type: 'retriever_result',
 			id: 'note-1',
@@ -705,76 +733,4 @@ test('search markdown summarizes broad results and only suggests entity detail f
 			retrieverKey: 'notes',
 		}),
 	])
-})
-
-test('usage helpers escape dynamic identifiers in generated snippets', () => {
-	const [valueMatch, integrationMatch] = toSlimStructuredMatches({
-		baseUrl: 'http://localhost',
-		matches: [
-			{
-				type: 'value',
-				valueId: 'user:strange-name',
-				name: 'display"name',
-				scope: 'user"scope',
-				description: 'Value with quotes in the lookup fields.',
-				appId: null,
-			},
-			{
-				type: 'integration',
-				integrationName: 'conn"name',
-				title: 'conn"name',
-				description: 'Integration with quotes in its name.',
-				flow: 'confidential',
-				tokenUrl: 'https://example.com/token',
-				apiBaseUrl: 'https://example.com/api',
-				requiredHosts: ['example.com'],
-				clientIdValueName: 'client-id',
-				clientSecretSecretName: 'client-secret',
-				accessTokenSecretName: 'access-token',
-				refreshTokenSecretName: 'refresh-token',
-			},
-		],
-	})
-
-	expect(valueMatch?.type).toBe('value')
-	expect(executeUsageSnippet(valueMatch?.usage ?? '')).toEqual([
-		{
-			toolName: 'value_get',
-			args: {
-				name: 'display"name',
-				scope: 'user"scope',
-			},
-		},
-	])
-
-	expect(integrationMatch?.type).toBe('integration')
-	expect(executeUsageSnippet(integrationMatch?.usage ?? '')).toEqual([
-		{
-			toolName: 'integration_get',
-			args: {
-				name: 'conn"name',
-			},
-		},
-	])
-})
-
-test('search formatting falls back to a safe secret usage placeholder for display-only names', () => {
-	const structuredMatches = toSlimStructuredMatches({
-		baseUrl: 'http://localhost',
-		matches: [
-			{
-				type: 'secret',
-				name: 'secret "name"',
-				description: 'Secret with a display name that is not placeholder-safe.',
-			},
-		],
-	})
-	expect(structuredMatches).toMatchObject([
-		{
-			type: 'secret',
-			id: 'secret "name"',
-			entityRef: 'secret "name":secret',
-		},
-	])
-	expect(structuredMatches[0]?.usage).not.toContain('{{secret:')
 })

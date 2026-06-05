@@ -16,7 +16,7 @@ async function workerFetch(request: Request): Promise<Response> {
 	return response
 }
 
-test('user-scoped connector entrypoints reject unauthenticated HTTP access while allowing WebSocket upgrades', async () => {
+test('public route hardening rejects unauthenticated connector access, unknown paths, and abusive auth while allowing websocket upgrades', async () => {
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -29,7 +29,8 @@ test('user-scoped connector entrypoints reject unauthenticated HTTP access while
 		`INSERT OR IGNORE INTO users (username, email, password_hash)
 			VALUES ('connector-user', 'connector-user@example.com', 'hash')`,
 	).run()
-	const unauthorizedRequests = [
+
+	const unauthorizedConnectorRequests = [
 		createRequest('/@connector-user/connectors/lights/default/snapshot'),
 		createRequest('/@connector-user/connectors/lights/default/rpc/tools-list', {
 			method: 'POST',
@@ -46,11 +47,17 @@ test('user-scoped connector entrypoints reject unauthenticated HTTP access while
 				message: { jsonrpc: '2.0', method: 'ping', id: 1 },
 			}),
 		}),
+		createRequest('/@connector-user/connectors'),
+		createRequest('/@connector-user/connectors/home', {
+			headers: { Upgrade: 'websocket' },
+		}),
 	]
-
-	for (const request of unauthorizedRequests) {
+	for (const request of unauthorizedConnectorRequests) {
 		const response = await workerFetch(request)
 		expect(response.status).toBe(404)
+		if (request.url.endsWith('/connectors') || request.url.endsWith('/home')) {
+			await expect(response.text()).resolves.toBe('Not Found')
+		}
 	}
 
 	const websocketRequest = createRequest(
@@ -60,44 +67,23 @@ test('user-scoped connector entrypoints reject unauthenticated HTTP access while
 		},
 	)
 	const websocketResponse = await workerFetch(websocketRequest)
-
 	expect(websocketResponse.status).toBe(101)
 	expect(websocketResponse.webSocket).toBeTruthy()
-})
 
-test('unmatched connector ingress paths do not fall through to the SPA shell', async () => {
-	const requests = [
-		createRequest('/@connector-user/connectors'),
-		createRequest('/@connector-user/connectors/home', {
-			headers: { Upgrade: 'websocket' },
-		}),
-	]
-
-	for (const request of requests) {
-		const response = await workerFetch(request)
-		expect(response.status).toBe(404)
-		await expect(response.text()).resolves.toBe('Not Found')
-	}
-})
-
-test('unknown maintenance endpoints return a consistent JSON 404 response', async () => {
-	const requests = [
+	const maintenanceRequests = [
 		createRequest('/__maintenance/reindex-skills', {
 			method: 'POST',
 		}),
 		createRequest('/__maintenance/nonexistent'),
 	]
-
-	for (const request of requests) {
+	for (const request of maintenanceRequests) {
 		const response = await workerFetch(request)
 		expect(response.status).toBe(404)
 		await expect(response.json()).resolves.toEqual({
 			error: 'Unknown maintenance endpoint.',
 		})
 	}
-})
 
-test('repeated POST /auth attempts trigger 429', async () => {
 	let rateLimited = false
 	for (let i = 0; i < 25; i++) {
 		const request = createRequest('/auth', {
@@ -115,8 +101,7 @@ test('repeated POST /auth attempts trigger 429', async () => {
 		const response = await workerFetch(request)
 		if (response.status === 429) {
 			rateLimited = true
-			const retryAfter = response.headers.get('Retry-After')
-			expect(retryAfter).toBeTruthy()
+			expect(response.headers.get('Retry-After')).toBeTruthy()
 			break
 		}
 	}
