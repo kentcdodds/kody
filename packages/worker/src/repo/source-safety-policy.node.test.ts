@@ -54,6 +54,16 @@ function createEnvWithSnapshot(files: Record<string, string> | null) {
 	} as unknown as Env
 }
 
+function createEnvWithRawSnapshot(snapshot: unknown) {
+	return {
+		BUNDLE_ARTIFACTS_KV: {
+			async get(_key: string, type?: 'text' | 'json') {
+				return type === 'json' ? snapshot : null
+			},
+		},
+	} as unknown as Env
+}
+
 test('package source overwrite requires explicit destructive confirmation before snapshot verification', async () => {
 	await expect(
 		assertPackageSourceOverwriteAllowed({
@@ -83,6 +93,20 @@ test('restorable package source snapshot verification rejects missing and corrup
 			operation: 'package_publish_external_push force publish',
 		}),
 	).rejects.toThrow('missing manifest "package.json"')
+
+	await expect(
+		assertRestorablePackageSourceSnapshot({
+			env: createEnvWithRawSnapshot({
+				version: 1,
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+				files: null,
+			}),
+			userId: 'user-1',
+			source: packageSource(),
+			operation: 'package_publish_external_push force publish',
+		}),
+	).rejects.toThrow('the published source snapshot is missing or malformed')
 })
 
 test('restorable package source snapshot verification accepts a manifest-bearing snapshot', async () => {

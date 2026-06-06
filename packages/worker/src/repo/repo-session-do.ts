@@ -1563,7 +1563,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
 		}
-		if (input.force === true) {
+		if (input.force === true && source.entity_kind === 'package') {
 			await assertPackageSourceOverwriteAllowed({
 				env: this.env,
 				userId: input.userId,

@@ -84,6 +84,19 @@ export async function assertRestorablePackageSourceSnapshot(input: {
 			}),
 		)
 	}
+	if (
+		typeof snapshot.files !== 'object' ||
+		snapshot.files == null ||
+		Array.isArray(snapshot.files)
+	) {
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: 'the published source snapshot is missing or malformed',
+			}),
+		)
+	}
 	const files = snapshot.files
 	const fileCount = Object.keys(files).length
 	const manifestContent = files[input.source.manifest_path]
