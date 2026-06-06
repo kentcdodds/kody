@@ -8,9 +8,7 @@ import {
 	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
-import {
-	assertRestorablePackageSourceSnapshot,
-} from '#worker/repo/source-safety-policy.ts'
+import { assertRestorablePackageSourceSnapshot } from '#worker/repo/source-safety-policy.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const getGitRemoteInputSchema = z.object({

@@ -12,9 +12,7 @@ import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
-import {
-	destructiveOverwriteConfirmationDescription,
-} from '#worker/repo/source-safety-policy.ts'
+import { destructiveOverwriteConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const inputSchema = z.object({

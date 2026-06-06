@@ -10,9 +10,7 @@ import {
 	type EntitySourceRow,
 	type RepoExternalPublishResult,
 } from './types.ts'
-import {
-	assertPackageSourceOverwriteAllowed,
-} from './source-safety-policy.ts'
+import { assertPackageSourceOverwriteAllowed } from './source-safety-policy.ts'
 
 export type RepoPublishWorkspace = {
 	readFile(path: string): Promise<string | null>
