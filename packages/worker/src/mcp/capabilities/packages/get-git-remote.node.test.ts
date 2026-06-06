@@ -38,7 +38,36 @@ function resetMocks() {
 
 function createContext(userId = 'user-1') {
 	return {
-		env: { APP_DB: {} } as Env,
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: {
+				async get(_key: string, type?: 'text' | 'json') {
+					if (type !== 'json') return null
+					return {
+						version: 1,
+						sourceId: 'source-1',
+						repoId: 'package-package-1',
+						entityKind: 'package',
+						entityId: 'package-1',
+						publishedCommit: 'commit-1',
+						manifestPath: 'package.json',
+						sourceRoot: '/',
+						files: {
+							'package.json': JSON.stringify({
+								name: '@kentcdodds/unleashed-wifi',
+								exports: { '.': './src/index.ts' },
+								kody: {
+									id: 'unleashed-wifi',
+									description: 'Unleashed WiFi controls.',
+								},
+							}),
+							'src/index.ts': 'export default async function main() {}\n',
+						},
+						createdAt: '2026-05-04T00:00:00.000Z',
+					}
+				},
+			},
+		} as unknown as Env,
 		callerContext: {
 			baseUrl: 'https://heykody.dev',
 			user: {
