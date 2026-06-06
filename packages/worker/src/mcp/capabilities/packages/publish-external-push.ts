@@ -293,8 +293,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 						newCommit,
 						expectedHead: newCommit,
 						allowForce: args.allow_force,
-						destructiveOverwriteConfirmed:
-							args.confirm_destructive_overwrite,
+						destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
 						baseUrl: ctx.callerContext.baseUrl,
 						rebuildPackageArtifacts: false,
 						expectedPackageScope,

@@ -17,15 +17,17 @@ export const repoRunCommandsSupportedForms = [
 ] as const
 
 export const repoRunCommandsCapabilityDescription =
-	withProductionPackageSourceSafetyPolicy([
-	'Run a parsed git-only workflow in a Kody-managed repo session for MCP-native edits.',
-	'Use this for tool-only agents without local filesystem/git access; coding agents that can clone locally should prefer `package_get_git_remote` (saved packages only) plus `package_publish_external_push`.',
-	'Commands are newline-separated and parsed, not shell-executed.',
-	'Only supported git command forms are accepted; unsupported syntax returns line-specific parse errors.',
-	'`git apply` requires heredoc form and a standard unified diff body with `--- a/<path>` / `+++ b/<path>` headers and `@@ ... @@` hunk markers; one heredoc may contain multiple file patches stacked back-to-back, and `/dev/null` on either side creates or deletes a file.',
-	'For exact whole-file replacements (especially single-file job sources, freshly generated files, or any edit where you have the full new content), prefer `repo_write_file` over `git apply`; it avoids unified-diff context drift entirely.',
-	'For one-file edits to non-package repo-backed scheduled job source, prefer `job_update` with a replacement `code` string; it republishes the job module without needing a repo session.',
-].join(' '))
+	withProductionPackageSourceSafetyPolicy(
+		[
+			'Run a parsed git-only workflow in a Kody-managed repo session for MCP-native edits.',
+			'Use this for tool-only agents without local filesystem/git access; coding agents that can clone locally should prefer `package_get_git_remote` (saved packages only) plus `package_publish_external_push`.',
+			'Commands are newline-separated and parsed, not shell-executed.',
+			'Only supported git command forms are accepted; unsupported syntax returns line-specific parse errors.',
+			'`git apply` requires heredoc form and a standard unified diff body with `--- a/<path>` / `+++ b/<path>` headers and `@@ ... @@` hunk markers; one heredoc may contain multiple file patches stacked back-to-back, and `/dev/null` on either side creates or deletes a file.',
+			'For exact whole-file replacements (especially single-file job sources, freshly generated files, or any edit where you have the full new content), prefer `repo_write_file` over `git apply`; it avoids unified-diff context drift entirely.',
+			'For one-file edits to non-package repo-backed scheduled job source, prefer `job_update` with a replacement `code` string; it republishes the job module without needing a repo session.',
+		].join(' '),
+	)
 
 export const repoRunCommandsUnsupportedSyntaxDescription = [
 	'Only git commands are accepted.',
