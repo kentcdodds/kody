@@ -10,6 +10,10 @@ import {
 	type EntitySourceRow,
 	type RepoExternalPublishResult,
 } from './types.ts'
+import {
+	assertPackageSourceOverwriteAllowed,
+	productionPackageSourceSafetyPolicy,
+} from './source-safety-policy.ts'
 
 export type RepoPublishWorkspace = {
 	readFile(path: string): Promise<string | null>
@@ -111,6 +115,7 @@ export async function publishFromExternalRef(input: {
 	newCommit: string
 	isFastForward(input: { previousCommit: string }): Promise<boolean>
 	allowForce?: boolean
+	destructiveOverwriteConfirmed?: boolean
 	workspace: RepoPublishWorkspace
 	files?: Record<string, string>
 	baseUrl: string
@@ -130,19 +135,28 @@ export async function publishFromExternalRef(input: {
 			published_commit: source.published_commit,
 		}
 	}
-	if (
-		source.published_commit &&
-		!input.allowForce &&
-		!(await input.isFastForward({
+	if (source.published_commit) {
+		const isFastForward = await input.isFastForward({
 			previousCommit: source.published_commit,
-		}))
-	) {
-		return {
-			status: 'not_fast_forward',
-			previous_commit: source.published_commit,
-			published_commit: input.newCommit,
-			message:
-				'The external Artifacts HEAD is not a descendant of the current published commit. Retry with allow_force to publish it.',
+		})
+		if (!isFastForward && !input.allowForce) {
+			return {
+				status: 'not_fast_forward',
+				previous_commit: source.published_commit,
+				published_commit: input.newCommit,
+				message:
+					'The external Artifacts HEAD is not a descendant of the current published commit. Retry only after satisfying the production package source safety policy and setting allow_force with explicit destructive overwrite confirmation. ' +
+					productionPackageSourceSafetyPolicy,
+			}
+		}
+		if (!isFastForward) {
+			await assertPackageSourceOverwriteAllowed({
+				env: input.env,
+				userId: input.userId,
+				source,
+				operation: 'package_publish_external_push force publish',
+				confirmed: input.destructiveOverwriteConfirmed,
+			})
 		}
 	}
 	const checks = await runRepoChecks({

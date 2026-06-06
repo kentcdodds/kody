@@ -12,12 +12,21 @@ import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
+import {
+	destructiveOverwriteConfirmationDescription,
+	withProductionPackageSourceSafetyPolicy,
+} from '#worker/repo/source-safety-policy.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const inputSchema = z.object({
 	package_id: z.string().min(1).optional(),
 	kody_id: z.string().min(1).optional(),
 	allow_force: z.boolean().optional().default(false),
+	confirm_destructive_overwrite: z
+		.boolean()
+		.optional()
+		.default(false)
+		.describe(destructiveOverwriteConfirmationDescription),
 })
 
 const externalPublishRetryDelaysMs = [100, 500] as const
@@ -231,12 +240,13 @@ export const publishExternalPushCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_publish_external_push',
-		description:
+		description: withProductionPackageSourceSafetyPolicy(
 			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically.',
+		),
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
-		destructive: false,
+		destructive: true,
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
@@ -283,6 +293,8 @@ export const publishExternalPushCapability = defineDomainCapability(
 						newCommit,
 						expectedHead: newCommit,
 						allowForce: args.allow_force,
+						destructiveOverwriteConfirmed:
+							args.confirm_destructive_overwrite,
 						baseUrl: ctx.callerContext.baseUrl,
 						rebuildPackageArtifacts: false,
 						expectedPackageScope,

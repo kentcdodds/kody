@@ -21,6 +21,7 @@ type SyncArtifactSourceInput = {
 	sourceId: string | null
 	files: Record<string, string>
 	bootstrapAccess?: ArtifactBootstrapAccess | null
+	destructiveOverwriteConfirmed?: boolean
 }
 
 function validateEntitySourceManifest(input: {
@@ -183,6 +184,9 @@ export async function syncArtifactSourceSnapshot(
 			sessionId,
 			userId: input.userId,
 			force: true,
+			...(input.destructiveOverwriteConfirmed === true
+				? { destructiveOverwriteConfirmed: true }
+				: {}),
 		})
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)

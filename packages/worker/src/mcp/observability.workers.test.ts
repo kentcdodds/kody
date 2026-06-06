@@ -244,6 +244,20 @@ test('package_save capability logs success for valid invocation', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	resetRepoPersistenceMocks()
+	repoMockModule.ensureEntitySource.mockResolvedValue({
+		id: 'package-package-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
+		published_commit: 'published-commit-1',
+		indexed_commit: 'published-commit-1',
+		manifest_path: 'package.json',
+		source_root: '/',
+		created_at: '2026-04-13T00:00:00.000Z',
+		updated_at: '2026-04-13T00:00:00.000Z',
+		bootstrapAccess: null,
+	})
 	console.info = ((tag: unknown, json?: unknown) => {
 		if (tag === 'mcp-event' && typeof json === 'string') {
 			payloads.push(json)
@@ -253,6 +267,7 @@ test('package_save capability logs success for valid invocation', async () => {
 		const handler = capabilityMap['package_save'].handler
 		const result = await handler(
 			{
+				confirm_destructive_overwrite: true,
 				files: [
 					{
 						path: 'package.json',

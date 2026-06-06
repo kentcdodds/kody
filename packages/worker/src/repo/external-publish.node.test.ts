@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	updateEntitySource: vi.fn(async () => true),
 	runRepoChecks: vi.fn(),
 	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
+	loadPublishedSourceSnapshot: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
 	hasPublishedRuntimeArtifacts: vi.fn(() => false),
 }))
@@ -23,6 +24,8 @@ vi.mock('./checks.ts', () => ({
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 	hasPublishedRuntimeArtifacts: (...args: Array<unknown>) =>
 		mockModule.hasPublishedRuntimeArtifacts(...args),
+	loadPublishedSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.loadPublishedSourceSnapshot(...args),
 	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
 		mockModule.writePublishedSourceSnapshot(...args),
 }))
@@ -62,6 +65,9 @@ function workspace() {
 // eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default mock behavior after global mockReset.
 beforeEach(() => {
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
+		files: { 'package.json': '{}' },
+	})
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
 })
 
@@ -176,14 +182,57 @@ test('refuses non-fast-forward publish unless allowForce is true', async () => {
 		status: 'not_fast_forward',
 		previous_commit: 'commit-old',
 		published_commit: 'commit-rewritten',
-		message:
-			'The external Artifacts HEAD is not a descendant of the current published commit. Retry with allow_force to publish it.',
+		message: expect.stringContaining(
+			'production package source safety policy',
+		),
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
-test('allows non-fast-forward publish when allowForce is true', async () => {
+test('refuses non-fast-forward publish with allowForce but without destructive confirmation', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+
+	await expect(
+		publishFromExternalRef({
+			env: { APP_DB: {} } as Env,
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-rewritten',
+			isFastForward: async () => false,
+			allowForce: true,
+			workspace: workspace(),
+			files: { 'package.json': '{}' },
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow('confirm_destructive_overwrite')
+	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
+
+test('refuses non-fast-forward publish when the backup snapshot is missing', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValueOnce(null)
+
+	await expect(
+		publishFromExternalRef({
+			env: { APP_DB: {} } as Env,
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-rewritten',
+			isFastForward: async () => false,
+			allowForce: true,
+			destructiveOverwriteConfirmed: true,
+			workspace: workspace(),
+			files: { 'package.json': '{}' },
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow('Stop and report this source recovery problem')
+	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
+
+test('allows non-fast-forward publish when allowForce is true and destructive overwrite is confirmed', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
@@ -202,6 +251,7 @@ test('allows non-fast-forward publish when allowForce is true', async () => {
 		newCommit: 'commit-rewritten',
 		isFastForward: async () => false,
 		allowForce: true,
+		destructiveOverwriteConfirmed: true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
@@ -244,8 +294,9 @@ test('rechecks fast-forward against the latest source row before publishing', as
 		status: 'not_fast_forward',
 		previous_commit: 'commit-concurrent',
 		published_commit: 'commit-new',
-		message:
-			'The external Artifacts HEAD is not a descendant of the current published commit. Retry with allow_force to publish it.',
+		message: expect.stringContaining(
+			'production package source safety policy',
+		),
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()

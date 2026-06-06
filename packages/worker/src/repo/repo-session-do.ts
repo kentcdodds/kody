@@ -64,6 +64,10 @@ import {
 	publishFromExternalRef as publishExternalRefSource,
 } from './external-publish.ts'
 import {
+	assertPackageSourceOverwriteAllowed,
+	buildSourceRecoveryProblemMessage,
+} from './source-safety-policy.ts'
+import {
 	attachPublishGitNoteBestEffort,
 	buildPublishGitNote,
 	type KodyPublishGitNoteChecks,
@@ -1524,6 +1528,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 		force?: boolean
+		destructiveOverwriteConfirmed?: boolean
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 	}): Promise<RepoSessionPublishResult> {
@@ -1557,6 +1562,15 @@ class RepoSessionBase extends DurableObject<Env> {
 				message:
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
+		}
+		if (input.force === true) {
+			await assertPackageSourceOverwriteAllowed({
+				env: this.env,
+				userId: input.userId,
+				source,
+				operation: 'repo forced publish',
+				confirmed: input.destructiveOverwriteConfirmed,
+			})
 		}
 		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
 		const sourceInfo = await sourceRepo.info()
@@ -1641,6 +1655,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		newCommit: string
 		expectedHead?: string | null
 		allowForce?: boolean
+		destructiveOverwriteConfirmed?: boolean
 		baseUrl?: string
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
@@ -1670,20 +1685,32 @@ class RepoSessionBase extends DurableObject<Env> {
 		await this.workspace.mkdir(repoSessionWorkspacePrefix, {
 			recursive: true,
 		})
-		await this.git.clone({
-			dir: repoSessionWorkspacePrefix,
-			branch: targetBranch,
-			singleBranch: true,
-			...buildGitCloneAuth({
-				remote: sourceAccess.remote,
-				token: sourceAccess.token,
-			}),
-		})
-		await this.git.checkout({
-			dir: repoSessionWorkspacePrefix,
-			ref: input.newCommit,
-			force: true,
-		})
+		try {
+			await this.git.clone({
+				dir: repoSessionWorkspacePrefix,
+				branch: targetBranch,
+				singleBranch: true,
+				...buildGitCloneAuth({
+					remote: sourceAccess.remote,
+					token: sourceAccess.token,
+				}),
+			})
+			await this.git.checkout({
+				dir: repoSessionWorkspacePrefix,
+				ref: input.newCommit,
+				force: true,
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			throw new Error(
+				buildSourceRecoveryProblemMessage({
+					source,
+					operation: 'package_publish_external_push',
+					reason: `source clone or commit checkout failed: ${message}`,
+				}),
+				{ cause: error },
+			)
+		}
 		const runId = crypto.randomUUID()
 		const publishResult = await publishExternalRefSource({
 			env: this.env,
@@ -1697,6 +1724,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					descendant: input.newCommit,
 				}),
 			allowForce: input.allowForce,
+			destructiveOverwriteConfirmed: input.destructiveOverwriteConfirmed,
 			workspace: this.workspace,
 			baseUrl: input.baseUrl ?? source.source_root,
 			manifestPath: resolveRepoWorkspacePath(

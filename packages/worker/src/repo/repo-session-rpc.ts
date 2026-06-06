@@ -123,6 +123,7 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 		force?: boolean
+		destructiveOverwriteConfirmed?: boolean
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 	}) => Promise<RepoSessionPublishResult>
@@ -133,6 +134,7 @@ export type RepoSessionRpc = {
 		newCommit: string
 		expectedHead?: string | null
 		allowForce?: boolean
+		destructiveOverwriteConfirmed?: boolean
 		baseUrl?: string
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string

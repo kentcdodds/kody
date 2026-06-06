@@ -5,6 +5,11 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
+	assertPackageSourceOverwriteAllowed,
+	destructiveOverwriteConfirmationDescription,
+	withProductionPackageSourceSafetyPolicy,
+} from '#worker/repo/source-safety-policy.ts'
+import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 	insertSavedPackage,
@@ -31,6 +36,11 @@ const inputSchema = z
 			.describe(
 				'Full package file set to write. Must include package.json at the repo root.',
 			),
+		confirm_destructive_overwrite: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe(destructiveOverwriteConfirmationDescription),
 	})
 	.superRefine((value, ctx) => {
 		const hasPackageJson = value.files.some(
@@ -58,8 +68,9 @@ export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_save',
-		description:
+		description: withProductionPackageSourceSafetyPolicy(
 			'Create or replace a saved package by writing a complete package file set. Prefer package_get_git_remote or repo sessions for iterative edits. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear.',
+		),
 		keywords: [
 			'package',
 			'save',
@@ -72,7 +83,7 @@ export const savePackageCapability = defineDomainCapability(
 		],
 		readOnly: false,
 		idempotent: false,
-		destructive: false,
+		destructive: true,
 		inputSchema,
 		outputSchema: packageSummarySchema,
 		async handler(args, ctx) {
@@ -112,6 +123,15 @@ export const savePackageCapability = defineDomainCapability(
 				manifestPath: 'package.json',
 				requirePersistence: true,
 			})
+			if (existing) {
+				await assertPackageSourceOverwriteAllowed({
+					env: ctx.env,
+					userId: user.userId,
+					source: ensuredSource,
+					operation: 'package_save',
+					confirmed: args.confirm_destructive_overwrite,
+				})
+			}
 			await syncArtifactSourceSnapshot({
 				env: ctx.env,
 				userId: user.userId,
@@ -119,6 +139,7 @@ export const savePackageCapability = defineDomainCapability(
 				sourceId: ensuredSource.id,
 				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 				files,
+				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
 			})
 			if (!existing) {
 				const now = new Date().toISOString()

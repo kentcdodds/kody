@@ -388,7 +388,7 @@ test('surfaces not-fast-forward refusal without force', async () => {
 	)
 })
 
-test('passes allow_force through to the publish pipeline', async () => {
+test('passes allow_force and destructive confirmation through to the publish pipeline', async () => {
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-rewrite',
@@ -402,13 +402,18 @@ test('passes allow_force through to the publish pipeline', async () => {
 	})
 
 	await publishExternalPushCapability.handler(
-		{ package_id: 'package-1', allow_force: true },
+		{
+			package_id: 'package-1',
+			allow_force: true,
+			confirm_destructive_overwrite: true,
+		},
 		createContext(),
 	)
 
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
 			allowForce: true,
+			destructiveOverwriteConfirmed: true,
 		}),
 	)
 })
