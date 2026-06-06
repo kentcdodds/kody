@@ -131,16 +131,16 @@ test('package mutation capabilities surface the canonical production source safe
 	expect(savePackageCapability.description).toContain(
 		productionPackageSourceSafetyPolicy,
 	)
-	expect(publishExternalPushCapability.description).toContain(
+	expect(publishExternalPushCapability.description).not.toContain(
 		productionPackageSourceSafetyPolicy,
 	)
-	expect(getGitRemoteCapability.description).toContain(
+	expect(getGitRemoteCapability.description).not.toContain(
 		productionPackageSourceSafetyPolicy,
 	)
-	expect(repoPublishSessionCapability.description).toContain(
+	expect(repoPublishSessionCapability.description).not.toContain(
 		productionPackageSourceSafetyPolicy,
 	)
-	expect(repoRunCommandsCapabilityDescription).toContain(
+	expect(repoRunCommandsCapabilityDescription).not.toContain(
 		productionPackageSourceSafetyPolicy,
 	)
 })

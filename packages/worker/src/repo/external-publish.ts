@@ -12,7 +12,6 @@ import {
 } from './types.ts'
 import {
 	assertPackageSourceOverwriteAllowed,
-	productionPackageSourceSafetyPolicy,
 } from './source-safety-policy.ts'
 
 export type RepoPublishWorkspace = {
@@ -145,8 +144,7 @@ export async function publishFromExternalRef(input: {
 				previous_commit: source.published_commit,
 				published_commit: input.newCommit,
 				message:
-					'The external Artifacts HEAD is not a descendant of the current published commit. Retry only after satisfying the production package source safety policy and setting allow_force with explicit destructive overwrite confirmation. ' +
-					productionPackageSourceSafetyPolicy,
+					'The external Artifacts HEAD is not a descendant of the current published commit. Retry only after satisfying the package source safety gate and setting allow_force with explicit destructive overwrite confirmation.',
 			}
 		}
 		if (!isFastForward) {

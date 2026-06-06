@@ -3,7 +3,6 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
-import { withProductionPackageSourceSafetyPolicy } from '#worker/repo/source-safety-policy.ts'
 import {
 	repoPublishSessionOutputSchema,
 	repoSessionIdSchema,
@@ -14,9 +13,8 @@ export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repo_publish_session',
-		description: withProductionPackageSourceSafetyPolicy(
+		description:
 			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current.',
-		),
 		keywords: ['repo', 'publish', 'session', 'checks', 'artifact'],
 		readOnly: false,
 		idempotent: false,

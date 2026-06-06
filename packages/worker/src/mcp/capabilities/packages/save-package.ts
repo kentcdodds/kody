@@ -8,7 +8,7 @@ import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	assertPackageSourceOverwriteAllowed,
 	destructiveOverwriteConfirmationDescription,
-	withProductionPackageSourceSafetyPolicy,
+	productionPackageSourceSafetyPolicy,
 } from '#worker/repo/source-safety-policy.ts'
 import {
 	getSavedPackageById,
@@ -69,9 +69,7 @@ export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_save',
-		description: withProductionPackageSourceSafetyPolicy(
-			'Create or replace a saved package by writing a complete package file set. Prefer package_get_git_remote or repo sessions for iterative edits. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear.',
-		),
+		description: `Create or replace a saved package by writing a complete package file set. Prefer package_get_git_remote or repo sessions for iterative edits. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${productionPackageSourceSafetyPolicy}`,
 		keywords: [
 			'package',
 			'save',

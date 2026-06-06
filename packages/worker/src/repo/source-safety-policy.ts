@@ -10,10 +10,6 @@ export const destructiveOverwriteConfirmationField =
 export const destructiveOverwriteConfirmationDescription =
 	'Set to true only when the user explicitly approved destructive overwrite of existing package source history. Kody still verifies a restorable backup snapshot before publishing.'
 
-export function withProductionPackageSourceSafetyPolicy(description: string) {
-	return `${description} ${productionPackageSourceSafetyPolicy}`
-}
-
 export function buildSourceRecoveryProblemMessage(input: {
 	source: EntitySourceRow
 	operation: string
@@ -24,7 +20,6 @@ export function buildSourceRecoveryProblemMessage(input: {
 		`${input.operation} stopped by the production package source safety policy.`,
 		`Kody could not verify a restorable backup snapshot for source "${input.source.id}" at published commit "${publishedCommit}": ${input.reason}`,
 		'Stop and report this source recovery problem instead of rebuilding or overwriting the package in place.',
-		productionPackageSourceSafetyPolicy,
 	].join(' ')
 }
 
@@ -35,7 +30,6 @@ function buildDestructiveOverwriteConfirmationMessage(input: {
 	return [
 		`${input.operation} would overwrite existing package source "${input.source.id}".`,
 		`Set ${destructiveOverwriteConfirmationField}: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.`,
-		productionPackageSourceSafetyPolicy,
 	].join(' ')
 }
 

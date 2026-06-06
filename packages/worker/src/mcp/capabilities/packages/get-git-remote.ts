@@ -10,7 +10,6 @@ import {
 } from '#worker/repo/artifacts.ts'
 import {
 	assertRestorablePackageSourceSnapshot,
-	withProductionPackageSourceSafetyPolicy,
 } from '#worker/repo/source-safety-policy.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
@@ -43,9 +42,8 @@ export const getGitRemoteCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_get_git_remote',
-		description: withProductionPackageSourceSafetyPolicy(
-			'Mint a short-lived Cloudflare Artifacts git remote for coding agents with local filesystem/git access to clone a saved package into a temporary directory, edit normally, push, and publish with package_publish_external_push.',
-		),
+		description:
+			'Mint a short-lived Cloudflare Artifacts git remote for coding agents with local filesystem/git access to clone a saved package into a temporary directory, edit normally, push, and publish with package_publish_external_push. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish.',
 		keywords: [
 			'package',
 			'git',

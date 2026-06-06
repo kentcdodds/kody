@@ -182,7 +182,7 @@ test('refuses non-fast-forward publish unless allowForce is true', async () => {
 		status: 'not_fast_forward',
 		previous_commit: 'commit-old',
 		published_commit: 'commit-rewritten',
-		message: expect.stringContaining('production package source safety policy'),
+		message: expect.stringContaining('package source safety gate'),
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
@@ -292,7 +292,7 @@ test('rechecks fast-forward against the latest source row before publishing', as
 		status: 'not_fast_forward',
 		previous_commit: 'commit-concurrent',
 		published_commit: 'commit-new',
-		message: expect.stringContaining('production package source safety policy'),
+		message: expect.stringContaining('package source safety gate'),
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
