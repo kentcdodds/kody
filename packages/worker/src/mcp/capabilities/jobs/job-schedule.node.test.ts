@@ -115,7 +115,7 @@ test('workflow_list returns recent workflow runs for the current user', async ()
 	})
 })
 
-test('job_update updates safe mutable fields on an existing job', async () => {
+test('job_update and job_delete mutate existing jobs for the signed-in user', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -294,25 +294,12 @@ test('job_update updates safe mutable fields on an existing job', async () => {
 		),
 	).rejects.toThrow('Provide at least one mutable field to update.')
 	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
-})
 
-test('job_delete removes an existing job by id for the signed-in user', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
 	mockModule.deleteJob.mockResolvedValue({
 		id: 'job-123',
 		deleted: true,
 	})
-
-	const result = await jobDeleteCapability.handler(
+	const deleteResult = await jobDeleteCapability.handler(
 		{
 			id: 'job-123',
 		},
@@ -321,13 +308,12 @@ test('job_delete removes an existing job by id for the signed-in user', async ()
 			callerContext,
 		},
 	)
-
 	expect(mockModule.deleteJob).toHaveBeenCalledWith({
 		env,
 		userId: 'user-123',
 		jobId: 'job-123',
 	})
-	expect(result).toEqual({
+	expect(deleteResult).toEqual({
 		job_id: 'job-123',
 		deleted: true,
 	})
@@ -750,7 +736,7 @@ test('job capabilities require an authenticated user for scheduling, mutation, a
 	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
 })
 
-test('job inspection capabilities expose due-now state, history, and alarm status', async () => {
+test('job inspection capabilities expose due-now state, history, alarm status, and optional source code', async () => {
 	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
@@ -920,80 +906,67 @@ test('job inspection capabilities expose due-now state, history, and alarm statu
 			next_runnable_run_at: '2026-04-20T18:30:00.000Z',
 			alarm_in_sync: false,
 		})
-	} finally {
-		vi.useRealTimers()
-	}
-})
 
-test('job_get can request published source code', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	const sourceCode =
-		'export default async function main() { return { ok: true } }'
-	mockModule.getJobInspection.mockResolvedValue({
-		job: {
-			id: 'job-123',
-			name: 'Inspect source',
-			sourceId: 'source-123',
-			publishedCommit: 'commit-123',
-			storageId: 'job:job-123',
-			schedule: {
-				type: 'interval',
-				every: '15m',
+		const sourceCode =
+			'export default async function main() { return { ok: true } }'
+		mockModule.getJobInspection.mockResolvedValue({
+			job: {
+				id: 'job-123',
+				name: 'Inspect source',
+				sourceId: 'source-123',
+				publishedCommit: 'commit-123',
+				storageId: 'job:job-123',
+				schedule: {
+					type: 'interval',
+					every: '15m',
+				},
+				scheduleSummary: 'Runs every 15m',
+				timezone: 'UTC',
+				enabled: true,
+				killSwitchEnabled: false,
+				createdAt: '2026-04-20T10:00:00.000Z',
+				updatedAt: '2026-04-20T10:05:00.000Z',
+				nextRunAt: '2026-04-20T18:30:00.000Z',
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+				runHistory: [],
 			},
-			scheduleSummary: 'Runs every 15m',
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			createdAt: '2026-04-20T10:00:00.000Z',
-			updatedAt: '2026-04-20T10:05:00.000Z',
-			nextRunAt: '2026-04-20T18:30:00.000Z',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-			runHistory: [],
-		},
-		alarm: {
-			bindingAvailable: true,
-			status: 'armed',
-			storedUserId: 'user-123',
-			alarmScheduledFor: '2026-04-20T18:30:00.000Z',
-			nextRunnableJobId: 'job-123',
-			nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
-			alarmInSync: true,
-		},
-		source: {
+			alarm: {
+				bindingAvailable: true,
+				status: 'armed',
+				storedUserId: 'user-123',
+				alarmScheduledFor: '2026-04-20T18:30:00.000Z',
+				nextRunnableJobId: 'job-123',
+				nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
+				alarmInSync: true,
+			},
+			source: {
+				entrypoint: 'src/custom-job.ts',
+				code: sourceCode,
+				error: null,
+			},
+		})
+
+		const sourceResult = await jobGetCapability.handler(
+			{ job_id: 'job-123', includeCode: true },
+			{
+				env,
+				callerContext,
+			},
+		)
+		expect(mockModule.getJobInspection).toHaveBeenLastCalledWith({
+			env,
+			userId: 'user-123',
+			jobId: 'job-123',
+			includeCode: true,
+		})
+		expect(sourceResult.source).toEqual({
 			entrypoint: 'src/custom-job.ts',
 			code: sourceCode,
 			error: null,
-		},
-	})
-
-	const result = await jobGetCapability.handler(
-		{ job_id: 'job-123', includeCode: true },
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.getJobInspection).toHaveBeenCalledWith({
-		env,
-		userId: 'user-123',
-		jobId: 'job-123',
-		includeCode: true,
-	})
-	expect(result.source).toEqual({
-		entrypoint: 'src/custom-job.ts',
-		code: sourceCode,
-		error: null,
-	})
+		})
+	} finally {
+		vi.useRealTimers()
+	}
 })

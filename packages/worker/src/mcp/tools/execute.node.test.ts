@@ -94,7 +94,7 @@ async function getExecuteHandler(
 	}>
 }
 
-test('execute tool serializes successes, binds storage, passes package invoke tools, and truncates oversized returns', async () => {
+test('execute tool serializes successes and errors, binds storage, passes package invoke tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
 	const rawContent: Array<ContentBlock> = [
 		{
@@ -331,23 +331,20 @@ test('execute tool serializes successes, binds storage, passes package invoke to
 		},
 		logs: [],
 	})
-})
 
-test('execute tool includes timing metadata in error responses', async () => {
-	const handler = await getExecuteHandler()
 	mockPerformanceSequence(50, 65)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		error: new Error('Boom'),
 		logs: [{ level: 'error', message: 'failed' }],
 	})
 
-	const response = await handler({
+	const errorResponse = await handler({
 		code: 'async () => { throw new Error("Boom") }',
 		conversationId: 'conv-error',
 	})
 
-	expect(response.isError).toBe(true)
-	expect(response.structuredContent).toEqual(
+	expect(errorResponse.isError).toBe(true)
+	expect(errorResponse.structuredContent).toEqual(
 		expect.objectContaining({
 			conversationId: 'conv-error',
 			timing: {

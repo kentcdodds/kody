@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { createMcpCallerContext, parseMcpCallerContext } from './context.ts'
 
-test('createMcpCallerContext normalizes missing user to null', () => {
+test('MCP caller context helpers normalize optional fields and validate parsed shapes', () => {
 	expect(
 		createMcpCallerContext({
 			baseUrl: 'https://example.com',
@@ -13,9 +13,7 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 		storageContext: null,
 		user: null,
 	})
-})
 
-test('parseMcpCallerContext validates caller context shape', () => {
 	const parsed = parseMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {

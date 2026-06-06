@@ -119,9 +119,7 @@ test('artifacts REST client scopes API paths to configured or stored namespaces'
 		info: expect.any(Function),
 	})
 	expect(sessionFetch).toHaveBeenCalledTimes(1)
-})
 
-test('getArtifactsNamespace defaults to default and trims configured values', () => {
 	expect(getArtifactsNamespace({} as Env)).toBe('default')
 	expect(
 		getArtifactsNamespace({ ARTIFACTS_NAMESPACE: ' preview ' } as Env),

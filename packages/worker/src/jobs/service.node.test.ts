@@ -995,14 +995,17 @@ function createBaseCallerContext(): PersistedJobCallerContext {
 	}) as PersistedJobCallerContext
 }
 
-test('createJob stores a codemode job with interval support', async () => {
+test('createJob persists interval schedules, assigns stable storage ids, and syncs alarms', async () => {
 	const env = {
 		APP_DB: createDatabase(),
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 
-	const result = await createJob({
+	const intervalJob = await createJob({
 		env,
 		callerContext,
 		body: {
@@ -1015,50 +1018,19 @@ test('createJob stores a codemode job with interval support', async () => {
 		} satisfies JobCreateInput,
 	})
 
-	expect(result.schedule).toEqual({
+	expect(intervalJob.schedule).toEqual({
 		type: 'interval',
 		every: '15m',
 	})
-	expect(result.scheduleSummary).toBe('Runs every 15m')
-})
-
-test('createJob assigns a stable job storage id', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-
-	const created = await createJob({
+	expect(intervalJob.scheduleSummary).toBe('Runs every 15m')
+	expect(intervalJob.storageId).toBe(`job:${intervalJob.id}`)
+	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
-		callerContext,
-		body: {
-			name: 'Storage-backed job',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
+		userId: callerContext.user.userId,
 	})
 
-	expect(created.storageId).toBe(`job:${created.id}`)
-})
-
-test('createJob syncs the job manager alarm after persisting a job', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-
-	await createJob({
+	jobManagerMockModule.syncJobManagerAlarm.mockClear()
+	const onceJob = await createJob({
 		env,
 		callerContext,
 		body: {
@@ -1070,14 +1042,14 @@ test('createJob syncs the job manager alarm after persisting a job', async () =>
 			},
 		},
 	})
-
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: callerContext.user.userId,
 	})
+	expect(onceJob.storageId).toBe(`job:${onceJob.id}`)
 })
 
-test('updateJob syncs the job manager alarm after mutating a job', async () => {
+test('updateJob and deleteJob sync the job manager alarm after mutations', async () => {
 	const env = {
 		APP_DB: createDatabase(),
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
@@ -1115,29 +1087,6 @@ test('updateJob syncs the job manager alarm after mutating a job', async () => {
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: callerContext.user.userId,
-	})
-})
-
-test('deleteJob syncs the job manager alarm after removing a job', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Sync job manager on delete',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
 	})
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 

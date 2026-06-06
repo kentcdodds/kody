@@ -149,25 +149,22 @@ function getCookiePair(setCookie: string) {
 	return setCookie.split(';', 1)[0] ?? setCookie
 }
 
-test('authorize info returns client and scopes', async () => {
-	const response = await handleAuthorizeInfo(
+test('authorize info returns client metadata and marks invalid client mismatch as resettable', async () => {
+	const successResponse = await handleAuthorizeInfo(
 		new Request(
 			'https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
 		),
 		createEnv(createHelpers()),
 	)
 
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual({
+	expect(successResponse.status).toBe(200)
+	await expect(successResponse.json()).resolves.toEqual({
 		ok: true,
 		client: { id: baseClient.clientId, name: baseClient.clientName },
 		scopes: baseAuthRequest.scope,
 	})
-})
 
-test('authorize info marks invalid client mismatch as resettable', async () => {
-	const response = await handleAuthorizeInfo(
+	const mismatchResponse = await handleAuthorizeInfo(
 		new Request(
 			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
 		),
@@ -180,25 +177,25 @@ test('authorize info marks invalid client mismatch as resettable', async () => {
 		),
 	)
 
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
+	expect(mismatchResponse.status).toBe(400)
+	await expect(mismatchResponse.json()).resolves.toEqual({
 		ok: false,
 		error: invalidClientIdMismatchMessage,
 		allowClientReset: true,
 	})
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
+	const setCookie = mismatchResponse.headers.get('Set-Cookie') ?? ''
 	expect(setCookie).toContain('kody_oauth_client_reset=')
 	expect(setCookie).toContain('Path=/oauth')
 })
 
-test('authorize denies access and redirects with error', async () => {
-	const response = await handleAuthorizeRequest(
+test('authorize denies access and requires credentials before approval', async () => {
+	const denyResponse = await handleAuthorizeRequest(
 		createFormRequest({ decision: 'deny' }),
 		createEnv(createHelpers()),
 	)
 
-	expect(response.status).toBe(302)
-	const location = response.headers.get('Location')
+	expect(denyResponse.status).toBe(302)
+	const location = denyResponse.headers.get('Location')
 	expect(location).toBeTruthy()
 	const redirectUrl = new URL(location as string)
 	const expectedRedirect = new URL(baseAuthRequest.redirectUri)
@@ -206,10 +203,8 @@ test('authorize denies access and redirects with error', async () => {
 	expect(redirectUrl.pathname).toBe(expectedRedirect.pathname)
 	expect(redirectUrl.searchParams.get('error')).toBe('access_denied')
 	expect(redirectUrl.searchParams.get('state')).toBe('demo')
-})
 
-test('authorize requires email and password for approval', async () => {
-	const response = await handleAuthorizeRequest(
+	const missingPasswordResponse = await handleAuthorizeRequest(
 		createFormRequest(
 			{ decision: 'approve', email: 'user@example.com' },
 			{ Accept: 'application/json' },
@@ -217,9 +212,8 @@ test('authorize requires email and password for approval', async () => {
 		createEnv(createHelpers()),
 	)
 
-	expect(response.status).toBe(400)
-	const payload = await response.json()
-	expect(payload).toEqual({
+	expect(missingPasswordResponse.status).toBe(400)
+	await expect(missingPasswordResponse.json()).resolves.toEqual({
 		ok: false,
 		error: 'Email and password are required.',
 		code: 'invalid_request',
