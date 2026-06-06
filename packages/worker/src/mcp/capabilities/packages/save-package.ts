@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import {
 	assertPackageSourceOverwriteAllowed,
 	destructiveOverwriteConfirmationDescription,
@@ -112,10 +112,14 @@ export const savePackageCapability = defineDomainCapability(
 							kodyId: manifest.kody.id,
 						})
 			const packageId = existing?.id ?? args.package_id ?? crypto.randomUUID()
-			const existingSource =
+			const canonicalExistingSource =
 				existing == null
 					? null
-					: await getEntitySourceById(ctx.env.APP_DB, existing.sourceId)
+					: await getEntitySourceByEntity(ctx.env.APP_DB, {
+							userId: user.userId,
+							entityKind: 'package',
+							entityId: packageId,
+						})
 			const ensuredSource = await ensureEntitySource({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
@@ -131,8 +135,8 @@ export const savePackageCapability = defineDomainCapability(
 					env: ctx.env,
 					userId: user.userId,
 					source:
-						existingSource?.user_id === user.userId
-							? existingSource
+						canonicalExistingSource?.id === ensuredSource.id
+							? canonicalExistingSource
 							: ensuredSource,
 					operation: 'package_save',
 					confirmed: args.confirm_destructive_overwrite,
