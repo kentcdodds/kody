@@ -363,7 +363,7 @@ test('rebuilds published package bundle artifacts one target at a time after pub
 	)
 })
 
-test('surfaces not-fast-forward refusal without force', async () => {
+test('force publish passes destructive confirmation through and refuses without allow_force', async () => {
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-rewrite',
@@ -375,24 +375,17 @@ test('surfaces not-fast-forward refusal without force', async () => {
 		message: 'The external Artifacts HEAD is not a descendant.',
 	})
 
-	const result = await publishExternalPushCapability.handler(
+	const refused = await publishExternalPushCapability.handler(
 		{ package_id: 'package-1' },
 		createContext(),
 	)
-
-	expect(result.status).toBe('not_fast_forward')
+	expect(refused.status).toBe('not_fast_forward')
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
 			allowForce: false,
 		}),
 	)
-})
 
-test('passes allow_force and destructive confirmation through to the publish pipeline', async () => {
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-rewrite',
-	})
 	mockModule.publishFromExternalRef.mockResolvedValue({
 		status: 'published',
 		previous_commit: 'commit-old',
@@ -400,7 +393,6 @@ test('passes allow_force and destructive confirmation through to the publish pip
 		manifest: {},
 		checks: [],
 	})
-
 	await publishExternalPushCapability.handler(
 		{
 			package_id: 'package-1',
@@ -409,8 +401,7 @@ test('passes allow_force and destructive confirmation through to the publish pip
 		},
 		createContext(),
 	)
-
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
+	expect(mockModule.publishFromExternalRef).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			allowForce: true,
 			destructiveOverwriteConfirmed: true,

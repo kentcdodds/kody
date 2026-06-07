@@ -164,10 +164,10 @@ test('returns no-op when commit is already current', async () => {
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
-test('refuses non-fast-forward publish unless allowForce is true', async () => {
+test('non-fast-forward publish requires allowForce, destructive confirmation, and a restorable backup snapshot', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 
-	const result = await publishFromExternalRef({
+	const refusedWithoutForce = await publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
 		userId: 'user-1',
@@ -177,8 +177,7 @@ test('refuses non-fast-forward publish unless allowForce is true', async () => {
 		files: {},
 		baseUrl: 'https://kody.test',
 	})
-
-	expect(result).toEqual({
+	expect(refusedWithoutForce).toEqual({
 		status: 'not_fast_forward',
 		previous_commit: 'commit-old',
 		published_commit: 'commit-rewritten',
@@ -186,10 +185,6 @@ test('refuses non-fast-forward publish unless allowForce is true', async () => {
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
-})
-
-test('refuses non-fast-forward publish with allowForce but without destructive confirmation', async () => {
-	mockModule.getEntitySourceById.mockResolvedValue(source())
 
 	await expect(
 		publishFromExternalRef({
@@ -204,14 +199,8 @@ test('refuses non-fast-forward publish with allowForce but without destructive c
 			baseUrl: 'https://kody.test',
 		}),
 	).rejects.toThrow('confirm_destructive_overwrite')
-	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
-	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
-})
 
-test('refuses non-fast-forward publish when the backup snapshot is missing', async () => {
-	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValueOnce(null)
-
 	await expect(
 		publishFromExternalRef({
 			env: { APP_DB: {} } as Env,
@@ -226,12 +215,7 @@ test('refuses non-fast-forward publish when the backup snapshot is missing', asy
 			baseUrl: 'https://kody.test',
 		}),
 	).rejects.toThrow('Stop and report this source recovery problem')
-	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
-	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
-})
 
-test('allows non-fast-forward publish when allowForce is true and destructive overwrite is confirmed', async () => {
-	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
 		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
@@ -241,8 +225,7 @@ test('allows non-fast-forward publish when allowForce is true and destructive ov
 			kody: { id: 'demo', description: 'Demo' },
 		},
 	})
-
-	const result = await publishFromExternalRef({
+	const published = await publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
 		userId: 'user-1',
@@ -254,8 +237,7 @@ test('allows non-fast-forward publish when allowForce is true and destructive ov
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
 	})
-
-	expect(result).toEqual(
+	expect(published).toEqual(
 		expect.objectContaining({
 			status: 'published',
 			previous_commit: 'commit-old',

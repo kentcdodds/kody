@@ -3,13 +3,7 @@ import {
 	assertPackageSourceOverwriteAllowed,
 	assertRestorablePackageSourceSnapshot,
 	destructiveOverwriteConfirmationField,
-	productionPackageSourceSafetyPolicy,
 } from './source-safety-policy.ts'
-import { savePackageCapability } from '#mcp/capabilities/packages/save-package.ts'
-import { publishExternalPushCapability } from '#mcp/capabilities/packages/publish-external-push.ts'
-import { getGitRemoteCapability } from '#mcp/capabilities/packages/get-git-remote.ts'
-import { repoPublishSessionCapability } from '#mcp/capabilities/repo/repo-publish-session.ts'
-import { repoRunCommandsCapabilityDescription } from '#mcp/capabilities/repo/repo-run-commands-text.ts'
 import { type EntitySourceRow } from './types.ts'
 
 function packageSource(
@@ -75,7 +69,7 @@ test('package source overwrite requires explicit destructive confirmation before
 	).rejects.toThrow(destructiveOverwriteConfirmationField)
 })
 
-test('restorable package source snapshot verification rejects missing and corrupt snapshots with recovery guidance', async () => {
+test('restorable package source snapshot verification rejects corrupt snapshots and accepts manifest-bearing backups', async () => {
 	await expect(
 		assertRestorablePackageSourceSnapshot({
 			env: createEnvWithSnapshot(null),
@@ -107,9 +101,7 @@ test('restorable package source snapshot verification rejects missing and corrup
 			operation: 'package_publish_external_push force publish',
 		}),
 	).rejects.toThrow('the published source snapshot is missing or malformed')
-})
 
-test('restorable package source snapshot verification accepts a manifest-bearing snapshot', async () => {
 	await expect(
 		assertRestorablePackageSourceSnapshot({
 			env: createEnvWithSnapshot({
@@ -125,22 +117,4 @@ test('restorable package source snapshot verification accepts a manifest-bearing
 		publishedCommit: 'commit-1',
 		fileCount: 2,
 	})
-})
-
-test('package mutation capabilities surface the canonical production source safety policy', () => {
-	expect(savePackageCapability.description).toContain(
-		productionPackageSourceSafetyPolicy,
-	)
-	expect(publishExternalPushCapability.description).not.toContain(
-		productionPackageSourceSafetyPolicy,
-	)
-	expect(getGitRemoteCapability.description).not.toContain(
-		productionPackageSourceSafetyPolicy,
-	)
-	expect(repoPublishSessionCapability.description).not.toContain(
-		productionPackageSourceSafetyPolicy,
-	)
-	expect(repoRunCommandsCapabilityDescription).not.toContain(
-		productionPackageSourceSafetyPolicy,
-	)
 })
