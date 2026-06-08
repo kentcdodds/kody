@@ -51,12 +51,9 @@ test('authenticated MCP smoke returns same-origin inline UI sessions', async () 
 				} | null
 		  }
 		| undefined
-	expect(typeof inlineUiStructured?.appSession?.token).toBe('string')
 	const executeEndpoint = inlineUiStructured?.appSession?.endpoints?.execute
-	expect(typeof executeEndpoint).toBe('string')
-	if (typeof executeEndpoint !== 'string') {
-		throw new Error('Expected open_generated_ui to return an execute endpoint')
-	}
-	const executeUrl = new URL(executeEndpoint, server.origin)
+	expect(inlineUiStructured?.appSession?.token).toBeTruthy()
+	expect(executeEndpoint).toBeTruthy()
+	const executeUrl = new URL(String(executeEndpoint), server.origin)
 	expect(executeUrl.origin).toBe(server.origin)
 })

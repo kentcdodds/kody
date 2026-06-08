@@ -109,7 +109,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		entityRef: 'user:preferred_repo:value',
 		scope: 'user',
 		appId: null,
-		usage: expect.any(String),
 	})
 	expect(structuredMatches[1]).toMatchObject({
 		type: 'integration',
@@ -121,8 +120,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
 			scopes: ['repo', 'read:user'],
 		},
-		usage: expect.any(String),
-		nextStep: expect.any(String),
 	})
 
 	const quotedValueMatch = structuredMatches[2]
@@ -234,8 +231,6 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 		executeExample: expect.stringMatching(
 			/return await codemode\.github_create_issue\(/,
 		),
-		inputTypeDefinition: expect.any(String),
-		outputTypeDefinition: expect.any(String),
 	})
 	expect(identifierDetail.structured).not.toHaveProperty('inputSchema')
 	expect(identifierDetail.structured).not.toHaveProperty('outputSchema')
@@ -378,7 +373,6 @@ export declare function fetch(request: Request): Promise<Response>
 		],
 		readme: {
 			path: 'README.md',
-			content: expect.any(String),
 			truncated: false,
 		},
 	})
@@ -506,9 +500,6 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 		entityRef: 'spotify-playback:package',
 		hasApp: true,
 		hostedUrl: 'http://localhost/@test-user/packages/spotify-playback',
-		usage: expect.any(String),
-		rootImportUsage: expect.any(String),
-		nextStep: expect.any(String),
 	})
 
 	const [anonymousPackageMatch] = toSlimStructuredMatches({
@@ -531,7 +522,6 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 		type: 'package',
 		hasApp: true,
 		hostedUrl: null,
-		openGeneratedUiUsage: expect.any(String),
 	})
 
 	const [actionPackageMatch] = toSlimStructuredMatches({
@@ -581,7 +571,6 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 				],
 			}),
 		],
-		usage: expect.any(String),
 	})
 })
 

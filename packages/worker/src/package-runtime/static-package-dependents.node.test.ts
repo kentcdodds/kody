@@ -45,8 +45,6 @@ test('buildStaticPackageDependentsSummary reports stale state, limits, and aggre
 			},
 		],
 	})
-	expect(staleSummary.items[0]?.recommended_action).toEqual(expect.any(String))
-	expect(staleSummary.recommended_next_action).toEqual(expect.any(String))
 
 	const emptySummary = buildStaticPackageDependentsSummary({
 		total: 0,

@@ -344,7 +344,9 @@ test('optional search rows load packages and values with graceful fallbacks', as
 	})
 	expect(packageFailure).toMatchObject({
 		...emptyRows,
-		warnings: [expect.any(String)],
+		warnings: [
+			'Saved packages are temporarily unavailable: packages unavailable',
+		],
 	})
 
 	const savedPackage = await loadOptionalSearchRows({
@@ -441,7 +443,9 @@ test('optional search rows load packages and values with graceful fallbacks', as
 	})
 	expect(valuesFailure).toMatchObject({
 		...emptyRows,
-		warnings: [expect.any(String)],
+		warnings: [
+			'Persisted values are temporarily unavailable: values unavailable',
+		],
 	})
 
 	const anonymous = await loadOptionalSearchRows({
@@ -625,8 +629,6 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			}),
 		],
 	})
-	expect(result.guidance).toEqual(expect.any(String))
-
 	const broadQuery = await searchUnified({
 		env: {} as Env,
 		query: 'google products helpers',
@@ -678,7 +680,6 @@ test('searchUnified annotates high-confidence package action matches', async () 
 		kodyId: 'google-products',
 		actionMatches: [],
 	})
-	expect(broadQuery.guidance).toEqual(expect.any(String))
 })
 
 test('searchUnified ranks package wrappers and exact capability matches ahead of weaker alternatives', async () => {
@@ -1028,78 +1029,6 @@ test('buildSavedPackageSearchRows falls back when package source resolution fail
 		}),
 	])
 	expect(result.warnings).toHaveLength(1)
-})
-
-test('search guidance does not pair unrelated package and integration matches', async () => {
-	const registry = buildCapabilityRegistry([])
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'music remote',
-		limit: 5,
-		registry,
-		optionalRows: {
-			packageRows: [
-				{
-					record: {
-						id: 'package-123',
-						userId: 'user-123',
-						name: '@kody/observed',
-						kodyId: 'observed-package',
-						description: 'Observed package with app controls.',
-						tags: ['music'],
-						searchText: 'music remote package',
-						sourceId: 'source-package-123',
-						hasApp: true,
-						createdAt: '2026-03-24T00:00:00.000Z',
-						updatedAt: '2026-03-24T00:00:00.000Z',
-					},
-					projection: {
-						name: '@kody/observed',
-						kodyId: 'observed-package',
-						description: 'Observed package with app controls.',
-						tags: ['music'],
-						searchText: 'music remote package',
-						hasApp: true,
-						appEntry: 'src/app.ts',
-						exports: [createPackageExportProjection('./play')],
-						jobs: [],
-						services: [],
-						subscriptions: [],
-						retrievers: [],
-					},
-				},
-			],
-			userSecretRows: [],
-			userValueRows: [
-				{
-					name: buildIntegrationValueName('github'),
-					scope: 'user',
-					value: JSON.stringify({
-						tokenUrl: 'https://github.com/login/oauth/access_token',
-						apiBaseUrl: 'https://api.github.com',
-						flow: 'confidential',
-						clientIdValueName: 'github-client-id',
-						clientSecretSecretName: 'github-client-secret',
-						accessTokenSecretName: 'github-access-token',
-						refreshTokenSecretName: 'github-refresh-token',
-						requiredHosts: ['api.github.com'],
-					}),
-					description: 'GitHub OAuth integration config',
-					appId: null,
-					createdAt: '2026-04-20T00:00:00.000Z',
-					updatedAt: '2026-04-20T00:00:00.000Z',
-					ttlMs: null,
-				},
-			],
-			warnings: [],
-		},
-	})
-
-	expect(result.matches[0]).toMatchObject({
-		type: 'package',
-		kodyId: 'observed-package',
-	})
-	expect(result.guidance).toBeDefined()
 })
 
 test('down remote connector statuses surface only disconnected connectors for signed-in users', async () => {

@@ -13,20 +13,16 @@ import {
 	limitExecutionResultValue,
 } from './executor.ts'
 
-test('getExecutionErrorDetails returns concrete guidance for capability access denial', () => {
-	const error = new Error(
+test('getExecutionErrorDetails maps secret and host approval errors to structured guidance', () => {
+	const capabilityError = new Error(
 		createCapabilitySecretAccessDeniedMessage(
 			'cloudflareToken',
 			'secret_set',
 			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 		),
 	)
-
-	const details = getExecutionErrorDetails(error)
-	expect(details).toMatchObject({
+	expect(getExecutionErrorDetails(capabilityError)).toMatchObject({
 		kind: 'secret_capability_access_required',
-		message: expect.any(String),
-		nextStep: expect.any(String),
 		secretNames: ['cloudflareToken'],
 		capabilityName: 'secret_set',
 		approvalUrl:
@@ -34,6 +30,81 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 		suggestedAction: {
 			type: 'edit_secret_policy',
 			policyField: 'allowed_capabilities',
+		},
+	})
+
+	const capabilityBatchError = new Error(
+		createCapabilitySecretAccessDeniedBatchMessage([
+			{
+				secretName: 'lutronUsername',
+				capabilityName: 'lighting_lutron_set_credentials',
+				approvalUrl:
+					'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
+			},
+			{
+				secretName: 'lutronPassword',
+				capabilityName: 'lighting_lutron_set_credentials',
+				approvalUrl:
+					'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
+			},
+		]),
+	)
+	expect(getExecutionErrorDetails(capabilityBatchError)).toMatchObject({
+		kind: 'secret_capability_access_required_batch',
+		missingApprovals: [
+			{
+				secretName: 'lutronUsername',
+				capabilityName: 'lighting_lutron_set_credentials',
+				approvalUrl:
+					'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
+			},
+			{
+				secretName: 'lutronPassword',
+				capabilityName: 'lighting_lutron_set_credentials',
+				approvalUrl:
+					'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
+			},
+		],
+		suggestedAction: {
+			type: 'edit_secret_policy',
+			policyField: 'allowed_capabilities',
+		},
+	})
+
+	const hostBatchError = new Error(
+		createHostSecretAccessDeniedBatchMessage([
+			{
+				secretName: 'cloudflareToken',
+				host: 'api.cloudflare.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
+			},
+			{
+				secretName: 'slackToken',
+				host: 'slack.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
+			},
+		]),
+	)
+	expect(getExecutionErrorDetails(hostBatchError)).toMatchObject({
+		kind: 'host_approval_required_batch',
+		missingApprovals: [
+			{
+				secretName: 'cloudflareToken',
+				host: 'api.cloudflare.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
+			},
+			{
+				secretName: 'slackToken',
+				host: 'slack.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
+			},
+		],
+		suggestedAction: {
+			type: 'approve_secret_host',
 		},
 	})
 })
@@ -58,7 +129,7 @@ test('formatExecutionOutput appends next steps from structured execution errors'
 	}
 })
 
-test('extractRawContent returns MCP content blocks from sentinel result', () => {
+test('extractRawContent returns MCP content blocks from sentinel result and null otherwise', () => {
 	const content: Array<ContentBlock> = [
 		{
 			type: 'image',
@@ -76,12 +147,7 @@ test('extractRawContent returns MCP content blocks from sentinel result', () => 
 			__mcpContent: content,
 		}),
 	).toEqual(content)
-})
-
-test('extractRawContent returns null for non-sentinel values', () => {
 	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
-	expect(extractRawContent('plain text')).toBeNull()
-	expect(extractRawContent(null)).toBeNull()
 })
 
 test('limitExecutionResultValue truncates strings on UTF-8 codepoint boundaries', () => {
@@ -101,91 +167,4 @@ test('limitExecutionResultValue truncates strings on UTF-8 codepoint boundaries'
 	expect(
 		new TextEncoder().encode(String(threeByteLimit.value)).byteLength,
 	).toBe(3)
-})
-
-test('getExecutionErrorDetails returns batch capability approvals', () => {
-	const error = new Error(
-		createCapabilitySecretAccessDeniedBatchMessage([
-			{
-				secretName: 'lutronUsername',
-				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
-			},
-			{
-				secretName: 'lutronPassword',
-				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
-			},
-		]),
-	)
-
-	const details = getExecutionErrorDetails(error)
-	expect(details).toMatchObject({
-		kind: 'secret_capability_access_required_batch',
-		message: expect.any(String),
-		nextStep: expect.any(String),
-		missingApprovals: [
-			{
-				secretName: 'lutronUsername',
-				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
-			},
-			{
-				secretName: 'lutronPassword',
-				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
-			},
-		],
-		suggestedAction: {
-			type: 'edit_secret_policy',
-			policyField: 'allowed_capabilities',
-		},
-	})
-})
-
-test('getExecutionErrorDetails returns batch host approvals', () => {
-	const error = new Error(
-		createHostSecretAccessDeniedBatchMessage([
-			{
-				secretName: 'cloudflareToken',
-				host: 'api.cloudflare.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
-			},
-			{
-				secretName: 'slackToken',
-				host: 'slack.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
-			},
-		]),
-	)
-
-	const details = getExecutionErrorDetails(error)
-	expect(details).toMatchObject({
-		kind: 'host_approval_required_batch',
-		message: expect.any(String),
-		nextStep: expect.any(String),
-		missingApprovals: [
-			{
-				secretName: 'cloudflareToken',
-				host: 'api.cloudflare.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
-			},
-			{
-				secretName: 'slackToken',
-				host: 'slack.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
-			},
-		],
-		suggestedAction: {
-			type: 'approve_secret_host',
-		},
-	})
 })

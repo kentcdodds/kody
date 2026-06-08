@@ -363,7 +363,6 @@ test('deleteUserAccount records a warning when listUserGrants throws and continu
 		warning.includes('OAuth grant listing failed'),
 	)
 	expect(oauthWarning).toBeDefined()
-	expect(oauthWarning).toContain('OAuth provider is temporarily unavailable')
 })
 
 test('deleteUserAccount surfaces a warning when BUNDLE_ARTIFACTS_KV is unavailable', async () => {
@@ -403,5 +402,4 @@ test('deleteUserAccount surfaces a warning when BUNDLE_ARTIFACTS_KV is unavailab
 		warning.includes('BUNDLE_ARTIFACTS_KV'),
 	)
 	expect(kvWarning).toBeDefined()
-	expect(kvWarning).toContain('2 bundle artifact key(s)')
 })

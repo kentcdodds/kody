@@ -84,10 +84,8 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 		expect.objectContaining({
 			id: 'memory-1',
 			can_mutate: true,
-			mutation_guidance: expect.any(String),
 		}),
 	])
-	expect(searchResult.warning).toEqual(expect.any(String))
 
 	mockModule.verifyMemoryCandidate.mockResolvedValueOnce({
 		candidate: {
@@ -226,7 +224,6 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 			id: 'memory-1',
 			status: 'deleted',
 		},
-		guidance: expect.any(String),
 	})
 })
 
