@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
@@ -100,8 +100,5 @@ export function createAccountDeleteHandler(env: Env) {
 				{ status: 200, headers },
 			)
 		},
-	} satisfies BuildAction<
-		typeof routes.accountDelete.method,
-		typeof routes.accountDelete.pattern
-	>
+	} satisfies Action<typeof routes.accountDelete>
 }

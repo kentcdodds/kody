@@ -1,4 +1,4 @@
-import { createRouter } from 'remix/fetch-router'
+import { createRouter } from 'remix/router'
 import { account } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'

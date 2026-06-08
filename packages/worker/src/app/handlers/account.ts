@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { Layout } from '#app/layout.ts'
@@ -21,7 +21,4 @@ export const account = {
 
 		return response
 	},
-} satisfies BuildAction<
-	typeof routes.account.method,
-	typeof routes.account.pattern
->
+} satisfies Action<typeof routes.account>

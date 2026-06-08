@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
 
@@ -16,7 +16,4 @@ export const logout = {
 			},
 		})
 	},
-} satisfies BuildAction<
-	typeof routes.logout.method,
-	typeof routes.logout.pattern
->
+} satisfies Action<typeof routes.logout>

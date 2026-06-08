@@ -2,9 +2,6 @@ import {
 	getTableName,
 	getTablePrimaryKey,
 	type AdapterCapabilityOverrides,
-	type DataMigrationOperation,
-	type DataMigrationRequest,
-	type DataMigrationResult,
 	type DataManipulationRequest,
 	type DataManipulationResult,
 	type DataManipulationOperation,
@@ -76,12 +73,7 @@ export class D1DataTableAdapter implements DatabaseAdapter {
 		}
 	}
 
-	compileSql(
-		operation: DataManipulationOperation | DataMigrationOperation,
-	): Array<SqlStatement> {
-		if (!isDataManipulationOperation(operation)) {
-			throw new Error('D1DataTableAdapter does not support schema migrations')
-		}
+	compileSql(operation: DataManipulationOperation): Array<SqlStatement> {
 		return [compileSqliteStatement(operation)]
 	}
 
@@ -146,15 +138,12 @@ export class D1DataTableAdapter implements DatabaseAdapter {
 		}
 	}
 
-	async migrate(request: DataMigrationRequest): Promise<DataMigrationResult> {
-		const statements = this.compileSql(request.operation)
-		for (const statement of statements) {
-			await this.#database
-				.prepare(statement.text)
-				.bind(...statement.values)
-				.run()
-		}
-		return { affectedOperations: statements.length }
+	async executeScript(
+		sql: string,
+		transaction?: TransactionToken,
+	): Promise<void> {
+		if (transaction) this.#assertTransaction(transaction)
+		await this.#database.exec(sql)
 	}
 
 	async hasTable(table: TableRef): Promise<boolean> {
@@ -377,10 +366,6 @@ function compileSqliteStatement(
 			text: statement.sql.text,
 			values: [...statement.sql.values],
 		}
-	}
-
-	if (!isDataManipulationOperation(statement)) {
-		throw new Error('D1DataTableAdapter does not support migration SQL yet')
 	}
 
 	const context: SqliteCompileContext = { values: [] }
@@ -670,22 +655,6 @@ function compileFromClause(
 			compilePredicate(typedJoin.on, context)
 	}
 	return output
-}
-
-function isDataManipulationOperation(
-	operation: DataManipulationOperation | DataMigrationOperation,
-): operation is DataManipulationOperation {
-	return (
-		operation.kind === 'select' ||
-		operation.kind === 'count' ||
-		operation.kind === 'exists' ||
-		operation.kind === 'insert' ||
-		operation.kind === 'insertMany' ||
-		operation.kind === 'update' ||
-		operation.kind === 'delete' ||
-		operation.kind === 'upsert' ||
-		operation.kind === 'raw'
-	)
 }
 
 function compileWhereClause(

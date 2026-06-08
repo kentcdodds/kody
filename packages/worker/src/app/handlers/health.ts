@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { type routes } from '#app/routes.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
@@ -21,8 +21,5 @@ export function createHealthHandler(appEnv: HealthEnv) {
 				},
 			)
 		},
-	} satisfies BuildAction<
-		typeof routes.health.method,
-		typeof routes.health.pattern
-	>
+	} satisfies Action<typeof routes.health>
 }

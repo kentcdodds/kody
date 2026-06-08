@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import {
 	buildAccountSecretId,
 	parseAccountSecretId,
@@ -119,10 +119,7 @@ export function createAccountSecretsHandler(_env: Env) {
 			}
 			return response
 		},
-	} satisfies BuildAction<
-		typeof routes.accountSecrets.method,
-		typeof routes.accountSecrets.pattern
-	>
+	} satisfies Action<typeof routes.accountSecrets>
 }
 
 export function createAccountSecretsApiHandler(env: Env) {
@@ -202,10 +199,7 @@ export function createAccountSecretsApiHandler(env: Env) {
 
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
-	} satisfies BuildAction<
-		typeof routes.accountSecretsApi.method,
-		typeof routes.accountSecretsApi.pattern
-	>
+	} satisfies Action<typeof routes.accountSecretsApi>
 }
 
 async function handleValueGetAction(input: {

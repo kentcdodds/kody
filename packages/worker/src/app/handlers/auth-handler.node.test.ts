@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from 'vitest'
-import { RequestContext } from 'remix/fetch-router'
+import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'

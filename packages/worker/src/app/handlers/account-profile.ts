@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
@@ -111,10 +111,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				}),
 			)
 		},
-	} satisfies BuildAction<
-		typeof routes.accountProfileApi.method,
-		typeof routes.accountProfileApi.pattern
-	>
+	} satisfies Action<typeof routes.accountProfileApi>
 }
 
 function buildPayload(user: AuthenticatedUser): AccountProfilePayload {

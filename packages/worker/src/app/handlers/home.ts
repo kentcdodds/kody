@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
@@ -8,4 +8,4 @@ export const home = {
 	async handler() {
 		return render(Layout({}))
 	},
-} satisfies BuildAction<typeof routes.home.method, typeof routes.home.pattern>
+} satisfies Action<typeof routes.home>

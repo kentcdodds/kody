@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { RequestContext } from 'remix/fetch-router'
+import { RequestContext } from 'remix/router'
 import { createHealthHandler } from '#app/handlers/health.ts'
 
 function createHealthRequestContext() {

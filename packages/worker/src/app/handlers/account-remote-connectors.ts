@@ -1,4 +1,4 @@
-import { type BuildAction } from 'remix/fetch-router'
+import { type Action } from 'remix/router'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
@@ -52,10 +52,7 @@ export function createAccountRemoteConnectorsHandler(_env: Env) {
 			}
 			return response
 		},
-	} satisfies BuildAction<
-		typeof routes.accountRemoteConnectors.method,
-		typeof routes.accountRemoteConnectors.pattern
-	>
+	} satisfies Action<typeof routes.accountRemoteConnectors>
 }
 
 export function createAccountRemoteConnectorsApiHandler(env: Env) {
@@ -116,10 +113,7 @@ export function createAccountRemoteConnectorsApiHandler(env: Env) {
 
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
-	} satisfies BuildAction<
-		typeof routes.accountRemoteConnectorsApi.method,
-		typeof routes.accountRemoteConnectorsApi.pattern
-	>
+	} satisfies Action<typeof routes.accountRemoteConnectorsApi>
 }
 
 async function handleSaveAction(input: {

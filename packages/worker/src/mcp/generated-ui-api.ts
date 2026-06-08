@@ -1,5 +1,5 @@
-import { createRouter, type BuildAction } from 'remix/fetch-router'
-import { post, route } from 'remix/fetch-router/routes'
+import { createRouter, type Action } from 'remix/router'
+import { post, route } from 'remix/routes'
 import { z } from 'zod'
 import { exports as workerExports } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
@@ -121,10 +121,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 				appSession,
 			})
 		},
-	} satisfies BuildAction<
-		typeof generatedUiApiRoutes.source.method,
-		typeof generatedUiApiRoutes.source.pattern
-	>
+	} satisfies Action<typeof generatedUiApiRoutes.source>
 }
 
 function createGeneratedUiExecuteHandler(env: Env) {
@@ -201,10 +198,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 				logs: result.logs ?? [],
 			})
 		},
-	} satisfies BuildAction<
-		typeof generatedUiApiRoutes.execute.method,
-		typeof generatedUiApiRoutes.execute.pattern
-	>
+	} satisfies Action<typeof generatedUiApiRoutes.execute>
 }
 
 function createGeneratedUiSecretsHandler(env: Env) {
@@ -314,10 +308,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 				)
 			}
 		},
-	} satisfies BuildAction<
-		typeof generatedUiApiRoutes.listSecrets.method,
-		typeof generatedUiApiRoutes.listSecrets.pattern
-	>
+	} satisfies Action<typeof generatedUiApiRoutes.listSecrets>
 }
 
 function createGeneratedUiDeleteSecretHandler(env: Env) {
@@ -378,10 +369,7 @@ function createGeneratedUiDeleteSecretHandler(env: Env) {
 				)
 			}
 		},
-	} satisfies BuildAction<
-		typeof generatedUiApiRoutes.deleteSecret.method,
-		typeof generatedUiApiRoutes.deleteSecret.pattern
-	>
+	} satisfies Action<typeof generatedUiApiRoutes.deleteSecret>
 }
 
 async function resolveSourceContext(input: {
