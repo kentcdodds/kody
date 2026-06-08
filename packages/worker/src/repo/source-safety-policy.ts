@@ -1,4 +1,9 @@
 import { loadPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	type ArtifactRepoHandle,
+	resolveArtifactDefaultBranchHead,
+	resolveExistingArtifactSourceRepo,
+} from './artifacts.ts'
 import { type EntitySourceRow } from './types.ts'
 
 export const productionPackageSourceSafetyPolicy =
@@ -116,6 +121,102 @@ export async function assertRestorablePackageSourceSnapshot(input: {
 		sourceId: input.source.id,
 		publishedCommit: input.source.published_commit,
 		fileCount,
+	}
+}
+
+export async function assertPublishedPackageSourceRepoHead(input: {
+	env: Env
+	source: EntitySourceRow
+	operation: string
+	requirePublishedCommitHead?: boolean
+}): Promise<{
+	sourceId: string
+	publishedCommit: string
+	commit: string
+	defaultBranch: string
+	remote: string
+	repo: ArtifactRepoHandle
+} | null> {
+	if (input.source.entity_kind !== 'package') {
+		return null
+	}
+	if (!input.source.published_commit) {
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: 'the source has no published commit',
+			}),
+		)
+	}
+	let repo: ArtifactRepoHandle | null
+	try {
+		repo = await resolveExistingArtifactSourceRepo(
+			input.env,
+			input.source.repo_id,
+		)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: message,
+			}),
+			{ cause: error },
+		)
+	}
+	if (!repo) {
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: `artifact source repo "${input.source.repo_id}" was not found`,
+			}),
+		)
+	}
+	let head: Awaited<ReturnType<typeof resolveArtifactDefaultBranchHead>>
+	try {
+		head = await resolveArtifactDefaultBranchHead({ repo })
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: message,
+			}),
+			{ cause: error },
+		)
+	}
+	if (!head) {
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: `artifact source repo "${input.source.repo_id}" default branch has no HEAD`,
+			}),
+		)
+	}
+	if (
+		input.requirePublishedCommitHead === true &&
+		head.commit !== input.source.published_commit
+	) {
+		throw new Error(
+			buildSourceRecoveryProblemMessage({
+				source: input.source,
+				operation: input.operation,
+				reason: `artifact source repo "${input.source.repo_id}" default branch HEAD "${head.commit}" does not match published commit "${input.source.published_commit}"`,
+			}),
+		)
+	}
+	return {
+		sourceId: input.source.id,
+		publishedCommit: input.source.published_commit,
+		commit: head.commit,
+		defaultBranch: head.defaultBranch,
+		remote: head.remote,
+		repo,
 	}
 }
 

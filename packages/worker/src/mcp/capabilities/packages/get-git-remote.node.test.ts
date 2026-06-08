@@ -4,7 +4,8 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getEntitySourceById: vi.fn(),
-	resolveArtifactSourceRepo: vi.fn(),
+	resolveArtifactDefaultBranchHead: vi.fn(),
+	resolveExistingArtifactSourceRepo: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -23,8 +24,10 @@ vi.mock('#worker/repo/artifacts.ts', async () => {
 	const actual = await vi.importActual('#worker/repo/artifacts.ts')
 	return {
 		...(actual as object),
-		resolveArtifactSourceRepo: (...args: Array<unknown>) =>
-			mockModule.resolveArtifactSourceRepo(...args),
+		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
+			mockModule.resolveArtifactDefaultBranchHead(...args),
+		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
+			mockModule.resolveExistingArtifactSourceRepo(...args),
 	}
 })
 
@@ -115,13 +118,20 @@ function mockPackageSource(sourceUserId = 'user-1') {
 		scope,
 		expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
 	}))
-	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
+	const repo = {
 		info: vi.fn(async () => ({
 			remote:
 				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
 			defaultBranch: 'main',
 		})),
 		createToken,
+	}
+	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue(repo)
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+		defaultBranch: 'main',
+		commit: 'commit-1',
 	})
 	return { createToken }
 }
@@ -191,4 +201,20 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 			createContext(),
 		),
 	).rejects.toThrow()
+})
+
+test('get_git_remote rejects package sources whose artifact repo has no default branch HEAD', async () => {
+	resetMocks()
+	const { createToken } = mockPackageSource()
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce(null)
+
+	await expect(
+		getGitRemoteCapability.handler(
+			{ package_id: 'package-1', ttl_seconds: 1800 },
+			createContext(),
+		),
+	).rejects.toThrow(
+		'artifact source repo "package-package-1" default branch has no HEAD',
+	)
+	expect(createToken).not.toHaveBeenCalled()
 })

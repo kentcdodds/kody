@@ -6,9 +6,11 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	buildAuthenticatedArtifactsRemote,
 	parseArtifactTokenSecret,
-	resolveArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
-import { assertRestorablePackageSourceSnapshot } from '#worker/repo/source-safety-policy.ts'
+import {
+	assertPublishedPackageSourceRepoHead,
+	assertRestorablePackageSourceSnapshot,
+} from '#worker/repo/source-safety-policy.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const getGitRemoteInputSchema = z.object({
@@ -75,31 +77,35 @@ export const getGitRemoteCapability = defineDomainCapability(
 					operation: 'package_get_git_remote write access',
 				})
 			}
-			const repo = await resolveArtifactSourceRepo(ctx.env, source.repo_id)
-			const info = await repo.info()
-			if (!info?.remote) {
-				throw new Error('Artifact repo remote URL is unavailable.')
+			const sourceHead = await assertPublishedPackageSourceRepoHead({
+				env: ctx.env,
+				source,
+				operation: 'package_get_git_remote',
+			})
+			if (!sourceHead) {
+				throw new Error('package_get_git_remote requires a package source.')
 			}
+			const { repo } = sourceHead
 			const token = await repo.createToken(args.scope, args.ttl_seconds)
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id
 			return {
-				remote: info.remote,
+				remote: sourceHead.remote,
 				authenticated_remote: buildAuthenticatedArtifactsRemote({
-					remote: info.remote,
+					remote: sourceHead.remote,
 					token: token.plaintext,
 				}),
 				git_extra_header: gitExtraHeader,
 				scope: args.scope,
 				expires_at: token.expiresAt,
 				setup_commands: [
-					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(info.remote)} ${shellQuote(cloneDirectory)}`,
+					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(sourceHead.remote)} ${shellQuote(cloneDirectory)}`,
 					`cd ${shellQuote(cloneDirectory)}`,
-					`git remote add kody ${shellQuote(info.remote)}`,
+					`git remote add kody ${shellQuote(sourceHead.remote)}`,
 					`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
 					`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} fetch kody 'refs/notes/*:refs/notes/*'`,
-					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(info.defaultBranch ?? 'main')}`,
+					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(sourceHead.defaultBranch)}`,
 				],
 			}
 		},

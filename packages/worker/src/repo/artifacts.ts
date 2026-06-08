@@ -748,6 +748,23 @@ export async function resolveArtifactSourceRepo(env: Env, repoId: string) {
 	return result.repo
 }
 
+export async function resolveExistingArtifactSourceRepo(
+	env: Env,
+	repoId: string,
+	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
+) {
+	const result = await binding.get(repoId)
+	if (result.status === 'ready') {
+		return result.repo
+	}
+	if (result.status === 'not_found') {
+		return null
+	}
+	throw new Error(
+		`Artifacts repo "${repoId}" is ${result.status}. Retry after ${result.retryAfter}s.`,
+	)
+}
+
 export async function resolveSessionRepo(
 	env: Env,
 	input: { namespace?: string | null; name: string },
@@ -765,7 +782,13 @@ export async function resolveSessionRepo(
 }
 
 export async function resolveArtifactSourceHead(env: Env, repoId: string) {
-	const repo = await resolveArtifactSourceRepo(env, repoId)
+	const repo = await resolveExistingArtifactSourceRepo(env, repoId)
+	if (!repo) {
+		return {
+			branch: 'main',
+			commit: null,
+		}
+	}
 	const ref = await resolveArtifactDefaultBranchHead({ repo })
 	return {
 		branch: ref?.defaultBranch ?? 'main',

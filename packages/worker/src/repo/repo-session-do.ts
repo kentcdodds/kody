@@ -65,6 +65,7 @@ import {
 } from './external-publish.ts'
 import {
 	assertPackageSourceOverwriteAllowed,
+	assertPublishedPackageSourceRepoHead,
 	buildSourceRecoveryProblemMessage,
 } from './source-safety-policy.ts'
 import {
@@ -718,16 +719,21 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Source "${input.sourceId}" was not found for this user.`,
 				)
 			}
-			const sourceRepo = await resolveArtifactSourceRepo(
-				this.env,
-				source.repo_id,
-			)
 			const baseCommit = source.published_commit
 			if (!baseCommit) {
 				throw new Error(
 					`Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
 				)
 			}
+			const sourceHead = await assertPublishedPackageSourceRepoHead({
+				env: this.env,
+				source,
+				operation: 'repo_open_session',
+				requirePublishedCommitHead: true,
+			})
+			const sourceRepo =
+				sourceHead?.repo ??
+				(await resolveArtifactSourceRepo(this.env, source.repo_id))
 			const sessionRepoName = buildSessionArtifactsRepoName(
 				source.repo_id,
 				input.sessionId,

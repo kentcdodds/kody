@@ -7,7 +7,9 @@ const {
 	getArtifactsBinding,
 	getArtifactsNamespace,
 	parseArtifactTokenSecret,
+	resolveArtifactSourceHead,
 	resolveArtifactSourceRepo,
+	resolveExistingArtifactSourceRepo,
 	resolveSessionRepo,
 } = await import('./artifacts.ts')
 
@@ -461,6 +463,44 @@ test('ensureArtifactRepoReady rereads after concurrent create conflicts', async 
 		repo: expect.any(Object),
 	})
 	expect(fetchMock).toHaveBeenCalledTimes(3)
+})
+
+test('source repo HEAD lookup does not recreate missing artifact repos', async () => {
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						result: null,
+						errors: [{ code: 1000, message: 'Repo not found' }],
+						messages: [],
+					}),
+					{
+						status: 404,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+		})
+	const env = {
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+	} as Env
+
+	await expect(resolveExistingArtifactSourceRepo(env, 'repo-1')).resolves.toBe(
+		null,
+	)
+	await expect(resolveArtifactSourceHead(env, 'repo-1')).resolves.toEqual({
+		branch: 'main',
+		commit: null,
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(2)
 })
 
 test('ensureArtifactRepoReady does not swallow generic create conflicts', async () => {
