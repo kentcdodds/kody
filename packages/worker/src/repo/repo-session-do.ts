@@ -58,8 +58,6 @@ import {
 	type RepoSessionRow,
 	type RepoSessionSearchResult,
 	type RepoSessionTreeResult,
-	type SourceRescueResult,
-	type SourceRescueValidationResult,
 } from './types.ts'
 import {
 	finalizePublishedEntitySource,
@@ -74,14 +72,12 @@ import {
 	attachPublishGitNoteBestEffort,
 	buildPublishGitNote,
 	type KodyPublishGitNoteChecks,
-	type KodyPublishGitNotePublishedBy,
 } from './publish-git-notes.ts'
 import {
 	type RepoGitCommand,
 	type RepoRunCommandsResult,
 	parseRepoGitCommands,
 } from './repo-session-commands.ts'
-import { insertSourceRescueEvent } from './source-rescue-events.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -532,7 +528,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		remote: string
 		token: string
 		remoteName?: string
-		publishedBy: KodyPublishGitNotePublishedBy
+		publishedBy: 'repo_session' | 'source_bootstrap' | 'external_push'
 		sessionId?: string | null
 		conversationId?: string | null
 		baseCommit?: string | null
@@ -1655,255 +1651,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
 			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
-		}
-	}
-
-	async recoverSourceFromSessionCheckpoint(input: {
-		sessionId: string
-		sourceId: string
-		userId: string
-		packageId: string
-		kodyId: string
-		recoveredCommit: string
-		operatorUserId: string
-		operatorEmail?: string | null
-		baseUrl?: string
-		rebuildPackageArtifacts?: boolean
-		expectedPackageScope?: string
-	}): Promise<SourceRescueResult> {
-		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
-		if (!source || source.user_id !== input.userId) {
-			throw new Error('Repo source was not found for this user.')
-		}
-		if (source.entity_kind !== 'package') {
-			throw new Error('Source rescue is only supported for package sources.')
-		}
-		const sourcePackageId = source.entity_id
-		if (input.packageId !== sourcePackageId) {
-			throw new Error(
-				`Recovery package "${input.packageId}" does not match source package "${sourcePackageId}".`,
-			)
-		}
-		if (!source.published_commit) {
-			throw new Error(
-				`Source "${source.id}" has no published commit to verify for rescue.`,
-			)
-		}
-		if (input.recoveredCommit !== source.published_commit) {
-			throw new Error(
-				`Source rescue requires the recovered commit "${input.recoveredCommit}" to match the prior published commit "${source.published_commit}".`,
-			)
-		}
-		const sessionRow = await getRepoSessionById(
-			this.env.APP_DB,
-			input.sessionId,
-		)
-		if (
-			!sessionRow ||
-			sessionRow.user_id !== input.userId ||
-			sessionRow.source_id !== source.id
-		) {
-			throw new Error('Recovery repo session was not found for this source.')
-		}
-		if (
-			sessionRow.last_checkpoint_commit !== input.recoveredCommit &&
-			sessionRow.base_commit !== input.recoveredCommit
-		) {
-			throw new Error(
-				`Recovery repo session "${sessionRow.id}" does not record commit "${input.recoveredCommit}" as a checkpoint or base commit.`,
-			)
-		}
-		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
-		const sourceInfo = await sourceRepo.info()
-		const sourceHeadBefore = await resolveArtifactDefaultBranchHead({
-			repo: sourceRepo,
-		})
-		if (sourceHeadBefore) {
-			throw new Error(
-				`Source rescue stopped because artifact source repo "${source.repo_id}" already has HEAD "${sourceHeadBefore.commit}". Use normal package source workflows instead.`,
-			)
-		}
-		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
-		const sessionRepo = await resolveSessionRepo(this.env, {
-			namespace: sessionRow.session_repo_namespace,
-			name: sessionRow.session_repo_name,
-		})
-		const sessionAccess = await ensureArtifactRepoRemote({
-			repo: sessionRepo,
-			scope: 'read',
-		})
-		await this.initialize({
-			sessionId: sessionRow.id,
-			sessionRepoRemote: sessionAccess.remote,
-			sessionRepoToken: sessionAccess.token,
-		})
-		await this.git.checkout({
-			dir: repoSessionWorkspacePrefix,
-			ref: input.recoveredCommit,
-			branch: targetBranch,
-			force: true,
-		})
-		const checkedOutCommit = await this.getHeadCommit()
-		if (checkedOutCommit !== input.recoveredCommit) {
-			throw new Error(
-				`Recovery repo session "${sessionRow.id}" checked out "${checkedOutCommit ?? 'unknown'}" instead of "${input.recoveredCommit}".`,
-			)
-		}
-		const checks = await runRepoChecks({
-			workspace: this.workspace,
-			manifestPath: resolveRepoWorkspacePath(
-				source.manifest_path,
-				repoSessionWorkspacePrefix,
-			),
-			sourceRoot: resolveRepoWorkspacePath(
-				source.source_root || repoSessionWorkspacePrefix,
-				repoSessionWorkspacePrefix,
-			),
-			env: this.env,
-			baseUrl: input.baseUrl ?? source.source_root,
-			userId: input.userId,
-			expectedPackageScope: input.expectedPackageScope,
-		})
-		const validation: SourceRescueValidationResult = {
-			ok: checks.ok,
-			runId: crypto.randomUUID(),
-			treeHash: await this.computeTreeHash(),
-			checkedAt: nowIso(),
-			results: checks.results.map((entry) => ({
-				kind: entry.kind,
-				ok: entry.ok,
-				message: entry.message,
-			})),
-		}
-		if (!checks.ok) {
-			const auditEventId = await insertSourceRescueEvent(this.env.APP_DB, {
-				userId: input.userId,
-				sourceId: source.id,
-				entityKind: source.entity_kind,
-				entityId: source.entity_id,
-				packageId: sourcePackageId,
-				kodyId: input.kodyId,
-				sourceRepoId: source.repo_id,
-				recoveryKind: 'repo_session',
-				recoveredSessionId: sessionRow.id,
-				recoveredRepoId: sessionRow.session_repo_id,
-				recoveredRepoName: sessionRow.session_repo_name,
-				recoveredCommit: input.recoveredCommit,
-				priorPublishedCommit: source.published_commit,
-				sourceHeadBefore: null,
-				sourceHeadAfter: null,
-				operatorUserId: input.operatorUserId,
-				operatorEmail: input.operatorEmail ?? null,
-				validationStatus: 'failed',
-				validationJson: JSON.stringify(validation),
-			})
-			return {
-				status: 'checks_failed',
-				sourceId: source.id,
-				packageId: sourcePackageId,
-				recoveredCommit: input.recoveredCommit,
-				priorPublishedCommit: source.published_commit,
-				sourceHeadBefore: null,
-				recoveredSessionId: sessionRow.id,
-				recoveredRepoId: sessionRow.session_repo_id,
-				recoveredRepoName: sessionRow.session_repo_name,
-				validation,
-				auditEventId,
-				failedChecks: validation.results.filter((entry) => !entry.ok),
-			}
-		}
-		const sourceHeadBeforePush = await resolveArtifactDefaultBranchHead({
-			repo: sourceRepo,
-		})
-		if (sourceHeadBeforePush) {
-			throw new Error(
-				`Source rescue stopped because artifact source repo "${source.repo_id}" gained HEAD "${sourceHeadBeforePush.commit}" before recovery publish. Use normal package source workflows instead.`,
-			)
-		}
-		const sourceAccess = await ensureArtifactRepoRemote({
-			repo: sourceRepo,
-			scope: 'write',
-		})
-		await this.ensureRemote({
-			name: 'source',
-			url: buildAuthenticatedArtifactsRemote({
-				remote: sourceAccess.remote,
-				token: sourceAccess.token,
-			}),
-		})
-		await this.git.push({
-			dir: repoSessionWorkspacePrefix,
-			remote: 'source',
-			ref: targetBranch,
-			...buildArtifactsGitAuth({ token: sourceAccess.token }),
-		})
-		const snapshotFiles = await this.collectWorkspaceFiles()
-		await finalizePublishedEntitySource({
-			env: this.env,
-			source,
-			publishedCommit: input.recoveredCommit,
-			files: snapshotFiles,
-			baseUrl: input.baseUrl ?? source.source_root,
-			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
-		})
-		await this.attachSourcePublishGitNote({
-			source,
-			commitOid: input.recoveredCommit,
-			remote: sourceAccess.remote,
-			token: sourceAccess.token,
-			remoteName: 'source',
-			publishedBy: 'source_rescue',
-			sessionId: sessionRow.id,
-			conversationId: sessionRow.conversation_id,
-			baseCommit: sessionRow.base_commit,
-			previousPublishedCommit: source.published_commit,
-			checks: {
-				runId: validation.runId,
-				treeHash: validation.treeHash,
-				checkedAt: validation.checkedAt,
-				ok: validation.ok,
-				results: validation.results,
-			},
-			scope: 'repo.sourceRescue.publish-git-note',
-		})
-		const sourceHeadAfter =
-			(await resolveArtifactDefaultBranchHead({ repo: sourceRepo }))?.commit ??
-			input.recoveredCommit
-		const auditEventId = await insertSourceRescueEvent(this.env.APP_DB, {
-			userId: input.userId,
-			sourceId: source.id,
-			entityKind: source.entity_kind,
-			entityId: source.entity_id,
-			packageId: sourcePackageId,
-			kodyId: input.kodyId,
-			sourceRepoId: source.repo_id,
-			recoveryKind: 'repo_session',
-			recoveredSessionId: sessionRow.id,
-			recoveredRepoId: sessionRow.session_repo_id,
-			recoveredRepoName: sessionRow.session_repo_name,
-			recoveredCommit: input.recoveredCommit,
-			priorPublishedCommit: source.published_commit,
-			sourceHeadBefore: null,
-			sourceHeadAfter,
-			operatorUserId: input.operatorUserId,
-			operatorEmail: input.operatorEmail ?? null,
-			validationStatus: 'passed',
-			validationJson: JSON.stringify(validation),
-		})
-		return {
-			status: 'recovered',
-			sourceId: source.id,
-			packageId: sourcePackageId,
-			recoveredCommit: input.recoveredCommit,
-			priorPublishedCommit: source.published_commit,
-			sourceHeadBefore: null,
-			sourceHeadAfter,
-			recoveredSessionId: sessionRow.id,
-			recoveredRepoId: sessionRow.session_repo_id,
-			recoveredRepoName: sessionRow.session_repo_name,
-			validation,
-			auditEventId,
-			message: `Recovered package source ${source.id} from repo session ${sessionRow.id} at ${input.recoveredCommit}.`,
 		}
 	}
 
