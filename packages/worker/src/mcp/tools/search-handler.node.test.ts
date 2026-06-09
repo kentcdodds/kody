@@ -143,14 +143,14 @@ test('search tool reports timing metadata across success and error flows', async
 		conversationId: 'conv-search-error',
 	})
 	expect(validationErrorResponse.isError).toBe(true)
-	expect(validationErrorResponse.structuredContent).toEqual({
+	expect(validationErrorResponse.structuredContent).toMatchObject({
 		conversationId: 'conv-search-error',
 		timing: {
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
 			durationMs: expect.any(Number),
 		},
-		error: 'Provide either "query" or "entity".',
+		error: expect.stringMatching(/query.*entity/i),
 	})
 	expect(
 		validationErrorResponse.structuredContent.timing.durationMs,

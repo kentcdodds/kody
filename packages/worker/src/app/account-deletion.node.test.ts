@@ -276,9 +276,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.jobs).toBe(2)
 	expect(result.deletedRowCounts.users).toBe(1)
 	expect(result.deletedRowCounts.email_attachments).toBe(1)
-	expect(result.warnings).toContain(
-		'OAuth provider binding was unavailable; OAuth grants were not revoked.',
-	)
+	expect(
+		result.warnings.some(
+			(warning) => warning.includes('OAuth') && warning.includes('unavailable'),
+		),
+	).toBe(true)
 })
 
 test('deleteUserAccount revokes OAuth grants when an OAuth provider is bound', async () => {

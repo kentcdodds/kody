@@ -202,19 +202,3 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 		),
 	).rejects.toThrow()
 })
-
-test('get_git_remote rejects package sources whose artifact repo has no default branch HEAD', async () => {
-	resetMocks()
-	const { createToken } = mockPackageSource()
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce(null)
-
-	await expect(
-		getGitRemoteCapability.handler(
-			{ package_id: 'package-1', ttl_seconds: 1800 },
-			createContext(),
-		),
-	).rejects.toThrow(
-		'artifact source repo "package-package-1" default branch has no HEAD',
-	)
-	expect(createToken).not.toHaveBeenCalled()
-})

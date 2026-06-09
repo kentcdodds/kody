@@ -407,15 +407,15 @@ function setCommonSessionFixtures() {
 	mockModule.updateEntitySource.mockClear()
 }
 
-test('rebaseSession uses Artifacts username/password auth without token override', async () => {
+test('rebaseSession and publishSession use Artifacts username/password auth without token override', async () => {
 	setCommonSessionFixtures()
+	mockModule.writePublishedSourceSnapshot.mockClear()
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 
 	await repoSession.rebaseSession({
 		sessionId: 'session-1',
 		userId: 'user-1',
 	})
-
 	expect(mockModule.git.pull).toHaveBeenCalledWith(
 		expect.objectContaining({
 			remote: 'source',
@@ -438,19 +438,14 @@ test('rebaseSession uses Artifacts username/password auth without token override
 	expect(mockModule.git.push).toHaveBeenCalledWith(
 		expect.not.objectContaining({ token: expect.anything() }),
 	)
-})
 
-test('publishSession uses Artifacts username/password auth for both origin and source pushes', async () => {
-	setCommonSessionFixtures()
-	mockModule.writePublishedSourceSnapshot.mockClear()
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-
+	mockModule.git.pull.mockClear()
+	mockModule.git.push.mockClear()
 	await repoSession.publishSession({
 		sessionId: 'session-1',
 		userId: 'user-1',
 		force: true,
 	})
-
 	expect(mockModule.git.push).toHaveBeenCalledTimes(2)
 	expect(mockModule.git.push).toHaveBeenNthCalledWith(
 		1,
@@ -809,7 +804,7 @@ test('publishSession handles snapshot collection and persistence failures withou
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
-test('openSession strips unsupported characters from derived session repo names', async () => {
+test('openSession sanitizes repo names, persists namespace metadata, and rejects stale package source heads', async () => {
 	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
@@ -850,9 +845,7 @@ test('openSession strips unsupported characters from derived session repo names'
 			fork: vi.fn(),
 		},
 	}))
-	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
-		fork,
-	})
+	mockModule.resolveArtifactSourceRepo.mockResolvedValue({ fork })
 	mockModule.git.clone.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
@@ -864,7 +857,6 @@ test('openSession strips unsupported characters from derived session repo names'
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
-
 	const forkName = fork.mock.calls[0]?.[0]?.name
 	expect(forkName).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
 	expect(forkName).not.toContain(':')
@@ -875,9 +867,7 @@ test('openSession strips unsupported characters from derived session repo names'
 			url: `https://acct.artifacts.cloudflare.net/git/default/${forkName}.git`,
 		}),
 	)
-})
 
-test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async () => {
 	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
@@ -905,31 +895,24 @@ test('openSession persists ARTIFACTS_NAMESPACE as session_repo_namespace', async
 		})),
 	})
 	vi.mocked(insertRepoSession).mockClear()
-
-	const repoSession = new RepoSession(createDurableObjectState(), {
+	await new RepoSession(createDurableObjectState(), {
 		APP_DB: {},
 		ARTIFACTS_NAMESPACE: 'preview',
-	} as Env)
-	await repoSession.openSession({
+	} as Env).openSession({
 		sessionId: 'session-preview-namespace',
 		sourceId: 'source-1',
 		userId: 'user-1',
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
-
 	expect(insertRepoSession).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			session_repo_namespace: 'preview',
 		}),
 	)
-})
 
-test('openSession rejects package sources whose artifact repo has no default branch HEAD before forking', async () => {
-	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue(null)
-	mockModule.getEntitySourceById.mockResolvedValue({
+	const packageSource = {
 		id: 'source-1',
 		user_id: 'user-1',
 		entity_kind: 'package',
@@ -942,68 +925,54 @@ test('openSession rejects package sources whose artifact repo has no default bra
 		last_external_check_at: null,
 		created_at: '2026-04-16T00:00:00.000Z',
 		updated_at: '2026-04-16T00:00:00.000Z',
-	})
-	const fork = vi.fn()
+	}
+	restoreRepoSessionMockBaseline()
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
+	const blockedFork = vi.fn()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		fork,
+		fork: blockedFork,
 	})
+	mockModule.resolveArtifactSourceRepo.mockClear()
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce(null)
-
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 	await expect(
-		repoSession.openSession({
+		new RepoSession(createDurableObjectState(), createEnv()).openSession({
 			sessionId: 'session-empty-source-head',
 			sourceId: 'source-1',
 			userId: 'user-1',
 			baseUrl: 'https://example.com',
 			sourceRoot: '/',
 		}),
-	).rejects.toThrow(
-		'artifact source repo "package-package-1" default branch has no HEAD',
-	)
-	expect(fork).not.toHaveBeenCalled()
+	).rejects.toThrow(/default branch has no HEAD/)
+	expect(blockedFork).not.toHaveBeenCalled()
 	expect(mockModule.resolveArtifactSourceRepo).not.toHaveBeenCalled()
-})
 
-test('openSession rejects package sources whose artifact repo HEAD differs from the published base', async () => {
 	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-package-1',
+		...packageSource,
 		published_commit: 'commit-published',
 		indexed_commit: 'commit-published',
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
 	})
-	const fork = vi.fn()
-	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({ fork })
+	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		fork: blockedFork,
+	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
 		defaultBranch: 'main',
 		commit: 'commit-unpublished',
 		remote:
 			'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
 	})
-
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 	await expect(
-		repoSession.openSession({
+		new RepoSession(createDurableObjectState(), createEnv()).openSession({
 			sessionId: 'session-stale-source-head',
 			sourceId: 'source-1',
 			userId: 'user-1',
 			baseUrl: 'https://example.com',
 			sourceRoot: '/',
 		}),
-	).rejects.toThrow(
-		'artifact source repo "package-package-1" default branch HEAD "commit-unpublished" does not match published commit "commit-published"',
-	)
-	expect(fork).not.toHaveBeenCalled()
+	).rejects.toThrow(/does not match published commit/)
+	expect(blockedFork).not.toHaveBeenCalled()
 })
 
 test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {

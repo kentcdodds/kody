@@ -14,7 +14,6 @@ vi.mock('#mcp/memory/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof MemoryService>()
 	return {
 		...actual,
-		memorySearchMutationGuidance: 'Use this exact id for memory mutations.',
 		deleteMemory: (...args: Array<unknown>) => mockModule.deleteMemory(...args),
 		getMemory: (...args: Array<unknown>) => mockModule.getMemory(...args),
 		searchMemoryRecords: (...args: Array<unknown>) =>

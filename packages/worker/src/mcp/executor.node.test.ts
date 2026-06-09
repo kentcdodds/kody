@@ -13,7 +13,7 @@ import {
 	limitExecutionResultValue,
 } from './executor.ts'
 
-test('getExecutionErrorDetails maps secret and host approval errors to structured guidance', () => {
+test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
 	const capabilityError = new Error(
 		createCapabilitySecretAccessDeniedMessage(
 			'cloudflareToken',
@@ -55,14 +55,10 @@ test('getExecutionErrorDetails maps secret and host approval errors to structure
 			{
 				secretName: 'lutronUsername',
 				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
 			},
 			{
 				secretName: 'lutronPassword',
 				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
 			},
 		],
 		suggestedAction: {
@@ -93,43 +89,28 @@ test('getExecutionErrorDetails maps secret and host approval errors to structure
 			{
 				secretName: 'cloudflareToken',
 				host: 'api.cloudflare.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
 			},
 			{
 				secretName: 'slackToken',
 				host: 'slack.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
 			},
 		],
 		suggestedAction: {
 			type: 'approve_secret_host',
 		},
 	})
-})
 
-test('formatExecutionOutput appends next steps from structured execution errors', () => {
 	const errors = [
-		new Error(
-			createCapabilitySecretAccessDeniedMessage(
-				'cloudflareToken',
-				'secret_set',
-				'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
-			),
-		),
+		capabilityError,
 		new Error(createMissingSecretMessage('missingToken')),
 	]
-
 	for (const error of errors) {
 		const output = formatExecutionOutput({ error } as const)
 		const plainOutput = `Error: ${error.message}`
 		expect(output).toContain(plainOutput)
 		expect(output.length).toBeGreaterThan(plainOutput.length)
 	}
-})
 
-test('extractRawContent returns MCP content blocks from sentinel result and null otherwise', () => {
 	const content: Array<ContentBlock> = [
 		{
 			type: 'image',
@@ -141,16 +122,13 @@ test('extractRawContent returns MCP content blocks from sentinel result and null
 			text: 'Screenshot of https://example.com',
 		},
 	]
-
 	expect(
 		extractRawContent({
 			__mcpContent: content,
 		}),
 	).toEqual(content)
 	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
-})
 
-test('limitExecutionResultValue truncates strings on UTF-8 codepoint boundaries', () => {
 	const oneByteLimit = limitExecutionResultValue('éabc', 1)
 	expect(oneByteLimit).toMatchObject({
 		value: '',

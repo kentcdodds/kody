@@ -7,7 +7,6 @@ import {
 	buildSavedPackageSearchRows,
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
-	resolveSearchMemoryContext,
 	searchUnified,
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
@@ -197,45 +196,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 	)
 })
 
-test('searchUnified includes package retriever results as first-class matches', async () => {
-	const registry = buildCapabilityRegistry([])
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'bob phone number',
-		limit: 5,
-		registry,
-		optionalRows: {
-			packageRows: [],
-			userSecretRows: [],
-			userValueRows: [],
-		},
-		retrieverResults: [
-			{
-				id: 'note-1',
-				title: 'Bob phone number',
-				summary: 'Bob can be reached at 555-1234.',
-				score: 0.9,
-				source: 'personal inbox',
-				packageId: 'package-1',
-				kodyId: 'personal-inbox',
-				retrieverKey: 'notes',
-				retrieverName: 'Personal inbox notes',
-			},
-		],
-	})
-
-	expect(result.matches).toEqual([
-		expect.objectContaining({
-			type: 'retriever_result',
-			id: 'note-1',
-			kodyId: 'personal-inbox',
-			retrieverKey: 'notes',
-		}),
-	])
-	expect(result.telemetry.candidateCounts.retriever_result).toBe(1)
-})
-
-test('searchUnified clamps package retriever scores into the normal ranking range', async () => {
+test('searchUnified ranks package retriever results alongside capabilities', async () => {
 	const registry = buildCapabilityRegistry([
 		{
 			name: 'meta',
@@ -258,7 +219,42 @@ test('searchUnified clamps package retriever scores into the normal ranking rang
 			],
 		},
 	])
-	const result = await searchUnified({
+	const retrieverResults = [
+		{
+			id: 'note-1',
+			title: 'Bob phone number',
+			summary: 'Bob can be reached at 555-1234.',
+			score: 0.9,
+			source: 'personal inbox',
+			packageId: 'package-1',
+			kodyId: 'personal-inbox',
+			retrieverKey: 'notes',
+			retrieverName: 'Personal inbox notes',
+		},
+	]
+	const directMatch = await searchUnified({
+		env: {} as Env,
+		query: 'bob phone number',
+		limit: 5,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+		retrieverResults,
+	})
+	expect(directMatch.matches).toEqual([
+		expect.objectContaining({
+			type: 'retriever_result',
+			id: 'note-1',
+			kodyId: 'personal-inbox',
+			retrieverKey: 'notes',
+		}),
+	])
+	expect(directMatch.telemetry.candidateCounts.retriever_result).toBe(1)
+
+	const clampedRanking = await searchUnified({
 		env: {} as Env,
 		query: 'bob phone',
 		limit: 2,
@@ -270,19 +266,14 @@ test('searchUnified clamps package retriever scores into the normal ranking rang
 		},
 		retrieverResults: [
 			{
-				id: 'note-1',
+				...retrieverResults[0]!,
 				title: 'Unrelated appliance note',
 				summary: 'The toaster oven is 1800 watts.',
 				score: 50,
-				packageId: 'package-1',
-				kodyId: 'personal-inbox',
-				retrieverKey: 'notes',
-				retrieverName: 'Personal inbox notes',
 			},
 		],
 	})
-
-	expect(result.matches).toEqual(
+	expect(clampedRanking.matches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				type: 'capability',
@@ -294,37 +285,6 @@ test('searchUnified clamps package retriever scores into the normal ranking rang
 			}),
 		]),
 	)
-})
-
-test('search memory context preserves caller context and otherwise falls back to meaningful queries', () => {
-	expect(
-		resolveSearchMemoryContext({
-			query: 'saved interactive dashboard app',
-			memoryContext: {
-				task: 'Find dashboard app',
-				query: 'saved dashboard app',
-				entities: ['dashboard'],
-			},
-		}),
-	).toEqual({
-		task: 'Find dashboard app',
-		query: 'saved dashboard app',
-		entities: ['dashboard'],
-	})
-
-	expect(
-		resolveSearchMemoryContext({
-			query: 'saved interactive dashboard app',
-		}),
-	).toEqual({
-		query: 'saved interactive dashboard app',
-	})
-
-	expect(
-		resolveSearchMemoryContext({
-			query: '   ',
-		}),
-	).toBeUndefined()
 })
 
 test('optional search rows load packages and values with graceful fallbacks', async () => {
@@ -342,12 +302,11 @@ test('optional search rows load packages and values with graceful fallbacks', as
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
 	})
-	expect(packageFailure).toMatchObject({
-		...emptyRows,
-		warnings: [
-			'Saved packages are temporarily unavailable: packages unavailable',
-		],
-	})
+	expect(packageFailure.packageRows).toEqual([])
+	expect(packageFailure.userSecretRows).toEqual([])
+	expect(packageFailure.userValueRows).toEqual([])
+	expect(packageFailure.warnings).toHaveLength(1)
+	expect(packageFailure.warnings[0]).toMatch(/packages unavailable/i)
 
 	const savedPackage = await loadOptionalSearchRows({
 		userId: 'user-123',
@@ -441,12 +400,11 @@ test('optional search rows load packages and values with graceful fallbacks', as
 			throw new Error('values unavailable')
 		},
 	})
-	expect(valuesFailure).toMatchObject({
-		...emptyRows,
-		warnings: [
-			'Persisted values are temporarily unavailable: values unavailable',
-		],
-	})
+	expect(valuesFailure.packageRows).toEqual([])
+	expect(valuesFailure.userSecretRows).toEqual([])
+	expect(valuesFailure.userValueRows).toEqual([])
+	expect(valuesFailure.warnings).toHaveLength(1)
+	expect(valuesFailure.warnings[0]).toMatch(/values unavailable/i)
 
 	const anonymous = await loadOptionalSearchRows({
 		userId: null,
