@@ -1178,13 +1178,16 @@ test('recoverSourceFromSessionCheckpoint restores a missing source HEAD from a v
 
 	expect(result.status).toBe('recovered')
 	expect(mockModule.git.checkout).toHaveBeenCalledWith(
-		expect.objectContaining({ ref: 'commit-base', force: true }),
+		expect.objectContaining({
+			ref: 'commit-base',
+			branch: 'main',
+			force: true,
+		}),
 	)
 	expect(mockModule.git.push).toHaveBeenCalledWith(
 		expect.objectContaining({
 			remote: 'source',
-			ref: 'commit-base',
-			remoteRef: 'main',
+			ref: 'main',
 			username: 'x',
 			password: 'art_source_secret',
 		}),

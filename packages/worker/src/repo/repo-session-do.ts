@@ -1720,6 +1720,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Source rescue stopped because artifact source repo "${source.repo_id}" already has HEAD "${sourceHeadBefore.commit}". Use normal package source workflows instead.`,
 			)
 		}
+		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
 		const sessionRepo = await resolveSessionRepo(this.env, {
 			namespace: sessionRow.session_repo_namespace,
 			name: sessionRow.session_repo_name,
@@ -1736,6 +1737,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		await this.git.checkout({
 			dir: repoSessionWorkspacePrefix,
 			ref: input.recoveredCommit,
+			branch: targetBranch,
 			force: true,
 		})
 		const checkedOutCommit = await this.getHeadCommit()
@@ -1818,12 +1820,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				token: sourceAccess.token,
 			}),
 		})
-		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
-			ref: input.recoveredCommit,
-			remoteRef: targetBranch,
+			ref: targetBranch,
 			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
 		const snapshotFiles = await this.collectWorkspaceFiles()
