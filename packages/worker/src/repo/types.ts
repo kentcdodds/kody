@@ -335,6 +335,49 @@ export type RepoSessionPublishResult =
 			repairHint: 'repo_rebase_session'
 	  }
 
+export type SourceRescueValidationResult = {
+	ok: boolean
+	runId: string
+	treeHash: string | null
+	checkedAt: string
+	results: Array<{
+		kind: string
+		ok: boolean
+		message: string
+	}>
+}
+
+export type SourceRescueResult =
+	| {
+			status: 'recovered'
+			sourceId: string
+			packageId: string
+			recoveredCommit: string
+			priorPublishedCommit: string
+			sourceHeadBefore: null
+			sourceHeadAfter: string
+			recoveredSessionId: string
+			recoveredRepoId: string
+			recoveredRepoName: string
+			validation: SourceRescueValidationResult
+			auditEventId: string
+			message: string
+	  }
+	| {
+			status: 'checks_failed'
+			sourceId: string
+			packageId: string
+			recoveredCommit: string
+			priorPublishedCommit: string
+			sourceHeadBefore: null
+			recoveredSessionId: string
+			recoveredRepoId: string
+			recoveredRepoName: string
+			validation: SourceRescueValidationResult
+			auditEventId: string
+			failedChecks: SourceRescueValidationResult['results']
+	  }
+
 export type RepoExternalPublishResult =
 	| {
 			status: 'already_published'

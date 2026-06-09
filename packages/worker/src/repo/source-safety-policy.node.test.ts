@@ -69,6 +69,18 @@ test('package source overwrite requires explicit destructive confirmation before
 	).rejects.toThrow(destructiveOverwriteConfirmationField)
 })
 
+test('package source overwrite remains blocked when destructive confirmation has no verified source backup', async () => {
+	await expect(
+		assertPackageSourceOverwriteAllowed({
+			env: createEnvWithSnapshot(null),
+			userId: 'user-1',
+			source: packageSource(),
+			operation: 'package_save',
+			confirmed: true,
+		}),
+	).rejects.toThrow('Stop and report this source recovery problem')
+})
+
 test('restorable package source snapshot verification rejects corrupt snapshots and accepts manifest-bearing backups', async () => {
 	await expect(
 		assertRestorablePackageSourceSnapshot({

@@ -114,6 +114,7 @@ const mockModule = vi.hoisted(() => {
 			},
 		})),
 		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
+		insertSourceRescueEvent: vi.fn(async () => 'source-rescue-event-1'),
 	}
 })
 
@@ -175,6 +176,7 @@ function restoreRepoSessionMockBaseline() {
 		},
 	})
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.insertSourceRescueEvent.mockResolvedValue('source-rescue-event-1')
 
 	git.clone.mockResolvedValue({ cloned: 'ok', dir: '/session' })
 	git.remote.mockImplementation(
@@ -330,6 +332,11 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 			mockModule.writePublishedSourceSnapshot(...args),
 	}
 })
+
+vi.mock('./source-rescue-events.ts', () => ({
+	insertSourceRescueEvent: (...args: Array<unknown>) =>
+		mockModule.insertSourceRescueEvent(...args),
+}))
 
 const { RepoSession } = await import('./repo-session-do.ts')
 const { insertRepoSession } = await import('./repo-sessions.ts')
@@ -1098,6 +1105,273 @@ test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	).rejects.toThrow(
 		'Artifacts HEAD changed from "commit-stale" to "commit-new" before publish.',
 	)
+})
+
+test('recoverSourceFromSessionCheckpoint restores a missing source HEAD from a verified session commit', async () => {
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-base'
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'session-repo',
+		session_repo_namespace: 'default',
+		base_commit: 'commit-base',
+		source_root: '/',
+		conversation_id: 'conversation-1',
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: '2026-06-06T00:00:00.000Z',
+		last_checkpoint_commit: 'commit-base',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	mockModule.resolveArtifactDefaultBranchHead
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce({
+			defaultBranch: 'main',
+			commit: 'commit-base',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		})
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ path: '/session/package.json', type: 'file' },
+		{ path: '/session/index.ts', type: 'file' },
+	])
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/package.json') return '{"name":"@kody/demo"}'
+		if (path === '/session/index.ts') return 'export const ready = true\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
+
+	const result = await repoSession.recoverSourceFromSessionCheckpoint({
+		sessionId: 'session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		packageId: 'package-1',
+		kodyId: 'demo',
+		recoveredCommit: 'commit-base',
+		operatorUserId: 'user-1',
+		operatorEmail: 'user@example.com',
+	})
+
+	expect(result.status).toBe('recovered')
+	expect(mockModule.git.checkout).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'commit-base',
+			branch: 'main',
+			force: true,
+		}),
+	)
+	expect(mockModule.git.push).toHaveBeenCalledWith(
+		expect.objectContaining({
+			remote: 'source',
+			ref: 'main',
+			username: 'x',
+			password: 'art_source_secret',
+		}),
+	)
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			files: {
+				'package.json': '{"name":"@kody/demo"}',
+				'index.ts': 'export const ready = true\n',
+			},
+		}),
+	)
+	expect(mockModule.insertSourceRescueEvent).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			sourceId: 'source-1',
+			packageId: 'package-1',
+			kodyId: 'demo',
+			recoveredSessionId: 'session-1',
+			recoveredRepoId: 'session-repo-1',
+			recoveredCommit: 'commit-base',
+			priorPublishedCommit: 'commit-base',
+			operatorUserId: 'user-1',
+			operatorEmail: 'user@example.com',
+			validationStatus: 'passed',
+		}),
+	)
+})
+
+test('recoverSourceFromSessionCheckpoint refuses to overwrite an existing source HEAD', async () => {
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-base'
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'session-repo',
+		session_repo_namespace: 'default',
+		base_commit: 'commit-base',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: 'commit-base',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+		defaultBranch: 'main',
+		commit: 'commit-existing',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.recoverSourceFromSessionCheckpoint({
+			sessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			packageId: 'package-1',
+			kodyId: 'demo',
+			recoveredCommit: 'commit-base',
+			operatorUserId: 'user-1',
+		}),
+	).rejects.toThrow('already has HEAD "commit-existing"')
+	expect(mockModule.git.push).not.toHaveBeenCalled()
+	expect(mockModule.insertSourceRescueEvent).not.toHaveBeenCalled()
+})
+
+test('recoverSourceFromSessionCheckpoint rechecks missing HEAD before pushing recovered source', async () => {
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-base'
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'session-repo',
+		session_repo_namespace: 'default',
+		base_commit: 'commit-base',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: 'commit-base',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	mockModule.resolveArtifactDefaultBranchHead
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce({
+			defaultBranch: 'main',
+			commit: 'commit-raced',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.recoverSourceFromSessionCheckpoint({
+			sessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			packageId: 'package-1',
+			kodyId: 'demo',
+			recoveredCommit: 'commit-base',
+			operatorUserId: 'user-1',
+		}),
+	).rejects.toThrow('gained HEAD "commit-raced" before recovery publish')
+	expect(mockModule.git.push).not.toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.insertSourceRescueEvent).not.toHaveBeenCalled()
+})
+
+test('recoverSourceFromSessionCheckpoint rejects mismatched package ids before recovery side effects', async () => {
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.recoverSourceFromSessionCheckpoint({
+			sessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			packageId: 'package-other',
+			kodyId: 'demo',
+			recoveredCommit: 'commit-base',
+			operatorUserId: 'user-1',
+		}),
+	).rejects.toThrow(
+		'Recovery package "package-other" does not match source package "package-1".',
+	)
+	expect(mockModule.getRepoSessionById).not.toHaveBeenCalled()
+	expect(mockModule.git.push).not.toHaveBeenCalled()
+	expect(mockModule.insertSourceRescueEvent).not.toHaveBeenCalled()
 })
 
 test('publishFromExternalRef checks fast-forward ancestry through shell git adapter', async () => {
