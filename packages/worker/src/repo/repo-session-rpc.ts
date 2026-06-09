@@ -16,6 +16,7 @@ import {
 	type RepoSessionRebaseResult,
 	type RepoSessionSearchResult,
 	type RepoSessionTreeResult,
+	type SourceRescueResult,
 } from './types.ts'
 
 export type RepoSessionRpc = {
@@ -139,6 +140,19 @@ export type RepoSessionRpc = {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 	}) => Promise<RepoExternalPublishResult>
+	recoverSourceFromSessionCheckpoint: (payload: {
+		sessionId: string
+		sourceId: string
+		userId: string
+		packageId: string
+		kodyId: string
+		recoveredCommit: string
+		operatorUserId: string
+		operatorEmail?: string | null
+		baseUrl?: string
+		rebuildPackageArtifacts?: boolean
+		expectedPackageScope?: string
+	}) => Promise<SourceRescueResult>
 }
 
 export function repoSessionRpc(env: Env, sessionId: string): RepoSessionRpc {

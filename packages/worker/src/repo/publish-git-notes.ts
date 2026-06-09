@@ -15,6 +15,7 @@ export type KodyPublishGitNotePublishedBy =
 	| 'repo_session'
 	| 'source_bootstrap'
 	| 'external_push'
+	| 'source_rescue'
 
 export type KodyPublishGitNoteChecks = {
 	runId: string
@@ -49,7 +50,12 @@ export const kodyPublishGitNotesRef = 'refs/notes/commits'
 export const kodyPublishGitNoteSchema = z.object({
 	v: z.literal(kodyPublishGitNoteVersion),
 	publishedAt: z.string(),
-	publishedBy: z.enum(['repo_session', 'source_bootstrap', 'external_push']),
+	publishedBy: z.enum([
+		'repo_session',
+		'source_bootstrap',
+		'external_push',
+		'source_rescue',
+	]),
 	sourceId: z.string(),
 	entityKind: z.enum(['skill', 'app', 'job', 'package']),
 	entityId: z.string(),
