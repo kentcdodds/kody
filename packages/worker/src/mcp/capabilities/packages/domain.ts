@@ -9,7 +9,6 @@ import { packageDebugGetRunCapability } from './package-debug-get-run.ts'
 import { packageDebugListRunsCapability } from './package-debug-list-runs.ts'
 import { publishExternalPushCapability } from './publish-external-push.ts'
 import { savePackageCapability } from './save-package.ts'
-import { sourceRescueCapability } from './source-rescue.ts'
 
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
@@ -35,7 +34,6 @@ export const packagesDomain = defineDomain({
 		packageDebugListRunsCapability,
 		packageDebugGetRunCapability,
 		publishExternalPushCapability,
-		sourceRescueCapability,
 		deletePackageCapability,
 	],
 })
