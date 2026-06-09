@@ -114,7 +114,12 @@ function buildCandidate(
 	publishedCommit: string | null,
 ) {
 	const recoveredCommit =
-		session.last_checkpoint_commit ?? session.base_commit ?? null
+		publishedCommit != null &&
+		session.last_checkpoint_commit === publishedCommit
+			? session.last_checkpoint_commit
+			: publishedCommit != null && session.base_commit === publishedCommit
+				? session.base_commit
+				: null
 	return {
 		session_id: session.id,
 		session_repo_id: session.session_repo_id,
@@ -123,10 +128,7 @@ function buildCandidate(
 		base_commit: session.base_commit,
 		last_checkpoint_commit: session.last_checkpoint_commit,
 		recovered_commit: recoveredCommit,
-		matches_published_commit:
-			publishedCommit != null &&
-			(session.last_checkpoint_commit === publishedCommit ||
-				session.base_commit === publishedCommit),
+		matches_published_commit: recoveredCommit != null,
 		created_at: session.created_at,
 		updated_at: session.updated_at,
 	}
@@ -285,7 +287,7 @@ export const sourceRescueCapability = defineDomainCapability(
 					note: 'Bundle artifacts are evidence only; package_source_rescue never recreates source from bundle output.',
 				},
 			}
-			if (sourceHead.status === 'present') {
+			if (sourceHead.status === 'present' && args.action === 'inspect') {
 				return {
 					status: 'healthy' as const,
 					...baseOutput,
@@ -327,20 +329,17 @@ export const sourceRescueCapability = defineDomainCapability(
 					`Repo session "${args.recovery_source.session_id}" was not found for this package source.`,
 				)
 			}
+			const selectedCandidate = candidates.find(
+				(candidate) => candidate.session_id === selectedSession.id,
+			)
 			const selectedCommit =
-				args.recovery_source.commit ??
-				selectedSession.last_checkpoint_commit ??
-				selectedSession.base_commit
+				args.recovery_source.commit ?? selectedCandidate?.recovered_commit
 			if (!selectedCommit || selectedCommit !== source.published_commit) {
 				throw new Error(
 					`Selected recovery commit "${selectedCommit ?? 'none'}" does not match prior published commit "${source.published_commit ?? 'none'}".`,
 				)
 			}
-			if (
-				!candidates.some(
-					(candidate) => candidate.session_id === selectedSession.id,
-				)
-			) {
+			if (!selectedCandidate) {
 				throw new Error(
 					`Repo session "${selectedSession.id}" is not a verified recovery candidate for the prior published commit.`,
 				)
@@ -365,9 +364,20 @@ export const sourceRescueCapability = defineDomainCapability(
 				rebuildPackageArtifacts: args.rebuild_package_artifacts,
 				expectedPackageScope,
 			})
+			const sourceHeadAfter =
+				recovery.status === 'recovered'
+					? {
+							status: 'present' as const,
+							commit: recovery.sourceHeadAfter,
+							default_branch: sourceHead.default_branch,
+							remote: sourceHead.remote,
+							message: null,
+						}
+					: sourceHead
 			return {
 				status: recovery.status,
 				...baseOutput,
+				source_head: sourceHeadAfter,
 				recovery,
 				recommended_next_action:
 					recovery.status === 'recovered'

@@ -166,6 +166,32 @@ test('package_source_rescue inspect reports verified repo session candidates and
 	)
 })
 
+test('package_source_rescue inspect reports the published matching commit as the recovery commit', async () => {
+	resetMocks()
+	mockPackageSource()
+	mockModule.listRepoSessionsBySource.mockResolvedValue([
+		{
+			...matchingSession(),
+			base_commit: 'commit-1',
+			last_checkpoint_commit: 'commit-different',
+		},
+	])
+
+	const result = await sourceRescueCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+
+	expect(result.status).toBe('recoverable')
+	expect(result.repo_session_candidates).toEqual([
+		expect.objectContaining({
+			session_id: 'session-1',
+			recovered_commit: 'commit-1',
+			matches_published_commit: true,
+		}),
+	])
+})
+
 test('package_source_rescue inspect blocks recovery when only bundle artifacts exist', async () => {
 	resetMocks()
 	mockPackageSource()
@@ -236,6 +262,13 @@ test('package_source_rescue recover requires confirmation and delegates verified
 	)
 
 	expect(result.status).toBe('recovered')
+	expect(result.source_head).toEqual(
+		expect.objectContaining({
+			status: 'present',
+			commit: 'commit-1',
+			message: null,
+		}),
+	)
 	expect(rpc.recoverSourceFromSessionCheckpoint).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sessionId: 'session-1',
@@ -249,4 +282,85 @@ test('package_source_rescue recover requires confirmation and delegates verified
 			expectedPackageScope: '@kody',
 		}),
 	)
+})
+
+test('package_source_rescue recover defaults to the candidate commit that matches the published commit', async () => {
+	resetMocks()
+	mockPackageSource()
+	const session = {
+		...matchingSession(),
+		base_commit: 'commit-1',
+		last_checkpoint_commit: 'commit-different',
+	}
+	mockModule.listRepoSessionsBySource.mockResolvedValue([session])
+	const rpc = {
+		recoverSourceFromSessionCheckpoint: vi.fn(async () => ({
+			status: 'recovered',
+			sourceId: 'source-1',
+			packageId: 'package-1',
+			recoveredCommit: 'commit-1',
+			priorPublishedCommit: 'commit-1',
+			sourceHeadBefore: null,
+			sourceHeadAfter: 'commit-1',
+			recoveredSessionId: 'session-1',
+			recoveredRepoId: 'session-repo-1',
+			recoveredRepoName: 'repo-1-session-1',
+			validation: {
+				ok: true,
+				runId: 'run-1',
+				treeHash: null,
+				checkedAt: '',
+				results: [],
+			},
+			auditEventId: 'source-rescue-event-1',
+			message: 'Recovered.',
+		})),
+	}
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+
+	await sourceRescueCapability.handler(
+		{
+			package_id: 'package-1',
+			action: 'recover',
+			confirm_recovery: true,
+			recovery_source: { kind: 'repo_session', session_id: 'session-1' },
+		},
+		createContext(),
+	)
+
+	expect(rpc.recoverSourceFromSessionCheckpoint).toHaveBeenCalledWith(
+		expect.objectContaining({
+			recoveredCommit: 'commit-1',
+		}),
+	)
+})
+
+test('package_source_rescue recover rejects sources that already have a default branch HEAD', async () => {
+	resetMocks()
+	mockPackageSource()
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+		defaultBranch: 'main',
+		commit: 'commit-1',
+	})
+	mockModule.listRepoSessionsBySource.mockResolvedValue([matchingSession()])
+	const rpc = {
+		recoverSourceFromSessionCheckpoint: vi.fn(),
+	}
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+
+	await expect(
+		sourceRescueCapability.handler(
+			{
+				package_id: 'package-1',
+				action: 'recover',
+				confirm_recovery: true,
+				recovery_source: { kind: 'repo_session', session_id: 'session-1' },
+			},
+			createContext(),
+		),
+	).rejects.toThrow(
+		'package_source_rescue recover requires an existing source repo whose default branch has no HEAD; current status is "present".',
+	)
+	expect(rpc.recoverSourceFromSessionCheckpoint).not.toHaveBeenCalled()
 })
