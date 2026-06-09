@@ -1812,6 +1812,14 @@ class RepoSessionBase extends DurableObject<Env> {
 				failedChecks: validation.results.filter((entry) => !entry.ok),
 			}
 		}
+		const sourceHeadBeforePush = await resolveArtifactDefaultBranchHead({
+			repo: sourceRepo,
+		})
+		if (sourceHeadBeforePush) {
+			throw new Error(
+				`Source rescue stopped because artifact source repo "${source.repo_id}" gained HEAD "${sourceHeadBeforePush.commit}" before recovery publish. Use normal package source workflows instead.`,
+			)
+		}
 		const sourceAccess = await ensureArtifactRepoRemote({
 			repo: sourceRepo,
 			scope: 'write',
