@@ -1275,6 +1275,42 @@ test('recoverSourceFromSessionCheckpoint refuses to overwrite an existing source
 	expect(mockModule.insertSourceRescueEvent).not.toHaveBeenCalled()
 })
 
+test('recoverSourceFromSessionCheckpoint rejects mismatched package ids before recovery side effects', async () => {
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.recoverSourceFromSessionCheckpoint({
+			sessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			packageId: 'package-other',
+			kodyId: 'demo',
+			recoveredCommit: 'commit-base',
+			operatorUserId: 'user-1',
+		}),
+	).rejects.toThrow(
+		'Recovery package "package-other" does not match source package "package-1".',
+	)
+	expect(mockModule.getRepoSessionById).not.toHaveBeenCalled()
+	expect(mockModule.git.push).not.toHaveBeenCalled()
+	expect(mockModule.insertSourceRescueEvent).not.toHaveBeenCalled()
+})
+
 test('publishFromExternalRef checks fast-forward ancestry through shell git adapter', async () => {
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue({

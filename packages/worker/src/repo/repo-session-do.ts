@@ -1681,6 +1681,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (source.entity_kind !== 'package') {
 			throw new Error('Source rescue is only supported for package sources.')
 		}
+		const sourcePackageId = source.entity_id
+		if (input.packageId !== sourcePackageId) {
+			throw new Error(
+				`Recovery package "${input.packageId}" does not match source package "${sourcePackageId}".`,
+			)
+		}
 		if (!source.published_commit) {
 			throw new Error(
 				`Source "${source.id}" has no published commit to verify for rescue.`,
@@ -1778,7 +1784,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				sourceId: source.id,
 				entityKind: source.entity_kind,
 				entityId: source.entity_id,
-				packageId: input.packageId,
+				packageId: sourcePackageId,
 				kodyId: input.kodyId,
 				sourceRepoId: source.repo_id,
 				recoveryKind: 'repo_session',
@@ -1797,7 +1803,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			return {
 				status: 'checks_failed',
 				sourceId: source.id,
-				packageId: input.packageId,
+				packageId: sourcePackageId,
 				recoveredCommit: input.recoveredCommit,
 				priorPublishedCommit: source.published_commit,
 				sourceHeadBefore: null,
@@ -1863,7 +1869,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			sourceId: source.id,
 			entityKind: source.entity_kind,
 			entityId: source.entity_id,
-			packageId: input.packageId,
+			packageId: sourcePackageId,
 			kodyId: input.kodyId,
 			sourceRepoId: source.repo_id,
 			recoveryKind: 'repo_session',
@@ -1882,7 +1888,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		return {
 			status: 'recovered',
 			sourceId: source.id,
-			packageId: input.packageId,
+			packageId: sourcePackageId,
 			recoveredCommit: input.recoveredCommit,
 			priorPublishedCommit: source.published_commit,
 			sourceHeadBefore: null,
