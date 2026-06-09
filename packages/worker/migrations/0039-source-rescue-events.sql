@@ -2,12 +2,12 @@ CREATE TABLE IF NOT EXISTS source_rescue_events (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL,
 	source_id TEXT NOT NULL,
-	entity_kind TEXT NOT NULL,
+	entity_kind TEXT NOT NULL CHECK (entity_kind IN ('package')),
 	entity_id TEXT NOT NULL,
 	package_id TEXT,
 	kody_id TEXT,
 	source_repo_id TEXT NOT NULL,
-	recovery_kind TEXT NOT NULL,
+	recovery_kind TEXT NOT NULL CHECK (recovery_kind IN ('repo_session')),
 	recovered_session_id TEXT,
 	recovered_repo_id TEXT,
 	recovered_repo_name TEXT,
@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS source_rescue_events (
 	source_head_after TEXT,
 	operator_user_id TEXT NOT NULL,
 	operator_email TEXT,
-	validation_status TEXT NOT NULL,
-	validation_json TEXT NOT NULL,
-	metadata_json TEXT,
+	validation_status TEXT NOT NULL CHECK (validation_status IN ('passed', 'failed')),
+	validation_json TEXT NOT NULL CHECK (json_valid(validation_json)),
+	metadata_json TEXT CHECK (metadata_json IS NULL OR json_valid(metadata_json)),
 	created_at TEXT NOT NULL
 );
 

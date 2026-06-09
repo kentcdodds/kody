@@ -74,6 +74,7 @@ import {
 	attachPublishGitNoteBestEffort,
 	buildPublishGitNote,
 	type KodyPublishGitNoteChecks,
+	type KodyPublishGitNotePublishedBy,
 } from './publish-git-notes.ts'
 import {
 	type RepoGitCommand,
@@ -531,11 +532,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		remote: string
 		token: string
 		remoteName?: string
-		publishedBy:
-			| 'repo_session'
-			| 'source_bootstrap'
-			| 'external_push'
-			| 'source_rescue'
+		publishedBy: KodyPublishGitNotePublishedBy
 		sessionId?: string | null
 		conversationId?: string | null
 		baseCommit?: string | null
