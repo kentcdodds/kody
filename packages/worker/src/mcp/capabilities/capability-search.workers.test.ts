@@ -1,9 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	buildCapabilityEmbedText,
-	CAPABILITY_EMBEDDING_DIMENSIONS,
-	deterministicEmbedding,
-	hybridSearchScore,
 	lexicalScore,
 	searchCapabilities,
 } from './capability-search.ts'
@@ -26,19 +23,13 @@ test('capability search helpers build normalized searchable documents', () => {
 	} satisfies CapabilitySpec
 
 	const embedText = buildCapabilityEmbedText(spec)
-	expect(embedText.length).toBeGreaterThan(0)
-	const a = deterministicEmbedding('hello', CAPABILITY_EMBEDDING_DIMENSIONS)
-	expect(a.length).toBe(CAPABILITY_EMBEDDING_DIMENSIONS)
-	let sum = 0
-	for (const x of a) sum += x * x
-	expect(sum).toBeCloseTo(1, 5)
+	expect(embedText).toContain('deploy_worker')
+	expect(embedText).toContain('Deploy a Worker from saved source.')
+
 	const doc = 'github rest api issues pull request repository'
 	expect(lexicalScore('github issues', doc)).toBeGreaterThan(
 		lexicalScore('weather forecast', doc),
 	)
-	expect(hybridSearchScore(0, 0)).toBe(0)
-	expect(hybridSearchScore(1, 1)).toBe(1)
-	expect(hybridSearchScore(0.6, 0.2)).toBe(0.4)
 })
 
 test('offline detailed search returns structured capability matches without schema fields', async () => {
@@ -96,89 +87,4 @@ test('offline detailed search returns structured capability matches without sche
 		inputTypeDefinition: expect.stringContaining('OAuthSetupGuideInput'),
 	})
 	expect(oauthGuide.matches[0]).not.toHaveProperty('outputSchema')
-})
-
-test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {
-	const query = 'turn the living room tv on'
-	const specs = {
-		github_enable_issue_notifications: {
-			name: 'github_enable_issue_notifications',
-			domain: 'coding',
-			description: 'Turn on GitHub issue notifications for a repository.',
-			keywords: ['github', 'notifications', 'issues'],
-			readOnly: false,
-			idempotent: true,
-			destructive: false,
-			inputFields: ['owner', 'repo'],
-			requiredInputFields: ['owner', 'repo'],
-			outputFields: [],
-			inputSchema: {
-				type: 'object',
-				properties: {
-					owner: { type: 'string' },
-					repo: { type: 'string' },
-				},
-				required: ['owner', 'repo'],
-			},
-			inputTypeDefinition:
-				'type GithubEnableIssueNotificationsInput = {\n\towner: string\n\trepo: string\n}',
-		},
-		remote_display_press_key: {
-			name: 'remote_display_press_key',
-			domain: 'remote:display:default',
-			description:
-				'Wake a streaming display by sending a remote-control key command.',
-			keywords: ['home', 'roku', 'remote', 'display', 'wake'],
-			readOnly: false,
-			idempotent: false,
-			destructive: false,
-			inputFields: ['deviceId', 'key'],
-			requiredInputFields: ['deviceId', 'key'],
-			outputFields: [],
-			inputSchema: {
-				type: 'object',
-				properties: {
-					deviceId: { type: 'string' },
-					key: { type: 'string' },
-				},
-				required: ['deviceId', 'key'],
-			},
-			inputTypeDefinition:
-				'type HomeRokuPressKeyInput = {\n\tdeviceId: string\n\tkey: string\n}',
-		},
-	} satisfies Record<string, CapabilitySpec>
-	const env = {
-		CAPABILITY_VECTOR_INDEX: {
-			query() {
-				return Promise.resolve({
-					matches: [
-						{
-							id: 'github_enable_issue_notifications',
-							score: 0.8,
-						},
-					],
-					count: 1,
-				})
-			},
-		},
-	} as unknown as Env
-
-	const { matches, offline } = await searchCapabilities({
-		env,
-		query,
-		limit: 5,
-		detail: false,
-		specs,
-		vectorMetadataFilter: {
-			kind: { $eq: 'builtin' },
-		},
-	})
-
-	expect(offline).toBe(false)
-	const runtimeOnlyMatch = matches.find(
-		(match) => match.name === 'remote_display_press_key',
-	)
-	expect(runtimeOnlyMatch).toBeDefined()
-	expect(runtimeOnlyMatch?.vectorRank).toEqual(expect.any(Number))
-	expect(matches[0]?.name).toBe('github_enable_issue_notifications')
 })

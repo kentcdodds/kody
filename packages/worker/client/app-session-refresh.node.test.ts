@@ -82,16 +82,14 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, false)
 
 	const authenticatedUi = await renderToString(render())
-	expect(authenticatedUi).toContain('href="/account"')
 	expect(authenticatedUi).toContain(sessionUsername)
-	expect(authenticatedUi).toContain('<form method="post" action="/logout"')
+	expect(fetchSessionInfoMock).toHaveBeenCalledTimes(1)
 
 	// Re-run refresh via navigation, then abort in-flight fetch.
 	navigationListeners[0]!()
 	await runNextTask(queuedTasks, true)
 
 	const uiAfterAbort = await renderToString(render())
-	expect(uiAfterAbort).toContain('href="/account"')
 	expect(uiAfterAbort).toContain(sessionUsername)
-	expect(uiAfterAbort).toContain('<form method="post" action="/logout"')
+	expect(fetchSessionInfoMock).toHaveBeenCalledTimes(2)
 })

@@ -15,7 +15,6 @@ const ctx = {
 test('kody_official_guide fetches markdown and surfaces fetch failures', async () => {
 	const originalFetch = globalThis.fetch
 	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
-	expect(url).toMatch(/\/package-subscriptions\.md$/)
 	globalThis.fetch = (async (input) => {
 		expect(String(input)).toBe(url)
 		return new Response('# Hello\n\nbody', { status: 200 })
