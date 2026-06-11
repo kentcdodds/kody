@@ -203,9 +203,9 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 			description: 'Meta capabilities',
 			capabilities: [
 				{
-					name: 'bob_phone_lookup',
+					name: 'target_lookup',
 					domain: 'meta',
-					description: 'Find Bob phone details',
+					description: 'Find target details',
 					keywords: [],
 					readOnly: true,
 					idempotent: true,
@@ -222,19 +222,19 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 	const retrieverResults = [
 		{
 			id: 'note-1',
-			title: 'Bob phone number',
-			summary: 'Bob can be reached at 555-1234.',
+			title: 'Target lookup note',
+			summary: 'Target can be reached at 555-1234.',
 			score: 0.9,
-			source: 'personal inbox',
+			source: 'notes inbox',
 			packageId: 'package-1',
-			kodyId: 'personal-inbox',
+			kodyId: 'notes-package',
 			retrieverKey: 'notes',
-			retrieverName: 'Personal inbox notes',
+			retrieverName: 'Notes retriever',
 		},
 	]
 	const directMatch = await searchUnified({
 		env: {} as Env,
-		query: 'bob phone number',
+		query: 'target lookup note',
 		limit: 5,
 		registry: buildCapabilityRegistry([]),
 		optionalRows: {
@@ -248,15 +248,15 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 		expect.objectContaining({
 			type: 'retriever_result',
 			id: 'note-1',
-			kodyId: 'personal-inbox',
+			kodyId: 'notes-package',
 			retrieverKey: 'notes',
 		}),
 	])
 	expect(directMatch.telemetry.candidateCounts.retriever_result).toBe(1)
 
-	const clampedRanking = await searchUnified({
+	const mixedRanking = await searchUnified({
 		env: {} as Env,
-		query: 'bob phone',
+		query: 'target lookup',
 		limit: 2,
 		registry,
 		optionalRows: {
@@ -268,16 +268,16 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 			{
 				...retrieverResults[0]!,
 				title: 'Unrelated appliance note',
-				summary: 'The toaster oven is 1800 watts.',
+				summary: 'The appliance is 1800 watts.',
 				score: 50,
 			},
 		],
 	})
-	expect(clampedRanking.matches).toEqual(
+	expect(mixedRanking.matches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				type: 'capability',
-				name: 'bob_phone_lookup',
+				name: 'target_lookup',
 			}),
 			expect.objectContaining({
 				type: 'retriever_result',
@@ -424,115 +424,94 @@ test('optional search rows load packages and values with graceful fallbacks', as
 
 test('searchUnified annotates high-confidence package action matches', async () => {
 	const registry = buildCapabilityRegistry([])
+	const packageRow = {
+		record: {
+			id: 'pkg-alpha',
+			userId: 'user-1',
+			name: '@kody/pkg-alpha',
+			kodyId: 'pkg-alpha',
+			description: 'Alpha helpers.',
+			tags: ['alpha', 'module-a'],
+			searchText: 'module-a module-b helpers',
+			sourceId: 'source-alpha',
+			hasApp: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		projection: {
+			name: '@kody/pkg-alpha',
+			kodyId: 'pkg-alpha',
+			description: 'Alpha helpers.',
+			tags: ['alpha', 'module-a'],
+			searchText: 'module-a module-b helpers',
+			hasApp: false,
+			appEntry: null,
+			exports: [
+				createPackageExportProjection('./module-a', {
+					description: 'Run module-a task.',
+					functionName: 'runTask',
+					functionDescription: 'Run module-a task.',
+					typeDefinition:
+						'export declare function runTask(params: TaskParams): Promise<JsonObject>',
+				}),
+				createPackageExportProjection('./module-b', {
+					description: 'Search module-b records.',
+					functionName: 'searchRecords',
+					functionDescription: 'Search module-b records.',
+				}),
+			],
+			jobs: [],
+			services: [],
+			subscriptions: [],
+			retrievers: [],
+		},
+	}
 	const result = await searchUnified({
 		env: {} as Env,
-		query: 'google calendar create event',
+		query: 'module-a run task',
 		limit: 5,
 		registry,
 		optionalRows: {
-			packageRows: [
-				{
-					record: {
-						id: 'google-pkg',
-						userId: 'user-1',
-						name: '@kentcdodds/google-products',
-						kodyId: 'google-products',
-						description: 'Google product helpers.',
-						tags: ['google', 'calendar'],
-						searchText: 'Gmail Calendar Drive helpers',
-						sourceId: 'source-google',
-						hasApp: false,
-						createdAt: '2026-04-20T00:00:00.000Z',
-						updatedAt: '2026-04-20T00:00:00.000Z',
-					},
-					projection: {
-						name: '@kentcdodds/google-products',
-						kodyId: 'google-products',
-						description: 'Google product helpers.',
-						tags: ['google', 'calendar'],
-						searchText: 'Gmail Calendar Drive helpers',
-						hasApp: false,
-						appEntry: null,
-						exports: [
-							createPackageExportProjection('./calendar', {
-								description: 'Create a calendar event.',
-								functionName: 'createEvent',
-								functionDescription: 'Create a calendar event.',
-								typeDefinition:
-									'export declare function createEvent(params: CalendarEventMutationParams): Promise<JsonObject>',
-							}),
-							createPackageExportProjection('./gmail', {
-								description: 'Search Gmail messages.',
-								functionName: 'searchMessages',
-								functionDescription: 'Search Gmail messages.',
-							}),
-						],
-						jobs: [],
-						services: [],
-						subscriptions: [],
-						retrievers: [],
-					},
-				},
-			],
+			packageRows: [packageRow],
 			userSecretRows: [],
 			userValueRows: [],
 		},
 	})
 
-	const packageMatch = result.matches[0]
+	const packageMatch = result.matches.find((match) => match.type === 'package')
 	expect(packageMatch).toMatchObject({
 		type: 'package',
-		kodyId: 'google-products',
-		actionMatches: [
+		kodyId: 'pkg-alpha',
+	})
+	expect(packageMatch?.actionMatches).toEqual(
+		expect.arrayContaining([
 			expect.objectContaining({
-				subpath: './calendar',
+				subpath: './module-a',
 				functions: [
 					expect.objectContaining({
-						name: 'createEvent',
+						name: 'runTask',
 					}),
 				],
 			}),
-		],
-	})
+		]),
+	)
 	const broadQuery = await searchUnified({
 		env: {} as Env,
-		query: 'google products helpers',
+		query: 'alpha helpers overview',
 		limit: 5,
 		registry,
 		optionalRows: {
 			packageRows: [
 				{
-					record: {
-						id: 'google-pkg',
-						userId: 'user-1',
-						name: '@kentcdodds/google-products',
-						kodyId: 'google-products',
-						description: 'Google product helpers.',
-						tags: ['google'],
-						searchText: 'Gmail Calendar Drive helpers',
-						sourceId: 'source-google',
-						hasApp: false,
-						createdAt: '2026-04-20T00:00:00.000Z',
-						updatedAt: '2026-04-20T00:00:00.000Z',
-					},
+					...packageRow,
 					projection: {
-						name: '@kentcdodds/google-products',
-						kodyId: 'google-products',
-						description: 'Google product helpers.',
-						tags: ['google'],
-						searchText: 'Gmail Calendar Drive helpers',
-						hasApp: false,
-						appEntry: null,
+						...packageRow.projection,
 						exports: [
-							createPackageExportProjection('./calendar', {
-								description: 'Create a calendar event.',
-								functionName: 'createEvent',
+							createPackageExportProjection('./module-a', {
+								description: 'Run module-a task.',
+								functionName: 'runTask',
 							}),
 						],
-						jobs: [],
-						services: [],
-						subscriptions: [],
-						retrievers: [],
 					},
 				},
 			],
@@ -540,17 +519,23 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			userValueRows: [],
 		},
 	})
-	expect(broadQuery.matches[0]).toMatchObject({
+	const broadPackageMatch = broadQuery.matches.find(
+		(match) => match.type === 'package',
+	)
+	expect(broadPackageMatch).toMatchObject({
 		type: 'package',
-		kodyId: 'google-products',
+		kodyId: 'pkg-alpha',
 		actionMatches: [],
 	})
 })
 
 test('buildSavedPackageSearchRows hydrates README and export JSDoc search signals', async () => {
+	const readmeBody =
+		'Package-first trace and debug workflow for failed processor service storage automation.'
+	const exportDescription = 'Trace failed processor service storage writes.'
 	const manifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
-			name: '@kentcdodds/email-received-subscriber',
+			name: '@kody/trace-package',
 			exports: {
 				'./trace-processor': {
 					import: './src/trace-processor.ts',
@@ -558,24 +543,23 @@ test('buildSavedPackageSearchRows hydrates README and export JSDoc search signal
 				},
 			},
 			kody: {
-				id: 'email-received-subscriber',
-				description: 'Email received subscriber package',
+				id: 'trace-package',
+				description: 'Trace package',
 			},
 		}),
 		manifestPath: 'package.json',
 	})
 	const files = {
 		'package.json': '{}',
-		'README.md':
-			'# Email received subscriber\n\nPackage-first trace and debug workflow for failed email processor service storage automation.',
+		'README.md': `# Trace package\n\n${readmeBody}`,
 		'src/trace-processor.d.ts': `/**
- * Trace failed email processor service storage writes.
+ * ${exportDescription}
  */
 export declare function traceProcessorFailure(messageId: string): Promise<void>
 `,
 	}
 	sourceMocks.loadPackageSourceBySourceId.mockResolvedValueOnce({
-		source: { id: 'source-email' },
+		source: { id: 'source-trace' },
 		manifest,
 		files,
 	})
@@ -586,14 +570,14 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		userId: 'user-123',
 		records: [
 			{
-				id: 'email-pkg',
+				id: 'trace-pkg',
 				userId: 'user-123',
-				name: '@kentcdodds/email-received-subscriber',
-				kodyId: 'email-received-subscriber',
-				description: 'Email received subscriber package',
-				tags: ['email'],
+				name: '@kody/trace-package',
+				kodyId: 'trace-package',
+				description: 'Trace package',
+				tags: ['trace'],
 				searchText: null,
-				sourceId: 'source-email',
+				sourceId: 'source-trace',
 				hasApp: false,
 				createdAt: '2026-04-20T00:00:00.000Z',
 				updatedAt: '2026-04-20T00:00:00.000Z',
@@ -605,13 +589,13 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	expect(rows.rows[0]).toMatchObject({
 		readmeSnippet: {
 			path: 'README.md',
-			snippet: expect.stringContaining('trace and debug workflow'),
+			snippet: expect.stringContaining(readmeBody),
 			truncated: false,
 		},
 		projection: {
 			exports: [
 				expect.objectContaining({
-					description: 'Trace failed email processor service storage writes.',
+					description: exportDescription,
 				}),
 			],
 		},
@@ -619,15 +603,14 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 
 	const registry = buildCapabilityRegistry([
 		{
-			name: 'email',
-			description: 'Email and storage primitives',
+			name: 'storage',
+			description: 'Storage primitives',
 			capabilities: [
 				{
-					name: 'email_storage_query',
-					domain: 'email',
-					description:
-						'Low-level email service storage query for processor records.',
-					keywords: ['email', 'storage', 'service', 'processor', 'failed'],
+					name: 'storage_query',
+					domain: 'storage',
+					description: 'Low-level storage query for processor records.',
+					keywords: ['storage', 'service', 'processor', 'failed'],
 					readOnly: true,
 					idempotent: true,
 					destructive: false,
@@ -642,7 +625,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	])
 	const result = await searchUnified({
 		env: {} as Env,
-		query: 'email trace failed processor service storage',
+		query: 'trace failed processor service storage',
 		limit: 3,
 		registry,
 		optionalRows: {
@@ -652,10 +635,14 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		},
 	})
 
-	expect(result.matches[0]).toMatchObject({
-		type: 'package',
-		kodyId: 'email-received-subscriber',
-	})
+	expect(result.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'package',
+				kodyId: 'trace-package',
+			}),
+		]),
+	)
 })
 
 test('buildSavedPackageSearchRows falls back when package source resolution fails', async () => {

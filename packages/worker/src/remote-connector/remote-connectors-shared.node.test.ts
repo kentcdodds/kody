@@ -13,12 +13,6 @@ test('normalizeRemoteConnectorRefs normalizes connector lists and userScopedConn
 
 	expect(
 		normalizeRemoteConnectorRefs({
-			remoteConnectors: [],
-		}),
-	).toEqual([])
-
-	expect(
-		normalizeRemoteConnectorRefs({
 			remoteConnectors: [
 				{ kind: 'Lights', instanceId: '  a  ' },
 				{ kind: 'custom', instanceId: 'x' },

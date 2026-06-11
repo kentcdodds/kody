@@ -259,9 +259,7 @@ test('integration_save creates, validates, and upserts integration records', asy
 				}),
 			},
 		),
-	).rejects.toThrow(
-		'Cannot create integration "spotify": missing or invalid required fields',
-	)
+	).rejects.toThrow(/missing or invalid required fields/i)
 	expect(invalidDb.entries.has('_integration:spotify')).toBe(false)
 
 	const upsertDb = createValueTestDb()

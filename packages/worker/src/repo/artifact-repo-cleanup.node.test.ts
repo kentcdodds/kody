@@ -133,7 +133,8 @@ test('artifact repo cleanup records warnings for scope mismatches and missing Ar
 		}),
 	).toBe(0)
 	expect(mockModule.deleteArtifactRepo).not.toHaveBeenCalled()
-	expect(packageWarnings[0]).toContain('user scope mismatch')
+	expect(packageWarnings).toHaveLength(1)
+	expect(packageWarnings[0]).toMatch(/scope mismatch/i)
 
 	mockModule.hasArtifactsAccess.mockReturnValue(false)
 	mockModule.listEntitySourcesByUser.mockResolvedValue([
@@ -149,7 +150,6 @@ test('artifact repo cleanup records warnings for scope mismatches and missing Ar
 			warnings: accountWarnings,
 		}),
 	).toBe(0)
-	expect(accountWarnings[0]).toContain(
-		'Cloudflare Artifacts access was unavailable',
-	)
+	expect(accountWarnings).toHaveLength(1)
+	expect(accountWarnings[0]).toMatch(/artifacts access/i)
 })

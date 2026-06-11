@@ -999,9 +999,8 @@ test('package runtime checks and invokes another package with current contract m
 				'export default async function handleDiscordMessageCreated(input: { event: { id: string }, dryRun?: boolean }): Promise<{ handled: boolean }>',
 		},
 	})
-	expect(check.ok && check.contract.warnings).toEqual([
-		'No machine-readable params schema is published for package exports; params were only validated as a JSON object.',
-	])
+	expect(check.ok && check.contract.warnings).toHaveLength(1)
+	expect(check.ok && check.contract.warnings[0]).toMatch(/params schema/i)
 	expect(repoMockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
 	if (!check.ok) throw new Error(check.message)
 

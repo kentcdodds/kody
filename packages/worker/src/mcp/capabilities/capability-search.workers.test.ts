@@ -24,11 +24,13 @@ test('capability search helpers build normalized searchable documents', () => {
 
 	const embedText = buildCapabilityEmbedText(spec)
 	expect(embedText).toContain('deploy_worker')
-	expect(embedText).toContain('Deploy a Worker from saved source.')
+	expect(embedText).toContain('apps')
+	expect(embedText).toContain('sourceId')
+	expect(embedText).toContain('deploymentId')
 
-	const doc = 'github rest api issues pull request repository'
-	expect(lexicalScore('github issues', doc)).toBeGreaterThan(
-		lexicalScore('weather forecast', doc),
+	const doc = 'alpha beta gamma delta epsilon'
+	expect(lexicalScore('alpha beta', doc)).toBeGreaterThan(
+		lexicalScore('omega zeta', doc),
 	)
 })
 

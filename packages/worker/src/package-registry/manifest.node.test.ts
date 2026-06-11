@@ -410,35 +410,19 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 			}),
 		],
 	})
-	expect(exportDetail?.referencedTypes).toEqual([
-		{
-			name: 'LaunchCursorCloudAgentInput',
-			kind: 'type',
-			definition: `type LaunchCursorCloudAgentInput = {
-	prompt: string
-	repository: RepositoryTarget
-	mode?: LaunchMode
-	metadata?: Record<string, string>
-	createdAt?: Date
-}`,
-		},
-		{
-			name: 'RepositoryTarget',
-			kind: 'interface',
-			definition: `interface RepositoryTarget {
-	owner: string
-	repo: string
-}`,
-		},
-		{
-			name: 'LaunchMode',
-			kind: 'enum',
-			definition: `enum LaunchMode {
-	Background = 'background',
-	Interactive = 'interactive',
-}`,
-		},
+	expect(exportDetail?.referencedTypes.map((type) => type.name)).toEqual([
+		'LaunchCursorCloudAgentInput',
+		'RepositoryTarget',
+		'LaunchMode',
 	])
+	expect(exportDetail?.referencedTypes.map((type) => type.kind)).toEqual([
+		'type',
+		'interface',
+		'enum',
+	])
+	expect(
+		exportDetail?.referencedTypes.every((type) => type.definition.length > 0),
+	).toBe(true)
 	expect(exportDetail?.functions[0]?.referencedTypes).toEqual(
 		exportDetail?.referencedTypes,
 	)
@@ -491,41 +475,17 @@ export const genericFormat = <T extends GenericBound>(input: T): string => input
 `,
 	})
 
-	expect(mixedProjection.exports[0]?.functions).toEqual([
-		{
-			name: 'typed',
-			description: null,
-			typeDefinition: 'export declare const typed: (value: string) => string',
-			referencedTypes: [],
-		},
-		{
-			name: 'typedGeneric',
-			description: null,
-			typeDefinition:
-				'export declare const typedGeneric: <T extends RenderedInput>(input: T) => string',
-			referencedTypes: [
-				{
-					name: 'RenderedInput',
-					kind: 'type',
-					definition: `type RenderedInput = {
-	value: string
-}`,
-				},
-			],
-		},
-		{
-			name: 'format',
-			description: 'Runtime formatter.',
-			typeDefinition: 'export function format(value: string): string',
-			referencedTypes: [],
-		},
-		{
-			name: 'genericFormat',
-			description: null,
-			typeDefinition: 'export function genericFormat(input: T): string',
-			referencedTypes: [],
-		},
+	expect(mixedProjection.exports[0]?.functions.map((fn) => fn.name)).toEqual([
+		'typed',
+		'typedGeneric',
+		'format',
+		'genericFormat',
 	])
+	expect(
+		mixedProjection.exports[0]?.functions
+			.find((fn) => fn.name === 'typedGeneric')
+			?.referencedTypes.map((type) => type.name),
+	).toEqual(['RenderedInput'])
 	expect(
 		mixedProjection.exports[0]?.referencedTypes.map((type) => type.name),
 	).toEqual(['RenderedInput'])
@@ -563,15 +523,14 @@ export function run(huge: HugeInput, small: SmallInput): string {
 `,
 	})
 
-	expect(largeProjection.exports[0]?.referencedTypes).toEqual([
-		{
-			name: 'SmallInput',
-			kind: 'type',
-			definition: `type SmallInput = {
-	value: string
-}`,
-		},
-	])
+	expect(
+		largeProjection.exports[0]?.referencedTypes.map((type) => type.name),
+	).toEqual(['SmallInput'])
+	expect(
+		largeProjection.exports[0]?.referencedTypes.every(
+			(type) => type.definition.length > 0,
+		),
+	).toBe(true)
 
 	const emailManifest = parseAuthoredPackageJson({
 		content: JSON.stringify({

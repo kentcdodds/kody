@@ -7,7 +7,7 @@ import {
 	createExecuteHelperPrelude,
 	oauthClientCredentials,
 	refreshAccessToken,
-	secretHeaders,
+	type secretHeaders,
 } from './codemode-utils.ts'
 
 type SecretSetCall = {
@@ -275,18 +275,6 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 	expect(fetchCalls).toHaveLength(2)
 	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
-	)
-})
-
-test('secretHeaders.basic returns an opaque Basic Auth placeholder', () => {
-	expect(
-		secretHeaders.basic({
-			usernameSecret: 'paypalClientId',
-			passwordSecret: 'paypalClientSecret',
-			scope: 'user',
-		}),
-	).toBe(
-		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
 })
 

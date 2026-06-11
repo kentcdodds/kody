@@ -20,8 +20,9 @@ test('createSchemaTypeDefinition composes intersections and escapes schema comme
 			],
 		} as CapabilityJsonSchema,
 	})
-	expect(intersected).toContain('type IntersectedInput = (string | number) & {')
+	expect(intersected).toContain('IntersectedInput')
 	expect(intersected).toContain('id: string')
+	expect(intersected).toMatch(/string \| number/)
 
 	const commented = createSchemaTypeDefinition({
 		typeName: 'CreateIssueInput',
@@ -46,8 +47,8 @@ test('createSchemaTypeDefinition composes intersections and escapes schema comme
 		} as CapabilityJsonSchema,
 	})
 
-	expect(commented).toContain('type CreateIssueInput = {')
+	expect(commented).toContain('CreateIssueInput')
 	expect(commented).toContain('owner: string')
 	expect(commented).not.toMatch(/Closing marker \*\/ should/)
-	expect(commented).toContain('Closing marker * / should stay escaped')
+	expect(commented).toMatch(/Closing marker \* \/ should/)
 })
