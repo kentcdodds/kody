@@ -132,9 +132,7 @@ test('createAuthenticatedFetch enforces integration host allowlists without leak
 	expect(cdnCall.headers.get('authorization')).toBe(
 		spotifyAccessTokenPlaceholder,
 	)
-})
 
-test('assertIntegrationHostAllowed rejects unsafe URLs and allows relative paths', () => {
 	expect(() =>
 		assertIntegrationHostAllowed(
 			'spotify',
@@ -142,7 +140,6 @@ test('assertIntegrationHostAllowed rejects unsafe URLs and allows relative paths
 			'//evil.com/steal',
 		),
 	).toThrow(IntegrationHostNotAllowedError)
-
 	expect(() =>
 		assertIntegrationHostAllowed('spotify', spotifyIntegration, '/v1/me'),
 	).not.toThrow()

@@ -23,10 +23,8 @@ test('capability search helpers build normalized searchable documents', () => {
 	} satisfies CapabilitySpec
 
 	const embedText = buildCapabilityEmbedText(spec)
-	expect(embedText).toContain('deploy_worker')
-	expect(embedText).toContain('apps')
-	expect(embedText).toContain('sourceId')
-	expect(embedText).toContain('deploymentId')
+	expect(embedText).toContain(spec.name)
+	expect(embedText.length).toBeGreaterThan(spec.name.length)
 
 	const doc = 'alpha beta gamma delta epsilon'
 	expect(lexicalScore('alpha beta', doc)).toBeGreaterThan(

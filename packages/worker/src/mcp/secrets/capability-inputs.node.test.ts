@@ -4,8 +4,8 @@ import {
 	secretInputSchemaFlag,
 } from './capability-inputs.ts'
 
-test('resolveCapabilityInputSecrets replaces placeholders for annotated fields', async () => {
-	const result = await resolveCapabilityInputSecrets({
+test('resolveCapabilityInputSecrets replaces annotated secret placeholders in nested values', async () => {
+	const flatResult = await resolveCapabilityInputSecrets({
 		schema: {
 			type: 'object',
 			properties: {
@@ -34,15 +34,13 @@ test('resolveCapabilityInputSecrets replaces placeholders for annotated fields',
 		},
 	})
 
-	expect(result).toEqual({
+	expect(flatResult).toEqual({
 		username: 'wireless-user',
 		password: 'Bearer wireless-pass',
 		label: '{{secret:displayName}}',
 	})
-})
 
-test('resolveCapabilityInputSecrets walks nested arrays and objects', async () => {
-	const result = await resolveCapabilityInputSecrets({
+	const nestedResult = await resolveCapabilityInputSecrets({
 		schema: {
 			type: 'object',
 			properties: {
@@ -69,7 +67,7 @@ test('resolveCapabilityInputSecrets walks nested arrays and objects', async () =
 		resolveSecretValue: async (secret) => `${secret.name}-value`,
 	})
 
-	expect(result).toEqual({
+	expect(nestedResult).toEqual({
 		processors: [
 			{ password: 'firstPassword-value' },
 			{ password: 'secondPassword-value' },

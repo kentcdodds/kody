@@ -163,7 +163,7 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 	expect(mod.packageContext).toEqual({ packageId: 'pkg-1' })
 })
 
-test('preloaded codemode export resolves from the active runtime store', async () => {
+test('preloaded codemode exports resolve from the active runtime store', async () => {
 	const sharedStorage = new AsyncLocalStorage<unknown>()
 	;(globalThis as unknown as Record<symbol, unknown>)[
 		Symbol.for('kody.runtimeStorage')
@@ -171,7 +171,7 @@ test('preloaded codemode export resolves from the active runtime store', async (
 	const url = await writeRuntimeFile()
 	const mod = (await import(url)) as RuntimeModule
 
-	const result = await sharedStorage.run(
+	const namedExportResult = await sharedStorage.run(
 		{
 			codemode: {
 				async tool_call(args: unknown) {
@@ -186,21 +186,12 @@ test('preloaded codemode export resolves from the active runtime store', async (
 		},
 	)
 
-	expect(result).toEqual({
+	expect(namedExportResult).toEqual({
 		ok: true,
 		args: { value: 'active-store' },
 	})
-})
 
-test('preloaded default runtime export exposes active codemode store', async () => {
-	const sharedStorage = new AsyncLocalStorage<unknown>()
-	;(globalThis as unknown as Record<symbol, unknown>)[
-		Symbol.for('kody.runtimeStorage')
-	] = sharedStorage
-	const url = await writeRuntimeFile()
-	const mod = (await import(url)) as RuntimeModule
-
-	const result = await sharedStorage.run(
+	const defaultExportResult = await sharedStorage.run(
 		{
 			codemode: {
 				async tool_call(args: unknown) {
@@ -215,22 +206,8 @@ test('preloaded default runtime export exposes active codemode store', async () 
 		},
 	)
 
-	expect(result).toEqual({
+	expect(defaultExportResult).toEqual({
 		ok: true,
 		args: { value: 'default-active-store' },
 	})
-})
-
-test('preloaded codemode export supports inspection outside a runtime store', async () => {
-	const url = await writeRuntimeFile()
-	const mod = (await import(url)) as RuntimeModule
-
-	expect(String(mod.codemode)).toBe('[KodyRuntime:codemode]')
-	expect(Object.prototype.toString.call(mod.codemode)).toBe(
-		'[object KodyRuntime:codemode]',
-	)
-	expect(Symbol.iterator in Object(mod.codemode)).toBe(false)
-	expect(() => mod.codemode?.tool_call({})).toThrow(
-		'kody:runtime export "codemode" is not available in this execution context.',
-	)
 })

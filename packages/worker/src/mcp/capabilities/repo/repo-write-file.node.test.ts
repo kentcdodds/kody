@@ -33,7 +33,7 @@ function resetMocks() {
 	mockModule.repoSessionRpc.mockReset()
 }
 
-test('repo_write_file forwards write edits to applyEdits and reshapes the response', async () => {
+test('repo_write_file forwards write edits, optional flags, and empty content clears', async () => {
 	resetMocks()
 	const rpc = createRpc()
 	rpc.applyEdits.mockResolvedValueOnce({
@@ -56,7 +56,7 @@ test('repo_write_file forwards write edits to applyEdits and reshapes the respon
 	})
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 
-	const result = await repoWriteFileCapability.handler(
+	const writeResult = await repoWriteFileCapability.handler(
 		{
 			session_id: 'session-1',
 			files: [
@@ -85,7 +85,7 @@ test('repo_write_file forwards write edits to applyEdits and reshapes the respon
 		dryRun: undefined,
 		rollbackOnError: undefined,
 	})
-	expect(result).toEqual({
+	expect(writeResult).toEqual({
 		dry_run: false,
 		total_changed: 2,
 		edits: [
@@ -103,11 +103,7 @@ test('repo_write_file forwards write edits to applyEdits and reshapes the respon
 			},
 		],
 	})
-})
 
-test('repo_write_file passes dry_run and rollback_on_error through to applyEdits', async () => {
-	resetMocks()
-	const rpc = createRpc()
 	rpc.applyEdits.mockResolvedValueOnce({
 		dryRun: true,
 		totalChanged: 0,
@@ -120,9 +116,8 @@ test('repo_write_file passes dry_run and rollback_on_error through to applyEdits
 			},
 		],
 	})
-	mockModule.repoSessionRpc.mockReturnValue(rpc)
 
-	const result = await repoWriteFileCapability.handler(
+	const dryRunResult = await repoWriteFileCapability.handler(
 		{
 			session_id: 'session-1',
 			files: [{ path: 'src/index.ts', content: 'unchanged\n' }],
@@ -138,13 +133,9 @@ test('repo_write_file passes dry_run and rollback_on_error through to applyEdits
 			rollbackOnError: false,
 		}),
 	)
-	expect(result.dry_run).toBe(true)
-	expect(result.total_changed).toBe(0)
-})
+	expect(dryRunResult.dry_run).toBe(true)
+	expect(dryRunResult.total_changed).toBe(0)
 
-test('repo_write_file allows empty content for clearing a file', async () => {
-	resetMocks()
-	const rpc = createRpc()
 	rpc.applyEdits.mockResolvedValueOnce({
 		dryRun: false,
 		totalChanged: 1,
@@ -152,18 +143,19 @@ test('repo_write_file allows empty content for clearing a file', async () => {
 			{ path: 'src/index.ts', changed: true, content: '', diff: '@@ cleared' },
 		],
 	})
-	mockModule.repoSessionRpc.mockReturnValue(rpc)
-	const result = await repoWriteFileCapability.handler(
+
+	const clearResult = await repoWriteFileCapability.handler(
 		{
 			session_id: 'session-1',
 			files: [{ path: 'src/index.ts', content: '' }],
 		},
 		createCapabilityContext(),
 	)
+
 	expect(rpc.applyEdits).toHaveBeenCalledWith(
 		expect.objectContaining({
 			edits: [{ kind: 'write', path: 'src/index.ts', content: '' }],
 		}),
 	)
-	expect(result.total_changed).toBe(1)
+	expect(clearResult.total_changed).toBe(1)
 })

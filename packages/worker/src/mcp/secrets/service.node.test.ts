@@ -188,9 +188,10 @@ function createSecretTestDb() {
 	return { db, seedReservedSecret }
 }
 
-test('saveSecret rejects reserved internal skill runner names', async () => {
+test('reserved internal skill runner secret names cannot be saved or listed', async () => {
+	const testDb = createSecretTestDb()
 	const env = {
-		APP_DB: createSecretTestDb().db,
+		APP_DB: testDb.db,
 		COOKIE_SECRET: 'test-cookie-secret',
 	}
 
@@ -203,12 +204,8 @@ test('saveSecret rejects reserved internal skill runner names', async () => {
 			value: 'super-secret-token',
 		}),
 	).rejects.toThrow('Secret name is reserved for internal use.')
-})
 
-test('listSecrets hides reserved internal skill runner names', async () => {
-	const testDb = createSecretTestDb()
 	testDb.seedReservedSecret('user-123', 'skill-runner-token:discord-gateway')
-	const env = { APP_DB: testDb.db }
 
 	await expect(
 		listSecrets({

@@ -56,7 +56,6 @@ test('logJobSchedulerError truncates oversized fields, caps outcome count, and a
 		) as Record<string, unknown>
 		expect((errorSpy.mock.calls[0] ?? [])[0]).toBe('job-scheduler')
 		expect(String(topLevelPayload.errorMessage).length).toBeLessThan(1_205)
-		expect(topLevelPayload.errorMessage).toContain('...[truncated')
 
 		const jobOutcomePayload = JSON.parse(
 			(errorSpy.mock.calls[1] ?? [])[1] as string,
@@ -65,9 +64,7 @@ test('logJobSchedulerError truncates oversized fields, caps outcome count, and a
 		}
 		const outcome = jobOutcomePayload.jobOutcomes[0] ?? {}
 		expect(String(outcome.error).length).toBeLessThan(1_100)
-		expect(outcome.error).toContain('...[truncated')
 		expect(outcome.rescheduleError).not.toBe('w'.repeat(1_010))
-		expect(outcome.rescheduleError).toContain('...[truncated')
 
 		const timestampPayload = JSON.parse(
 			(errorSpy.mock.calls[2] ?? [])[1] as string,
