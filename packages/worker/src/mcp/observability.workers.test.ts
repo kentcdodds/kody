@@ -128,7 +128,7 @@ test('observability helpers normalize errors and emit resilient mcp-event logs',
 	}
 })
 
-test('package_save capability logs parse_input failure and rethrows', async () => {
+test('package_save logs parse failures, rejects invalid manifests, and logs successful saves', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	console.info = ((tag: unknown, json?: unknown) => {
@@ -153,15 +153,15 @@ test('package_save capability logs parse_input failure and rethrows', async () =
 		console.info = originalInfo
 	}
 
-	expect(payloads.length).toBe(1)
-	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
-	expect(event.tool).toBe('capability')
-	expect(event.capabilityName).toBe('package_save')
-	expect(event.outcome).toBe('failure')
-	expect(event.failurePhase).toBe('parse_input')
-})
+	expect(payloads).toHaveLength(1)
+	const parseFailureEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
+	expect(parseFailureEvent).toMatchObject({
+		tool: 'capability',
+		capabilityName: 'package_save',
+		outcome: 'failure',
+		failurePhase: 'parse_input',
+	})
 
-test('package_save rejects invalid manifests before persistence', async () => {
 	resetRepoPersistenceMocks()
 	const handler = capabilityMap['package_save'].handler
 	const signedInContext = {
@@ -238,11 +238,8 @@ test('package_save rejects invalid manifests before persistence', async () => {
 		'package.json name "@other/observed-package" must use the authenticated user\'s package scope "@user/*".',
 	)
 	expect(repoMockModule.ensureEntitySource).not.toHaveBeenCalled()
-})
 
-test('package_save capability logs success for valid invocation', async () => {
-	const originalInfo = console.info
-	const payloads: Array<string> = []
+	payloads.length = 0
 	resetRepoPersistenceMocks()
 	repoMockModule.ensureEntitySource.mockResolvedValue({
 		id: 'package-package-1',
@@ -269,7 +266,6 @@ test('package_save capability logs success for valid invocation', async () => {
 		}
 	}) as typeof console.info
 	try {
-		const handler = capabilityMap['package_save'].handler
 		const result = await handler(
 			{
 				confirm_destructive_overwrite: true,
@@ -481,8 +477,8 @@ test('package_save capability logs success for valid invocation', async () => {
 		console.info = originalInfo
 	}
 
-	expect(payloads.length).toBe(1)
-	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
-	expect(event.outcome).toBe('success')
-	expect(event.failurePhase).toBeUndefined()
+	expect(payloads).toHaveLength(1)
+	const successEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
+	expect(successEvent.outcome).toBe('success')
+	expect(successEvent.failurePhase).toBeUndefined()
 }, 15_000)

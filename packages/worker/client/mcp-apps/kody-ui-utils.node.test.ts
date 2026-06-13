@@ -98,27 +98,25 @@ test('document helpers preserve structure while rewriting only supported urls', 
 	expect(absolutized).toContain('href="#section"')
 	expect(absolutized).toContain('src="data:image/png;base64,abc"')
 	expect(absolutized).toContain('href="javascript:alert(1)"')
-})
 
-test('measureRenderedFrameSize uses the largest body and document dimensions', () => {
-	const size = measureRenderedFrameSize({
-		documentElement: {
-			scrollHeight: 420,
-			scrollWidth: 610,
-			offsetHeight: 410,
-			offsetWidth: 600,
-			getBoundingClientRect: () => ({ height: 405.2, width: 598.6 }),
-		},
-		body: {
-			scrollHeight: 530,
-			scrollWidth: 580,
-			offsetHeight: 520,
-			offsetWidth: 570,
-			getBoundingClientRect: () => ({ height: 518.4, width: 640.2 }),
-		},
-	})
-
-	expect(size).toEqual({
+	expect(
+		measureRenderedFrameSize({
+			documentElement: {
+				scrollHeight: 420,
+				scrollWidth: 610,
+				offsetHeight: 410,
+				offsetWidth: 600,
+				getBoundingClientRect: () => ({ height: 405.2, width: 598.6 }),
+			},
+			body: {
+				scrollHeight: 530,
+				scrollWidth: 580,
+				offsetHeight: 520,
+				offsetWidth: 570,
+				getBoundingClientRect: () => ({ height: 518.4, width: 640.2 }),
+			},
+		}),
+	).toEqual({
 		height: 530,
 		width: 641,
 	})

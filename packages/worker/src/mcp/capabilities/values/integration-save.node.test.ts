@@ -69,7 +69,7 @@ function createValueTestDb() {
 	return { db, entries }
 }
 
-test('integration config helpers merge patches, tolerate legacy rows, and drop invalid authorization metadata', () => {
+test('integration config helpers and integration_save persist validated integration records', async () => {
 	const current = integrationConfigSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -176,9 +176,7 @@ test('integration config helpers merge patches, tolerate legacy rows, and drop i
 		name: 'spotify',
 		authorization: null,
 	})
-})
 
-test('integration_save creates, validates, and upserts integration records', async () => {
 	const testDb = createValueTestDb()
 
 	const result = await integrationSaveCapability.handler(

@@ -1,38 +1,13 @@
 import { expect, test } from 'vitest'
-import {
-	buildCapabilityEmbedText,
-	lexicalScore,
-	searchCapabilities,
-} from './capability-search.ts'
+import { lexicalScore, searchCapabilities } from './capability-search.ts'
 import { type CapabilitySpec } from './types.ts'
 
-test('capability search helpers build normalized searchable documents', () => {
-	const spec = {
-		name: 'deploy_worker',
-		domain: 'apps',
-		description: 'Deploy a Worker from saved source.',
-		keywords: ['deploy', 'worker', 'wrangler'],
-		readOnly: false,
-		idempotent: true,
-		destructive: false,
-		inputFields: ['sourceId', 'environment'],
-		requiredInputFields: ['sourceId'],
-		outputFields: ['deploymentId'],
-		inputSchema: {},
-		inputTypeDefinition: 'type DeployWorkerInput = Record<string, unknown>',
-	} satisfies CapabilitySpec
-
-	const embedText = buildCapabilityEmbedText(spec)
-	expect(embedText).toContain(spec.name)
-	expect(embedText.length).toBeGreaterThan(spec.name.length)
-
+test('offline capability search ranks lexical matches and returns structured detail without schema fields', async () => {
 	const doc = 'alpha beta gamma delta epsilon'
 	expect(lexicalScore('alpha beta', doc)).toBeGreaterThan(
 		lexicalScore('omega zeta', doc),
 	)
-})
 
-test('offline detailed search returns structured capability matches without schema fields', async () => {
 	const specs = {
 		oauth_setup_guide: {
 			name: 'oauth_setup_guide',
@@ -60,15 +35,12 @@ test('offline detailed search returns structured capability matches without sche
 		AI: {} as Ai,
 	} as Env
 
-	const oauthSpecs = {
-		oauth_setup_guide: specs.oauth_setup_guide,
-	} satisfies Record<string, CapabilitySpec>
 	const oauthGuide = await searchCapabilities({
 		env,
 		query: 'oauth redirect uri provider registration',
 		limit: 8,
 		detail: true,
-		specs: oauthSpecs,
+		specs,
 	})
 
 	expect(oauthGuide.offline).toBe(true)

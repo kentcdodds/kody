@@ -115,10 +115,52 @@ test('workflow_list returns recent workflow runs for the current user', async ()
 	})
 })
 
-test('job_update and job_delete mutate existing jobs for the signed-in user', async () => {
+test('job_update and job_delete require authentication and mutate existing jobs for the signed-in user', async () => {
 	resetMocks()
 	const env = {} as Env
-	const callerContext = createMcpCallerContext({
+	const unauthenticatedContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+	})
+
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+				enabled: false,
+			},
+			{
+				env,
+				callerContext: unauthenticatedContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
+		jobDeleteCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext: unauthenticatedContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
+		jobRunNowCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext: unauthenticatedContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	expect(mockModule.updateJob).not.toHaveBeenCalled()
+	expect(mockModule.deleteJob).not.toHaveBeenCalled()
+	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
+
+	const signedInContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
 			userId: 'user-123',
@@ -178,13 +220,13 @@ test('job_update and job_delete mutate existing jobs for the signed-in user', as
 		},
 		{
 			env,
-			callerContext,
+			callerContext: signedInContext,
 		},
 	)
 
 	expect(mockModule.updateJob).toHaveBeenCalledWith({
 		env,
-		callerContext,
+		callerContext: signedInContext,
 		body: {
 			id: 'job-123',
 			name: 'Nightly cleanup v2',
@@ -265,11 +307,11 @@ test('job_update and job_delete mutate existing jobs for the signed-in user', as
 				run_at: '2026-04-22T18:30:00Z',
 			},
 		},
-		{ env, callerContext },
+		{ env, callerContext: signedInContext },
 	)
 	expect(mockModule.updateJob).toHaveBeenLastCalledWith({
 		env,
-		callerContext,
+		callerContext: signedInContext,
 		body: expect.objectContaining({
 			id: 'job-once',
 			schedule: {
@@ -289,7 +331,7 @@ test('job_update and job_delete mutate existing jobs for the signed-in user', as
 			},
 			{
 				env,
-				callerContext,
+				callerContext: signedInContext,
 			},
 		),
 	).rejects.toThrow('Provide at least one mutable field to update.')
@@ -305,7 +347,7 @@ test('job_update and job_delete mutate existing jobs for the signed-in user', as
 		},
 		{
 			env,
-			callerContext,
+			callerContext: signedInContext,
 		},
 	)
 	expect(mockModule.deleteJob).toHaveBeenCalledWith({
@@ -500,9 +542,42 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 	expect(failedOneOffResult.job.last_run_error).toBe('boom')
 })
 
-test('job_schedule covers recurring schedules and the one-off helper flow', async () => {
+test('job_schedule covers recurring schedules, requires auth, and supports the one-off helper flow', async () => {
 	resetMocks()
 	const env = {} as Env
+	const unauthenticatedContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+	})
+
+	await expect(
+		jobScheduleCapability.handler(
+			{
+				code: 'export default async () => ({ ok: true })',
+				schedule: {
+					type: 'interval',
+					every: '15m',
+				},
+			},
+			{
+				env,
+				callerContext: unauthenticatedContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
+		jobScheduleOnceCapability.handler(
+			{
+				code: 'export default async () => ({ ok: true })',
+				run_at: '2026-04-20T18:30:00Z',
+			},
+			{
+				env,
+				callerContext: unauthenticatedContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	expect(mockModule.createJob).not.toHaveBeenCalled()
+
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
@@ -660,80 +735,6 @@ test('job_schedule covers recurring schedules and the one-off helper flow', asyn
 			run_at: '2026-04-20T18:30:00.000Z',
 		},
 	})
-})
-
-test('job capabilities require an authenticated user for scheduling, mutation, and run-now flows', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-	})
-
-	await expect(
-		jobScheduleCapability.handler(
-			{
-				code: 'export default async () => ({ ok: true })',
-				schedule: {
-					type: 'interval',
-					every: '15m',
-				},
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-				enabled: false,
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobScheduleOnceCapability.handler(
-			{
-				code: 'export default async () => ({ ok: true })',
-				run_at: '2026-04-20T18:30:00Z',
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobDeleteCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobRunNowCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	expect(mockModule.createJob).not.toHaveBeenCalled()
-	expect(mockModule.updateJob).not.toHaveBeenCalled()
-	expect(mockModule.deleteJob).not.toHaveBeenCalled()
-	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
 })
 
 test('job inspection capabilities expose due-now state, history, alarm status, and optional source code', async () => {

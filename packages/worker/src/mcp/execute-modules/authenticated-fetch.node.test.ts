@@ -85,7 +85,7 @@ async function withPatchedFetch<T>(
 	}
 }
 
-test('createAuthenticatedFetch enforces integration host allowlists without leaking tokens', async () => {
+test('createAuthenticatedFetch enforces integration host allowlists and fails closed without configured hosts', async () => {
 	const { codemode, fetchCalls, fetchStub } = createCodemode()
 
 	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
@@ -143,15 +143,13 @@ test('createAuthenticatedFetch enforces integration host allowlists without leak
 	expect(() =>
 		assertIntegrationHostAllowed('spotify', spotifyIntegration, '/v1/me'),
 	).not.toThrow()
-})
 
-test('createAuthenticatedFetch fails closed when integration has no allowlist configured', async () => {
 	const emptyIntegration = {
 		...spotifyIntegration,
 		requiredHosts: [] as Array<string>,
 		apiBaseUrl: null,
 	}
-	const codemode = {
+	const emptyAllowlistCodemode = {
 		async integration_get() {
 			return { integration: emptyIntegration }
 		},
@@ -164,13 +162,13 @@ test('createAuthenticatedFetch fails closed when integration has no allowlist co
 		},
 	} satisfies CodemodeNamespace
 
-	const fetchCalls: Array<Request> = []
-	const fetchStub: typeof globalThis.fetch = async (
+	const emptyAllowlistFetchCalls: Array<Request> = []
+	const emptyAllowlistFetchStub: typeof globalThis.fetch = async (
 		input: ExecuteRequestInput,
 		init?: RequestInit,
 	) => {
 		const request = new Request(input, init)
-		fetchCalls.push(request)
+		emptyAllowlistFetchCalls.push(request)
 		if (request.url === emptyIntegration.tokenUrl) {
 			return new Response(JSON.stringify({ access_token: fakeAccessToken }), {
 				status: 200,
@@ -183,17 +181,18 @@ test('createAuthenticatedFetch fails closed when integration has no allowlist co
 		})
 	}
 
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
-		createAuthenticatedFetch(codemode, 'spotify'),
+	const emptyAllowlistFetch = await withPatchedFetch(
+		emptyAllowlistFetchStub,
+		() => createAuthenticatedFetch(emptyAllowlistCodemode, 'spotify'),
 	)
 
-	const fetchCallsBefore = fetchCalls.length
+	const fetchCallsBefore = emptyAllowlistFetchCalls.length
 
 	await expect(
-		withPatchedFetch(fetchStub, () =>
-			authenticatedFetch('https://anything.example/data'),
+		withPatchedFetch(emptyAllowlistFetchStub, () =>
+			emptyAllowlistFetch('https://anything.example/data'),
 		),
 	).rejects.toThrow(/no allowed hosts configured/)
 
-	expect(fetchCalls.length).toBe(fetchCallsBefore)
+	expect(emptyAllowlistFetchCalls.length).toBe(fetchCallsBefore)
 })

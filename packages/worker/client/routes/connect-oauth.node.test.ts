@@ -7,7 +7,7 @@ import {
 	summarizeStoredSetupState,
 } from './connect-oauth.tsx'
 
-test('stored integration parsing normalizes saved metadata and lookup candidates', () => {
+test('connect OAuth helpers parse stored integrations, merge reconnect configs, and derive provider defaults', () => {
 	const parsed = parseStoredIntegrationConfig(
 		JSON.stringify({
 			name: 'GitHub',
@@ -45,13 +45,10 @@ test('stored integration parsing normalizes saved metadata and lookup candidates
 		buildIntegrationValueName('GitHub'),
 		buildIntegrationValueName('github'),
 	])
-
 	expect(getIntegrationValueCandidates('github', 'github')).toEqual([
 		buildIntegrationValueName('github'),
 	])
-})
 
-test('mergeConnectOauthConfig reuses stored integration metadata across reconnect flows', () => {
 	const githubConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'github',
@@ -100,6 +97,7 @@ test('mergeConnectOauthConfig reuses stored integration metadata across reconnec
 		refreshTokenSecretName: 'githubRefreshToken',
 		allowedHosts: ['api.github.com', 'github.com'],
 	})
+
 	const googleReconnectConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'google-youtube-brand',
@@ -157,6 +155,7 @@ test('mergeConnectOauthConfig reuses stored integration metadata across reconnec
 		},
 		allowedHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 	})
+
 	const googleFallbackConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'google-youtube-brand',
@@ -202,10 +201,8 @@ test('mergeConnectOauthConfig reuses stored integration metadata across reconnec
 			prompt: 'consent',
 		},
 	})
-})
 
-test('new OAuth providers derive defaults and surface setup readiness in one flow', () => {
-	const config = mergeConnectOauthConfig({
+	const spotifyConfig = mergeConnectOauthConfig({
 		queryConfig: {
 			provider: 'spotify',
 			providerKey: 'spotify',
@@ -224,7 +221,7 @@ test('new OAuth providers derive defaults and surface setup readiness in one flo
 		storedIntegration: null,
 	})
 
-	expect(config).toMatchObject({
+	expect(spotifyConfig).toMatchObject({
 		provider: 'spotify',
 		providerKey: 'spotify',
 		tokenHost: 'accounts.spotify.com',
@@ -235,6 +232,7 @@ test('new OAuth providers derive defaults and surface setup readiness in one flo
 		accessTokenSecretName: 'spotifyAccessToken',
 		refreshTokenSecretName: 'spotifyRefreshToken',
 	})
+
 	const confidentialSetup = summarizeStoredSetupState({
 		flow: 'confidential',
 		clientId: 'client-id',
