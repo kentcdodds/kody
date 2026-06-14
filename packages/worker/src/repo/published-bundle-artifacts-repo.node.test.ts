@@ -28,38 +28,13 @@ function createStaticDependentsDb(input: {
 	} as unknown as D1Database
 }
 
-test('countStaticDependentBundleArtifactPackages counts direct JSON dependency rows by source id', async () => {
+test('static dependent bundle artifact queries count and list bounded rows by source id', async () => {
 	const onBind = vi.fn()
 	const db = createStaticDependentsDb({
 		first: {
 			total_packages: 2,
 			stale_packages: 1,
 		},
-		onBind,
-	})
-
-	const result = await countStaticDependentBundleArtifactPackages(db, {
-		userId: 'user-1',
-		sourceId: 'source-a',
-		currentDependencyCommit: 'commit-a-new',
-	})
-
-	expect(result).toEqual({
-		totalPackages: 2,
-		stalePackages: 1,
-	})
-	expect(onBind).toHaveBeenCalledTimes(1)
-	expect(onBind).toHaveBeenCalledWith(expect.any(String), [
-		'commit-a-new',
-		'user-1',
-		'source-a',
-		'source-a',
-	])
-})
-
-test('listStaticDependentBundleArtifactRows maps bounded dependent package artifact rows', async () => {
-	const onBind = vi.fn()
-	const db = createStaticDependentsDb({
 		results: [
 			{
 				package_id: 'package-b',
@@ -79,15 +54,26 @@ test('listStaticDependentBundleArtifactRows maps bounded dependent package artif
 		],
 		onBind,
 	})
-
-	const rows = await listStaticDependentBundleArtifactRows(db, {
+	const queryInput = {
 		userId: 'user-1',
 		sourceId: 'source-a',
 		currentDependencyCommit: 'commit-a-new',
+	}
+
+	const counts = await countStaticDependentBundleArtifactPackages(
+		db,
+		queryInput,
+	)
+	expect(counts).toEqual({
+		totalPackages: 2,
+		stalePackages: 1,
+	})
+
+	const rows = await listStaticDependentBundleArtifactRows(db, {
+		...queryInput,
 		packageLimit: 10,
 		artifactsPerPackageLimit: 5,
 	})
-
 	expect(rows).toEqual([
 		{
 			packageId: 'package-b',
@@ -105,8 +91,15 @@ test('listStaticDependentBundleArtifactRows maps bounded dependent package artif
 			bundledDependencyCommit: 'commit-a-old',
 		},
 	])
-	expect(onBind).toHaveBeenCalledTimes(1)
-	expect(onBind).toHaveBeenCalledWith(expect.any(String), [
+
+	expect(onBind).toHaveBeenCalledTimes(2)
+	expect(onBind).toHaveBeenNthCalledWith(1, expect.any(String), [
+		'commit-a-new',
+		'user-1',
+		'source-a',
+		'source-a',
+	])
+	expect(onBind).toHaveBeenNthCalledWith(2, expect.any(String), [
 		'commit-a-new',
 		'user-1',
 		'source-a',

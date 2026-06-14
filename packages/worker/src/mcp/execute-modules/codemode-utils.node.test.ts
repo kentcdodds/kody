@@ -119,18 +119,17 @@ async function withPatchedFetch<T>(
 	}
 }
 
-test('refreshAccessToken persists rotated refresh token and access token', async () => {
-	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode({
+test('codemode oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
+	const rotatedRefresh = createCodemode({
 		access_token: 'new-access-token',
 		refresh_token: 'new-refresh-token',
 	})
-
-	const accessToken = await withPatchedFetch(fetchStub, () =>
-		refreshAccessToken(codemode, 'spotify'),
+	const rotatedAccessToken = await withPatchedFetch(
+		rotatedRefresh.fetchStub,
+		() => refreshAccessToken(rotatedRefresh.codemode, 'spotify'),
 	)
-
-	expect(accessToken).toBe('new-access-token')
-	expect(secretSetCalls).toEqual([
+	expect(rotatedAccessToken).toBe('new-access-token')
+	expect(rotatedRefresh.secretSetCalls).toEqual([
 		{
 			name: 'spotifyRefreshToken',
 			value: 'new-refresh-token',
@@ -142,34 +141,34 @@ test('refreshAccessToken persists rotated refresh token and access token', async
 			scope: 'user',
 		},
 	])
-	expect(fetchCalls).toHaveLength(1)
-	expect(fetchCalls[0]?.method).toBe('POST')
-	expect(await fetchCalls[0]?.text()).toContain(
+	expect(rotatedRefresh.fetchCalls).toHaveLength(1)
+	expect(rotatedRefresh.fetchCalls[0]?.method).toBe('POST')
+	expect(await rotatedRefresh.fetchCalls[0]?.text()).toContain(
 		'refresh_token=%7B%7Bsecret%3AspotifyRefreshToken%7Cscope%3Duser%7D%7D',
 	)
-})
 
-test('createAuthenticatedFetch uses the stored access token before refreshing', async () => {
-	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode({
+	const storedToken = createCodemode({
 		access_token: 'refreshed-access-token',
 	})
-
-	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
-	const response = await withPatchedFetch(fetchStub, () =>
-		authenticatedFetch('/me/playlists', { method: 'POST' }),
+	const authenticatedFetch = await createAuthenticatedFetch(
+		storedToken.codemode,
+		'spotify',
 	)
-
-	expect(secretSetCalls).toEqual([])
-	expect(fetchCalls).toHaveLength(1)
-	expect(fetchCalls[0]?.url).toBe('https://api.spotify.test/v1/me/playlists')
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+	const storedTokenResponse = await withPatchedFetch(
+		storedToken.fetchStub,
+		() => authenticatedFetch('/me/playlists', { method: 'POST' }),
+	)
+	expect(storedToken.secretSetCalls).toEqual([])
+	expect(storedToken.fetchCalls).toHaveLength(1)
+	expect(storedToken.fetchCalls[0]?.url).toBe(
+		'https://api.spotify.test/v1/me/playlists',
+	)
+	expect(storedToken.fetchCalls[0]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-	expect(await response.json()).toEqual({ ok: true })
-})
+	expect(await storedTokenResponse.json()).toEqual({ ok: true })
 
-test('createAuthenticatedFetch refreshes when the stored access token secret is missing', async () => {
-	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode(
+	const missingToken = createCodemode(
 		{
 			access_token: 'new-access-token',
 		},
@@ -177,32 +176,34 @@ test('createAuthenticatedFetch refreshes when the stored access token secret is 
 			apiErrors: [new Error('Secret "spotifyAccessToken" was not found.')],
 		},
 	)
-
-	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
-	const response = await withPatchedFetch(fetchStub, () =>
-		authenticatedFetch('/me?market=US'),
+	const missingTokenFetch = await createAuthenticatedFetch(
+		missingToken.codemode,
+		'spotify',
 	)
-
-	expect(secretSetCalls).toEqual([
+	const missingTokenResponse = await withPatchedFetch(
+		missingToken.fetchStub,
+		() => missingTokenFetch('/me?market=US'),
+	)
+	expect(missingToken.secretSetCalls).toEqual([
 		{
 			name: 'spotifyAccessToken',
 			value: 'new-access-token',
 			scope: 'user',
 		},
 	])
-	expect(fetchCalls).toHaveLength(3)
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+	expect(missingToken.fetchCalls).toHaveLength(3)
+	expect(missingToken.fetchCalls[0]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-	expect(fetchCalls[1]?.url).toBe('https://accounts.spotify.test/api/token')
-	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
+	expect(missingToken.fetchCalls[1]?.url).toBe(
+		'https://accounts.spotify.test/api/token',
+	)
+	expect(missingToken.fetchCalls[2]?.headers.get('authorization')).toBe(
 		'Bearer new-access-token',
 	)
-	expect(await response.json()).toEqual({ ok: true })
-})
+	expect(await missingTokenResponse.json()).toEqual({ ok: true })
 
-test('createAuthenticatedFetch persists refreshed access token even without refresh token rotation', async () => {
-	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode(
+	const expiredToken = createCodemode(
 		{
 			access_token: 'new-access-token',
 		},
@@ -213,43 +214,45 @@ test('createAuthenticatedFetch persists refreshed access token even without refr
 			],
 		},
 	)
-
-	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
-	const response = await withPatchedFetch(fetchStub, () =>
-		authenticatedFetch('/me?market=US'),
+	const expiredTokenFetch = await createAuthenticatedFetch(
+		expiredToken.codemode,
+		'spotify',
 	)
-
-	expect(secretSetCalls).toEqual([
+	const expiredTokenResponse = await withPatchedFetch(
+		expiredToken.fetchStub,
+		() => expiredTokenFetch('/me?market=US'),
+	)
+	expect(expiredToken.secretSetCalls).toEqual([
 		{
 			name: 'spotifyAccessToken',
 			value: 'new-access-token',
 			scope: 'user',
 		},
 	])
-	expect(fetchCalls).toHaveLength(3)
-	expect(fetchCalls[0]?.url).toBe('https://api.spotify.test/v1/me?market=US')
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+	expect(expiredToken.fetchCalls).toHaveLength(3)
+	expect(expiredToken.fetchCalls[0]?.url).toBe(
+		'https://api.spotify.test/v1/me?market=US',
 	)
-	expect(fetchCalls[1]?.url).toBe('https://accounts.spotify.test/api/token')
-	expect(fetchCalls[2]?.url).toBe('https://api.spotify.test/v1/me?market=US')
-	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
+	expect(expiredToken.fetchCalls[1]?.url).toBe(
+		'https://accounts.spotify.test/api/token',
+	)
+	expect(expiredToken.fetchCalls[2]?.headers.get('authorization')).toBe(
 		'Bearer new-access-token',
 	)
-	expect(await response.json()).toEqual({ ok: true })
+	expect(await expiredTokenResponse.json()).toEqual({ ok: true })
 })
 
-test('createExecuteHelperPrelude persists rotated refresh token and access token', async () => {
+test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, authenticated fetch, secrets, and client credentials', async () => {
+	const prelude = createExecuteHelperPrelude()
+	const createSandboxHelpers = new Function(
+		'codemode',
+		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
+	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
+
 	const { codemode, secretSetCalls, fetchStub, fetchCalls } = createCodemode({
 		access_token: 'new-access-token',
 		refresh_token: 'new-refresh-token',
 	})
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'codemode',
-		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch };`,
-	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
-
 	const helpers = createSandboxHelpers(codemode)
 	const accessToken = await withPatchedFetch(fetchStub, () =>
 		helpers.refreshAccessToken('spotify'),
@@ -276,16 +279,24 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-})
 
-test('oauthClientCredentials posts a Basic placeholder through fetch', async () => {
-	const fetchCalls: Array<Request> = []
-	const fetchStub: typeof globalThis.fetch = async (
+	expect(
+		helpers.secretHeaders.basic({
+			usernameSecret: 'paypalClientId',
+			passwordSecret: 'paypalClientSecret',
+			scope: 'user',
+		}),
+	).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+
+	const clientCredentialsCalls: Array<Request> = []
+	const clientCredentialsStub: typeof globalThis.fetch = async (
 		input: ExecuteRequestInput,
 		init?: RequestInit,
 	) => {
 		const request = new Request(input, init)
-		fetchCalls.push(request)
+		clientCredentialsCalls.push(request)
 		return new Response(
 			JSON.stringify({
 				access_token: 'paypal-access-token',
@@ -297,9 +308,8 @@ test('oauthClientCredentials posts a Basic placeholder through fetch', async () 
 			},
 		)
 	}
-
-	const tokenResponse = await withPatchedFetch(fetchStub, () =>
-		oauthClientCredentials({
+	const tokenResponse = await withPatchedFetch(clientCredentialsStub, () =>
+		helpers.oauthClientCredentials({
 			tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
 			clientIdSecret: 'paypalClientId',
 			clientSecretSecret: 'paypalClientSecret',
@@ -309,65 +319,22 @@ test('oauthClientCredentials posts a Basic placeholder through fetch', async () 
 			},
 		}),
 	)
-
 	expect(tokenResponse).toEqual({
 		access_token: 'paypal-access-token',
 		token_type: 'Bearer',
 	})
-	expect(fetchCalls).toHaveLength(1)
-	expect(fetchCalls[0]?.method).toBe('POST')
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+	expect(clientCredentialsCalls).toHaveLength(1)
+	expect(clientCredentialsCalls[0]?.method).toBe('POST')
+	expect(clientCredentialsCalls[0]?.headers.get('authorization')).toBe(
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
-	expect(fetchCalls[0]?.headers.get('content-type')).toBe(
+	expect(clientCredentialsCalls[0]?.headers.get('content-type')).toBe(
 		'application/x-www-form-urlencoded',
 	)
-	expect(await fetchCalls[0]?.text()).toBe(
+	expect(await clientCredentialsCalls[0]?.text()).toBe(
 		new URLSearchParams({
 			scope: 'openid',
 			grant_type: 'client_credentials',
 		}).toString(),
-	)
-})
-
-test('createExecuteHelperPrelude exposes secret and client credentials helpers', async () => {
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'codemode',
-		`${prelude}; return { secretHeaders, oauthClientCredentials };`,
-	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
-	const fetchCalls: Array<Request> = []
-	const fetchStub: typeof globalThis.fetch = async (
-		input: ExecuteRequestInput,
-		init?: RequestInit,
-	) => {
-		const request = new Request(input, init)
-		fetchCalls.push(request)
-		return new Response(JSON.stringify({ access_token: 'access-token' }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' },
-		})
-	}
-
-	const helpers = createSandboxHelpers({} satisfies CodemodeNamespace)
-	expect(
-		helpers.secretHeaders.basic({
-			usernameSecret: 'paypalClientId',
-			passwordSecret: 'paypalClientSecret',
-			scope: 'user',
-		}),
-	).toBe(
-		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
-	)
-	await withPatchedFetch(fetchStub, () =>
-		helpers.oauthClientCredentials({
-			tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
-			clientIdSecret: 'paypalClientId',
-			clientSecretSecret: 'paypalClientSecret',
-			scope: 'user',
-		}),
-	)
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
-		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
 })

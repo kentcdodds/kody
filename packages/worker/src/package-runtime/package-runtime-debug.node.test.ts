@@ -135,9 +135,9 @@ function createDebugDatabase(options: { failLogInsert?: boolean } = {}) {
 	return db
 }
 
-test('records, lists, and loads retained package runtime logs', async () => {
+test('package runtime debug records runs, enforces log limits, and surfaces errors', async () => {
 	const env = { APP_DB: createDebugDatabase() } as Env
-	const run = await beginPackageRuntimeRun({
+	const successRun = await beginPackageRuntimeRun({
 		env,
 		userId: 'user-1',
 		context: {
@@ -153,10 +153,9 @@ test('records, lists, and loads retained package runtime logs', async () => {
 			metadata: { topic: 'manual' },
 		},
 	})
-
 	await finishPackageRuntimeRun({
 		env,
-		handle: run,
+		handle: successRun,
 		status: 'success',
 		logs: ['starting sync', 'finished sync'],
 	})
@@ -176,21 +175,17 @@ test('records, lists, and loads retained package runtime logs', async () => {
 		name: './sync',
 		metadata: { topic: 'manual' },
 	})
-
-	const loaded = await getPackageRuntimeRun({
+	const loadedSuccess = await getPackageRuntimeRun({
 		env,
 		userId: 'user-1',
 		runId: listed[0]?.id ?? '',
 	})
-	expect(loaded?.logs.map((log) => log.message)).toEqual([
+	expect(loadedSuccess?.logs.map((log) => log.message)).toEqual([
 		'starting sync',
 		'finished sync',
 	])
-})
 
-test('records normalized error details', async () => {
-	const env = { APP_DB: createDebugDatabase() } as Env
-	const run = await beginPackageRuntimeRun({
+	const errorRun = await beginPackageRuntimeRun({
 		env,
 		userId: 'user-1',
 		context: {
@@ -200,28 +195,23 @@ test('records normalized error details', async () => {
 			name: 'daemon',
 		},
 	})
-
 	await finishPackageRuntimeRun({
 		env,
-		handle: run,
+		handle: errorRun,
 		status: 'error',
 		error: { name: 'ServiceError', message: 'boom' },
 	})
-
-	const listed = await listPackageRuntimeRuns({
+	const listedAfterError = await listPackageRuntimeRuns({
 		env,
 		userId: 'user-1',
 	})
-	expect(listed[0]).toMatchObject({
+	expect(listedAfterError[0]).toMatchObject({
 		status: 'error',
 		errorName: 'ServiceError',
 		errorMessage: 'boom',
 	})
-})
 
-test('truncates large UTF-8 log entries within the byte limit', async () => {
-	const env = { APP_DB: createDebugDatabase() } as Env
-	const run = await beginPackageRuntimeRun({
+	const truncationRun = await beginPackageRuntimeRun({
 		env,
 		userId: 'user-1',
 		context: {
@@ -231,67 +221,24 @@ test('truncates large UTF-8 log entries within the byte limit', async () => {
 			name: './sync',
 		},
 	})
-
 	await finishPackageRuntimeRun({
 		env,
-		handle: run,
+		handle: truncationRun,
 		status: 'success',
 		logs: ['😀'.repeat(20_000)],
 	})
-
-	const loaded = await getPackageRuntimeRun({
+	const loadedTruncated = await getPackageRuntimeRun({
 		env,
 		userId: 'user-1',
-		runId: run?.id ?? '',
+		runId: truncationRun?.id ?? '',
 	})
-	const message = loaded?.logs[0]?.message ?? ''
-	expect(new TextEncoder().encode(message).length).toBeLessThanOrEqual(
+	const truncatedMessage = loadedTruncated?.logs[0]?.message ?? ''
+	expect(new TextEncoder().encode(truncatedMessage).length).toBeLessThanOrEqual(
 		16 * 1024,
 	)
-	expect(message.endsWith('... [truncated]')).toBe(true)
-})
+	expect(truncatedMessage.endsWith('... [truncated]')).toBe(true)
 
-test('updates run status when log persistence fails', async () => {
-	const env = {
-		APP_DB: createDebugDatabase({ failLogInsert: true }),
-	} as Env
-	const run = await beginPackageRuntimeRun({
-		env,
-		userId: 'user-1',
-		context: {
-			packageId: 'pkg-1',
-			kodyId: 'calendar-agent',
-			surface: 'export',
-			name: './sync',
-		},
-	})
-
-	await finishPackageRuntimeRun({
-		env,
-		handle: run,
-		status: 'success',
-		logs: ['log write will fail'],
-	})
-
-	const listed = await listPackageRuntimeRuns({
-		env,
-		userId: 'user-1',
-	})
-	expect(listed[0]).toMatchObject({
-		status: 'success',
-		name: './sync',
-	})
-	const loaded = await getPackageRuntimeRun({
-		env,
-		userId: 'user-1',
-		runId: run?.id ?? '',
-	})
-	expect(loaded?.logs).toEqual([])
-})
-
-test('keeps truncated metadata parseable', async () => {
-	const env = { APP_DB: createDebugDatabase() } as Env
-	const run = await beginPackageRuntimeRun({
+	const metadataRun = await beginPackageRuntimeRun({
 		env,
 		userId: 'user-1',
 		context: {
@@ -304,26 +251,24 @@ test('keeps truncated metadata parseable', async () => {
 			},
 		},
 	})
-
 	await finishPackageRuntimeRun({
 		env,
-		handle: run,
+		handle: metadataRun,
 		status: 'success',
 	})
-
-	const listed = await listPackageRuntimeRuns({
+	const listedAfterMetadata = await listPackageRuntimeRuns({
 		env,
 		userId: 'user-1',
 	})
-	expect(listed[0]?.metadata).toMatchObject({
+	const metadataRow = listedAfterMetadata.find(
+		(row) => row.id === metadataRun?.id,
+	)
+	expect(metadataRow?.metadata).toMatchObject({
 		__truncated__: true,
 	})
-	expect(listed[0]?.metadata['preview']).toEqual(expect.any(String))
-})
+	expect(metadataRow?.metadata['preview']).toEqual(expect.any(String))
 
-test('retains the newest log entries when log count exceeds the cap', async () => {
-	const env = { APP_DB: createDebugDatabase() } as Env
-	const run = await beginPackageRuntimeRun({
+	const cappedRun = await beginPackageRuntimeRun({
 		env,
 		userId: 'user-1',
 		context: {
@@ -333,26 +278,58 @@ test('retains the newest log entries when log count exceeds the cap', async () =
 			name: './sync',
 		},
 	})
-
 	await finishPackageRuntimeRun({
 		env,
-		handle: run,
+		handle: cappedRun,
 		status: 'success',
 		logs: Array.from({ length: 205 }, (_, index) => `line-${index}`),
 	})
-
-	const loaded = await getPackageRuntimeRun({
+	const loadedCapped = await getPackageRuntimeRun({
 		env,
 		userId: 'user-1',
-		runId: run?.id ?? '',
+		runId: cappedRun?.id ?? '',
 	})
-	expect(loaded?.logs).toHaveLength(200)
-	expect(loaded?.logs[0]).toMatchObject({
+	expect(loadedCapped?.logs).toHaveLength(200)
+	expect(loadedCapped?.logs[0]).toMatchObject({
 		sequence: 0,
 		message: 'line-5',
 	})
-	expect(loaded?.logs.at(-1)).toMatchObject({
+	expect(loadedCapped?.logs.at(-1)).toMatchObject({
 		sequence: 199,
 		message: 'line-204',
 	})
+
+	const failingLogEnv = {
+		APP_DB: createDebugDatabase({ failLogInsert: true }),
+	} as Env
+	const logFailureRun = await beginPackageRuntimeRun({
+		env: failingLogEnv,
+		userId: 'user-1',
+		context: {
+			packageId: 'pkg-1',
+			kodyId: 'calendar-agent',
+			surface: 'export',
+			name: './sync',
+		},
+	})
+	await finishPackageRuntimeRun({
+		env: failingLogEnv,
+		handle: logFailureRun,
+		status: 'success',
+		logs: ['log write will fail'],
+	})
+	const listedAfterLogFailure = await listPackageRuntimeRuns({
+		env: failingLogEnv,
+		userId: 'user-1',
+	})
+	expect(listedAfterLogFailure[0]).toMatchObject({
+		status: 'success',
+		name: './sync',
+	})
+	const loadedAfterLogFailure = await getPackageRuntimeRun({
+		env: failingLogEnv,
+		userId: 'user-1',
+		runId: logFailureRun?.id ?? '',
+	})
+	expect(loadedAfterLogFailure?.logs).toEqual([])
 })
