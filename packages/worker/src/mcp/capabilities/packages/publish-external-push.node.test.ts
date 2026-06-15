@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	captureException: vi.fn(),
@@ -53,8 +53,7 @@ vi.mock('#worker/package-runtime/static-package-dependents.ts', () => ({
 const { publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default capability mocks after global mockReset.
-beforeEach(() => {
+function setupDefaultMocks() {
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		kodyId: 'demo-package',
@@ -94,7 +93,7 @@ beforeEach(() => {
 		},
 		kvKey: 'bundle-key',
 	})
-})
+}
 
 function createContext() {
 	return {
@@ -126,6 +125,7 @@ function createContext() {
 }
 
 test('publishes a new external Artifacts HEAD', async () => {
+	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-new',
@@ -166,6 +166,7 @@ test('publishes a new external Artifacts HEAD', async () => {
 })
 
 test('returns already_published when Artifacts HEAD matches D1', async () => {
+	setupDefaultMocks()
 	const targets = [
 		{
 			kind: 'service',
@@ -215,6 +216,7 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 })
 
 test('already_published without a commit fails instead of silently skipping artifact rebuild', async () => {
+	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-old',
@@ -236,6 +238,7 @@ test('already_published without a commit fails instead of silently skipping arti
 })
 
 test('published output lists stale static dependents for the new dependency commit', async () => {
+	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-new',
@@ -303,6 +306,7 @@ test('published output lists stale static dependents for the new dependency comm
 })
 
 test('rebuilds published package bundle artifacts one target at a time after publish', async () => {
+	setupDefaultMocks()
 	const targets = [
 		{
 			kind: 'module',
@@ -364,6 +368,7 @@ test('rebuilds published package bundle artifacts one target at a time after pub
 })
 
 test('force publish passes destructive confirmation through and refuses without allow_force', async () => {
+	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-rewrite',
@@ -409,31 +414,32 @@ test('force publish passes destructive confirmation through and refuses without 
 	)
 })
 
-test('retries transient Durable Object resets with a fresh external publish session', async () => {
+test('publishExternalPush recovers from transient Durable Object resets', async () => {
+	setupDefaultMocks()
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-new',
 	})
-	mockModule.publishFromExternalRef
-		.mockRejectedValueOnce(
-			new Error('Durable Object exceeded its CPU time limit and was reset'),
-		)
-		.mockResolvedValueOnce({
-			status: 'published',
-			previous_commit: 'commit-old',
-			published_commit: 'commit-new',
-			manifest: {},
-			checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		})
 
 	try {
-		const result = await publishExternalPushCapability.handler(
+		mockModule.publishFromExternalRef
+			.mockRejectedValueOnce(
+				new Error('Durable Object exceeded its CPU time limit and was reset'),
+			)
+			.mockResolvedValueOnce({
+				status: 'published',
+				previous_commit: 'commit-old',
+				published_commit: 'commit-new',
+				manifest: {},
+				checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+			})
+
+		const recovered = await publishExternalPushCapability.handler(
 			{ package_id: 'package-1' },
 			createContext(),
 		)
-
-		expect(result.status).toBe('published')
+		expect(recovered.status).toBe('published')
 		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
 		expect(mockModule.publishFromExternalRef).toHaveBeenNthCalledWith(
 			1,
@@ -460,64 +466,53 @@ test('retries transient Durable Object resets with a fresh external publish sess
 				},
 			}),
 		)
-	} finally {
-		warnSpy.mockRestore()
-	}
-})
 
-test('returns already_published when a retry observes that the reset attempt committed', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.getEntitySourceById
-		.mockResolvedValueOnce({
-			id: 'source-1',
-			user_id: 'user-1',
-			entity_kind: 'package',
-			entity_id: 'package-1',
-			repo_id: 'package-package-1',
-			published_commit: 'commit-old',
-			indexed_commit: null,
-			manifest_path: 'package.json',
-			source_root: '/',
-			last_external_check_at: null,
-			created_at: '2026-05-04T00:00:00.000Z',
-			updated_at: '2026-05-04T00:00:00.000Z',
-		})
-		.mockResolvedValueOnce({
-			id: 'source-1',
-			user_id: 'user-1',
-			entity_kind: 'package',
-			entity_id: 'package-1',
-			repo_id: 'package-package-1',
-			published_commit: 'commit-new',
-			indexed_commit: null,
-			manifest_path: 'package.json',
-			source_root: '/',
-			last_external_check_at: null,
-			created_at: '2026-05-04T00:00:00.000Z',
-			updated_at: '2026-05-04T00:00:00.000Z',
-		})
-	mockModule.publishFromExternalRef
-		.mockRejectedValueOnce(
-			new Error(
-				"Durable Object's isolate exceeded its memory limit and was reset",
-			),
-		)
-		.mockResolvedValueOnce({
-			status: 'already_published',
-			published_commit: 'commit-new',
-		})
+		setupDefaultMocks()
+		mockModule.getEntitySourceById
+			.mockResolvedValueOnce({
+				id: 'source-1',
+				user_id: 'user-1',
+				entity_kind: 'package',
+				entity_id: 'package-1',
+				repo_id: 'package-package-1',
+				published_commit: 'commit-old',
+				indexed_commit: null,
+				manifest_path: 'package.json',
+				source_root: '/',
+				last_external_check_at: null,
+				created_at: '2026-05-04T00:00:00.000Z',
+				updated_at: '2026-05-04T00:00:00.000Z',
+			})
+			.mockResolvedValueOnce({
+				id: 'source-1',
+				user_id: 'user-1',
+				entity_kind: 'package',
+				entity_id: 'package-1',
+				repo_id: 'package-package-1',
+				published_commit: 'commit-new',
+				indexed_commit: null,
+				manifest_path: 'package.json',
+				source_root: '/',
+				last_external_check_at: null,
+				created_at: '2026-05-04T00:00:00.000Z',
+				updated_at: '2026-05-04T00:00:00.000Z',
+			})
+		mockModule.publishFromExternalRef
+			.mockRejectedValueOnce(
+				new Error(
+					"Durable Object's isolate exceeded its memory limit and was reset",
+				),
+			)
+			.mockResolvedValueOnce({
+				status: 'already_published',
+				published_commit: 'commit-new',
+			})
 
-	try {
-		const result = await publishExternalPushCapability.handler(
+		const alreadyPublished = await publishExternalPushCapability.handler(
 			{ package_id: 'package-1' },
 			createContext(),
 		)
-
-		expect(result).toEqual({
+		expect(alreadyPublished).toEqual({
 			status: 'already_published',
 			published_commit: 'commit-new',
 			static_dependents: expect.objectContaining({
@@ -527,23 +522,13 @@ test('returns already_published when a retry observes that the reset attempt com
 				items: [],
 			}),
 		})
-		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
-	} finally {
-		warnSpy.mockRestore()
-	}
-})
 
-test('replaces exhausted transient reset attempts with a stable error message', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockRejectedValue(
-		new Error('Durable Object exceeded its CPU time limit and was reset'),
-	)
-
-	try {
+		setupDefaultMocks()
+		mockModule.captureException.mockClear()
+		mockModule.publishFromExternalRef.mockClear()
+		mockModule.publishFromExternalRef.mockRejectedValue(
+			new Error('Durable Object exceeded its CPU time limit and was reset'),
+		)
 		await expect(
 			publishExternalPushCapability.handler(
 				{ package_id: 'package-1' },
@@ -560,6 +545,7 @@ test('replaces exhausted transient reset attempts with a stable error message', 
 })
 
 test('check failure leaves mutation to the shared publish pipeline', async () => {
+	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-new',
