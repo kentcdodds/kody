@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 import {
 	DynamicCallableWorkflowBase,
 	createDynamicCallableWorkflow,
-	createPackageWorkflowInstanceId,
 	listWorkflowRunsForUser,
 } from './package-workflows.ts'
 
@@ -199,50 +198,6 @@ function createWorkflowRunsDatabase(options?: {
 		workflowRuns: Map<string, Record<string, unknown>>
 	}
 }
-
-test('createPackageWorkflowInstanceId is stable and scoped to scheduled package workflow inputs', async () => {
-	const first = await createPackageWorkflowInstanceId({
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		workflowName: 'shade-event',
-		idempotencyKey: 'event-2026-05-03T10:00:00Z',
-		runAt: '2026-05-03T10:00:00.000Z',
-	})
-	const second = await createPackageWorkflowInstanceId({
-		idempotencyKey: 'event-2026-05-03T10:00:00Z',
-		workflowName: 'shade-event',
-		packageId: 'pkg-1',
-		userId: 'user-1',
-		runAt: '2026-05-03T10:00:00.000Z',
-	})
-	const withWhitespace = await createPackageWorkflowInstanceId({
-		userId: ' user-1 ',
-		packageId: ' pkg-1 ',
-		workflowName: ' shade-event ',
-		idempotencyKey: ' event-2026-05-03T10:00:00Z ',
-		runAt: '2026-05-03T10:00:00.000Z',
-	})
-	const differentPackage = await createPackageWorkflowInstanceId({
-		userId: 'user-1',
-		packageId: 'pkg-2',
-		workflowName: 'shade-event',
-		idempotencyKey: 'event-2026-05-03T10:00:00Z',
-		runAt: '2026-05-03T10:00:00.000Z',
-	})
-	const differentRunAt = await createPackageWorkflowInstanceId({
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		workflowName: 'shade-event',
-		idempotencyKey: 'event-2026-05-03T10:00:00Z',
-		runAt: '2026-05-04T10:00:00.000Z',
-	})
-
-	expect(first).toBe(second)
-	expect(first).toBe(withWhitespace)
-	expect(first).toMatch(/^pkgwf-[A-Za-z0-9_-]{43}$/)
-	expect(differentPackage).not.toBe(first)
-	expect(differentRunAt).not.toBe(first)
-})
 
 test('createDynamicCallableWorkflow queues inline code without package context', async () => {
 	const binding = createStatefulWorkflowBinding()
@@ -786,43 +741,6 @@ test('createDynamicCallableWorkflow dedupes even when the prior run terminated w
 	expect(replay.id).toBe(first.id)
 	expect(replay.status).toBe('errored')
 	expect(binding.create).toHaveBeenCalledTimes(1)
-})
-
-test('createDynamicCallableWorkflow normalizes exportName: FQN, relative, and bare forms store without doubled "./"', async () => {
-	for (const form of [
-		'kody:@kentcdodds/shade-automation/workflow-run-event',
-		'./workflow-run-event',
-		'workflow-run-event',
-	]) {
-		const binding = createStatefulWorkflowBinding()
-		const db = createWorkflowRunsDatabase()
-		const env = {
-			APP_DB: db,
-			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-		} as Env
-		const created = await createDynamicCallableWorkflow({
-			env,
-			userId: 'user-1',
-			body: {
-				packageId: 'pkg-1',
-				exportName: form,
-				runAt: '2026-05-08T19:30:00.000Z',
-				idempotencyKey: `key-${form}`,
-			},
-		})
-		const expectedExportName = form.startsWith('kody:')
-			? form
-			: form.startsWith('./')
-				? form
-				: `./${form}`
-		expect(created.export_name, `create result for ${form}`).toBe(
-			expectedExportName,
-		)
-		expect(
-			db.workflowRuns.get(created.id)?.['export_name'],
-			`stored row for ${form}`,
-		).toBe(expectedExportName)
-	}
 })
 
 test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {

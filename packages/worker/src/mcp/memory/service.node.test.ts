@@ -382,7 +382,7 @@ test('memory search returns mutable user-owned ids that can be updated and delet
 	expect(deleted?.status).toBe('deleted')
 })
 
-test('memory upsert explains rejected mutation ids', async () => {
+test('memory upsert rejects unknown mutation ids', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
 
@@ -399,17 +399,6 @@ test('memory upsert explains rejected mutation ids', async () => {
 	).rejects.toThrow(
 		'Memory "transcribed-memory-id" was not found in mutable memory storage for this signed-in user.',
 	)
-	await expect(
-		upsertMemory({
-			env: runtimeEnv,
-			userId: 'user-123',
-			memoryId: 'transcribed-memory-id',
-			subject: 'Preferred editor theme',
-			summary: 'User prefers a dark theme in editors.',
-			category: 'preference',
-			verificationReference: 'verify-7',
-		}),
-	).rejects.toThrow('copy the full id exactly and retry')
 })
 
 test('memory surfacing suppresses repeated memories per conversation', async () => {

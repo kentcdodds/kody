@@ -175,8 +175,8 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	expect(writeResult.git_extra_header).toBe(
 		'Authorization: Bearer art_v1_write_token',
 	)
-	expect(writeResult.setup_commands[0]).toContain('-c http.extraHeader=')
-	expect(writeResult.setup_commands[1]).toBe(`cd 'package-1'`)
+	expect(writeResult.setup_commands[0]).toMatch(/^git -c http\.extraHeader=/)
+	expect(writeResult.setup_commands).toContain(`cd 'package-1'`)
 
 	resetMocks()
 	const readSetup = mockPackageSource()

@@ -578,6 +578,7 @@ export function run(huge: HugeInput, small: SmallInput): string {
 	])
 	const document = buildPackageSearchDocument(emailProjection)
 	for (const subscription of emailProjection.subscriptions ?? []) {
-		expect(document).toContain(`subscription:${subscription.topic}`)
+		expect(document).toContain(subscription.topic)
+		expect(document).toContain(subscription.handler)
 	}
 })

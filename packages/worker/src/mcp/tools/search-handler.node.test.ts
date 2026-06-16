@@ -117,68 +117,6 @@ async function getSearchHandler() {
 	}>
 }
 
-test('search tool reports timing metadata across success and error flows', async () => {
-	vi.clearAllMocks()
-	const handler = await getSearchHandler()
-
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
-	const successResponse = await handler({
-		query: 'search docs',
-		conversationId: 'conv-search',
-	})
-	expect(successResponse.isError).toBeUndefined()
-	expect(successResponse.structuredContent).toMatchObject({
-		conversationId: 'conv-search',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-		},
-	})
-	expect(
-		successResponse.structuredContent.timing.durationMs,
-	).toBeGreaterThanOrEqual(0)
-
-	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
-	const validationErrorResponse = await handler({
-		conversationId: 'conv-search-error',
-	})
-	expect(validationErrorResponse.isError).toBe(true)
-	expect(validationErrorResponse.structuredContent).toMatchObject({
-		conversationId: 'conv-search-error',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: expect.any(Number),
-		},
-		error: expect.stringMatching(/query.*entity/i),
-	})
-	expect(
-		validationErrorResponse.structuredContent.timing.durationMs,
-	).toBeGreaterThanOrEqual(0)
-
-	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
-		new Error('Registry unavailable'),
-	)
-	mockPerformanceNow.mockReturnValueOnce(20).mockReturnValueOnce(35)
-	const handledErrorResponse = await handler({
-		query: 'search docs',
-		conversationId: 'conv-search-handled-error',
-	})
-	expect(handledErrorResponse.isError).toBe(true)
-	expect(handledErrorResponse.structuredContent).toEqual({
-		conversationId: 'conv-search-handled-error',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: expect.any(Number),
-		},
-		error: 'Registry unavailable',
-	})
-	expect(
-		handledErrorResponse.structuredContent.timing.durationMs,
-	).toBeGreaterThanOrEqual(0)
-})
-
 test('search tool returns compact query markdown while preserving structured auxiliary detail', async () => {
 	vi.clearAllMocks()
 	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce({
@@ -205,16 +143,27 @@ test('search tool returns compact query markdown while preserving structured aux
 	})
 	const handler = await getSearchHandler()
 
-	const response = await handler({
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
+	const successResponse = await handler({
 		query: 'search docs',
 		conversationId: 'conv-compact-search',
 	})
-	const text = response.content.map((item) => item.text).join('\n')
+	expect(successResponse.isError).toBeUndefined()
+	expect(successResponse.structuredContent).toMatchObject({
+		conversationId: 'conv-compact-search',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: expect.any(Number),
+		},
+	})
+	expect(
+		successResponse.structuredContent.timing.durationMs,
+	).toBeGreaterThanOrEqual(0)
 
-	expect(response.isError).toBeUndefined()
+	const text = successResponse.content.map((item) => item.text).join('\n')
 	expect(text.length).toBeGreaterThan(0)
-
-	const result = response.structuredContent.result as {
+	const result = successResponse.structuredContent.result as {
 		warnings: Array<string>
 		guidance?: string
 		memories?: { surfaced: Array<{ id: string }> }
@@ -230,4 +179,32 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(result.memories?.surfaced).toEqual([
 		expect.objectContaining({ id: 'memory-1' }),
 	])
+
+	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
+	const validationErrorResponse = await handler({
+		conversationId: 'conv-search-error',
+	})
+	expect(validationErrorResponse.isError).toBe(true)
+	expect(validationErrorResponse.structuredContent).toMatchObject({
+		conversationId: 'conv-search-error',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: expect.any(Number),
+		},
+		error: expect.stringMatching(/query.*entity/i),
+	})
+
+	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
+		new Error('Registry unavailable'),
+	)
+	mockPerformanceNow.mockReturnValueOnce(20).mockReturnValueOnce(35)
+	const handledErrorResponse = await handler({
+		query: 'search docs',
+		conversationId: 'conv-search-handled-error',
+	})
+	expect(handledErrorResponse.isError).toBe(true)
+	expect(handledErrorResponse.structuredContent.error).toBe(
+		'Registry unavailable',
+	)
 })

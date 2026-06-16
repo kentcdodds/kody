@@ -1127,7 +1127,7 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 	})
 })
 
-test('package runtime check returns clear failures for invalid package export and params', async () => {
+test('package runtime dispatch rejects invalid targets before and during invocation', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	const tools = createRuntimeDispatchTools(db)
@@ -1172,14 +1172,8 @@ test('package runtime check returns clear failures for invalid package export an
 		message: 'packages.check params must be a JSON object when provided.',
 		problems: ['packages.check params must be a JSON object when provided.'],
 	})
-})
 
-test('package runtime invokeChecked fails before invocation when check fails', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	const tools = createRuntimeDispatchTools(db)
-
 	await expect(
 		tools.invokeChecked({
 			kodyId: 'discord-general-chat',
@@ -1199,11 +1193,7 @@ test('package runtime invokeChecked fails before invocation when check fails', a
 		'packages.invokeChecked check failed: packages.invokeChecked params must be a JSON object when provided.',
 	)
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-})
 
-test('package runtime invocation errors clearly when the target package or export is missing', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
 	const createTools = () =>
 		createPackageRuntimeInvokeTools({
 			env: createEnv(db),

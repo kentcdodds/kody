@@ -305,8 +305,9 @@ test('optional search rows load packages and values with graceful fallbacks', as
 	expect(packageFailure.packageRows).toEqual([])
 	expect(packageFailure.userSecretRows).toEqual([])
 	expect(packageFailure.userValueRows).toEqual([])
-	expect(packageFailure.warnings).toHaveLength(1)
-	expect(packageFailure.warnings[0]).toMatch(/packages unavailable/i)
+	expect(packageFailure.warnings).toEqual([
+		'Saved packages are temporarily unavailable: packages unavailable',
+	])
 
 	const savedPackage = await loadOptionalSearchRows({
 		userId: 'user-123',
@@ -403,8 +404,9 @@ test('optional search rows load packages and values with graceful fallbacks', as
 	expect(valuesFailure.packageRows).toEqual([])
 	expect(valuesFailure.userSecretRows).toEqual([])
 	expect(valuesFailure.userValueRows).toEqual([])
-	expect(valuesFailure.warnings).toHaveLength(1)
-	expect(valuesFailure.warnings[0]).toMatch(/values unavailable/i)
+	expect(valuesFailure.warnings).toEqual([
+		'Persisted values are temporarily unavailable: values unavailable',
+	])
 
 	const anonymous = await loadOptionalSearchRows({
 		userId: null,

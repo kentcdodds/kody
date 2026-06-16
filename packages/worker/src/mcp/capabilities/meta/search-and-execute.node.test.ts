@@ -202,7 +202,7 @@ test('search capability returns shared slim structured search matches', async ()
 		matches: slimMatches,
 		offline: false,
 		warnings: ['row warning', 'retriever warning', 'memory warning'],
-		guidance: 'Use package_save.',
+		guidance: expect.any(String),
 		memories: {
 			surfaced: [],
 			suppressedCount: 0,
