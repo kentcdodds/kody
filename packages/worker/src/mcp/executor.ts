@@ -54,6 +54,14 @@ type DynamicWorkerExecutorOptions = {
 	globalOutbound: Fetcher | null
 }
 
+type DynamicWorkerEntrypoint = {
+	evaluate(dispatchers: Record<string, ToolDispatcher>): Promise<{
+		result: unknown
+		error?: string
+		logs?: Array<string>
+	}>
+}
+
 export function createExecuteExecutor(input: {
 	env: Env
 	exports?: WorkerLoopbackExports
@@ -120,10 +128,10 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				workerOptions,
 			})
 			const dispatchers = createToolDispatchers(providers)
-			const response = await input.loader
+			const entrypoint = input.loader
 				.get(workerId, () => workerOptions)
-				.getEntrypoint()
-				.evaluate(dispatchers)
+				.getEntrypoint() as unknown as DynamicWorkerEntrypoint
+			const response = await entrypoint.evaluate(dispatchers)
 			if (response.error) {
 				return {
 					result: undefined,
