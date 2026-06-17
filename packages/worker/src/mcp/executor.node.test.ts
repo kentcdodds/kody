@@ -172,6 +172,41 @@ test('createExecuteExecutor rejects reserved JavaScript provider names before lo
 	expect(fakeLoader.factoryCallCount).toBe(0)
 })
 
+test('createExecuteExecutor keeps random worker ids when user id is absent', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	const env = createExecutorTestEnv(fakeLoader.loader)
+	const exports = createExecutorTestExports()
+	const gatewayProps = {
+		...createGatewayProps('user-1'),
+		userId: null,
+	}
+
+	await createExecuteExecutor({
+		env,
+		exports,
+		gatewayProps,
+	}).execute('async () => "ok"', [
+		{
+			name: 'codemode',
+			fns: {},
+		},
+	])
+	await createExecuteExecutor({
+		env,
+		exports,
+		gatewayProps,
+	}).execute('async () => "ok"', [
+		{
+			name: 'codemode',
+			fns: {},
+		},
+	])
+
+	expect(fakeLoader.ids).toHaveLength(2)
+	expect(new Set(fakeLoader.ids).size).toBe(2)
+	expect(fakeLoader.factoryCallCount).toBe(2)
+})
+
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
 	const capabilityError = new Error(
 		createCapabilitySecretAccessDeniedMessage(

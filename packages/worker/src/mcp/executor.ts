@@ -274,6 +274,9 @@ async function createStableDynamicWorkerId(input: {
 	timeoutMs: number
 	workerOptions: DynamicWorkerExecutorOptions
 }) {
+	if (!input.gatewayProps.userId) {
+		return `${dynamicWorkerIdPrefix}${crypto.randomUUID()}`
+	}
 	const hash = await sha256Base64Url(
 		canonicalJsonStringify({
 			version: dynamicWorkerCacheKeyVersion,
