@@ -265,9 +265,6 @@ test('createExecuteExecutor keeps random worker ids when user id is absent', asy
 	expect(fakeLoader.ids).toHaveLength(2)
 	expect(new Set(fakeLoader.ids).size).toBe(2)
 	expect(fakeLoader.factoryCallCount).toBe(2)
-	const options = fakeLoader.createdOptions.get(fakeLoader.ids[0] ?? '')
-	const modules = options?.modules as Record<string, string> | undefined
-	expect(modules?.['executor.js']).not.toContain('__kodySandboxGlobal')
 })
 
 test('createExecuteExecutor keeps random worker ids when app commit is absent', async () => {
@@ -294,6 +291,9 @@ test('createExecuteExecutor keeps random worker ids when app commit is absent', 
 	expect(fakeLoader.ids).toHaveLength(2)
 	expect(new Set(fakeLoader.ids).size).toBe(2)
 	expect(fakeLoader.factoryCallCount).toBe(2)
+	const options = fakeLoader.createdOptions.get(fakeLoader.ids[0] ?? '')
+	const modules = options?.modules as Record<string, string> | undefined
+	expect(modules?.['executor.js']).not.toContain('__kodySandboxGlobal')
 })
 
 test('createExecuteExecutor keeps random worker ids for bundled module graphs', async () => {
