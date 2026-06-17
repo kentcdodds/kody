@@ -107,7 +107,7 @@ test('createExecuteExecutor uses stable dynamic worker ids for identical code an
 
 	expect(first.result).toBe(second.result)
 	expect(fakeLoader.ids).toHaveLength(2)
-	expect(new Set(fakeLoader.ids)).toHaveSize(1)
+	expect(new Set(fakeLoader.ids).size).toBe(1)
 	expect(fakeLoader.factoryCallCount).toBe(1)
 })
 
@@ -148,7 +148,7 @@ test('createExecuteExecutor separates dynamic worker ids by user binding context
 	}).execute('async () => "ok"', providers)
 
 	expect(fakeLoader.ids).toHaveLength(3)
-	expect(new Set(fakeLoader.ids)).toHaveSize(3)
+	expect(new Set(fakeLoader.ids).size).toBe(3)
 	expect(fakeLoader.factoryCallCount).toBe(3)
 })
 
