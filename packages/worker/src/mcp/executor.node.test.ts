@@ -19,6 +19,9 @@ type FakeWorkerOptions = Record<string, unknown>
 function createFakeWorkerLoader() {
 	const ids: Array<string> = []
 	const createdOptions = new Map<string, FakeWorkerOptions>()
+	const evaluations: Array<
+		Record<string, { call: typeof ToolDispatcherCall }>
+	> = []
 	let factoryCallCount = 0
 	const loader = {
 		get(id: string, factory: () => FakeWorkerOptions) {
@@ -32,7 +35,10 @@ function createFakeWorkerLoader() {
 			return {
 				getEntrypoint() {
 					return {
-						async evaluate() {
+						async evaluate(
+							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
+						) {
+							evaluations.push(dispatchers)
 							return {
 								result: id,
 								logs: [],
@@ -47,10 +53,15 @@ function createFakeWorkerLoader() {
 		loader,
 		ids,
 		createdOptions,
+		evaluations,
 		get factoryCallCount() {
 			return factoryCallCount
 		},
 	}
+}
+
+async function ToolDispatcherCall(_name: string, _argsJson: string) {
+	return ''
 }
 
 function createExecutorTestEnv(loader: Env['LOADER']) {
@@ -195,6 +206,30 @@ test('createExecuteExecutor clears timeout handles after execution settles', asy
 	expect(executorModule).toContain('let __timeoutId;')
 	expect(executorModule).toContain('__timeoutId = setTimeout(')
 	expect(executorModule).toContain('clearTimeout(__timeoutId);')
+	expect(executorModule).toContain('const __kodySandboxGlobal = new Proxy')
+	expect(executorModule).toContain('(async (globalThis, self, global) => (')
+})
+
+test('createExecuteExecutor disables dispatchers after execution completes', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: createExecutorTestEnv(fakeLoader.loader),
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute('async () => await codemode.search({ q: "ok" })', [
+		{
+			name: 'codemode',
+			fns: {
+				search: async () => ({ ok: true }),
+			},
+		},
+	])
+	const dispatchers = fakeLoader.evaluations[0]
+	const result = await dispatchers?.codemode?.call('search', '{}')
+
+	expect(JSON.parse(result ?? '{}')).toEqual({
+		error: 'Execution has already completed.',
+	})
 })
 
 test('createExecuteExecutor keeps random worker ids when user id is absent', async () => {
@@ -230,6 +265,9 @@ test('createExecuteExecutor keeps random worker ids when user id is absent', asy
 	expect(fakeLoader.ids).toHaveLength(2)
 	expect(new Set(fakeLoader.ids).size).toBe(2)
 	expect(fakeLoader.factoryCallCount).toBe(2)
+	const options = fakeLoader.createdOptions.get(fakeLoader.ids[0] ?? '')
+	const modules = options?.modules as Record<string, string> | undefined
+	expect(modules?.['executor.js']).not.toContain('__kodySandboxGlobal')
 })
 
 test('createExecuteExecutor keeps random worker ids when app commit is absent', async () => {

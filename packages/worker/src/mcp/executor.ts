@@ -154,6 +154,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			const executorModule = createExecutorModule({
 				code,
 				providers,
+				shadowGlobalThis: Object.keys(modules).length === 0,
 				timeoutMs: input.timeout,
 			})
 			const workerOptions = {
@@ -172,21 +173,26 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				timeoutMs: input.timeout,
 				workerOptions,
 			})
-			const dispatchers = createToolDispatchers(providers)
-			const entrypoint = input.loader
-				.get(workerId, () => workerOptions)
-				.getEntrypoint() as unknown as DynamicWorkerEntrypoint
-			const response = await entrypoint.evaluate(dispatchers)
-			if (response.error) {
+			const executionState = { active: true }
+			const dispatchers = createToolDispatchers(providers, executionState)
+			try {
+				const entrypoint = input.loader
+					.get(workerId, () => workerOptions)
+					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
+				const response = await entrypoint.evaluate(dispatchers)
+				if (response.error) {
+					return {
+						result: undefined,
+						error: response.error,
+						logs: response.logs,
+					}
+				}
 				return {
-					result: undefined,
-					error: response.error,
+					result: response.result,
 					logs: response.logs,
 				}
-			}
-			return {
-				result: response.result,
-				logs: response.logs,
+			} finally {
+				executionState.active = false
 			}
 		},
 	}
@@ -215,9 +221,34 @@ function validateProviders(providers: Array<ResolvedProvider>) {
 function createExecutorModule(input: {
 	code: string
 	providers: Array<ResolvedProvider>
+	shadowGlobalThis: boolean
 	timeoutMs: number
 }) {
 	const normalized = normalizeCode(input.code)
+	const sandboxGlobalLines = input.shadowGlobalThis
+		? [
+				'    const __kodySandboxGlobalValues = Object.create(null);',
+				'    const __kodySandboxGlobal = new Proxy(globalThis, {',
+				'      get(target, property) {',
+				'        return property in __kodySandboxGlobalValues ? __kodySandboxGlobalValues[property] : target[property];',
+				'      },',
+				'      set(_target, property, value) {',
+				'        __kodySandboxGlobalValues[property] = value;',
+				'        return true;',
+				'      },',
+				'      has(target, property) {',
+				'        return property in __kodySandboxGlobalValues || property in target;',
+				'      },',
+				'    });',
+			]
+		: []
+	const userCodeInvocation = input.shadowGlobalThis
+		? [
+				'        (async (globalThis, self, global) => (',
+				normalized,
+				')())(__kodySandboxGlobal, __kodySandboxGlobal, __kodySandboxGlobal),',
+			]
+		: ['        (', normalized, ')(),']
 	return [
 		'import { WorkerEntrypoint } from "cloudflare:workers";',
 		'',
@@ -229,6 +260,7 @@ function createExecutorModule(input: {
 		'      warn: (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); },',
 		'      error: (...a) => { __logs.push("[error] " + a.map(String).join(" ")); },',
 		'    };',
+		...sandboxGlobalLines,
 		// Keep this aligned with upstream codemode's sandbox dispatcher shape:
 		// the dynamic worker source only names provider namespaces, while the
 		// actual per-invocation tool implementations arrive through RPC dispatchers.
@@ -244,9 +276,7 @@ function createExecutorModule(input: {
 		`        __timeoutId = setTimeout(() => reject(new Error("Execution timed out")), ${input.timeoutMs});`,
 		'      });',
 		'      const result = await Promise.race([',
-		'        (',
-		normalized,
-		')(),',
+		...userCodeInvocation,
 		'        __timeoutPromise',
 		'      ]);',
 		'      return { result, logs: __logs };',
@@ -260,7 +290,10 @@ function createExecutorModule(input: {
 	].join('\n')
 }
 
-function createToolDispatchers(providers: Array<ResolvedProvider>) {
+function createToolDispatchers(
+	providers: Array<ResolvedProvider>,
+	executionState: { active: boolean },
+) {
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
 		const sanitizedFns: Record<
@@ -268,7 +301,12 @@ function createToolDispatchers(providers: Array<ResolvedProvider>) {
 			(...args: Array<unknown>) => Promise<unknown>
 		> = {}
 		for (const [name, fn] of Object.entries(provider.fns)) {
-			sanitizedFns[sanitizeToolName(name)] = fn
+			sanitizedFns[sanitizeToolName(name)] = async (...args) => {
+				if (!executionState.active) {
+					throw new Error('Execution has already completed.')
+				}
+				return await fn(...args)
+			}
 		}
 		dispatchers[provider.name] = new ToolDispatcher(
 			sanitizedFns,
