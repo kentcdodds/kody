@@ -31,6 +31,48 @@ const dynamicWorkerIdPrefix = 'codemode-'
 const dynamicWorkerCacheKeyVersion = 1
 const reservedProviderNames = new Set(['__dispatchers', '__logs'])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
+const javascriptReservedWords = new Set([
+	'await',
+	'break',
+	'case',
+	'catch',
+	'class',
+	'const',
+	'continue',
+	'debugger',
+	'default',
+	'delete',
+	'do',
+	'else',
+	'enum',
+	'export',
+	'extends',
+	'false',
+	'finally',
+	'for',
+	'function',
+	'if',
+	'import',
+	'in',
+	'instanceof',
+	'let',
+	'new',
+	'null',
+	'return',
+	'static',
+	'super',
+	'switch',
+	'this',
+	'throw',
+	'true',
+	'try',
+	'typeof',
+	'var',
+	'void',
+	'while',
+	'with',
+	'yield',
+])
 
 type DynamicWorkerExecutorInput = {
 	loader: Env['LOADER']
@@ -149,6 +191,9 @@ function validateProviders(providers: Array<ResolvedProvider>) {
 		}
 		if (!validProviderNamePattern.test(provider.name)) {
 			return `Provider name "${provider.name}" is not a valid JavaScript identifier`
+		}
+		if (javascriptReservedWords.has(provider.name)) {
+			return `Provider name "${provider.name}" is a JavaScript reserved word`
 		}
 		if (seenNames.has(provider.name)) {
 			return `Duplicate provider name "${provider.name}"`

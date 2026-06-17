@@ -152,6 +152,26 @@ test('createExecuteExecutor separates dynamic worker ids by user binding context
 	expect(fakeLoader.factoryCallCount).toBe(3)
 })
 
+test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	const result = await createExecuteExecutor({
+		env: createExecutorTestEnv(fakeLoader.loader),
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('user-1'),
+	}).execute('async () => "ok"', [
+		{
+			name: 'class',
+			fns: {},
+		},
+	])
+
+	expect(result).toEqual({
+		result: undefined,
+		error: 'Provider name "class" is a JavaScript reserved word',
+	})
+	expect(fakeLoader.factoryCallCount).toBe(0)
+})
+
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
 	const capabilityError = new Error(
 		createCapabilitySecretAccessDeniedMessage(
