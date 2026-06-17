@@ -32,11 +32,6 @@ const dynamicWorkerCacheKeyVersion = 1
 const reservedProviderNames = new Set(['__dispatchers', '__logs'])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 
-type LegacyCodemodeFns = Record<
-	string,
-	(...args: Array<unknown>) => Promise<unknown>
->
-
 type DynamicWorkerExecutorInput = {
 	loader: Env['LOADER']
 	timeout: number
@@ -96,9 +91,8 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 	return {
 		async execute(
 			code: string,
-			providersOrFns: Array<ResolvedProvider> | LegacyCodemodeFns,
+			providers: Array<ResolvedProvider>,
 		): Promise<ExecuteResult> {
-			const providers = normalizeProviders(providersOrFns)
 			const validationError = validateProviders(providers)
 			if (validationError) {
 				return {
@@ -145,21 +139,6 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			}
 		},
 	}
-}
-
-function normalizeProviders(
-	providersOrFns: Array<ResolvedProvider> | LegacyCodemodeFns,
-): Array<ResolvedProvider> {
-	if (Array.isArray(providersOrFns)) return providersOrFns
-	console.warn(
-		'[@cloudflare/codemode] Passing raw fns to executor.execute() is deprecated. Use ResolvedProvider[] instead. This will be removed in the next major version.',
-	)
-	return [
-		{
-			name: 'codemode',
-			fns: providersOrFns,
-		},
-	]
 }
 
 function validateProviders(providers: Array<ResolvedProvider>) {
@@ -219,7 +198,10 @@ function createExecutorModule(input: {
 function createToolDispatchers(providers: Array<ResolvedProvider>) {
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
-		const sanitizedFns: LegacyCodemodeFns = {}
+		const sanitizedFns: Record<
+			string,
+			(...args: Array<unknown>) => Promise<unknown>
+		> = {}
 		for (const [name, fn] of Object.entries(provider.fns)) {
 			sanitizedFns[sanitizeToolName(name)] = fn
 		}
