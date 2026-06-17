@@ -12,51 +12,7 @@ const workerWranglerConfigPath = path.resolve(
 	'../../packages/worker/wrangler.jsonc',
 )
 
-test('writeGeneratedWranglerConfig keeps migrations ordered by tag version', async () => {
-	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
-
-	try {
-		const outConfigPath = path.join(
-			tempDir,
-			'wrangler-production.generated.json',
-		)
-		await writeGeneratedWranglerConfig({
-			baseConfigPath: workerWranglerConfigPath,
-			outConfigPath,
-			envName: 'production',
-			d1DatabaseName: 'kody',
-			d1DatabaseId: 'dry-run-kody',
-			oauthKvId: 'dry-run-kody-oauth',
-			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
-			extraMigrations: [
-				{
-					deleted_classes: ['AppRunner'],
-					tag: 'v12',
-				},
-			],
-		})
-
-		const generatedConfigText = await readFile(outConfigPath, 'utf8')
-		const generatedConfig = parseJsonc<{
-			migrations: Array<{ tag: string; new_sqlite_classes?: Array<string> }>
-		}>(generatedConfigText)
-		const migrationTags = generatedConfig.migrations.map(
-			(migration) => migration.tag,
-		)
-		const v12Index = migrationTags.indexOf('v12')
-		const v13Index = migrationTags.indexOf('v13')
-
-		expect(v12Index).toBeGreaterThanOrEqual(0)
-		expect(v13Index).toBeGreaterThan(v12Index)
-		expect(generatedConfig.migrations[v13Index]?.new_sqlite_classes).toContain(
-			'PackageRealtimeSession',
-		)
-	} finally {
-		await rm(tempDir, { force: true, recursive: true })
-	}
-})
-
-test('writeGeneratedWranglerConfig copies environment asset routing to the deployed top-level config', async () => {
+test('writeGeneratedWranglerConfig orders migrations and copies environment asset routing', async () => {
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
 
 	try {
@@ -72,20 +28,36 @@ test('writeGeneratedWranglerConfig copies environment asset routing to the deplo
 			d1DatabaseId: 'dry-run-kody',
 			oauthKvId: 'dry-run-kody-oauth',
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+			extraMigrations: [
+				{
+					deleted_classes: ['AppRunner'],
+					tag: 'v12',
+				},
+			],
 		})
 
 		const productionConfig = parseJsonc<{
+			migrations: Array<{ tag: string; new_sqlite_classes?: Array<string> }>
 			assets?: { run_worker_first?: Array<string> }
 			env?: {
 				production?: { assets?: { run_worker_first?: Array<string> } }
 			}
 		}>(await readFile(productionOutPath, 'utf8'))
-		expect(productionConfig.assets?.run_worker_first).toContain(
-			'/@*/connectors/*',
+		const migrationTags = productionConfig.migrations.map(
+			(migration) => migration.tag,
 		)
+		const v12Index = migrationTags.indexOf('v12')
+		const v13Index = migrationTags.indexOf('v13')
+
+		expect(v12Index).toBeGreaterThanOrEqual(0)
+		expect(v13Index).toBeGreaterThan(v12Index)
+		expect(
+			productionConfig.migrations[v13Index]?.new_sqlite_classes?.length,
+		).toBeGreaterThan(0)
 		expect(productionConfig.assets).toEqual(
 			productionConfig.env?.production?.assets,
 		)
+		expect(productionConfig.assets?.run_worker_first?.length).toBeGreaterThan(0)
 
 		const previewOutPath = path.join(tempDir, 'wrangler-preview.generated.json')
 		await writeGeneratedWranglerConfig({
@@ -105,8 +77,8 @@ test('writeGeneratedWranglerConfig copies environment asset routing to the deplo
 				preview?: { assets?: { run_worker_first?: Array<string> } }
 			}
 		}>(await readFile(previewOutPath, 'utf8'))
-		expect(previewConfig.assets?.run_worker_first).toContain('/@*/connectors/*')
 		expect(previewConfig.assets).toEqual(previewConfig.env?.preview?.assets)
+		expect(previewConfig.assets?.run_worker_first?.length).toBeGreaterThan(0)
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

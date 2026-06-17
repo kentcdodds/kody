@@ -134,26 +134,28 @@ test('resolveJobManagerAlarmState covers armed, out-of-sync, and idle states', (
 	})
 })
 
-test('syncAlarm logs when it arms a new alarm for the next runnable job', async () => {
+test('syncAlarm arms, clears, and logs scheduler state transitions', async () => {
 	resetMocks()
 	const nextRunAt = '2026-04-20T18:30:00.000Z'
 	mockModule.getNextRunnableJob.mockResolvedValue({
 		id: 'job-123',
 		nextRunAt,
 	})
-	const { state, persistedEntries, getAlarmAt } = createState({
+	const armedState = createState({
 		currentAlarmAt: Date.parse('2026-04-20T18:00:00.000Z'),
 	})
-	const manager = new JobManagerBase(state, {} as Env)
+	const armedManager = new JobManagerBase(armedState.state, {} as Env)
 
-	await expect(manager.syncAlarm({ userId: 'user-123' })).resolves.toEqual({
-		ok: true,
-		userId: 'user-123',
-		nextRunAt,
-	})
+	await expect(armedManager.syncAlarm({ userId: 'user-123' })).resolves.toEqual(
+		{
+			ok: true,
+			userId: 'user-123',
+			nextRunAt,
+		},
+	)
 
-	expect(persistedEntries.get('user-id')).toBe('user-123')
-	expect(getAlarmAt()).toBe(Date.parse(nextRunAt))
+	expect(armedState.persistedEntries.get('user-id')).toBe('user-123')
+	expect(armedState.getAlarmAt()).toBe(Date.parse(nextRunAt))
 	expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
 		event: 'sync_alarm',
 		userId: 'user-123',
@@ -163,23 +165,23 @@ test('syncAlarm logs when it arms a new alarm for the next runnable job', async 
 		reason: 'alarm_armed',
 	})
 	expect(mockModule.logJobSchedulerError).not.toHaveBeenCalled()
-})
 
-test('syncAlarm logs when no runnable job is found and clears the alarm', async () => {
 	resetMocks()
 	mockModule.getNextRunnableJob.mockResolvedValue(null)
-	const { state, getAlarmAt } = createState({
+	const clearedState = createState({
 		currentAlarmAt: Date.parse('2026-04-20T18:00:00.000Z'),
 	})
-	const manager = new JobManagerBase(state, {} as Env)
+	const clearedManager = new JobManagerBase(clearedState.state, {} as Env)
 
-	await expect(manager.syncAlarm({ userId: 'user-123' })).resolves.toEqual({
+	await expect(
+		clearedManager.syncAlarm({ userId: 'user-123' }),
+	).resolves.toEqual({
 		ok: true,
 		userId: 'user-123',
 		nextRunAt: null,
 	})
 
-	expect(getAlarmAt()).toBeNull()
+	expect(clearedState.getAlarmAt()).toBeNull()
 	expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
 		event: 'sync_alarm',
 		userId: 'user-123',

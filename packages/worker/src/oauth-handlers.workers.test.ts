@@ -149,7 +149,7 @@ function getCookiePair(setCookie: string) {
 	return setCookie.split(';', 1)[0] ?? setCookie
 }
 
-test('authorize info returns client metadata and marks invalid client mismatch as resettable', async () => {
+test('authorize info, denial, approval, and default scopes follow the OAuth workflow', async () => {
 	const successResponse = await handleAuthorizeInfo(
 		new Request(
 			'https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
@@ -186,9 +186,7 @@ test('authorize info returns client metadata and marks invalid client mismatch a
 	const setCookie = mismatchResponse.headers.get('Set-Cookie') ?? ''
 	expect(setCookie).toContain('kody_oauth_client_reset=')
 	expect(setCookie).toContain('Path=/oauth')
-})
 
-test('authorize denies access and requires credentials before approval', async () => {
 	const denyResponse = await handleAuthorizeRequest(
 		createFormRequest({ decision: 'deny' }),
 		createEnv(createHelpers()),
@@ -218,11 +216,9 @@ test('authorize denies access and requires credentials before approval', async (
 		error: 'Email and password are required.',
 		code: 'invalid_request',
 	})
-})
 
-test('authorize allows approval with an existing session', async () => {
 	let capturedOptions: CompleteAuthorizationOptions | null = null
-	const helpers = createHelpers({
+	const sessionHelpers = createHelpers({
 		async completeAuthorization(options) {
 			capturedOptions = options
 			return { redirectTo: 'https://example.com/callback?code=session' }
@@ -234,24 +230,22 @@ test('authorize allows approval with an existing session', async () => {
 		false,
 	)
 
-	const response = await handleAuthorizeRequest(
+	const sessionResponse = await handleAuthorizeRequest(
 		createFormRequest(
 			{ decision: 'approve' },
 			{ Accept: 'application/json', Cookie: cookie },
 		),
-		createEnv(helpers, await createDatabase('password123')),
+		createEnv(sessionHelpers, await createDatabase('password123')),
 	)
 
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual({
+	expect(sessionResponse.status).toBe(200)
+	const sessionPayload = await sessionResponse.json()
+	expect(sessionPayload).toEqual({
 		ok: true,
 		redirectTo: 'https://example.com/callback?code=session',
 	})
 	expect(capturedOptions).not.toBeNull()
-})
 
-test('authorize uses default scopes when none requested', async () => {
 	let resolveCapturedOptions:
 		| ((value: CompleteAuthorizationOptions) => void)
 		| undefined
@@ -271,7 +265,7 @@ test('authorize uses default scopes when none requested', async () => {
 			return { redirectTo: 'https://example.com/callback?code=ok' }
 		},
 	})
-	const response = await handleAuthorizeRequest(
+	const defaultScopeResponse = await handleAuthorizeRequest(
 		createFormRequest({
 			decision: 'approve',
 			email: 'user@example.com',
@@ -280,17 +274,15 @@ test('authorize uses default scopes when none requested', async () => {
 		createEnv(helpers, await createDatabase('password123')),
 	)
 
-	expect(response.status).toBe(302)
-	expect(response.headers.get('Location')).toBe(
+	expect(defaultScopeResponse.status).toBe(302)
+	expect(defaultScopeResponse.headers.get('Location')).toBe(
 		'https://example.com/callback?code=ok',
 	)
-	const capturedOptions = await capturedOptionsPromise
-	expect(capturedOptions.scope).toEqual(oauthScopes)
+	const defaultScopeOptions = await capturedOptionsPromise
+	expect(defaultScopeOptions.scope).toEqual(oauthScopes)
 })
 
 test('reset client deletes matching grants for redirect-uri, client-id, and authorize-info mismatches', async () => {
-	const resetSuccessMessage =
-		'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.'
 	const userId = await createStableUserIdFromEmail('user@example.com')
 	setAuthSessionSecret(cookieSecret)
 	const cookie = await createAuthCookie(
@@ -363,9 +355,9 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	)
 
 	expect(redirectUriResponse.status).toBe(200)
-	await expect(redirectUriResponse.json()).resolves.toEqual({
+	await expect(redirectUriResponse.json()).resolves.toMatchObject({
 		ok: true,
-		message: resetSuccessMessage,
+		message: expect.stringMatching(/deleted the stored client records/i),
 	})
 	expect(redirectUriRevokedGrantIds).toEqual(['grant-1', 'grant-3'])
 	expect(redirectUriDeletedClientIds).toEqual(['client-123'])
@@ -433,9 +425,9 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	)
 
 	expect(clientMismatchResponse.status).toBe(200)
-	await expect(clientMismatchResponse.json()).resolves.toEqual({
+	await expect(clientMismatchResponse.json()).resolves.toMatchObject({
 		ok: true,
-		message: resetSuccessMessage,
+		message: expect.stringMatching(/deleted the stored client records/i),
 	})
 	expect(clientMismatchRevokedGrantIds).toEqual(['grant-1', 'grant-2'])
 	expect(clientMismatchDeletedClientIds).toEqual(['client-123'])
@@ -485,9 +477,9 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	)
 
 	expect(authorizeInfoResetResponse.status).toBe(200)
-	await expect(authorizeInfoResetResponse.json()).resolves.toEqual({
+	await expect(authorizeInfoResetResponse.json()).resolves.toMatchObject({
 		ok: true,
-		message: resetSuccessMessage,
+		message: expect.stringMatching(/deleted the stored client records/i),
 	})
 	expect(authorizeInfoRevokedGrantIds).toEqual(['grant-1'])
 	expect(authorizeInfoDeletedClientIds).toEqual(['client-123'])

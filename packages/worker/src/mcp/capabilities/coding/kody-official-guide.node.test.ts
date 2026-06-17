@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	buildKodyOfficialGuideUrlForTest,
 	kodyOfficialGuideCapability,
+	kodyOfficialGuideCatalog,
 } from './kody-official-guide.ts'
 
 const ctx = {
@@ -25,7 +26,9 @@ test('kody_official_guide fetches markdown and surfaces fetch failures', async (
 			ctx,
 		)
 		expect(result.body).toBe('# Hello\n\nbody')
-		expect(result.title.length).toBeGreaterThan(0)
+		expect(result.title).toBe(
+			kodyOfficialGuideCatalog.package_subscriptions.title,
+		)
 	} finally {
 		globalThis.fetch = originalFetch
 	}

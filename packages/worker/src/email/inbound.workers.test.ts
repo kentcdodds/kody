@@ -147,10 +147,10 @@ test('inbound email handler stores all routed inbound messages', async () => {
 	expect(subjectOnly[0]?.threadId).not.toBe(normalizedExistingThread.id)
 })
 
-test('inbound email handler rejects unknown aliases without persisting them', async () => {
+test('inbound email handler rejects unknown aliases and malformed messages without persisting them', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const recipient = `missing-${crypto.randomUUID()}@example.com`
-	const message = createForwardableEmailMessage({
+	const unknownAliasMessage = createForwardableEmailMessage({
 		from: 'stranger@example.net',
 		to: recipient,
 		raw: [
@@ -162,19 +162,16 @@ test('inbound email handler rejects unknown aliases without persisting them', as
 		].join('\r\n'),
 	})
 
-	await handleInboundEmail(message, env)
+	await handleInboundEmail(unknownAliasMessage, env)
 
-	expect(message.rejectedReason).toBe('Unknown Kody email alias.')
-	const messages = await listEmailMessages({
+	expect(unknownAliasMessage.rejectedReason).toBe('Unknown Kody email alias.')
+	const unknownAliasMessages = await listEmailMessages({
 		db: env.APP_DB,
 		userId: 'unknown',
 		limit: 10,
 	})
-	expect(messages).toEqual([])
-})
+	expect(unknownAliasMessages).toEqual([])
 
-test('inbound email handler rejects malformed messages without persisting them', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `email-parse-user-${crypto.randomUUID()}`
 	const address = requireNormalizedEmailAddress(
 		`parse-${crypto.randomUUID()}@example.com`,
@@ -193,25 +190,25 @@ test('inbound email handler rejects malformed messages without persisting them',
 		localPart: getEmailLocalPart(address),
 		domain: getEmailDomain(address),
 	})
-	const message = createForwardableEmailMessage({
+	const malformedMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
 		raw: 'Subject: Too large\r\n\r\nBody',
 	})
-	Object.defineProperty(message, 'rawSize', {
+	Object.defineProperty(malformedMessage, 'rawSize', {
 		value: 600 * 1024,
 	})
 
-	await handleInboundEmail(message, env)
+	await handleInboundEmail(malformedMessage, env)
 
-	expect(message.rejectedReason).toMatch(/too large/)
-	const messages = await listEmailMessages({
+	expect(malformedMessage.rejectedReason).toMatch(/too large/)
+	const malformedMessages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
 		inboxId: inbox.id,
 		limit: 10,
 	})
-	expect(messages).toEqual([])
+	expect(malformedMessages).toEqual([])
 })
 
 test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {

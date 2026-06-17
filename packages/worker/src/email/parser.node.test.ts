@@ -29,7 +29,7 @@ function createMessage(
 	} satisfies ForwardableEmailMessage
 }
 
-test('parseForwardableEmailMessage extracts headers, bodies, and attachment metadata', async () => {
+test('parseForwardableEmailMessage extracts content, attachments, and reply tokens', async () => {
 	const raw = [
 		'From: Sender <sender@example.com>',
 		'To: Support <support@example.com>',
@@ -71,9 +71,7 @@ test('parseForwardableEmailMessage extracts headers, bodies, and attachment meta
 			size: expect.any(Number),
 		}),
 	])
-})
 
-test('parseForwardableEmailMessage resolves reply tokens from headers and recipient addresses', async () => {
 	const headerTokenRaw = [
 		'From: Sender <sender@example.com>',
 		'To: Support <support@example.com>',
