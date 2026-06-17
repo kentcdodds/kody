@@ -173,6 +173,9 @@ function createExecutorModule(input: {
 		'    console.log = (...a) => { __logs.push(a.map(String).join(" ")); };',
 		'    console.warn = (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); };',
 		'    console.error = (...a) => { __logs.push("[error] " + a.map(String).join(" ")); };',
+		// Keep this aligned with upstream codemode's sandbox dispatcher shape:
+		// the dynamic worker source only names provider namespaces, while the
+		// actual per-invocation tool implementations arrive through RPC dispatchers.
 		...input.providers.map((provider) =>
 			provider.positionalArgs
 				? `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
