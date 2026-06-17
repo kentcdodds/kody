@@ -154,22 +154,47 @@ test('createExecuteExecutor separates dynamic worker ids by user binding context
 
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
 	const fakeLoader = createFakeWorkerLoader()
-	const result = await createExecuteExecutor({
+	for (const name of ['class', 'private']) {
+		const result = await createExecuteExecutor({
+			env: createExecutorTestEnv(fakeLoader.loader),
+			exports: createExecutorTestExports(),
+			gatewayProps: createGatewayProps('user-1'),
+		}).execute('async () => "ok"', [
+			{
+				name,
+				fns: {},
+			},
+		])
+
+		expect(result).toEqual({
+			result: undefined,
+			error: `Provider name "${name}" is a JavaScript reserved word`,
+		})
+	}
+	expect(fakeLoader.factoryCallCount).toBe(0)
+})
+
+test('createExecuteExecutor clears timeout handles after execution settles', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
 		env: createExecutorTestEnv(fakeLoader.loader),
 		exports: createExecutorTestExports(),
 		gatewayProps: createGatewayProps('user-1'),
 	}).execute('async () => "ok"', [
 		{
-			name: 'class',
+			name: 'codemode',
 			fns: {},
 		},
 	])
+	const workerId = fakeLoader.ids[0]
+	if (!workerId) throw new Error('Expected worker id')
+	const options = fakeLoader.createdOptions.get(workerId)
+	const modules = options?.modules as Record<string, string> | undefined
+	const executorModule = modules?.['executor.js']
 
-	expect(result).toEqual({
-		result: undefined,
-		error: 'Provider name "class" is a JavaScript reserved word',
-	})
-	expect(fakeLoader.factoryCallCount).toBe(0)
+	expect(executorModule).toContain('let __timeoutId;')
+	expect(executorModule).toContain('__timeoutId = setTimeout(')
+	expect(executorModule).toContain('clearTimeout(__timeoutId);')
 })
 
 test('createExecuteExecutor keeps random worker ids when user id is absent', async () => {
