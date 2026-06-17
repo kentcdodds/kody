@@ -1,4 +1,10 @@
-import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
+import {
+	normalizeCode,
+	sanitizeToolName,
+	ToolDispatcher,
+	type ExecuteResult,
+	type ResolvedProvider,
+} from '@cloudflare/codemode'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -18,6 +24,35 @@ type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
 export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
+const dynamicWorkerCompatibilityDate = '2025-06-01'
+const dynamicWorkerCompatibilityFlags = ['nodejs_compat'] as const
+const dynamicWorkerMainModule = 'executor.js'
+const dynamicWorkerIdPrefix = 'codemode-'
+const dynamicWorkerCacheKeyVersion = 1
+const reservedProviderNames = new Set(['__dispatchers', '__logs'])
+const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
+
+type LegacyCodemodeFns = Record<
+	string,
+	(...args: Array<unknown>) => Promise<unknown>
+>
+
+type DynamicWorkerExecutorInput = {
+	loader: Env['LOADER']
+	timeout: number
+	globalOutbound: Fetcher | null
+	modules?: WorkerLoaderModules
+	gatewayProps: FetchGatewayProps
+	appCommitSha?: string | null
+}
+
+type DynamicWorkerExecutorOptions = {
+	compatibilityDate: string
+	compatibilityFlags: Array<string>
+	mainModule: string
+	modules: WorkerLoaderModules
+	globalOutbound: Fetcher | null
+}
 
 export function createExecuteExecutor(input: {
 	env: Env
@@ -36,14 +71,238 @@ export function createExecuteExecutor(input: {
 		input.timeoutMs === null
 			? maxSupportedExecutorTimeoutMs
 			: (input.timeoutMs ?? 90_000)
-	return new DynamicWorkerExecutor({
+	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
 		globalOutbound: loopbackExports.CodemodeFetchGateway({
 			props: input.gatewayProps,
 		}),
-		modules: input.modules as unknown as Record<string, string> | undefined,
+		modules: input.modules,
+		gatewayProps: input.gatewayProps,
+		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
 	})
+}
+
+function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
+	const modules = removeReservedExecutorModule(input.modules)
+	return {
+		async execute(
+			code: string,
+			providersOrFns: Array<ResolvedProvider> | LegacyCodemodeFns,
+		): Promise<ExecuteResult> {
+			const providers = normalizeProviders(providersOrFns)
+			const validationError = validateProviders(providers)
+			if (validationError) {
+				return {
+					result: undefined,
+					error: validationError,
+				}
+			}
+			const executorModule = createExecutorModule({
+				code,
+				providers,
+				timeoutMs: input.timeout,
+			})
+			const workerOptions = {
+				compatibilityDate: dynamicWorkerCompatibilityDate,
+				compatibilityFlags: [...dynamicWorkerCompatibilityFlags],
+				mainModule: dynamicWorkerMainModule,
+				modules: {
+					...modules,
+					[dynamicWorkerMainModule]: executorModule,
+				},
+				globalOutbound: input.globalOutbound,
+			}
+			const workerId = await createStableDynamicWorkerId({
+				appCommitSha: input.appCommitSha ?? null,
+				gatewayProps: input.gatewayProps,
+				timeoutMs: input.timeout,
+				workerOptions,
+			})
+			const dispatchers = createToolDispatchers(providers)
+			const response = await input.loader
+				.get(workerId, () => workerOptions)
+				.getEntrypoint()
+				.evaluate(dispatchers)
+			if (response.error) {
+				return {
+					result: undefined,
+					error: response.error,
+					logs: response.logs,
+				}
+			}
+			return {
+				result: response.result,
+				logs: response.logs,
+			}
+		},
+	}
+}
+
+function normalizeProviders(
+	providersOrFns: Array<ResolvedProvider> | LegacyCodemodeFns,
+): Array<ResolvedProvider> {
+	if (Array.isArray(providersOrFns)) return providersOrFns
+	console.warn(
+		'[@cloudflare/codemode] Passing raw fns to executor.execute() is deprecated. Use ResolvedProvider[] instead. This will be removed in the next major version.',
+	)
+	return [
+		{
+			name: 'codemode',
+			fns: providersOrFns,
+		},
+	]
+}
+
+function validateProviders(providers: Array<ResolvedProvider>) {
+	const seenNames = new Set<string>()
+	for (const provider of providers) {
+		if (reservedProviderNames.has(provider.name)) {
+			return `Provider name "${provider.name}" is reserved`
+		}
+		if (!validProviderNamePattern.test(provider.name)) {
+			return `Provider name "${provider.name}" is not a valid JavaScript identifier`
+		}
+		if (seenNames.has(provider.name)) {
+			return `Duplicate provider name "${provider.name}"`
+		}
+		seenNames.add(provider.name)
+	}
+	return null
+}
+
+function createExecutorModule(input: {
+	code: string
+	providers: Array<ResolvedProvider>
+	timeoutMs: number
+}) {
+	const normalized = normalizeCode(input.code)
+	return [
+		'import { WorkerEntrypoint } from "cloudflare:workers";',
+		'',
+		'export default class CodeExecutor extends WorkerEntrypoint {',
+		'  async evaluate(__dispatchers = {}) {',
+		'    const __logs = [];',
+		'    console.log = (...a) => { __logs.push(a.map(String).join(" ")); };',
+		'    console.warn = (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); };',
+		'    console.error = (...a) => { __logs.push("[error] " + a.map(String).join(" ")); };',
+		...input.providers.map((provider) =>
+			provider.positionalArgs
+				? `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
+				: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`,
+		),
+		'',
+		'    try {',
+		'      const result = await Promise.race([',
+		'        (',
+		normalized,
+		')(),',
+		`        new Promise((_, reject) => setTimeout(() => reject(new Error("Execution timed out")), ${input.timeoutMs}))`,
+		'      ]);',
+		'      return { result, logs: __logs };',
+		'    } catch (err) {',
+		'      return { result: undefined, error: err.message, logs: __logs };',
+		'    }',
+		'  }',
+		'}',
+	].join('\n')
+}
+
+function createToolDispatchers(providers: Array<ResolvedProvider>) {
+	const dispatchers: Record<string, ToolDispatcher> = {}
+	for (const provider of providers) {
+		const sanitizedFns: LegacyCodemodeFns = {}
+		for (const [name, fn] of Object.entries(provider.fns)) {
+			sanitizedFns[sanitizeToolName(name)] = fn
+		}
+		dispatchers[provider.name] = new ToolDispatcher(
+			sanitizedFns,
+			provider.positionalArgs,
+		)
+	}
+	return dispatchers
+}
+
+function removeReservedExecutorModule(
+	modules: WorkerLoaderModules | undefined,
+) {
+	const { [dynamicWorkerMainModule]: _ignored, ...safeModules } = modules ?? {}
+	return safeModules
+}
+
+async function createStableDynamicWorkerId(input: {
+	appCommitSha: string | null
+	gatewayProps: FetchGatewayProps
+	timeoutMs: number
+	workerOptions: DynamicWorkerExecutorOptions
+}) {
+	const hash = await sha256Base64Url(
+		canonicalJsonStringify({
+			version: dynamicWorkerCacheKeyVersion,
+			binding: 'LOADER',
+			appCommitSha: input.appCommitSha,
+			gatewayProps: input.gatewayProps,
+			timeoutMs: input.timeoutMs,
+			compatibilityDate: input.workerOptions.compatibilityDate,
+			compatibilityFlags: input.workerOptions.compatibilityFlags,
+			mainModule: input.workerOptions.mainModule,
+			modules: input.workerOptions.modules,
+		}),
+	)
+	return `${dynamicWorkerIdPrefix}${hash.slice(0, 43)}`
+}
+
+function canonicalJsonStringify(value: unknown) {
+	return JSON.stringify(canonicalizeForHash(value))
+}
+
+function canonicalizeForHash(value: unknown): unknown {
+	if (value === undefined) return { __kodyType: 'undefined' }
+	if (value === null) return null
+	if (typeof value === 'bigint')
+		return { __kodyType: 'bigint', value: String(value) }
+	if (typeof value !== 'object') return value
+	if (value instanceof ArrayBuffer) {
+		return {
+			__kodyType: 'arrayBuffer',
+			value: toBase64Url(new Uint8Array(value)),
+		}
+	}
+	if (ArrayBuffer.isView(value)) {
+		return {
+			__kodyType: 'arrayBuffer',
+			value: toBase64Url(
+				new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+			),
+		}
+	}
+	if (Array.isArray(value))
+		return value.map((entry) => canonicalizeForHash(entry))
+	const record = value as Record<string, unknown>
+	return Object.fromEntries(
+		Object.keys(record)
+			.sort((left, right) => left.localeCompare(right))
+			.map((key) => [key, canonicalizeForHash(record[key])]),
+	)
+}
+
+async function sha256Base64Url(value: string) {
+	return toBase64Url(
+		new Uint8Array(
+			await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
+		),
+	)
+}
+
+function toBase64Url(bytes: Uint8Array) {
+	let binary = ''
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte)
+	}
+	return btoa(binary)
+		.replaceAll('+', '-')
+		.replaceAll('/', '_')
+		.replace(/=+$/u, '')
 }
 
 export type ExecutionErrorDetails =
