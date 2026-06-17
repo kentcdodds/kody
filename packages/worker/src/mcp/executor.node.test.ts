@@ -207,6 +207,58 @@ test('createExecuteExecutor keeps random worker ids when user id is absent', asy
 	expect(fakeLoader.factoryCallCount).toBe(2)
 })
 
+test('createExecuteExecutor keeps random worker ids when app commit is absent', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	const env = {
+		...createExecutorTestEnv(fakeLoader.loader),
+		APP_COMMIT_SHA: undefined,
+	} as Env
+	const exports = createExecutorTestExports()
+
+	for (let index = 0; index < 2; index += 1) {
+		await createExecuteExecutor({
+			env,
+			exports,
+			gatewayProps: createGatewayProps('user-1'),
+		}).execute('async () => "ok"', [
+			{
+				name: 'codemode',
+				fns: {},
+			},
+		])
+	}
+
+	expect(fakeLoader.ids).toHaveLength(2)
+	expect(new Set(fakeLoader.ids).size).toBe(2)
+	expect(fakeLoader.factoryCallCount).toBe(2)
+})
+
+test('createExecuteExecutor keeps random worker ids for bundled module graphs', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	const env = createExecutorTestEnv(fakeLoader.loader)
+	const exports = createExecutorTestExports()
+
+	for (let index = 0; index < 2; index += 1) {
+		await createExecuteExecutor({
+			env,
+			exports,
+			gatewayProps: createGatewayProps('user-1'),
+			modules: {
+				'entry.js': 'export default async function main() { return "ok" }',
+			},
+		}).execute('async () => "ok"', [
+			{
+				name: 'codemode',
+				fns: {},
+			},
+		])
+	}
+
+	expect(fakeLoader.ids).toHaveLength(2)
+	expect(new Set(fakeLoader.ids).size).toBe(2)
+	expect(fakeLoader.factoryCallCount).toBe(2)
+})
+
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
 	const capabilityError = new Error(
 		createCapabilitySecretAccessDeniedMessage(

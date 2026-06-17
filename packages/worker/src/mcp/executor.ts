@@ -215,9 +215,11 @@ function createExecutorModule(input: {
 		'export default class CodeExecutor extends WorkerEntrypoint {',
 		'  async evaluate(__dispatchers = {}) {',
 		'    const __logs = [];',
-		'    console.log = (...a) => { __logs.push(a.map(String).join(" ")); };',
-		'    console.warn = (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); };',
-		'    console.error = (...a) => { __logs.push("[error] " + a.map(String).join(" ")); };',
+		'    const console = {',
+		'      log: (...a) => { __logs.push(a.map(String).join(" ")); },',
+		'      warn: (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); },',
+		'      error: (...a) => { __logs.push("[error] " + a.map(String).join(" ")); },',
+		'    };',
 		// Keep this aligned with upstream codemode's sandbox dispatcher shape:
 		// the dynamic worker source only names provider namespaces, while the
 		// actual per-invocation tool implementations arrive through RPC dispatchers.
@@ -274,7 +276,7 @@ async function createStableDynamicWorkerId(input: {
 	timeoutMs: number
 	workerOptions: DynamicWorkerExecutorOptions
 }) {
-	if (!input.gatewayProps.userId) {
+	if (!canReuseDynamicWorkerId(input)) {
 		return `${dynamicWorkerIdPrefix}${crypto.randomUUID()}`
 	}
 	const hash = await sha256Base64Url(
@@ -291,6 +293,18 @@ async function createStableDynamicWorkerId(input: {
 		}),
 	)
 	return `${dynamicWorkerIdPrefix}${hash.slice(0, 43)}`
+}
+
+function canReuseDynamicWorkerId(input: {
+	appCommitSha: string | null
+	gatewayProps: FetchGatewayProps
+	workerOptions: DynamicWorkerExecutorOptions
+}) {
+	if (!input.gatewayProps.userId) return false
+	if (!input.appCommitSha) return false
+	return Object.keys(input.workerOptions.modules).every(
+		(moduleName) => moduleName === dynamicWorkerMainModule,
+	)
 }
 
 function canonicalJsonStringify(value: unknown) {
