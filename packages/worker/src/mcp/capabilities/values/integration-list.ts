@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import {
+	emptyCapabilityInputSchema,
+	type CapabilityContext,
+} from '#mcp/capabilities/types.ts'
 import { listValues } from '#mcp/values/service.ts'
 import {
 	integrationConfigSchema,
@@ -10,8 +13,6 @@ import {
 	parseIntegrationValueName,
 	parseIntegrationJson,
 } from './integration-shared.ts'
-
-const inputSchema = z.object({})
 
 const outputSchema = z.object({
 	integrations: z.array(integrationConfigSchema),
@@ -26,7 +27,7 @@ export const integrationListCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema,
+		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)

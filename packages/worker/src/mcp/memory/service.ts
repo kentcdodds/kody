@@ -10,6 +10,7 @@ import {
 	updateMemory,
 	upsertConversationSuppressions,
 } from './repo.ts'
+import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedText } from './memory-embed.ts'
 import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
 import { searchMemories } from './memory-search.ts'
@@ -588,16 +589,6 @@ async function filterSuppressedMatches(input: {
 	return {
 		matches: visible,
 		suppressedCount: input.matches.length - visible.length,
-	}
-}
-
-function parseJsonStringArray(raw: string) {
-	try {
-		const parsed = JSON.parse(raw) as unknown
-		if (!Array.isArray(parsed)) return []
-		return parsed.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return []
 	}
 }
 

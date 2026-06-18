@@ -9,6 +9,7 @@ import {
 	reciprocalRankFusion,
 	sortIdsByScore,
 } from '#mcp/capabilities/capability-search.ts'
+import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'
 
@@ -106,7 +107,7 @@ export async function searchMemories(input: {
 				subject: row.subject,
 				summary: row.summary,
 				details: row.details,
-				tags: parseTags(row.tags_json),
+				tags: parseJsonStringArray(row.tags_json),
 				sourceUris: parseJsonStringArray(row.source_uris_json),
 				dedupeKey: row.dedupe_key,
 				createdAt: row.created_at,
@@ -119,19 +120,5 @@ export async function searchMemories(input: {
 			}
 		}),
 		offline,
-	}
-}
-
-function parseTags(raw: string): Array<string> {
-	return parseJsonStringArray(raw)
-}
-
-function parseJsonStringArray(raw: string): Array<string> {
-	try {
-		const parsed = JSON.parse(raw) as unknown
-		if (!Array.isArray(parsed)) return []
-		return parsed.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return []
 	}
 }

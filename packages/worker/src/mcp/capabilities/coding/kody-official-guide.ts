@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { defineDomainCapability } from '../define-domain-capability.ts'
-import { capabilityDomainNames } from '../domain-metadata.ts'
-import { type CapabilityContext } from '../types.ts'
+import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
+import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 
 /** Same upper bound as markdown doc fetches elsewhere. */
 const MAX_GUIDE_BODY_CHARS = 2_000_000

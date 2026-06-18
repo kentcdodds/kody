@@ -1,14 +1,5 @@
+import { parseJsonStringArray } from './json-string-array.ts'
 import { type McpMemoryRow } from './types.ts'
-
-function parseJsonStringArray(raw: string): Array<string> {
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return []
-		return value.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return []
-	}
-}
 
 export function buildMemoryEmbedText(input: {
 	category: string | null

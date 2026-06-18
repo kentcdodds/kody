@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import {
+	emptyCapabilityInputSchema,
+	type CapabilityContext,
+} from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from './require-user.ts'
 
 const outputSchema = z.object({
@@ -28,7 +31,7 @@ export const metaGetCurrentUserCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.object({}),
+		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)

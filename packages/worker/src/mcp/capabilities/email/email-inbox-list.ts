@@ -1,7 +1,7 @@
-import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import {
 	listEmailInboxAddressesForUser,
 	listEmailInboxesForUser,
@@ -18,7 +18,7 @@ export const emailInboxListCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.object({}),
+		inputSchema: emptyCapabilityInputSchema,
 		outputSchema: emailInboxListSchema,
 		async handler(_args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)

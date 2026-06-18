@@ -1,4 +1,4 @@
-import { defineDomain } from '../define-domain.ts'
+import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { jobDeleteCapability } from './job-delete.ts'
 import { jobGetCapability } from './job-get.ts'

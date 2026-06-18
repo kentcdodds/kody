@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { getRemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
@@ -37,7 +38,7 @@ export const metaListRemoteConnectorStatusCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.object({}),
+		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
 		async handler(_args, ctx) {
 			const refs = normalizeRemoteConnectorRefs(ctx.callerContext)

@@ -1,22 +1,21 @@
+import {
+	normalizeAllowedStringList,
+	parseAllowedStringList,
+} from './allowed-string-list.ts'
+
+const compareAllowedCapabilities = (left: string, right: string) =>
+	left.localeCompare(right)
+
 export function normalizeAllowedCapabilities(input: Array<string>) {
-	return Array.from(
-		new Set(
-			input.map((value) => value.trim()).filter((value) => value.length > 0),
-		),
-	).sort((left, right) => left.localeCompare(right))
+	return normalizeAllowedStringList({
+		values: input,
+		normalizeEntry: (value) => value.trim(),
+		compare: compareAllowedCapabilities,
+	})
 }
 
 export function parseAllowedCapabilities(value: string | null | undefined) {
-	if (!value) return []
-	try {
-		const parsed = JSON.parse(value)
-		if (!Array.isArray(parsed)) return []
-		return normalizeAllowedCapabilities(
-			parsed.filter((entry): entry is string => typeof entry === 'string'),
-		)
-	} catch {
-		return []
-	}
+	return parseAllowedStringList(value, normalizeAllowedCapabilities)
 }
 
 export function stringifyAllowedCapabilities(input: Array<string>) {

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { packageSummarySchema } from './shared.ts'
 
@@ -15,7 +16,7 @@ export const listPackagesCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.object({}),
+		inputSchema: emptyCapabilityInputSchema,
 		outputSchema: z.object({
 			packages: z.array(packageSummarySchema),
 		}),

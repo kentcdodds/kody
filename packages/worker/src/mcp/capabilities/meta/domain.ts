@@ -1,4 +1,4 @@
-import { defineDomain } from '../define-domain.ts'
+import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { metaMemoryDeleteCapability } from './meta-memory-delete.ts'
 import { metaMemoryGetCapability } from './meta-memory-get.ts'

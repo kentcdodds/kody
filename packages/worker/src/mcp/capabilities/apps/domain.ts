@@ -1,4 +1,4 @@
-import { defineDomain } from '../define-domain.ts'
+import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { sessionBroadcastCapability } from './session-broadcast.ts'
 import { sessionEmitCapability } from './session-emit.ts'

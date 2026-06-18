@@ -1,29 +1,21 @@
+import {
+	normalizeAllowedStringList,
+	parseAllowedStringList,
+} from './allowed-string-list.ts'
+
 export function normalizeHost(host: string) {
 	return host.trim().toLowerCase()
 }
 
 export function normalizeAllowedHosts(hosts: Array<string>) {
-	return Array.from(
-		new Set(
-			hosts
-				.map((host) => normalizeHost(host))
-				.filter((host) => host.length > 0),
-		),
-	).sort()
+	return normalizeAllowedStringList({
+		values: hosts,
+		normalizeEntry: normalizeHost,
+	})
 }
 
 export function parseAllowedHosts(raw: string | null | undefined) {
-	if (!raw) return []
-	try {
-		const parsed = JSON.parse(raw)
-		return Array.isArray(parsed)
-			? normalizeAllowedHosts(
-					parsed.filter((value): value is string => typeof value === 'string'),
-				)
-			: []
-	} catch {
-		return []
-	}
+	return parseAllowedStringList(raw, normalizeAllowedHosts)
 }
 
 export function stringifyAllowedHosts(hosts: Array<string>) {
