@@ -1,4 +1,5 @@
 import { type Handle } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 
 type BlurHandler = (event: FocusEvent) => void
 type ClickHandler = (event: MouseEvent) => void
@@ -37,7 +38,7 @@ export function createDoubleCheck(handle: Handle) {
 		reset() {
 			setDoubleCheck(false)
 		},
-		getButtonProps<Props extends ButtonLikeProps>(props?: Props): Props {
+		getButtonMix<Props extends ButtonLikeProps>(props?: Props) {
 			const buttonProps = props ?? ({} as Props)
 
 			const onBlur: BlurHandler = () => {
@@ -55,14 +56,10 @@ export function createDoubleCheck(handle: Handle) {
 				setDoubleCheck(false)
 			}
 
-			return {
-				...buttonProps,
-				on: {
-					...buttonProps.on,
-					blur: callAll(onBlur, buttonProps.on?.blur),
-					click: onClick,
-				},
-			}
+			return [
+				on('blur', (event) => callAll(onBlur, buttonProps.on?.blur)(event)),
+				on('click', onClick),
+			]
 		},
 	}
 }

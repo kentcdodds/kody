@@ -1776,11 +1776,6 @@ export function AccountSecretsRoute(handle: Handle) {
 										<button
 											type="button"
 											disabled={isMutating}
-											{...deleteSecretCheck.getButtonProps({
-												on: {
-													click: () => void deleteSelectedSecret(),
-												},
-											})}
 											aria-label={
 												deleteSecretCheck.doubleCheck
 													? `Confirm delete secret "${editorState.name}"`
@@ -1791,7 +1786,14 @@ export function AccountSecretsRoute(handle: Handle) {
 													? `Click again to delete "${editorState.name}"`
 													: `Delete secret "${editorState.name}"`
 											}
-											mix={css(dangerButtonCss)}
+											mix={[
+												...deleteSecretCheck.getButtonMix({
+													on: {
+														click: () => void deleteSelectedSecret(),
+													},
+												}),
+												css(dangerButtonCss),
+											]}
 										>
 											{saveState === 'deleting'
 												? 'Deleting...'

@@ -703,3 +703,39 @@ test('GET /account/secrets.json includes selected secret value for editing', asy
 		}),
 	)
 })
+
+test('delete action removes selected user secret and refreshes payload', async () => {
+	mockModule.deleteSecret.mockResolvedValueOnce(true)
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'delete',
+				currentId: 'user::::myApiKey',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		deleted: true,
+		selectedSecret: null,
+		secrets: [],
+	})
+	expect(mockModule.deleteSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'myApiKey',
+			scope: 'user',
+			storageContext: { appId: null, sessionId: null },
+		}),
+	)
+})
