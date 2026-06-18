@@ -4,7 +4,9 @@ import {
 	readBearerToken,
 } from './maintenance-handler.ts'
 
-function createRequest(input: { method?: string; authorization?: string } = {}) {
+function createRequest(
+	input: { method?: string; authorization?: string } = {},
+) {
 	return new Request('http://localhost/__maintenance/test', {
 		method: input.method ?? 'POST',
 		headers:
@@ -15,12 +17,12 @@ function createRequest(input: { method?: string; authorization?: string } = {}) 
 }
 
 test('readBearerToken extracts trimmed bearer credentials', () => {
-	expect(readBearerToken(createRequest({ authorization: ' Bearer secret ' }))).toBe(
-		'secret',
-	)
-	expect(readBearerToken(createRequest({ authorization: 'Basic secret' }))).toBe(
-		null,
-	)
+	expect(
+		readBearerToken(createRequest({ authorization: ' Bearer secret ' })),
+	).toBe('secret')
+	expect(
+		readBearerToken(createRequest({ authorization: 'Basic secret' })),
+	).toBe(null)
 })
 
 test('handleSecretMaintenanceRequest rejects non-POST requests', async () => {
