@@ -24,13 +24,13 @@ const mockModule = vi.hoisted(() => ({
 			id: 'token-1',
 			user_id: 'stable-user-1',
 			token_hash: 'stored-hash',
-			name: 'Raycast',
+			name: 'Personal client',
 			email: 'user@example.com',
 			display_name: 'user',
 			package_ids_json: '[]',
 			package_kody_ids_json: '["*"]',
 			export_names_json: '["*"]',
-			sources_json: '["raycast"]',
+			sources_json: '["personal-client"]',
 			created_at: new Date(0).toISOString(),
 			updated_at: new Date(0).toISOString(),
 			last_used_at: null,
@@ -38,7 +38,7 @@ const mockModule = vi.hoisted(() => ({
 			packageIds: [],
 			packageKodyIds: ['*'],
 			exportNames: ['*'],
-			sources: ['raycast'],
+			sources: ['personal-client'],
 		},
 	]),
 	revokePackageInvocationToken: vi.fn(async () => true),
@@ -158,11 +158,11 @@ test('package invocation token API lists token metadata without token hashes', a
 		tokens: [
 			{
 				id: 'token-1',
-				name: 'Raycast',
+				name: 'Personal client',
 				packageIds: [],
 				packageKodyIds: ['*'],
 				exportNames: ['*'],
-				sources: ['raycast'],
+				sources: ['personal-client'],
 				createdAt: new Date(0).toISOString(),
 				updatedAt: new Date(0).toISOString(),
 				lastUsedAt: null,
@@ -172,7 +172,7 @@ test('package invocation token API lists token metadata without token hashes', a
 	})
 })
 
-test('package invocation token API hashes raw tokens and stores Raycast wildcard scopes', async () => {
+test('package invocation token API hashes raw tokens and stores wildcard scopes', async () => {
 	resetMocks()
 	const env = createEnv()
 	const handler = createAccountPackageInvocationTokensApiHandler(env)
@@ -184,11 +184,11 @@ test('package invocation token API hashes raw tokens and stores Raycast wildcard
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					action: 'create',
-					name: 'Personal Raycast',
-					rawToken: 'raw-raycast-token',
+					name: 'Personal automation',
+					rawToken: 'raw-personal-client-token',
 					packageKodyIds: ['*'],
 					exportNames: ['*'],
-					sources: ['raycast'],
+					sources: ['personal-client'],
 				}),
 			},
 		),
@@ -197,24 +197,24 @@ test('package invocation token API hashes raw tokens and stores Raycast wildcard
 
 	expect(response.status).toBe(200)
 	expect(mockModule.hashPackageInvocationBearerToken).toHaveBeenCalledWith(
-		'raw-raycast-token',
+		'raw-personal-client-token',
 	)
 	expect(mockModule.insertPackageInvocationToken).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		row: expect.objectContaining({
 			userId: 'stable-user-1',
-			name: 'Personal Raycast',
+			name: 'Personal automation',
 			tokenHash: 'hashed-raw-token',
 			email: 'user@example.com',
 			displayName: 'user',
 			packageIds: [],
 			packageKodyIds: ['*'],
 			exportNames: ['*'],
-			sources: ['raycast'],
+			sources: ['personal-client'],
 		}),
 	})
 	const text = await response.text()
-	expect(text).not.toContain('raw-raycast-token')
+	expect(text).not.toContain('raw-personal-client-token')
 	expect(JSON.parse(text)).toMatchObject({
 		ok: true,
 		selectedTokenId: expect.any(String),

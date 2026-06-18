@@ -83,12 +83,12 @@ Create payload shape:
 ```json
 {
 	"action": "create",
-	"name": "Personal Raycast",
+	"name": "Personal automation",
 	"rawToken": "<raw-token>",
 	"packageKodyIds": ["*"],
 	"packageIds": [],
 	"exportNames": ["*"],
-	"sources": ["raycast"]
+	"sources": ["personal-client"]
 }
 ```
 
@@ -251,21 +251,21 @@ curl --fail --silent \
 	}'
 ```
 
-## Personal Raycast client pattern
+## Personal client pattern
 
-Recommended flow for a personal Raycast extension:
+Recommended flow for a trusted personal client:
 
 1. generate a high-entropy raw token locally
-2. copy the raw token to the clipboard or keep it in Raycast's local secret
+2. copy the raw token to the clipboard or keep it in the client's local secret
    storage
 3. open Kody at
-   `/account/package-invocation-tokens/new?name=Personal%20Raycast&packageKodyIds=*&exportNames=*&sources=raycast`
+   `/account/package-invocation-tokens/new?name=Personal%20automation&packageKodyIds=*&exportNames=*&sources=personal-client`
 4. paste the raw token into the form and create the token
 5. send invocation requests with `Authorization: Bearer <raw-token>` and
-   `"source": "raycast"`
+   `"source": "personal-client"`
 
-The Raycast wildcard token can call any package/export owned by the signed-in
-Kody user, but only for requests that identify themselves with source `raycast`.
+A wildcard token can call any package/export owned by the signed-in Kody user,
+but only for requests that identify themselves with an allowed source.
 
 ## Related
 

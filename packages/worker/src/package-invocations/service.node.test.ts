@@ -1522,7 +1522,7 @@ test('invokePackageExport allows wildcard package and export scopes while enforc
 	const db = createDatabase()
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { reply: 'hello raycast' },
+		result: { reply: 'hello trusted client' },
 		logs: ['invoked'],
 	})
 
@@ -1533,14 +1533,14 @@ test('invokePackageExport allows wildcard package and export scopes while enforc
 			packageIds: ['*'],
 			packageKodyIds: [],
 			exportNames: ['*'],
-			sources: ['raycast'],
+			sources: ['personal-client'],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'dispatch-message-created',
 			params: { content: 'hi' },
-			idempotencyKey: 'evt-raycast',
-			source: 'raycast',
+			idempotencyKey: 'evt-personal-client',
+			source: 'personal-client',
 		},
 	})
 
@@ -1548,8 +1548,8 @@ test('invokePackageExport allows wildcard package and export scopes while enforc
 	expect(allowed.body).toMatchObject({
 		ok: true,
 		exportName: './dispatch-message-created',
-		source: 'raycast',
-		result: { reply: 'hello raycast' },
+		source: 'personal-client',
+		result: { reply: 'hello trusted client' },
 	})
 
 	const denied = await invokePackageExport({
@@ -1559,7 +1559,7 @@ test('invokePackageExport allows wildcard package and export scopes while enforc
 			packageIds: ['*'],
 			packageKodyIds: [],
 			exportNames: ['*'],
-			sources: ['raycast'],
+			sources: ['personal-client'],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',

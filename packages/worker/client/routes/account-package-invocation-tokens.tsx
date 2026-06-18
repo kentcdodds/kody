@@ -19,7 +19,6 @@ import {
 	fieldLabelCss,
 	getDangerButtonCss,
 	getPrimaryButtonCss,
-	getSecondaryButtonCss,
 	inputCss,
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
@@ -198,7 +197,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let revokeConfirm = false
 
 	const primaryButtonCss = getPrimaryButtonCss()
-	const secondaryButtonCss = getSecondaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
 
 	function redirectToLogin() {
@@ -325,21 +323,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			lastLoadedHref = window.location.href
 			lastNewTokenQueryKey = getNewTokenQueryKey(window.location.href)
 		}
-		handle.update()
-	}
-
-	function useRaycastDefaults() {
-		editorState = {
-			...editorState,
-			name: editorState.name || 'Personal Raycast',
-			packageIdsText: '',
-			packageKodyIdsText: wildcardScope,
-			exportNamesText: wildcardScope,
-			sourcesText: 'raycast',
-		}
-		message =
-			'Raycast defaults allow any owned package and export when source is raycast.'
-		messageTone = 'info'
 		handle.update()
 	}
 
@@ -680,7 +663,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										name="name"
 										type="text"
 										value={editorState.name}
-										placeholder="Personal Raycast"
+										placeholder="Personal automation"
 										disabled={isMutating}
 										required
 										mix={[
@@ -789,7 +772,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<textarea
 										name="sources"
 										value={editorState.sourcesText}
-										placeholder="raycast"
+										placeholder="personal-client"
 										disabled={isMutating}
 										mix={[
 											on('input', (event) => {
@@ -818,16 +801,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										mix={css(primaryButtonCss)}
 									>
 										{saveState === 'creating' ? 'Creating...' : 'Create token'}
-									</button>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', useRaycastDefaults),
-											css(secondaryButtonCss),
-										]}
-									>
-										Use Raycast defaults
 									</button>
 								</div>
 							</form>
