@@ -201,6 +201,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	const secondaryButtonCss = getSecondaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
 
+	function redirectToLogin() {
+		saveState = 'idle'
+		status = 'ready'
+		if (typeof window !== 'undefined') {
+			window.location.assign('/login')
+		}
+	}
+
 	async function loadTokens(signal: AbortSignal) {
 		const loadStartedAtMutationVersion = mutationVersion
 		try {
@@ -216,7 +224,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			})
 			if (signal.aborted) return
 			if (response.status === 401) {
-				window.location.assign('/login')
+				redirectToLogin()
 				return
 			}
 			const payload =
@@ -225,7 +233,12 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error('Unable to load package invocation tokens.')
 			}
 			if (loadStartedAtMutationVersion !== mutationVersion) return
-			applyPayload(payload, href)
+			const latestHref =
+				typeof window === 'undefined'
+					? accountPackageInvocationTokensBasePath
+					: window.location.href
+			if (href !== latestHref) return
+			applyPayload(payload, latestHref)
 			status = 'ready'
 			message = null
 			messageTone = 'info'
@@ -388,7 +401,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				}),
 			})
 			if (response.status === 401) {
-				window.location.assign('/login')
+				redirectToLogin()
 				return
 			}
 			const payload = await readJson<
@@ -442,7 +455,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				}),
 			})
 			if (response.status === 401) {
-				window.location.assign('/login')
+				redirectToLogin()
 				return
 			}
 			const payload = await readJson<
