@@ -373,6 +373,12 @@ export function resolveJobGetId(input: { id?: string; job_id?: string }) {
 	return jobId
 }
 
+function assertNeverScheduledJobSchedule(schedule: never): never {
+	throw new Error(
+		`Unhandled scheduled job schedule: ${JSON.stringify(schedule)}`,
+	)
+}
+
 export function buildJobScheduleSummaryOutput(schedule: JobView['schedule']) {
 	switch (schedule.type) {
 		case 'once':
@@ -391,8 +397,7 @@ export function buildJobScheduleSummaryOutput(schedule: JobView['schedule']) {
 				expression: schedule.expression,
 			}
 	}
-	const exhaustive: never = schedule
-	return exhaustive
+	return assertNeverScheduledJobSchedule(schedule)
 }
 
 export function toJobSchedule(
@@ -415,8 +420,7 @@ export function toJobSchedule(
 				expression: schedule.expression,
 			}
 	}
-	const exhaustive: never = schedule
-	return exhaustive
+	return assertNeverScheduledJobSchedule(schedule)
 }
 
 export function resolveJobCreateBody(
