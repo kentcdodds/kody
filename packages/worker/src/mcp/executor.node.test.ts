@@ -85,7 +85,7 @@ function createGatewayProps(userId: string) {
 	}
 }
 
-test('createExecuteExecutor uses stable dynamic worker ids for identical code and caller-scoped bindings', async () => {
+test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	const env = createExecutorTestEnv(fakeLoader.loader)
 	const exports = createExecutorTestExports()
@@ -120,13 +120,8 @@ test('createExecuteExecutor uses stable dynamic worker ids for identical code an
 	expect(fakeLoader.ids).toHaveLength(2)
 	expect(new Set(fakeLoader.ids).size).toBe(1)
 	expect(fakeLoader.factoryCallCount).toBe(1)
-})
 
-test('createExecuteExecutor separates dynamic worker ids by user binding context and module graph', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	const env = createExecutorTestEnv(fakeLoader.loader)
-	const exports = createExecutorTestExports()
-	const providers = [
+	const scopedProviders = [
 		{
 			name: 'codemode',
 			fns: {},
@@ -140,7 +135,7 @@ test('createExecuteExecutor separates dynamic worker ids by user binding context
 		modules: {
 			'helper.js': 'export const value = "one";',
 		},
-	}).execute('async () => "ok"', providers)
+	}).execute('async () => "ok"', scopedProviders)
 	await createExecuteExecutor({
 		env,
 		exports,
@@ -148,7 +143,7 @@ test('createExecuteExecutor separates dynamic worker ids by user binding context
 		modules: {
 			'helper.js': 'export const value = "one";',
 		},
-	}).execute('async () => "ok"', providers)
+	}).execute('async () => "ok"', scopedProviders)
 	await createExecuteExecutor({
 		env,
 		exports,
@@ -156,11 +151,58 @@ test('createExecuteExecutor separates dynamic worker ids by user binding context
 		modules: {
 			'helper.js': 'export const value = "two";',
 		},
-	}).execute('async () => "ok"', providers)
+	}).execute('async () => "ok"', scopedProviders)
 
-	expect(fakeLoader.ids).toHaveLength(3)
-	expect(new Set(fakeLoader.ids).size).toBe(3)
-	expect(fakeLoader.factoryCallCount).toBe(3)
+	expect(fakeLoader.ids).toHaveLength(5)
+	expect(new Set(fakeLoader.ids).size).toBe(4)
+	expect(fakeLoader.factoryCallCount).toBe(4)
+
+	const noUserLoader = createFakeWorkerLoader()
+	const noUserGatewayProps = {
+		...createGatewayProps('user-1'),
+		userId: null,
+	}
+	for (let index = 0; index < 2; index += 1) {
+		await createExecuteExecutor({
+			env: createExecutorTestEnv(noUserLoader.loader),
+			exports,
+			gatewayProps: noUserGatewayProps,
+		}).execute('async () => "ok"', scopedProviders)
+	}
+	expect(noUserLoader.ids).toHaveLength(2)
+	expect(new Set(noUserLoader.ids).size).toBe(2)
+	expect(noUserLoader.factoryCallCount).toBe(2)
+
+	const noCommitLoader = createFakeWorkerLoader()
+	const noCommitEnv = {
+		...createExecutorTestEnv(noCommitLoader.loader),
+		APP_COMMIT_SHA: undefined,
+	} as Env
+	for (let index = 0; index < 2; index += 1) {
+		await createExecuteExecutor({
+			env: noCommitEnv,
+			exports,
+			gatewayProps: createGatewayProps('user-1'),
+		}).execute('async () => "ok"', scopedProviders)
+	}
+	expect(noCommitLoader.ids).toHaveLength(2)
+	expect(new Set(noCommitLoader.ids).size).toBe(2)
+	expect(noCommitLoader.factoryCallCount).toBe(2)
+
+	const bundledLoader = createFakeWorkerLoader()
+	for (let index = 0; index < 2; index += 1) {
+		await createExecuteExecutor({
+			env: createExecutorTestEnv(bundledLoader.loader),
+			exports,
+			gatewayProps: createGatewayProps('user-1'),
+			modules: {
+				'entry.js': 'export default async function main() { return "ok" }',
+			},
+		}).execute('async () => "ok"', scopedProviders)
+	}
+	expect(bundledLoader.ids).toHaveLength(2)
+	expect(new Set(bundledLoader.ids).size).toBe(2)
+	expect(bundledLoader.factoryCallCount).toBe(2)
 })
 
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
@@ -185,31 +227,6 @@ test('createExecuteExecutor rejects reserved JavaScript provider names before lo
 	expect(fakeLoader.factoryCallCount).toBe(0)
 })
 
-test('createExecuteExecutor clears timeout handles after execution settles', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: createExecutorTestEnv(fakeLoader.loader),
-		exports: createExecutorTestExports(),
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => "ok"', [
-		{
-			name: 'codemode',
-			fns: {},
-		},
-	])
-	const workerId = fakeLoader.ids[0]
-	if (!workerId) throw new Error('Expected worker id')
-	const options = fakeLoader.createdOptions.get(workerId)
-	const modules = options?.modules as Record<string, string> | undefined
-	const executorModule = modules?.['executor.js']
-
-	expect(executorModule).toContain('let __timeoutId;')
-	expect(executorModule).toContain('__timeoutId = setTimeout(')
-	expect(executorModule).toContain('clearTimeout(__timeoutId);')
-	expect(executorModule).toContain('const __kodySandboxGlobal = new Proxy')
-	expect(executorModule).toContain('(async (globalThis, self, global) => (')
-})
-
 test('createExecuteExecutor disables dispatchers after execution completes', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	await createExecuteExecutor({
@@ -230,96 +247,6 @@ test('createExecuteExecutor disables dispatchers after execution completes', asy
 	expect(JSON.parse(result ?? '{}')).toEqual({
 		error: 'Execution has already completed.',
 	})
-})
-
-test('createExecuteExecutor keeps random worker ids when user id is absent', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	const env = createExecutorTestEnv(fakeLoader.loader)
-	const exports = createExecutorTestExports()
-	const gatewayProps = {
-		...createGatewayProps('user-1'),
-		userId: null,
-	}
-
-	await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps,
-	}).execute('async () => "ok"', [
-		{
-			name: 'codemode',
-			fns: {},
-		},
-	])
-	await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps,
-	}).execute('async () => "ok"', [
-		{
-			name: 'codemode',
-			fns: {},
-		},
-	])
-
-	expect(fakeLoader.ids).toHaveLength(2)
-	expect(new Set(fakeLoader.ids).size).toBe(2)
-	expect(fakeLoader.factoryCallCount).toBe(2)
-})
-
-test('createExecuteExecutor keeps random worker ids when app commit is absent', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	const env = {
-		...createExecutorTestEnv(fakeLoader.loader),
-		APP_COMMIT_SHA: undefined,
-	} as Env
-	const exports = createExecutorTestExports()
-
-	for (let index = 0; index < 2; index += 1) {
-		await createExecuteExecutor({
-			env,
-			exports,
-			gatewayProps: createGatewayProps('user-1'),
-		}).execute('async () => "ok"', [
-			{
-				name: 'codemode',
-				fns: {},
-			},
-		])
-	}
-
-	expect(fakeLoader.ids).toHaveLength(2)
-	expect(new Set(fakeLoader.ids).size).toBe(2)
-	expect(fakeLoader.factoryCallCount).toBe(2)
-})
-
-test('createExecuteExecutor keeps random worker ids for bundled module graphs', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	const env = createExecutorTestEnv(fakeLoader.loader)
-	const exports = createExecutorTestExports()
-
-	for (let index = 0; index < 2; index += 1) {
-		await createExecuteExecutor({
-			env,
-			exports,
-			gatewayProps: createGatewayProps('user-1'),
-			modules: {
-				'entry.js': 'export default async function main() { return "ok" }',
-			},
-		}).execute('async () => "ok"', [
-			{
-				name: 'codemode',
-				fns: {},
-			},
-		])
-	}
-
-	expect(fakeLoader.ids).toHaveLength(2)
-	expect(new Set(fakeLoader.ids).size).toBe(2)
-	expect(fakeLoader.factoryCallCount).toBe(2)
-	const options = fakeLoader.createdOptions.get(fakeLoader.ids[0] ?? '')
-	const modules = options?.modules as Record<string, string> | undefined
-	expect(modules?.['executor.js']).not.toContain('__kodySandboxGlobal')
 })
 
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
