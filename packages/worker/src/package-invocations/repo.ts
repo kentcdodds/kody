@@ -196,6 +196,91 @@ export async function updatePackageInvocationTokenLastUsed(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function listPackageInvocationTokensByUserId(input: {
+	db: D1Database
+	userId: string
+}) {
+	const rows = await input.db
+		.prepare(
+			`SELECT *
+			FROM package_invocation_tokens
+			WHERE user_id = ?
+			ORDER BY created_at DESC, name ASC`,
+		)
+		.bind(input.userId)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapTokenRow)
+}
+
+export async function insertPackageInvocationToken(input: {
+	db: D1Database
+	row: {
+		id: string
+		userId: string
+		name: string
+		tokenHash: string
+		email: string
+		displayName: string
+		packageIds: Array<string>
+		packageKodyIds: Array<string>
+		exportNames: Array<string>
+		sources: Array<string>
+	}
+}) {
+	const now = new Date().toISOString()
+	await input.db
+		.prepare(
+			`INSERT INTO package_invocation_tokens (
+				id,
+				user_id,
+				name,
+				token_hash,
+				email,
+				display_name,
+				package_ids_json,
+				package_kody_ids_json,
+				export_names_json,
+				sources_json,
+				created_at,
+				updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			input.row.id,
+			input.row.userId,
+			input.row.name,
+			input.row.tokenHash,
+			input.row.email,
+			input.row.displayName,
+			JSON.stringify(input.row.packageIds),
+			JSON.stringify(input.row.packageKodyIds),
+			JSON.stringify(input.row.exportNames),
+			JSON.stringify(input.row.sources),
+			now,
+			now,
+		)
+		.run()
+}
+
+export async function revokePackageInvocationToken(input: {
+	db: D1Database
+	userId: string
+	id: string
+}) {
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE package_invocation_tokens
+			SET revoked_at = ?, updated_at = ?
+			WHERE id = ?
+				AND user_id = ?
+				AND revoked_at IS NULL`,
+		)
+		.bind(now, now, input.id, input.userId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function insertPackageInvocationRow(input: {
 	db: D1Database
 	row: {

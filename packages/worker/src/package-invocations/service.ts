@@ -123,8 +123,9 @@ const internalPackageEventSubscriptionTokenId = 'internal:package-events'
 const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
 const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
 const maxPackageRuntimeInvokeDepth = 8
+export const packageInvocationScopeWildcard = '*'
 
-function normalizeExportName(exportName: string) {
+export function normalizeExportName(exportName: string) {
 	const trimmed = exportName.trim()
 	if (!trimmed) {
 		throw new Error('Package export name must not be empty.')
@@ -558,15 +559,28 @@ async function resolveSavedPackage(input: {
 	)
 }
 
+function scopeAllowsValue(input: { values?: Array<string>; value: string }) {
+	return (
+		input.values?.includes(packageInvocationScopeWildcard) ||
+		input.values?.includes(input.value) ||
+		false
+	)
+}
+
 function tokenAllowsPackage(input: {
 	token: PackageInvocationTokenScope
 	savedPackage: SavedPackageRecord
 }) {
-	const allowsPackageId =
-		input.token.packageIds?.includes(input.savedPackage.id) ?? false
-	const allowsKodyId =
-		input.token.packageKodyIds?.includes(input.savedPackage.kodyId) ?? false
-	return allowsPackageId || allowsKodyId
+	return (
+		scopeAllowsValue({
+			values: input.token.packageIds,
+			value: input.savedPackage.id,
+		}) ||
+		scopeAllowsValue({
+			values: input.token.packageKodyIds,
+			value: input.savedPackage.kodyId,
+		})
+	)
 }
 
 function tokenAllowsExport(input: {
@@ -574,9 +588,11 @@ function tokenAllowsExport(input: {
 	exportName: string
 }) {
 	const exportNames = input.token.exportNames ?? []
-	return exportNames
-		.map((entry) => normalizeExportName(entry))
-		.includes(input.exportName)
+	return exportNames.some(
+		(entry) =>
+			entry === packageInvocationScopeWildcard ||
+			normalizeExportName(entry) === input.exportName,
+	)
 }
 
 function tokenAllowsSource(input: {

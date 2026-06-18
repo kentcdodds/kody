@@ -161,7 +161,8 @@ export function AccountRoute(handle: Handle) {
 						{username ? `${username} account` : 'Account'}
 					</h1>
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Manage your profile, approval requests, and stored secrets.
+						Manage your profile, approval requests, stored secrets, and package
+						invocation tokens.
 					</p>
 				</header>
 
@@ -231,6 +232,21 @@ export function AccountRoute(handle: Handle) {
 							<div>
 								<a href="/account/secrets" mix={css(primaryLinkCss)}>
 									Manage secrets
+								</a>
+							</div>
+						</section>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Package invocation tokens</h2>
+							<p mix={css(descriptionCss)}>
+								Create and revoke bearer tokens for trusted personal clients
+								that call saved package exports.
+							</p>
+							<div>
+								<a
+									href="/account/package-invocation-tokens"
+									mix={css(primaryLinkCss)}
+								>
+									Manage package tokens
 								</a>
 							</div>
 						</section>

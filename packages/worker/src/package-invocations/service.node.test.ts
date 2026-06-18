@@ -182,6 +182,8 @@ function createEnv(db: D1Database) {
 
 function createToken(
 	overrides: Partial<{
+		packageIds: Array<string>
+		packageKodyIds: Array<string>
 		exportNames: Array<string>
 		sources: Array<string>
 		remoteConnectors: Array<{ kind: string; instanceId: string }>
@@ -192,7 +194,8 @@ function createToken(
 		userId: 'user-123',
 		email: 'me@example.com',
 		displayName: 'me',
-		packageKodyIds: ['discord-gateway'],
+		packageIds: overrides.packageIds,
+		packageKodyIds: overrides.packageKodyIds ?? ['discord-gateway'],
 		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
 		sources: overrides.sources ?? ['discord-gateway'],
 		remoteConnectors: overrides.remoteConnectors,
@@ -1513,6 +1516,68 @@ test('invokePackageExport rejects explicitly disallowed source values', async ()
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+})
+
+test('invokePackageExport allows wildcard package and export scopes while enforcing source scopes', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'hello raycast' },
+		logs: ['invoked'],
+	})
+
+	const allowed = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({
+			packageIds: ['*'],
+			packageKodyIds: [],
+			exportNames: ['*'],
+			sources: ['raycast'],
+		}),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-raycast',
+			source: 'raycast',
+		},
+	})
+
+	expect(allowed.status).toBe(200)
+	expect(allowed.body).toMatchObject({
+		ok: true,
+		exportName: './dispatch-message-created',
+		source: 'raycast',
+		result: { reply: 'hello raycast' },
+	})
+
+	const denied = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({
+			packageIds: ['*'],
+			packageKodyIds: [],
+			exportNames: ['*'],
+			sources: ['raycast'],
+		}),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-shortcuts',
+			source: 'shortcuts',
+		},
+	})
+
+	expect(denied.status).toBe(403)
+	expect(denied.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'source_not_allowed',
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
 test('invokePackageExport rejects reusing an idempotency key for a different payload', async () => {

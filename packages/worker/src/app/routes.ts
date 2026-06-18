@@ -3,6 +3,12 @@ import { post, route } from 'remix/routes'
 export const routes = route({
 	home: '/',
 	connectOauth: '/connect/oauth',
+	accountPackageInvocationTokens: '/account/package-invocation-tokens',
+	accountPackageInvocationTokenNew: '/account/package-invocation-tokens/new',
+	accountPackageInvocationTokensApi: '/account/package-invocation-tokens.json',
+	accountPackageInvocationTokensApiPost: post(
+		'/account/package-invocation-tokens.json',
+	),
 	accountRemoteConnectors: '/account/remote-connectors',
 	accountRemoteConnectorsApi: '/account/remote-connectors.json',
 	accountRemoteConnectorsApiPost: post('/account/remote-connectors.json'),
