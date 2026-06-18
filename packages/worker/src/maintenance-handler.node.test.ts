@@ -1,8 +1,5 @@
-import { expect, test, vi } from 'vitest'
-import {
-	handleSecretMaintenanceRequest,
-	readBearerToken,
-} from './maintenance-handler.ts'
+import { expect, test } from 'vitest'
+import { handleSecretMaintenanceRequest } from './maintenance-handler.ts'
 
 function createRequest(
 	input: { method?: string; authorization?: string } = {},
@@ -16,70 +13,62 @@ function createRequest(
 	})
 }
 
-test('readBearerToken extracts trimmed bearer credentials', () => {
-	expect(
-		readBearerToken(createRequest({ authorization: ' Bearer secret ' })),
-	).toBe('secret')
-	expect(
-		readBearerToken(createRequest({ authorization: 'Basic secret' })),
-	).toBe(null)
-})
+test('handleSecretMaintenanceRequest enforces auth and reports maintenance results', async () => {
+	let runCount = 0
+	const run = async () => {
+		runCount += 1
+		return { upserted: runCount }
+	}
 
-test('handleSecretMaintenanceRequest rejects non-POST requests', async () => {
-	const response = await handleSecretMaintenanceRequest({
+	const methodResponse = await handleSecretMaintenanceRequest({
 		request: createRequest({ method: 'GET', authorization: 'Bearer secret' }),
 		secret: 'secret',
 		notConfiguredMessage: 'Not configured',
-		run: async () => ({ upserted: 1 }),
+		run,
 	})
 
-	expect(response.status).toBe(405)
-	expect(await response.text()).toBe('Method Not Allowed')
-})
+	expect(methodResponse.status).toBe(405)
+	expect(await methodResponse.text()).toBe('Method Not Allowed')
 
-test('handleSecretMaintenanceRequest rejects missing configuration', async () => {
-	const response = await handleSecretMaintenanceRequest({
+	const configurationResponse = await handleSecretMaintenanceRequest({
 		request: createRequest({ authorization: 'Bearer secret' }),
 		secret: ' ',
 		notConfiguredMessage: 'Not configured',
-		run: async () => ({ upserted: 1 }),
+		run,
 	})
 
-	expect(response.status).toBe(503)
-	expect(await response.text()).toBe('Not configured')
-})
+	expect(configurationResponse.status).toBe(503)
+	expect(await configurationResponse.text()).toBe('Not configured')
 
-test('handleSecretMaintenanceRequest rejects missing or wrong bearer tokens', async () => {
 	for (const authorization of [undefined, 'Bearer wrong']) {
 		const response = await handleSecretMaintenanceRequest({
 			request: createRequest({ authorization }),
 			secret: 'secret',
 			notConfiguredMessage: 'Not configured',
-			run: async () => ({ upserted: 1 }),
+			run,
 		})
 
 		expect(response.status).toBe(401)
 		expect(await response.text()).toBe('Unauthorized')
 	}
-})
 
-test('handleSecretMaintenanceRequest returns the upsert count', async () => {
-	const run = vi.fn(async () => ({ upserted: 3 }))
+	expect(runCount).toBe(0)
 
-	const response = await handleSecretMaintenanceRequest({
+	const successResponse = await handleSecretMaintenanceRequest({
 		request: createRequest({ authorization: 'Bearer secret' }),
 		secret: ' secret ',
 		notConfiguredMessage: 'Not configured',
 		run,
 	})
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({ ok: true, upserted: 3 })
-	expect(run).toHaveBeenCalledOnce()
-})
+	expect(successResponse.status).toBe(200)
+	await expect(successResponse.json()).resolves.toEqual({
+		ok: true,
+		upserted: 1,
+	})
+	expect(runCount).toBe(1)
 
-test('handleSecretMaintenanceRequest returns error responses from failures', async () => {
-	const response = await handleSecretMaintenanceRequest({
+	const errorResponse = await handleSecretMaintenanceRequest({
 		request: createRequest({ authorization: 'Bearer secret' }),
 		secret: 'secret',
 		notConfiguredMessage: 'Not configured',
@@ -88,6 +77,9 @@ test('handleSecretMaintenanceRequest returns error responses from failures', asy
 		},
 	})
 
-	expect(response.status).toBe(500)
-	await expect(response.json()).resolves.toEqual({ ok: false, error: 'boom' })
+	expect(errorResponse.status).toBe(500)
+	await expect(errorResponse.json()).resolves.toEqual({
+		ok: false,
+		error: 'boom',
+	})
 })

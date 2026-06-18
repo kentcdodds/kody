@@ -11,7 +11,7 @@ type SecretMaintenanceRequestInput = {
 	run: () => Promise<MaintenanceResult>
 }
 
-export function readBearerToken(request: Request) {
+function readBearerToken(request: Request) {
 	const auth = request.headers.get('Authorization')?.trim()
 	return auth?.startsWith('Bearer ')
 		? auth.slice('Bearer '.length).trim()
