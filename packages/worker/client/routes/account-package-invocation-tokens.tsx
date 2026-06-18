@@ -194,6 +194,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let messageTone: 'info' | 'error' = 'info'
 	let lastLoadedHref = ''
 	let lastNewTokenQueryKey = ''
+	let mutationVersion = 0
 	let revokeConfirm = false
 
 	const primaryButtonCss = getPrimaryButtonCss()
@@ -201,6 +202,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	const dangerButtonCss = getDangerButtonCss()
 
 	async function loadTokens(signal: AbortSignal) {
+		const loadStartedAtMutationVersion = mutationVersion
 		try {
 			const href =
 				typeof window === 'undefined'
@@ -222,6 +224,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load package invocation tokens.')
 			}
+			if (loadStartedAtMutationVersion !== mutationVersion) return
 			applyPayload(payload, href)
 			status = 'ready'
 			message = null
@@ -229,6 +232,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
+			if (loadStartedAtMutationVersion !== mutationVersion) return
 			status = 'error'
 			message =
 				error instanceof Error
@@ -252,6 +256,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		if (payload.selectedTokenId) {
 			selectedTokenId = payload.selectedTokenId
 			editorState = createEmptyEditorState()
+			lastNewTokenQueryKey = ''
 			return
 		}
 		if (isNewTokenPath(href)) {
@@ -263,6 +268,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			}
 			return
 		}
+		editorState = createEmptyEditorState()
+		lastNewTokenQueryKey = ''
 		if (
 			selectedTokenId &&
 			!tokens.some((token) => token.id === selectedTokenId)
@@ -390,6 +397,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to create token.')
 			}
+			mutationVersion += 1
 			applyPayload(payload, accountPackageInvocationTokensBasePath)
 			saveState = 'idle'
 			editorState = createEmptyEditorState()
@@ -443,6 +451,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to revoke token.')
 			}
+			mutationVersion += 1
 			applyPayload(payload, accountPackageInvocationTokensBasePath)
 			saveState = 'idle'
 			message = 'Revoked token.'
@@ -459,6 +468,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 
 	function selectToken(token: PackageInvocationTokenListItem) {
 		selectedTokenId = token.id
+		editorState = createEmptyEditorState()
+		lastNewTokenQueryKey = ''
 		revokeConfirm = false
 		message = null
 		messageTone = 'info'
