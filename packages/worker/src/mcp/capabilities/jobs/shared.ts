@@ -77,11 +77,7 @@ export const scheduledJobScheduleSchema = z.discriminatedUnion('type', [
 	cronScheduleSchema,
 ])
 
-export const scheduledJobSummarySchema = z.discriminatedUnion('type', [
-	onceScheduleSchema,
-	intervalScheduleSchema,
-	cronScheduleSchema,
-])
+export const scheduledJobSummarySchema = scheduledJobScheduleSchema
 
 export const jobInspectionInputSchema = z.object({
 	id: z
@@ -366,6 +362,17 @@ export type JobDeleteCapabilityInput = z.infer<typeof jobDeleteInputSchema>
 export type JobRunNowCapabilityInput = z.infer<typeof jobRunNowInputSchema>
 export type JobUpdateCapabilityInput = z.infer<typeof jobUpdateInputSchema>
 
+export function resolveJobGetId(input: { id?: string; job_id?: string }) {
+	if (input.id && input.job_id && input.id !== input.job_id) {
+		throw new Error('id and job_id must match when both are provided.')
+	}
+	const jobId = input.id ?? input.job_id
+	if (!jobId) {
+		throw new Error('Job id is required.')
+	}
+	return jobId
+}
+
 export function buildJobScheduleSummaryOutput(schedule: JobView['schedule']) {
 	switch (schedule.type) {
 		case 'once':
@@ -384,6 +391,8 @@ export function buildJobScheduleSummaryOutput(schedule: JobView['schedule']) {
 				expression: schedule.expression,
 			}
 	}
+	const exhaustive: never = schedule
+	return exhaustive
 }
 
 export function toJobSchedule(
@@ -406,6 +415,8 @@ export function toJobSchedule(
 				expression: schedule.expression,
 			}
 	}
+	const exhaustive: never = schedule
+	return exhaustive
 }
 
 export function resolveJobCreateBody(

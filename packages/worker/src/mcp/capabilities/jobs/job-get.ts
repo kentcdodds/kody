@@ -7,18 +7,8 @@ import {
 	buildJobSourceInspectionOutput,
 	jobGetInputSchema,
 	jobGetOutputSchema,
+	resolveJobGetId,
 } from './shared.ts'
-
-function resolveJobGetId(input: { id?: string; job_id?: string }) {
-	if (input.id && input.job_id && input.id !== input.job_id) {
-		throw new Error('id and job_id must match when both are provided.')
-	}
-	const jobId = input.id ?? input.job_id
-	if (!jobId) {
-		throw new Error('Job id is required.')
-	}
-	return jobId
-}
 
 export const jobGetCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,

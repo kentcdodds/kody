@@ -12,7 +12,7 @@ import {
 	renderGeneratedUiRuntimeHtmlEntry,
 } from '#mcp/apps/generated-ui-runtime-html-entry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
-import { mcpResourcePath } from '../../mcp-auth.ts'
+import { mcpResourcePath } from '#worker/mcp-auth.ts'
 
 const generatedUiAppResource = {
 	name: 'generated_ui_app_resource',

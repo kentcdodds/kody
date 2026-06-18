@@ -19,6 +19,10 @@ export function formatJobError(error: unknown): string {
 	return String(error)
 }
 
+function assertNeverJobSchedule(schedule: never): never {
+	throw new Error(`Unhandled job schedule type: ${JSON.stringify(schedule)}`)
+}
+
 export function normalizeJobTimezone(timezone?: string | null) {
 	return timezone?.trim() || defaultJobTimezone
 }
@@ -43,9 +47,7 @@ function assertValidCronExpression(expression: string) {
 	try {
 		new Cron(normalized, { paused: true })
 	} catch (error) {
-		throw new Error(
-			`Invalid cron expression: ${error instanceof Error ? error.message : String(error)}`,
-		)
+		throw new Error(`Invalid cron expression: ${formatJobError(error)}`)
 	}
 	return normalized
 }
@@ -129,6 +131,7 @@ export function computeNextRunAt(input: {
 			return nextRun.toISOString()
 		}
 	}
+	return assertNeverJobSchedule(input.schedule)
 }
 
 export function normalizeJobSchedule(schedule: JobSchedule) {
@@ -149,6 +152,7 @@ export function normalizeJobSchedule(schedule: JobSchedule) {
 				expression: assertValidCronExpression(schedule.expression),
 			}
 	}
+	return assertNeverJobSchedule(schedule)
 }
 
 export function formatScheduleSummary(input: {
@@ -164,6 +168,7 @@ export function formatScheduleSummary(input: {
 		case 'cron':
 			return `Runs on cron "${assertValidCronExpression(input.schedule.expression)}" in ${timezone}`
 	}
+	return assertNeverJobSchedule(input.schedule)
 }
 
 export function isJobDue(job: JobRecord, now = new Date()) {

@@ -13,6 +13,15 @@ const d1DatabaseSchema = createSchema<unknown, D1Database>((value, context) => {
 	return fail('Missing APP_DB binding for database access.', context.path)
 })
 
+function requiredDurableObjectNamespaceSchema(message: string) {
+	return createSchema<unknown, DurableObjectNamespace>((value, context) => {
+		if (value) {
+			return { value: value as DurableObjectNamespace }
+		}
+		return fail(message, context.path)
+	})
+}
+
 const optionalSendEmailSchema = createSchema<unknown, SendEmail | undefined>(
 	(value, _context) => {
 		if (value === undefined) return { value: undefined }
@@ -134,49 +143,17 @@ export const EnvSchema = object({
 			context.path,
 		)
 	}),
-	JOB_MANAGER: createSchema<unknown, DurableObjectNamespace>(
-		(value, context) => {
-			if (value) {
-				return { value: value as DurableObjectNamespace }
-			}
-			return fail(
-				'Missing JOB_MANAGER binding for jobs scheduling.',
-				context.path,
-			)
-		},
+	JOB_MANAGER: requiredDurableObjectNamespaceSchema(
+		'Missing JOB_MANAGER binding for jobs scheduling.',
 	),
-	STORAGE_RUNNER: createSchema<unknown, DurableObjectNamespace>(
-		(value, context) => {
-			if (value) {
-				return { value: value as DurableObjectNamespace }
-			}
-			return fail(
-				'Missing STORAGE_RUNNER binding for durable execute and job storage.',
-				context.path,
-			)
-		},
+	STORAGE_RUNNER: requiredDurableObjectNamespaceSchema(
+		'Missing STORAGE_RUNNER binding for durable execute and job storage.',
 	),
-	PACKAGE_REALTIME_SESSION: createSchema<unknown, DurableObjectNamespace>(
-		(value, context) => {
-			if (value) {
-				return { value: value as DurableObjectNamespace }
-			}
-			return fail(
-				'Missing PACKAGE_REALTIME_SESSION binding for package realtime websocket sessions.',
-				context.path,
-			)
-		},
+	PACKAGE_REALTIME_SESSION: requiredDurableObjectNamespaceSchema(
+		'Missing PACKAGE_REALTIME_SESSION binding for package realtime websocket sessions.',
 	),
-	PACKAGE_SERVICE_INSTANCE: createSchema<unknown, DurableObjectNamespace>(
-		(value, context) => {
-			if (value) {
-				return { value: value as DurableObjectNamespace }
-			}
-			return fail(
-				'Missing PACKAGE_SERVICE_INSTANCE binding for package service runtimes.',
-				context.path,
-			)
-		},
+	PACKAGE_SERVICE_INSTANCE: requiredDurableObjectNamespaceSchema(
+		'Missing PACKAGE_SERVICE_INSTANCE binding for package service runtimes.',
 	),
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
