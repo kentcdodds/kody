@@ -107,13 +107,17 @@ function buildConnectOauthHref(integration: AccountIntegrationListItem) {
 
 function renderIntegrationDetail(label: string, value: string) {
 	return (
-		<div mix={css(detailItemCss)}>
+		<div mix={css({ ...detailItemCss, minWidth: 0 })}>
 			<span mix={css(detailLabelCss)}>{label}</span>
 			<span
 				mix={css({
 					...detailValueCss,
+					display: 'block',
+					maxWidth: '100%',
+					minWidth: 0,
 					overflowWrap: 'anywhere',
-					wordBreak: 'break-word',
+					whiteSpace: 'normal',
+					wordBreak: 'break-all',
 				})}
 			>
 				{value}
