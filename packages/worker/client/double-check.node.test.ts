@@ -23,7 +23,7 @@ function invoke(mixin: unknown, event: Event) {
 	recordedMixin.handler(event)
 }
 
-test('double check button mix requires two clicks before invoking action', () => {
+test('double check button mix requires two clicks, resets on blur, then invokes action', () => {
 	const handle = { update: vi.fn() }
 	const action = vi.fn()
 	const doubleCheck = createDoubleCheck(handle as never)
@@ -46,33 +46,25 @@ test('double check button mix requires two clicks before invoking action', () =>
 	expect(doubleCheck.doubleCheck).toBe(true)
 	expect(action).not.toHaveBeenCalled()
 
-	const secondClick = {
-		preventDefault: vi.fn(),
-	} as unknown as Event
-	invoke(mix[1], secondClick)
-
-	expect(secondClick.preventDefault).not.toHaveBeenCalled()
-	expect(action).toHaveBeenCalledTimes(1)
-	expect(doubleCheck.doubleCheck).toBe(false)
-})
-
-test('double check button mix resets on blur', () => {
-	const handle = { update: vi.fn() }
-	const action = vi.fn()
-	const doubleCheck = createDoubleCheck(handle as never)
-	const mix = doubleCheck.getButtonMix({
-		on: {
-			click: action,
-		},
-	})
-
-	invoke(mix[1], {
-		preventDefault: vi.fn(),
-	} as unknown as Event)
-	expect(doubleCheck.doubleCheck).toBe(true)
-
 	invoke(mix[0], new Event('blur'))
-
 	expect(doubleCheck.doubleCheck).toBe(false)
 	expect(action).not.toHaveBeenCalled()
+
+	const thirdClick = {
+		preventDefault: vi.fn(),
+	} as unknown as Event
+	invoke(mix[1], thirdClick)
+
+	expect(thirdClick.preventDefault).toHaveBeenCalled()
+	expect(doubleCheck.doubleCheck).toBe(true)
+	expect(action).not.toHaveBeenCalled()
+
+	const fourthClick = {
+		preventDefault: vi.fn(),
+	} as unknown as Event
+	invoke(mix[1], fourthClick)
+
+	expect(fourthClick.preventDefault).not.toHaveBeenCalled()
+	expect(action).toHaveBeenCalledTimes(1)
+	expect(doubleCheck.doubleCheck).toBe(false)
 })

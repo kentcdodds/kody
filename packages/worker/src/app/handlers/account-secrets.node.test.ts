@@ -657,7 +657,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	)
 })
 
-test('GET /account/secrets.json includes selected secret value for editing', async () => {
+test('account secrets API loads selected secret values and deletes the selected user secret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'myApiKey',
@@ -680,7 +680,7 @@ test('GET /account/secrets.json includes selected secret value for editing', asy
 	})
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const getResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::myApiKey',
 			{ method: 'GET' },
@@ -688,13 +688,14 @@ test('GET /account/secrets.json includes selected secret value for editing', asy
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload.ok).toBe(true)
-	expect(payload.selectedSecret).toBeDefined()
-	expect(payload.selectedSecret.name).toBe('myApiKey')
-	expect(payload.selectedSecret.description).toBe('API key')
-	expect(payload.selectedSecret.value).toBe('seeded-secret-value')
+	expect(getResponse.status).toBe(200)
+	const getPayload = await getResponse.json()
+	expect(getPayload.ok).toBe(true)
+	expect(getPayload.selectedSecret).toMatchObject({
+		name: 'myApiKey',
+		description: 'API key',
+		value: 'seeded-secret-value',
+	})
 	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: 'myApiKey',
@@ -702,16 +703,13 @@ test('GET /account/secrets.json includes selected secret value for editing', asy
 			storageContext: { appId: null, sessionId: null },
 		}),
 	)
-})
 
-test('delete action removes selected user secret and refreshes payload', async () => {
 	mockModule.deleteSecret.mockResolvedValueOnce(true)
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const deleteResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -723,8 +721,8 @@ test('delete action removes selected user secret and refreshes payload', async (
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(deleteResponse.status).toBe(200)
+	await expect(deleteResponse.json()).resolves.toMatchObject({
 		ok: true,
 		deleted: true,
 		selectedSecret: null,

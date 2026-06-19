@@ -129,21 +129,23 @@ function resetMocks() {
 	mockModule.listSavedPackagesByUserId.mockClear()
 }
 
-test('package invocation token API lists token metadata without token hashes', async () => {
+test('package invocation token API lists, creates, validates, and revokes tokens', async () => {
 	resetMocks()
-	const handler = createAccountPackageInvocationTokensApiHandler(createEnv())
-	const response = await handler.handler({
+	const env = createEnv()
+	const handler = createAccountPackageInvocationTokensApiHandler(env)
+
+	const listResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/package-invocation-tokens.json',
 		),
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe('no-store')
-	const text = await response.text()
-	expect(text).not.toContain('stored-hash')
-	expect(JSON.parse(text)).toEqual({
+	expect(listResponse.status).toBe(200)
+	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
+	const listText = await listResponse.text()
+	expect(listText).not.toContain('stored-hash')
+	expect(JSON.parse(listText)).toEqual({
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',
@@ -170,13 +172,8 @@ test('package invocation token API lists token metadata without token hashes', a
 			},
 		],
 	})
-})
 
-test('package invocation token API hashes raw tokens and stores wildcard scopes', async () => {
-	resetMocks()
-	const env = createEnv()
-	const handler = createAccountPackageInvocationTokensApiHandler(env)
-	const response = await handler.handler({
+	const createResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/package-invocation-tokens.json',
 			{
@@ -195,7 +192,7 @@ test('package invocation token API hashes raw tokens and stores wildcard scopes'
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
+	expect(createResponse.status).toBe(200)
 	expect(mockModule.hashPackageInvocationBearerToken).toHaveBeenCalledWith(
 		'raw-personal-client-token',
 	)
@@ -213,18 +210,14 @@ test('package invocation token API hashes raw tokens and stores wildcard scopes'
 			sources: ['personal-client'],
 		}),
 	})
-	const text = await response.text()
-	expect(text).not.toContain('raw-personal-client-token')
-	expect(JSON.parse(text)).toMatchObject({
+	const createText = await createResponse.text()
+	expect(createText).not.toContain('raw-personal-client-token')
+	expect(JSON.parse(createText)).toMatchObject({
 		ok: true,
 		selectedTokenId: expect.any(String),
 	})
-})
 
-test('package invocation token API rejects concrete package scopes not owned by the user', async () => {
-	resetMocks()
-	const handler = createAccountPackageInvocationTokensApiHandler(createEnv())
-	const response = await handler.handler({
+	const invalidScopeResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/package-invocation-tokens.json',
 			{
@@ -242,19 +235,14 @@ test('package invocation token API rejects concrete package scopes not owned by 
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
+	expect(invalidScopeResponse.status).toBe(400)
+	await expect(invalidScopeResponse.json()).resolves.toEqual({
 		ok: false,
 		error: 'Unknown package Kody id: other-package',
 	})
-	expect(mockModule.insertPackageInvocationToken).not.toHaveBeenCalled()
-})
+	expect(mockModule.insertPackageInvocationToken).toHaveBeenCalledTimes(1)
 
-test('package invocation token API revokes tokens by signed-in stable user id', async () => {
-	resetMocks()
-	const env = createEnv()
-	const handler = createAccountPackageInvocationTokensApiHandler(env)
-	const response = await handler.handler({
+	const revokeResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/package-invocation-tokens.json',
 			{
@@ -269,11 +257,11 @@ test('package invocation token API revokes tokens by signed-in stable user id', 
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
+	expect(revokeResponse.status).toBe(200)
 	expect(mockModule.revokePackageInvocationToken).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		userId: 'stable-user-1',
 		id: 'token-1',
 	})
-	await expect(response.json()).resolves.toMatchObject({ ok: true })
+	await expect(revokeResponse.json()).resolves.toMatchObject({ ok: true })
 })

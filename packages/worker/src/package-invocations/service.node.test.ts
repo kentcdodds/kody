@@ -903,9 +903,9 @@ test('package runtime dispatches declared events to same-user package subscripti
 	})
 })
 
-test('package runtime rejects dispatch for undeclared emitted event topics', async () => {
+test('package runtime rejects invalid event dispatch requests', async () => {
 	const db = createDatabase()
-	seedRuntimeDispatchPackages()
+	const { manifests, sources } = seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { ok: true },
@@ -925,16 +925,7 @@ test('package runtime rejects dispatch for undeclared emitted event topics', asy
 		'does not declare emitted event "@kentcdodds/discord.reaction.created"',
 	)
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-})
 
-test('package runtime fails dispatch when subscriber manifest discovery fails', async () => {
-	const db = createDatabase()
-	const { manifests, sources } = seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { ok: true },
-		logs: [],
-	})
 	repoMockModule.loadPackageManifestBySourceId.mockImplementation(
 		async (input: { sourceId: string }) => {
 			if (input.sourceId === 'source-subscriber') {
@@ -946,7 +937,6 @@ test('package runtime fails dispatch when subscriber manifest discovery fails', 
 			}
 		},
 	)
-	const tools = createRuntimeEventTools(db)
 
 	await expect(
 		tools.dispatch({
@@ -1359,7 +1349,7 @@ test('package runtime invocation requires package context and enforces loop dept
 	)
 })
 
-test('invokePackageExport replays the stored response for a duplicate idempotency key', async () => {
+test('invokePackageExport enforces idempotency replay, mismatch, corruption, and persistence failures', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
@@ -1367,7 +1357,7 @@ test('invokePackageExport replays the stored response for a duplicate idempotenc
 		logs: ['dispatched'],
 	})
 
-	const first = await invokePackageExport({
+	const replayFirst = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
@@ -1375,12 +1365,12 @@ test('invokePackageExport replays the stored response for a duplicate idempotenc
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'dispatch-message-created',
 			params: { content: 'hi' },
-			idempotencyKey: 'evt-1',
+			idempotencyKey: 'evt-replay',
 			source: 'discord-gateway',
 			topic: 'discord.message.created',
 		},
 	})
-	const second = await invokePackageExport({
+	const replaySecond = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
@@ -1388,33 +1378,64 @@ test('invokePackageExport replays the stored response for a duplicate idempotenc
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'dispatch-message-created',
 			params: { content: 'hi' },
-			idempotencyKey: 'evt-1',
+			idempotencyKey: 'evt-replay',
 			source: 'discord-gateway',
 			topic: 'discord.message.created',
 		},
 	})
 
-	expect(first.status).toBe(200)
-	expect(second.status).toBe(200)
-	expect(second.body).toMatchObject({
+	expect(replayFirst.status).toBe(200)
+	expect(replaySecond.status).toBe(200)
+	expect(replaySecond.body).toMatchObject({
 		ok: true,
 		idempotency: {
-			key: 'evt-1',
+			key: 'evt-replay',
 			replayed: true,
 		},
 	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-})
 
-test('invokePackageExport does not re-execute terminal rows with unusable stored responses', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { reply: 'hello discord' },
-		logs: ['dispatched'],
+	await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-mismatch',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	const mismatch = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'different' },
+			idempotencyKey: 'evt-mismatch',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
 	})
 
-	const first = await invokePackageExport({
+	expect(mismatch.status).toBe(409)
+	expect(mismatch.body).toEqual({
+		ok: false,
+		error: {
+			code: 'idempotency_mismatch',
+			message:
+				'This idempotency key has already been used for a different package invocation request.',
+		},
+		idempotency: {
+			key: 'evt-mismatch',
+			replayed: false,
+		},
+	})
+
+	const corruptFirst = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
@@ -1430,7 +1451,7 @@ test('invokePackageExport does not re-execute terminal rows with unusable stored
 	;(
 		db as unknown as { corruptStoredResponses(): void }
 	).corruptStoredResponses()
-	const second = await invokePackageExport({
+	const corruptSecond = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
@@ -1444,9 +1465,9 @@ test('invokePackageExport does not re-execute terminal rows with unusable stored
 		},
 	})
 
-	expect(first.status).toBe(200)
-	expect(second.status).toBe(409)
-	expect(second.body).toMatchObject({
+	expect(corruptFirst.status).toBe(200)
+	expect(corruptSecond.status).toBe(409)
+	expect(corruptSecond.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'idempotency_response_unavailable',
@@ -1456,15 +1477,12 @@ test('invokePackageExport does not re-execute terminal rows with unusable stored
 			replayed: false,
 		},
 	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(3)
 
-test('invokePackageExport returns structured errors when idempotency insert fails', async () => {
-	const db = createDatabase({ failInsert: true })
+	const failingDb = createDatabase({ failInsert: true })
 	seedPackageResolution()
-
-	const response = await invokePackageExport({
-		env: createEnv(db),
+	const persistenceFailure = await invokePackageExport({
+		env: createEnv(failingDb),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
 		request: {
@@ -1477,8 +1495,8 @@ test('invokePackageExport returns structured errors when idempotency insert fail
 		},
 	})
 
-	expect(response.status).toBe(500)
-	expect(response.body).toMatchObject({
+	expect(persistenceFailure.status).toBe(500)
+	expect(persistenceFailure.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'idempotency_persistence_failed',
@@ -1488,14 +1506,13 @@ test('invokePackageExport returns structured errors when idempotency insert fail
 			replayed: false,
 		},
 	})
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
-test('invokePackageExport rejects explicitly disallowed source values', async () => {
+test('invokePackageExport enforces source scopes for wildcard tokens', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
 
-	const response = await invokePackageExport({
+	const disallowedSource = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
@@ -1508,19 +1525,14 @@ test('invokePackageExport rejects explicitly disallowed source values', async ()
 		},
 	})
 
-	expect(response.status).toBe(403)
-	expect(response.body).toMatchObject({
+	expect(disallowedSource.status).toBe(403)
+	expect(disallowedSource.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'source_not_allowed',
 		},
 	})
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-})
 
-test('invokePackageExport allows wildcard package and export scopes while enforcing source scopes', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { reply: 'hello trusted client' },
 		logs: ['invoked'],
@@ -1575,57 +1587,6 @@ test('invokePackageExport allows wildcard package and export scopes while enforc
 		ok: false,
 		error: {
 			code: 'source_not_allowed',
-		},
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-})
-
-test('invokePackageExport rejects reusing an idempotency key for a different payload', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { reply: 'hello discord' },
-		logs: ['dispatched'],
-	})
-
-	await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: {
-			packageIdOrKodyId: 'discord-gateway',
-			exportName: 'dispatch-message-created',
-			params: { content: 'hi' },
-			idempotencyKey: 'evt-1',
-			source: 'discord-gateway',
-			topic: 'discord.message.created',
-		},
-	})
-	const mismatch = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: {
-			packageIdOrKodyId: 'discord-gateway',
-			exportName: 'dispatch-message-created',
-			params: { content: 'different' },
-			idempotencyKey: 'evt-1',
-			source: 'discord-gateway',
-			topic: 'discord.message.created',
-		},
-	})
-
-	expect(mismatch.status).toBe(409)
-	expect(mismatch.body).toEqual({
-		ok: false,
-		error: {
-			code: 'idempotency_mismatch',
-			message:
-				'This idempotency key has already been used for a different package invocation request.',
-		},
-		idempotency: {
-			key: 'evt-1',
-			replayed: false,
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)

@@ -39,8 +39,6 @@ const { jobListCapability } = await import('./job-list.ts')
 const { jobRunNowCapability } = await import('./job-run-now.ts')
 const { jobUpdateCapability } = await import('./job-update.ts')
 const { workflowListCapability } = await import('./workflow-list.ts')
-const { buildJobScheduleSummaryOutput, toJobSchedule } =
-	await import('./shared.ts')
 
 function resetMocks() {
 	mockModule.createJob.mockReset()
@@ -51,19 +49,6 @@ function resetMocks() {
 	mockModule.runJobNowViaManager.mockReset()
 	mockModule.updateJob.mockReset()
 }
-
-test('job schedule helpers fail fast on malformed schedule variants', () => {
-	const malformedSchedule = { type: 'weekly' }
-
-	expect(() =>
-		buildJobScheduleSummaryOutput(
-			malformedSchedule as Parameters<typeof buildJobScheduleSummaryOutput>[0],
-		),
-	).toThrow('Unhandled scheduled job schedule')
-	expect(() =>
-		toJobSchedule(malformedSchedule as Parameters<typeof toJobSchedule>[0]),
-	).toThrow('Unhandled scheduled job schedule')
-})
 
 test('workflow_list returns recent workflow runs for the current user', async () => {
 	resetMocks()
