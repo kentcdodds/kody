@@ -105,11 +105,11 @@ function buildConnectOauthHref(integration: AccountIntegrationListItem) {
 	return `/connect/oauth?${params.toString()}`
 }
 
-function IntegrationDetail(props: { label: string; value: string }) {
+function renderIntegrationDetail(label: string, value: string) {
 	return (
 		<div mix={css(detailItemCss)}>
-			<span mix={css(detailLabelCss)}>{props.label}</span>
-			<span mix={css(detailValueCss)}>{props.value}</span>
+			<span mix={css(detailLabelCss)}>{label}</span>
+			<span mix={css(detailValueCss)}>{value}</span>
 		</div>
 	)
 }
@@ -254,61 +254,52 @@ export function AccountIntegrationsRoute(handle: Handle) {
 									</header>
 
 									<section mix={css(detailGridCss)}>
-										<IntegrationDetail
-											label="Token URL"
-											value={integration.tokenUrl}
-										/>
-										<IntegrationDetail
-											label="API base URL"
-											value={formatOptional(integration.apiBaseUrl)}
-										/>
-										<IntegrationDetail
-											label="Authorize URL"
-											value={formatOptional(
-												integration.authorization?.authorizeUrl,
-											)}
-										/>
-										<IntegrationDetail
-											label="Scopes"
-											value={formatList(integration.authorization?.scopes)}
-										/>
+										{renderIntegrationDetail('Token URL', integration.tokenUrl)}
+										{renderIntegrationDetail(
+											'API base URL',
+											formatOptional(integration.apiBaseUrl),
+										)}
+										{renderIntegrationDetail(
+											'Authorize URL',
+											formatOptional(integration.authorization?.authorizeUrl),
+										)}
+										{renderIntegrationDetail(
+											'Scopes',
+											formatList(integration.authorization?.scopes),
+										)}
 									</section>
 
 									<section mix={css(insetCardCss)}>
 										<h3 mix={css(sectionTitleCss)}>Stored names</h3>
 										<div mix={css(detailGridCss)}>
-											<IntegrationDetail
-												label="Client ID value"
-												value={integration.clientIdValueName}
-											/>
-											<IntegrationDetail
-												label="Client secret"
-												value={formatOptional(
-													integration.clientSecretSecretName,
-												)}
-											/>
-											<IntegrationDetail
-												label="Access token secret"
-												value={integration.accessTokenSecretName}
-											/>
-											<IntegrationDetail
-												label="Refresh token secret"
-												value={formatOptional(
-													integration.refreshTokenSecretName,
-												)}
-											/>
+											{renderIntegrationDetail(
+												'Client ID value',
+												integration.clientIdValueName,
+											)}
+											{renderIntegrationDetail(
+												'Client secret',
+												formatOptional(integration.clientSecretSecretName),
+											)}
+											{renderIntegrationDetail(
+												'Access token secret',
+												integration.accessTokenSecretName,
+											)}
+											{renderIntegrationDetail(
+												'Refresh token secret',
+												formatOptional(integration.refreshTokenSecretName),
+											)}
 										</div>
 									</section>
 
 									<section mix={css(detailGridCss)}>
-										<IntegrationDetail
-											label="Required hosts"
-											value={formatList(integration.requiredHosts)}
-										/>
-										<IntegrationDetail
-											label="Updated"
-											value={formatTimestamp(integration.updatedAt)}
-										/>
+										{renderIntegrationDetail(
+											'Required hosts',
+											formatList(integration.requiredHosts),
+										)}
+										{renderIntegrationDetail(
+											'Updated',
+											formatTimestamp(integration.updatedAt),
+										)}
 									</section>
 
 									{connectHref ? (
