@@ -109,7 +109,15 @@ function renderIntegrationDetail(label: string, value: string) {
 	return (
 		<div mix={css(detailItemCss)}>
 			<span mix={css(detailLabelCss)}>{label}</span>
-			<span mix={css(detailValueCss)}>{value}</span>
+			<span
+				mix={css({
+					...detailValueCss,
+					overflowWrap: 'anywhere',
+					wordBreak: 'break-word',
+				})}
+			>
+				{value}
+			</span>
 		</div>
 	)
 }
