@@ -1,4 +1,5 @@
 import { AccountRoute } from './account.tsx'
+import { AccountIntegrationsRoute } from './account-integrations.tsx'
 import { AccountPackageInvocationTokensRoute } from './account-package-invocation-tokens.tsx'
 import { AccountRemoteConnectorsRoute } from './account-remote-connectors.tsx'
 import { AccountSecretsRoute } from './account-secrets.tsx'
@@ -12,6 +13,7 @@ import { ResetPasswordRoute } from './reset-password.tsx'
 export const clientRoutes = {
 	'/': <HomeRoute />,
 	'/account': <AccountRoute />,
+	'/account/integrations': <AccountIntegrationsRoute />,
 	'/account/package-invocation-tokens': <AccountPackageInvocationTokensRoute />,
 	'/account/package-invocation-tokens/new': (
 		<AccountPackageInvocationTokensRoute />

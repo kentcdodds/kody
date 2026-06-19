@@ -161,8 +161,8 @@ export function AccountRoute(handle: Handle) {
 						{username ? `${username} account` : 'Account'}
 					</h1>
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Manage your profile, approval requests, stored secrets, and package
-						invocation tokens.
+						Manage your profile, integrations, approval requests, stored
+						secrets, and package invocation tokens.
 					</p>
 				</header>
 
@@ -232,6 +232,18 @@ export function AccountRoute(handle: Handle) {
 							<div>
 								<a href="/account/secrets" mix={css(primaryLinkCss)}>
 									Manage secrets
+								</a>
+							</div>
+						</section>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Integrations</h2>
+							<p mix={css(descriptionCss)}>
+								Review saved OAuth provider configurations and reconnect
+								integrations when tokens need to be refreshed.
+							</p>
+							<div>
+								<a href="/account/integrations" mix={css(primaryLinkCss)}>
+									Manage integrations
 								</a>
 							</div>
 						</section>

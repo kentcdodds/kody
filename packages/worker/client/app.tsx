@@ -90,6 +90,7 @@ export function App(handle: Handle) {
 
 	return () => {
 		const isWideLayout =
+			currentPathname.startsWith('/account/integrations') ||
 			currentPathname.startsWith('/account/package-invocation-tokens') ||
 			currentPathname.startsWith('/account/remote-connectors') ||
 			currentPathname.startsWith('/account/secrets')
@@ -182,6 +183,9 @@ export function App(handle: Handle) {
 							</a>
 							<a href="/account/secrets" mix={css(navLinkCss)}>
 								Secrets
+							</a>
+							<a href="/account/integrations" mix={css(navLinkCss)}>
+								Integrations
 							</a>
 							<a
 								href="/account/package-invocation-tokens"

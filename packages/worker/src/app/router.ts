@@ -2,6 +2,10 @@ import { createRouter } from 'remix/router'
 import { account } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import {
+	createAccountIntegrationsApiHandler,
+	createAccountIntegrationsHandler,
+} from '#app/handlers/account-integrations.ts'
+import {
 	createAccountPackageInvocationTokensApiHandler,
 	createAccountPackageInvocationTokensHandler,
 } from '#app/handlers/account-package-invocation-tokens.ts'
@@ -47,6 +51,12 @@ export function createAppRouter(appEnv: AppEnv) {
 			signup,
 			account,
 			accountDelete: createAccountDeleteHandler(appEnv as unknown as Env),
+			accountIntegrations: createAccountIntegrationsHandler(
+				appEnv as unknown as Env,
+			),
+			accountIntegrationsApi: createAccountIntegrationsApiHandler(
+				appEnv as unknown as Env,
+			),
 			accountPackageInvocationTokens:
 				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
 			accountPackageInvocationTokenNew:
