@@ -73,35 +73,7 @@ function buildConnectOauthHref(integration: AccountIntegrationListItem) {
 	const authorization = integration.authorization
 	if (!authorization?.authorizeUrl) return null
 
-	const params = new URLSearchParams({
-		provider: integration.name,
-		authorizeUrl: authorization.authorizeUrl,
-		tokenUrl: integration.tokenUrl,
-		flow: integration.flow,
-	})
-	if (integration.apiBaseUrl) {
-		params.set('apiBaseUrl', integration.apiBaseUrl)
-	}
-	if (authorization.scopes.length > 0) {
-		params.set('scopes', JSON.stringify(authorization.scopes))
-	}
-	if (authorization.scopeSeparator) {
-		params.set('scopeSeparator', authorization.scopeSeparator)
-	}
-	if (
-		authorization.extraAuthorizeParams &&
-		Object.keys(authorization.extraAuthorizeParams).length > 0
-	) {
-		params.set(
-			'extraAuthorizeParams',
-			JSON.stringify(authorization.extraAuthorizeParams),
-		)
-	}
-	const requiredHosts = integration.requiredHosts ?? []
-	if (requiredHosts.length > 0) {
-		params.set('allowedHosts', requiredHosts.join(','))
-	}
-
+	const params = new URLSearchParams({ provider: integration.name })
 	return `/connect/oauth?${params.toString()}`
 }
 
