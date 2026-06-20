@@ -39,13 +39,11 @@ function setupMemoryContextMocks() {
 				retrieverName: 'Personal notes',
 			},
 		],
-		warnings: [
-			'Package retriever "personal-inbox/notes" failed and was skipped.',
-		],
+		warnings: [],
 	})
 }
 
-test('memory tool context surfaces retriever results, keeps memories on retriever failure, and formats retriever-only markdown', async () => {
+test('memory tool context surfaces retriever results, fails on retriever errors, and formats retriever-only markdown', async () => {
 	setupMemoryContextMocks()
 	const callerContext = {
 		baseUrl: 'https://heykody.dev',
@@ -85,7 +83,7 @@ test('memory tool context surfaces retriever results, keeps memories on retrieve
 			retrieverKey: 'notes',
 		}),
 	])
-	expect(withRetrievers?.retrieverWarnings).toHaveLength(1)
+	expect(withRetrievers?.retrieverWarnings).toEqual([])
 
 	const [retrieverOnlyContent] = formatSurfacedMemoriesMarkdown({
 		memories: [],
@@ -119,13 +117,7 @@ test('memory tool context surfaces retriever results, keeps memories on retrieve
 		new Error('retriever unavailable'),
 	)
 
-	const withoutRetrievers = await loadRelevantMemoriesForTool(request)
-	expect(withoutRetrievers?.memories).toEqual([
-		expect.objectContaining({
-			id: 'memory-1',
-			subject: 'Sprinkler setup',
-		}),
-	])
-	expect(withoutRetrievers?.retrieverResults).toEqual([])
-	expect(withoutRetrievers?.retrieverWarnings).toEqual([])
+	await expect(loadRelevantMemoriesForTool(request)).rejects.toThrow(
+		'retriever unavailable',
+	)
 })

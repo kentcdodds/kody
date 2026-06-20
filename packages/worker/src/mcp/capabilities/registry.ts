@@ -3,10 +3,7 @@ import {
 	type BuiltCapabilityRegistry,
 } from './build-capability-registry.ts'
 import { builtinDomains } from './builtin-domains.ts'
-import {
-	type SynthesizedRemoteConnectorDomain,
-	synthesizeRemoteToolDomain,
-} from './remote-connector/index.ts'
+import { synthesizeRemoteToolDomain } from './remote-connector/index.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
@@ -34,29 +31,17 @@ export async function getCapabilityRegistryForContext(input: {
 }): Promise<BuiltCapabilityRegistry> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
 	const userId = input.callerContext.user?.userId ?? null
-	const synthesizedDomains: Array<SynthesizedRemoteConnectorDomain['domain']> =
-		[]
 	if (refs.length === 0 || !userId) {
 		return staticRegistry
 	}
-	const settled = await Promise.allSettled(
+	const synthesized = await Promise.all(
 		refs.map((ref) =>
 			synthesizeRemoteToolDomain({ env: input.env, userId, ref }),
 		),
 	)
-	for (const [index, outcome] of settled.entries()) {
-		if (outcome.status === 'fulfilled' && outcome.value) {
-			synthesizedDomains.push(outcome.value.domain)
-			continue
-		}
-		if (outcome.status === 'rejected') {
-			const ref = refs[index]
-			console.error(
-				`[getCapabilityRegistryForContext] synthesizeRemoteToolDomain failed for ${ref?.kind ?? '?'}:${ref?.instanceId ?? '?'}`,
-				outcome.reason,
-			)
-		}
-	}
+	const synthesizedDomains = synthesized.flatMap((domain) =>
+		domain ? [domain.domain] : [],
+	)
 	if (synthesizedDomains.length === 0) {
 		return staticRegistry
 	}

@@ -1,4 +1,3 @@
-import * as Sentry from '@sentry/cloudflare'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -261,60 +260,26 @@ export async function runPackageRetrievers(input: {
 			scope: input.scope,
 		})
 	).slice(0, input.maxProviders ?? (input.scope === 'context' ? 3 : 10))
-	const settled = await Promise.allSettled(
-		entries.map((entry) =>
-			invokeRetriever({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId,
-				scope: input.scope,
-				entry,
-				query,
-				memoryContext: input.memoryContext,
-				conversationId: input.conversationId,
-			}),
-		),
-	)
-	const results: Array<PackageRetrieverSurfaceResult> = []
-	const warnings: Array<string> = []
-	for (let index = 0; index < settled.length; index += 1) {
-		const outcome = settled[index]
-		const entry = entries[index]
-		if (!outcome || !entry) continue
-		if (outcome.status === 'fulfilled') {
-			results.push(...outcome.value)
-			continue
-		}
-		console.error(
-			JSON.stringify({
-				message: 'package retriever failed',
-				packageId: entry.packageId,
-				kodyId: entry.kodyId,
-				retrieverKey: entry.retrieverKey,
-				scope: input.scope,
-			}),
+	const results = (
+		await Promise.all(
+			entries.map((entry) =>
+				invokeRetriever({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId,
+					scope: input.scope,
+					entry,
+					query,
+					memoryContext: input.memoryContext,
+					conversationId: input.conversationId,
+				}),
+			),
 		)
-		Sentry.captureException(outcome.reason, {
-			tags: {
-				scope: 'package-retriever',
-				retrieverScope: input.scope,
-			},
-			extra: {
-				packageId: entry.packageId,
-				kodyId: entry.kodyId,
-				retrieverKey: entry.retrieverKey,
-			},
-		})
-		if (input.scope === 'search') {
-			warnings.push(
-				`Package retriever "${entry.kodyId}/${entry.retrieverKey}" failed and was skipped.`,
-			)
-		}
-	}
+	).flat()
 	return {
 		results: results.sort(
 			(left, right) => (right.score ?? 0) - (left.score ?? 0),
 		),
-		warnings,
+		warnings: [],
 	}
 }

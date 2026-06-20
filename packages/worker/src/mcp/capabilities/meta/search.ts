@@ -122,28 +122,21 @@ async function runPackageRetrieverSearch(input: {
 	if (!input.userId || !input.query) {
 		return { results: [], warnings: [] }
 	}
-	try {
-		const { resolveSearchMemoryContext } = await import('#mcp/tools/search.ts')
-		const { runPackageRetrievers } =
-			await import('#worker/package-retrievers/service.ts')
-		return await runPackageRetrievers({
-			env: input.ctx.env,
-			baseUrl: input.ctx.callerContext.baseUrl,
-			userId: input.userId,
-			scope: 'search',
+	const { resolveSearchMemoryContext } = await import('#mcp/tools/search.ts')
+	const { runPackageRetrievers } =
+		await import('#worker/package-retrievers/service.ts')
+	return await runPackageRetrievers({
+		env: input.ctx.env,
+		baseUrl: input.ctx.callerContext.baseUrl,
+		userId: input.userId,
+		scope: 'search',
+		query: input.query,
+		memoryContext: resolveSearchMemoryContext({
 			query: input.query,
-			memoryContext: resolveSearchMemoryContext({
-				query: input.query,
-				memoryContext: input.memoryContext,
-			}),
-			conversationId: input.conversationId,
-		})
-	} catch {
-		return {
-			results: [],
-			warnings: ['Package retrievers are temporarily unavailable.'],
-		}
-	}
+			memoryContext: input.memoryContext,
+		}),
+		conversationId: input.conversationId,
+	})
 }
 
 export const searchCapability = defineDomainCapability(

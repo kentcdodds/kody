@@ -575,9 +575,8 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 })
 
 test('search markdown summarizes broad results safely and only suggests entity detail for entity-backed hits', () => {
-	const sensitiveWarning =
-		'Saved package metadata fallback warning with long details.'
-	const retrieverWarning = 'Package retrievers are temporarily unavailable.'
+	const sensitiveWarning = 'Saved package metadata warning with long details.'
+	const retrieverWarning = 'Package retriever warning with long details.'
 	const truncatedReadmeSnippet =
 		'Includes setup instructions, export examples, and maintenance notes.'
 	const markdown = formatSearchMarkdown({

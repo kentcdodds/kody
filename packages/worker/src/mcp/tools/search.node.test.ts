@@ -287,27 +287,23 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 	)
 })
 
-test('optional search rows load packages and values with graceful fallbacks', async () => {
+test('optional search rows load packages and values without partial fallbacks', async () => {
 	const emptyRows = {
 		packageRows: [],
 		userSecretRows: [],
 		userValueRows: [],
 	}
 
-	const packageFailure = await loadOptionalSearchRows({
-		userId: 'user-123',
-		loadPackages: async () => {
-			throw new Error('packages unavailable')
-		},
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => [],
-	})
-	expect(packageFailure.packageRows).toEqual([])
-	expect(packageFailure.userSecretRows).toEqual([])
-	expect(packageFailure.userValueRows).toEqual([])
-	expect(packageFailure.warnings).toEqual([
-		'Saved packages are temporarily unavailable: packages unavailable',
-	])
+	await expect(
+		loadOptionalSearchRows({
+			userId: 'user-123',
+			loadPackages: async () => {
+				throw new Error('packages unavailable')
+			},
+			loadUserSecrets: async () => [],
+			loadUserValues: async () => [],
+		}),
+	).rejects.toThrow('packages unavailable')
 
 	const savedPackage = await loadOptionalSearchRows({
 		userId: 'user-123',
@@ -351,62 +347,16 @@ test('optional search rows load packages and values with graceful fallbacks', as
 	expect(savedPackage.userValueRows).toEqual([])
 	expect(savedPackage.warnings).toEqual([])
 
-	const packageWarnings = await loadOptionalSearchRows({
-		userId: 'user-123',
-		loadPackages: async () => ({
-			rows: [
-				{
-					record: {
-						id: 'package-123',
-						userId: 'user-123',
-						name: '@kody/observed',
-						kodyId: 'observed-package',
-						description: 'Observed package',
-						tags: ['observed'],
-						searchText: null,
-						sourceId: 'source-package-123',
-						hasApp: true,
-						createdAt: '2026-03-24T00:00:00.000Z',
-						updatedAt: '2026-03-24T00:00:00.000Z',
-					},
-					projection: {
-						name: '@kody/observed',
-						kodyId: 'observed-package',
-						description: 'Observed package',
-						tags: ['observed'],
-						searchText: null,
-						hasApp: true,
-						appEntry: null,
-						exports: [],
-						jobs: [],
-						services: [],
-						subscriptions: [],
-						retrievers: [],
-					},
-				},
-			],
-			warnings: ['fallback warning'],
+	await expect(
+		loadOptionalSearchRows({
+			userId: 'user-123',
+			loadPackages: async () => [],
+			loadUserSecrets: async () => [],
+			loadUserValues: async () => {
+				throw new Error('values unavailable')
+			},
 		}),
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => [],
-	})
-	expect(packageWarnings.packageRows).toHaveLength(1)
-	expect(packageWarnings.warnings).toEqual(['fallback warning'])
-
-	const valuesFailure = await loadOptionalSearchRows({
-		userId: 'user-123',
-		loadPackages: async () => [],
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => {
-			throw new Error('values unavailable')
-		},
-	})
-	expect(valuesFailure.packageRows).toEqual([])
-	expect(valuesFailure.userSecretRows).toEqual([])
-	expect(valuesFailure.userValueRows).toEqual([])
-	expect(valuesFailure.warnings).toEqual([
-		'Persisted values are temporarily unavailable: values unavailable',
-	])
+	).rejects.toThrow('values unavailable')
 
 	const anonymous = await loadOptionalSearchRows({
 		userId: null,

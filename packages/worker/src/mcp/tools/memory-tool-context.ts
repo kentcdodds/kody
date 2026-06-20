@@ -1,5 +1,4 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
-import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { surfaceRelevantMemories } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
@@ -40,35 +39,18 @@ async function runContextPackageRetrievers(input: {
 	} | null
 	conversationId: string
 }) {
-	try {
-		const { runPackageRetrievers } =
-			await import('#worker/package-retrievers/service.ts')
-		return await runPackageRetrievers({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			scope: 'context',
-			query: input.query,
-			memoryContext: input.memoryContext,
-			conversationId: input.conversationId,
-			maxProviders: 3,
-		})
-	} catch (error) {
-		console.error(
-			JSON.stringify({
-				message: 'package context retrievers unavailable',
-			}),
-		)
-		Sentry.captureException(error, {
-			tags: {
-				scope: 'memory-tool-context.package-retrievers',
-			},
-		})
-		return {
-			results: [],
-			warnings: [],
-		}
-	}
+	const { runPackageRetrievers } =
+		await import('#worker/package-retrievers/service.ts')
+	return await runPackageRetrievers({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		scope: 'context',
+		query: input.query,
+		memoryContext: input.memoryContext,
+		conversationId: input.conversationId,
+		maxProviders: 3,
+	})
 }
 
 export async function loadRelevantMemoriesForTool(input: {

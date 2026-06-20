@@ -36,7 +36,7 @@ async function loadRemoteConnectorInstructionSummaries(input: {
 	if (refs.length === 0 || !userId) {
 		return []
 	}
-	const settled = await Promise.allSettled(
+	const snapshots = await Promise.all(
 		refs.map(async (ref) => {
 			const snapshot = await createRemoteConnectorMcpClient({
 				env: input.env,
@@ -54,17 +54,7 @@ async function loadRemoteConnectorInstructionSummaries(input: {
 			}
 		}),
 	)
-	return settled.flatMap((outcome, index) => {
-		if (outcome.status === 'fulfilled') {
-			return outcome.value ? [outcome.value] : []
-		}
-		const ref = refs[index]
-		console.error(
-			`[loadRemoteConnectorInstructionSummaries] failed for ${ref?.kind ?? '?'}:${ref?.instanceId ?? '?'}`,
-			outcome.reason,
-		)
-		return []
-	})
+	return snapshots.flatMap((snapshot) => (snapshot ? [snapshot] : []))
 }
 
 class MCPBase extends McpAgent<Env, State, Props> {

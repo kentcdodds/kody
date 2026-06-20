@@ -183,28 +183,6 @@ function flattenReferencedTypeFields(
 	])
 }
 
-function buildFallbackPackageSearchProjection(
-	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number],
-): PackageSearchProjection {
-	return {
-		name: record.name,
-		kodyId: record.kodyId,
-		description: record.description,
-		tags: record.tags,
-		searchText: record.searchText,
-		// Preserve the saved-record app signal for discoverability even when manifest
-		// hydration fails and we cannot recover the concrete app entry path.
-		hasApp: record.hasApp,
-		appEntry: null,
-		exports: [],
-		jobs: [],
-		services: [],
-		subscriptions: [],
-		emits: [],
-		retrievers: [],
-	}
-}
-
 export type BuildSavedPackageSearchRowsResult = {
 	rows: Array<PackageSearchRow>
 	warnings: Array<string>
@@ -216,49 +194,25 @@ export async function buildSavedPackageSearchRows(input: {
 	userId: string
 	records: Array<Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]>
 }): Promise<BuildSavedPackageSearchRowsResult> {
-	const warnings: Array<string> = []
 	const rows = await Promise.all(
 		input.records.map(async (record) => {
-			try {
-				const loaded = await loadPackageSourceBySourceId({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.userId,
-					sourceId: record.sourceId,
-				})
-				return {
-					record,
-					projection: buildPackageSearchProjection(
-						loaded.manifest,
-						loaded.files,
-					),
-					readmeSnippet: buildPackageReadmeSnippet({
-						files: loaded.files,
-						maxChars: 1_000,
-					}),
-				}
-			} catch (cause) {
-				Sentry.captureException(cause, {
-					tags: {
-						scope: 'search.buildSavedPackageSearchRows',
-					},
-					extra: {
-						kodyId: record.kodyId,
-						sourceId: record.sourceId,
-					},
-				})
-				const message = cause instanceof Error ? cause.message : String(cause)
-				warnings.push(
-					`Saved package "${record.kodyId}" search metadata is partially unavailable; using fallback metadata from source "${record.sourceId}": ${message}`,
-				)
-				return {
-					record,
-					projection: buildFallbackPackageSearchProjection(record),
-				}
+			const loaded = await loadPackageSourceBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: record.sourceId,
+			})
+			return {
+				record,
+				projection: buildPackageSearchProjection(loaded.manifest, loaded.files),
+				readmeSnippet: buildPackageReadmeSnippet({
+					files: loaded.files,
+					maxChars: 1_000,
+				}),
 			}
 		}),
 	)
-	return { rows, warnings }
+	return { rows, warnings: [] }
 }
 
 function buildPackageRelationTokens(
@@ -1524,57 +1478,20 @@ export async function loadOptionalSearchRows(input: {
 		}
 	}
 
-	const warnings: Array<string> = []
-	const [packageRowsResult, userSecretRowsResult, userValueRowsResult] =
-		await Promise.allSettled([
-			input.loadPackages(),
-			input.loadUserSecrets(),
-			input.loadUserValues(),
-		])
-
-	let packageRows: Array<PackageSearchRow> = []
-	if (packageRowsResult.status === 'fulfilled') {
-		if (Array.isArray(packageRowsResult.value)) {
-			packageRows = packageRowsResult.value
-		} else {
-			packageRows = packageRowsResult.value.rows
-			warnings.push(...packageRowsResult.value.warnings)
-		}
-	} else {
-		const message =
-			packageRowsResult.reason instanceof Error
-				? packageRowsResult.reason.message
-				: String(packageRowsResult.reason)
-		warnings.push(`Saved packages are temporarily unavailable: ${message}`)
-	}
-
-	const userSecretRows =
-		userSecretRowsResult.status === 'fulfilled'
-			? userSecretRowsResult.value
-			: []
-	if (userSecretRowsResult.status === 'rejected') {
-		const message =
-			userSecretRowsResult.reason instanceof Error
-				? userSecretRowsResult.reason.message
-				: String(userSecretRowsResult.reason)
-		warnings.push(`User secrets are temporarily unavailable: ${message}`)
-	}
-
-	const userValueRows =
-		userValueRowsResult.status === 'fulfilled' ? userValueRowsResult.value : []
-	if (userValueRowsResult.status === 'rejected') {
-		const message =
-			userValueRowsResult.reason instanceof Error
-				? userValueRowsResult.reason.message
-				: String(userValueRowsResult.reason)
-		warnings.push(`Persisted values are temporarily unavailable: ${message}`)
-	}
+	const [loadedPackageRows, userSecretRows, userValueRows] = await Promise.all([
+		input.loadPackages(),
+		input.loadUserSecrets(),
+		input.loadUserValues(),
+	])
+	const packageRows = Array.isArray(loadedPackageRows)
+		? loadedPackageRows
+		: loadedPackageRows.rows
 
 	return {
 		packageRows,
 		userSecretRows,
 		userValueRows,
-		warnings,
+		warnings: [],
 	}
 }
 
@@ -1856,34 +1773,21 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				const retrieverRunPromise =
 					userId && query
 						? (async () => {
-								try {
-									const { runPackageRetrievers } =
-										await import('#worker/package-retrievers/service.ts')
-									return await runPackageRetrievers({
-										env: agent.getEnv(),
-										baseUrl,
-										userId,
-										scope: 'search',
+								const { runPackageRetrievers } = await import(
+									'#worker/package-retrievers/service.ts'
+								)
+								return await runPackageRetrievers({
+									env: agent.getEnv(),
+									baseUrl,
+									userId,
+									scope: 'search',
+									query,
+									memoryContext: resolveSearchMemoryContext({
 										query,
-										memoryContext: resolveSearchMemoryContext({
-											query,
-											memoryContext: args.memoryContext,
-										}),
-										conversationId,
-									})
-								} catch (error) {
-									Sentry.captureException(error, {
-										tags: {
-											scope: 'search.package-retrievers',
-										},
-									})
-									return {
-										results: [],
-										warnings: [
-											'Package retrievers are temporarily unavailable.',
-										],
-									}
-								}
+										memoryContext: args.memoryContext,
+									}),
+									conversationId,
+								})
 							})()
 						: Promise.resolve({ results: [], warnings: [] })
 				const [searchRows] = await Promise.all([

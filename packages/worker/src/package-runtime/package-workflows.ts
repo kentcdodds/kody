@@ -417,7 +417,7 @@ function validateDynamicCallableWorkflowPayload(
 async function readWorkflowInstanceSummary(
 	instance: WorkflowInstance,
 ): Promise<{ id: string; status?: string }> {
-	const status = await instance.status().catch(() => null)
+	const status = await instance.status()
 	return {
 		id: instance.id,
 		status: typeof status?.status === 'string' ? status.status : undefined,
@@ -870,10 +870,7 @@ export async function listWorkflowRunsForUser(input: {
 			) {
 				return
 			}
-			const instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(
-				row.id,
-			).catch(() => null)
-			if (!instance) return
+			const instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(row.id)
 			const summary = await readWorkflowInstanceSummary(instance)
 			if (!summary.status || !knownWorkflowStatuses.has(summary.status)) return
 			if (summary.status === row.status) return
