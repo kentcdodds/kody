@@ -842,6 +842,14 @@ export async function createDynamicCallableWorkflow(input: {
 		})
 	}
 	const summary = await readWorkflowInstanceSummary(instance)
+	if (input.env.APP_DB && summary.status) {
+		await recordWorkflowRun({
+			db: input.env.APP_DB,
+			id,
+			payload,
+			status: summary.status,
+		})
+	}
 	return createWorkflowCreateResult({ summary, payload })
 }
 
