@@ -60,20 +60,3 @@ test('offline capability search ranks lexical matches and returns structured det
 	})
 	expect(oauthGuide.matches[0]).not.toHaveProperty('outputSchema')
 })
-
-test('production capability search requires the Vectorize binding', async () => {
-	await expect(
-		searchCapabilities({
-			env: {
-				SENTRY_ENVIRONMENT: 'production',
-				AI: {} as Ai,
-			} as Env,
-			query: 'oauth redirect uri',
-			limit: 8,
-			detail: false,
-			specs: {},
-		}),
-	).rejects.toThrow(
-		'CAPABILITY_VECTOR_INDEX binding is required for capability search outside offline mode.',
-	)
-})

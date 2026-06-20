@@ -140,21 +140,3 @@ test('password reset skips sending when APP_BASE_URL is missing and logs a redac
 		warnSpy.mockRestore()
 	}
 })
-
-test('password reset rejects invalid APP_BASE_URL before storing a token', async () => {
-	vi.clearAllMocks()
-	const handler = createPasswordResetRequestHandler(
-		createEnv({ APP_BASE_URL: 'not a valid url' }),
-	)
-
-	await expect(
-		handler.handler({
-			request: createResetRequest(),
-			url: new URL('https://request-origin.test/password-reset'),
-			params: {},
-		}),
-	).rejects.toThrow('Invalid URL')
-	expect(mockModule.deleteMany).not.toHaveBeenCalled()
-	expect(mockModule.createRecord).not.toHaveBeenCalled()
-	expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
-})

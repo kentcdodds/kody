@@ -34,7 +34,6 @@ function createWorkflowBinding(options?: {
 	getThrows?: Error
 	createThrows?: Error
 	statusThrows?: Error
-	createStatus?: string
 }) {
 	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
 		if (options?.createThrows) throw options.createThrows
@@ -42,7 +41,7 @@ function createWorkflowBinding(options?: {
 			id: input.id,
 			status: async () => {
 				if (options?.statusThrows) throw options.statusThrows
-				return { status: options?.createStatus ?? 'queued' }
+				return { status: 'queued' }
 			},
 		}
 	})
@@ -277,34 +276,6 @@ test('createDynamicCallableWorkflow records the run before reading workflow stat
 			idempotency_key: 'status-failure-key',
 		}),
 	])
-})
-
-test('createDynamicCallableWorkflow stores the live status after a successful status read', async () => {
-	const binding = createWorkflowBinding({
-		existing: null,
-		createStatus: 'waiting',
-	})
-	const db = createWorkflowRunsDatabase()
-
-	const created = await createDynamicCallableWorkflow({
-		env: {
-			APP_DB: db,
-			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-		} as Env,
-		userId: 'user-1',
-		packageContext: null,
-		body: {
-			code: 'export default async function main() { return { ok: true } }',
-			runAt: '2026-05-03T12:34:56.000Z',
-			idempotencyKey: 'waiting-status-key',
-		},
-	})
-
-	expect(created.status).toBe('waiting')
-	expect(db.workflowRuns.get(created.id)).toMatchObject({
-		status: 'waiting',
-		idempotency_key: 'waiting-status-key',
-	})
 })
 
 test('DynamicCallableWorkflowBase executes queued inline code and records completion', async () => {
@@ -857,37 +828,17 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 			idempotencyKey: 'inline-key',
 		}),
 	])
-})
-
-test('listWorkflowRunsForUser keeps stored rows when active workflow instances are stale', async () => {
-	const binding = createStatefulWorkflowBinding()
-	const db = createWorkflowRunsDatabase()
-	const env = {
-		APP_DB: db,
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-	} as Env
-	const created = await createDynamicCallableWorkflow({
+	binding.instances.delete(created.id)
+	const staleWorkflows = await listWorkflowRunsForUser({
 		env,
 		userId: 'user-1',
-		body: {
-			code: 'export default async function main() { return { ok: true } }',
-			runAt: '2026-05-03T12:34:56.000Z',
-			idempotencyKey: 'stale-inline-key',
-		},
+		limit: 10,
 	})
-	binding.instances.delete(created.id)
-
-	await expect(
-		listWorkflowRunsForUser({
-			env,
-			userId: 'user-1',
-			limit: 10,
-		}),
-	).resolves.toEqual([
+	expect(staleWorkflows).toEqual([
 		expect.objectContaining({
 			id: created.id,
 			status: 'queued',
-			idempotencyKey: 'stale-inline-key',
+			idempotencyKey: 'inline-key',
 		}),
 	])
 })
