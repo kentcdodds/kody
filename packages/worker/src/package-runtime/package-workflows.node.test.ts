@@ -250,6 +250,7 @@ test('createDynamicCallableWorkflow queues inline code without package context',
 
 test('createDynamicCallableWorkflow records the run before reading workflow status', async () => {
 	const binding = createWorkflowBinding({
+		existing: null,
 		statusThrows: new Error('status unavailable'),
 	})
 	const db = createWorkflowRunsDatabase()
