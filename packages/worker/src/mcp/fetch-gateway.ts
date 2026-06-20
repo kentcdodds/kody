@@ -236,11 +236,7 @@ async function collectHostApprovalEntries(input: {
 }
 
 function readRequestedHost(url: string) {
-	try {
-		return new URL(url).hostname
-	} catch {
-		return ''
-	}
+	return new URL(url).hostname
 }
 
 function ensureFetchAllowed(props: FetchGatewayProps) {

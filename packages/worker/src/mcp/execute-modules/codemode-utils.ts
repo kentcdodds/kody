@@ -183,7 +183,7 @@ export async function oauthClientCredentials(
 		headers,
 		body: body.toString(),
 	})
-	const payload = (await response.json().catch(() => null)) as unknown
+	const payload = (await response.json()) as unknown
 	if (!response.ok) {
 		throw new Error(
 			`OAuth client_credentials request failed with HTTP ${response.status}.`,
@@ -302,10 +302,7 @@ async function refreshAccessTokenWithIntegration(
 		},
 		body: params.toString(),
 	})
-	const payload = (await response.json().catch(() => null)) as Record<
-		string,
-		unknown
-	> | null
+	const payload = (await response.json()) as Record<string, unknown>
 
 	if (!response.ok) {
 		throw new Error(
@@ -492,10 +489,8 @@ const __kodyGetIntegrationAllowedHosts = (integration) => {
     }
   }
   if (integration.apiBaseUrl) {
-    try {
-      const apiHost = new URL(integration.apiBaseUrl).hostname.trim().toLowerCase();
-      if (apiHost) hosts.add(apiHost);
-    } catch {}
+    const apiHost = new URL(integration.apiBaseUrl).hostname.trim().toLowerCase();
+    if (apiHost) hosts.add(apiHost);
   }
   return Array.from(hosts);
 };
@@ -713,7 +708,7 @@ const __kodyRefreshAccessToken = async (providerName) => {
     },
     body: params.toString(),
   });
-  const payload = await response.json().catch(() => null);
+  const payload = await response.json();
   if (!response.ok) {
     throw new Error(
       \`Token refresh failed for integration "\${providerName}" with HTTP \${response.status}.\`,
@@ -795,7 +790,7 @@ const __kodyOauthClientCredentials = async (input) => {
     headers,
     body: body.toString(),
   });
-  const payload = await response.json().catch(() => null);
+  const payload = await response.json();
   if (!response.ok) {
     throw new Error(
       \`OAuth client_credentials request failed with HTTP \${response.status}.\`,

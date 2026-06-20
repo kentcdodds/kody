@@ -24,25 +24,17 @@ function bytesToBase64(bytes: Uint8Array) {
 }
 function parseJsonArray(value: string | null) {
 	if (!value) return []
-	try {
-		const parsed = JSON.parse(value) as unknown
-		return Array.isArray(parsed) ? parsed : []
-	} catch {
-		return []
-	}
+	const parsed = JSON.parse(value) as unknown
+	return Array.isArray(parsed) ? parsed : []
 }
 
 function parseOptionalJsonRecord(value: string | null) {
 	if (!value) return null
-	try {
-		const parsed = JSON.parse(value) as unknown
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-			return null
-		}
-		return parsed as Record<string, unknown>
-	} catch {
+	const parsed = JSON.parse(value) as unknown
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
 		return null
 	}
+	return parsed as Record<string, unknown>
 }
 
 function mapInboxRow(row: Record<string, unknown>): EmailInboxRecord {

@@ -473,11 +473,11 @@ function serializeRuntimeError(error) {
 }
 
 async function startRuntimeRun(runtimeBridge, input) {
-	return await runtimeBridge.packageRuntimeRunStart(input).catch(() => null);
+	return await runtimeBridge.packageRuntimeRunStart(input);
 }
 
 async function finishRuntimeRun(runtimeBridge, input) {
-	await runtimeBridge.packageRuntimeRunFinish(input).catch(() => {});
+	await runtimeBridge.packageRuntimeRunFinish(input);
 }
 
 function resolveRealtimeHandler(userModule, facetName) {

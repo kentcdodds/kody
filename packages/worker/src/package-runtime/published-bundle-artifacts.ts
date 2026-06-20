@@ -398,7 +398,7 @@ export async function deletePublishedArtifactsForSource(input: {
 		input.sourceId,
 	)
 	if (hasPublishedRuntimeArtifacts(input.env)) {
-		await Promise.allSettled(
+		await Promise.all(
 			rows.map(async (row: PublishedBundleArtifactRecord) => {
 				await deletePublishedBundleArtifact({
 					env: input.env,

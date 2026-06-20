@@ -173,7 +173,6 @@ export function isCapabilitySearchOffline(env: Env): boolean {
 	const runtime = env as unknown as Record<string, string | undefined>
 	if (runtime['SENTRY_ENVIRONMENT'] === 'test') return true
 	if (runtime['WRANGLER_IS_LOCAL_DEV'] === 'true') return true
-	if (!getCapabilityVectorIndex(env)) return true
 	return false
 }
 

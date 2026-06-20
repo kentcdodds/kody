@@ -525,16 +525,12 @@ function collectPackageCallableTypecheckTargets(
 
 function parseDeclaredNpmDependencies(packageJsonContent: string | null) {
 	if (!packageJsonContent) return []
-	try {
-		const parsed = JSON.parse(packageJsonContent) as {
-			dependencies?: Record<string, string>
-		}
-		return Object.keys(parsed.dependencies ?? {}).sort((left, right) =>
-			left.localeCompare(right),
-		)
-	} catch {
-		return []
+	const parsed = JSON.parse(packageJsonContent) as {
+		dependencies?: Record<string, string>
 	}
+	return Object.keys(parsed.dependencies ?? {}).sort((left, right) =>
+		left.localeCompare(right),
+	)
 }
 
 function pluralize(count: number, singular: string, plural: string) {

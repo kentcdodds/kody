@@ -65,11 +65,7 @@ function serializeJob(job: JobRecord) {
 
 function parseJson<T>(value: string | null, fallback: T): T {
 	if (!value) return fallback
-	try {
-		return JSON.parse(value) as T
-	} catch {
-		return fallback
-	}
+	return JSON.parse(value) as T
 }
 
 function mapRow(row: Record<string, unknown>): JobRow {

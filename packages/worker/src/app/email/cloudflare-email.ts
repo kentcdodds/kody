@@ -102,9 +102,7 @@ async function sendViaCloudflareApi(
 		}
 	}
 
-	const payload = (await response
-		.json()
-		.catch(() => null)) as CloudflareApiEnvelope | null
+	const payload = (await response.json()) as CloudflareApiEnvelope
 	if (!response.ok || payload?.success !== true) {
 		console.warn(
 			'cloudflare-email-api-failed',

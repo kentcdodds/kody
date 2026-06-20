@@ -24,17 +24,13 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 
 function parseTagsJson(raw: unknown) {
 	if (raw == null) return []
-	try {
-		const parsed = JSON.parse(String(raw)) as unknown
-		return Array.isArray(parsed)
-			? parsed
-					.filter((value): value is string => typeof value === 'string')
-					.map((value) => value.trim())
-					.filter((value) => value.length > 0)
-			: []
-	} catch {
-		return []
-	}
+	const parsed = JSON.parse(String(raw)) as unknown
+	return Array.isArray(parsed)
+		? parsed
+				.filter((value): value is string => typeof value === 'string')
+				.map((value) => value.trim())
+				.filter((value) => value.length > 0)
+		: []
 }
 
 export async function insertSavedPackage(

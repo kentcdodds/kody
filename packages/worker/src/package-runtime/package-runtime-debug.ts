@@ -156,14 +156,9 @@ function serializeJson(value: unknown, maxBytes = maxPersistedJsonBytes) {
 
 function parseJsonRecord(value: unknown): Record<string, unknown> {
 	if (typeof value !== 'string' || value.length === 0) return {}
-	try {
-		const parsed = JSON.parse(value) as unknown
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-			return {}
-		return parsed as Record<string, unknown>
-	} catch {
-		return {}
-	}
+	const parsed = JSON.parse(value) as unknown
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+	return parsed as Record<string, unknown>
 }
 
 function mapRunRow(row: Record<string, unknown>): PackageRuntimeRunRecord {

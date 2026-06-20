@@ -74,13 +74,9 @@ function getPasswordResetEmailConfig(appEnv: Pick<AppEnv, 'APP_BASE_URL'>) {
 	const configuredBaseUrl = appEnv.APP_BASE_URL?.trim()
 	if (!configuredBaseUrl) return null
 
-	try {
-		const appBaseUrl = new URL(configuredBaseUrl).origin
-		const fromEmail = `kody@${new URL(configuredBaseUrl).hostname}`
-		return { appBaseUrl, fromEmail }
-	} catch {
-		return null
-	}
+	const appBaseUrl = new URL(configuredBaseUrl).origin
+	const fromEmail = `kody@${new URL(configuredBaseUrl).hostname}`
+	return { appBaseUrl, fromEmail }
 }
 
 export function createPasswordResetRequestHandler(appEnv: AppEnv) {

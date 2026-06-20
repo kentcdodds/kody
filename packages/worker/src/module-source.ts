@@ -37,37 +37,29 @@ function getNodeName(node: unknown) {
 
 export function hasTopLevelModuleSyntax(source: string) {
 	if (!source) return false
-	try {
-		const body = getProgramBody(
-			parseModuleSource(source) as unknown as ModuleAstNode,
-		)
-		return body.some(
-			(statement) =>
-				statement?.type === 'ImportDeclaration' ||
-				statement?.type?.startsWith('Export') === true,
-		)
-	} catch {
-		return false
-	}
+	const body = getProgramBody(
+		parseModuleSource(source) as unknown as ModuleAstNode,
+	)
+	return body.some(
+		(statement) =>
+			statement?.type === 'ImportDeclaration' ||
+			statement?.type?.startsWith('Export') === true,
+	)
 }
 
 export function hasTopLevelDefaultExport(source: string) {
 	if (!source) return false
-	try {
-		const body = getProgramBody(
-			parseModuleSource(source) as unknown as ModuleAstNode,
+	const body = getProgramBody(
+		parseModuleSource(source) as unknown as ModuleAstNode,
+	)
+	return body.some((statement) => {
+		if (statement.type === 'ExportDefaultDeclaration') return true
+		if (statement.type !== 'ExportNamedDeclaration') return false
+		const specifiers = statement.specifiers
+		if (!Array.isArray(specifiers)) return false
+		return specifiers.some(
+			(specifier) =>
+				getNodeName((specifier as ModuleAstNode).exported) === 'default',
 		)
-		return body.some((statement) => {
-			if (statement.type === 'ExportDefaultDeclaration') return true
-			if (statement.type !== 'ExportNamedDeclaration') return false
-			const specifiers = statement.specifiers
-			if (!Array.isArray(specifiers)) return false
-			return specifiers.some(
-				(specifier) =>
-					getNodeName((specifier as ModuleAstNode).exported) === 'default',
-			)
-		})
-	} catch {
-		return false
-	}
+	})
 }

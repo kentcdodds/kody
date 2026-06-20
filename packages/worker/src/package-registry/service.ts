@@ -307,23 +307,17 @@ export async function deleteSavedPackageProjection(input: {
 			baseUrl: 'https://package-service.invalid',
 			packageId: input.packageId,
 			savedPackage,
-		}).catch(() => null)
-		if (listedServices) {
-			for (const service of listedServices.services) {
-				try {
-					await packageServiceRpc({
-						env: input.env,
-						userId: input.userId,
-						packageId: savedPackage.id,
-						kodyId: savedPackage.kodyId,
-						sourceId: savedPackage.sourceId,
-						baseUrl: 'https://package-service.invalid',
-						serviceName: service.name,
-					}).stop()
-				} catch {
-					// Best-effort shutdown of orphaned services during package deletion.
-				}
-			}
+		})
+		for (const service of listedServices.services) {
+			await packageServiceRpc({
+				env: input.env,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				sourceId: savedPackage.sourceId,
+				baseUrl: 'https://package-service.invalid',
+				serviceName: service.name,
+			}).stop()
 		}
 		const existingRows = await listJobRowsByUserId(
 			input.env.APP_DB,

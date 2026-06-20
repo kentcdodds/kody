@@ -702,12 +702,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/sessions')) {
-			const body = (await request
-				.json()
-				.catch(() => null)) as PackageRealtimeListPayload | null
-			if (!body) {
-				return Response.json({ sessions: [] })
-			}
+			const body = (await request.json()) as PackageRealtimeListPayload
 			await this.initializeBinding(body.binding)
 			return Response.json({
 				sessions: this.listSessions({

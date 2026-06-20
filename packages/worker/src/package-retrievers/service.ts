@@ -250,10 +250,9 @@ export async function runPackageRetrievers(input: {
 		}
 	}
 	if (!('BUNDLE_ARTIFACTS_KV' in input.env)) {
-		return {
-			results: [],
-			warnings: [],
-		}
+		throw new Error(
+			'BUNDLE_ARTIFACTS_KV binding is required for package retrievers.',
+		)
 	}
 	const entries = (
 		await loadScopeEntries({

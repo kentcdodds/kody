@@ -108,12 +108,12 @@ async function resolveTokenScope(input: {
 	const record = await getActivePackageInvocationTokenByHash({
 		db: input.env.APP_DB,
 		tokenHash,
-	}).catch(() => null)
+	})
 	if (!record) return null
 	const touched = await updatePackageInvocationTokenLastUsed({
 		db: input.env.APP_DB,
 		id: record.id,
-	}).catch(() => false)
+	})
 	if (!touched) return null
 	return {
 		tokenId: record.id,

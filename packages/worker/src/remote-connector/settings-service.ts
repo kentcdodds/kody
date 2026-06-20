@@ -95,15 +95,7 @@ export async function safelyListAttachedRemoteConnectorRefs(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
-	try {
-		return await listAttachedRemoteConnectorRefs(input)
-	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error)
-		console.error(
-			`[remote-connectors] failed to read attached connector refs for user ${input.userId}: ${detail}`,
-		)
-		return []
-	}
+	return await listAttachedRemoteConnectorRefs(input)
 }
 
 export async function saveRemoteConnectorSetting(
