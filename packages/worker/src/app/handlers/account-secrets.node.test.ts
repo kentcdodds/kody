@@ -118,10 +118,13 @@ function createEnv() {
 	} as Env
 }
 
-test('connect oauth returns direct host approval links for saved token secrets', async () => {
+test('connect oauth saves tokens, integration metadata, and host approval links', async () => {
 	mockModule.saveValue.mockClear()
+	mockModule.buildSecretHostApprovalUrl.mockClear()
+	mockModule.setSecretAllowedHosts.mockClear()
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+
+	const githubResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -148,8 +151,8 @@ test('connect oauth returns direct host approval links for saved token secrets',
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(githubResponse.status).toBe(200)
+	await expect(githubResponse.json()).resolves.toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
@@ -206,12 +209,9 @@ test('connect oauth returns direct host approval links for saved token secrets',
 			}),
 		}),
 	)
-})
 
-test('connect oauth keeps existing refresh token secret name when provider omits a rotated refresh token', async () => {
 	mockModule.saveValue.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const spotifyResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -238,8 +238,8 @@ test('connect oauth keeps existing refresh token secret name when provider omits
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(spotifyResponse.status).toBe(200)
+	await expect(spotifyResponse.json()).resolves.toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: false,
@@ -253,9 +253,7 @@ test('connect oauth keeps existing refresh token secret name when provider omits
 			),
 		}),
 	)
-})
 
-test('connect oauth omits direct host approval links when hosts are already approved', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'teslaAccessToken',
@@ -289,8 +287,7 @@ test('connect oauth omits direct host approval links when hosts are already appr
 		},
 	])
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const teslaResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -316,30 +313,25 @@ test('connect oauth omits direct host approval links when hosts are already appr
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toMatchObject({
+	expect(teslaResponse.status).toBe(200)
+	const teslaPayload = await teslaResponse.json()
+	expect(teslaPayload).toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
 		hostApprovalLinks: [],
 		integrationName: 'Tesla',
 	})
-	expect(payload.allowedHosts).toEqual(
+	expect(teslaPayload.allowedHosts).toEqual(
 		expect.arrayContaining([
 			'auth.tesla.com',
 			'fleet-api.prd.na.vn.cloud.tesla.com',
 			'fleet-auth.prd.vn.cloud.tesla.com',
 		]),
 	)
-	expect(mockModule.buildSecretHostApprovalUrl).not.toHaveBeenCalled()
-})
 
-test('connect oauth drops invalid authorization metadata without hiding the integration', async () => {
 	mockModule.saveValue.mockClear()
-
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const invalidAuthorizeResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -364,8 +356,8 @@ test('connect oauth drops invalid authorization metadata without hiding the inte
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(invalidAuthorizeResponse.status).toBe(200)
+	await expect(invalidAuthorizeResponse.json()).resolves.toMatchObject({
 		ok: true,
 		integrationName: 'GitHub',
 	})
@@ -377,7 +369,7 @@ test('connect oauth drops invalid authorization metadata without hiding the inte
 	)
 })
 
-test('host approval view is derived from allowed-host and selected secret', async () => {
+test('host approval view and approve persist normalized hosts for the selected secret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'cloudflareToken',
@@ -408,7 +400,7 @@ test('host approval view is derived from allowed-host and selected secret', asyn
 	])
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const viewResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
 			{ method: 'GET' },
@@ -416,8 +408,8 @@ test('host approval view is derived from allowed-host and selected secret', asyn
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(viewResponse.status).toBe(200)
+	await expect(viewResponse.json()).resolves.toMatchObject({
 		ok: true,
 		approval: {
 			name: 'cloudflareToken',
@@ -427,9 +419,7 @@ test('host approval view is derived from allowed-host and selected secret', asyn
 			currentAllowedHosts: [],
 		},
 	})
-})
 
-test('host approval approve persists host from allowed-host and selected secret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'cloudflareToken',
@@ -448,8 +438,7 @@ test('host approval approve persists host from allowed-host and selected secret'
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const approveResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
 			{
@@ -461,8 +450,8 @@ test('host approval approve persists host from allowed-host and selected secret'
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({ ok: true })
+	expect(approveResponse.status).toBe(200)
+	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
 	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: 'cloudflareToken',
@@ -587,13 +576,14 @@ test('account secrets payload preserves app titles and allowed packages', async 
 	})
 })
 
-test('package approval reject succeeds even when the secret no longer exists', async () => {
+test('package approval reject and approve handle missing secrets and deduplicate package ids', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const rejectResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-allowed',
 			{
@@ -605,16 +595,14 @@ test('package approval reject succeeds even when the secret no longer exists', a
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(rejectResponse.status).toBe(200)
+	await expect(rejectResponse.json()).resolves.toMatchObject({
 		ok: true,
 		secrets: [],
 	})
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
-})
 
-test('package approval approve deduplicates allowed package ids', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'discordBotToken',
@@ -633,8 +621,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
+	const approveResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-new',
 			{
@@ -646,8 +633,8 @@ test('package approval approve deduplicates allowed package ids', async () => {
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({ ok: true })
+	expect(approveResponse.status).toBe(200)
+	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
 	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: 'discordBotToken',
