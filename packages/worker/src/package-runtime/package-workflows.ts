@@ -432,14 +432,18 @@ async function getExistingWorkflowInstance(
 		const instance = await workflow.get(id)
 		return await readWorkflowInstanceSummary(instance)
 	} catch (error) {
-		if (
-			error instanceof Error &&
-			/does not exist|not found|not_found|404/i.test(error.message)
-		) {
+		if (isMissingWorkflowInstanceError(error)) {
 			return null
 		}
 		throw error
 	}
+}
+
+function isMissingWorkflowInstanceError(error: unknown) {
+	return (
+		error instanceof Error &&
+		/does not exist|not found|not_found|404/i.test(error.message)
+	)
 }
 
 function isDuplicateWorkflowInstanceError(error: unknown) {
@@ -829,15 +833,15 @@ export async function createDynamicCallableWorkflow(input: {
 		}
 		throw error
 	}
-	const summary = await readWorkflowInstanceSummary(instance)
 	if (input.env.APP_DB) {
 		await recordWorkflowRun({
 			db: input.env.APP_DB,
 			id,
 			payload,
-			status: summary.status ?? 'queued',
+			status: 'queued',
 		})
 	}
+	const summary = await readWorkflowInstanceSummary(instance)
 	return createWorkflowCreateResult({ summary, payload })
 }
 
@@ -870,7 +874,13 @@ export async function listWorkflowRunsForUser(input: {
 			) {
 				return
 			}
-			const instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(row.id)
+			let instance: WorkflowInstance
+			try {
+				instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(row.id)
+			} catch (error) {
+				if (isMissingWorkflowInstanceError(error)) return
+				throw error
+			}
 			const summary = await readWorkflowInstanceSummary(instance)
 			if (!summary.status || !knownWorkflowStatuses.has(summary.status)) return
 			if (summary.status === row.status) return

@@ -234,7 +234,12 @@ export async function searchCapabilities(input: {
 		)
 		vectorOrder = sortIdsByScore(ids, (id) => vectorScoreById[id]!)
 	} else {
-		const index = getCapabilityVectorIndex(input.env)!
+		const index = getCapabilityVectorIndex(input.env)
+		if (!index) {
+			throw new Error(
+				'CAPABILITY_VECTOR_INDEX binding is required for capability search outside offline mode.',
+			)
+		}
 		const qVec = await embedTextForVectorize(input.env, q)
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
 		const vectorScoreMap = new Map<string, number>()
