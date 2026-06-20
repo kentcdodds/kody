@@ -440,10 +440,16 @@ async function getExistingWorkflowInstance(
 }
 
 function isMissingWorkflowInstanceError(error: unknown) {
-	return (
-		error instanceof Error &&
-		/does not exist|not found|not_found|404/i.test(error.message)
-	)
+	if (!error || typeof error !== 'object') return false
+	const workflowError = error as { code?: unknown; message?: unknown }
+	if (workflowError.code === 404) return true
+	const message =
+		error instanceof Error
+			? error.message
+			: typeof workflowError.message === 'string'
+				? workflowError.message
+				: ''
+	return /does not exist|not found|not_found|404/i.test(message)
 }
 
 function isDuplicateWorkflowInstanceError(error: unknown) {
