@@ -102,7 +102,7 @@ function createEnv() {
 	} as Env
 }
 
-test('integrations API lists valid user-scoped OAuth integrations', async () => {
+test('integrations API lists valid user-scoped OAuth integrations and skips malformed values', async () => {
 	const handler = createAccountIntegrationsApiHandler(createEnv())
 	const response = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json'),

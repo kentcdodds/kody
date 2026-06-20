@@ -83,16 +83,17 @@ function createEnv() {
 	} as Env
 }
 
-test('remote connector settings API lists settings with plaintext secrets', async () => {
+test('remote connector settings API lists connectors and saves submitted secrets', async () => {
 	const handler = createAccountRemoteConnectorsApiHandler(createEnv())
-	const response = await handler.handler({
+
+	const listResponse = await handler.handler({
 		request: new Request('https://example.com/account/remote-connectors.json'),
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe('no-store')
-	await expect(response.json()).resolves.toEqual({
+	expect(listResponse.status).toBe(200)
+	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
+	await expect(listResponse.json()).resolves.toEqual({
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',
@@ -112,11 +113,8 @@ test('remote connector settings API lists settings with plaintext secrets', asyn
 			},
 		],
 	})
-})
 
-test('remote connector settings API passes submitted secret to save service', async () => {
-	const handler = createAccountRemoteConnectorsApiHandler(createEnv())
-	const response = await handler.handler({
+	const saveResponse = await handler.handler({
 		request: new Request('https://example.com/account/remote-connectors.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -132,7 +130,7 @@ test('remote connector settings API passes submitted secret to save service', as
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
+	expect(saveResponse.status).toBe(200)
 	expect(mockModule.saveRemoteConnectorSetting).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
@@ -141,7 +139,7 @@ test('remote connector settings API passes submitted secret to save service', as
 			sharedSecret: 'roku-secret',
 		}),
 	)
-	expect(await response.json()).toEqual({
+	expect(await saveResponse.json()).toEqual({
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',
