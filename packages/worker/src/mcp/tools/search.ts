@@ -1773,9 +1773,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				const retrieverRunPromise =
 					userId && query
 						? (async () => {
-								const { runPackageRetrievers } = await import(
-									'#worker/package-retrievers/service.ts'
-								)
+								const { runPackageRetrievers } =
+									await import('#worker/package-retrievers/service.ts')
 								return await runPackageRetrievers({
 									env: agent.getEnv(),
 									baseUrl,
