@@ -526,9 +526,18 @@ function collectPackageCallableTypecheckTargets(
 function parseDeclaredNpmDependencies(packageJsonContent: string | null) {
 	if (!packageJsonContent) return []
 	const parsed = JSON.parse(packageJsonContent) as {
-		dependencies?: Record<string, string>
+		dependencies?: unknown
 	}
-	return Object.keys(parsed.dependencies ?? {}).sort((left, right) =>
+	const dependencies = parsed.dependencies
+	if (
+		dependencies !== undefined &&
+		(!dependencies ||
+			typeof dependencies !== 'object' ||
+			Array.isArray(dependencies))
+	) {
+		throw new Error('package.json dependencies must be an object when present.')
+	}
+	return Object.keys(dependencies ?? {}).sort((left, right) =>
 		left.localeCompare(right),
 	)
 }

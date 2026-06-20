@@ -91,13 +91,6 @@ export async function listAttachedRemoteConnectorRefs(input: {
 	}))
 }
 
-export async function safelyListAttachedRemoteConnectorRefs(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-}) {
-	return await listAttachedRemoteConnectorRefs(input)
-}
-
 export async function saveRemoteConnectorSetting(
 	input: SaveRemoteConnectorSettingInput,
 ): Promise<RemoteConnectorSettingMetadata> {

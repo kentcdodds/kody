@@ -11,7 +11,7 @@ const invocationMocks = vi.hoisted(() => ({
 }))
 
 const remoteConnectorMocks = vi.hoisted(() => ({
-	safelyListAttachedRemoteConnectorRefs: vi.fn(async () => []),
+	listAttachedRemoteConnectorRefs: vi.fn(async () => []),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -20,8 +20,8 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 }))
 
 vi.mock('#worker/remote-connector/settings-service.ts', () => ({
-	safelyListAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
-		remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs(...args),
+	listAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
+		remoteConnectorMocks.listAttachedRemoteConnectorRefs(...args),
 }))
 
 vi.mock('#mcp/run-codemode-registry.ts', () => ({
@@ -330,9 +330,9 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		result: { ok: true },
 		logs: [],
 	})
-	remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs.mockResolvedValueOnce(
-		[{ kind: 'home', instanceId: 'default' }],
-	)
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce([
+		{ kind: 'home', instanceId: 'default' },
+	])
 
 	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
 	const stepDo = vi.fn(
@@ -349,7 +349,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 	)
 
 	expect(
-		remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs,
+		remoteConnectorMocks.listAttachedRemoteConnectorRefs,
 	).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',
@@ -391,9 +391,9 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for packag
 		status: 200,
 		body: { result: { ok: true } },
 	})
-	remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs.mockResolvedValueOnce(
-		[{ kind: 'home', instanceId: 'default' }],
-	)
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce([
+		{ kind: 'home', instanceId: 'default' },
+	])
 
 	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
 	const stepDo = vi.fn(
@@ -410,7 +410,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for packag
 	)
 
 	expect(
-		remoteConnectorMocks.safelyListAttachedRemoteConnectorRefs,
+		remoteConnectorMocks.listAttachedRemoteConnectorRefs,
 	).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',

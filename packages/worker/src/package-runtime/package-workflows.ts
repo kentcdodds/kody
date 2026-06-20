@@ -11,7 +11,7 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
-import { safelyListAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
+import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 
 export type PackageWorkflowParams = Record<string, unknown>
@@ -977,7 +977,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 	private async invokePackageWorkflowExport(
 		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'package' }>,
 	): Promise<JsonValue> {
-		const remoteConnectors = await safelyListAttachedRemoteConnectorRefs({
+		const remoteConnectors = await listAttachedRemoteConnectorRefs({
 			env: this.env,
 			userId: payload.userId,
 		})
@@ -1024,7 +1024,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				import('#mcp/run-codemode-registry.ts'),
 				import('#mcp/context.ts'),
 			])
-		const remoteConnectors = await safelyListAttachedRemoteConnectorRefs({
+		const remoteConnectors = await listAttachedRemoteConnectorRefs({
 			env: this.env,
 			userId: payload.userId,
 		})

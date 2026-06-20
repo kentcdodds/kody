@@ -607,11 +607,7 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 			packageId: 'package-1',
 		}),
 	).rejects.toThrow('stub unavailable')
-	expect(mockModule.deleteJobRow).not.toHaveBeenCalledWith(
-		{},
-		'user-1',
-		'job-1',
-	)
+	expect(mockModule.deleteJobRow).not.toHaveBeenCalled()
 	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
 	expect(mockModule.deleteSavedPackageVector).not.toHaveBeenCalled()
 	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()

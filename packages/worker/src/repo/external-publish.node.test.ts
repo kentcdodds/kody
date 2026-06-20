@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	updateEntitySource: vi.fn(async () => true),
 	runRepoChecks: vi.fn(),
 	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
+	deletePublishedSourceSnapshot: vi.fn(async () => undefined),
 	loadPublishedSourceSnapshot: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
 	hasPublishedRuntimeArtifacts: vi.fn(() => false),
@@ -28,6 +29,8 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 		mockModule.loadPublishedSourceSnapshot(...args),
 	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
 		mockModule.writePublishedSourceSnapshot(...args),
+	deletePublishedSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.deletePublishedSourceSnapshot(...args),
 }))
 
 vi.mock('#worker/package-registry/service.ts', () => ({
@@ -65,6 +68,7 @@ function workspace() {
 // eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default mock behavior after global mockReset.
 beforeEach(() => {
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.deletePublishedSourceSnapshot.mockResolvedValue(undefined)
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
 		files: { 'package.json': '{}' },
 	})
@@ -353,6 +357,12 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 			publishedCommit: 'commit-new',
 		}),
 	)
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-old',
+		}),
+	)
 
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
@@ -382,4 +392,9 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 		}),
 	).rejects.toThrow('projection unavailable')
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
+	expect(mockModule.deletePublishedSourceSnapshot).toHaveBeenCalledWith({
+		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} },
+		sourceId: 'source-1',
+		publishedCommit: 'commit-new',
+	})
 })

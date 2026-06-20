@@ -5,7 +5,7 @@ import {
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
-import { safelyListAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
+import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -114,7 +114,7 @@ export async function handleMcpRequest({
 	const user = tokenSummary.grant.props ?? null
 	const remoteConnectors =
 		user && typeof user.userId === 'string'
-			? await safelyListAttachedRemoteConnectorRefs({
+			? await listAttachedRemoteConnectorRefs({
 					env,
 					userId: user.userId,
 				})
