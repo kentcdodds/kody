@@ -232,7 +232,7 @@ test('sendCloudflareEmail returns ok false when the Cloudflare API request throw
 	}
 })
 
-test('sendCloudflareEmail returns ok false when the Cloudflare API returns invalid JSON', async () => {
+test('sendCloudflareEmail rejects when the Cloudflare API returns invalid JSON', async () => {
 	const originalFetch = globalThis.fetch
 	globalThis.fetch = vi.fn(async () => {
 		return new Response('not-json', {
@@ -242,24 +242,21 @@ test('sendCloudflareEmail returns ok false when the Cloudflare API returns inval
 	}) as typeof fetch
 
 	try {
-		const result = await sendCloudflareEmail(
-			{
-				accountId: mockAccountId,
-				apiBaseUrl: 'https://api.cloudflare.test',
-				apiToken: 'test-token',
-			},
-			{
-				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
-				subject: 'Invalid JSON',
-				html: '<p>body</p>',
-			},
-		)
-
-		expect(result).toEqual({
-			ok: false,
-			error: 'Cloudflare Email API returned an error response.',
-		})
+		await expect(
+			sendCloudflareEmail(
+				{
+					accountId: mockAccountId,
+					apiBaseUrl: 'https://api.cloudflare.test',
+					apiToken: 'test-token',
+				},
+				{
+					to: 'recipient@example.com',
+					from: 'reset@kody.dev',
+					subject: 'Invalid JSON',
+					html: '<p>body</p>',
+				},
+			),
+		).rejects.toThrow('not valid JSON')
 	} finally {
 		globalThis.fetch = originalFetch
 	}

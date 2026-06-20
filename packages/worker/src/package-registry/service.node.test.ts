@@ -597,25 +597,22 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 	mockModule.packageServiceRpc.mockImplementation(() => {
 		throw new Error('stub unavailable')
 	})
-	await deleteSavedPackageProjection({
-		env,
-		userId: 'user-1',
-		packageId: 'package-1',
-	})
-	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({}, 'user-1', 'job-1')
-	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
-		{},
-		{
+	mockModule.deleteSavedPackage.mockClear()
+	mockModule.deleteSavedPackageVector.mockClear()
+	mockModule.syncJobManagerAlarm.mockClear()
+	await expect(
+		deleteSavedPackageProjection({
+			env,
 			userId: 'user-1',
 			packageId: 'package-1',
-		},
+		}),
+	).rejects.toThrow('stub unavailable')
+	expect(mockModule.deleteJobRow).not.toHaveBeenCalledWith(
+		{},
+		'user-1',
+		'job-1',
 	)
-	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
-		env,
-		'package-1',
-	)
-	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId: 'user-1',
-	})
+	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteSavedPackageVector).not.toHaveBeenCalled()
+	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 })

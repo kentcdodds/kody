@@ -149,10 +149,7 @@ test('integration config helpers and integration_save persist validated integrat
 			},
 			null,
 		),
-	).toMatchObject({
-		name: 'spotify',
-		authorization: null,
-	})
+	).toBeNull()
 
 	expect(
 		parseIntegrationConfig(
@@ -172,10 +169,7 @@ test('integration config helpers and integration_save persist validated integrat
 			},
 			null,
 		),
-	).toMatchObject({
-		name: 'spotify',
-		authorization: null,
-	})
+	).toBeNull()
 
 	const testDb = createValueTestDb()
 

@@ -320,7 +320,7 @@ test('check failure leaves D1 untouched', async () => {
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
-test('publishFromExternalRef succeeds when projection refresh fails after commit', async () => {
+test('publishFromExternalRef fails when projection refresh fails after commit', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
@@ -335,18 +335,18 @@ test('publishFromExternalRef succeeds when projection refresh fails after commit
 		new Error('projection failed'),
 	)
 
-	const withoutSnapshot = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
-	})
-
-	expect(withoutSnapshot.status).toBe('published')
+	await expect(
+		publishFromExternalRef({
+			env: { APP_DB: {} } as Env,
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-new',
+			isFastForward: async () => true,
+			workspace: workspace(),
+			files: { 'package.json': '{}' },
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow('projection failed')
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -369,17 +369,17 @@ test('publishFromExternalRef succeeds when projection refresh fails after commit
 		new Error('projection unavailable'),
 	)
 
-	const withSnapshot = await publishFromExternalRef({
-		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
-	})
-
-	expect(withSnapshot.status).toBe('published')
+	await expect(
+		publishFromExternalRef({
+			env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-new',
+			isFastForward: async () => true,
+			workspace: workspace(),
+			files: { 'package.json': '{}' },
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow('projection unavailable')
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
 })

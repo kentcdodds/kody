@@ -1078,8 +1078,8 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 		published_commit: 'commit-old',
 		manifest_path: 'package.json',
 		source_root: '/',
-		entity_kind: 'package',
-		entity_id: 'package-1',
+		entity_kind: 'app',
+		entity_id: 'app-1',
 	})
 	mockModule.git.log.mockResolvedValueOnce([
 		{ oid: 'commit-new' },

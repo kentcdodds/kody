@@ -234,31 +234,26 @@ test('package invocation API rejects missing, invalid, and unsafe tokens before 
 	})
 	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
 
-	const malformedScopeResponse = await handlePackageInvocationApiRequest(
-		new Request(route, {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer private-token-123',
-				'Content-Type': 'application/json',
-			},
-			body,
-		}),
-		await createEnv({
-			tokenRow: {
-				package_kody_ids_json: '{bad json',
-			},
-		}),
-		createContext(),
+	await expect(
+		handlePackageInvocationApiRequest(
+			new Request(route, {
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer private-token-123',
+					'Content-Type': 'application/json',
+				},
+				body,
+			}),
+			await createEnv({
+				tokenRow: {
+					package_kody_ids_json: '{bad json',
+				},
+			}),
+			createContext(),
+		),
+	).rejects.toThrow(
+		'Invalid package invocation token record: package_kody_ids_json must be valid JSON.',
 	)
-
-	expect(malformedScopeResponse.status).toBe(401)
-	await expect(malformedScopeResponse.json()).resolves.toEqual({
-		ok: false,
-		error: {
-			code: 'unauthorized',
-			message: 'Invalid package invocation token.',
-		},
-	})
 	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
 })
 

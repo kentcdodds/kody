@@ -126,7 +126,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 	)
 })
 
-test('mcp request enforces token audience and forwards caller props with connector fallback', async () => {
+test('mcp request enforces token audience and forwards caller props', async () => {
 	const request = new Request(`https://example.com${mcpResourcePath}`, {
 		headers: { Authorization: 'Bearer token' },
 	})
@@ -239,22 +239,20 @@ test('mcp request enforces token audience and forwards caller props with connect
 			throw new Error('D1 unavailable')
 		},
 	} as unknown as D1Database
-	const degradedResponse = await handleMcpRequest({
-		request,
-		env: createEnv(
-			createHelpers({
-				unwrapToken: async () => validToken,
-			}),
-			{ APP_DB: appDbUnavailable },
-		),
-		ctx: createContext(),
-		fetchMcp: (_request, _env, ctx) => {
-			receivedProps = ctx.props
-			return new Response('ok')
-		},
-	})
-	expect(degradedResponse.status).toBe(200)
-	expect(receivedProps).toMatchObject({
-		remoteConnectors: [],
-	})
+	await expect(
+		handleMcpRequest({
+			request,
+			env: createEnv(
+				createHelpers({
+					unwrapToken: async () => validToken,
+				}),
+				{ APP_DB: appDbUnavailable },
+			),
+			ctx: createContext(),
+			fetchMcp: (_request, _env, ctx) => {
+				receivedProps = ctx.props
+				return new Response('ok')
+			},
+		}),
+	).rejects.toThrow('D1 unavailable')
 })
