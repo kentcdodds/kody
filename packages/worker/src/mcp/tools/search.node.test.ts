@@ -597,43 +597,32 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	)
 })
 
-test('buildSavedPackageSearchRows falls back when package source resolution fails', async () => {
+test('buildSavedPackageSearchRows rejects when package source resolution fails', async () => {
 	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
 		new Error('missing-source'),
 	)
-	const result = await buildSavedPackageSearchRows({
-		env: {} as Env,
-		baseUrl: 'http://localhost',
-		userId: 'user-123',
-		records: [
-			{
-				id: 'package-123',
-				userId: 'user-123',
-				name: '@kody/observed',
-				kodyId: 'observed',
-				description: 'Observed package',
-				tags: ['observed'],
-				searchText: 'search text',
-				sourceId: 'missing-source',
-				hasApp: true,
-				createdAt: '2026-03-24T00:00:00.000Z',
-				updatedAt: '2026-03-24T00:00:00.000Z',
-			},
-		],
-	})
-
-	expect(result.rows).toEqual([
-		expect.objectContaining({
-			projection: expect.objectContaining({
-				hasApp: true,
-				appEntry: null,
-				exports: [],
-				jobs: [],
-				services: [],
-			}),
+	await expect(
+		buildSavedPackageSearchRows({
+			env: {} as Env,
+			baseUrl: 'http://localhost',
+			userId: 'user-123',
+			records: [
+				{
+					id: 'package-123',
+					userId: 'user-123',
+					name: '@kody/observed',
+					kodyId: 'observed',
+					description: 'Observed package',
+					tags: ['observed'],
+					searchText: 'search text',
+					sourceId: 'missing-source',
+					hasApp: true,
+					createdAt: '2026-03-24T00:00:00.000Z',
+					updatedAt: '2026-03-24T00:00:00.000Z',
+				},
+			],
 		}),
-	])
-	expect(result.warnings).toHaveLength(1)
+	).rejects.toThrow('missing-source')
 })
 
 test('down remote connector statuses surface only disconnected connectors for signed-in users', async () => {
