@@ -8,7 +8,7 @@ import {
 	stopProcess,
 	wranglerBin,
 } from '#mcp/test-process.ts'
-import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import {
 	createCloudflareRestClient,
 	CloudflareRestClient,
@@ -114,37 +114,32 @@ test('Cloudflare REST clients read mock responses and enforce API paths', async 
 test('CloudflareRestClient sends JSON body on PATCH', async () => {
 	let capturedRequest: Request | null = null
 
-	await withMswNodeServer(
-		[
-			http.patch(
-				'https://api.cloudflare.test/client/v4/zones/example-zone-id/settings/always_online',
-				async ({ request }) => {
-					capturedRequest = request.clone()
-					return HttpResponse.json({ success: true, result: null })
-				},
-			),
-		],
-		async () => {
-			const client = new CloudflareRestClient({
-				apiToken: 'patch-token',
-				baseUrl: 'https://api.cloudflare.test',
-			})
-			const response = await client.rawRequest({
-				method: 'PATCH',
-				path: '/client/v4/zones/example-zone-id/settings/always_online',
-				body: { value: 'on' },
-			})
+	using _server = createMswNodeServer([
+		http.patch(
+			'https://api.cloudflare.test/client/v4/zones/example-zone-id/settings/always_online',
+			async ({ request }) => {
+				capturedRequest = request.clone()
+				return HttpResponse.json({ success: true, result: null })
+			},
+		),
+	])
 
-			expect(response.status).toBe(200)
-			expect(capturedRequest).not.toBeNull()
-			expect(capturedRequest?.method).toBe('PATCH')
-			expect(capturedRequest?.headers.get('authorization')).toBe(
-				'Bearer patch-token',
-			)
-			expect(capturedRequest?.headers.get('content-type')).toBe(
-				'application/json',
-			)
-			expect(await capturedRequest?.text()).toBe('{"value":"on"}')
-		},
+	const client = new CloudflareRestClient({
+		apiToken: 'patch-token',
+		baseUrl: 'https://api.cloudflare.test',
+	})
+	const response = await client.rawRequest({
+		method: 'PATCH',
+		path: '/client/v4/zones/example-zone-id/settings/always_online',
+		body: { value: 'on' },
+	})
+
+	expect(response.status).toBe(200)
+	expect(capturedRequest).not.toBeNull()
+	expect(capturedRequest?.method).toBe('PATCH')
+	expect(capturedRequest?.headers.get('authorization')).toBe(
+		'Bearer patch-token',
 	)
+	expect(capturedRequest?.headers.get('content-type')).toBe('application/json')
+	expect(await capturedRequest?.text()).toBe('{"value":"on"}')
 })

@@ -143,7 +143,6 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		],
 		{ onUnhandledRequest: 'bypass' },
 	)
-	defaultBaseUrlServer.start()
 	const defaultBaseUrlResult = await sendCloudflareEmail(
 		{
 			accountId: mockAccountId,
@@ -195,7 +194,6 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		[http.post('https://api.cloudflare.test/*', () => HttpResponse.error())],
 		{ onUnhandledRequest: 'bypass' },
 	)
-	networkFailureServer.start()
 	const networkFailure = await sendCloudflareEmail(
 		{
 			accountId: mockAccountId,
@@ -224,7 +222,6 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		],
 		{ onUnhandledRequest: 'bypass' },
 	)
-	invalidJsonServer.start()
 	await expect(
 		sendCloudflareEmail(
 			{

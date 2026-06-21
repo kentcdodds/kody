@@ -1,5 +1,5 @@
 import { type HttpHandler } from 'msw'
-import { setupServer, type SetupServerApi } from 'msw/node'
+import { setupServer } from 'msw/node'
 
 export type MswNodeServerOptions = {
 	onUnhandledRequest?: 'error' | 'warn' | 'bypass'
@@ -11,12 +11,10 @@ export function createMswNodeServer(
 ) {
 	const server = setupServer(...handlers)
 	const onUnhandledRequest = options.onUnhandledRequest ?? 'error'
+	server.listen({ onUnhandledRequest })
 
 	return {
 		server,
-		start() {
-			server.listen({ onUnhandledRequest })
-		},
 		close() {
 			server.close()
 		},
@@ -29,19 +27,5 @@ export function createMswNodeServer(
 		[Symbol.dispose]() {
 			server.close()
 		},
-	}
-}
-
-export async function withMswNodeServer<T>(
-	handlers: Array<HttpHandler>,
-	run: (server: SetupServerApi) => Promise<T>,
-	options: MswNodeServerOptions = {},
-): Promise<T> {
-	const { server, start, close } = createMswNodeServer(handlers, options)
-	start()
-	try {
-		return await run(server)
-	} finally {
-		close()
 	}
 }

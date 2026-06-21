@@ -9,7 +9,7 @@ import {
 	upsertEmailSenderIdentity,
 } from './repo.ts'
 import { sendOutboundEmail } from './outbound.ts'
-import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
@@ -86,41 +86,38 @@ test('sendOutboundEmail does not fall back when binding sends without message id
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	let bindingSendCount = 0
 
-	await withMswNodeServer(
-		[restFallbackMustNotRunHandler()],
-		async () => {
-			await upsertEmailSenderIdentity({
-				db: env.APP_DB,
-				userId,
-				email: from,
-				domain: getEmailDomain(from),
-				status: 'verified',
-			})
-			const result = await sendOutboundEmail({
-				env: {
-					...env,
-					EMAIL: {
-						async send() {
-							bindingSendCount += 1
-							return { messageId: null as unknown as string }
-						},
-					},
+	using _server = createMswNodeServer([restFallbackMustNotRunHandler()], {
+		onUnhandledRequest: 'bypass',
+	})
+	await upsertEmailSenderIdentity({
+		db: env.APP_DB,
+		userId,
+		email: from,
+		domain: getEmailDomain(from),
+		status: 'verified',
+	})
+	const result = await sendOutboundEmail({
+		env: {
+			...env,
+			EMAIL: {
+				async send() {
+					bindingSendCount += 1
+					return { messageId: null as unknown as string }
 				},
-				userId,
-				from,
-				to: 'recipient@example.com',
-				subject: 'No provider id',
-				text: 'Body',
-			})
-			expect(bindingSendCount).toBe(1)
-			expect(result).toMatchObject({
-				status: 'sent',
-				providerMessageId: null,
-				error: null,
-			})
+			},
 		},
-		{ onUnhandledRequest: 'bypass' },
-	)
+		userId,
+		from,
+		to: 'recipient@example.com',
+		subject: 'No provider id',
+		text: 'Body',
+	})
+	expect(bindingSendCount).toBe(1)
+	expect(result).toMatchObject({
+		status: 'sent',
+		providerMessageId: null,
+		error: null,
+	})
 })
 
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
@@ -129,7 +126,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	const fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = []
 
-	await withMswNodeServer(
+	using _server = createMswNodeServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
 				fetchCalls.push({
@@ -145,81 +142,79 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 				)
 			}),
 		],
-		async () => {
-			await upsertEmailSenderIdentity({
-				db: env.APP_DB,
-				userId,
-				email: from,
-				domain: getEmailDomain(from),
-				status: 'verified',
-			})
-			const original = await sendOutboundEmail({
-				env: {
-					...env,
-					EMAIL: {
-						async send() {
-							return { messageId: 'original-provider-message' }
-						},
-					},
-				},
-				userId,
-				from,
-				to: 'recipient@example.com',
-				subject: 'Hello from Kody',
-				text: 'Original body',
-			})
-
-			const result = await sendOutboundEmail({
-				env: {
-					...env,
-					EMAIL: undefined as unknown as SendEmail,
-					CLOUDFLARE_ACCOUNT_ID: 'account-123',
-					CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-					CLOUDFLARE_API_TOKEN: 'token-123',
-				},
-				userId,
-				from,
-				to: 'recipient@example.com',
-				subject: 'Re: Hello from Kody',
-				text: 'Body',
-				replyTo: 'reply@example.com',
-				inReplyToHeader: original.message.messageIdHeader,
-				references: ['<root@example.com>'],
-			})
-
-			expect(result.status).toBe('failed')
-			expect(result.error).toBe('provider down')
-			expect(fetchCalls).toHaveLength(1)
-			expect(fetchCalls[0]?.body).toMatchObject({
-				html: 'Body',
-				replyTo: 'reply@example.com',
-				headers: {
-					'In-Reply-To': original.message.messageIdHeader,
-					References: '<root@example.com>',
-				},
-			})
-			expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
-			expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
-				'X-Kody-Email-Message-Id',
-			)
-			const stored = await getEmailMessageById({
-				db: env.APP_DB,
-				userId,
-				messageId: result.message.id,
-			})
-			expect(stored).toMatchObject({
-				processingStatus: 'failed',
-				error: 'provider down',
-				headers: {
-					'Message-ID': result.message.messageIdHeader,
-					'X-Kody-Email-Message-Id': result.message.messageIdHeader,
-					'In-Reply-To': original.message.messageIdHeader,
-					References: '<root@example.com>',
-				},
-			})
-		},
 		{ onUnhandledRequest: 'bypass' },
 	)
+	await upsertEmailSenderIdentity({
+		db: env.APP_DB,
+		userId,
+		email: from,
+		domain: getEmailDomain(from),
+		status: 'verified',
+	})
+	const original = await sendOutboundEmail({
+		env: {
+			...env,
+			EMAIL: {
+				async send() {
+					return { messageId: 'original-provider-message' }
+				},
+			},
+		},
+		userId,
+		from,
+		to: 'recipient@example.com',
+		subject: 'Hello from Kody',
+		text: 'Original body',
+	})
+
+	const result = await sendOutboundEmail({
+		env: {
+			...env,
+			EMAIL: undefined as unknown as SendEmail,
+			CLOUDFLARE_ACCOUNT_ID: 'account-123',
+			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+			CLOUDFLARE_API_TOKEN: 'token-123',
+		},
+		userId,
+		from,
+		to: 'recipient@example.com',
+		subject: 'Re: Hello from Kody',
+		text: 'Body',
+		replyTo: 'reply@example.com',
+		inReplyToHeader: original.message.messageIdHeader,
+		references: ['<root@example.com>'],
+	})
+
+	expect(result.status).toBe('failed')
+	expect(result.error).toBe('provider down')
+	expect(fetchCalls).toHaveLength(1)
+	expect(fetchCalls[0]?.body).toMatchObject({
+		html: 'Body',
+		replyTo: 'reply@example.com',
+		headers: {
+			'In-Reply-To': original.message.messageIdHeader,
+			References: '<root@example.com>',
+		},
+	})
+	expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
+	expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
+		'X-Kody-Email-Message-Id',
+	)
+	const stored = await getEmailMessageById({
+		db: env.APP_DB,
+		userId,
+		messageId: result.message.id,
+	})
+	expect(stored).toMatchObject({
+		processingStatus: 'failed',
+		error: 'provider down',
+		headers: {
+			'Message-ID': result.message.messageIdHeader,
+			'X-Kody-Email-Message-Id': result.message.messageIdHeader,
+			'In-Reply-To': original.message.messageIdHeader,
+			References: '<root@example.com>',
+		},
+	})
 })
 
 test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize one', async () => {
@@ -227,34 +222,31 @@ test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize
 	const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
 	const from = `sender-${crypto.randomUUID()}@example.com`
 
-	await withMswNodeServer(
-		[restFallbackMustNotRunHandler()],
-		async () => {
-			await upsertEmailSenderIdentity({
-				db: env.APP_DB,
-				userId,
-				email: from,
-				domain: getEmailDomain(from),
-				status: 'verified',
-			})
+	using _server = createMswNodeServer([restFallbackMustNotRunHandler()], {
+		onUnhandledRequest: 'bypass',
+	})
+	await upsertEmailSenderIdentity({
+		db: env.APP_DB,
+		userId,
+		email: from,
+		domain: getEmailDomain(from),
+		status: 'verified',
+	})
 
-			await expect(
-				sendOutboundEmail({
-					env: {
-						...env,
-						EMAIL: undefined as unknown as SendEmail,
-						CLOUDFLARE_ACCOUNT_ID: 'account-123',
-						CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-						CLOUDFLARE_API_TOKEN: 'token-123',
-					},
-					userId,
-					from,
-					to: 'recipient@example.com',
-					subject: 'Missing body',
-					text: '   ',
-				}),
-			).rejects.toThrow('Email text or HTML body is required.')
-		},
-		{ onUnhandledRequest: 'bypass' },
-	)
+	await expect(
+		sendOutboundEmail({
+			env: {
+				...env,
+				EMAIL: undefined as unknown as SendEmail,
+				CLOUDFLARE_ACCOUNT_ID: 'account-123',
+				CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+				CLOUDFLARE_API_TOKEN: 'token-123',
+			},
+			userId,
+			from,
+			to: 'recipient@example.com',
+			subject: 'Missing body',
+			text: '   ',
+		}),
+	).rejects.toThrow('Email text or HTML body is required.')
 })

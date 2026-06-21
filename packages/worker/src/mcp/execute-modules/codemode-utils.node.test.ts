@@ -11,7 +11,7 @@ import {
 	refreshAccessToken,
 	type secretHeaders,
 } from './codemode-utils.ts'
-import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 type SecretSetCall = {
 	name: string
@@ -104,9 +104,8 @@ type SpotifyFetchInterceptorOptions = {
 	apiResponses?: Array<ApiResponseSpec>
 }
 
-async function withSpotifyFetchInterceptor<T>(
+function createSpotifyFetchInterceptor(
 	options: SpotifyFetchInterceptorOptions,
-	run: () => Promise<T>,
 ) {
 	const apiErrors = [...(options.apiErrors ?? [])]
 	const apiResponses = [...(options.apiResponses ?? [])]
@@ -150,10 +149,10 @@ async function withSpotifyFetchInterceptor<T>(
 		})()
 	})
 	interceptor.apply()
-	try {
-		return await run()
-	} finally {
-		interceptor.dispose()
+	return {
+		[Symbol.dispose]() {
+			interceptor.dispose()
+		},
 	}
 }
 
@@ -161,22 +160,22 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 	const rotatedRefreshFetchCalls: Array<Request> = []
 	const { codemode: rotatedCodemode, secretSetCalls: rotatedSecretSetCalls } =
 		createCodemode()
-	await withMswNodeServer(
-		createSpotifyHandlers({
-			tokenPayload: {
-				access_token: 'new-access-token',
-				refresh_token: 'new-refresh-token',
-			},
-			fetchCalls: rotatedRefreshFetchCalls,
-		}),
-		async () => {
-			const rotatedAccessToken = await refreshAccessToken(
-				rotatedCodemode,
-				'spotify',
-			)
-			expect(rotatedAccessToken).toBe('new-access-token')
-		},
-	)
+	{
+		using _server = createMswNodeServer(
+			createSpotifyHandlers({
+				tokenPayload: {
+					access_token: 'new-access-token',
+					refresh_token: 'new-refresh-token',
+				},
+				fetchCalls: rotatedRefreshFetchCalls,
+			}),
+		)
+		const rotatedAccessToken = await refreshAccessToken(
+			rotatedCodemode,
+			'spotify',
+		)
+		expect(rotatedAccessToken).toBe('new-access-token')
+	}
 	expect(rotatedSecretSetCalls).toEqual([
 		{
 			name: 'spotifyRefreshToken',
@@ -200,22 +199,22 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 		codemode: storedTokenCodemode,
 		secretSetCalls: storedSecretSetCalls,
 	} = createCodemode()
-	await withMswNodeServer(
-		createSpotifyHandlers({
-			tokenPayload: { access_token: 'refreshed-access-token' },
-			fetchCalls: storedTokenFetchCalls,
-		}),
-		async () => {
-			const authenticatedFetch = await createAuthenticatedFetch(
-				storedTokenCodemode,
-				'spotify',
-			)
-			const storedTokenResponse = await authenticatedFetch('/me/playlists', {
-				method: 'POST',
-			})
-			expect(await storedTokenResponse.json()).toEqual({ ok: true })
-		},
-	)
+	{
+		using _server = createMswNodeServer(
+			createSpotifyHandlers({
+				tokenPayload: { access_token: 'refreshed-access-token' },
+				fetchCalls: storedTokenFetchCalls,
+			}),
+		)
+		const authenticatedFetch = await createAuthenticatedFetch(
+			storedTokenCodemode,
+			'spotify',
+		)
+		const storedTokenResponse = await authenticatedFetch('/me/playlists', {
+			method: 'POST',
+		})
+		expect(await storedTokenResponse.json()).toEqual({ ok: true })
+	}
 	expect(storedTokenFetchCalls).toHaveLength(1)
 	expect(storedTokenFetchCalls[0]?.url).toBe(
 		'https://api.spotify.test/v1/me/playlists',
@@ -230,21 +229,19 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 		codemode: missingTokenCodemode,
 		secretSetCalls: missingSecretSetCalls,
 	} = createCodemode()
-	await withSpotifyFetchInterceptor(
-		{
+	{
+		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
 			fetchCalls: missingTokenFetchCalls,
 			apiErrors: [new Error('Secret "spotifyAccessToken" was not found.')],
-		},
-		async () => {
-			const missingTokenFetch = await createAuthenticatedFetch(
-				missingTokenCodemode,
-				'spotify',
-			)
-			const missingTokenResponse = await missingTokenFetch('/me?market=US')
-			expect(await missingTokenResponse.json()).toEqual({ ok: true })
-		},
-	)
+		})
+		const missingTokenFetch = await createAuthenticatedFetch(
+			missingTokenCodemode,
+			'spotify',
+		)
+		const missingTokenResponse = await missingTokenFetch('/me?market=US')
+		expect(await missingTokenResponse.json()).toEqual({ ok: true })
+	}
 	expect(missingSecretSetCalls).toEqual([
 		{
 			name: 'spotifyAccessToken',
@@ -268,24 +265,22 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 		codemode: expiredTokenCodemode,
 		secretSetCalls: expiredSecretSetCalls,
 	} = createCodemode()
-	await withSpotifyFetchInterceptor(
-		{
+	{
+		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
 			fetchCalls: expiredTokenFetchCalls,
 			apiResponses: [
 				{ status: 401, body: { error: 'expired' } },
 				{ status: 200, body: { ok: true } },
 			],
-		},
-		async () => {
-			const expiredTokenFetch = await createAuthenticatedFetch(
-				expiredTokenCodemode,
-				'spotify',
-			)
-			const expiredTokenResponse = await expiredTokenFetch('/me?market=US')
-			expect(await expiredTokenResponse.json()).toEqual({ ok: true })
-		},
-	)
+		})
+		const expiredTokenFetch = await createAuthenticatedFetch(
+			expiredTokenCodemode,
+			'spotify',
+		)
+		const expiredTokenResponse = await expiredTokenFetch('/me?market=US')
+		expect(await expiredTokenResponse.json()).toEqual({ ok: true })
+	}
 	expect(expiredSecretSetCalls).toEqual([
 		{
 			name: 'spotifyAccessToken',
@@ -314,23 +309,22 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 
 	const fetchCalls: Array<Request> = []
 	const { codemode, secretSetCalls } = createCodemode()
-	await withMswNodeServer(
-		createSpotifyHandlers({
-			tokenPayload: {
-				access_token: 'new-access-token',
-				refresh_token: 'new-refresh-token',
-			},
-			fetchCalls,
-		}),
-		async () => {
-			const helpers = createSandboxHelpers(codemode)
-			const accessToken = await helpers.refreshAccessToken('spotify')
-			const authenticatedFetch =
-				await helpers.createAuthenticatedFetch('spotify')
-			await authenticatedFetch('/me')
-			expect(accessToken).toBe('new-access-token')
-		},
-	)
+	{
+		using _server = createMswNodeServer(
+			createSpotifyHandlers({
+				tokenPayload: {
+					access_token: 'new-access-token',
+					refresh_token: 'new-refresh-token',
+				},
+				fetchCalls,
+			}),
+		)
+		const helpers = createSandboxHelpers(codemode)
+		const accessToken = await helpers.refreshAccessToken('spotify')
+		const authenticatedFetch = await helpers.createAuthenticatedFetch('spotify')
+		await authenticatedFetch('/me')
+		expect(accessToken).toBe('new-access-token')
+	}
 	expect(secretSetCalls).toEqual([
 		{
 			name: 'spotifyRefreshToken',
@@ -360,8 +354,8 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 	)
 
 	const clientCredentialsCalls: Array<Request> = []
-	await withMswNodeServer(
-		[
+	{
+		using _server = createMswNodeServer([
 			http.post(
 				'https://api-m.paypal.com/v1/oauth2/token',
 				async ({ request }) => {
@@ -372,23 +366,21 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 					})
 				},
 			),
-		],
-		async () => {
-			const tokenResponse = await helpers.oauthClientCredentials({
-				tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
-				clientIdSecret: 'paypalClientId',
-				clientSecretSecret: 'paypalClientSecret',
-				scope: 'user',
-				body: {
-					scope: 'openid',
-				},
-			})
-			expect(tokenResponse).toEqual({
-				access_token: 'paypal-access-token',
-				token_type: 'Bearer',
-			})
-		},
-	)
+		])
+		const tokenResponse = await helpers.oauthClientCredentials({
+			tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
+			clientIdSecret: 'paypalClientId',
+			clientSecretSecret: 'paypalClientSecret',
+			scope: 'user',
+			body: {
+				scope: 'openid',
+			},
+		})
+		expect(tokenResponse).toEqual({
+			access_token: 'paypal-access-token',
+			token_type: 'Bearer',
+		})
+	}
 	expect(clientCredentialsCalls).toHaveLength(1)
 	expect(clientCredentialsCalls[0]?.method).toBe('POST')
 	expect(clientCredentialsCalls[0]?.headers.get('authorization')).toBe(
