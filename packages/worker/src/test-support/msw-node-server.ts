@@ -1,4 +1,3 @@
-import { FetchInterceptor } from '@mswjs/interceptors/fetch'
 import { type HttpHandler } from 'msw'
 import { setupServer, type SetupServerApi } from 'msw/node'
 
@@ -44,28 +43,5 @@ export async function withMswNodeServer<T>(
 		return await run(server)
 	} finally {
 		close()
-	}
-}
-
-export async function withFetchStub<T>(
-	fetchImpl: typeof globalThis.fetch,
-	run: () => Promise<T>,
-): Promise<T> {
-	const interceptor = new FetchInterceptor()
-	interceptor.on('request', ({ request, controller }) => {
-		void (async () => {
-			try {
-				const response = await fetchImpl(request)
-				await controller.respondWith(response)
-			} catch (error) {
-				controller.errorWith(error)
-			}
-		})()
-	})
-	interceptor.apply()
-	try {
-		return await run()
-	} finally {
-		interceptor.dispose()
 	}
 }
