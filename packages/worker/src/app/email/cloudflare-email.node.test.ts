@@ -1,12 +1,14 @@
 import { expect, test, vi } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
+import { http, HttpResponse } from 'msw'
 import {
 	captureOutput,
 	spawnProcess,
 	stopProcess,
 	wranglerBin,
 } from '#mcp/test-process.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { sendCloudflareEmail } from './cloudflare-email.ts'
 
 const workerConfig = 'packages/mock-servers/cloudflare/wrangler.jsonc'
@@ -121,47 +123,45 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		text: 'Reset link',
 	})
 
-	const originalFetch = globalThis.fetch
-	const fetchSpy = vi.fn(async () => {
-		return new Response(
-			JSON.stringify({
-				success: true,
-				result: {
-					delivered: ['recipient@example.com'],
-					permanent_bounces: [],
-					queued: [],
+	const defaultBaseUrlRequests: Array<Request> = []
+	using defaultBaseUrlServer = createMswNodeServer(
+		[
+			http.post(
+				`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
+				async ({ request }) => {
+					defaultBaseUrlRequests.push(request.clone())
+					return HttpResponse.json({
+						success: true,
+						result: {
+							delivered: ['recipient@example.com'],
+							permanent_bounces: [],
+							queued: [],
+						},
+					})
 				},
-			}),
-			{
-				status: 200,
-				headers: { 'content-type': 'application/json' },
-			},
-		)
-	})
-	globalThis.fetch = fetchSpy as typeof fetch
-	try {
-		const defaultBaseUrlResult = await sendCloudflareEmail(
-			{
-				accountId: mockAccountId,
-				apiToken: 'test-token',
-			},
-			{
-				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
-				subject: 'Default base URL',
-				html: '<p>body</p>',
-				text: 'body',
-			},
-		)
-		expect(defaultBaseUrlResult).toMatchObject({ ok: true })
-		expect(fetchSpy).toHaveBeenCalledTimes(1)
-		const [input] = fetchSpy.mock.calls[0]!
-		expect(String(input)).toBe(
-			`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
-		)
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+			),
+		],
+		{ onUnhandledRequest: 'bypass' },
+	)
+	defaultBaseUrlServer.start()
+	const defaultBaseUrlResult = await sendCloudflareEmail(
+		{
+			accountId: mockAccountId,
+			apiToken: 'test-token',
+		},
+		{
+			to: 'recipient@example.com',
+			from: 'reset@kody.dev',
+			subject: 'Default base URL',
+			html: '<p>body</p>',
+			text: 'body',
+		},
+	)
+	expect(defaultBaseUrlResult).toMatchObject({ ok: true })
+	expect(defaultBaseUrlRequests).toHaveLength(1)
+	expect(defaultBaseUrlRequests[0]?.url).toBe(
+		`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
+	)
 
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	try {
@@ -191,11 +191,42 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		warnSpy.mockRestore()
 	}
 
-	globalThis.fetch = vi.fn(async () => {
-		throw new Error('network down')
-	}) as typeof fetch
-	try {
-		const networkFailure = await sendCloudflareEmail(
+	using networkFailureServer = createMswNodeServer(
+		[http.post('https://api.cloudflare.test/*', () => HttpResponse.error())],
+		{ onUnhandledRequest: 'bypass' },
+	)
+	networkFailureServer.start()
+	const networkFailure = await sendCloudflareEmail(
+		{
+			accountId: mockAccountId,
+			apiBaseUrl: 'https://api.cloudflare.test',
+			apiToken: 'test-token',
+		},
+		{
+			to: 'recipient@example.com',
+			from: 'reset@kody.dev',
+			subject: 'Request failure',
+			html: '<p>body</p>',
+		},
+	)
+	expect(networkFailure).toEqual({
+		ok: false,
+		error: 'Failed to fetch',
+	})
+
+	using invalidJsonServer = createMswNodeServer(
+		[
+			http.post('https://api.cloudflare.test/*', () =>
+				HttpResponse.text('not-json', {
+					headers: { 'content-type': 'application/json' },
+				}),
+			),
+		],
+		{ onUnhandledRequest: 'bypass' },
+	)
+	invalidJsonServer.start()
+	await expect(
+		sendCloudflareEmail(
 			{
 				accountId: mockAccountId,
 				apiBaseUrl: 'https://api.cloudflare.test',
@@ -204,41 +235,9 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 			{
 				to: 'recipient@example.com',
 				from: 'reset@kody.dev',
-				subject: 'Request failure',
+				subject: 'Invalid JSON',
 				html: '<p>body</p>',
 			},
-		)
-		expect(networkFailure).toEqual({
-			ok: false,
-			error: 'network down',
-		})
-	} finally {
-		globalThis.fetch = originalFetch
-	}
-
-	globalThis.fetch = vi.fn(async () => {
-		return new Response('not-json', {
-			status: 200,
-			headers: { 'content-type': 'application/json' },
-		})
-	}) as typeof fetch
-	try {
-		await expect(
-			sendCloudflareEmail(
-				{
-					accountId: mockAccountId,
-					apiBaseUrl: 'https://api.cloudflare.test',
-					apiToken: 'test-token',
-				},
-				{
-					to: 'recipient@example.com',
-					from: 'reset@kody.dev',
-					subject: 'Invalid JSON',
-					html: '<p>body</p>',
-				},
-			),
-		).rejects.toThrow('not valid JSON')
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+		),
+	).rejects.toThrow('not valid JSON')
 })

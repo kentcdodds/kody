@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
@@ -7,6 +8,7 @@ import {
 	stopProcess,
 	wranglerBin,
 } from '#mcp/test-process.ts'
+import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import {
 	createCloudflareRestClient,
 	CloudflareRestClient,
@@ -110,39 +112,39 @@ test('Cloudflare REST clients read mock responses and enforce API paths', async 
 })
 
 test('CloudflareRestClient sends JSON body on PATCH', async () => {
-	const originalFetch = globalThis.fetch
 	let capturedRequest: Request | null = null
 
-	globalThis.fetch = (async (input, init) => {
-		capturedRequest = new Request(input, init)
-		return new Response(JSON.stringify({ success: true, result: null }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' },
-		})
-	}) as typeof fetch
+	await withMswNodeServer(
+		[
+			http.patch(
+				'https://api.cloudflare.test/client/v4/zones/example-zone-id/settings/always_online',
+				async ({ request }) => {
+					capturedRequest = request.clone()
+					return HttpResponse.json({ success: true, result: null })
+				},
+			),
+		],
+		async () => {
+			const client = new CloudflareRestClient({
+				apiToken: 'patch-token',
+				baseUrl: 'https://api.cloudflare.test',
+			})
+			const response = await client.rawRequest({
+				method: 'PATCH',
+				path: '/client/v4/zones/example-zone-id/settings/always_online',
+				body: { value: 'on' },
+			})
 
-	try {
-		const client = new CloudflareRestClient({
-			apiToken: 'patch-token',
-			baseUrl: 'https://api.cloudflare.test',
-		})
-		const response = await client.rawRequest({
-			method: 'PATCH',
-			path: '/client/v4/zones/example-zone-id/settings/always_online',
-			body: { value: 'on' },
-		})
-
-		expect(response.status).toBe(200)
-		expect(capturedRequest).not.toBeNull()
-		expect(capturedRequest?.method).toBe('PATCH')
-		expect(capturedRequest?.headers.get('authorization')).toBe(
-			'Bearer patch-token',
-		)
-		expect(capturedRequest?.headers.get('content-type')).toBe(
-			'application/json',
-		)
-		expect(await capturedRequest?.text()).toBe('{"value":"on"}')
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+			expect(response.status).toBe(200)
+			expect(capturedRequest).not.toBeNull()
+			expect(capturedRequest?.method).toBe('PATCH')
+			expect(capturedRequest?.headers.get('authorization')).toBe(
+				'Bearer patch-token',
+			)
+			expect(capturedRequest?.headers.get('content-type')).toBe(
+				'application/json',
+			)
+			expect(await capturedRequest?.text()).toBe('{"value":"on"}')
+		},
+	)
 })

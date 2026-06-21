@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import { getEmailDomain } from './address.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import {
@@ -8,6 +9,16 @@ import {
 	upsertEmailSenderIdentity,
 } from './repo.ts'
 import { sendOutboundEmail } from './outbound.ts'
+import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+
+const cloudflareEmailApi =
+	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
+
+function restFallbackMustNotRunHandler() {
+	return http.post(cloudflareEmailApi, () => {
+		throw new Error('REST fallback should not be called')
+	})
+}
 
 test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -74,43 +85,42 @@ test('sendOutboundEmail does not fall back when binding sends without message id
 	const userId = `email-outbound-null-id-user-${crypto.randomUUID()}`
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	let bindingSendCount = 0
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = (async () => {
-		throw new Error('REST fallback should not be called')
-	}) as typeof fetch
-	try {
-		await upsertEmailSenderIdentity({
-			db: env.APP_DB,
-			userId,
-			email: from,
-			domain: getEmailDomain(from),
-			status: 'verified',
-		})
-		const result = await sendOutboundEmail({
-			env: {
-				...env,
-				EMAIL: {
-					async send() {
-						bindingSendCount += 1
-						return { messageId: null as unknown as string }
+
+	await withMswNodeServer(
+		[restFallbackMustNotRunHandler()],
+		async () => {
+			await upsertEmailSenderIdentity({
+				db: env.APP_DB,
+				userId,
+				email: from,
+				domain: getEmailDomain(from),
+				status: 'verified',
+			})
+			const result = await sendOutboundEmail({
+				env: {
+					...env,
+					EMAIL: {
+						async send() {
+							bindingSendCount += 1
+							return { messageId: null as unknown as string }
+						},
 					},
 				},
-			},
-			userId,
-			from,
-			to: 'recipient@example.com',
-			subject: 'No provider id',
-			text: 'Body',
-		})
-		expect(bindingSendCount).toBe(1)
-		expect(result).toMatchObject({
-			status: 'sent',
-			providerMessageId: null,
-			error: null,
-		})
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+				userId,
+				from,
+				to: 'recipient@example.com',
+				subject: 'No provider id',
+				text: 'Body',
+			})
+			expect(bindingSendCount).toBe(1)
+			expect(result).toMatchObject({
+				status: 'sent',
+				providerMessageId: null,
+				error: null,
+			})
+		},
+		{ onUnhandledRequest: 'bypass' },
+	)
 })
 
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
@@ -118,118 +128,48 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	const userId = `email-outbound-fallback-user-${crypto.randomUUID()}`
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	const fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = []
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-		fetchCalls.push({
-			url: String(input),
-			body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
-		})
-		return new Response(
-			JSON.stringify({
-				success: false,
-				errors: [{ message: 'provider down' }],
-			}),
-			{ status: 500, headers: { 'content-type': 'application/json' } },
-		)
-	}) as typeof fetch
 
-	try {
-		await upsertEmailSenderIdentity({
-			db: env.APP_DB,
-			userId,
-			email: from,
-			domain: getEmailDomain(from),
-			status: 'verified',
-		})
-		const original = await sendOutboundEmail({
-			env: {
-				...env,
-				EMAIL: {
-					async send() {
-						return { messageId: 'original-provider-message' }
+	await withMswNodeServer(
+		[
+			http.post(cloudflareEmailApi, async ({ request }) => {
+				fetchCalls.push({
+					url: request.url,
+					body: (await request.json()) as Record<string, unknown>,
+				})
+				return HttpResponse.json(
+					{
+						success: false,
+						errors: [{ message: 'provider down' }],
+					},
+					{ status: 500 },
+				)
+			}),
+		],
+		async () => {
+			await upsertEmailSenderIdentity({
+				db: env.APP_DB,
+				userId,
+				email: from,
+				domain: getEmailDomain(from),
+				status: 'verified',
+			})
+			const original = await sendOutboundEmail({
+				env: {
+					...env,
+					EMAIL: {
+						async send() {
+							return { messageId: 'original-provider-message' }
+						},
 					},
 				},
-			},
-			userId,
-			from,
-			to: 'recipient@example.com',
-			subject: 'Hello from Kody',
-			text: 'Original body',
-		})
+				userId,
+				from,
+				to: 'recipient@example.com',
+				subject: 'Hello from Kody',
+				text: 'Original body',
+			})
 
-		const result = await sendOutboundEmail({
-			env: {
-				...env,
-				EMAIL: undefined as unknown as SendEmail,
-				CLOUDFLARE_ACCOUNT_ID: 'account-123',
-				CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-				CLOUDFLARE_API_TOKEN: 'token-123',
-			},
-			userId,
-			from,
-			to: 'recipient@example.com',
-			subject: 'Re: Hello from Kody',
-			text: 'Body',
-			replyTo: 'reply@example.com',
-			inReplyToHeader: original.message.messageIdHeader,
-			references: ['<root@example.com>'],
-		})
-
-		expect(result.status).toBe('failed')
-		expect(result.error).toBe('provider down')
-		expect(fetchCalls).toHaveLength(1)
-		expect(fetchCalls[0]?.body).toMatchObject({
-			html: 'Body',
-			replyTo: 'reply@example.com',
-			headers: {
-				'In-Reply-To': original.message.messageIdHeader,
-				References: '<root@example.com>',
-			},
-		})
-		expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
-		expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
-			'X-Kody-Email-Message-Id',
-		)
-		const stored = await getEmailMessageById({
-			db: env.APP_DB,
-			userId,
-			messageId: result.message.id,
-		})
-		expect(stored).toMatchObject({
-			processingStatus: 'failed',
-			error: 'provider down',
-			headers: {
-				'Message-ID': result.message.messageIdHeader,
-				'X-Kody-Email-Message-Id': result.message.messageIdHeader,
-				'In-Reply-To': original.message.messageIdHeader,
-				References: '<root@example.com>',
-			},
-		})
-	} finally {
-		globalThis.fetch = originalFetch
-	}
-})
-
-test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize one', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
-	const from = `sender-${crypto.randomUUID()}@example.com`
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = (async () => {
-		throw new Error('REST fallback should not be called')
-	}) as typeof fetch
-
-	try {
-		await upsertEmailSenderIdentity({
-			db: env.APP_DB,
-			userId,
-			email: from,
-			domain: getEmailDomain(from),
-			status: 'verified',
-		})
-
-		await expect(
-			sendOutboundEmail({
+			const result = await sendOutboundEmail({
 				env: {
 					...env,
 					EMAIL: undefined as unknown as SendEmail,
@@ -240,11 +180,81 @@ test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize
 				userId,
 				from,
 				to: 'recipient@example.com',
-				subject: 'Missing body',
-				text: '   ',
-			}),
-		).rejects.toThrow('Email text or HTML body is required.')
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+				subject: 'Re: Hello from Kody',
+				text: 'Body',
+				replyTo: 'reply@example.com',
+				inReplyToHeader: original.message.messageIdHeader,
+				references: ['<root@example.com>'],
+			})
+
+			expect(result.status).toBe('failed')
+			expect(result.error).toBe('provider down')
+			expect(fetchCalls).toHaveLength(1)
+			expect(fetchCalls[0]?.body).toMatchObject({
+				html: 'Body',
+				replyTo: 'reply@example.com',
+				headers: {
+					'In-Reply-To': original.message.messageIdHeader,
+					References: '<root@example.com>',
+				},
+			})
+			expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
+			expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
+				'X-Kody-Email-Message-Id',
+			)
+			const stored = await getEmailMessageById({
+				db: env.APP_DB,
+				userId,
+				messageId: result.message.id,
+			})
+			expect(stored).toMatchObject({
+				processingStatus: 'failed',
+				error: 'provider down',
+				headers: {
+					'Message-ID': result.message.messageIdHeader,
+					'X-Kody-Email-Message-Id': result.message.messageIdHeader,
+					'In-Reply-To': original.message.messageIdHeader,
+					References: '<root@example.com>',
+				},
+			})
+		},
+		{ onUnhandledRequest: 'bypass' },
+	)
+})
+
+test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize one', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
+	const from = `sender-${crypto.randomUUID()}@example.com`
+
+	await withMswNodeServer(
+		[restFallbackMustNotRunHandler()],
+		async () => {
+			await upsertEmailSenderIdentity({
+				db: env.APP_DB,
+				userId,
+				email: from,
+				domain: getEmailDomain(from),
+				status: 'verified',
+			})
+
+			await expect(
+				sendOutboundEmail({
+					env: {
+						...env,
+						EMAIL: undefined as unknown as SendEmail,
+						CLOUDFLARE_ACCOUNT_ID: 'account-123',
+						CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+						CLOUDFLARE_API_TOKEN: 'token-123',
+					},
+					userId,
+					from,
+					to: 'recipient@example.com',
+					subject: 'Missing body',
+					text: '   ',
+				}),
+			).rejects.toThrow('Email text or HTML body is required.')
+		},
+		{ onUnhandledRequest: 'bypass' },
+	)
 })

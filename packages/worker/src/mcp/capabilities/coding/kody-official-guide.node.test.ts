@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import {
 	buildKodyOfficialGuideUrlForTest,
 	kodyOfficialGuideCapability,
 	kodyOfficialGuideCatalog,
 } from './kody-official-guide.ts'
+import { withMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 const ctx = {
 	env: {} as Env,
@@ -14,44 +16,53 @@ const ctx = {
 }
 
 test('kody_official_guide fetches markdown and surfaces fetch failures', async () => {
-	const originalFetch = globalThis.fetch
 	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
-	globalThis.fetch = (async (input) => {
-		expect(String(input)).toBe(url)
-		return new Response('# Hello\n\nbody', { status: 200 })
-	}) as typeof fetch
-	try {
-		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'package_subscriptions' },
-			ctx,
-		)
-		expect(result.body).toBe('# Hello\n\nbody')
-		expect(result.title).toBe(
-			kodyOfficialGuideCatalog.package_subscriptions.title,
-		)
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+	await withMswNodeServer(
+		[
+			http.get(url, () =>
+				HttpResponse.text('# Hello\n\nbody', {
+					headers: { 'content-type': 'text/markdown' },
+				}),
+			),
+		],
+		async () => {
+			const result = await kodyOfficialGuideCapability.handler(
+				{ guide: 'package_subscriptions' },
+				ctx,
+			)
+			expect(result.body).toBe('# Hello\n\nbody')
+			expect(result.title).toBe(
+				kodyOfficialGuideCatalog.package_subscriptions.title,
+			)
+		},
+	)
 
-	globalThis.fetch = (async () => {
-		return new Response('missing', { status: 404 })
-	}) as typeof fetch
-	try {
-		await expect(
-			kodyOfficialGuideCapability.handler({ guide: 'connect_secret' }, ctx),
-		).rejects.toThrow(/Kody guide fetch failed: HTTP 404/)
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+	await withMswNodeServer(
+		[
+			http.get(buildKodyOfficialGuideUrlForTest('connect_secret'), () =>
+				HttpResponse.text('missing', { status: 404 }),
+			),
+		],
+		async () => {
+			await expect(
+				kodyOfficialGuideCapability.handler({ guide: 'connect_secret' }, ctx),
+			).rejects.toThrow(/Kody guide fetch failed: HTTP 404/)
+		},
+	)
 
-	globalThis.fetch = (async () => {
-		throw new Error('network down')
-	}) as typeof fetch
-	try {
-		await expect(
-			kodyOfficialGuideCapability.handler({ guide: 'generated_ui_oauth' }, ctx),
-		).rejects.toThrow(/Kody guide fetch failed: network down/)
-	} finally {
-		globalThis.fetch = originalFetch
-	}
+	await withMswNodeServer(
+		[
+			http.get(buildKodyOfficialGuideUrlForTest('generated_ui_oauth'), () =>
+				HttpResponse.error(),
+			),
+		],
+		async () => {
+			await expect(
+				kodyOfficialGuideCapability.handler(
+					{ guide: 'generated_ui_oauth' },
+					ctx,
+				),
+			).rejects.toThrow(/Kody guide fetch failed: Failed to fetch/)
+		},
+	)
 })

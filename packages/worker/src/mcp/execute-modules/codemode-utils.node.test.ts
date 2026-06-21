@@ -9,6 +9,7 @@ import {
 	refreshAccessToken,
 	type secretHeaders,
 } from './codemode-utils.ts'
+import { withFetchStub } from '#worker/test-support/msw-node-server.ts'
 
 type SecretSetCall = {
 	name: string
@@ -106,27 +107,13 @@ function createCodemode(
 	return { codemode, secretSetCalls, fetchCalls, fetchStub }
 }
 
-async function withPatchedFetch<T>(
-	fetchImpl: typeof globalThis.fetch,
-	callback: () => Promise<T>,
-) {
-	const originalFetch = globalThis.fetch
-	globalThis.fetch = fetchImpl
-	try {
-		return await callback()
-	} finally {
-		globalThis.fetch = originalFetch
-	}
-}
-
 test('codemode oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
 	const rotatedRefresh = createCodemode({
 		access_token: 'new-access-token',
 		refresh_token: 'new-refresh-token',
 	})
-	const rotatedAccessToken = await withPatchedFetch(
-		rotatedRefresh.fetchStub,
-		() => refreshAccessToken(rotatedRefresh.codemode, 'spotify'),
+	const rotatedAccessToken = await withFetchStub(rotatedRefresh.fetchStub, () =>
+		refreshAccessToken(rotatedRefresh.codemode, 'spotify'),
 	)
 	expect(rotatedAccessToken).toBe('new-access-token')
 	expect(rotatedRefresh.secretSetCalls).toEqual([
@@ -154,9 +141,8 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 		storedToken.codemode,
 		'spotify',
 	)
-	const storedTokenResponse = await withPatchedFetch(
-		storedToken.fetchStub,
-		() => authenticatedFetch('/me/playlists', { method: 'POST' }),
+	const storedTokenResponse = await withFetchStub(storedToken.fetchStub, () =>
+		authenticatedFetch('/me/playlists', { method: 'POST' }),
 	)
 	expect(storedToken.secretSetCalls).toEqual([])
 	expect(storedToken.fetchCalls).toHaveLength(1)
@@ -180,9 +166,8 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 		missingToken.codemode,
 		'spotify',
 	)
-	const missingTokenResponse = await withPatchedFetch(
-		missingToken.fetchStub,
-		() => missingTokenFetch('/me?market=US'),
+	const missingTokenResponse = await withFetchStub(missingToken.fetchStub, () =>
+		missingTokenFetch('/me?market=US'),
 	)
 	expect(missingToken.secretSetCalls).toEqual([
 		{
@@ -218,9 +203,8 @@ test('codemode oauth helpers refresh tokens, retry on missing or expired access 
 		expiredToken.codemode,
 		'spotify',
 	)
-	const expiredTokenResponse = await withPatchedFetch(
-		expiredToken.fetchStub,
-		() => expiredTokenFetch('/me?market=US'),
+	const expiredTokenResponse = await withFetchStub(expiredToken.fetchStub, () =>
+		expiredTokenFetch('/me?market=US'),
 	)
 	expect(expiredToken.secretSetCalls).toEqual([
 		{
@@ -254,13 +238,13 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 		refresh_token: 'new-refresh-token',
 	})
 	const helpers = createSandboxHelpers(codemode)
-	const accessToken = await withPatchedFetch(fetchStub, () =>
+	const accessToken = await withFetchStub(fetchStub, () =>
 		helpers.refreshAccessToken('spotify'),
 	)
-	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
+	const authenticatedFetch = await withFetchStub(fetchStub, () =>
 		helpers.createAuthenticatedFetch('spotify'),
 	)
-	await withPatchedFetch(fetchStub, () => authenticatedFetch('/me'))
+	await withFetchStub(fetchStub, () => authenticatedFetch('/me'))
 
 	expect(accessToken).toBe('new-access-token')
 	expect(secretSetCalls).toEqual([
@@ -308,7 +292,7 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 			},
 		)
 	}
-	const tokenResponse = await withPatchedFetch(clientCredentialsStub, () =>
+	const tokenResponse = await withFetchStub(clientCredentialsStub, () =>
 		helpers.oauthClientCredentials({
 			tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
 			clientIdSecret: 'paypalClientId',
