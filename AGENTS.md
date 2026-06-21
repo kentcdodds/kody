@@ -81,14 +81,14 @@ unless nvm’s Node 24 bin directory is prepended to `PATH`. Verify with
 
 ### Quick commands
 
-| Task             | Command                                                         |
-| ---------------- | --------------------------------------------------------------- |
-| Cloud VM setup   | `npm run setup:cloud-agent`                                     |
-| Install deps     | `npm install`                                                   |
-| Start dev        | `npm run dev` (prints the resolved URL)                         |
-| Migrate local D1 | `npm run migrate:local`                                         |
-| Seed test login  | `npm run seed:local` (see seeding note below)                   |
-| Full CI gate     | `npm run validate`                                              |
+| Task             | Command                                       |
+| ---------------- | --------------------------------------------- |
+| Cloud VM setup   | `npm run setup:cloud-agent`                   |
+| Install deps     | `npm install`                                 |
+| Start dev        | `npm run dev` (prints the resolved URL)       |
+| Migrate local D1 | `npm run migrate:local`                       |
+| Seed test login  | `npm run seed:local` (see seeding note below) |
+| Full CI gate     | `npm run validate`                            |
 
 ### Dev server
 

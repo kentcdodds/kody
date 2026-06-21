@@ -4,17 +4,17 @@ A full-stack web application built on Cloudflare Workers with Remix 3 (alpha).
 
 ## Quick Reference
 
-| Task                   | Command                |
-| ---------------------- | ---------------------- |
+| Task                   | Command                     |
+| ---------------------- | --------------------------- |
 | Bootstrap Cloud VM     | `npm run setup:cloud-agent` |
-| Start dev server       | `npm run dev`          |
-| Full validation        | `npm run validate`     |
-| Apply formatter / lint | `npm run validate:fix` |
-| Lint                   | `npm run lint`         |
-| Format                 | `npm run format`       |
-| Type check             | `npm run typecheck`    |
-| Build                  | `npm run build`        |
-| E2E tests              | `npm run test:e2e:run` |
+| Start dev server       | `npm run dev`               |
+| Full validation        | `npm run validate`          |
+| Apply formatter / lint | `npm run validate:fix`      |
+| Lint                   | `npm run lint`              |
+| Format                 | `npm run format`            |
+| Type check             | `npm run typecheck`         |
+| Build                  | `npm run build`             |
+| E2E tests              | `npm run test:e2e:run`      |
 
 `npm run validate` is the single authoritative gate. CI runs the same script, so
 a green local `validate` means CI will pass. `validate` is read-only; use
