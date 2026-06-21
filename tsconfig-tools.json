@@ -34,6 +34,8 @@
 		"./packages/worker/src/mcp/apps/claude-widget-domain.ts",
 		"./packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts",
 		"./packages/worker/src/mcp/test-process.ts",
+		"./packages/worker/src/test-support/msw-node-server.ts",
+		"./packages/worker/src/test-support/cloudflare-mock-server.ts",
 		"./tools/**/*.ts",
 		"./packages/shared/src/**/*.ts"
 	]

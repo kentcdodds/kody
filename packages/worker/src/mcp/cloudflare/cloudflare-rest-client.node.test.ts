@@ -1,75 +1,11 @@
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import getPort from 'get-port'
-import { setTimeout as delay } from 'node:timers/promises'
-import {
-	captureOutput,
-	spawnProcess,
-	stopProcess,
-	wranglerBin,
-} from '#mcp/test-process.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
 import {
 	createCloudflareRestClient,
 	CloudflareRestClient,
 } from './cloudflare-rest-client.ts'
-
-const workerConfig = 'packages/mock-servers/cloudflare/wrangler.jsonc'
-const projectRoot = process.cwd()
-
-async function waitForMock(origin: string) {
-	const deadline = Date.now() + 25_000
-	while (Date.now() < deadline) {
-		try {
-			const response = await fetch(`${origin}/__mocks/meta`)
-			if (response.ok) {
-				await response.body?.cancel()
-				return
-			}
-		} catch {
-			/* retry */
-		}
-		await delay(200)
-	}
-	throw new Error('mock cloudflare timeout')
-}
-
-async function startCloudflareMock(token: string) {
-	const port = await getPort({ host: '127.0.0.1' })
-	const origin = `http://127.0.0.1:${port}`
-	const inspectorPort = await getPort({ host: '127.0.0.1' })
-	const proc = spawnProcess({
-		cmd: [
-			wranglerBin,
-			'dev',
-			'--local',
-			'--config',
-			workerConfig,
-			'--var',
-			`MOCK_API_TOKEN:${token}`,
-			'--port',
-			String(port),
-			'--inspector-port',
-			String(inspectorPort),
-			'--ip',
-			'127.0.0.1',
-			'--show-interactive-dev-session=false',
-			'--log-level',
-			'error',
-		],
-		cwd: projectRoot,
-	})
-	captureOutput(proc.stdout)
-	captureOutput(proc.stderr)
-	await waitForMock(origin)
-	return {
-		origin,
-		token,
-		async [Symbol.asyncDispose]() {
-			await stopProcess(proc)
-		},
-	}
-}
 
 test('Cloudflare REST clients read mock responses and enforce API paths', async () => {
 	const token = 'cloudflare-client-env-token'

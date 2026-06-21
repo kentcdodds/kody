@@ -80,44 +80,83 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 	expect(listed.map((message) => message.id)).toContain(result.message.id)
 })
 
-test('sendOutboundEmail does not fall back when binding sends without message id', async () => {
+test('sendOutboundEmail skips REST fallback when the binding succeeds or validation fails first', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `email-outbound-null-id-user-${crypto.randomUUID()}`
-	const from = `sender-${crypto.randomUUID()}@example.com`
-	let bindingSendCount = 0
+	const mswOptions = { onUnhandledRequest: 'bypass' as const }
 
-	using _server = createMswNodeServer([restFallbackMustNotRunHandler()], {
-		onUnhandledRequest: 'bypass',
-	})
-	await upsertEmailSenderIdentity({
-		db: env.APP_DB,
-		userId,
-		email: from,
-		domain: getEmailDomain(from),
-		status: 'verified',
-	})
-	const result = await sendOutboundEmail({
-		env: {
-			...env,
-			EMAIL: {
-				async send() {
-					bindingSendCount += 1
-					return { messageId: null as unknown as string }
+	{
+		const userId = `email-outbound-null-id-user-${crypto.randomUUID()}`
+		const from = `sender-${crypto.randomUUID()}@example.com`
+		let bindingSendCount = 0
+
+		using _server = createMswNodeServer(
+			[restFallbackMustNotRunHandler()],
+			mswOptions,
+		)
+		await upsertEmailSenderIdentity({
+			db: env.APP_DB,
+			userId,
+			email: from,
+			domain: getEmailDomain(from),
+			status: 'verified',
+		})
+		const result = await sendOutboundEmail({
+			env: {
+				...env,
+				EMAIL: {
+					async send() {
+						bindingSendCount += 1
+						return { messageId: null as unknown as string }
+					},
 				},
 			},
-		},
-		userId,
-		from,
-		to: 'recipient@example.com',
-		subject: 'No provider id',
-		text: 'Body',
-	})
-	expect(bindingSendCount).toBe(1)
-	expect(result).toMatchObject({
-		status: 'sent',
-		providerMessageId: null,
-		error: null,
-	})
+			userId,
+			from,
+			to: 'recipient@example.com',
+			subject: 'No provider id',
+			text: 'Body',
+		})
+		expect(bindingSendCount).toBe(1)
+		expect(result).toMatchObject({
+			status: 'sent',
+			providerMessageId: null,
+			error: null,
+		})
+	}
+
+	{
+		const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
+		const from = `sender-${crypto.randomUUID()}@example.com`
+
+		using _server = createMswNodeServer(
+			[restFallbackMustNotRunHandler()],
+			mswOptions,
+		)
+		await upsertEmailSenderIdentity({
+			db: env.APP_DB,
+			userId,
+			email: from,
+			domain: getEmailDomain(from),
+			status: 'verified',
+		})
+
+		await expect(
+			sendOutboundEmail({
+				env: {
+					...env,
+					EMAIL: undefined as unknown as SendEmail,
+					CLOUDFLARE_ACCOUNT_ID: 'account-123',
+					CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+					CLOUDFLARE_API_TOKEN: 'token-123',
+				},
+				userId,
+				from,
+				to: 'recipient@example.com',
+				subject: 'Missing body',
+				text: '   ',
+			}),
+		).rejects.toThrow('Email text or HTML body is required.')
+	}
 })
 
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
@@ -215,38 +254,4 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			References: '<root@example.com>',
 		},
 	})
-})
-
-test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize one', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
-	const from = `sender-${crypto.randomUUID()}@example.com`
-
-	using _server = createMswNodeServer([restFallbackMustNotRunHandler()], {
-		onUnhandledRequest: 'bypass',
-	})
-	await upsertEmailSenderIdentity({
-		db: env.APP_DB,
-		userId,
-		email: from,
-		domain: getEmailDomain(from),
-		status: 'verified',
-	})
-
-	await expect(
-		sendOutboundEmail({
-			env: {
-				...env,
-				EMAIL: undefined as unknown as SendEmail,
-				CLOUDFLARE_ACCOUNT_ID: 'account-123',
-				CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
-				CLOUDFLARE_API_TOKEN: 'token-123',
-			},
-			userId,
-			from,
-			to: 'recipient@example.com',
-			subject: 'Missing body',
-			text: '   ',
-		}),
-	).rejects.toThrow('Email text or HTML body is required.')
 })

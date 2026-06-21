@@ -7,7 +7,7 @@ import {
 	type ExecuteRequestInput,
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
-	oauthClientCredentials,
+	type oauthClientCredentials,
 	refreshAccessToken,
 	type secretHeaders,
 } from './codemode-utils.ts'
@@ -107,6 +107,9 @@ type SpotifyFetchInterceptorOptions = {
 function createSpotifyFetchInterceptor(
 	options: SpotifyFetchInterceptorOptions,
 ) {
+	// MSW HttpResponse bodies hang on response.body.cancel(), which
+	// createAuthenticatedFetch uses during 401 retry. Native Response
+	// objects from FetchInterceptor avoid that Node/Vitest issue.
 	const apiErrors = [...(options.apiErrors ?? [])]
 	const apiResponses = [...(options.apiResponses ?? [])]
 	const interceptor = new FetchInterceptor()
