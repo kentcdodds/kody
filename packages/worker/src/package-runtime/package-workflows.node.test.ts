@@ -206,7 +206,7 @@ function createWorkflowRunsDatabase(options?: {
 	}
 }
 
-test('createDynamicCallableWorkflow queues inline code without package context', async () => {
+test('createDynamicCallableWorkflow queues inline code without package context and records runs before status reads', async () => {
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 
@@ -246,20 +246,17 @@ test('createDynamicCallableWorkflow queues inline code without package context',
 			errorRetention: '30 days',
 		},
 	})
-})
 
-test('createDynamicCallableWorkflow records the run before reading workflow status', async () => {
-	const binding = createWorkflowBinding({
+	const statusFailureBinding = createWorkflowBinding({
 		existing: null,
 		statusThrows: new Error('status unavailable'),
 	})
-	const db = createWorkflowRunsDatabase()
-
+	const statusFailureDb = createWorkflowRunsDatabase()
 	await expect(
 		createDynamicCallableWorkflow({
 			env: {
-				APP_DB: db,
-				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+				APP_DB: statusFailureDb,
+				DYNAMIC_CALLABLE_WORKFLOWS: statusFailureBinding.workflow,
 			} as Env,
 			userId: 'user-1',
 			packageContext: null,
@@ -270,7 +267,7 @@ test('createDynamicCallableWorkflow records the run before reading workflow stat
 			},
 		}),
 	).rejects.toThrow('status unavailable')
-	expect([...db.workflowRuns.values()]).toEqual([
+	expect([...statusFailureDb.workflowRuns.values()]).toEqual([
 		expect.objectContaining({
 			status: 'queued',
 			idempotency_key: 'status-failure-key',
@@ -342,16 +339,21 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 	}
 })
 
-test('DynamicCallableWorkflowBase restores attached remote connectors for inline code', async () => {
-	const binding = createStatefulWorkflowBinding()
-	const db = createWorkflowRunsDatabase()
-	const env = {
-		APP_DB: db,
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+test('DynamicCallableWorkflowBase restores attached remote connectors for inline code and package exports', async () => {
+	const remoteConnectors = [{ kind: 'home', instanceId: 'default' }]
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+
+	const inlineBinding = createStatefulWorkflowBinding()
+	const inlineEnv = {
+		APP_DB: createWorkflowRunsDatabase(),
+		DYNAMIC_CALLABLE_WORKFLOWS: inlineBinding.workflow,
 		APP_BASE_URL: 'https://app.example.com',
 	} as Env
-	const created = await createDynamicCallableWorkflow({
-		env,
+	const inlineCreated = await createDynamicCallableWorkflow({
+		env: inlineEnv,
 		userId: 'user-1',
 		packageContext: null,
 		body: {
@@ -360,57 +362,46 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 			idempotencyKey: 'execute-remote-connector-smoke',
 		},
 	})
-	const queued = binding.instances.get(created.id)
-	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	const inlineQueued = inlineBinding.instances.get(inlineCreated.id)
+	if (!inlineQueued?.params)
+		throw new Error('Expected queued workflow payload.')
 	invocationMocks.runModuleWithRegistry.mockReset()
 	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
 	})
-	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce([
-		{ kind: 'home', instanceId: 'default' },
-	])
-
-	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
-	const stepDo = vi.fn(
-		async (_name: string, _config: unknown, callback: () => unknown) =>
-			await callback(),
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce(
+		remoteConnectors,
 	)
-	await workflow.run(
+	await new DynamicCallableWorkflowBase({} as ExecutionContext, inlineEnv).run(
 		{
-			payload: queued.params as never,
+			payload: inlineQueued.params as never,
 			timestamp: new Date(),
-			instanceId: created.id,
+			instanceId: inlineCreated.id,
 		},
 		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 	)
-
 	expect(
 		remoteConnectorMocks.listAttachedRemoteConnectorRefs,
 	).toHaveBeenCalledWith({
-		env,
+		env: inlineEnv,
 		userId: 'user-1',
 	})
 	expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.any(Object),
-		expect.objectContaining({
-			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
-		}),
+		expect.objectContaining({ remoteConnectors }),
 		expect.any(String),
 		undefined,
 	)
-})
 
-test('DynamicCallableWorkflowBase restores attached remote connectors for package exports', async () => {
-	const binding = createStatefulWorkflowBinding()
-	const db = createWorkflowRunsDatabase()
-	const env = {
-		APP_DB: db,
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+	const packageBinding = createStatefulWorkflowBinding()
+	const packageEnv = {
+		APP_DB: createWorkflowRunsDatabase(),
+		DYNAMIC_CALLABLE_WORKFLOWS: packageBinding.workflow,
 		APP_BASE_URL: 'https://app.example.com',
 	} as Env
-	const created = await createDynamicCallableWorkflow({
-		env,
+	const packageCreated = await createDynamicCallableWorkflow({
+		env: packageEnv,
 		userId: 'user-1',
 		packageContext: null,
 		body: {
@@ -421,42 +412,34 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for packag
 			params: { key: 'north-east-open' },
 		},
 	})
-	const queued = binding.instances.get(created.id)
-	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	const packageQueued = packageBinding.instances.get(packageCreated.id)
+	if (!packageQueued?.params)
+		throw new Error('Expected queued workflow payload.')
 	invocationMocks.invokePackageExport.mockReset()
 	invocationMocks.invokePackageExport.mockResolvedValueOnce({
 		status: 200,
 		body: { result: { ok: true } },
 	})
-	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce([
-		{ kind: 'home', instanceId: 'default' },
-	])
-
-	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
-	const stepDo = vi.fn(
-		async (_name: string, _config: unknown, callback: () => unknown) =>
-			await callback(),
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce(
+		remoteConnectors,
 	)
-	await workflow.run(
+	await new DynamicCallableWorkflowBase({} as ExecutionContext, packageEnv).run(
 		{
-			payload: queued.params as never,
+			payload: packageQueued.params as never,
 			timestamp: new Date(),
-			instanceId: created.id,
+			instanceId: packageCreated.id,
 		},
 		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 	)
-
 	expect(
 		remoteConnectorMocks.listAttachedRemoteConnectorRefs,
 	).toHaveBeenCalledWith({
-		env,
+		env: packageEnv,
 		userId: 'user-1',
 	})
 	expect(invocationMocks.invokePackageExport).toHaveBeenCalledWith(
 		expect.objectContaining({
-			token: expect.objectContaining({
-				remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
-			}),
+			token: expect.objectContaining({ remoteConnectors }),
 		}),
 	)
 })
@@ -640,7 +623,7 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 	)
 })
 
-test('createDynamicCallableWorkflow dedupes by (user_id, idempotency_key) across runAt changes and runs the workflow only once', async () => {
+test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency key', async () => {
 	const binding = createStatefulWorkflowBinding()
 	const db = createWorkflowRunsDatabase()
 	const env = {
@@ -659,8 +642,7 @@ test('createDynamicCallableWorkflow dedupes by (user_id, idempotency_key) across
 			params: { date: '2026-05-08', key: 'noop' },
 		},
 	})
-
-	const second = await createDynamicCallableWorkflow({
+	const replay = await createDynamicCallableWorkflow({
 		env,
 		userId: 'user-1',
 		body: {
@@ -671,9 +653,8 @@ test('createDynamicCallableWorkflow dedupes by (user_id, idempotency_key) across
 			params: { date: '2026-05-08', key: 'noop' },
 		},
 	})
-
-	expect(second.id).toBe(first.id)
-	expect(second).toMatchObject({
+	expect(replay.id).toBe(first.id)
+	expect(replay).toMatchObject({
 		ok: true,
 		id: first.id,
 		source_type: 'package',
@@ -683,41 +664,18 @@ test('createDynamicCallableWorkflow dedupes by (user_id, idempotency_key) across
 	})
 	expect(binding.create).toHaveBeenCalledTimes(1)
 	expect(binding.instances.size).toBe(1)
-	expect(db.workflowRuns.size).toBe(1)
-	const stored = [...db.workflowRuns.values()]
-	expect(stored).toHaveLength(1)
-	expect(stored[0]).toMatchObject({
-		idempotency_key: 'idempotency-repro',
-		run_at: '2026-05-08T19:30:00.000Z',
-	})
-})
+	expect([...db.workflowRuns.values()]).toEqual([
+		expect.objectContaining({
+			idempotency_key: 'idempotency-repro',
+			run_at: '2026-05-08T19:30:00.000Z',
+		}),
+	])
 
-test('createDynamicCallableWorkflow scopes idempotency dedupe per user', async () => {
-	const binding = createStatefulWorkflowBinding()
-	const db = createWorkflowRunsDatabase({
-		savedPackage: {
-			id: 'pkg-1',
-			user_id: 'user-2',
-			name: 'Shade automation',
-			kody_id: 'shade-automation',
-			description: 'Shade automation package',
-			tags_json: '[]',
-			search_text: null,
-			source_id: 'source-1',
-			has_app: 0,
-			created_at: '2026-05-03T00:00:00.000Z',
-			updated_at: '2026-05-03T00:00:00.000Z',
-		},
-	})
-	const env = {
-		APP_DB: db,
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
-	} as Env
-
+	const perUserBinding = createStatefulWorkflowBinding()
 	const userOne = await createDynamicCallableWorkflow({
 		env: {
 			APP_DB: createWorkflowRunsDatabase(),
-			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			DYNAMIC_CALLABLE_WORKFLOWS: perUserBinding.workflow,
 		} as Env,
 		userId: 'user-1',
 		body: {
@@ -728,7 +686,24 @@ test('createDynamicCallableWorkflow scopes idempotency dedupe per user', async (
 		},
 	})
 	const userTwo = await createDynamicCallableWorkflow({
-		env,
+		env: {
+			APP_DB: createWorkflowRunsDatabase({
+				savedPackage: {
+					id: 'pkg-1',
+					user_id: 'user-2',
+					name: 'Shade automation',
+					kody_id: 'shade-automation',
+					description: 'Shade automation package',
+					tags_json: '[]',
+					search_text: null,
+					source_id: 'source-1',
+					has_app: 0,
+					created_at: '2026-05-03T00:00:00.000Z',
+					updated_at: '2026-05-03T00:00:00.000Z',
+				},
+			}),
+			DYNAMIC_CALLABLE_WORKFLOWS: perUserBinding.workflow,
+		} as Env,
 		userId: 'user-2',
 		body: {
 			packageId: 'pkg-1',
@@ -737,21 +712,17 @@ test('createDynamicCallableWorkflow scopes idempotency dedupe per user', async (
 			idempotencyKey: 'shared-key',
 		},
 	})
-
 	expect(userOne.id).not.toBe(userTwo.id)
-	expect(binding.create).toHaveBeenCalledTimes(2)
-})
+	expect(perUserBinding.create).toHaveBeenCalledTimes(2)
 
-test('createDynamicCallableWorkflow dedupes even when the prior run terminated with an error', async () => {
-	const binding = createStatefulWorkflowBinding()
-	const db = createWorkflowRunsDatabase()
-	const env = {
-		APP_DB: db,
-		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+	const erroredBinding = createStatefulWorkflowBinding()
+	const erroredDb = createWorkflowRunsDatabase()
+	const erroredEnv = {
+		APP_DB: erroredDb,
+		DYNAMIC_CALLABLE_WORKFLOWS: erroredBinding.workflow,
 	} as Env
-
-	const first = await createDynamicCallableWorkflow({
-		env,
+	const erroredFirst = await createDynamicCallableWorkflow({
+		env: erroredEnv,
 		userId: 'user-1',
 		body: {
 			packageId: 'pkg-1',
@@ -760,12 +731,11 @@ test('createDynamicCallableWorkflow dedupes even when the prior run terminated w
 			idempotencyKey: 'terminal-key',
 		},
 	})
-	const stored = db.workflowRuns.get(first.id)
-	if (!stored) throw new Error('Expected stored workflow row.')
-	stored['status'] = 'errored'
-
-	const replay = await createDynamicCallableWorkflow({
-		env,
+	const erroredStored = erroredDb.workflowRuns.get(erroredFirst.id)
+	if (!erroredStored) throw new Error('Expected stored workflow row.')
+	erroredStored['status'] = 'errored'
+	const erroredReplay = await createDynamicCallableWorkflow({
+		env: erroredEnv,
 		userId: 'user-1',
 		body: {
 			packageId: 'pkg-1',
@@ -774,10 +744,9 @@ test('createDynamicCallableWorkflow dedupes even when the prior run terminated w
 			idempotencyKey: 'terminal-key',
 		},
 	})
-
-	expect(replay.id).toBe(first.id)
-	expect(replay.status).toBe('errored')
-	expect(binding.create).toHaveBeenCalledTimes(1)
+	expect(erroredReplay.id).toBe(erroredFirst.id)
+	expect(erroredReplay.status).toBe('errored')
+	expect(erroredBinding.create).toHaveBeenCalledTimes(1)
 })
 
 test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {

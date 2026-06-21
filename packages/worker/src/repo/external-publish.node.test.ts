@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
@@ -65,17 +65,17 @@ function workspace() {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default mock behavior after global mockReset.
-beforeEach(() => {
+function resetPublishMocks() {
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
 	mockModule.deletePublishedSourceSnapshot.mockResolvedValue(undefined)
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
 		files: { 'package.json': '{}' },
 	})
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
-})
+}
 
 test('publishes an external fast-forward ref after checks pass', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
@@ -109,6 +109,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 })
 
 test('finalizes with the source files already collected by checks', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -147,6 +148,7 @@ test('finalizes with the source files already collected by checks', async () => 
 })
 
 test('returns no-op when commit is already current', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 
 	await expect(
@@ -169,6 +171,7 @@ test('returns no-op when commit is already current', async () => {
 })
 
 test('non-fast-forward publish requires allowForce, destructive confirmation, and a restorable backup snapshot', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 
 	const refusedWithoutForce = await publishFromExternalRef({
@@ -259,6 +262,7 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 })
 
 test('rechecks fast-forward against the latest source row before publishing', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(
 		source({ published_commit: 'commit-concurrent' }),
 	)
@@ -285,6 +289,7 @@ test('rechecks fast-forward against the latest source row before publishing', as
 })
 
 test('check failure leaves D1 untouched', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: false,
@@ -325,6 +330,7 @@ test('check failure leaves D1 untouched', async () => {
 })
 
 test('publishFromExternalRef fails when projection refresh fails after commit', async () => {
+	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,

@@ -151,16 +151,14 @@ function createContext() {
 	} as unknown as ExecutionContext
 }
 
-test('isPackageInvocationApiRequest matches the external package invocation route', () => {
+test('package invocation API rejects missing, invalid, and unsafe tokens before invoking exports', async () => {
 	expect(
 		isPackageInvocationApiRequest(
 			'/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
 		),
 	).toBe(true)
 	expect(isPackageInvocationApiRequest('/api/me')).toBe(false)
-})
 
-test('package invocation API rejects missing, invalid, and unsafe tokens before invoking exports', async () => {
 	const route =
 		'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created'
 	const body = JSON.stringify({ idempotencyKey: 'evt-1' })

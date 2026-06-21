@@ -73,7 +73,7 @@ async function startCloudflareMock(token: string) {
 	}
 }
 
-test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
+test('sendCloudflareEmail delivers through the mock API and handles configuration and transport failures', async () => {
 	const token = 'cloudflare-email-mock-token'
 	await using mock = await startCloudflareMock(token)
 	const clearResponse = await fetch(
@@ -120,9 +120,7 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 		subject: 'Reset your kody password',
 		text: 'Reset link',
 	})
-})
 
-test('sendCloudflareEmail defaults the API base URL when it is unset', async () => {
 	const originalFetch = globalThis.fetch
 	const fetchSpy = vi.fn(async () => {
 		return new Response(
@@ -141,9 +139,8 @@ test('sendCloudflareEmail defaults the API base URL when it is unset', async () 
 		)
 	})
 	globalThis.fetch = fetchSpy as typeof fetch
-
 	try {
-		const result = await sendCloudflareEmail(
+		const defaultBaseUrlResult = await sendCloudflareEmail(
 			{
 				accountId: mockAccountId,
 				apiToken: 'test-token',
@@ -156,10 +153,7 @@ test('sendCloudflareEmail defaults the API base URL when it is unset', async () 
 				text: 'body',
 			},
 		)
-
-		expect(result).toMatchObject({
-			ok: true,
-		})
+		expect(defaultBaseUrlResult).toMatchObject({ ok: true })
 		expect(fetchSpy).toHaveBeenCalledTimes(1)
 		const [input] = fetchSpy.mock.calls[0]!
 		expect(String(input)).toBe(
@@ -168,13 +162,10 @@ test('sendCloudflareEmail defaults the API base URL when it is unset', async () 
 	} finally {
 		globalThis.fetch = originalFetch
 	}
-})
 
-test('sendCloudflareEmail returns skipped when account or token is missing', async () => {
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
 	try {
-		const result = await sendCloudflareEmail(
+		const skippedResult = await sendCloudflareEmail(
 			{},
 			{
 				to: 'recipient@example.com',
@@ -184,8 +175,7 @@ test('sendCloudflareEmail returns skipped when account or token is missing', asy
 				text: 'secret text',
 			},
 		)
-
-		expect(result).toEqual({
+		expect(skippedResult).toEqual({
 			ok: false,
 			skipped: true,
 		})
@@ -200,16 +190,12 @@ test('sendCloudflareEmail returns skipped when account or token is missing', asy
 	} finally {
 		warnSpy.mockRestore()
 	}
-})
 
-test('sendCloudflareEmail returns ok false when the Cloudflare API request throws', async () => {
-	const originalFetch = globalThis.fetch
 	globalThis.fetch = vi.fn(async () => {
 		throw new Error('network down')
 	}) as typeof fetch
-
 	try {
-		const result = await sendCloudflareEmail(
+		const networkFailure = await sendCloudflareEmail(
 			{
 				accountId: mockAccountId,
 				apiBaseUrl: 'https://api.cloudflare.test',
@@ -222,25 +208,20 @@ test('sendCloudflareEmail returns ok false when the Cloudflare API request throw
 				html: '<p>body</p>',
 			},
 		)
-
-		expect(result).toEqual({
+		expect(networkFailure).toEqual({
 			ok: false,
 			error: 'network down',
 		})
 	} finally {
 		globalThis.fetch = originalFetch
 	}
-})
 
-test('sendCloudflareEmail rejects when the Cloudflare API returns invalid JSON', async () => {
-	const originalFetch = globalThis.fetch
 	globalThis.fetch = vi.fn(async () => {
 		return new Response('not-json', {
 			status: 200,
 			headers: { 'content-type': 'application/json' },
 		})
 	}) as typeof fetch
-
 	try {
 		await expect(
 			sendCloudflareEmail(

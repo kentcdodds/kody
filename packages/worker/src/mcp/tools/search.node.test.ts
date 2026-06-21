@@ -595,9 +595,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 			}),
 		]),
 	)
-})
 
-test('buildSavedPackageSearchRows rejects when package source resolution fails', async () => {
 	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
 		new Error('missing-source'),
 	)
