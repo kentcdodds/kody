@@ -1,5 +1,5 @@
 import { FetchInterceptor } from '@mswjs/interceptors/fetch'
-import { http, type HttpHandler } from 'msw'
+import { type HttpHandler } from 'msw'
 import { setupServer, type SetupServerApi } from 'msw/node'
 
 export type MswNodeServerOptions = {
@@ -68,11 +68,4 @@ export async function withFetchStub<T>(
 	} finally {
 		interceptor.dispose()
 	}
-}
-
-/** @deprecated Use declarative `http.*` handlers or `withFetchStub` instead. */
-export function createFetchStubHandler(
-	fetchImpl: typeof globalThis.fetch,
-): HttpHandler {
-	return http.all('*', async ({ request }) => fetchImpl(request))
 }
