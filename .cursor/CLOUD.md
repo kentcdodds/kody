@@ -6,6 +6,7 @@ A full-stack web application built on Cloudflare Workers with Remix 3 (alpha).
 
 | Task                   | Command                |
 | ---------------------- | ---------------------- |
+| Bootstrap Cloud VM     | `npm run setup:cloud-agent` |
 | Start dev server       | `npm run dev`          |
 | Full validation        | `npm run validate`     |
 | Apply formatter / lint | `npm run validate:fix` |

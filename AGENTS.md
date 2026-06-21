@@ -83,10 +83,11 @@ unless nvm’s Node 24 bin directory is prepended to `PATH`. Verify with
 
 | Task             | Command                                                         |
 | ---------------- | --------------------------------------------------------------- |
+| Cloud VM setup   | `npm run setup:cloud-agent`                                     |
 | Install deps     | `npm install`                                                   |
 | Start dev        | `npm run dev` (prints the resolved URL)                         |
 | Migrate local D1 | `npm run migrate:local`                                         |
-| Seed test login  | `node tools/seed-test-data.ts --local` (see seeding note below) |
+| Seed test login  | `npm run seed:local` (see seeding note below)                   |
 | Full CI gate     | `npm run validate`                                              |
 
 ### Dev server
@@ -107,10 +108,8 @@ Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
 ### Seeding a test account
 
 After `npm run migrate:local`, seed the default E2E login (`me@kentcdodds.com` /
-`iliketwix`) per [`docs/contributing/setup.md`](./docs/contributing/setup.md).
-If `node tools/seed-test-data.ts --local` fails because Wrangler cannot resolve
-`APP_DB` without the worker config wrapper, run the seed SQL through
-`./wrangler-env.ts` instead (same pattern as the migrate script).
+`iliketwix`) with `npm run seed:local`. That command passes
+`--config packages/worker/wrangler.jsonc` so Wrangler can resolve `APP_DB`.
 
 ### Local limitations
 

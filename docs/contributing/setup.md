@@ -11,6 +11,9 @@ Quick notes for getting a local kody environment running.
 - `npm install`
 - The repo root hosts the Nx workspace metadata; runtime packages live under
   `packages/`.
+- On Cursor Cloud VMs, run `npm run setup:cloud-agent` to select Node 24,
+  install dependencies, prepare `packages/worker/.env`, migrate local D1, and
+  seed the default test account.
 
 ## Local development
 
@@ -141,9 +144,9 @@ Use this script to ensure a known test login exists in any deployed environment:
 
 - Local D1 (default):
   - `npm run migrate:local`
-  - `node tools/seed-test-data.ts --local`
+  - `npm run seed:local`
 - Local D1 with custom persisted state:
-  - `node tools/seed-test-data.ts --local --persist-to .wrangler/state/e2e`
+  - `node tools/seed-test-data.ts --local --config packages/worker/wrangler.jsonc --persist-to .wrangler/state/e2e`
 - Remote D1:
   - `node tools/seed-test-data.ts --remote --config <wrangler-config-path>`
   - Add `--env <name>` when the config uses environment-scoped bindings and the
@@ -166,7 +169,7 @@ For a full local reset before seeding:
 2. Re-apply migrations:
    - `npm run migrate:local`
 3. Seed test account:
-   - `node tools/seed-test-data.ts`
+   - `npm run seed:local`
 
 For preview environments, we do a full resource reset:
 
