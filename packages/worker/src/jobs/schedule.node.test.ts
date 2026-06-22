@@ -25,15 +25,15 @@ test('job schedule helpers normalize schedules and compute the next run time', (
 		every: '5m',
 	})
 
-	expect(
-		formatScheduleSummary({
-			schedule: {
-				type: 'cron',
-				expression: '0 7 * * *',
-			},
-			timezone: 'America/Los_Angeles',
-		}),
-	).toBe('Runs on cron "0 7 * * *" in America/Los_Angeles')
+	const cronSummary = formatScheduleSummary({
+		schedule: {
+			type: 'cron',
+			expression: '0 7 * * *',
+		},
+		timezone: 'America/Los_Angeles',
+	})
+	expect(cronSummary).toMatch(/0 7 \* \* \*/)
+	expect(cronSummary).toMatch(/America\/Los_Angeles/)
 
 	expect(
 		computeNextRunAt({

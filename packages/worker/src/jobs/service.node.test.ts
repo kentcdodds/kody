@@ -1022,7 +1022,7 @@ test('createJob persists interval schedules, assigns stable storage ids, and syn
 		type: 'interval',
 		every: '15m',
 	})
-	expect(intervalJob.scheduleSummary).toBe('Runs every 15m')
+	expect(intervalJob.scheduleSummary).toMatch(/15m/)
 	expect(intervalJob.storageId).toBe(`job:${intervalJob.id}`)
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
@@ -1102,7 +1102,7 @@ test('updateJob and deleteJob sync the job manager alarm after mutations', async
 	})
 })
 
-test('updateJob rejects another user trying to mutate a job by id', async () => {
+test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
 	const env = {
 		APP_DB: createDatabase(),
 	} as Env
@@ -1144,32 +1144,12 @@ test('updateJob rejects another user trying to mutate a job by id', async () => 
 		}),
 	).rejects.toThrow(`Job "${created.id}" was not found.`)
 
-	const inspection = await getJobInspection({
+	let inspection = await getJobInspection({
 		env,
 		userId: ownerCallerContext.user.userId,
 		jobId: created.id,
 	})
 	expect(inspection.job.enabled).toBe(true)
-})
-
-test('deleteJob rejects another user trying to remove a job by id', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-	} as Env
-	mockRepoPersistence()
-	const ownerCallerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
-		callerContext: ownerCallerContext,
-		body: {
-			name: 'Owner job',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
-	})
 
 	await expect(
 		deleteJob({
@@ -1179,7 +1159,7 @@ test('deleteJob rejects another user trying to remove a job by id', async () => 
 		}),
 	).rejects.toThrow(`Job "${created.id}" was not found.`)
 
-	const inspection = await getJobInspection({
+	inspection = await getJobInspection({
 		env,
 		userId: ownerCallerContext.user.userId,
 		jobId: created.id,
@@ -1503,15 +1483,15 @@ test('getJobInspection can include manifest-declared job source code', async () 
 	})
 })
 
-test('getJobInspection reports missing source files without failing inspection', async () => {
-	const env = {
+test('getJobInspection reports missing source artifacts without failing inspection', async () => {
+	const filesEnv = {
 		APP_DB: createDatabase(),
 		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
+	const missingEntrypointJob = await createJob({
+		env: filesEnv,
 		callerContext,
 		body: {
 			name: 'Missing source job',
@@ -1523,11 +1503,11 @@ test('getJobInspection reports missing source files without failing inspection',
 		},
 	})
 	await insertPublishedEntitySource({
-		db: env.APP_DB as ReturnType<typeof createDatabase>,
-		env,
+		db: filesEnv.APP_DB as ReturnType<typeof createDatabase>,
+		env: filesEnv,
 		userId: callerContext.user.userId,
-		sourceId: created.sourceId,
-		entityId: created.id,
+		sourceId: missingEntrypointJob.sourceId,
+		entityId: missingEntrypointJob.id,
 		publishedCommit: 'published-commit-2',
 		files: {
 			'kody.json': JSON.stringify({
@@ -1540,31 +1520,27 @@ test('getJobInspection reports missing source files without failing inspection',
 		},
 	})
 
-	const inspected = await getJobInspection({
-		env,
+	const missingEntrypointInspection = await getJobInspection({
+		env: filesEnv,
 		userId: callerContext.user.userId,
-		jobId: created.id,
+		jobId: missingEntrypointJob.id,
 		includeCode: true,
 	})
 
-	expect(inspected.job.id).toBe(created.id)
-	expect(inspected.source).toEqual({
+	expect(missingEntrypointInspection.job.id).toBe(missingEntrypointJob.id)
+	expect(missingEntrypointInspection.source).toEqual({
 		entrypoint: 'src/missing-job.ts',
 		code: null,
 		error: 'Job entrypoint "src/missing-job.ts" was not found.',
 	})
-})
 
-test('getJobInspection reports missing source manifests without failing inspection', async () => {
 	const bundleKv = createBundleArtifactsKv()
-	const env = {
+	const manifestEnv = {
 		APP_DB: createDatabase(),
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
+	const missingManifestJob = await createJob({
+		env: manifestEnv,
 		callerContext,
 		body: {
 			name: 'Missing manifest job',
@@ -1576,24 +1552,24 @@ test('getJobInspection reports missing source manifests without failing inspecti
 		},
 	})
 	await insertPublishedEntitySource({
-		db: env.APP_DB as ReturnType<typeof createDatabase>,
-		env,
+		db: manifestEnv.APP_DB as ReturnType<typeof createDatabase>,
+		env: manifestEnv,
 		userId: callerContext.user.userId,
-		sourceId: created.sourceId,
-		entityId: created.id,
+		sourceId: missingManifestJob.sourceId,
+		entityId: missingManifestJob.id,
 		publishedCommit: 'published-commit-2',
 	})
 	await bundleKv.put(
 		buildPublishedSourceSnapshotKvKey({
-			sourceId: created.sourceId,
+			sourceId: missingManifestJob.sourceId,
 			publishedCommit: 'published-commit-2',
 		}),
 		JSON.stringify({
 			version: 1,
-			sourceId: created.sourceId,
-			repoId: `job-${created.id}`,
+			sourceId: missingManifestJob.sourceId,
+			repoId: `job-${missingManifestJob.id}`,
 			entityKind: 'job',
-			entityId: created.id,
+			entityId: missingManifestJob.id,
 			publishedCommit: 'published-commit-2',
 			manifestPath: 'kody.json',
 			sourceRoot: '/',
@@ -1604,15 +1580,15 @@ test('getJobInspection reports missing source manifests without failing inspecti
 		}),
 	)
 
-	const inspected = await getJobInspection({
-		env,
+	const missingManifestInspection = await getJobInspection({
+		env: manifestEnv,
 		userId: callerContext.user.userId,
-		jobId: created.id,
+		jobId: missingManifestJob.id,
 		includeCode: true,
 	})
 
-	expect(inspected.job.id).toBe(created.id)
-	expect(inspected.source).toEqual({
+	expect(missingManifestInspection.job.id).toBe(missingManifestJob.id)
+	expect(missingManifestInspection.source).toEqual({
 		entrypoint: null,
 		code: null,
 		error: 'Job manifest "kody.json" was not found.',

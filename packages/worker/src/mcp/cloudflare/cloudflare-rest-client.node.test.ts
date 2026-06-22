@@ -7,7 +7,7 @@ import {
 	CloudflareRestClient,
 } from './cloudflare-rest-client.ts'
 
-test('Cloudflare REST clients read mock responses and enforce API paths', async () => {
+test('Cloudflare REST clients read mock responses, enforce API paths, and send JSON bodies', async () => {
 	const token = 'cloudflare-client-env-token'
 	await using mock = await startCloudflareMock(token)
 	const directClient = new CloudflareRestClient({
@@ -45,9 +45,7 @@ test('Cloudflare REST clients read mock responses and enforce API paths', async 
 			path: '/zones',
 		}),
 	).rejects.toThrow('path must start with `/client/v4/`')
-})
 
-test('CloudflareRestClient sends JSON body on PATCH', async () => {
 	let capturedRequest: Request | null = null
 
 	using _server = createMswNodeServer([
@@ -60,17 +58,17 @@ test('CloudflareRestClient sends JSON body on PATCH', async () => {
 		),
 	])
 
-	const client = new CloudflareRestClient({
+	const patchClient = new CloudflareRestClient({
 		apiToken: 'patch-token',
 		baseUrl: 'https://api.cloudflare.test',
 	})
-	const response = await client.rawRequest({
+	const patchResponse = await patchClient.rawRequest({
 		method: 'PATCH',
 		path: '/client/v4/zones/example-zone-id/settings/always_online',
 		body: { value: 'on' },
 	})
 
-	expect(response.status).toBe(200)
+	expect(patchResponse.status).toBe(200)
 	expect(capturedRequest).not.toBeNull()
 	expect(capturedRequest?.method).toBe('PATCH')
 	expect(capturedRequest?.headers.get('authorization')).toBe(

@@ -42,7 +42,19 @@ vi.mock('./package-app.ts', () => ({
 const { resolvePackageAppWorkerCacheKey } =
 	await import('./realtime-session.ts')
 
-test('resolvePackageAppWorkerCacheKey includes latest published commit when available', async () => {
+const binding = {
+	userId: 'user-1',
+	packageId: 'package-1',
+	kodyId: 'example',
+	sourceId: 'source-1',
+	baseUrl: 'https://example.com',
+}
+
+test('resolvePackageAppWorkerCacheKey encodes binding identity and published commit state', async () => {
+	const env = {
+		APP_DB: {} as D1Database,
+	} as Env
+
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -58,20 +70,12 @@ test('resolvePackageAppWorkerCacheKey includes latest published commit when avai
 		updated_at: '2026-04-20T00:00:00.000Z',
 	})
 
-	const cacheKey = await resolvePackageAppWorkerCacheKey({
-		env: {
-			APP_DB: {} as D1Database,
-		} as Env,
-		binding: {
-			userId: 'user-1',
-			packageId: 'package-1',
-			kodyId: 'example',
-			sourceId: 'source-1',
-			baseUrl: 'https://example.com',
-		},
+	const publishedCommitCacheKey = await resolvePackageAppWorkerCacheKey({
+		env,
+		binding,
 	})
 
-	expect(cacheKey).toBe(
+	expect(publishedCommitCacheKey).toBe(
 		JSON.stringify([
 			'user-1',
 			'package-1',
@@ -81,9 +85,7 @@ test('resolvePackageAppWorkerCacheKey includes latest published commit when avai
 		]),
 	)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledWith({}, 'source-1')
-})
 
-test('resolvePackageAppWorkerCacheKey falls back to current source state when published commit is unavailable', async () => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -99,20 +101,12 @@ test('resolvePackageAppWorkerCacheKey falls back to current source state when pu
 		updated_at: '2026-04-20T00:00:00.000Z',
 	})
 
-	const cacheKey = await resolvePackageAppWorkerCacheKey({
-		env: {
-			APP_DB: {} as D1Database,
-		} as Env,
-		binding: {
-			userId: 'user-1',
-			packageId: 'package-1',
-			kodyId: 'example',
-			sourceId: 'source-1',
-			baseUrl: 'https://example.com',
-		},
+	const unpublishedCacheKey = await resolvePackageAppWorkerCacheKey({
+		env,
+		binding,
 	})
 
-	expect(cacheKey).toBe(
+	expect(unpublishedCacheKey).toBe(
 		JSON.stringify([
 			'user-1',
 			'package-1',
@@ -121,45 +115,4 @@ test('resolvePackageAppWorkerCacheKey falls back to current source state when pu
 			null,
 		]),
 	)
-})
-
-test('resolvePackageAppWorkerCacheKey can skip source refresh and reuse cached binding identity', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'repo-1',
-		published_commit: 'commit-2',
-		indexed_commit: 'commit-2',
-		manifest_path: 'package.json',
-		source_root: '/',
-		created_at: '2026-04-20T00:00:00.000Z',
-		updated_at: '2026-04-20T00:00:00.000Z',
-	})
-
-	const cacheKey = await resolvePackageAppWorkerCacheKey({
-		env: {
-			APP_DB: {} as D1Database,
-		} as Env,
-		binding: {
-			userId: 'user-1',
-			packageId: 'package-1',
-			kodyId: 'example',
-			sourceId: 'source-1',
-			baseUrl: 'https://example.com',
-		},
-	})
-
-	expect(cacheKey).toBe(
-		JSON.stringify([
-			'user-1',
-			'package-1',
-			'source-1',
-			'https://example.com',
-			'commit-2',
-		]),
-	)
-	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })

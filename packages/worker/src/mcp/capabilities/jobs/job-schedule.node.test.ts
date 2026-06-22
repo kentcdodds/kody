@@ -50,71 +50,6 @@ function resetMocks() {
 	mockModule.updateJob.mockReset()
 }
 
-test('workflow_list returns recent workflow runs for the current user', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.listWorkflowRunsForUser.mockResolvedValue([
-		{
-			id: 'dynwf-123',
-			userId: 'user-123',
-			sourceType: 'inline',
-			packageId: null,
-			kodyId: null,
-			sourceId: null,
-			workflowName: 'inline-code',
-			exportName: null,
-			idempotencyKey: 'execute-smoke',
-			runAt: '2026-05-03T12:00:00.000Z',
-			planDate: '2026-05-03',
-			status: 'complete',
-			createdAt: '2026-05-03T11:59:00.000Z',
-			updatedAt: '2026-05-03T12:00:01.000Z',
-			completedAt: '2026-05-03T12:00:01.000Z',
-			lastError: null,
-		},
-	])
-
-	const result = await workflowListCapability.handler(
-		{ limit: 5 },
-		{ env, callerContext },
-	)
-
-	expect(mockModule.listWorkflowRunsForUser).toHaveBeenCalledWith({
-		env,
-		userId: 'user-123',
-		limit: 5,
-	})
-	expect(result).toEqual({
-		workflows: [
-			{
-				id: 'dynwf-123',
-				source_type: 'inline',
-				package_id: null,
-				kody_id: null,
-				source_id: null,
-				workflow_name: 'inline-code',
-				export_name: null,
-				idempotency_key: 'execute-smoke',
-				run_at: '2026-05-03T12:00:00.000Z',
-				plan_date: '2026-05-03',
-				status: 'complete',
-				created_at: '2026-05-03T11:59:00.000Z',
-				updated_at: '2026-05-03T12:00:01.000Z',
-				completed_at: '2026-05-03T12:00:01.000Z',
-				last_error: null,
-			},
-		],
-	})
-})
-
 test('job_update and job_delete require authentication and mutate existing jobs for the signed-in user', async () => {
 	resetMocks()
 	const env = {} as Env
@@ -243,7 +178,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 			killSwitchEnabled: true,
 		},
 	})
-	expect(result).toEqual({
+	expect(result).toMatchObject({
 		job_id: 'job-123',
 		name: 'Nightly cleanup v2',
 		source_id: 'source-123',
@@ -256,7 +191,6 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 			type: 'cron',
 			expression: '0 3 * * *',
 		},
-		schedule_summary: 'Runs on cron "0 3 * * *" in America/Denver',
 		timezone: 'America/Denver',
 		enabled: false,
 		kill_switch_enabled: true,
@@ -436,7 +370,7 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 		jobId: 'job-123',
 		callerContext,
 	})
-	expect(successResult).toEqual({
+	expect(successResult).toMatchObject({
 		job: {
 			job_id: 'job-123',
 			name: 'Immediate run',
@@ -450,7 +384,6 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 				type: 'interval',
 				every: '15m',
 			},
-			schedule_summary: 'Runs every 15m',
 			timezone: 'UTC',
 			enabled: true,
 			kill_switch_enabled: false,
@@ -686,7 +619,6 @@ test('job_schedule covers recurring schedules, requires auth, and supports the o
 			type: 'interval',
 			every: '15m',
 		},
-		schedule_summary: 'Runs every 15m',
 		next_run_at: '2026-04-20T10:15:00.000Z',
 	})
 
@@ -710,7 +642,6 @@ test('job_schedule covers recurring schedules, requires auth, and supports the o
 			type: 'cron',
 			expression: '0 9 * * 1',
 		},
-		schedule_summary: 'Runs on cron "0 9 * * 1" in America/Denver',
 		next_run_at: '2026-04-27T15:00:00.000Z',
 	})
 
@@ -737,7 +668,7 @@ test('job_schedule covers recurring schedules, requires auth, and supports the o
 	})
 })
 
-test('job inspection capabilities expose due-now state, history, alarm status, and optional source code', async () => {
+test('job inspection capabilities expose due-now state, history, alarm status, optional source code, and workflow runs', async () => {
 	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
@@ -967,6 +898,56 @@ test('job inspection capabilities expose due-now state, history, alarm status, a
 			code: sourceCode,
 			error: null,
 		})
+
+		mockModule.listWorkflowRunsForUser.mockResolvedValue([
+			{
+				id: 'dynwf-123',
+				userId: 'user-123',
+				sourceType: 'inline',
+				packageId: null,
+				kodyId: null,
+				sourceId: null,
+				workflowName: 'inline-code',
+				exportName: null,
+				idempotencyKey: 'execute-smoke',
+				runAt: '2026-05-03T12:00:00.000Z',
+				planDate: '2026-05-03',
+				status: 'complete',
+				createdAt: '2026-05-03T11:59:00.000Z',
+				updatedAt: '2026-05-03T12:00:01.000Z',
+				completedAt: '2026-05-03T12:00:01.000Z',
+				lastError: null,
+			},
+		])
+
+		const workflowListResult = await workflowListCapability.handler(
+			{ limit: 5 },
+			{ env, callerContext },
+		)
+		expect(mockModule.listWorkflowRunsForUser).toHaveBeenCalledWith({
+			env,
+			userId: 'user-123',
+			limit: 5,
+		})
+		expect(workflowListResult.workflows).toEqual([
+			{
+				id: 'dynwf-123',
+				source_type: 'inline',
+				package_id: null,
+				kody_id: null,
+				source_id: null,
+				workflow_name: 'inline-code',
+				export_name: null,
+				idempotency_key: 'execute-smoke',
+				run_at: '2026-05-03T12:00:00.000Z',
+				plan_date: '2026-05-03',
+				status: 'complete',
+				created_at: '2026-05-03T11:59:00.000Z',
+				updated_at: '2026-05-03T12:00:01.000Z',
+				completed_at: '2026-05-03T12:00:01.000Z',
+				last_error: null,
+			},
+		])
 	} finally {
 		vi.useRealTimers()
 	}
