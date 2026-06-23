@@ -368,7 +368,8 @@ export declare function fetch(request: Request): Promise<Response>
 		jobs: [
 			expect.objectContaining({
 				name: 'nightly',
-				scheduleSummary: 'Runs every 1d',
+				entry: './src/jobs/nightly.ts',
+				enabled: true,
 			}),
 		],
 		readme: {

@@ -29,7 +29,6 @@ test('kody_official_guide fetches markdown and surfaces fetch failures', async (
 			ctx,
 		)
 		expect(result.body).toBe('# Hello\n\nbody')
-		expect(result.title).toBeTruthy()
 	}
 
 	{

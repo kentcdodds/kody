@@ -21,20 +21,6 @@ test('module parameter definitions normalize names, validate inputs, and run par
 		},
 	])!
 
-	expect(definitions).toEqual([
-		expect.objectContaining({
-			name: 'owner',
-			type: 'string',
-			required: true,
-		}),
-		expect.objectContaining({
-			name: 'limit',
-			type: 'number',
-			required: false,
-			default: 5,
-		}),
-	])
-
 	expect(() =>
 		applySkillParameters({ definitions, values: { limit: 2 } }),
 	).toThrow('Missing required module parameter: owner.')

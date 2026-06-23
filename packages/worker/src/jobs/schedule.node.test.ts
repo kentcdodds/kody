@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	computeNextRunAt,
-	formatScheduleSummary,
-	normalizeJobSchedule,
-} from './schedule.ts'
+import { computeNextRunAt, normalizeJobSchedule } from './schedule.ts'
 
 test('job schedule helpers normalize schedules and compute the next run time', () => {
 	expect(
@@ -24,16 +20,6 @@ test('job schedule helpers normalize schedules and compute the next run time', (
 		type: 'interval',
 		every: '5m',
 	})
-
-	const cronSummary = formatScheduleSummary({
-		schedule: {
-			type: 'cron',
-			expression: '0 7 * * *',
-		},
-		timezone: 'America/Los_Angeles',
-	})
-	expect(cronSummary).toMatch(/0 7 \* \* \*/)
-	expect(cronSummary).toMatch(/America\/Los_Angeles/)
 
 	expect(
 		computeNextRunAt({

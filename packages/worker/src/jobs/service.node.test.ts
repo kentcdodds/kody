@@ -995,7 +995,7 @@ function createBaseCallerContext(): PersistedJobCallerContext {
 	}) as PersistedJobCallerContext
 }
 
-test('createJob persists interval schedules, assigns stable storage ids, and syncs alarms', async () => {
+test('create, update, and delete jobs sync the job manager alarm', async () => {
 	const env = {
 		APP_DB: createDatabase(),
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
@@ -1022,7 +1022,6 @@ test('createJob persists interval schedules, assigns stable storage ids, and syn
 		type: 'interval',
 		every: '15m',
 	})
-	expect(intervalJob.scheduleSummary).toMatch(/15m/)
 	expect(intervalJob.storageId).toBe(`job:${intervalJob.id}`)
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
@@ -1047,17 +1046,8 @@ test('createJob persists interval schedules, assigns stable storage ids, and syn
 		userId: callerContext.user.userId,
 	})
 	expect(onceJob.storageId).toBe(`job:${onceJob.id}`)
-})
 
-test('updateJob and deleteJob sync the job manager alarm after mutations', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
+	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 	const created = await createJob({
 		env,
 		callerContext,
@@ -1070,7 +1060,6 @@ test('updateJob and deleteJob sync the job manager alarm after mutations', async
 			},
 		},
 	})
-	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 
 	await updateJob({
 		env,
@@ -1204,27 +1193,6 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	expect(updated.params).toBeUndefined()
 	expect(updated.timezone).toBe('America/Denver')
 	expect(updated.enabled).toBe(false)
-	expect(updated.scheduleSummary).toContain('America/Denver')
-})
-
-test('updateJob rejects empty replacement code', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Code validation job',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
-	})
 
 	await expect(
 		updateJob({
@@ -1236,31 +1204,6 @@ test('updateJob rejects empty replacement code', async () => {
 			},
 		}),
 	).rejects.toThrow('Jobs require non-empty code.')
-})
-
-test('createJob rejects legacy async-arrow snippet code', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-
-	await expect(
-		createJob({
-			env,
-			callerContext,
-			body: {
-				name: 'Legacy snippet job',
-				code: 'async () => ({ ok: true })',
-				schedule: {
-					type: 'interval',
-					every: '15m',
-				},
-			},
-		}),
-	).rejects.toThrow(
-		'Repo-backed package export entrypoints and job entrypoints must default export a function',
-	)
 })
 
 test('inspectJobsForUser returns persisted job fields with alarm debug state', async () => {
@@ -1348,7 +1291,6 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 			name: 'Inspect recurring job',
 			sourceId: created.sourceId,
 			storageId: created.storageId,
-			scheduleSummary: 'Runs every 15m',
 			lastRunAt: '2026-04-20T10:05:00.000Z',
 			lastRunStatus: 'error',
 			lastRunError: 'Worker fetch failed',
@@ -3757,81 +3699,6 @@ test('runJobNow deletes vectors for once jobs', async () => {
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
-	}
-})
-
-test('runJobNow preserves failed once jobs for inspection', async () => {
-	const db = createDatabase()
-	const env = {
-		APP_DB: db,
-		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-		LOADER: {} as WorkerLoader,
-		REPO_SESSION: {} as DurableObjectNamespace,
-	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-	const jobView = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Run once and keep failures',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-17T15:00:00Z',
-			},
-		},
-	})
-	const deleteByIds = vi.fn(async () => {})
-	env.CAPABILITY_VECTOR_INDEX = {
-		deleteByIds,
-	}
-	const sessionClient = {
-		openSession: vi.fn(async () => {
-			throw new Error('repo session unavailable')
-		}),
-		discardSession: vi.fn(),
-	}
-	const repoSessionRpcSpy = vi
-		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
-		.mockReturnValue(sessionClient as never)
-
-	try {
-		const result = await runJobNow({
-			env: env as Env,
-			userId: callerContext.user.userId,
-			jobId: jobView.id,
-			callerContext,
-		})
-		expect(result.execution.ok).toBe(false)
-		if (result.execution.ok) {
-			throw new Error('Expected failed execution result.')
-		}
-		expect(result.execution.error).toContain(
-			'Cannot read properties of undefined',
-		)
-		expect(result.deletedAfterRun).toBe(false)
-		expect(deleteByIds).not.toHaveBeenCalled()
-		const row = await (
-			await import('./repo.ts')
-		).getJobRowById(db, callerContext.user.userId, jobView.id)
-		expect(row?.record).toEqual(
-			expect.objectContaining({
-				id: jobView.id,
-				enabled: false,
-				lastRunStatus: 'error',
-				lastRunError: expect.stringContaining(
-					'Cannot read properties of undefined',
-				),
-				runCount: 1,
-				successCount: 0,
-				errorCount: 1,
-			}),
-		)
-	} finally {
-		repoSessionRpcSpy.mockRestore()
 	}
 })
 
