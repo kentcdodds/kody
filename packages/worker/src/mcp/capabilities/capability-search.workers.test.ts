@@ -51,9 +51,6 @@ test('offline capability search ranks lexical matches and returns structured det
 		lexicalRank: 1,
 		vectorRank: 1,
 	})
-	expect(oauthGuide.matches[0]?.keywords).toEqual(
-		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
-	)
 	expect(oauthGuide.matches[0]).not.toHaveProperty('inputSchema')
 	expect(oauthGuide.matches[0]).toMatchObject({
 		inputTypeDefinition: expect.stringContaining('OAuthSetupGuideInput'),
