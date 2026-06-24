@@ -5,6 +5,7 @@ function mapRepoSessionRow(row: Record<string, unknown>): RepoSessionRow {
 		id: String(row['id']),
 		user_id: String(row['user_id']),
 		source_id: String(row['source_id']),
+		source_repo_id: String(row['source_repo_id']),
 		session_branch: String(row['session_branch']),
 		source_branch: String(row['source_branch']),
 		base_commit: String(row['base_commit']),
@@ -41,15 +42,16 @@ export async function insertRepoSession(
 	await db
 		.prepare(
 			`INSERT INTO repo_sessions (
-				id, user_id, source_id, session_branch, source_branch, base_commit, source_root, conversation_id, status, expires_at,
+				id, user_id, source_id, source_repo_id, session_branch, source_branch, base_commit, source_root, conversation_id, status, expires_at,
 				last_checkpoint_at, last_checkpoint_commit, last_check_run_id,
 				last_check_tree_hash, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			row.source_id,
+			row.source_repo_id,
 			row.session_branch,
 			row.source_branch,
 			row.base_commit,

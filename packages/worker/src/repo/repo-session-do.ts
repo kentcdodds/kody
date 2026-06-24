@@ -21,6 +21,7 @@ import {
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactDefaultBranchHead,
+	resolveExistingArtifactSourceRepo,
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
@@ -828,6 +829,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					id: input.sessionId,
 					user_id: input.userId,
 					source_id: input.sourceId,
+					source_repo_id: source.repo_id,
 					session_branch: sessionBranch,
 					source_branch: sourceBranch,
 					base_commit: baseCommit ?? '',
@@ -1088,6 +1090,26 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionRow.source_id,
 		)
 		if (!source) {
+			const sourceRepo = await resolveExistingArtifactSourceRepo(
+				this.env,
+				sessionRow.source_repo_id,
+			)
+			if (sourceRepo) {
+				const access = await ensureArtifactRepoRemote({
+					repo: sourceRepo,
+					scope: 'write',
+				})
+				await this.initialize({
+					sessionId: sessionRow.id,
+					repoRemote: access.remote,
+					repoToken: access.token,
+					sessionBranch,
+				})
+				await this.deleteRemoteBranch({
+					branch: sessionBranch,
+					token: access.token,
+				})
+			}
 			await deleteRepoSession(this.env.APP_DB, input.sessionId)
 			await this.clearCachedSessionState(input.sessionId)
 			await this.resetWorkspace()

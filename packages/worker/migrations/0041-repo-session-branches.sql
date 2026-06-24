@@ -4,6 +4,7 @@ CREATE TABLE repo_sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL,
 	source_id TEXT NOT NULL,
+	source_repo_id TEXT NOT NULL,
 	session_branch TEXT NOT NULL,
 	source_branch TEXT NOT NULL,
 	base_commit TEXT NOT NULL,

@@ -33,6 +33,7 @@ export const repoSessionRowSchema = z.object({
 	id: z.string(),
 	user_id: z.string(),
 	source_id: z.string(),
+	source_repo_id: z.string(),
 	session_branch: z.string(),
 	source_branch: z.string(),
 	base_commit: z.string(),
