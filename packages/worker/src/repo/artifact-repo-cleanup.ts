@@ -152,6 +152,44 @@ export async function cleanupArtifactReposForPackage(input: {
 	})
 }
 
+export async function cleanupArtifactReposForSource(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	warnings?: Array<string>
+}) {
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (!source) return 0
+	if (source.user_id !== input.userId) {
+		input.warnings?.push(
+			`Skipped artifact repo cleanup for source ${input.sourceId}: user scope mismatch.`,
+		)
+		return 0
+	}
+	if (!hasArtifactsAccess(input.env)) {
+		const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
+			userId: input.userId,
+			sourceId: source.id,
+		})
+		const repoCount = collectUniqueRepoNames([
+			...sessions.map((session) => session.session_repo_name),
+			source.repo_id,
+		]).length
+		if (repoCount > 0) {
+			input.warnings?.push(
+				`Cloudflare Artifacts access was unavailable; ${repoCount} artifact repo(s) for source ${source.id} were not removed and must be cleaned up manually.`,
+			)
+		}
+		return 0
+	}
+	return deleteReposForEntitySource({
+		env: input.env,
+		userId: input.userId,
+		source,
+		warnings: input.warnings,
+	})
+}
+
 export async function cleanupAllUserArtifactRepos(input: {
 	env: Env
 	userId: string

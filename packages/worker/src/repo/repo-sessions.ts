@@ -8,6 +8,8 @@ function mapRepoSessionRow(row: Record<string, unknown>): RepoSessionRow {
 		session_repo_id: String(row['session_repo_id']),
 		session_repo_name: String(row['session_repo_name']),
 		session_repo_namespace: String(row['session_repo_namespace']),
+		session_branch:
+			row['session_branch'] == null ? null : String(row['session_branch']),
 		base_commit: String(row['base_commit']),
 		source_root: String(row['source_root']),
 		conversation_id:
@@ -43,10 +45,10 @@ export async function insertRepoSession(
 		.prepare(
 			`INSERT INTO repo_sessions (
 				id, user_id, source_id, session_repo_id, session_repo_name, session_repo_namespace,
-				base_commit, source_root, conversation_id, status, expires_at,
+				session_branch, base_commit, source_root, conversation_id, status, expires_at,
 				last_checkpoint_at, last_checkpoint_commit, last_check_run_id,
 				last_check_tree_hash, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -55,6 +57,7 @@ export async function insertRepoSession(
 			row.session_repo_id,
 			row.session_repo_name,
 			row.session_repo_namespace,
+			row.session_branch,
 			row.base_commit,
 			row.source_root,
 			row.conversation_id,
@@ -135,6 +138,30 @@ export async function listRepoSessionsByUser(
 	return (results ?? []).map(mapRepoSessionRow)
 }
 
+export async function listRepoSessionsForBranchCleanup(
+	db: D1Database,
+	input: {
+		now: string
+		abandonedBefore: string
+		limit: number
+	},
+): Promise<Array<RepoSessionRow>> {
+	const { results } = await db
+		.prepare(
+			`SELECT * FROM repo_sessions
+			WHERE session_branch IS NOT NULL
+				AND (
+					(status IN ('published', 'discarded') AND expires_at IS NOT NULL AND expires_at <= ?)
+					OR (status = 'active' AND updated_at <= ?)
+				)
+			ORDER BY updated_at ASC
+			LIMIT ?`,
+		)
+		.bind(input.now, input.abandonedBefore, input.limit)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapRepoSessionRow)
+}
+
 export async function updateRepoSession(
 	db: D1Database,
 	input: {
@@ -143,6 +170,7 @@ export async function updateRepoSession(
 		sessionRepoId?: string
 		sessionRepoName?: string
 		sessionRepoNamespace?: string
+		sessionBranch?: string | null
 		baseCommit?: string
 		sourceRoot?: string
 		conversationId?: string | null
@@ -168,6 +196,9 @@ export async function updateRepoSession(
 	}
 	if (input.sessionRepoNamespace !== undefined) {
 		add('session_repo_namespace', input.sessionRepoNamespace)
+	}
+	if (input.sessionBranch !== undefined) {
+		add('session_branch', input.sessionBranch)
 	}
 	if (input.baseCommit !== undefined) add('base_commit', input.baseCommit)
 	if (input.sourceRoot !== undefined) add('source_root', input.sourceRoot)

@@ -36,6 +36,11 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 	}) => Promise<RepoSessionDiscardResult>
+	cleanupSessionBranch: (payload: {
+		sessionId: string
+		userId: string
+		reason: 'expired' | 'abandoned'
+	}) => Promise<{ ok: true; sessionId: string; branch: string }>
 	readFile: (payload: {
 		sessionId: string
 		userId: string

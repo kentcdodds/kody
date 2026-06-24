@@ -23,6 +23,7 @@ import {
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
+	cleanupArtifactReposForSource: vi.fn(async () => 0),
 }))
 
 const jobManagerMockModule = vi.hoisted(() => ({
@@ -40,6 +41,11 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 		repoMockModule.syncArtifactSourceSnapshot(...args),
 }))
 
+vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
+	cleanupArtifactReposForSource: (...args: Array<unknown>) =>
+		repoMockModule.cleanupArtifactReposForSource(...args),
+}))
+
 vi.mock('./manager-client.ts', () => ({
 	syncJobManagerAlarm: (...args: Array<unknown>) =>
 		jobManagerMockModule.syncJobManagerAlarm(...args),
@@ -50,6 +56,8 @@ vi.mock('./manager-client.ts', () => ({
 // eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite restores global spies across many integration-style tests.
 afterEach(() => {
 	vi.restoreAllMocks()
+	repoMockModule.cleanupArtifactReposForSource.mockClear()
+	repoMockModule.cleanupArtifactReposForSource.mockResolvedValue(0)
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 	jobManagerMockModule.getJobManagerDebugState.mockReset()
 	jobManagerMockModule.getJobManagerDebugState.mockResolvedValue({
@@ -1085,6 +1093,11 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		jobId: created.id,
 	})
 
+	expect(repoMockModule.cleanupArtifactReposForSource).toHaveBeenCalledWith({
+		env,
+		userId: callerContext.user.userId,
+		sourceId: created.sourceId,
+	})
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: callerContext.user.userId,

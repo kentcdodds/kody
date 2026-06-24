@@ -56,6 +56,7 @@ import {
 	deleteEntitySource,
 	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
+import { cleanupArtifactReposForSource } from '#worker/repo/artifact-repo-cleanup.ts'
 import {
 	loadPublishedEntitySource,
 	type PublishedEntitySource,
@@ -614,7 +615,16 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 				input.env.APP_DB,
 				artifact.sourceId,
 			)
-			if (source) {
+			if (
+				source &&
+				source.entity_kind === 'job' &&
+				source.entity_id === artifact.jobId
+			) {
+				await cleanupArtifactReposForSource({
+					env: input.env,
+					userId: artifact.userId,
+					sourceId: source.id,
+				})
 				await deletePublishedArtifactsForSource({
 					env: input.env,
 					userId: artifact.userId,
@@ -654,6 +664,45 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 			})
 		}
 	}
+}
+
+async function cleanupAdHocJobSource(input: {
+	env: Env
+	userId: string
+	jobId: string
+	sourceId: string | null | undefined
+}) {
+	if (!input.sourceId) {
+		return
+	}
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (
+		!source ||
+		source.user_id !== input.userId ||
+		source.entity_kind !== 'job' ||
+		source.entity_id !== input.jobId
+	) {
+		return
+	}
+	await cleanupArtifactReposForSource({
+		env: input.env,
+		userId: input.userId,
+		sourceId: source.id,
+	})
+	await deletePublishedArtifactsForSource({
+		env: input.env,
+		userId: input.userId,
+		sourceId: source.id,
+	})
+	await deletePublishedSourceSnapshot({
+		env: input.env,
+		sourceId: source.id,
+		publishedCommit: source.published_commit,
+	})
+	await deleteEntitySource(input.env.APP_DB, {
+		id: source.id,
+		userId: input.userId,
+	})
 }
 
 function createPackageJobCallerContext(input: {
@@ -1094,6 +1143,22 @@ export async function deleteJob(input: {
 	}
 	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
 	await deleteJobVector(input.env, input.jobId)
+	await cleanupAdHocJobSource({
+		env: input.env,
+		userId: input.userId,
+		jobId: input.jobId,
+		sourceId: row.record.sourceId,
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'ad hoc job source cleanup failed',
+				userId: input.userId,
+				jobId: input.jobId,
+				sourceId: row.record.sourceId,
+				error: error instanceof Error ? error.message : String(error),
+			}),
+		)
+	})
 	await syncJobManagerAlarm({
 		env: input.env,
 		userId: input.userId,

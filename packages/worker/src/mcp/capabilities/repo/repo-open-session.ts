@@ -14,7 +14,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 	{
 		name: 'repo_open_session',
 		description:
-			'Open or resume an MCP-native repo-backed editing session for a saved source artifact when editing through Kody tools instead of a local clone. Later repo capabilities can read, search, edit, validate, and publish against a mutable session fork.',
+			'Open or resume an MCP-native repo-backed editing session for a saved source artifact when editing through Kody tools instead of a local clone. Later repo capabilities can read, search, edit, validate, and publish against a mutable session branch.',
 		keywords: ['repo', 'session', 'open', 'resume', 'artifact', 'source'],
 		readOnly: false,
 		idempotent: false,

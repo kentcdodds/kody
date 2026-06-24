@@ -105,6 +105,7 @@ export const repoSessionInfoSchema = z.object({
 	session_repo_id: z.string(),
 	session_repo_name: z.string(),
 	session_repo_namespace: z.string(),
+	session_branch: z.string().nullable(),
 	conversation_id: z.string().nullable(),
 	last_checkpoint_commit: z.string().nullable(),
 	last_check_run_id: z.string().nullable(),

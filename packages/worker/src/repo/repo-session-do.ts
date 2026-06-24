@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
+import rawGit from 'isomorphic-git'
+import http from 'isomorphic-git/http/web'
 import {
 	Workspace,
 	WorkspaceFileSystem,
@@ -21,7 +23,6 @@ import {
 	getArtifactsNamespace,
 	resolveArtifactDefaultBranchHead,
 	resolveArtifactSourceRepo,
-	resolveSessionRepo,
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
@@ -83,6 +84,7 @@ const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
 const cachedSessionStateStorageKeyPrefix = 'repo-session:state:'
 const defaultSessionBranch = 'main'
+const publishedSessionRetentionMs = 14 * 24 * 60 * 60 * 1000
 const sessionCommitAuthor = {
 	name: 'Kody Repo Session',
 	email: 'repo-session@local.invalid',
@@ -92,6 +94,8 @@ type CachedRepoSessionState = {
 	sessionRow: RepoSessionRow
 	source: EntitySourceRow
 }
+
+type RawGitPushInput = Parameters<typeof rawGit.push>[0]
 
 function buildRepoSessionWorkspaceName(sessionId: string) {
 	return `repo-session:${sessionId}`
@@ -139,13 +143,21 @@ function compactArtifactsRepoSuffix(value: string) {
 	return compact.length > 0 ? compact : 'session'
 }
 
-function buildSessionArtifactsRepoName(
-	sourceRepoId: string,
-	sessionId: string,
-) {
-	const compactSessionId = compactArtifactsRepoSuffix(sessionId).slice(-61)
-	const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
-	return `${sourceRepoId.slice(0, repoPrefixLength)}-${compactSessionId}`
+function buildSessionBranchName(sessionId: string) {
+	return `sessions/${compactArtifactsRepoSuffix(sessionId).slice(-80)}`
+}
+
+function buildPublishedSessionExpiresAt(now: Date = new Date()) {
+	return new Date(now.valueOf() + publishedSessionRetentionMs).toISOString()
+}
+
+function requireSessionBranch(sessionRow: RepoSessionRow) {
+	if (!sessionRow.session_branch) {
+		throw new Error(
+			`Repo session "${sessionRow.id}" was created with the retired fork-backed session model. Open a new repo session for this source.`,
+		)
+	}
+	return sessionRow.session_branch
 }
 
 async function ensureArtifactRepoRemote(input: {
@@ -266,24 +278,23 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
+		const sessionBranch = requireSessionBranch(sessionRow)
 		await this.writeCachedSessionState({ sessionRow, source })
-		const sessionRepo = await resolveSessionRepo(this.env, {
-			namespace: sessionRow.session_repo_namespace,
-			name: sessionRow.session_repo_name,
-		})
+		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
 		const access = await ensureArtifactRepoRemote({
-			repo: sessionRepo,
+			repo: sourceRepo,
 			scope: 'write',
 		})
 		await this.initialize({
 			sessionId: sessionRow.id,
 			sessionRepoRemote: access.remote,
 			sessionRepoToken: access.token,
+			sessionBranch,
 		})
 		return {
 			sessionRow,
 			source,
-			sessionRepo,
+			sourceRepo,
 			sessionAccess: access,
 		}
 	}
@@ -375,17 +386,6 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 	}
 
-	private async getCurrentBranch(defaultBranch = defaultSessionBranch) {
-		const branchResult = await this.git.branch({
-			dir: repoSessionWorkspacePrefix,
-			list: true,
-		})
-		if ('current' in branchResult && branchResult.current) {
-			return branchResult.current
-		}
-		return defaultBranch
-	}
-
 	private async getHeadCommit() {
 		const log = await this.git.log({
 			dir: repoSessionWorkspacePrefix,
@@ -414,6 +414,40 @@ class RepoSessionBase extends DurableObject<Env> {
 			author: sessionCommitAuthor,
 		})
 		return commit.oid
+	}
+
+	private async pushBranchToRemoteRef(input: {
+		branch: string
+		remoteRef: string
+		token: string
+	}) {
+		const auth = buildArtifactsGitAuth({ token: input.token })
+		return rawGit.push({
+			fs: this.fileSystem as unknown as RawGitPushInput['fs'],
+			http,
+			dir: repoSessionWorkspacePrefix,
+			remote: 'origin',
+			ref: input.branch,
+			remoteRef: input.remoteRef,
+			onAuth() {
+				return auth
+			},
+		})
+	}
+
+	private async deleteRemoteBranch(input: { branch: string; token: string }) {
+		const auth = buildArtifactsGitAuth({ token: input.token })
+		return rawGit.push({
+			fs: this.fileSystem as unknown as RawGitPushInput['fs'],
+			http,
+			dir: repoSessionWorkspacePrefix,
+			remote: 'origin',
+			ref: input.branch,
+			delete: true,
+			onAuth() {
+				return auth
+			},
+		})
 	}
 
 	private async listWorkspaceFileEntries(
@@ -594,6 +628,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		sessionRepoRemote: string
 		sessionRepoToken: string
+		sessionBranch?: string | null
 	}): Promise<void> {
 		if (this.initializedSessionId === input.sessionId) return
 		const gitConfigPath = `${repoSessionWorkspacePrefix}/.git/config`
@@ -613,6 +648,12 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 			await this.git.clone({
 				dir: repoSessionWorkspacePrefix,
+				...(input.sessionBranch
+					? {
+							branch: input.sessionBranch,
+							singleBranch: true,
+						}
+					: {}),
 				...buildGitCloneAuth({
 					remote: input.sessionRepoRemote,
 					token: input.sessionRepoToken,
@@ -734,22 +775,49 @@ class RepoSessionBase extends DurableObject<Env> {
 			const sourceRepo =
 				sourceHead?.repo ??
 				(await resolveArtifactSourceRepo(this.env, source.repo_id))
-			const sessionRepoName = buildSessionArtifactsRepoName(
-				source.repo_id,
-				input.sessionId,
-			)
-			const forked = await sourceRepo.fork({
-				name: sessionRepoName,
-				readOnly: false,
+			const sourceInfo = await sourceRepo.info()
+			const sourceAccess = await ensureArtifactRepoRemote({
+				repo: sourceRepo,
+				scope: 'write',
+			})
+			const sessionBranch = buildSessionBranchName(input.sessionId)
+			await this.resetWorkspace()
+			await this.workspace.mkdir(repoSessionWorkspacePrefix, {
+				recursive: true,
+			})
+			await this.git.clone({
+				dir: repoSessionWorkspacePrefix,
+				branch: sourceInfo?.defaultBranch ?? defaultSessionBranch,
+				singleBranch: true,
+				...buildGitCloneAuth({
+					remote: sourceAccess.remote,
+					token: sourceAccess.token,
+				}),
+			})
+			await this.git.checkout({
+				dir: repoSessionWorkspacePrefix,
+				ref: baseCommit,
+				force: true,
+			})
+			await this.git.checkout({
+				dir: repoSessionWorkspacePrefix,
+				branch: sessionBranch,
+			})
+			await this.git.push({
+				dir: repoSessionWorkspacePrefix,
+				remote: 'origin',
+				ref: sessionBranch,
+				...buildArtifactsGitAuth({ token: sourceAccess.token }),
 			})
 			const now = nowIso()
 			const newSessionRow: RepoSessionRow = {
 				id: input.sessionId,
 				user_id: input.userId,
 				source_id: input.sourceId,
-				session_repo_id: forked.id,
-				session_repo_name: forked.name,
+				session_repo_id: sourceInfo?.id ?? source.repo_id,
+				session_repo_name: sourceInfo?.name ?? source.repo_id,
 				session_repo_namespace: getArtifactsNamespace(this.env),
+				session_branch: sessionBranch,
 				base_commit: baseCommit ?? '',
 				source_root: input.sourceRoot ?? source.source_root,
 				conversation_id: input.conversationId ?? null,
@@ -764,29 +832,32 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 			await insertRepoSession(this.env.APP_DB, newSessionRow)
 			sessionRow = newSessionRow
-			await this.initialize({
-				sessionId: sessionRow.id,
-				sessionRepoRemote: forked.remote,
-				sessionRepoToken: forked.token,
-			})
 		} else {
 			if (sessionRow.user_id !== input.userId) {
 				throw new Error(
 					`Repo session "${input.sessionId}" was not found for this user.`,
 				)
 			}
-			const sessionRepo = await resolveSessionRepo(this.env, {
-				namespace: sessionRow.session_repo_namespace,
-				name: sessionRow.session_repo_name,
-			})
+			const source = await getEntitySourceById(
+				this.env.APP_DB,
+				sessionRow.source_id,
+			)
+			if (!source) {
+				throw new Error(`Source "${sessionRow.source_id}" was not found.`)
+			}
+			const sourceRepo = await resolveArtifactSourceRepo(
+				this.env,
+				source.repo_id,
+			)
 			const access = await ensureArtifactRepoRemote({
-				repo: sessionRepo,
+				repo: sourceRepo,
 				scope: 'write',
 			})
 			await this.initialize({
 				sessionId: sessionRow.id,
 				sessionRepoRemote: access.remote,
 				sessionRepoToken: access.token,
+				sessionBranch: requireSessionBranch(sessionRow),
 			})
 		}
 		const source = await getEntitySourceById(
@@ -948,13 +1019,84 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Repo session "${input.sessionId}" was not found for this user.`,
 			)
 		}
-		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		requireSessionBranch(sessionRow)
+		await updateRepoSession(this.env.APP_DB, {
+			id: sessionRow.id,
+			userId: sessionRow.user_id,
+			status: 'discarded',
+			expiresAt: buildPublishedSessionExpiresAt(),
+			lastCheckpointAt: nowIso(),
+		})
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace()
 		return {
 			ok: true,
 			sessionId: input.sessionId,
 			deleted: true,
+		}
+	}
+
+	async cleanupSessionBranch(input: {
+		sessionId: string
+		userId: string
+		reason: 'expired' | 'abandoned'
+	}) {
+		const sessionRow = await getRepoSessionById(
+			this.env.APP_DB,
+			input.sessionId,
+		)
+		if (!sessionRow) {
+			return {
+				ok: true as const,
+				sessionId: input.sessionId,
+				branch: '',
+			}
+		}
+		if (sessionRow.user_id !== input.userId) {
+			throw new Error(
+				`Repo session "${input.sessionId}" was not found for this user.`,
+			)
+		}
+		const sessionBranch = requireSessionBranch(sessionRow)
+		const source = await getEntitySourceById(
+			this.env.APP_DB,
+			sessionRow.source_id,
+		)
+		if (!source) {
+			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
+		}
+		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+		const access = await ensureArtifactRepoRemote({
+			repo: sourceRepo,
+			scope: 'write',
+		})
+		await this.initialize({
+			sessionId: sessionRow.id,
+			sessionRepoRemote: access.remote,
+			sessionRepoToken: access.token,
+			sessionBranch,
+		})
+		await this.deleteRemoteBranch({
+			branch: sessionBranch,
+			token: access.token,
+		})
+		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		await this.clearCachedSessionState(input.sessionId)
+		await this.resetWorkspace()
+		console.info(
+			JSON.stringify({
+				message: 'repo session branch deleted',
+				userId: input.userId,
+				sessionId: input.sessionId,
+				sourceId: source.id,
+				branch: sessionBranch,
+				reason: input.reason,
+			}),
+		)
+		return {
+			ok: true as const,
+			sessionId: input.sessionId,
+			branch: sessionBranch,
 		}
 	}
 
@@ -1482,36 +1624,23 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 	}): Promise<RepoSessionRebaseResult> {
-		const { sessionRow, source, sessionAccess } = await this.getSessionState(
-			input.sessionId,
-			input.userId,
-		)
-		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+		const { sessionRow, source, sourceRepo, sessionAccess } =
+			await this.getSessionState(input.sessionId, input.userId)
 		const sourceInfo = await sourceRepo.info()
-		const sourceAccess = await ensureArtifactRepoRemote({
-			repo: sourceRepo,
-			scope: 'write',
-		})
-		await this.ensureRemote({
-			name: 'source',
-			url: buildAuthenticatedArtifactsRemote({
-				remote: sourceAccess.remote,
-				token: sourceAccess.token,
-			}),
-		})
+		const sessionBranch = requireSessionBranch(sessionRow)
 		const defaultBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
 		const pullResult = await this.git.pull({
 			dir: repoSessionWorkspacePrefix,
-			remote: 'source',
+			remote: 'origin',
 			ref: defaultBranch,
 			author: sessionCommitAuthor,
-			...buildArtifactsGitAuth({ token: sourceAccess.token }),
+			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		const headCommit = await this.getHeadCommit()
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
-			ref: defaultBranch,
+			ref: sessionBranch,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		await updateRepoSession(this.env.APP_DB, {
@@ -1538,10 +1667,9 @@ class RepoSessionBase extends DurableObject<Env> {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 	}): Promise<RepoSessionPublishResult> {
-		const { sessionRow, source, sessionAccess } = await this.getSessionState(
-			input.sessionId,
-			input.userId,
-		)
+		const { sessionRow, source, sourceRepo, sessionAccess } =
+			await this.getSessionState(input.sessionId, input.userId)
+		const sessionBranch = requireSessionBranch(sessionRow)
 		const checkStatus = await this.readCheckStatus()
 		const currentTreeHash = await this.computeTreeHash()
 		if (
@@ -1578,12 +1706,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				confirmed: input.destructiveOverwriteConfirmed,
 			})
 		}
-		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
 		const sourceInfo = await sourceRepo.info()
-		const sourceAccess = await ensureArtifactRepoRemote({
-			repo: sourceRepo,
-			scope: 'write',
-		})
 		const sessionHeadCommit =
 			(await this.commitIfDirty(`Publish repo session ${input.sessionId}`)) ??
 			(await this.getHeadCommit())
@@ -1595,24 +1718,14 @@ class RepoSessionBase extends DurableObject<Env> {
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
-			ref: await this.getCurrentBranch(
-				sourceInfo?.defaultBranch ?? defaultSessionBranch,
-			),
+			ref: sessionBranch,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
-		await this.ensureRemote({
-			name: 'source',
-			url: buildAuthenticatedArtifactsRemote({
-				remote: sourceAccess.remote,
-				token: sourceAccess.token,
-			}),
-		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
-		await this.git.push({
-			dir: repoSessionWorkspacePrefix,
-			remote: 'source',
-			ref: targetBranch,
-			...buildArtifactsGitAuth({ token: sourceAccess.token }),
+		await this.pushBranchToRemoteRef({
+			branch: sessionBranch,
+			remoteRef: targetBranch,
+			token: sessionAccess.token,
 		})
 		const snapshotFiles = await this.collectWorkspaceFiles()
 		await finalizePublishedEntitySource({
@@ -1627,9 +1740,9 @@ class RepoSessionBase extends DurableObject<Env> {
 		await this.attachSourcePublishGitNote({
 			source,
 			commitOid: publishedCommit,
-			remote: sourceAccess.remote,
-			token: sourceAccess.token,
-			remoteName: 'source',
+			remote: sessionAccess.remote,
+			token: sessionAccess.token,
+			remoteName: 'origin',
 			publishedBy: 'repo_session',
 			sessionId: sessionRow.id,
 			conversationId: sessionRow.conversation_id,
@@ -1645,6 +1758,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			baseCommit: sessionHeadCommit ?? sessionRow.base_commit,
 			lastCheckpointCommit: sessionHeadCommit,
 			lastCheckpointAt: nowIso(),
+			expiresAt: buildPublishedSessionExpiresAt(),
 		})
 		return {
 			status: 'ok',

@@ -40,6 +40,7 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
+import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
 	parseUserScopedConnectorRoutePath,
@@ -413,6 +414,10 @@ const workerHandler = {
 		await reconcileArtifactsPushes({
 			env,
 			baseUrl,
+			now: new Date(controller.scheduledTime),
+		})
+		await cleanupRepoSessionBranches({
+			env,
 			now: new Date(controller.scheduledTime),
 		})
 	},

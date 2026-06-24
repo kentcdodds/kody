@@ -34,6 +34,7 @@ vi.mock('./repo-sessions.ts', () => ({
 const {
 	cleanupAllUserArtifactRepos,
 	cleanupArtifactReposForPackage,
+	cleanupArtifactReposForSource,
 	deleteUserScopedArtifactRepo,
 } = await import('./artifact-repo-cleanup.ts')
 
@@ -152,4 +153,55 @@ test('artifact repo cleanup records warnings for scope mismatches and missing Ar
 	).toBe(0)
 	expect(accountWarnings).toHaveLength(1)
 	expect(accountWarnings[0]).toMatch(/artifacts access/i)
+})
+
+test('generic source cleanup deletes the source root and tracked sessions with user scope checks', async () => {
+	mockModule.hasArtifactsAccess.mockReturnValue(true)
+	mockModule.deleteArtifactRepo.mockResolvedValue({
+		id: 'repo-deleted',
+		alreadyDeleted: false,
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'job-job-1',
+	})
+	mockModule.listRepoSessionsBySource.mockResolvedValue([
+		{
+			id: 'session-1',
+			user_id: 'user-1',
+			source_id: 'source-1',
+			session_repo_name: 'legacy-session-fork',
+		},
+	])
+
+	await expect(
+		cleanupArtifactReposForSource({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+		}),
+	).resolves.toBe(2)
+	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('job-job-1')
+	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith(
+		'legacy-session-fork',
+	)
+
+	mockModule.deleteArtifactRepo.mockClear()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-2',
+		repo_id: 'job-job-1',
+	})
+	const warnings: Array<string> = []
+	await expect(
+		cleanupArtifactReposForSource({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			warnings,
+		}),
+	).resolves.toBe(0)
+	expect(mockModule.deleteArtifactRepo).not.toHaveBeenCalled()
+	expect(warnings[0]).toMatch(/scope mismatch/i)
 })

@@ -36,6 +36,7 @@ export const repoSessionRowSchema = z.object({
 	session_repo_id: z.string(),
 	session_repo_name: z.string(),
 	session_repo_namespace: z.string(),
+	session_branch: z.string().nullable(),
 	base_commit: z.string(),
 	source_root: z.string(),
 	conversation_id: z.string().nullable(),
@@ -179,6 +180,7 @@ export type RepoSessionInfo = {
 	sessionRepoId: string
 	sessionRepoName: string
 	sessionRepoNamespace: string
+	sessionBranch: string | null
 	conversationId: string | null
 	lastCheckpointCommit: string | null
 	lastCheckRunId: string | null
@@ -205,6 +207,7 @@ export type RepoSessionInfoResult = {
 	session_repo_id: string
 	session_repo_name: string
 	session_repo_namespace: string
+	session_branch: string | null
 	conversation_id: string | null
 	last_checkpoint_commit: string | null
 	last_check_run_id: string | null

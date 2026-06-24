@@ -95,6 +95,7 @@ export function toRepoSessionInfoResult(
 		session_repo_id: session.session_repo_id,
 		session_repo_name: session.session_repo_name,
 		session_repo_namespace: session.session_repo_namespace,
+		session_branch: session.session_branch,
 		conversation_id: session.conversation_id,
 		last_checkpoint_commit: session.last_checkpoint_commit,
 		last_check_run_id: session.last_check_run_id,
