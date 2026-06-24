@@ -727,22 +727,6 @@ export async function resolveExistingArtifactSourceRepo(
 	)
 }
 
-export async function resolveSessionRepo(
-	env: Env,
-	input: { namespace?: string | null; name: string },
-) {
-	const binding = getArtifactsBinding(env, input.namespace)
-	const result = await binding.get(input.name)
-	if (result.status !== 'ready') {
-		throw new Error(
-			`Artifacts repo "${input.name}" is ${result.status}${
-				'retryAfter' in result ? ` (retry after ${result.retryAfter}s)` : ''
-			}.`,
-		)
-	}
-	return result.repo
-}
-
 export async function resolveArtifactSourceHead(env: Env, repoId: string) {
 	const repo = await resolveExistingArtifactSourceRepo(env, repoId)
 	if (!repo) {

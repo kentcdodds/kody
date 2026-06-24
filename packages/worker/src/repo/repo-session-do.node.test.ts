@@ -91,7 +91,6 @@ const mockModule = vi.hoisted(() => {
 		getEntitySourceById: vi.fn(),
 		updateRepoSession: vi.fn(async () => undefined),
 		updateEntitySource: vi.fn(async () => undefined),
-		resolveSessionRepo: vi.fn(),
 		resolveArtifactSourceRepo: vi.fn(),
 		resolveExistingArtifactSourceRepo: vi.fn(),
 		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
@@ -317,8 +316,6 @@ vi.mock('./artifacts.ts', async () => {
 	const actual = await vi.importActual<Artifacts>('./artifacts.ts')
 	return {
 		...actual,
-		resolveSessionRepo: (...args: Array<unknown>) =>
-			mockModule.resolveSessionRepo(...args),
 		resolveArtifactSourceRepo: (...args: Array<unknown>) =>
 			mockModule.resolveArtifactSourceRepo(...args),
 		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
