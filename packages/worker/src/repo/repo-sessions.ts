@@ -6,6 +6,7 @@ function mapRepoSessionRow(row: Record<string, unknown>): RepoSessionRow {
 		user_id: String(row['user_id']),
 		source_id: String(row['source_id']),
 		session_branch: String(row['session_branch']),
+		source_branch: String(row['source_branch']),
 		base_commit: String(row['base_commit']),
 		source_root: String(row['source_root']),
 		conversation_id:
@@ -40,16 +41,17 @@ export async function insertRepoSession(
 	await db
 		.prepare(
 			`INSERT INTO repo_sessions (
-				id, user_id, source_id, session_branch, base_commit, source_root, conversation_id, status, expires_at,
+				id, user_id, source_id, session_branch, source_branch, base_commit, source_root, conversation_id, status, expires_at,
 				last_checkpoint_at, last_checkpoint_commit, last_check_run_id,
 				last_check_tree_hash, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			row.source_id,
 			row.session_branch,
+			row.source_branch,
 			row.base_commit,
 			row.source_root,
 			row.conversation_id,
@@ -157,6 +159,7 @@ export async function updateRepoSession(
 		id: string
 		userId: string
 		sessionBranch?: string | null
+		sourceBranch?: string
 		baseCommit?: string
 		sourceRoot?: string
 		conversationId?: string | null
@@ -177,6 +180,7 @@ export async function updateRepoSession(
 	if (input.sessionBranch !== undefined) {
 		add('session_branch', input.sessionBranch)
 	}
+	if (input.sourceBranch !== undefined) add('source_branch', input.sourceBranch)
 	if (input.baseCommit !== undefined) add('base_commit', input.baseCommit)
 	if (input.sourceRoot !== undefined) add('source_root', input.sourceRoot)
 	if (input.conversationId !== undefined) {

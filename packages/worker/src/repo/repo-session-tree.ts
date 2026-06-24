@@ -93,6 +93,7 @@ export function toRepoSessionInfoResult(
 		source_root: session.source_root,
 		base_commit: session.base_commit,
 		session_branch: session.session_branch,
+		source_branch: session.source_branch,
 		conversation_id: session.conversation_id,
 		last_checkpoint_commit: session.last_checkpoint_commit,
 		last_check_run_id: session.last_check_run_id,

@@ -5,6 +5,7 @@ CREATE TABLE repo_sessions (
 	user_id TEXT NOT NULL,
 	source_id TEXT NOT NULL,
 	session_branch TEXT NOT NULL,
+	source_branch TEXT NOT NULL,
 	base_commit TEXT NOT NULL,
 	source_root TEXT NOT NULL DEFAULT '/',
 	conversation_id TEXT,

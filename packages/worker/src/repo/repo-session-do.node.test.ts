@@ -376,6 +376,7 @@ function setCommonSessionFixtures() {
 		user_id: 'user-1',
 		source_id: 'source-1',
 		session_branch: 'sessions/session1',
+		source_branch: 'main',
 		base_commit: 'commit-base',
 		last_checkpoint_commit: 'commit-base',
 	})
@@ -615,6 +616,7 @@ test('runCommands fetches session metadata after publish side effects', async ()
 		user_id: 'user-1',
 		source_id: 'source-1',
 		session_branch: 'sessions/session1',
+		source_branch: 'main',
 		base_commit: 'commit-base',
 		last_checkpoint_commit: 'commit-base',
 	})
@@ -933,7 +935,10 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	})
 	expect(insertRepoSession).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({}),
+		expect.objectContaining({
+			session_branch: expect.stringMatching(/^sessions\//),
+			source_branch: 'main',
+		}),
 	)
 
 	const packageSource = {
@@ -1033,6 +1038,7 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 		user_id: 'user-1',
 		source_id: 'source-1',
 		session_branch: 'sessions/jobruntimesessionreplicalag',
+		source_branch: 'main',
 		base_commit: 'commit-base',
 		source_root: '/',
 		conversation_id: null,
@@ -1181,6 +1187,7 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 		user_id: 'user-1',
 		source_id: 'source-1',
 		session_branch: 'sessions/session1',
+		source_branch: 'main',
 		base_commit: 'commit-initial',
 		last_checkpoint_commit: 'commit-initial',
 	}

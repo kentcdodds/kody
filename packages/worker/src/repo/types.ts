@@ -34,6 +34,7 @@ export const repoSessionRowSchema = z.object({
 	user_id: z.string(),
 	source_id: z.string(),
 	session_branch: z.string(),
+	source_branch: z.string(),
 	base_commit: z.string(),
 	source_root: z.string(),
 	conversation_id: z.string().nullable(),
@@ -174,6 +175,7 @@ export type RepoSessionInfo = {
 	sourceRoot: string
 	baseCommit: string
 	sessionBranch: string
+	sourceBranch: string
 	conversationId: string | null
 	lastCheckpointCommit: string | null
 	lastCheckRunId: string | null
@@ -198,6 +200,7 @@ export type RepoSessionInfoResult = {
 	source_root: string
 	base_commit: string
 	session_branch: string
+	source_branch: string
 	conversation_id: string | null
 	last_checkpoint_commit: string | null
 	last_check_run_id: string | null

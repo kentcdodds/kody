@@ -62,6 +62,7 @@ function session(input: { id: string; status: 'active' | 'published' }) {
 		user_id: 'user-1',
 		source_id: 'source-1',
 		session_branch: `sessions/${input.id}`,
+		source_branch: 'main',
 		status: input.status,
 	}
 }

@@ -41,10 +41,6 @@ export async function cleanupRepoSessionBranches(input: {
 			console.warn(
 				JSON.stringify({
 					message: 'repo session branch cleanup failed',
-					userId: session.user_id,
-					sessionId: session.id,
-					sourceId: session.source_id,
-					branch: session.session_branch,
 					reason,
 					error: error instanceof Error ? error.message : String(error),
 				}),

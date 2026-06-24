@@ -616,14 +616,20 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 			)
 			if (
 				source &&
+				source.user_id === artifact.userId &&
 				source.entity_kind === 'job' &&
 				source.entity_id === artifact.jobId
 			) {
-				await cleanupArtifactReposForSource({
+				const deletedRepoCount = await cleanupArtifactReposForSource({
 					env: input.env,
 					userId: artifact.userId,
 					sourceId: source.id,
 				})
+				if (source.repo_id.trim() && deletedRepoCount === 0) {
+					throw new Error(
+						`Artifact repo cleanup failed for source ${source.id}.`,
+					)
+				}
 				await deletePublishedArtifactsForSource({
 					env: input.env,
 					userId: artifact.userId,
@@ -683,11 +689,14 @@ async function cleanupAdHocJobSource(input: {
 	) {
 		return
 	}
-	await cleanupArtifactReposForSource({
+	const deletedRepoCount = await cleanupArtifactReposForSource({
 		env: input.env,
 		userId: input.userId,
 		sourceId: source.id,
 	})
+	if (source.repo_id.trim() && deletedRepoCount === 0) {
+		throw new Error(`Artifact repo cleanup failed for source ${source.id}.`)
+	}
 	await deletePublishedArtifactsForSource({
 		env: input.env,
 		userId: input.userId,
