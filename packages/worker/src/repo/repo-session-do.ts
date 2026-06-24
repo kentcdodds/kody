@@ -1088,7 +1088,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionRow.source_id,
 		)
 		if (!source) {
-			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
+			await deleteRepoSession(this.env.APP_DB, input.sessionId)
+			await this.clearCachedSessionState(input.sessionId)
+			await this.resetWorkspace()
+			return {
+				ok: true as const,
+				sessionId: input.sessionId,
+				branch: sessionBranch,
+			}
 		}
 		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
 		const access = await ensureArtifactRepoRemote({
