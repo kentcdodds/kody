@@ -378,6 +378,7 @@ function setCommonSessionFixtures() {
 		session_branch: 'sessions/session1',
 		source_branch: 'main',
 		base_commit: 'commit-base',
+		status: 'active',
 		last_checkpoint_commit: 'commit-base',
 	})
 	mockModule.getEntitySourceById.mockResolvedValue({
@@ -618,6 +619,7 @@ test('runCommands fetches session metadata after publish side effects', async ()
 		session_branch: 'sessions/session1',
 		source_branch: 'main',
 		base_commit: 'commit-base',
+		status: 'active',
 		last_checkpoint_commit: 'commit-base',
 	})
 	let source = {
@@ -865,7 +867,7 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
-	expect(opened.session_branch).toMatch(/^sessions\/[A-Za-z0-9]+$/)
+	expect(opened.session_branch).toMatch(/^sessions\/[a-z0-9]+-[a-f0-9]{32}$/)
 	expect(opened.session_branch).not.toContain(':')
 	expect(mockModule.git.clone).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -940,6 +942,25 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 			source_branch: 'main',
 		}),
 	)
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'discarded-session',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_branch: 'sessions/discarded',
+		source_branch: 'main',
+		status: 'discarded',
+	})
+	await expect(
+		new RepoSession(createDurableObjectState(), createEnv()).openSession({
+			sessionId: 'discarded-session',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			baseUrl: 'https://example.com',
+			sourceRoot: '/',
+		}),
+	).rejects.toThrow(/is discarded/)
 
 	const packageSource = {
 		id: 'source-1',
@@ -1189,6 +1210,7 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 		session_branch: 'sessions/session1',
 		source_branch: 'main',
 		base_commit: 'commit-initial',
+		status: 'active',
 		last_checkpoint_commit: 'commit-initial',
 	}
 	const movedSession = {

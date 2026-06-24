@@ -138,12 +138,14 @@ async function readEntitySourceWithRetry(db: D1Database, sourceId: string) {
 }
 
 function compactArtifactsRepoSuffix(value: string) {
-	const compact = value.replace(/[^a-zA-Z0-9]/g, '')
+	const compact = value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
 	return compact.length > 0 ? compact : 'session'
 }
 
 function buildSessionBranchName(sessionId: string) {
-	return `sessions/${compactArtifactsRepoSuffix(sessionId).slice(-80)}`
+	const readable = compactArtifactsRepoSuffix(sessionId).slice(0, 32)
+	const unique = crypto.randomUUID().replaceAll('-', '')
+	return `sessions/${readable}-${unique}`
 }
 
 function buildPublishedSessionExpiresAt(now: Date = new Date()) {
@@ -235,7 +237,20 @@ class RepoSessionBase extends DurableObject<Env> {
 		await this.ctx.storage.put(getCachedSessionStateStorageKey(sessionId), null)
 	}
 
-	private async getSessionState(sessionId: string, userId: string) {
+	private async touchRepoSession(sessionRow: RepoSessionRow) {
+		await updateRepoSession(this.env.APP_DB, {
+			id: sessionRow.id,
+			userId: sessionRow.user_id,
+		})
+	}
+
+	private async getSessionState(
+		sessionId: string,
+		userId: string,
+		options: {
+			allowedStatuses?: ReadonlyArray<RepoSessionRow['status']>
+		} = {},
+	) {
 		const cachedState = await this.readCachedSessionState(sessionId)
 		// Prefer fresh reads from D1 so correctness-sensitive flows like
 		// rebaseSession and publishSession always observe the latest
@@ -255,6 +270,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (sessionRow.user_id !== userId) {
 			throw new Error(
 				`Repo session "${sessionId}" was not found for this user.`,
+			)
+		}
+		const allowedStatuses = options.allowedStatuses ?? ['active']
+		if (!allowedStatuses.includes(sessionRow.status)) {
+			throw new Error(
+				`Repo session "${sessionId}" is ${sessionRow.status}; open a new session before continuing.`,
 			)
 		}
 		const source =
@@ -589,6 +610,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			const { source } = await this.getSessionState(
 				input.sessionId,
 				input.userId,
+				{ allowedStatuses: ['active', 'published'] },
 			)
 			return source
 		}
@@ -835,6 +857,11 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Repo session "${input.sessionId}" was not found for this user.`,
 				)
 			}
+			if (sessionRow.status !== 'active') {
+				throw new Error(
+					`Repo session "${input.sessionId}" is ${sessionRow.status}; open a new session before continuing.`,
+				)
+			}
 			const source = await getEntitySourceById(
 				this.env.APP_DB,
 				sessionRow.source_id,
@@ -991,6 +1018,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		await this.touchRepoSession(sessionRow)
 		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
@@ -1097,7 +1125,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		path: string
 	}): Promise<{ path: string; content: string | null }> {
-		await this.getSessionState(input.sessionId, input.userId)
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		await this.touchRepoSession(sessionRow)
 		return {
 			path: input.path,
 			content: await this.workspace.readFile(
@@ -1145,6 +1177,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		await this.touchRepoSession(sessionRow)
 		const root = resolveRepoWorkspacePath(
 			input.path?.trim() ||
 				sessionRow.source_root ||
@@ -1414,6 +1447,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		await this.touchRepoSession(sessionRow)
 		const root = resolveRepoWorkspacePath(
 			input.path?.trim() ||
 				sessionRow.source_root ||
@@ -1525,7 +1559,11 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	async getCheckStatus(input: { sessionId: string; userId: string }) {
-		await this.getSessionState(input.sessionId, input.userId)
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		await this.touchRepoSession(sessionRow)
 		return this.readCheckStatus()
 	}
 
