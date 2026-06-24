@@ -1017,6 +1017,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
 			input.userId,
+			{ allowedStatuses: ['active', 'published'] },
 		)
 		await this.touchRepoSession(sessionRow)
 		return toRepoSessionInfoResult(sessionRow, source)

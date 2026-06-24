@@ -622,6 +622,17 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 				source.entity_kind === 'job' &&
 				source.entity_id === artifact.jobId
 			) {
+				const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
+					userId: artifact.userId,
+					sourceId: source.id,
+				})
+				for (const session of sessions) {
+					await repoSessionRpc(input.env, session.id).cleanupSessionBranch({
+						sessionId: session.id,
+						userId: artifact.userId,
+						reason: 'source_deleted',
+					})
+				}
 				const deletedRepoCount = await cleanupArtifactReposForSource({
 					env: input.env,
 					userId: artifact.userId,
