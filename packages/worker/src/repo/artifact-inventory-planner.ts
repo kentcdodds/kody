@@ -7,7 +7,7 @@ import { listEntitySourcesByUser } from './entity-sources.ts'
 
 export type ArtifactInventoryClassification =
 	| 'referenced_source_root'
-	| 'unreferenced_fork'
+	| 'unreferenced_derived_repo'
 	| 'unreferenced_source_like_root'
 	| 'unknown_unreferenced'
 
@@ -35,7 +35,7 @@ export type ArtifactInventoryPlan = {
 function emptyCounts(): Record<ArtifactInventoryClassification, number> {
 	return {
 		referenced_source_root: 0,
-		unreferenced_fork: 0,
+		unreferenced_derived_repo: 0,
 		unreferenced_source_like_root: 0,
 		unknown_unreferenced: 0,
 	}
@@ -61,10 +61,10 @@ function classifyArtifactRepo(input: {
 	}
 	if (input.repo.source) {
 		return {
-			classification: 'unreferenced_fork',
+			classification: 'unreferenced_derived_repo',
 			deleteCandidate: true,
 			reason:
-				'Repo reports an Artifacts source repo but is not referenced by current source/session metadata.',
+				'Repo reports an Artifacts source repo but is not referenced by current source metadata.',
 		}
 	}
 	if (isSourceLikeRepoName(input.repo.name)) {
@@ -136,7 +136,7 @@ export async function planArtifactRepoInventory(input: {
 		truncated: Boolean(cursor) || totalListed < totalAvailable,
 		counts,
 		deleteCandidateCount:
-			counts.unreferenced_fork + counts.unreferenced_source_like_root,
+			counts.unreferenced_derived_repo + counts.unreferenced_source_like_root,
 		samples,
 	}
 }

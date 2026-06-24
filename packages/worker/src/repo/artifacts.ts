@@ -53,23 +53,12 @@ export type ArtifactRepoHandle = {
 	createToken(scope?: 'write' | 'read', ttl?: number): Promise<ArtifactToken>
 	listTokens?(): Promise<Array<ArtifactStoredToken>>
 	revokeToken?(idOrPlaintext: string): Promise<void>
-	fork(target: { name: string; readOnly?: boolean }): Promise<{
-		id: string
-		name: string
-		description: string | null
-		defaultBranch: string
-		remote: string
-		token: string
-		expiresAt: string
-		repo: ArtifactRepoHandle
-	}>
 }
 
 export type ArtifactGetRepoResult =
 	| { status: 'ready'; repo: ArtifactRepoHandle }
 	| { status: 'not_found' }
 	| { status: 'importing'; retryAfter: number }
-	| { status: 'forking'; retryAfter: number }
 
 export type ArtifactDeleteRepoResult = {
 	id: string | null
@@ -191,10 +180,6 @@ type ArtifactRestStoredToken = {
 	created_at?: string | null
 }
 
-type ArtifactRestForkRepoResult = ArtifactRestCreateRepoResult & {
-	objects?: number
-}
-
 function createArtifactsRestBinding(env: Env, namespace: string) {
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
@@ -260,29 +245,6 @@ function createArtifactsRestBinding(env: Env, namespace: string) {
 				method: 'DELETE',
 				path: `${basePath}/tokens/${encodeURIComponent(idOrPlaintext)}`,
 			})
-		},
-		fork: async (target) => {
-			const result = await requestArtifactsApi<ArtifactRestForkRepoResult>(
-				client,
-				{
-					method: 'POST',
-					path: `${basePath}/repos/${encodeURIComponent(name)}/fork`,
-					body: {
-						name: target.name,
-						read_only: target.readOnly ?? false,
-					},
-				},
-			)
-			return {
-				id: result.id,
-				name: result.name,
-				description: result.description,
-				defaultBranch: result.default_branch,
-				remote: result.remote,
-				token: result.token,
-				expiresAt: parseArtifactTokenExpiry(result.token),
-				repo: repoHandle(result.name),
-			}
 		},
 	})
 	return {
@@ -683,9 +645,9 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 			return { recreated: false, repo: result.repo }
 		}
 		lastStatus = result.status
-		if (result.status === 'importing' || result.status === 'forking') {
+		if (result.status === 'importing') {
 			throw new Error(
-				`Artifacts repo "${input.repoId}" is ${result.status}. Retry after ${result.retryAfter}s.`,
+				`Artifacts repo "${input.repoId}" is importing. Retry after ${result.retryAfter}s.`,
 			)
 		}
 		if (attempt < maxAttempts) {
@@ -706,9 +668,9 @@ export async function ensureArtifactRepoReady(
 	if (existing.status === 'ready') {
 		return { recreated: false, repo: existing.repo }
 	}
-	if (existing.status === 'importing' || existing.status === 'forking') {
+	if (existing.status === 'importing') {
 		throw new Error(
-			`Artifacts repo "${repoId}" is ${existing.status}. Retry after ${existing.retryAfter}s.`,
+			`Artifacts repo "${repoId}" is importing. Retry after ${existing.retryAfter}s.`,
 		)
 	}
 	let created: Awaited<ReturnType<ArtifactNamespaceBinding['create']>>

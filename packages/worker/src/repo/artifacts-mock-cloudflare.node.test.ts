@@ -7,7 +7,6 @@ const mockAccountId = 'cf_account_mock_123'
 test('Cloudflare mock implements the Artifacts REST workflow used in local dev', async () => {
 	const token = `cloudflare-artifacts-mock-token-${crypto.randomUUID()}`
 	const repoName = `repo-${crypto.randomUUID()}`
-	const forkName = `repo-copy-${crypto.randomUUID()}`
 	await using mock = await startCloudflareMock(token)
 	const env = {
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
@@ -47,29 +46,13 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 		scope: 'read',
 	})
 
-	const forked = await getResult.repo.fork({
-		name: forkName,
-		readOnly: true,
-	})
-	expect(forked).toMatchObject({
-		name: forkName,
-		defaultBranch: 'main',
-		remote: `${mock.origin}/git/default/${forkName}.git`,
-	})
-	expect(forked.token).toMatch(/\?expires=\d+$/)
-
 	const listed = await binding.list()
-	expect(listed.total).toBe(2)
+	expect(listed.total).toBe(1)
 	expect(listed.repos).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				name: repoName,
 				readOnly: false,
-			}),
-			expect.objectContaining({
-				name: forkName,
-				readOnly: true,
-				source: repoName,
 			}),
 		]),
 	)
@@ -79,5 +62,5 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 	const meta = (await metaResponse.json()) as {
 		artifactRepoCount?: number
 	}
-	expect(meta.artifactRepoCount).toBe(2)
+	expect(meta.artifactRepoCount).toBe(1)
 }, 40_000)

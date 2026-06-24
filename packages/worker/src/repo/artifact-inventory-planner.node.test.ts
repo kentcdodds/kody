@@ -31,7 +31,7 @@ test('artifact inventory planner classifies repos without deleting anything', as
 		repos: [
 			repo({ name: 'package-current' }),
 			repo({ name: 'package-old' }),
-			repo({ name: 'random-fork', source: 'package-current' }),
+			repo({ name: 'random-derived', source: 'package-current' }),
 			repo({ name: 'handmade-repo' }),
 		],
 	})
@@ -51,7 +51,7 @@ test('artifact inventory planner classifies repos without deleting anything', as
 		counts: {
 			referenced_source_root: 1,
 			unreferenced_source_like_root: 1,
-			unreferenced_fork: 1,
+			unreferenced_derived_repo: 1,
 			unknown_unreferenced: 1,
 		},
 		deleteCandidateCount: 2,
@@ -59,7 +59,7 @@ test('artifact inventory planner classifies repos without deleting anything', as
 	expect(plan.samples.map((entry) => entry.classification)).toEqual([
 		'referenced_source_root',
 		'unreferenced_source_like_root',
-		'unreferenced_fork',
+		'unreferenced_derived_repo',
 		'unknown_unreferenced',
 	])
 })

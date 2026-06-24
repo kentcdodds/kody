@@ -160,20 +160,6 @@ function restoreRepoSessionMockBaseline() {
 			scope: 'write',
 			expiresAt: '2026-10-09T08:16:40.000Z',
 		})),
-		fork: vi.fn(async ({ name }: { name: string }) => ({
-			id: 'session-repo-1',
-			name,
-			description: null,
-			defaultBranch: 'main',
-			remote: `https://acct.artifacts.cloudflare.net/git/default/${name}.git`,
-			token: 'art_session_secret?expires=1760000200',
-			expiresAt: '2026-10-09T08:16:40.000Z',
-			repo: {
-				info: vi.fn(),
-				createToken: vi.fn(),
-				fork: vi.fn(),
-			},
-		})),
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
 		defaultBranch: 'main',
@@ -842,7 +828,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		created_at: '2026-04-16T00:00:00.000Z',
 		updated_at: '2026-04-16T00:00:00.000Z',
 	})
-	const sourceFork = vi.fn()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: vi.fn(async () => ({
 			id: 'source-repo-1',
@@ -863,7 +848,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 			scope: 'write',
 			expiresAt: '2026-10-09T08:16:40.000Z',
 		})),
-		fork: sourceFork,
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
 		defaultBranch: 'main',
@@ -882,7 +866,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
-	expect(sourceFork).not.toHaveBeenCalled()
 	expect(opened.session_branch).toMatch(/^sessions\/[A-Za-z0-9]+$/)
 	expect(opened.session_branch).not.toContain(':')
 	expect(mockModule.git.clone).toHaveBeenCalledWith(
@@ -933,7 +916,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 			scope: 'write',
 			expiresAt: '2026-10-09T08:16:40.000Z',
 		})),
-		fork: vi.fn(),
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
 		defaultBranch: 'main',
@@ -974,9 +956,21 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
-	const blockedFork = vi.fn()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		fork: blockedFork,
+		info: vi.fn(async () => ({
+			id: 'source-repo-1',
+			name: 'package-package-1',
+			description: null,
+			defaultBranch: 'main',
+			createdAt: '2026-04-16T00:00:00.000Z',
+			updatedAt: '2026-04-16T00:00:00.000Z',
+			lastPushAt: null,
+			source: null,
+			readOnly: false,
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+		})),
+		createToken: vi.fn(),
 	})
 	mockModule.resolveArtifactSourceRepo.mockClear()
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce(null)
@@ -989,7 +983,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 			sourceRoot: '/',
 		}),
 	).rejects.toThrow(/default branch has no HEAD/)
-	expect(blockedFork).not.toHaveBeenCalled()
 	expect(mockModule.resolveArtifactSourceRepo).not.toHaveBeenCalled()
 
 	restoreRepoSessionMockBaseline()
@@ -1000,7 +993,20 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		indexed_commit: 'commit-published',
 	})
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		fork: blockedFork,
+		info: vi.fn(async () => ({
+			id: 'source-repo-1',
+			name: 'package-package-1',
+			description: null,
+			defaultBranch: 'main',
+			createdAt: '2026-04-16T00:00:00.000Z',
+			updatedAt: '2026-04-16T00:00:00.000Z',
+			lastPushAt: null,
+			source: null,
+			readOnly: false,
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+		})),
+		createToken: vi.fn(),
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
 		defaultBranch: 'main',
@@ -1017,7 +1023,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 			sourceRoot: '/',
 		}),
 	).rejects.toThrow(/does not match published commit/)
-	expect(blockedFork).not.toHaveBeenCalled()
 })
 
 test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
@@ -1263,7 +1268,6 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 			scope: 'write',
 			expiresAt: '2026-10-09T08:16:40.000Z',
 		})),
-		fork: vi.fn(),
 	})
 	mockModule.workspaceExists.mockResolvedValue(false)
 	mockModule.workspaceReadFile.mockResolvedValue('export default {}')

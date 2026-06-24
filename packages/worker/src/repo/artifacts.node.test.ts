@@ -124,7 +124,7 @@ test('artifacts REST client scopes API paths to configured or stored namespaces'
 	).toBe('preview')
 })
 
-test('artifacts REST client supports get, create, token, and fork operations', async () => {
+test('artifacts REST client supports get, create, token, and delete operations', async () => {
 	let getRepo1Count = 0
 	const fetchMock = vi
 		.spyOn(globalThis, 'fetch')
@@ -213,28 +213,6 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 					},
 				)
 			}
-			if (method === 'POST' && url.pathname.endsWith('/repos/repo-1/fork')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_2',
-							name: 'repo-copy',
-							description: null,
-							default_branch: 'main',
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
-							token: 'art_v1_fork?expires=1760000200',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
 			if (method === 'DELETE' && url.pathname.endsWith('/repos/repo-1')) {
 				return new Response(
 					JSON.stringify({
@@ -283,21 +261,12 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 		scope: 'read',
 		expiresAt: '2026-10-09T08:55:00.000Z',
 	})
-	await expect(
-		repo.fork({ name: 'repo-copy', readOnly: false }),
-	).resolves.toMatchObject({
-		id: 'repo_2',
-		name: 'repo-copy',
-		defaultBranch: 'main',
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
-		token: 'art_v1_fork?expires=1760000200',
-	})
 	await expect(binding.delete('repo-1')).resolves.toEqual({
 		id: 'repo_1',
 		alreadyDeleted: false,
 	})
 
-	expect(fetchMock).toHaveBeenCalledTimes(7)
+	expect(fetchMock).toHaveBeenCalledTimes(6)
 
 	expect(parseArtifactTokenSecret('art_v1_secret?expires=1760000100')).toBe(
 		'art_v1_secret',

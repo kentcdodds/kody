@@ -6,7 +6,7 @@ import { planArtifactRepoInventory } from '#worker/repo/artifact-inventory-plann
 
 const classificationSchema = z.enum([
 	'referenced_source_root',
-	'unreferenced_fork',
+	'unreferenced_derived_repo',
 	'unreferenced_source_like_root',
 	'unknown_unreferenced',
 ])
@@ -61,7 +61,7 @@ export const repoArtifactsInventoryCapability = defineDomainCapability(
 	{
 		name: 'repo_artifacts_inventory',
 		description:
-			'Read-only dry-run inventory for Cloudflare Artifacts repos in the configured namespace. It compares repo names against current Kody source metadata, classifies likely stale roots/forks, and returns deletion candidates without deleting anything.',
+			'Read-only dry-run inventory for Cloudflare Artifacts repos in the configured namespace. It compares repo names against current Kody source metadata, classifies likely stale repos, and returns deletion candidates without deleting anything.',
 		keywords: [
 			'artifacts',
 			'inventory',
