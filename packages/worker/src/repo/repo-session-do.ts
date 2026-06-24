@@ -1063,7 +1063,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async cleanupSessionBranch(input: {
 		sessionId: string
 		userId: string
-		reason: 'expired' | 'abandoned'
+		reason: 'expired' | 'abandoned' | 'source_deleted'
 	}) {
 		const sessionRow = await getRepoSessionById(
 			this.env.APP_DB,

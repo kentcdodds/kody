@@ -24,6 +24,8 @@ const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
 	cleanupArtifactReposForSource: vi.fn(async () => 0),
+	listRepoSessionsBySource: vi.fn(async () => []),
+	cleanupSessionBranch: vi.fn(async () => ({ ok: true })),
 }))
 
 const jobManagerMockModule = vi.hoisted(() => ({
@@ -46,6 +48,18 @@ vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
 		repoMockModule.cleanupArtifactReposForSource(...args),
 }))
 
+vi.mock('#worker/repo/repo-sessions.ts', () => ({
+	listRepoSessionsBySource: (...args: Array<unknown>) =>
+		repoMockModule.listRepoSessionsBySource(...args),
+}))
+
+vi.mock('#worker/repo/repo-session-do.ts', () => ({
+	repoSessionRpc: () => ({
+		cleanupSessionBranch: (...args: Array<unknown>) =>
+			repoMockModule.cleanupSessionBranch(...args),
+	}),
+}))
+
 vi.mock('./manager-client.ts', () => ({
 	syncJobManagerAlarm: (...args: Array<unknown>) =>
 		jobManagerMockModule.syncJobManagerAlarm(...args),
@@ -58,6 +72,10 @@ afterEach(() => {
 	vi.restoreAllMocks()
 	repoMockModule.cleanupArtifactReposForSource.mockClear()
 	repoMockModule.cleanupArtifactReposForSource.mockResolvedValue(0)
+	repoMockModule.listRepoSessionsBySource.mockClear()
+	repoMockModule.listRepoSessionsBySource.mockResolvedValue([])
+	repoMockModule.cleanupSessionBranch.mockClear()
+	repoMockModule.cleanupSessionBranch.mockResolvedValue({ ok: true })
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 	jobManagerMockModule.getJobManagerDebugState.mockReset()
 	jobManagerMockModule.getJobManagerDebugState.mockResolvedValue({
@@ -522,6 +540,23 @@ function createDatabase() {
 									).sort((left, right) =>
 										String(left['retain_until']).localeCompare(
 											String(right['retain_until']),
+										),
+									) as T[],
+								}
+							}
+							if (
+								query.includes('FROM published_bundle_artifacts') &&
+								query.includes('WHERE user_id = ? AND source_id = ?')
+							) {
+								return {
+									results: selectAll(
+										'published_bundle_artifacts',
+										(row) =>
+											row['user_id'] === params[0] &&
+											row['source_id'] === params[1],
+									).sort((left, right) =>
+										String(right['updated_at']).localeCompare(
+											String(left['updated_at']),
 										),
 									) as T[],
 								}
@@ -1086,6 +1121,10 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		userId: callerContext.user.userId,
 	})
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
+	repoMockModule.listRepoSessionsBySource.mockResolvedValueOnce([
+		{ id: 'session-1' },
+	])
+	repoMockModule.cleanupArtifactReposForSource.mockResolvedValueOnce(1)
 
 	await deleteJob({
 		env,
@@ -1097,6 +1136,11 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		env,
 		userId: callerContext.user.userId,
 		sourceId: created.sourceId,
+	})
+	expect(repoMockModule.cleanupSessionBranch).toHaveBeenCalledWith({
+		sessionId: 'session-1',
+		userId: callerContext.user.userId,
+		reason: 'source_deleted',
 	})
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,

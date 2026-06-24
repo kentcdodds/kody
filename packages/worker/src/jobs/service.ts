@@ -57,6 +57,8 @@ import {
 	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
 import { cleanupArtifactReposForSource } from '#worker/repo/artifact-repo-cleanup.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { listRepoSessionsBySource } from '#worker/repo/repo-sessions.ts'
 import {
 	loadPublishedEntitySource,
 	type PublishedEntitySource,
@@ -689,6 +691,17 @@ async function cleanupAdHocJobSource(input: {
 	) {
 		return
 	}
+	const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
+		userId: input.userId,
+		sourceId: source.id,
+	})
+	for (const session of sessions) {
+		await repoSessionRpc(input.env, session.id).cleanupSessionBranch({
+			sessionId: session.id,
+			userId: input.userId,
+			reason: 'source_deleted',
+		})
+	}
 	const deletedRepoCount = await cleanupArtifactReposForSource({
 		env: input.env,
 		userId: input.userId,
@@ -1149,24 +1162,14 @@ export async function deleteJob(input: {
 	if (!row) {
 		throw new Error(`Job "${input.jobId}" was not found.`)
 	}
-	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-	await deleteJobVector(input.env, input.jobId)
 	await cleanupAdHocJobSource({
 		env: input.env,
 		userId: input.userId,
 		jobId: input.jobId,
 		sourceId: row.record.sourceId,
-	}).catch((error) => {
-		console.warn(
-			JSON.stringify({
-				message: 'ad hoc job source cleanup failed',
-				userId: input.userId,
-				jobId: input.jobId,
-				sourceId: row.record.sourceId,
-				error: error instanceof Error ? error.message : String(error),
-			}),
-		)
 	})
+	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+	await deleteJobVector(input.env, input.jobId)
 	await syncJobManagerAlarm({
 		env: input.env,
 		userId: input.userId,
