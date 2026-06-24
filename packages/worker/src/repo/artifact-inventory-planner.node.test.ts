@@ -3,7 +3,6 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	listRepos: vi.fn(),
 	listEntitySourcesByUser: vi.fn(),
-	listRepoSessionsByUser: vi.fn(),
 }))
 
 vi.mock('./artifacts.ts', () => ({
@@ -19,11 +18,6 @@ vi.mock('./entity-sources.ts', () => ({
 		mockModule.listEntitySourcesByUser(...args),
 }))
 
-vi.mock('./repo-sessions.ts', () => ({
-	listRepoSessionsByUser: (...args: Array<unknown>) =>
-		mockModule.listRepoSessionsByUser(...args),
-}))
-
 const { planArtifactRepoInventory } =
 	await import('./artifact-inventory-planner.ts')
 
@@ -31,16 +25,11 @@ test('artifact inventory planner classifies repos without deleting anything', as
 	mockModule.listEntitySourcesByUser.mockResolvedValue([
 		{ repo_id: 'package-current' },
 	])
-	mockModule.listRepoSessionsByUser.mockResolvedValue([
-		{ session_repo_name: 'legacy-session-fork' },
-		{ session_repo_name: 'package-current' },
-	])
 	mockModule.listRepos.mockResolvedValue({
-		total: 5,
+		total: 4,
 		cursor: undefined,
 		repos: [
 			repo({ name: 'package-current' }),
-			repo({ name: 'legacy-session-fork' }),
 			repo({ name: 'package-old' }),
 			repo({ name: 'random-fork', source: 'package-current' }),
 			repo({ name: 'handmade-repo' }),
@@ -56,21 +45,19 @@ test('artifact inventory planner classifies repos without deleting anything', as
 
 	expect(plan).toMatchObject({
 		namespace: 'production',
-		totalListed: 5,
-		totalAvailable: 5,
+		totalListed: 4,
+		totalAvailable: 4,
 		truncated: false,
 		counts: {
 			referenced_source_root: 1,
-			referenced_legacy_session_fork: 1,
 			unreferenced_source_like_root: 1,
 			unreferenced_fork: 1,
 			unknown_unreferenced: 1,
 		},
-		deleteCandidateCount: 3,
+		deleteCandidateCount: 2,
 	})
 	expect(plan.samples.map((entry) => entry.classification)).toEqual([
 		'referenced_source_root',
-		'referenced_legacy_session_fork',
 		'unreferenced_source_like_root',
 		'unreferenced_fork',
 		'unknown_unreferenced',

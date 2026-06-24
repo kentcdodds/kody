@@ -392,8 +392,6 @@ function setCommonSessionFixtures() {
 		id: 'session-1',
 		user_id: 'user-1',
 		source_id: 'source-1',
-		session_repo_namespace: 'default',
-		session_repo_name: 'session-repo',
 		session_branch: 'sessions/session1',
 		base_commit: 'commit-base',
 		last_checkpoint_commit: 'commit-base',
@@ -633,8 +631,6 @@ test('runCommands fetches session metadata after publish side effects', async ()
 		id: 'session-1',
 		user_id: 'user-1',
 		source_id: 'source-1',
-		session_repo_namespace: 'default',
-		session_repo_name: 'session-repo',
 		session_branch: 'sessions/session1',
 		base_commit: 'commit-base',
 		last_checkpoint_commit: 'commit-base',
@@ -889,7 +885,6 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	expect(sourceFork).not.toHaveBeenCalled()
 	expect(opened.session_branch).toMatch(/^sessions\/[A-Za-z0-9]+$/)
 	expect(opened.session_branch).not.toContain(':')
-	expect(opened.session_repo_name).toBe('package-event-runner')
 	expect(mockModule.git.clone).toHaveBeenCalledWith(
 		expect.objectContaining({
 			url: 'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
@@ -959,9 +954,7 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	})
 	expect(insertRepoSession).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({
-			session_repo_namespace: 'preview',
-		}),
+		expect.objectContaining({}),
 	)
 
 	const packageSource = {
@@ -1037,9 +1030,6 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 		id: 'job-runtime-session-replica-lag',
 		user_id: 'user-1',
 		source_id: 'source-1',
-		session_repo_id: 'session-repo-1',
-		session_repo_name: 'session-repo-name',
-		session_repo_namespace: 'default',
 		session_branch: 'sessions/jobruntimesessionreplicalag',
 		base_commit: 'commit-base',
 		source_root: '/',
@@ -1188,8 +1178,6 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 		id: 'session-1',
 		user_id: 'user-1',
 		source_id: 'source-1',
-		session_repo_namespace: 'default',
-		session_repo_name: 'session-repo',
 		session_branch: 'sessions/session1',
 		base_commit: 'commit-initial',
 		last_checkpoint_commit: 'commit-initial',

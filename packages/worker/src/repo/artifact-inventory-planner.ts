@@ -4,11 +4,9 @@ import {
 	type ArtifactRepoInfo,
 } from './artifacts.ts'
 import { listEntitySourcesByUser } from './entity-sources.ts'
-import { listRepoSessionsByUser } from './repo-sessions.ts'
 
 export type ArtifactInventoryClassification =
 	| 'referenced_source_root'
-	| 'referenced_legacy_session_fork'
 	| 'unreferenced_fork'
 	| 'unreferenced_source_like_root'
 	| 'unknown_unreferenced'
@@ -37,7 +35,6 @@ export type ArtifactInventoryPlan = {
 function emptyCounts(): Record<ArtifactInventoryClassification, number> {
 	return {
 		referenced_source_root: 0,
-		referenced_legacy_session_fork: 0,
 		unreferenced_fork: 0,
 		unreferenced_source_like_root: 0,
 		unknown_unreferenced: 0,
@@ -51,7 +48,6 @@ function isSourceLikeRepoName(name: string) {
 function classifyArtifactRepo(input: {
 	repo: Omit<ArtifactRepoInfo, 'remote'>
 	sourceRepoNames: Set<string>
-	sessionRepoNames: Set<string>
 }): Omit<
 	ArtifactInventoryRepoPlan,
 	'name' | 'createdAt' | 'updatedAt' | 'lastPushAt' | 'source'
@@ -61,14 +57,6 @@ function classifyArtifactRepo(input: {
 			classification: 'referenced_source_root',
 			deleteCandidate: false,
 			reason: 'Repo is the current source root for a saved source row.',
-		}
-	}
-	if (input.sessionRepoNames.has(input.repo.name)) {
-		return {
-			classification: 'referenced_legacy_session_fork',
-			deleteCandidate: true,
-			reason:
-				'Repo is referenced by an old fork-backed repo session row; branch-backed sessions no longer need session repos.',
 		}
 	}
 	if (input.repo.source) {
@@ -104,16 +92,8 @@ export async function planArtifactRepoInventory(input: {
 }): Promise<ArtifactInventoryPlan> {
 	const namespace = resolveArtifactsNamespace(input.env, input.namespace)
 	const binding = getArtifactsBinding(input.env, namespace)
-	const [sources, sessions] = await Promise.all([
-		listEntitySourcesByUser(input.env.APP_DB, input.userId),
-		listRepoSessionsByUser(input.env.APP_DB, input.userId),
-	])
+	const sources = await listEntitySourcesByUser(input.env.APP_DB, input.userId)
 	const sourceRepoNames = new Set(sources.map((source) => source.repo_id))
-	const sessionRepoNames = new Set(
-		sessions
-			.map((session) => session.session_repo_name)
-			.filter((repoName) => !sourceRepoNames.has(repoName)),
-	)
 	const maxRepos = input.maxRepos ?? 1000
 	const sampleLimit = input.sampleLimit ?? 50
 	const counts = emptyCounts()
@@ -131,7 +111,6 @@ export async function planArtifactRepoInventory(input: {
 			const classification = classifyArtifactRepo({
 				repo,
 				sourceRepoNames,
-				sessionRepoNames,
 			})
 			counts[classification.classification] += 1
 			const plan = {
@@ -157,9 +136,7 @@ export async function planArtifactRepoInventory(input: {
 		truncated: Boolean(cursor) || totalListed < totalAvailable,
 		counts,
 		deleteCandidateCount:
-			counts.referenced_legacy_session_fork +
-			counts.unreferenced_fork +
-			counts.unreferenced_source_like_root,
+			counts.unreferenced_fork + counts.unreferenced_source_like_root,
 		samples,
 	}
 }

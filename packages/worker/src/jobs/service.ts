@@ -502,7 +502,6 @@ async function executePublishedJobArtifact(input: {
 					sourceId: source.id,
 					repoId: source.repo_id,
 					sessionId: null,
-					sessionRepoId: null,
 					baseCommit: source.published_commit,
 					manifestPath: source.manifest_path,
 					sourceRoot: source.source_root,

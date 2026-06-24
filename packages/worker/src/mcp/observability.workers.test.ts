@@ -398,9 +398,6 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 								openSession: async () => ({
 									id: 'session-1',
 									source_id: 'source-package-1',
-									session_repo_id: 'repo-1',
-									session_repo_name: 'repo-1',
-									session_repo_namespace: 'default',
 									base_commit: 'published-commit-1',
 									source_root: '/',
 									conversation_id: null,

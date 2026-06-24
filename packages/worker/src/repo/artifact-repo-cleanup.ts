@@ -7,10 +7,6 @@ import {
 	getEntitySourceById,
 	listEntitySourcesByUser,
 } from './entity-sources.ts'
-import {
-	listRepoSessionsBySource,
-	listRepoSessionsByUser,
-} from './repo-sessions.ts'
 import { type EntitySourceRow } from './types.ts'
 
 function logArtifactRepoDeleted(input: {
@@ -90,14 +86,7 @@ async function deleteReposForEntitySource(input: {
 		)
 		return 0
 	}
-	const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
-		userId: input.userId,
-		sourceId: input.source.id,
-	})
-	const repoNames = collectUniqueRepoNames([
-		...sessions.map((session) => session.session_repo_name),
-		input.source.repo_id,
-	])
+	const repoNames = collectUniqueRepoNames([input.source.repo_id])
 	let deleted = 0
 	for (const repoName of repoNames) {
 		if (
@@ -129,14 +118,7 @@ export async function cleanupArtifactReposForPackage(input: {
 		return 0
 	}
 	if (!hasArtifactsAccess(input.env)) {
-		const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
-			userId: input.userId,
-			sourceId: source.id,
-		})
-		const repoCount = collectUniqueRepoNames([
-			...sessions.map((session) => session.session_repo_name),
-			source.repo_id,
-		]).length
+		const repoCount = collectUniqueRepoNames([source.repo_id]).length
 		if (repoCount > 0) {
 			input.warnings?.push(
 				`Cloudflare Artifacts access was unavailable; ${repoCount} artifact repo(s) for the deleted package were not removed and must be cleaned up manually.`,
@@ -167,14 +149,7 @@ export async function cleanupArtifactReposForSource(input: {
 		return 0
 	}
 	if (!hasArtifactsAccess(input.env)) {
-		const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
-			userId: input.userId,
-			sourceId: source.id,
-		})
-		const repoCount = collectUniqueRepoNames([
-			...sessions.map((session) => session.session_repo_name),
-			source.repo_id,
-		]).length
+		const repoCount = collectUniqueRepoNames([source.repo_id]).length
 		if (repoCount > 0) {
 			input.warnings?.push(
 				`Cloudflare Artifacts access was unavailable; ${repoCount} artifact repo(s) for source ${source.id} were not removed and must be cleaned up manually.`,
@@ -204,14 +179,10 @@ export async function cleanupAllUserArtifactRepos(input: {
 		return 0
 	}
 
-	const [sources, sessions] = await Promise.all([
-		listEntitySourcesByUser(input.env.APP_DB, input.userId),
-		listRepoSessionsByUser(input.env.APP_DB, input.userId),
-	])
-	const repoNames = collectUniqueRepoNames([
-		...sources.map((source) => source.repo_id),
-		...sessions.map((session) => session.session_repo_name),
-	])
+	const sources = await listEntitySourcesByUser(input.env.APP_DB, input.userId)
+	const repoNames = collectUniqueRepoNames(
+		sources.map((source) => source.repo_id),
+	)
 	let deleted = 0
 	for (const repoName of repoNames) {
 		if (
@@ -229,12 +200,6 @@ export async function cleanupAllUserArtifactRepos(input: {
 }
 
 async function countUserArtifactRepoReferences(env: Env, userId: string) {
-	const [sources, sessions] = await Promise.all([
-		listEntitySourcesByUser(env.APP_DB, userId),
-		listRepoSessionsByUser(env.APP_DB, userId),
-	])
-	return collectUniqueRepoNames([
-		...sources.map((source) => source.repo_id),
-		...sessions.map((session) => session.session_repo_name),
-	]).length
+	const sources = await listEntitySourcesByUser(env.APP_DB, userId)
+	return collectUniqueRepoNames(sources.map((source) => source.repo_id)).length
 }

@@ -48,7 +48,6 @@ export const mcpRepoContextSchema = object({
 	sourceId: optional(nullable(string())),
 	repoId: optional(nullable(string())),
 	sessionId: optional(nullable(string())),
-	sessionRepoId: optional(nullable(string())),
 	baseCommit: optional(nullable(string())),
 	manifestPath: optional(nullable(string())),
 	sourceRoot: optional(nullable(string())),
