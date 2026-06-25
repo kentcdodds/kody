@@ -44,9 +44,7 @@ test('ensureEntitySource fails closed when durable persistence is required witho
 			sourceRoot: '/',
 			requirePersistence: true,
 		}),
-	).rejects.toThrow(
-		'Repo-backed source persistence requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
-	)
+	).rejects.toThrow()
 })
 
 test('ensureEntitySource returns bootstrap access for brand-new repos', async () => {

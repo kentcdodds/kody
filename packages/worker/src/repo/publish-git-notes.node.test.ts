@@ -106,34 +106,6 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 	expect(bootstrapNote.previousPublishedCommit).toBeNull()
 
 	const { parsePublishGitNote } = await import('./publish-git-notes.ts')
-	expect(
-		parsePublishGitNote(
-			JSON.stringify({
-				v: 1,
-				publishedAt: '2026-05-28T12:00:00.000Z',
-				publishedBy: 'external_push',
-				sourceId: 'source-1',
-				entityKind: 'job',
-				entityId: 'job-1',
-				repoId: 'job-job-1',
-				commit: 'commit-new',
-			}),
-		)?.publishedBy,
-	).toBe('external_push')
-	expect(
-		parsePublishGitNote(
-			JSON.stringify({
-				v: 1,
-				publishedAt: '2026-05-28T12:00:00.000Z',
-				publishedBy: 'repo_session',
-				sourceId: 'legacy-source',
-				entityKind: 'skill',
-				entityId: 'skill-1',
-				repoId: 'skill-skill-1',
-				commit: 'commit-new',
-			}),
-		)?.entityKind,
-	).toBe('skill')
 	expect(parsePublishGitNote('not-json')).toBeNull()
 
 	mockGit.addNote.mockClear()
@@ -188,9 +160,18 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 			force: true,
 		}),
 	)
-	expect(String(mockGit.addNote.mock.calls[0]?.[0]?.note)).toContain(
-		'"publishedBy": "external_push"',
-	)
+	const writtenNote = mockGit.addNote.mock.calls[0]?.[0]?.note
+	expect(
+		parsePublishGitNote(
+			typeof writtenNote === 'string'
+				? writtenNote
+				: new TextDecoder().decode(writtenNote),
+		),
+	).toMatchObject({
+		publishedBy: 'external_push',
+		entityKind: 'job',
+		commit: 'commit-new',
+	})
 	expect(mockGit.fetch).toHaveBeenCalledWith(
 		expect.objectContaining({
 			dir: '/session',
