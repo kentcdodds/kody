@@ -39,8 +39,8 @@ test('ensureEntitySource fails closed when durable persistence is required witho
 			db,
 			env: { APP_DB: db } as Env,
 			userId: 'user-1',
-			entityKind: 'app',
-			entityId: 'app-1',
+			entityKind: 'job',
+			entityId: 'job-1',
 			sourceRoot: '/',
 			requirePersistence: true,
 		}),
@@ -81,7 +81,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
 			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/skill-skill-1')) {
+			if (method === 'GET' && url.pathname.endsWith('/repos/job-job-1')) {
 				getRepoCount += 1
 				if (getRepoCount === 1) {
 					return new Response(
@@ -102,7 +102,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 						success: true,
 						result: {
 							id: 'repo-1',
-							name: 'skill-skill-1',
+							name: 'job-job-1',
 							description: null,
 							default_branch: 'main',
 							created_at: '2026-04-18T00:00:00.000Z',
@@ -111,7 +111,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 							source: null,
 							read_only: false,
 							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
+								'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
 						},
 						errors: [],
 						messages: [],
@@ -128,11 +128,11 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 						success: true,
 						result: {
 							id: 'repo-1',
-							name: 'skill-skill-1',
+							name: 'job-job-1',
 							description: null,
 							default_branch: 'main',
 							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
+								'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
 							token: 'art_v1_create?expires=1760000000',
 						},
 						errors: [],
@@ -157,17 +157,16 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
 			} as Env,
 			userId: 'user-1',
-			entityKind: 'skill',
-			entityId: 'skill-1',
+			entityKind: 'job',
+			entityId: 'job-1',
 			sourceRoot: '/',
 		})
 
 		expect(fetchMock).toHaveBeenCalledTimes(3)
-		expect(source.repo_id).toBe('skill-skill-1')
+		expect(source.repo_id).toBe('job-job-1')
 		expect(source.bootstrapAccess).toEqual({
 			defaultBranch: 'main',
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
+			remote: 'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
 			token: 'art_v1_create?expires=1760000000',
 			expiresAt: '2025-10-09T08:53:20.000Z',
 		})

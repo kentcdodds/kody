@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 
-export const entityKindValues = ['skill', 'app', 'job', 'package'] as const
+export const entityKindValues = ['job', 'package'] as const
 export type EntityKind = (typeof entityKindValues)[number]
 
 export const entitySourceRowSchema = z.object({
@@ -104,37 +104,13 @@ const manifestBaseSchema = z.object({
 	checks: repoChecksSchema,
 })
 
-export const skillManifestSchema = manifestBaseSchema.extend({
-	kind: z.literal('skill'),
-	entrypoint: z.string().min(1),
-	collection: z.string().optional(),
-	readOnly: z.boolean().optional(),
-	idempotent: z.boolean().optional(),
-	destructive: z.boolean().optional(),
-	usesCapabilities: z.array(z.string()).optional(),
-})
-
-export const appManifestSchema = manifestBaseSchema.extend({
-	kind: z.literal('app'),
-	server: z.string().min(1),
-	client: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
-	assets: z.array(z.string().min(1)).optional(),
-	hidden: z.boolean().optional(),
-})
-
 export const jobManifestSchema = manifestBaseSchema.extend({
 	kind: z.literal('job'),
 	entrypoint: z.string().min(1),
 })
 
-export const repoManifestSchema = z.discriminatedUnion('kind', [
-	skillManifestSchema,
-	appManifestSchema,
-	jobManifestSchema,
-])
+export const repoManifestSchema = jobManifestSchema
 
-export type SkillManifest = z.infer<typeof skillManifestSchema>
-export type AppManifest = z.infer<typeof appManifestSchema>
 export type JobManifest = z.infer<typeof jobManifestSchema>
 export type RepoManifest = z.infer<typeof repoManifestSchema>
 

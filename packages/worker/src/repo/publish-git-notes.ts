@@ -7,7 +7,7 @@ import {
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
-import { type EntityKind } from './types.ts'
+import { entityKindValues, type EntityKind } from './types.ts'
 
 export const kodyPublishGitNoteVersion = 1 as const
 
@@ -51,7 +51,7 @@ export const kodyPublishGitNoteSchema = z.object({
 	publishedAt: z.string(),
 	publishedBy: z.enum(['repo_session', 'source_bootstrap', 'external_push']),
 	sourceId: z.string(),
-	entityKind: z.enum(['skill', 'app', 'job', 'package']),
+	entityKind: z.enum(entityKindValues),
 	entityId: z.string(),
 	repoId: z.string(),
 	commit: z.string(),

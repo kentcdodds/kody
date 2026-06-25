@@ -32,7 +32,5 @@ export function normalizeRepoWorkspacePath(path: string) {
 }
 
 export function getManifestEntrypointPath(manifest: RepoManifest) {
-	return normalizeRepoWorkspacePath(
-		manifest.kind === 'app' ? manifest.server : manifest.entrypoint,
-	)
+	return normalizeRepoWorkspacePath(manifest.entrypoint)
 }

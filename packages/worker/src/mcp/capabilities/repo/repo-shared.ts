@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { repoRunCommandsCommandsFieldDescription } from './repo-run-commands-text.ts'
+import { entityKindValues } from '#worker/repo/types.ts'
 
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
 export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
@@ -27,7 +28,7 @@ export const repoResolvedTargetSchema = z.union([
 	z.object({
 		kind: z.literal('source'),
 		source_id: z.string(),
-		entity_kind: z.enum(['skill', 'app', 'job', 'package']),
+		entity_kind: z.enum(entityKindValues),
 		entity_id: z.string(),
 	}),
 	z.object({
@@ -113,7 +114,7 @@ export const repoSessionInfoSchema = z.object({
 	updated_at: z.string(),
 	published_commit: z.string().nullable(),
 	manifest_path: z.string(),
-	entity_type: z.enum(['skill', 'app', 'job', 'package']),
+	entity_type: z.enum(entityKindValues),
 })
 
 export const repoOpenSessionOutputSchema = repoSessionInfoSchema.extend({

@@ -71,7 +71,7 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 		bootstrapSource: vi.fn(async () => ({
 			sessionId: 'source-sync-source-1-session',
 			publishedCommit: 'commit-bootstrap-1',
-			message: 'Bootstrapped source source-1 in app-1.',
+			message: 'Bootstrapped source source-1 in job-1.',
 		})),
 		openSession: vi.fn(),
 		applyEdits: vi.fn(),
@@ -86,9 +86,9 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
-		entity_kind: 'app',
-		entity_id: 'app-1',
-		repo_id: 'app-1',
+		entity_kind: 'job',
+		entity_id: 'job-1',
+		repo_id: 'job-1',
 		published_commit: null,
 		indexed_commit: null,
 		manifest_path: 'kody.json',
@@ -114,8 +114,9 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 		baseUrl: 'https://heykody.dev',
 		sourceId: 'source-1',
 		files: {
-			'kody.json': '{"version":1,"kind":"app"}',
-			'client.html': '<main>Hello</main>',
+			'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
+			'src/job.ts':
+				'export default async function main() { return { ok: true } }',
 		},
 	})
 
@@ -128,12 +129,12 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 			{
 				kind: 'write',
 				path: 'kody.json',
-				content: '{"version":1,"kind":"app"}',
+				content: '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 			},
 			{
 				kind: 'write',
-				path: 'client.html',
-				content: '<main>Hello</main>',
+				path: 'src/job.ts',
+				content: 'export default async function main() { return { ok: true } }',
 			},
 		],
 		bootstrapAccess: null,
@@ -166,7 +167,7 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 			status: 'ok' as const,
 			sessionId: 'source-sync-source-1-session',
 			publishedCommit: 'commit-session-2',
-			message: 'Published session source-sync-source-1-session to app-1.',
+			message: 'Published session source-sync-source-1-session to job-1.',
 		})),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
@@ -178,9 +179,9 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
-		entity_kind: 'app',
-		entity_id: 'app-1',
-		repo_id: 'app-1',
+		entity_kind: 'job',
+		entity_id: 'job-1',
+		repo_id: 'job-1',
 		published_commit: 'commit-existing-1',
 		indexed_commit: 'commit-existing-1',
 		manifest_path: 'kody.json',
@@ -206,7 +207,7 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 		baseUrl: 'https://heykody.dev',
 		sourceId: 'source-1',
 		files: {
-			'kody.json': '{"version":1,"kind":"app"}',
+			'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		},
 	})
 
@@ -226,7 +227,7 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 			{
 				kind: 'write',
 				path: 'kody.json',
-				content: '{"version":1,"kind":"app"}',
+				content: '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 			},
 		],
 		dryRun: false,
@@ -252,7 +253,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 		bootstrapSource: vi.fn(async () => ({
 			sessionId: 'source-sync-source-1-session',
 			publishedCommit: 'commit-bootstrap-2',
-			message: 'Bootstrapped source source-1 in app-1.',
+			message: 'Bootstrapped source source-1 in job-1.',
 		})),
 		openSession: vi.fn(),
 		applyEdits: vi.fn(),
@@ -267,9 +268,9 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
-		entity_kind: 'skill',
-		entity_id: 'skill-1',
-		repo_id: 'skill-1',
+		entity_kind: 'job',
+		entity_id: 'job-1',
+		repo_id: 'job-1',
 		published_commit: null,
 		indexed_commit: null,
 		manifest_path: 'kody.json',
@@ -296,7 +297,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 		sourceId: 'source-1',
 		bootstrapAccess,
 		files: {
-			'kody.json': '{"version":1,"kind":"skill"}',
+			'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		},
 	})
 
@@ -309,7 +310,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 			{
 				kind: 'write',
 				path: 'kody.json',
-				content: '{"version":1,"kind":"skill"}',
+				content: '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 			},
 		],
 		bootstrapAccess,
@@ -343,7 +344,7 @@ test('syncArtifactSourceSnapshot does not re-persist the KV snapshot after a suc
 			status: 'ok' as const,
 			sessionId: 'source-sync-source-1-session',
 			publishedCommit: 'commit-session-final',
-			message: 'Published session source-sync-source-1-session to app-1.',
+			message: 'Published session source-sync-source-1-session to job-1.',
 		})),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
@@ -355,9 +356,9 @@ test('syncArtifactSourceSnapshot does not re-persist the KV snapshot after a suc
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
-		entity_kind: 'app',
-		entity_id: 'app-1',
-		repo_id: 'app-1',
+		entity_kind: 'job',
+		entity_id: 'job-1',
+		repo_id: 'job-1',
 		published_commit: 'commit-existing-1',
 		indexed_commit: 'commit-existing-1',
 		manifest_path: 'kody.json',
@@ -383,7 +384,7 @@ test('syncArtifactSourceSnapshot does not re-persist the KV snapshot after a suc
 		baseUrl: 'https://heykody.dev',
 		sourceId: 'source-1',
 		files: {
-			'kody.json': '{"version":1,"kind":"app"}',
+			'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		},
 	})
 

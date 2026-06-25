@@ -161,8 +161,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'mem-1', user_id: userAaa },
 			{ id: 'mem-2', user_id: userBbb },
 		],
-		mcp_skills: [{ id: 'sk-1', user_id: userAaa }],
-		ui_artifacts: [{ id: 'ui-1', user_id: userAaa }],
 		secret_buckets: [{ id: 'sb-1', user_id: userAaa }],
 		secret_entries: [{ bucket_id: 'sb-1', name: 's', user_id: 'unused' }],
 		value_buckets: [{ id: 'vb-1', user_id: userAaa }],
@@ -247,8 +245,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.password_resets).toEqual([{ id: 3, user_id: 2 }])
 
 	// User-scoped data is removed.
-	expect(rows.mcp_skills).toEqual([])
-	expect(rows.ui_artifacts).toEqual([])
 	expect(rows.secret_buckets).toEqual([])
 	expect(rows.secret_entries).toEqual([])
 	expect(rows.value_buckets).toEqual([])
