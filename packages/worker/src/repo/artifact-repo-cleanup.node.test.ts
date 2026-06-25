@@ -4,6 +4,8 @@ const mockModule = vi.hoisted(() => ({
 	deleteArtifactRepo: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	listEntitySourcesByUser: vi.fn(),
+	listRepoSessionsBySource: vi.fn(async () => []),
+	listRepoSessionsByUser: vi.fn(async () => []),
 	hasArtifactsAccess: vi.fn(),
 }))
 
@@ -20,6 +22,13 @@ vi.mock('./entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 	listEntitySourcesByUser: (...args: Array<unknown>) =>
 		mockModule.listEntitySourcesByUser(...args),
+}))
+
+vi.mock('./repo-sessions.ts', () => ({
+	listRepoSessionsBySource: (...args: Array<unknown>) =>
+		mockModule.listRepoSessionsBySource(...args),
+	listRepoSessionsByUser: (...args: Array<unknown>) =>
+		mockModule.listRepoSessionsByUser(...args),
 }))
 
 const {
@@ -66,6 +75,14 @@ test('artifact repo cleanup deletes scoped repos and deduplicated user source re
 		user_id: 'user-1',
 		repo_id: 'package-pkg-1',
 	})
+	mockModule.listRepoSessionsBySource.mockResolvedValueOnce([
+		{
+			id: 'session-1',
+			user_id: 'user-1',
+			source_id: 'source-1',
+			source_repo_id: 'package-pkg-1',
+		},
+	])
 	expect(
 		await cleanupArtifactReposForPackage({
 			env,
@@ -79,6 +96,13 @@ test('artifact repo cleanup deletes scoped repos and deduplicated user source re
 		{ id: 'source-1', user_id: 'user-1', repo_id: 'package-pkg-1' },
 		{ id: 'source-2', user_id: 'user-1', repo_id: 'job-job-1' },
 	])
+	mockModule.listRepoSessionsByUser.mockResolvedValueOnce([
+		{
+			id: 'session-1',
+			user_id: 'user-1',
+			source_repo_id: 'package-pkg-1',
+		},
+	])
 	expect(
 		await cleanupAllUserArtifactRepos({
 			env,
@@ -89,6 +113,7 @@ test('artifact repo cleanup deletes scoped repos and deduplicated user source re
 })
 
 test('artifact repo cleanup records warnings for scope mismatches and missing Artifacts access', async () => {
+	mockModule.listRepoSessionsByUser.mockResolvedValue([])
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-other',
@@ -127,6 +152,7 @@ test('artifact repo cleanup records warnings for scope mismatches and missing Ar
 
 test('generic source cleanup deletes the source root with user scope checks', async () => {
 	mockModule.hasArtifactsAccess.mockReturnValue(true)
+	mockModule.listRepoSessionsBySource.mockResolvedValue([])
 	mockModule.deleteArtifactRepo.mockResolvedValue({
 		id: 'repo-deleted',
 		alreadyDeleted: false,
