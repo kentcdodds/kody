@@ -264,10 +264,10 @@ test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', 
 
 	expect(buildAppBundle).not.toHaveBeenCalled()
 	expect(buildModuleBundle).toHaveBeenCalledWith({
-		entryPoint: './src/index.ts',
+		entryPoint: 'src/index.ts',
 	})
 	expect(buildImportableModuleBundle).toHaveBeenCalledWith({
-		entryPoint: './src/index.ts',
+		entryPoint: 'src/index.ts',
 	})
 	expect(buildModuleBundle).toHaveBeenCalledWith({
 		entryPoint: 'src/on-email-received.ts',

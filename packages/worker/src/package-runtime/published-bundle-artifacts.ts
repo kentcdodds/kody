@@ -1,9 +1,4 @@
 import {
-	getPackageAppEntryPath,
-	listPackageServices,
-	listPackageSubscriptions,
-} from '#worker/package-registry/manifest.ts'
-import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
@@ -29,7 +24,10 @@ import {
 } from '#worker/repo/published-bundle-artifacts-repo.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
-import { buildPackageSubscriptionArtifactName } from './subscription-artifacts.ts'
+import {
+	collectPublishedPackageArtifactTargets,
+	type PublishedPackageArtifactBuildTarget,
+} from './package-artifact-targets.ts'
 
 type PersistPublishedBundleArtifactInput = {
 	env: Env
@@ -43,13 +41,6 @@ type PersistPublishedBundleArtifactInput = {
 	dependencies: Array<BundleArtifactDependency>
 	dynamicDependencies?: Array<BundleArtifactDynamicDependency>
 	packageContext?: PublishedBundleArtifact['packageContext']
-}
-
-export type PublishedPackageArtifactBuildTarget = {
-	kind: BundleArtifactKind
-	artifactName?: string | null
-	entryPoint: string
-	bundleKind: 'app' | 'module' | 'importable-module'
 }
 
 type PublishedPackageArtifactBuilders = {
@@ -260,72 +251,6 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 	}
 }
 
-export function collectPublishedPackageArtifactTargets(
-	manifest: AuthoredPackageJson,
-) {
-	const targets: Array<PublishedPackageArtifactBuildTarget> = []
-	if (manifest.kody.app) {
-		const entryPoint = getPackageAppEntryPath(manifest)
-		if (entryPoint) {
-			targets.push({
-				kind: 'app',
-				entryPoint,
-				bundleKind: 'app',
-			})
-		}
-	}
-	for (const service of listPackageServices(manifest)) {
-		targets.push({
-			kind: 'service',
-			artifactName: service.name,
-			entryPoint: service.entry,
-			bundleKind: 'module',
-		})
-	}
-	for (const [exportName, exportTarget] of Object.entries(
-		manifest.exports,
-	) as Array<[string, AuthoredPackageJson['exports'][string]]>) {
-		const entryPoint =
-			typeof exportTarget === 'string'
-				? exportTarget
-				: (exportTarget.import ?? exportTarget.default ?? null)
-		if (!entryPoint) continue
-		targets.push({
-			kind: 'module',
-			artifactName: exportName,
-			entryPoint,
-			bundleKind: 'module',
-		})
-		targets.push({
-			kind: 'importable-module',
-			artifactName: exportName,
-			entryPoint,
-			bundleKind: 'importable-module',
-		})
-	}
-	for (const subscription of listPackageSubscriptions(manifest)) {
-		targets.push({
-			kind: 'module',
-			artifactName: buildPackageSubscriptionArtifactName(subscription.topic),
-			entryPoint: subscription.handler,
-			bundleKind: 'module',
-		})
-	}
-	for (const [jobName, jobDefinition] of Object.entries(
-		manifest.kody.jobs ?? {},
-	) as Array<
-		[string, NonNullable<AuthoredPackageJson['kody']['jobs']>[string]]
-	>) {
-		targets.push({
-			kind: 'job',
-			artifactName: jobName,
-			entryPoint: jobDefinition.entry,
-			bundleKind: 'module',
-		})
-	}
-	return targets
-}
-
 export async function persistPublishedPackageArtifactTarget(
 	input: {
 		env: Env
@@ -415,3 +340,5 @@ export async function deletePublishedArtifactsForSource(input: {
 }
 
 export type { PublishedBundleArtifactRecord }
+export { collectPublishedPackageArtifactTargets }
+export type { PublishedPackageArtifactBuildTarget }

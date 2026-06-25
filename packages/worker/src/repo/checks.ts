@@ -1,8 +1,7 @@
 import {
-	getPackageAppEntryPath,
 	listPackageServices,
-	listPackageSubscriptions,
 	listPackageRetrievers,
+	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
@@ -13,6 +12,10 @@ import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
 } from '#worker/package-runtime/module-graph.ts'
+import {
+	collectPublishedPackageArtifactTargets,
+	type PublishedPackageArtifactBuildTarget,
+} from '#worker/package-runtime/package-artifact-targets.ts'
 import { collectStaticKodyPackageImportsFromFiles } from '#worker/package-runtime/static-kody-imports.ts'
 import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import {
@@ -435,9 +438,23 @@ function compareBundleTargets(
 	return buildBundleTargetKey(left).localeCompare(buildBundleTargetKey(right))
 }
 
-function collectPackageBundleTargets(
-	manifest: AuthoredPackageJson,
-): Array<PackageBundleTarget> {
+function toPackageBundleKind(target: PublishedPackageArtifactBuildTarget) {
+	switch (target.bundleKind) {
+		case 'app':
+			return 'app'
+		case 'module':
+			return 'callable'
+		case 'importable-module':
+			return 'importable'
+		default: {
+			const bundleKind: never = target.bundleKind
+			void bundleKind
+			throw new Error('Unhandled package artifact bundle kind.')
+		}
+	}
+}
+
+function collectPackageBundleTargets(manifest: AuthoredPackageJson) {
 	const targets = new Map<string, PackageBundleTarget>()
 	const remember = (
 		path: string,
@@ -449,27 +466,8 @@ function collectPackageBundleTargets(
 			bundleKind,
 		})
 	}
-	const appEntryPath = getPackageAppEntryPath(manifest)
-	if (appEntryPath) {
-		remember(appEntryPath, 'app')
-	}
-	for (const exportName of Object.keys(manifest.exports)) {
-		remember(
-			resolvePackageExportPath({
-				manifest,
-				exportName,
-			}),
-			'importable',
-		)
-	}
-	for (const job of Object.values(manifest.kody.jobs ?? {})) {
-		remember(job.entry, 'callable')
-	}
-	for (const service of listPackageServices(manifest)) {
-		remember(service.entry, 'callable')
-	}
-	for (const subscription of listPackageSubscriptions(manifest)) {
-		remember(subscription.handler, 'callable')
+	for (const target of collectPublishedPackageArtifactTargets(manifest)) {
+		remember(target.entryPoint, toPackageBundleKind(target))
 	}
 	for (const retriever of listPackageRetrievers(manifest)) {
 		remember(
@@ -483,9 +481,7 @@ function collectPackageBundleTargets(
 	return Array.from(targets.values()).sort(compareBundleTargets)
 }
 
-function collectPackageCallableTypecheckTargets(
-	manifest: AuthoredPackageJson,
-): Array<PackageCallableTypecheckTarget> {
+function collectPackageCallableTypecheckTargets(manifest: AuthoredPackageJson) {
 	const targets = new Map<string, PackageCallableTypecheckTarget>()
 	const emittedEventTopics = Object.keys(manifest.kody.emits ?? {})
 	const remember = (path: string, includeStorage: boolean) => {

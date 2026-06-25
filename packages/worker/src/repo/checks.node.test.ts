@@ -435,17 +435,16 @@ export default async () => {
 	)
 })
 
-test('runRepoChecks allows named-only helper exports and typechecks callable manifest exports', async () => {
+test('runRepoChecks validates every persisted package artifact target before publish', async () => {
 	const files = new Map<string, string>([
 		[
 			'package.json',
 			createPackageManifest({
-				packageName: '@kody/helper-and-callable-export',
-				kodyId: 'helper-and-callable-export',
-				description: 'Exports helpers and callable runtime targets',
+				packageName: '@kody/persisted-artifacts',
+				kodyId: 'persisted-artifacts',
+				description: 'Exports package runtime targets',
 				exports: {
 					'.': './src/index.ts',
-					'./helper': './src/helper.ts',
 					'./job': './src/job.ts',
 					'./search': './src/search.ts',
 					'./subscription': './src/subscription.ts',
@@ -474,10 +473,9 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 				},
 			}),
 		],
-		['src/index.ts', 'export const ready = true\n'],
 		[
-			'src/helper.ts',
-			'export const format = (value: string) => value.trim()\n',
+			'src/index.ts',
+			'export default async () => ({ ready: true })\nexport const ready = true\n',
 		],
 		[
 			'src/job.ts',
@@ -516,11 +514,19 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 		},
 		manifestPath: 'package.json',
 		sourceRoot: '/',
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
 	})
 
 	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: true,
+				message: 'Bundled 8 package target(s) successfully.',
+			}),
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: true,
@@ -528,6 +534,16 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 					'No semantic diagnostics for 3 callable package runtime entrypoint(s).',
 			}),
 		]),
+	)
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+		}),
+	)
+	expect(mockModule.buildKodyImportableModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+		}),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_runtime__.d.ts',
@@ -544,10 +560,6 @@ test('runRepoChecks allows named-only helper exports and typechecks callable man
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
 		expect.stringContaining('import userEntrypoint from "./src/subscription"'),
-	)
-	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/helper"'),
 	)
 })
 
@@ -1182,7 +1194,87 @@ test('runRepoChecks fails bundle validation when runtime bundling cannot resolve
 			userId: 'user-123',
 		}),
 	)
-	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+			userId: 'user-123',
+		}),
+	)
+})
+
+test('runRepoChecks fails before publish when an exported module artifact cannot be built', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/named-only-export',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'named-only-export',
+					description: 'Exports a helper that is not callable.',
+				},
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics: vi.fn(() => []),
+		},
+	})
+	mockModule.buildKodyModuleBundle.mockRejectedValueOnce(
+		new Error('No matching default export for import "default"'),
+	)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining(
+					'src/index.ts: No matching default export for import "default"',
+				),
+			}),
+		]),
+	)
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+			userId: 'user-123',
+		}),
+	)
+	expect(mockModule.buildKodyImportableModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+			userId: 'user-123',
+		}),
+	)
 })
 
 test('runRepoChecks validates package runtime bundles with npm dependencies', async () => {
@@ -1256,7 +1348,7 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 			expect.objectContaining({
 				kind: 'bundle',
 				ok: true,
-				message: 'Bundled 2 package target(s) successfully.',
+				message: 'Bundled 3 package target(s) successfully.',
 			}),
 		]),
 	)

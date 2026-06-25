@@ -28,12 +28,36 @@ const inputSchema = z.object({
 
 const externalPublishRetryDelaysMs = [100, 500] as const
 
+function getErrorCause(error: unknown) {
+	if (error && typeof error === 'object' && 'cause' in error) {
+		return (error as { cause?: unknown }).cause
+	}
+	return undefined
+}
+
+function errorCauseChainIncludes(
+	error: unknown,
+	matches: (message: string) => boolean,
+) {
+	const seen = new Set<unknown>()
+	let current: unknown = error
+	while (current !== undefined && !seen.has(current)) {
+		seen.add(current)
+		if (matches(getErrorMessage(current))) {
+			return true
+		}
+		current = getErrorCause(current)
+	}
+	return false
+}
+
 function isTransientDurableObjectResetError(error: unknown) {
-	const message = getErrorMessage(error)
-	return (
-		message.includes('Durable Object exceeded its CPU time limit') ||
-		message.includes("Durable Object's isolate exceeded its memory limit") ||
-		message.includes('Durable Object was reset')
+	return errorCauseChainIncludes(
+		error,
+		(message) =>
+			message.includes('Durable Object exceeded its CPU time limit') ||
+			message.includes("Durable Object's isolate exceeded its memory limit") ||
+			message.includes('Durable Object was reset'),
 	)
 }
 
