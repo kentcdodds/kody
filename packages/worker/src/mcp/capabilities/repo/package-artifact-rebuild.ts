@@ -1,25 +1,6 @@
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
-
-function getErrorCause(error: unknown) {
-	if (error && typeof error === 'object' && 'cause' in error) {
-		return (error as { cause?: unknown }).cause
-	}
-	return undefined
-}
-
-function formatErrorCauseChain(error: unknown) {
-	const messages: Array<string> = []
-	const seen = new Set<unknown>()
-	let current: unknown = error
-	while (current !== undefined && !seen.has(current)) {
-		seen.add(current)
-		messages.push(getErrorMessage(current))
-		current = getErrorCause(current)
-	}
-	return messages.join(' Caused by: ')
-}
+import { formatErrorCauseChain } from '#mcp/capabilities/error-message.ts'
 
 function describePackageArtifactTarget(
 	target: PublishedPackageArtifactBuildTarget,

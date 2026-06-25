@@ -2,7 +2,10 @@ import * as Sentry from '@sentry/cloudflare'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
+import {
+	errorCauseChainIncludes,
+	getErrorMessage,
+} from '#mcp/capabilities/error-message.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	getStaticPackageDependentsSummary,
@@ -27,29 +30,6 @@ const inputSchema = z.object({
 })
 
 const externalPublishRetryDelaysMs = [100, 500] as const
-
-function getErrorCause(error: unknown) {
-	if (error && typeof error === 'object' && 'cause' in error) {
-		return (error as { cause?: unknown }).cause
-	}
-	return undefined
-}
-
-function errorCauseChainIncludes(
-	error: unknown,
-	matches: (message: string) => boolean,
-) {
-	const seen = new Set<unknown>()
-	let current: unknown = error
-	while (current !== undefined && !seen.has(current)) {
-		seen.add(current)
-		if (matches(getErrorMessage(current))) {
-			return true
-		}
-		current = getErrorCause(current)
-	}
-	return false
-}
 
 function isTransientDurableObjectResetError(error: unknown) {
 	return errorCauseChainIncludes(
