@@ -120,6 +120,20 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 			}),
 		)?.publishedBy,
 	).toBe('external_push')
+	expect(
+		parsePublishGitNote(
+			JSON.stringify({
+				v: 1,
+				publishedAt: '2026-05-28T12:00:00.000Z',
+				publishedBy: 'repo_session',
+				sourceId: 'legacy-source',
+				entityKind: 'skill',
+				entityId: 'skill-1',
+				repoId: 'skill-skill-1',
+				commit: 'commit-new',
+			}),
+		)?.entityKind,
+	).toBe('skill')
 	expect(parsePublishGitNote('not-json')).toBeNull()
 
 	mockGit.addNote.mockClear()

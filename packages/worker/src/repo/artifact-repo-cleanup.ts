@@ -139,14 +139,17 @@ export async function cleanupArtifactReposForSource(input: {
 	userId: string
 	sourceId: string
 	warnings?: Array<string>
-}) {
+}): Promise<{
+	deleted: number
+	artifactAccessUnavailable: boolean
+}> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source) return 0
+	if (!source) return { deleted: 0, artifactAccessUnavailable: false }
 	if (source.user_id !== input.userId) {
 		input.warnings?.push(
 			`Skipped artifact repo cleanup for source ${input.sourceId}: user scope mismatch.`,
 		)
-		return 0
+		return { deleted: 0, artifactAccessUnavailable: false }
 	}
 	if (!hasArtifactsAccess(input.env)) {
 		const repoCount = collectUniqueRepoNames([source.repo_id]).length
@@ -155,14 +158,17 @@ export async function cleanupArtifactReposForSource(input: {
 				`Cloudflare Artifacts access was unavailable; ${repoCount} artifact repo(s) for source ${source.id} were not removed and must be cleaned up manually.`,
 			)
 		}
-		return 0
+		return { deleted: 0, artifactAccessUnavailable: true }
 	}
-	return deleteReposForEntitySource({
-		env: input.env,
-		userId: input.userId,
-		source,
-		warnings: input.warnings,
-	})
+	return {
+		deleted: await deleteReposForEntitySource({
+			env: input.env,
+			userId: input.userId,
+			source,
+			warnings: input.warnings,
+		}),
+		artifactAccessUnavailable: false,
+	}
 }
 
 export async function cleanupAllUserArtifactRepos(input: {

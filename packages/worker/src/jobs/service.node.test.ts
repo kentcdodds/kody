@@ -23,7 +23,10 @@ import {
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
-	cleanupArtifactReposForSource: vi.fn(async () => 0),
+	cleanupArtifactReposForSource: vi.fn(async () => ({
+		deleted: 0,
+		artifactAccessUnavailable: false,
+	})),
 	listRepoSessionsBySource: vi.fn(async () => []),
 	cleanupSessionBranch: vi.fn(async () => ({ ok: true })),
 }))
@@ -71,7 +74,10 @@ vi.mock('./manager-client.ts', () => ({
 afterEach(() => {
 	vi.restoreAllMocks()
 	repoMockModule.cleanupArtifactReposForSource.mockClear()
-	repoMockModule.cleanupArtifactReposForSource.mockResolvedValue(0)
+	repoMockModule.cleanupArtifactReposForSource.mockResolvedValue({
+		deleted: 0,
+		artifactAccessUnavailable: false,
+	})
 	repoMockModule.listRepoSessionsBySource.mockClear()
 	repoMockModule.listRepoSessionsBySource.mockResolvedValue([])
 	repoMockModule.cleanupSessionBranch.mockClear()
@@ -1124,7 +1130,10 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 	repoMockModule.listRepoSessionsBySource.mockResolvedValueOnce([
 		{ id: 'session-1' },
 	])
-	repoMockModule.cleanupArtifactReposForSource.mockResolvedValueOnce(1)
+	repoMockModule.cleanupArtifactReposForSource.mockResolvedValueOnce({
+		deleted: 1,
+		artifactAccessUnavailable: false,
+	})
 
 	await deleteJob({
 		env,

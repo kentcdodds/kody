@@ -5,7 +5,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
-	kodyPublishGitNoteSchema,
+	legacyKodyPublishGitNoteSchema,
 	readPublishGitNoteFromArtifactsRepo,
 } from '#worker/repo/publish-git-notes.ts'
 
@@ -47,7 +47,7 @@ const outputSchema = z.object({
 	source_id: z.string(),
 	repo_id: z.string(),
 	raw_note: z.string().nullable(),
-	note: kodyPublishGitNoteSchema.nullable(),
+	note: legacyKodyPublishGitNoteSchema.nullable(),
 })
 
 export const repoShowPublishNoteCapability = defineDomainCapability(

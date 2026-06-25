@@ -897,6 +897,80 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-event-runner',
+		published_commit: 'commit-release',
+		indexed_commit: 'commit-release',
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	})
+	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			id: 'source-repo-1',
+			name: 'package-event-runner',
+			description: null,
+			defaultBranch: 'main',
+			createdAt: '2026-04-16T00:00:00.000Z',
+			updatedAt: '2026-04-16T00:00:00.000Z',
+			lastPushAt: null,
+			source: null,
+			readOnly: false,
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
+		})),
+		createToken: vi.fn(async () => ({
+			id: 'token-1',
+			plaintext: 'art_source_secret?expires=1760000200',
+			scope: 'write',
+			expiresAt: '2026-10-09T08:16:40.000Z',
+		})),
+	})
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+		defaultBranch: 'release',
+		commit: 'commit-release',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
+	})
+	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+		defaultBranch: 'release',
+		commit: 'commit-release',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
+	})
+	vi.mocked(insertRepoSession).mockClear()
+	await new RepoSession(createDurableObjectState(), createEnv()).openSession({
+		sessionId: 'session-release-branch',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+		sourceRoot: '/',
+	})
+	expect(insertRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			source_branch: 'release',
+		}),
+	)
+	await expect(
+		new RepoSession(createDurableObjectState(), createEnv()).openSession({
+			sessionId: 'session-conflicting-branch',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			baseUrl: 'https://example.com',
+			sourceRoot: '/',
+			defaultBranch: 'main',
+		}),
+	).rejects.toThrow(/published from "release"/)
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-event-runner',
 		published_commit: 'commit-base',
 		indexed_commit: 'commit-base',
 		manifest_path: 'package.json',

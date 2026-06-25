@@ -142,7 +142,10 @@ test('generic source cleanup deletes the source root with user scope checks', as
 			userId: 'user-1',
 			sourceId: 'source-1',
 		}),
-	).resolves.toBe(1)
+	).resolves.toEqual({
+		deleted: 1,
+		artifactAccessUnavailable: false,
+	})
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('job-job-1')
 
 	mockModule.deleteArtifactRepo.mockClear()
@@ -159,7 +162,30 @@ test('generic source cleanup deletes the source root with user scope checks', as
 			sourceId: 'source-1',
 			warnings,
 		}),
-	).resolves.toBe(0)
+	).resolves.toEqual({
+		deleted: 0,
+		artifactAccessUnavailable: false,
+	})
 	expect(mockModule.deleteArtifactRepo).not.toHaveBeenCalled()
 	expect(warnings[0]).toMatch(/scope mismatch/i)
+
+	mockModule.hasArtifactsAccess.mockReturnValue(false)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'job-job-1',
+	})
+	const missingAccessWarnings: Array<string> = []
+	await expect(
+		cleanupArtifactReposForSource({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			warnings: missingAccessWarnings,
+		}),
+	).resolves.toEqual({
+		deleted: 0,
+		artifactAccessUnavailable: true,
+	})
+	expect(missingAccessWarnings[0]).toMatch(/artifacts access/i)
 })
