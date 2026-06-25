@@ -1173,17 +1173,17 @@ export async function deleteJob(input: {
 	if (!row) {
 		throw new Error(`Job "${input.jobId}" was not found.`)
 	}
-	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-	await deleteJobVector(input.env, input.jobId)
-	await syncJobManagerAlarm({
-		env: input.env,
-		userId: input.userId,
-	})
 	await cleanupAdHocJobSource({
 		env: input.env,
 		userId: input.userId,
 		jobId: input.jobId,
 		sourceId: row.record.sourceId,
+	})
+	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+	await deleteJobVector(input.env, input.jobId)
+	await syncJobManagerAlarm({
+		env: input.env,
+		userId: input.userId,
 	})
 	return {
 		id: input.jobId,

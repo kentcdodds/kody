@@ -787,13 +787,19 @@ class RepoSessionBase extends DurableObject<Env> {
 			const sourceRepo =
 				sourceHead?.repo ??
 				(await resolveArtifactSourceRepo(this.env, source.repo_id))
-			const sourceInfo = await sourceRepo.info()
 			const sourceAccess = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
 			})
 			const sourceBranch =
-				input.defaultBranch ?? sourceInfo?.defaultBranch ?? defaultSessionBranch
+				sourceHead?.defaultBranch ??
+				(await sourceRepo.info())?.defaultBranch ??
+				defaultSessionBranch
+			if (input.defaultBranch && input.defaultBranch !== sourceBranch) {
+				throw new Error(
+					`Source "${source.id}" is published from "${sourceBranch}", not "${input.defaultBranch}".`,
+				)
+			}
 			const sessionBranch = buildSessionBranchName(input.sessionId)
 			await this.resetWorkspace()
 			await this.workspace.mkdir(repoSessionWorkspacePrefix, {

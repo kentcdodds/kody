@@ -1,24 +1,20 @@
-DROP TABLE IF EXISTS repo_sessions;
+ALTER TABLE repo_sessions
+	ADD COLUMN source_repo_id TEXT;
 
-CREATE TABLE repo_sessions (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL,
-	source_id TEXT NOT NULL,
-	source_repo_id TEXT NOT NULL,
-	session_branch TEXT NOT NULL,
-	source_branch TEXT NOT NULL,
-	base_commit TEXT NOT NULL,
-	source_root TEXT NOT NULL DEFAULT '/',
-	conversation_id TEXT,
-	status TEXT NOT NULL DEFAULT 'active',
-	expires_at TEXT,
-	last_checkpoint_at TEXT,
-	last_checkpoint_commit TEXT,
-	last_check_run_id TEXT,
-	last_check_tree_hash TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-);
+ALTER TABLE repo_sessions
+	ADD COLUMN session_branch TEXT;
+
+ALTER TABLE repo_sessions
+	ADD COLUMN source_branch TEXT;
+
+UPDATE repo_sessions
+SET source_repo_id = session_repo_name,
+	session_branch = 'sessions/' || id,
+	source_branch = 'main',
+	status = 'discarded',
+	expires_at = COALESCE(expires_at, CURRENT_TIMESTAMP),
+	updated_at = CURRENT_TIMESTAMP
+WHERE session_branch IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_repo_sessions_user_id
 ON repo_sessions(user_id);

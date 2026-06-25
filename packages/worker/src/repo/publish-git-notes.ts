@@ -77,6 +77,10 @@ export const kodyPublishGitNoteSchema = z.object({
 		.optional(),
 })
 
+const legacyKodyPublishGitNoteSchema = kodyPublishGitNoteSchema.extend({
+	entityKind: z.enum(['skill', 'app', ...entityKindValues]),
+})
+
 const kodyNoteAuthor = {
 	name: 'Kody',
 	email: 'kody@artifacts.local',
@@ -476,7 +480,9 @@ export function parsePublishGitNote(raw: string): KodyPublishGitNote | null {
 	const trimmed = raw.trim()
 	if (!trimmed) return null
 	try {
-		return kodyPublishGitNoteSchema.parse(JSON.parse(trimmed))
+		return legacyKodyPublishGitNoteSchema.parse(
+			JSON.parse(trimmed),
+		) as KodyPublishGitNote
 	} catch {
 		return null
 	}
