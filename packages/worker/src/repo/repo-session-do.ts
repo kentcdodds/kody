@@ -793,9 +793,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 			const sourceBranch =
 				sourceHead?.defaultBranch ??
+				input.defaultBranch ??
 				(await sourceRepo.info())?.defaultBranch ??
 				defaultSessionBranch
-			if (input.defaultBranch && input.defaultBranch !== sourceBranch) {
+			if (
+				sourceHead &&
+				input.defaultBranch &&
+				input.defaultBranch !== sourceBranch
+			) {
 				throw new Error(
 					`Source "${source.id}" is published from "${sourceBranch}", not "${input.defaultBranch}".`,
 				)
