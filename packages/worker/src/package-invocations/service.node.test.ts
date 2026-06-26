@@ -1592,6 +1592,160 @@ test('invokePackageExport enforces source scopes for wildcard tokens', async () 
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
+test('invokePackageExport accepts normalized YouTube WebSub token scopes', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.getSavedPackageByKodyId.mockResolvedValue({
+		id: 'pkg-youtube',
+		userId: 'user-123',
+		name: '@kentcdodds/youtube-livestream-vod-manager',
+		kodyId: 'youtube-livestream-vod-manager',
+		description: 'YouTube livestream VOD manager',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-youtube',
+		hasApp: false,
+		createdAt: '2026-04-27T00:00:00.000Z',
+		updatedAt: '2026-04-27T00:00:00.000Z',
+	})
+	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-youtube',
+			user_id: 'user-123',
+			entity_kind: 'package',
+			entity_id: 'pkg-youtube',
+			repo_id: 'repo-youtube',
+			published_commit: 'commit-youtube',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kentcdodds/youtube-livestream-vod-manager',
+			exports: {
+				'./process-video': './src/process-video.ts',
+			},
+			kody: {
+				id: 'youtube-livestream-vod-manager',
+				description: 'YouTube livestream VOD manager',
+			},
+		},
+	})
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: {
+			id: 'artifact-youtube',
+		},
+		artifact: {
+			version: 1,
+			kind: 'module',
+			artifactName: './process-video',
+			sourceId: 'source-youtube',
+			publishedCommit: 'commit-youtube',
+			entryPoint: 'src/process-video.ts',
+			mainModule: 'dist/index.js',
+			modules: {
+				'dist/index.js':
+					'export default async function run(){ return { processed: true } }',
+			},
+			dependencies: [],
+			packageContext: {
+				packageId: 'pkg-youtube',
+				kodyId: 'youtube-livestream-vod-manager',
+				sourceId: 'source-youtube',
+			},
+			serviceContext: null,
+			createdAt: '2026-04-27T00:00:00.000Z',
+		},
+	})
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { processed: true },
+		logs: [],
+	})
+
+	const response = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({
+			packageKodyIds: ['youtube-livestream-vod-manager'],
+			exportNames: ['./process-video'],
+			sources: ['youtube-websub-proxy'],
+		}),
+		request: {
+			packageIdOrKodyId: 'youtube-livestream-vod-manager',
+			exportName: 'process-video',
+			params: { videoId: 'E0CR2hzWGQE' },
+			idempotencyKey: 'youtube:E0CR2hzWGQE',
+			source: 'youtube-websub-proxy',
+		},
+	})
+
+	expect(response.status).toBe(200)
+	expect(response.body).toMatchObject({
+		ok: true,
+		package: {
+			id: 'pkg-youtube',
+			kodyId: 'youtube-livestream-vod-manager',
+		},
+		exportName: './process-video',
+		source: 'youtube-websub-proxy',
+		result: { processed: true },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+
+	const deniedByExport = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({
+			packageKodyIds: ['youtube-livestream-vod-manager'],
+			exportNames: ['./other-export'],
+			sources: ['youtube-websub-proxy'],
+		}),
+		request: {
+			packageIdOrKodyId: 'youtube-livestream-vod-manager',
+			exportName: 'process-video',
+			params: { videoId: 'E0CR2hzWGQE' },
+			idempotencyKey: 'youtube:E0CR2hzWGQE-denied-export',
+			source: 'youtube-websub-proxy',
+		},
+	})
+
+	expect(deniedByExport.status).toBe(403)
+	expect(deniedByExport.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'export_not_allowed',
+		},
+	})
+
+	const deniedBySource = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({
+			packageKodyIds: ['youtube-livestream-vod-manager'],
+			exportNames: ['./process-video'],
+			sources: ['other-source'],
+		}),
+		request: {
+			packageIdOrKodyId: 'youtube-livestream-vod-manager',
+			exportName: 'process-video',
+			params: { videoId: 'E0CR2hzWGQE' },
+			idempotencyKey: 'youtube:E0CR2hzWGQE-denied-source',
+			source: 'youtube-websub-proxy',
+		},
+	})
+
+	expect(deniedBySource.status).toBe(403)
+	expect(deniedBySource.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'source_not_allowed',
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
 test('invokePackageExport serializes execution failures without exposing thrown objects', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
