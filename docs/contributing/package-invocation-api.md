@@ -25,7 +25,7 @@ Examples:
 The path uses the owner's username and the package `kody.id`.
 
 The export name is normalized to package export form, so
-`dispatch-message-created` resolves as `./dispatch-message-created`.
+`dispatch-event` resolves as `./dispatch-event`.
 
 ## Authentication
 
