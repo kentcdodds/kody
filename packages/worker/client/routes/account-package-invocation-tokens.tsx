@@ -101,15 +101,50 @@ function readCommaListParams(params: URLSearchParams, keys: Array<string>) {
 function createEditorStateFromNewTokenQuery(href: string): EditorState {
 	const params = new URL(href, 'http://localhost').searchParams
 	const state = createEmptyEditorState()
-	const packageIds = readCommaListParams(params, ['packageId', 'packageIds'])
+	const packageIds = readCommaListParams(params, [
+		'packageId',
+		'packageIds',
+		'package_id',
+		'package_ids',
+		'package-id',
+		'package-ids',
+	])
 	const packageKodyIds = readCommaListParams(params, [
 		'packageKodyId',
 		'packageKodyIds',
+		'package_kody_id',
+		'package_kody_ids',
+		'package-kody-id',
+		'package-kody-ids',
 		'kodyId',
 		'kodyIds',
+		'kody_id',
+		'kody_ids',
+		'kody-id',
+		'kody-ids',
 	])
-	const exportNames = readCommaListParams(params, ['exportName', 'exportNames'])
-	const sources = readCommaListParams(params, ['source', 'sources'])
+	const exportNames = readCommaListParams(params, [
+		'exportName',
+		'exportNames',
+		'export_name',
+		'export_names',
+		'export-name',
+		'export-names',
+	])
+	const sources = readCommaListParams(params, [
+		'source',
+		'sources',
+		'source_name',
+		'source_names',
+		'source-name',
+		'source-names',
+		'allowedSource',
+		'allowedSources',
+		'allowed_source',
+		'allowed_sources',
+		'allowed-source',
+		'allowed-sources',
+	])
 	return {
 		...state,
 		name: readTrimmedParam(params, 'name') ?? state.name,
@@ -150,14 +185,40 @@ function getNewTokenQueryKey(href: string) {
 		'name',
 		'packageId',
 		'packageIds',
+		'package_id',
+		'package_ids',
+		'package-id',
+		'package-ids',
 		'packageKodyId',
 		'packageKodyIds',
+		'package_kody_id',
+		'package_kody_ids',
+		'package-kody-id',
+		'package-kody-ids',
 		'kodyId',
 		'kodyIds',
+		'kody_id',
+		'kody_ids',
+		'kody-id',
+		'kody-ids',
 		'exportName',
 		'exportNames',
+		'export_name',
+		'export_names',
+		'export-name',
+		'export-names',
 		'source',
 		'sources',
+		'source_name',
+		'source_names',
+		'source-name',
+		'source-names',
+		'allowedSource',
+		'allowedSources',
+		'allowed_source',
+		'allowed_sources',
+		'allowed-source',
+		'allowed-sources',
 	]
 	return keys
 		.map((key) => `${key}=${url.searchParams.getAll(key).join('\u0000')}`)

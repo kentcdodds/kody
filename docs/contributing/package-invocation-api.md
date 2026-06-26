@@ -59,7 +59,7 @@ The token is not a global backdoor:
 - tokens can be revoked without deploys
 - execution uses normal package runtime machinery
 
-### Creating and revoking tokens
+### Managing tokens
 
 Signed-in users manage package invocation tokens from:
 
@@ -67,7 +67,8 @@ Signed-in users manage package invocation tokens from:
 - `/account/package-invocation-tokens/new`
 
 The creation form accepts the raw token exactly once, hashes it server-side, and
-stores only the hash. Token lists never return the raw token or token hash.
+stores only the hash. Token list/detail payloads never return the raw token or
+token hash.
 
 The backing same-origin JSON endpoint is:
 
@@ -75,8 +76,14 @@ The backing same-origin JSON endpoint is:
   metadata
 - `POST /account/package-invocation-tokens.json` with `action: "create"` —
   create a token from a raw token and allowlists
+- `POST /account/package-invocation-tokens.json` with `action: "update"` —
+  update token name and allowlists without changing the stored token hash
 - `POST /account/package-invocation-tokens.json` with `action: "revoke"` —
   revoke a token by id
+- `POST /account/package-invocation-tokens.json` with `action: "unrevoke"` —
+  restore a revoked token by id
+- `POST /account/package-invocation-tokens.json` with `action: "delete"` —
+  permanently delete a token row by id
 
 Create payload shape:
 
@@ -103,10 +110,16 @@ The `/new` page supports metadata prefill query parameters for setup flows:
 - `packageKodyId` / `packageKodyIds` / `kodyId` / `kodyIds`
 - `packageId` / `packageIds`
 - `exportName` / `exportNames`
-- `source` / `sources`
+- `allowedSource` / `allowedSources` / `source` / `sources`
 
-Repeat parameters or comma-separate values. Do not put the raw token in the URL;
-paste it into the form or submit it over the authenticated same-origin JSON API.
+Snake case and kebab case aliases are accepted for list fields, such as
+`package_kody_ids`, `package-kody-ids`, `export_names`, `export-names`,
+`allowed_sources`, and `allowed-sources`. Repeat parameters or comma-separate
+values. Do not put the raw token in the URL; paste it into the form or submit it
+over the authenticated same-origin JSON API.
+
+Agents should load `kody_official_guide` with
+`guide: "package_invocation_token_setup"` before sending a user to this page.
 
 ## Request body
 

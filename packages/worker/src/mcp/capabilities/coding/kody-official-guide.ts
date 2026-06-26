@@ -58,6 +58,12 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'Hosted /account/secrets/new URL shape, query params, and approval policy for API keys and PATs.',
 	},
+	package_invocation_token_setup: {
+		file: 'account-package-invocation-token-setup.md',
+		title: 'Account package invocation token setup guide',
+		summary:
+			'Hosted /account/package-invocation-tokens/new URL shape, query params, and bearer-token safety policy for external package invocation clients.',
+	},
 	package_service_pattern: {
 		file: 'package-service-pattern.md',
 		title: 'Package service pattern guide',

@@ -5,14 +5,15 @@ Official markdown guides for agent and contributor workflows. At runtime, the
 branch via `raw.githubusercontent.com` (see capability description in code for
 available `guide` ids).
 
-| File                                                                           | Topic                                                                                                       |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [package-authoring.md](./package-authoring.md)                                 | General package-authoring guidance, including the README Intent section                                     |
-| [integration-bootstrap.md](./integration-bootstrap.md)                         | **Start here** for third-party integrations that must work before saving a dependent package or package app |
-| [secret-backed-integration.md](./secret-backed-integration.md)                 | Default recipe for non-OAuth integrations that use one or more saved secrets                                |
-| [integration-backed-app-happy-path.md](./integration-backed-app-happy-path.md) | Default package app pattern after integration smoke test passes                                             |
-| [package-service-pattern.md](./package-service-pattern.md)                     | General package-service pattern for native long-lived runtimes inside Kody                                  |
-| [package-subscriptions.md](./package-subscriptions.md)                         | Package subscription manifest shape, discovery, and email.message.received payload guidance                 |
-| [oauth.md](./oauth.md)                                                         | **Start here** for third-party OAuth (`/connect/oauth`, redirect URI, params)                               |
-| [generated-ui-oauth.md](./generated-ui-oauth.md)                               | Edge case: OAuth in a hosted package app (`open_generated_ui` on a saved package)                           |
-| [account-secret-setup.md](./account-secret-setup.md)                           | `/account/secrets/new` URL parameters and policies                                                          |
+| File                                                                                     | Topic                                                                                                       |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [package-authoring.md](./package-authoring.md)                                           | General package-authoring guidance, including the README Intent section                                     |
+| [integration-bootstrap.md](./integration-bootstrap.md)                                   | **Start here** for third-party integrations that must work before saving a dependent package or package app |
+| [secret-backed-integration.md](./secret-backed-integration.md)                           | Default recipe for non-OAuth integrations that use one or more saved secrets                                |
+| [integration-backed-app-happy-path.md](./integration-backed-app-happy-path.md)           | Default package app pattern after integration smoke test passes                                             |
+| [package-service-pattern.md](./package-service-pattern.md)                               | General package-service pattern for native long-lived runtimes inside Kody                                  |
+| [package-subscriptions.md](./package-subscriptions.md)                                   | Package subscription manifest shape, discovery, and email.message.received payload guidance                 |
+| [oauth.md](./oauth.md)                                                                   | **Start here** for third-party OAuth (`/connect/oauth`, redirect URI, params)                               |
+| [generated-ui-oauth.md](./generated-ui-oauth.md)                                         | Edge case: OAuth in a hosted package app (`open_generated_ui` on a saved package)                           |
+| [account-secret-setup.md](./account-secret-setup.md)                                     | `/account/secrets/new` URL parameters and policies                                                          |
+| [account-package-invocation-token-setup.md](./account-package-invocation-token-setup.md) | `/account/package-invocation-tokens/new` URL parameters and bearer-token safety policy                      |

@@ -195,6 +195,12 @@ authenticated user. Package code does not need to mint or pass
 package-invocation bearer tokens. Nested package invocations are depth-limited
 to prevent runaway loops.
 
+External trusted clients that must call package exports over HTTP use package
+invocation tokens instead. Before sending a user to create one, agents should
+load `kody_official_guide` with `guide: "package_invocation_token_setup"` and
+construct a prefilled `/account/package-invocation-tokens/new` URL without raw
+token material.
+
 Static package imports from ad hoc MCP `execute` code, such as
 `kody:@scope/package/export`, do not get a package runtime context. They run as
 library/snapshot imports in the execute caller's runtime. Use
