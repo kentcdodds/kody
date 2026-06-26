@@ -479,6 +479,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	function cancelEditToken() {
+		const tokenId = getCurrentSelectedTokenId()
+		selectedTokenId = tokenId
 		editorState = createEmptyEditorState()
 		editMode = false
 		revokeConfirm = false
@@ -486,7 +488,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		message = null
 		messageTone = 'info'
 		if (typeof window !== 'undefined') {
-			window.history.pushState(null, '', accountPackageInvocationTokensBasePath)
+			window.history.pushState(
+				null,
+				'',
+				tokenId
+					? buildTokenDetailPath(tokenId)
+					: accountPackageInvocationTokensBasePath,
+			)
 			lastLoadedHref = window.location.href
 		}
 		handle.update()
