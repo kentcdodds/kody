@@ -28,6 +28,12 @@ is write-only and optional: leaving it blank keeps the current bearer value,
 while pasting a new raw token replaces the stored hash. The UI never shows the
 existing raw token or token hash.
 
+When the exact bearer value does not matter, the user can click **Generate** in
+the raw-token field. Kody generates a high-entropy browser-side token, fills the
+password field, and offers a **Copy** control so the user can paste it into the
+external service or secret store. After saving, Kody stores only the hash and
+will not show the raw value again.
+
 ## URL format
 
 Provide the user a URL like:
@@ -66,7 +72,8 @@ package id scope.
 2. Generate a `/account/package-invocation-tokens/new` URL with `name`, package
    scope, export scope, and optional `allowedSources`.
 3. Ask the user to open the URL, paste their locally generated raw token into
-   the Raw token field, and create the token.
+   the Raw token field, or click **Generate** and copy/deliver the generated
+   value before creating the token.
    - For rotation, ask the user to open the existing token detail URL and paste
      the new raw token into the write-only replacement field.
 4. Instruct the external caller to send:

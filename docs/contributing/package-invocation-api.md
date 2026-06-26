@@ -124,6 +124,10 @@ write-only and optional: leave it blank to preserve the current token hash, or
 paste a new raw token to rotate the bearer value. Existing raw token material
 and stored hashes are never returned by list/detail payloads.
 
+The account UI also includes a browser-side **Generate** control for create and
+rotate flows. Generated values are filled into the write-only password field and
+can be copied by the user before saving; Kody still persists only the hash.
+
 Agents should load `kody_official_guide` with
 `guide: "package_invocation_token_setup"` before sending a user to this page.
 

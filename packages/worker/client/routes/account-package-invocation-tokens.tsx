@@ -242,6 +242,27 @@ function parseListText(value: string) {
 		.filter((entry) => entry.length > 0)
 }
 
+function encodeBase64Url(bytes: Uint8Array) {
+	let binary = ''
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte)
+	}
+	return btoa(binary)
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/g, '')
+}
+
+function generatePackageInvocationRawToken() {
+	const cryptoApi = globalThis.crypto
+	if (!cryptoApi?.getRandomValues) {
+		throw new Error('This browser cannot generate secure random tokens.')
+	}
+	const bytes = new Uint8Array(32)
+	cryptoApi.getRandomValues(bytes)
+	return `kody_${encodeBase64Url(bytes)}`
+}
+
 function formatScope(values: Array<string>) {
 	if (values.length === 0) return 'None'
 	if (values.includes(wildcardScope)) return 'Any'
@@ -432,6 +453,35 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			...editorState,
 			[field]: value,
 		}
+	}
+
+	function generateEditorRawToken() {
+		try {
+			setEditorField('rawToken', generatePackageInvocationRawToken())
+			message =
+				'Generated a raw token. Copy, save, or deliver it now; Kody will not show it again after saving.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to generate a secure token.'
+			messageTone = 'error'
+		}
+		handle.update()
+	}
+
+	async function copyEditorRawToken() {
+		if (!editorState.rawToken || saveState !== 'idle') return
+		try {
+			await navigator.clipboard.writeText(editorState.rawToken)
+			message = 'Copied raw token to clipboard.'
+			messageTone = 'info'
+		} catch {
+			message = 'Unable to copy token. Select the field and copy it manually.'
+			messageTone = 'error'
+		}
+		handle.update()
 	}
 
 	function readEditorStateFromForm(form: HTMLFormElement) {
@@ -1001,22 +1051,60 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Raw token</span>
-										<input
-											name="rawToken"
-											type="password"
-											value={editorState.rawToken}
-											placeholder="Paste the locally generated token"
-											autoComplete="off"
-											disabled={isMutating}
-											required
-											mix={[
-												on('input', (event) => {
-													setEditorField('rawToken', event.currentTarget.value)
-													handle.update()
-												}),
-												css(inputCss),
-											]}
-										/>
+										<div
+											mix={css({
+												display: 'grid',
+												gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+												gap: spacing.sm,
+												[mq.mobile]: {
+													gridTemplateColumns: '1fr',
+												},
+											})}
+										>
+											<input
+												name="rawToken"
+												type="password"
+												value={editorState.rawToken}
+												placeholder="Paste or generate a token"
+												autoComplete="off"
+												disabled={isMutating}
+												required
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'rawToken',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(inputCss),
+												]}
+											/>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', generateEditorRawToken),
+													css(secondaryButtonCss),
+												]}
+											>
+												Generate
+											</button>
+											<button
+												type="button"
+												disabled={isMutating || !editorState.rawToken}
+												mix={[
+													on('click', () => void copyEditorRawToken()),
+													css(secondaryButtonCss),
+												]}
+											>
+												Copy
+											</button>
+										</div>
+										<span mix={css(descriptionCss)}>
+											Use Generate when the exact bearer value does not matter.
+											Copy or deliver the raw value before saving.
+										</span>
 									</label>
 
 									<div
@@ -1181,24 +1269,58 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Replace raw token</span>
-										<input
-											name="rawToken"
-											type="password"
-											value={editorState.rawToken}
-											placeholder="Leave blank to keep the current token value"
-											autoComplete="off"
-											disabled={isMutating}
-											mix={[
-												on('input', (event) => {
-													setEditorField('rawToken', event.currentTarget.value)
-													handle.update()
-												}),
-												css(inputCss),
-											]}
-										/>
+										<div
+											mix={css({
+												display: 'grid',
+												gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+												gap: spacing.sm,
+												[mq.mobile]: {
+													gridTemplateColumns: '1fr',
+												},
+											})}
+										>
+											<input
+												name="rawToken"
+												type="password"
+												value={editorState.rawToken}
+												placeholder="Leave blank to keep the current token value"
+												autoComplete="off"
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'rawToken',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(inputCss),
+												]}
+											/>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', generateEditorRawToken),
+													css(secondaryButtonCss),
+												]}
+											>
+												Generate
+											</button>
+											<button
+												type="button"
+												disabled={isMutating || !editorState.rawToken}
+												mix={[
+													on('click', () => void copyEditorRawToken()),
+													css(secondaryButtonCss),
+												]}
+											>
+												Copy
+											</button>
+										</div>
 										<span mix={css(descriptionCss)}>
-											Paste a new raw token only when rotating this credential.
-											Kody stores only its hash.
+											Paste or generate a new raw token only when rotating this
+											credential. Kody stores only its hash.
 										</span>
 									</label>
 
