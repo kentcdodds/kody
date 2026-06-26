@@ -42,7 +42,7 @@ const mockModule = vi.hoisted(() => ({
 		},
 	]),
 	revokePackageInvocationToken: vi.fn(async () => true),
-	unrevokePackageInvocationToken: vi.fn(async () => true),
+	reinstatePackageInvocationToken: vi.fn(async () => true),
 	deletePackageInvocationToken: vi.fn(async () => true),
 	updatePackageInvocationToken: vi.fn(async () => true),
 	listSavedPackagesByUserId: vi.fn(async () => [
@@ -95,10 +95,10 @@ vi.mock('#worker/package-invocations/repo.ts', () => ({
 		mockModule.insertPackageInvocationToken(...args),
 	listPackageInvocationTokensByUserId: (...args: Array<unknown>) =>
 		mockModule.listPackageInvocationTokensByUserId(...args),
+	reinstatePackageInvocationToken: (...args: Array<unknown>) =>
+		mockModule.reinstatePackageInvocationToken(...args),
 	revokePackageInvocationToken: (...args: Array<unknown>) =>
 		mockModule.revokePackageInvocationToken(...args),
-	unrevokePackageInvocationToken: (...args: Array<unknown>) =>
-		mockModule.unrevokePackageInvocationToken(...args),
 	deletePackageInvocationToken: (...args: Array<unknown>) =>
 		mockModule.deletePackageInvocationToken(...args),
 	updatePackageInvocationToken: (...args: Array<unknown>) =>
@@ -135,13 +135,13 @@ function resetMocks() {
 	mockModule.insertPackageInvocationToken.mockClear()
 	mockModule.listPackageInvocationTokensByUserId.mockClear()
 	mockModule.revokePackageInvocationToken.mockClear()
-	mockModule.unrevokePackageInvocationToken.mockClear()
+	mockModule.reinstatePackageInvocationToken.mockClear()
 	mockModule.deletePackageInvocationToken.mockClear()
 	mockModule.updatePackageInvocationToken.mockClear()
 	mockModule.listSavedPackagesByUserId.mockClear()
 }
 
-test('package invocation token API lists, creates, updates, validates, revokes, restores, and deletes tokens', async () => {
+test('package invocation token API lists, creates, updates, validates, revokes, reinstates, and deletes tokens', async () => {
 	resetMocks()
 	const env = createEnv()
 	const handler = createAccountPackageInvocationTokensApiHandler(env)
@@ -386,14 +386,14 @@ test('package invocation token API lists, creates, updates, validates, revokes, 
 	})
 	await expect(revokeResponse.json()).resolves.toMatchObject({ ok: true })
 
-	const unrevokeResponse = await handler.handler({
+	const reinstateResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/package-invocation-tokens.json',
 			{
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					action: 'unrevoke',
+					action: 'reinstate',
 					id: 'token-1',
 				}),
 			},
@@ -401,13 +401,13 @@ test('package invocation token API lists, creates, updates, validates, revokes, 
 		params: {},
 	} as never)
 
-	expect(unrevokeResponse.status).toBe(200)
-	expect(mockModule.unrevokePackageInvocationToken).toHaveBeenCalledWith({
+	expect(reinstateResponse.status).toBe(200)
+	expect(mockModule.reinstatePackageInvocationToken).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		userId: 'stable-user-1',
 		id: 'token-1',
 	})
-	await expect(unrevokeResponse.json()).resolves.toMatchObject({
+	await expect(reinstateResponse.json()).resolves.toMatchObject({
 		ok: true,
 		selectedTokenId: 'token-1',
 	})

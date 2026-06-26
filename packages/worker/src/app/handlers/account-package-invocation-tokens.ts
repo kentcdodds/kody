@@ -11,9 +11,9 @@ import {
 	hashPackageInvocationBearerToken,
 	insertPackageInvocationToken,
 	listPackageInvocationTokensByUserId,
+	reinstatePackageInvocationToken,
 	revokePackageInvocationToken,
 	type PackageInvocationTokenRecord,
-	unrevokePackageInvocationToken,
 	updatePackageInvocationToken,
 } from '#worker/package-invocations/repo.ts'
 import {
@@ -102,8 +102,8 @@ export function createAccountPackageInvocationTokensApiHandler(env: Env) {
 			if (action === 'revoke') {
 				return handleRevokeAction({ env, request, user, body })
 			}
-			if (action === 'unrevoke') {
-				return handleUnrevokeAction({ env, request, user, body })
+			if (action === 'reinstate') {
+				return handleReinstateAction({ env, request, user, body })
 			}
 			if (action === 'delete') {
 				return handleDeleteAction({ env, request, user, body })
@@ -404,7 +404,7 @@ async function handleRevokeAction(input: {
 	)
 }
 
-async function handleUnrevokeAction(input: {
+async function handleReinstateAction(input: {
 	env: Env
 	request: Request
 	user: AuthenticatedUser
@@ -414,7 +414,7 @@ async function handleUnrevokeAction(input: {
 	if (!id) {
 		return jsonResponse({ ok: false, error: 'Token id is required.' }, 400)
 	}
-	const restored = await unrevokePackageInvocationToken({
+	const restored = await reinstatePackageInvocationToken({
 		db: input.env.APP_DB,
 		userId: input.user.mcpUser.userId,
 		id,

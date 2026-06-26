@@ -321,7 +321,7 @@ export async function revokePackageInvocationToken(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
-export async function unrevokePackageInvocationToken(input: {
+export async function reinstatePackageInvocationToken(input: {
 	db: D1Database
 	userId: string
 	id: string

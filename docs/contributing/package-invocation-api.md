@@ -81,8 +81,8 @@ The backing same-origin JSON endpoint is:
   from a new raw token
 - `POST /account/package-invocation-tokens.json` with `action: "revoke"` —
   revoke a token by id
-- `POST /account/package-invocation-tokens.json` with `action: "unrevoke"` —
-  restore a revoked token by id
+- `POST /account/package-invocation-tokens.json` with `action: "reinstate"` —
+  reinstate a revoked token by id
 - `POST /account/package-invocation-tokens.json` with `action: "delete"` —
   permanently delete a token row by id
 

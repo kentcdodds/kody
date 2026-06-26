@@ -309,7 +309,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		| 'creating'
 		| 'updating'
 		| 'revoking'
-		| 'unrevoking'
+		| 'reinstating'
 		| 'deleting' = 'idle'
 	let email = ''
 	let username = ''
@@ -776,10 +776,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
-	async function unrevokeSelectedToken() {
+	async function reinstateSelectedToken() {
 		const tokenId = getCurrentSelectedTokenId()
 		if (!tokenId || saveState !== 'idle') return
-		saveState = 'unrevoking'
+		saveState = 'reinstating'
 		message = null
 		messageTone = 'info'
 		handle.update()
@@ -792,7 +792,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					action: 'unrevoke',
+					action: 'reinstate',
 					id: tokenId,
 				}),
 			})
@@ -804,12 +804,12 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
 			>(response)
 			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to un-revoke token.')
+				throw new Error(payload?.error || 'Unable to reinstate token.')
 			}
 			mutationVersion += 1
 			applyPayload(payload, buildTokenDetailPath(tokenId))
 			saveState = 'idle'
-			message = 'Un-revoked token.'
+			message = 'Reinstated token.'
 			messageTone = 'info'
 			if (typeof window !== 'undefined') {
 				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
@@ -819,7 +819,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		} catch (error) {
 			saveState = 'idle'
 			message =
-				error instanceof Error ? error.message : 'Unable to un-revoke token.'
+				error instanceof Error ? error.message : 'Unable to reinstate token.'
 			messageTone = 'error'
 			handle.update()
 		}
@@ -1651,14 +1651,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												disabled={isMutating}
 												mix={[
 													on('click', () => {
-														void unrevokeSelectedToken()
+														void reinstateSelectedToken()
 													}),
 													css(secondaryButtonCss),
 												]}
 											>
-												{saveState === 'unrevoking'
-													? 'Un-revoking...'
-													: 'Un-revoke token'}
+												{saveState === 'reinstating'
+													? 'Reinstating...'
+													: 'Reinstate token'}
 											</button>
 										) : (
 											<>
