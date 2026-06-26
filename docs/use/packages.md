@@ -215,10 +215,10 @@ params. In contexts without a parent invocation key, Kody uses a unique key,
 which avoids accidental replay. Pass your own `idempotencyKey` when the target
 operation must dedupe against a domain event id.
 
-For `discord-gateway`, subscriber dispatch should move from static imports such
-as `kody:@kentcdodds/discord-general-chat/handle-discord-message-created` to the
-dynamic shape above, using the Discord event id as the explicit `idempotencyKey`
-when available.
+For `discord-gateway`, subscriber dispatch uses the dynamic shape above rather
+than static imports such as
+`kody:@kentcdodds/discord-general-chat/handle-discord-message-created`. Pass the
+Discord event id as the explicit `idempotencyKey` when available.
 
 ## Package apps
 
