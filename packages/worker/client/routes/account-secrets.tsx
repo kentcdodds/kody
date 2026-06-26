@@ -796,6 +796,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		if (saveState !== 'idle') return
 
 		const form = event.currentTarget as HTMLFormElement
+		const submittedEditorState = editorState
 
 		saveState = 'saving'
 		message = null
@@ -810,7 +811,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			)
 			const allowedPackages = Array.from(
 				new Set(
-					editorState.allowedPackages
+					submittedEditorState.allowedPackages
 						.map((entry) => entry.value.trim())
 						.filter((value) => value.length > 0),
 				),
@@ -824,12 +825,15 @@ export function AccountSecretsRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action: 'save',
-					currentId: editorState.currentId,
-					name: editorState.name,
-					scope: editorState.scope,
-					appId: editorState.scope === 'app' ? editorState.appId : null,
-					description: editorState.description,
-					value: editorState.value,
+					currentId: submittedEditorState.currentId,
+					name: submittedEditorState.name,
+					scope: submittedEditorState.scope,
+					appId:
+						submittedEditorState.scope === 'app'
+							? submittedEditorState.appId
+							: null,
+					description: submittedEditorState.description,
+					value: submittedEditorState.value,
 					allowedHosts,
 					allowedCapabilities,
 					allowedPackages,
@@ -847,7 +851,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to save secret.')
 			}
 
-			const wasCreating = !editorState.currentId
+			const wasCreating = !submittedEditorState.currentId
 			const nextSelection: SelectionState = {
 				selectedSecretId: payload.selectedSecret?.id ?? null,
 				isCreating: false,
@@ -855,7 +859,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			applyPayload(
 				payload,
 				nextSelection,
-				editorState.currentId ? 'Saved secret.' : 'Created secret.',
+				submittedEditorState.currentId ? 'Saved secret.' : 'Created secret.',
 			)
 			handle.update()
 
@@ -1084,8 +1088,12 @@ export function AccountSecretsRoute(handle: Handle) {
 							</a>
 							<button
 								type="button"
+								disabled={isMutating}
 								mix={[
-									on('click', () => navigate(buildNewSecretHref())),
+									on('click', () => {
+										if (isMutating) return
+										navigate(buildNewSecretHref())
+									}),
 									css(primaryButtonCss),
 								]}
 							>
@@ -1343,7 +1351,11 @@ export function AccountSecretsRoute(handle: Handle) {
 											<li key={secret.id} mix={css({ minWidth: 0 })}>
 												<AccountManagementListItemButton
 													active={isActive}
-													onClick={() => navigate(buildSecretHref(secret))}
+													disabled={isMutating}
+													onClick={() => {
+														if (isMutating) return
+														navigate(buildSecretHref(secret))
+													}}
 												>
 													<div
 														mix={css({

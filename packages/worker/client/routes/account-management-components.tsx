@@ -97,7 +97,8 @@ export function AccountManagementMessage(
 ) {
 	return () => (
 		<p
-			role="alert"
+			role={handle.props.tone === 'error' ? 'alert' : 'status'}
+			aria-live={handle.props.tone === 'error' ? 'assertive' : 'polite'}
 			mix={css({
 				color: handle.props.tone === 'error' ? colors.error : colors.text,
 				margin: 0,
@@ -196,6 +197,7 @@ export function AccountManagementList(
 
 type AccountManagementListItemButtonProps = {
 	active: boolean
+	disabled?: boolean
 	onClick: () => void
 	children: AccountManagementSlot
 }
@@ -206,6 +208,7 @@ export function AccountManagementListItemButton(
 	return () => (
 		<button
 			type="button"
+			disabled={handle.props.disabled}
 			mix={[
 				on('click', handle.props.onClick),
 				css({
@@ -224,7 +227,8 @@ export function AccountManagementListItemButton(
 						? colors.primarySoftest
 						: colors.background,
 					color: colors.text,
-					cursor: 'pointer',
+					cursor: handle.props.disabled ? 'not-allowed' : 'pointer',
+					opacity: handle.props.disabled ? 0.7 : 1,
 				}),
 			]}
 		>
