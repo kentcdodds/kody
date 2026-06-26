@@ -149,8 +149,13 @@ npm run migrate:local
 node tools/seed-test-data.ts --local
 ```
 
-The seed script's built-in default credentials are a local test fixture only.
-Pass `--email <email> --password <password>` when you need explicit fixture
+Default fixture credentials:
+
+- Email: `kody@example.com`
+- Password: `iliketwix`
+
+These credentials are a local test fixture only. Pass
+`--email <email> --password <password>` when you need explicit fixture
 credentials.
 
 ## Build and deploy

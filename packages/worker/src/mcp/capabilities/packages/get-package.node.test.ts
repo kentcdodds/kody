@@ -63,8 +63,8 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 				baseUrl: 'https://heykody.dev',
 				user: {
 					userId: 'user-1',
-					email: 'me@kentcdodds.com',
-					displayName: 'Kent',
+					email: 'kody@example.com',
+					displayName: 'Kody',
 				},
 				remoteConnectors: null,
 				storageContext: null,

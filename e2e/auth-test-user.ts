@@ -1,8 +1,8 @@
 import { type APIRequestContext } from '@playwright/test'
 
 export const primaryTestUser = {
-	email: 'me@kentcdodds.com',
-	username: 'kentcdodds',
+	email: 'kody@example.com',
+	username: 'kody',
 	password: 'iliketwix',
 }
 

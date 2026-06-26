@@ -14,7 +14,7 @@ import {
 } from '#mcp/test-process.ts'
 
 const projectRoot = process.cwd()
-const primaryUserEmail = 'me@kentcdodds.com'
+const primaryUserEmail = 'kody@example.com'
 const testUserPassword = 'secret'
 const localhost = '127.0.0.1'
 const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
@@ -45,7 +45,7 @@ export async function createTestDatabase() {
 	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
 		email: primaryUserEmail,
-		username: 'kentcdodds',
+		username: 'kody',
 		password: testUserPassword,
 	} satisfies TestUser
 
