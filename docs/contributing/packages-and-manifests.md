@@ -11,8 +11,8 @@ Kody-specific metadata.
 Use `package.json` as the canonical source of truth for saved package metadata.
 
 - `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment
-  must match `kody.id` (for example `@kentcdodds/cursor-cloud-agents` pairs with
-  `kody.id: "cursor-cloud-agents"`)
+  must match `kody.id` (for example `@scope/my-package` pairs with
+  `kody.id: "my-package"`)
 - `exports` — authoritative import/export map
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — package description for search/detail
@@ -115,8 +115,8 @@ Package runtime contexts and authenticated ad hoc execute calls expose
 import { packages } from 'kody:runtime'
 
 await packages.invokeChecked({
-	kodyId: 'discord-general-chat',
-	exportName: './handle-discord-message-created',
+	kodyId: 'event-subscriber',
+	exportName: './handle-event',
 	params: { event },
 })
 ```
@@ -137,8 +137,8 @@ warnings before deciding whether to invoke:
 
 ```ts
 const check = await packages.check({
-	kodyId: 'discord-general-chat',
-	exportName: './handle-discord-message-created',
+	kodyId: 'event-subscriber',
+	exportName: './handle-event',
 	params: { event, dryRun: true },
 })
 
@@ -166,7 +166,7 @@ the check fails.
 Idempotency:
 
 - Callers may pass `idempotencyKey` (or `idempotency_key`) explicitly. This is
-  recommended for domain events such as Discord message ids.
+  recommended for domain events such as webhook event ids.
 - If omitted during a parent package invocation with its own idempotency key,
   Kody derives a nested key from the parent key, parent runtime surface/name,
   call order, target, export, and params so retries do not duplicate the same
@@ -184,10 +184,10 @@ Security and loop safeguards:
 - Nested dynamic package invocations are depth-limited to prevent runaway
   package-to-package loops.
 
-For the Discord gateway/subscriber pattern, switch dispatchers from statically
+For event dispatcher/subscriber packages, switch dispatchers from statically
 importing subscriber packages to
 `packages.invoke({ kodyId, exportName, params, idempotencyKey })`. Republish
-subscribers independently; the gateway will observe the current published
+subscribers independently; the dispatcher will observe the current published
 subscriber export on its next dispatch without being republished.
 
 ## Package apps
@@ -274,8 +274,8 @@ import { workflows } from 'kody:runtime'
 await workflows.create({
 	exportName: './workflow-run-event',
 	runAt: '2026-05-03T12:00:00.000Z',
-	idempotencyKey: 'shade-event:2026-05-03T12:00:00.000Z:office',
-	params: { eventId: 'event-123', roomId: 'office' },
+	idempotencyKey: 'sync-event:2026-05-03T12:00:00.000Z:account-123',
+	params: { eventId: 'event-123', accountId: 'account-123' },
 })
 ```
 

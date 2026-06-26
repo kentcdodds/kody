@@ -262,16 +262,17 @@ For OAuth 2 `client_credentials` token exchanges that require
 `Authorization: Basic base64(client_id:client_secret)`, save the client id and
 client secret separately. Do **not** ask the user to precompute or save the
 derived Basic header. Use `secretHeaders.basic(...)` directly in a fetch header,
-or use `oauthClientCredentials(...)` for the token request:
+or use `oauthClientCredentials(...)` for the token request. These examples use a
+placeholder API host and generic client credential secret names:
 
 ```ts
 import { oauthClientCredentials } from 'kody:runtime'
 
 export default async function main() {
 	const token = await oauthClientCredentials({
-		tokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
-		clientIdSecret: 'paypalClientId',
-		clientSecretSecret: 'paypalClientSecret',
+		tokenUrl: 'https://api.example.com/oauth/token',
+		clientIdSecret: 'exampleClientId',
+		clientSecretSecret: 'exampleClientSecret',
 		scope: 'user',
 	})
 
@@ -279,21 +280,21 @@ export default async function main() {
 }
 ```
 
-The lower-level PayPal token request is:
+The lower-level token request is:
 
 ```ts
 import { secretHeaders } from 'kody:runtime'
 
 export default async function main() {
 	const body = new URLSearchParams({ grant_type: 'client_credentials' })
-	const response = await fetch('https://api-m.paypal.com/v1/oauth2/token', {
+	const response = await fetch('https://api.example.com/oauth/token', {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/x-www-form-urlencoded',
 			Authorization: secretHeaders.basic({
-				usernameSecret: 'paypalClientId',
-				passwordSecret: 'paypalClientSecret',
+				usernameSecret: 'exampleClientId',
+				passwordSecret: 'exampleClientSecret',
 				scope: 'user',
 			}),
 		},

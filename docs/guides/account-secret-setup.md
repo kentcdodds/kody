@@ -24,13 +24,13 @@ Do **not** ask the user to paste secrets into chat.
 
 Provide the user a URL like:
 
-`https://heykody.dev/account/secrets/new?name=linearApiKey&description=Linear%20API%20key&allowedHosts=api.linear.app&scope=user&allowedCapabilities=linear_issue_list,linear_issue_create&allowedPackages=pkg_123`
+`https://<your-kody-origin>/account/secrets/new?name=exampleApiKey&description=Example%20API%20key&allowedHosts=api.example.com&scope=user&allowedCapabilities=example_capability&allowedPackages=pkg_123`
 
 ## Query params
 
 | Param                 | Required | Description                                                                                                                |
 | --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `name`                | yes      | Secret name (for example `linearApiKey`).                                                                                  |
+| `name`                | yes      | Secret name (for example `exampleApiKey`).                                                                                 |
 | `description`         | no       | Human-readable description shown in the UI.                                                                                |
 | `allowedHosts`        | no       | Comma-separated hosts to review for approval.                                                                              |
 | `allowedCapabilities` | no       | Comma-separated capability names to review. Use only real Kody capability names from `search` or `meta_list_capabilities`. |

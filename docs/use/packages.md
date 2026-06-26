@@ -43,8 +43,7 @@ Important fields:
 
 For predictable package resolution, saved packages must use a scoped
 `package.json.name`, and the leaf segment must match `kody.id`. For example,
-`@kentcdodds/cursor-cloud-agents` must use
-`"kody": { "id": "cursor-cloud-agents" }`.
+`@scope/my-package` must use `"kody": { "id": "my-package" }`.
 
 ### npm dependencies
 
@@ -120,8 +119,8 @@ statically importing it:
 import { packages } from 'kody:runtime'
 
 const result = await packages.invoke({
-	kodyId: 'discord-general-chat',
-	exportName: './handle-discord-message-created',
+	kodyId: 'event-subscriber',
+	exportName: './handle-event',
 	params: { event },
 })
 ```
@@ -130,8 +129,8 @@ Use `packages.invokeChecked` for event subscribers, workflow dispatchers,
 agents, and other runtime fan-out where the caller should pick up the target
 package's current published export and wants Kody to validate the current
 runtime contract before invoking it. The check resolves the target package at
-runtime, so republishing `discord-general-chat` changes what `discord-gateway`
-observes without republishing `discord-gateway`.
+runtime, so republishing `event-subscriber` changes what `event-dispatcher`
+observes without republishing `event-dispatcher`.
 
 Use static `kody:@scope/package/export` imports for library-like dependencies
 where bundling a published dependency snapshot with the caller is desired.
@@ -143,8 +142,8 @@ before deciding whether to invoke:
 import { packages } from 'kody:runtime'
 
 const check = await packages.check({
-	kodyId: 'discord-general-chat',
-	exportName: './handle-discord-message-created',
+	kodyId: 'event-subscriber',
+	exportName: './handle-event',
 	params: { event, dryRun: true },
 })
 
@@ -160,8 +159,8 @@ For the common check-then-invoke flow, use the combined helper:
 import { packages } from 'kody:runtime'
 
 const result = await packages.invokeChecked({
-	kodyId: 'discord-general-chat',
-	exportName: './handle-discord-message-created',
+	kodyId: 'event-subscriber',
+	exportName: './handle-event',
 	params: { event, dryRun: true },
 })
 ```
@@ -215,10 +214,10 @@ params. In contexts without a parent invocation key, Kody uses a unique key,
 which avoids accidental replay. Pass your own `idempotencyKey` when the target
 operation must dedupe against a domain event id.
 
-For `discord-gateway`, subscriber dispatch should move from static imports such
-as `kody:@kentcdodds/discord-general-chat/handle-discord-message-created` to the
-dynamic shape above, using the Discord event id as the explicit `idempotencyKey`
-when available.
+For an event-dispatch package, subscriber dispatch should prefer the dynamic
+shape above over static imports such as
+`kody:@scope/event-subscriber/handle-event`, using the source event id as the
+explicit `idempotencyKey` when available.
 
 ## Package apps
 

@@ -98,8 +98,8 @@ normalization runs.
 ## Secret-capable input fields
 
 Some capability input fields may accept secret placeholders such as
-`{{secret:lutronUsername}}` or `{{secret:lutronPassword|scope=user}}` instead of
-raw strings.
+`{{secret:exampleUsername}}` or `{{secret:examplePassword|scope=user}}` instead
+of raw strings.
 
 This is an explicit opt-in. A field only participates when its JSON Schema marks
 that string property with `x-kody-secret: true`.
@@ -165,8 +165,8 @@ const inputSchema = markSecretInputFields(
 ```
 
 If you are starting from Zod, call `markSecretInputFields(...)` after
-`z.toJSONSchema(...)` produces the schema object. That is what the home
-connector does for `lutron_set_credentials`.
+`z.toJSONSchema(...)` produces the schema object. Use that pattern for
+connector-style credential setup capabilities that store write-only values.
 
 ## Directory layout
 

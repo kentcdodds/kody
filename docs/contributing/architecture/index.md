@@ -19,8 +19,6 @@ to become.
   Objects.
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
-- [Kody Home Connector](https://github.com/kentcdodds/kody-home-connector):
-  external `home` reference connector implementation.
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.

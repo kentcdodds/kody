@@ -3,16 +3,16 @@
 Use this API when a trusted external service should invoke a saved package
 export inside Kody without going through the interactive MCP transport.
 
-A stable Discord Gateway proxy is a representative caller:
+A stable webhook proxy is a representative caller:
 
-1. the external proxy owns the long-lived Discord websocket
-2. the proxy normalizes gateway events
+1. the external proxy owns the provider-specific connection or webhook ingress
+2. the proxy normalizes inbound events
 3. the proxy calls Kody's package invocation API
 4. Kody executes the saved package export with package context, user context,
    package storage, and normal secret/capability rules
 
 Kody is the package runtime and storage brain. The external service owns the
-socket lifecycle.
+provider lifecycle.
 
 ## Endpoint
 
@@ -20,7 +20,7 @@ socket lifecycle.
 
 Examples:
 
-- `/@kent/api/package-invocations/discord-gateway/dispatch-message-created`
+- `/@alice/api/package-invocations/webhook-dispatcher/dispatch-event`
 
 The path uses the owner's username and the package `kody.id`.
 
@@ -91,12 +91,12 @@ Create payload shape:
 ```json
 {
 	"action": "create",
-	"name": "Personal automation",
+	"name": "Trusted external client",
 	"rawToken": "<raw-token>",
 	"packageKodyIds": ["*"],
 	"packageIds": [],
 	"exportNames": ["*"],
-	"sources": ["personal-client"]
+	"sources": ["trusted-client"]
 }
 ```
 
@@ -136,12 +136,12 @@ Agents should load `kody_official_guide` with
 ```json
 {
 	"params": {
-		"messageId": "123",
+		"eventId": "123",
 		"content": "hello"
 	},
-	"idempotencyKey": "discord:message-create:123",
-	"source": "discord-gateway",
-	"topic": "discord.message.created"
+	"idempotencyKey": "webhook:event:123",
+	"source": "webhook-dispatcher",
+	"topic": "webhook.event"
 }
 ```
 
@@ -172,7 +172,7 @@ Behavior:
 - duplicate while first invocation is still active =>
   `409 invocation_in_progress`
 
-This makes duplicate Discord gateway deliveries safe when the proxy retries.
+This makes duplicate event deliveries safe when the proxy retries.
 
 ## Response shape
 
@@ -183,13 +183,13 @@ Success:
 	"ok": true,
 	"package": {
 		"id": "pkg_123",
-		"kodyId": "discord-gateway"
+		"kodyId": "webhook-dispatcher"
 	},
-	"exportName": "./dispatch-message-created",
-	"source": "discord-gateway",
-	"topic": "discord.message.created",
+	"exportName": "./dispatch-event",
+	"source": "webhook-dispatcher",
+	"topic": "webhook.event",
 	"idempotency": {
-		"key": "discord:message-create:123",
+		"key": "webhook:event:123",
 		"replayed": false
 	},
 	"result": {
@@ -208,7 +208,7 @@ Failures return:
 	"ok": false,
 	"error": {
 		"code": "package_not_found",
-		"message": "Saved package \"discord-gateway\" was not found for this user."
+		"message": "Saved package \"webhook-dispatcher\" was not found for this user."
 	}
 }
 ```
@@ -244,15 +244,16 @@ The endpoint is shaped for standard Cloudflare edge rate limiting:
 Prefer Cloudflare WAF/rate limiting rules in front of this path rather than
 adding bespoke in-Worker rate limiting first.
 
-## Discord gateway proxy pattern
+## Webhook proxy pattern
 
 Recommended flow:
 
-1. keep the Discord Gateway websocket in a stable external process
-2. receive `MESSAGE_CREATE`
-3. derive a stable idempotency key from the gateway event
+1. keep the provider webhook or long-lived connection in a stable external
+   process
+2. receive a provider event
+3. derive a stable idempotency key from the provider event id
 4. call the Kody endpoint
-5. use Kody's structured result to decide what to post back to Discord
+5. use Kody's structured result to decide how the proxy should respond
 
 Example request:
 
@@ -261,31 +262,31 @@ curl --fail --silent \
 	-X POST \
 	-H "Authorization: Bearer $PACKAGE_INVOCATION_TOKEN" \
 	-H "Content-Type: application/json" \
-	"https://kody.example.com/@kent/api/package-invocations/discord-gateway/dispatch-message-created" \
+	"https://kody.example.com/@alice/api/package-invocations/webhook-dispatcher/dispatch-event" \
 	-d '{
 		"params": {
-			"messageId": "123",
-			"channelId": "456",
+			"eventId": "123",
+			"resourceId": "456",
 			"content": "hello"
 		},
-		"idempotencyKey": "discord:message-create:123",
-		"source": "discord-gateway",
-		"topic": "discord.message.created"
+		"idempotencyKey": "webhook:event:123",
+		"source": "webhook-dispatcher",
+		"topic": "webhook.event"
 	}'
 ```
 
-## Personal client pattern
+## Trusted external client pattern
 
-Recommended flow for a trusted personal client:
+Recommended flow for a trusted external client:
 
 1. generate a high-entropy raw token locally
 2. copy the raw token to the clipboard or keep it in the client's local secret
    storage
 3. open Kody at
-   `/account/package-invocation-tokens/new?name=Personal%20automation&packageKodyIds=*&exportNames=*&sources=personal-client`
+   `/account/package-invocation-tokens/new?name=Trusted%20External%20Client&packageKodyIds=*&exportNames=*&sources=trusted-client`
 4. paste the raw token into the form and create the token
 5. send invocation requests with `Authorization: Bearer <raw-token>` and
-   `"source": "personal-client"`
+   `"source": "trusted-client"`
 
 A wildcard token can call any package/export owned by the signed-in Kody user,
 but only for requests that identify themselves with an allowed source.

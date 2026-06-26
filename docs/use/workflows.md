@@ -54,8 +54,8 @@ export default async function main() {
 		packageId: 'pkg_123',
 		exportName: './workflow-run-event',
 		runAt: new Date(Date.now() + 60_000).toISOString(),
-		idempotencyKey: 'morning-shades-up',
-		params: { roomId: 'office' },
+		idempotencyKey: 'sync-account-123',
+		params: { accountId: 'account-123' },
 	})
 }
 ```

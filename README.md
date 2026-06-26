@@ -24,10 +24,9 @@ The project favors a compact MCP surface with powerful `search` and Code Mode
 
 Kody is a multi-user personal assistant: each signed-in user gets a fully
 isolated assistant (packages, jobs, secrets, values, memories, and related
-state). Tests and fixtures often reference `me@kentcdodds.com` as the
-maintainer's primary account; that address is not privileged at runtime. The
-repo follows several [epicflare](https://github.com/epicweb-dev/epicflare)
-starter conventions.
+state). Tests and fixtures may seed deterministic local accounts, but no account
+is privileged at runtime. The repo follows several
+[epicflare](https://github.com/epicweb-dev/epicflare) starter conventions.
 
 The repo is organized as an Nx monorepo, with shared modules in
 `packages/shared` (`@kody-internal/shared`), the main app worker under

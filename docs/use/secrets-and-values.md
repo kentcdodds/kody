@@ -25,17 +25,18 @@ resolves them for **approved** destinations.
 
 When an API requires Basic Auth derived from two saved secrets, import
 **`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in
-the outbound fetch header:
+the outbound fetch header. This example uses a placeholder API host and generic
+client credential secret names:
 
 ```ts
 import { secretHeaders } from 'kody:runtime'
 
-await fetch('https://api-m.paypal.com/v1/oauth2/token', {
+await fetch('https://api.example.com/oauth/token', {
 	method: 'POST',
 	headers: {
 		Authorization: secretHeaders.basic({
-			usernameSecret: 'paypalClientId',
-			passwordSecret: 'paypalClientSecret',
+			usernameSecret: 'exampleClientId',
+			passwordSecret: 'exampleClientSecret',
 			scope: 'user',
 		}),
 		'Content-Type': 'application/x-www-form-urlencoded',

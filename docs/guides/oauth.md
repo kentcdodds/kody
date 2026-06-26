@@ -17,7 +17,7 @@ This path does not require package-app-specific OAuth code.
 
 Example shape:
 
-`https://heykody.dev/connect/oauth?provider=...&authorizeUrl=...&tokenUrl=...`
+`https://<your-kody-origin>/connect/oauth?provider=...&authorizeUrl=...&tokenUrl=...`
 
 ## Redirect URI
 
@@ -72,10 +72,9 @@ and the current client credentials.
 ## Integration naming convention
 
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
-exist: `google` for the primary account, `google-business` for a business
-account, or `google-youtube-brand` for a brand identity. Agents should call
-`integration_list` up front when a provider may have multiple accounts
-connected.
+exist: `google` for a default account, `google-business` for a business account,
+or `google-youtube-brand` for a brand identity. Agents should call
+`integration_list` up front when a provider may have multiple accounts connected.
 
 ## Not the same as MCP OAuth
 

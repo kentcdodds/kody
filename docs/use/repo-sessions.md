@@ -97,7 +97,7 @@ user-facing identity instead of requiring the internal `source_id`.
 Examples:
 
 ```json
-{ "target": { "kind": "package", "kody_id": "triage-github-pr" } }
+{ "target": { "kind": "package", "kody_id": "my-package" } }
 ```
 
 ```json
@@ -175,7 +175,7 @@ republishes the job module without opening a session.
 
 ```ts
 await codemode.repo_run_commands({
-	target: { kind: 'package', kody_id: 'triage-github-pr' },
+	target: { kind: 'package', kody_id: 'my-package' },
 	commands: `git apply <<'PATCH'
 --- a/src/index.ts
 +++ b/src/index.ts

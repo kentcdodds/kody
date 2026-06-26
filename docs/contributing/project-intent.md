@@ -37,9 +37,8 @@ shared state between users.
   can create an account. Operators who want to restrict who can sign up should
   put the worker behind their own network-layer access control rather than
   expecting the application to gate it.
-- Primary first-party user: `me@kentcdodds.com` (the maintainer's own account);
-  tests, fixtures, and historical examples often reference this address but it
-  is not a privileged account at runtime
+- Tests and fixtures may seed deterministic local accounts, but seeded accounts
+  are fixtures only and are not privileged at runtime
 
 Optimize for:
 

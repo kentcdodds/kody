@@ -42,11 +42,11 @@ will not show the raw value again.
 
 Provide the user a URL like:
 
-`https://heykody.dev/account/package-invocation-tokens/new?name=Discord%20Gateway&packageKodyIds=discord-gateway&exportNames=dispatch-message-created&allowedSources=discord-gateway`
+`https://<your-kody-origin>/account/package-invocation-tokens/new?name=Webhook%20Dispatcher&packageKodyIds=webhook-dispatcher&exportNames=dispatch-event&allowedSources=webhook-dispatcher`
 
 Wildcard package/export setup for a highly trusted personal client:
 
-`https://heykody.dev/account/package-invocation-tokens/new?name=Personal%20automation&packageKodyIds=*&exportNames=*&allowedSources=personal-client`
+`https://<your-kody-origin>/account/package-invocation-tokens/new?name=Trusted%20External%20Client&packageKodyIds=*&exportNames=*&allowedSources=trusted-client`
 
 ## Query params
 
@@ -60,7 +60,7 @@ field names without extra translation.
 | `packageKodyIds` / `packageKodyId`          | yes\*    | Saved package `kody.id` values, or `*` for all packages owned by the signed-in Kody user.                               |
 | `kodyIds` / `kodyId`                        | yes\*    | Alias for `packageKodyIds`.                                                                                             |
 | `packageIds` / `packageId`                  | yes\*    | Saved package ids, or `*` for all packages owned by the signed-in Kody user.                                            |
-| `exportNames` / `exportName`                | yes      | Package export names. `dispatch-message-created` is normalized to `./dispatch-message-created`; `*` allows all exports. |
+| `exportNames` / `exportName`                | yes      | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports.                    |
 | `allowedSources` / `allowedSource`          | no       | Optional exact source labels the external caller may send in request JSON.                                              |
 | `sources` / `source`                        | no       | Alias for `allowedSources`.                                                                                             |
 | `package_kody_ids`, `package-kody-ids`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                                    |

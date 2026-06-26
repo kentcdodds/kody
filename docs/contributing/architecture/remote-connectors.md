@@ -28,7 +28,7 @@ All messages are **JSON objects** with a **`type`** field.
 1. **`connector.hello`** (required first logical message after open)
    - **`type`:** `"connector.hello"`
    - **`connectorId`:** string — instance id (for example `default`,
-     `living-room`).
+     `example-instance`).
    - **`sharedSecret`:** string — must match an enabled shared secret saved for
      the connector ref in D1.
    - **`connectorKind`:** non-empty string. Lowercase values are normalized.
