@@ -930,7 +930,11 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												<li key={token.id}>
 													<AccountManagementListItemButton
 														active={isSelected}
-														onClick={() => selectToken(token)}
+														disabled={isMutating}
+														onClick={() => {
+															if (isMutating) return
+															selectToken(token)
+														}}
 													>
 														<strong>{token.name}</strong>
 														<span mix={css(tokenStatusCss(token))}>
