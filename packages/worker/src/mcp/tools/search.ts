@@ -1609,6 +1609,8 @@ async function resolveEntityDetail(input: {
 			record,
 			manifest: loaded.manifest,
 			files: loaded.files,
+			baseUrl: input.callerContext.baseUrl,
+			ownerUsername: input.username,
 			hostedUrl:
 				record.hasApp && input.username
 					? buildPackageAppUrl({

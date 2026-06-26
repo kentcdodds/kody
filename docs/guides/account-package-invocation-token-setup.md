@@ -40,6 +40,12 @@ will not show the raw value again.
 
 ## URL format
 
+This section is only for token setup. Setup URLs under
+`/account/package-invocation-tokens/new` open the browser UI where the signed-in
+user creates or rotates a token. They are **not** package invocation URLs and
+must not be used by external workers, webhooks, or CLIs as the HTTP API
+endpoint.
+
 Provide the user a URL like:
 
 `https://<your-kody-origin>/account/package-invocation-tokens/new?name=Webhook%20Dispatcher&packageKodyIds=webhook-dispatcher&exportNames=dispatch-event&allowedSources=webhook-dispatcher`
@@ -68,6 +74,46 @@ field names without extra translation.
 \* At least one package scope is required: either a package Kody id scope or a
 package id scope.
 
+## Invocation URL format
+
+External callers invoke package exports with the owner-scoped route:
+
+`POST https://heykody.dev/@:username/api/package-invocations/:kodyId/:exportName`
+
+The `@:username` segment is required and must be the public username of the
+package owner. Do not use the stale unscoped form
+`/api/package-invocations/:kodyId/:exportName`.
+
+Export names are normalized for token scope checks. The URL path usually omits
+the leading `./`, so an export scoped as `./process-video` is invoked with the
+path segment `process-video`.
+
+Concrete YouTube WebSub Worker example:
+
+```sh
+curl -X POST \
+	"https://heykody.dev/@kentcdodds/api/package-invocations/youtube-livestream-vod-manager/process-video" \
+	-H "Authorization: Bearer <raw-token>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"idempotencyKey": "youtube:<video-id>",
+		"source": "youtube-websub-proxy",
+		"params": {
+			"videoId": "<video-id>"
+		}
+	}'
+```
+
+When a token is scoped to allowed sources, the request JSON `source` must match
+one of those source labels exactly. For Kent's YouTube Worker, use
+`"source": "youtube-websub-proxy"`.
+
+Prefer canonical URL metadata from package discovery over manual string
+construction. `package_get` and package entity search details include canonical
+external invocation metadata with the URL, path, route export name, normalized
+export name used for token scope checks, and source guidance for each callable
+export.
+
 ## Agent instructions
 
 1. Identify the saved package and export the external system needs to call.
@@ -81,10 +127,10 @@ package id scope.
    - For rotation, ask the user to open the existing token detail URL and paste
      or generate the new raw token in the **Token value** section.
    - The external service or secret store must receive the exact raw value that
-     was pasted/generated. If invocation later returns `invalid_token`, rotate
-     the package invocation token and update the external secret with the newly
-     copied value.
+     was pasted/generated.
 4. Instruct the external caller to send:
+   - `POST` to the canonical owner-scoped invocation URL from package metadata,
+     not to a `/account/package-invocation-tokens/...` setup URL
    - `Authorization: Bearer <raw-token>`
    - JSON `source` matching one of the allowed sources when sources are scoped
 5. Never display, log, store in docs, or send raw token material through chat or
@@ -99,11 +145,19 @@ shell, not the client-loaded token list, and
 cookie. Agents should not treat missing token metadata in the HTML shell as
 proof that a token was not saved.
 
-For external invocation smoke tests, the first failure boundary is bearer-token
-authentication. A `401 invalid_token` or `Invalid package invocation token`
-response means the presented raw bearer value did not match any active stored
-package invocation token for the route; package export names and `source` policy
-are checked only after authentication succeeds.
+For external invocation smoke tests, check failures in this order:
+
+1. `owner_slug_required`: the endpoint is missing the `@:username` owner slug.
+   Use `/@:username/api/package-invocations/:kodyId/:exportName`;
+   `/api/package-invocations/...` is not an invocation route.
+2. `not_found`: verify the owner slug matches the package owner.
+3. `invalid_token` or `Invalid package invocation token`: the request reached
+   bearer-token authentication on a correctly shaped owner-scoped endpoint.
+   Rotate the package invocation token or check that the external secret
+   contains the exact active raw bearer value.
+
+Package export names and `source` policy are checked only after bearer-token
+authentication succeeds.
 
 ## Related
 

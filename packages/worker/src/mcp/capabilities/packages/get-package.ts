@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { resolvePublicUsername } from '#app/user-lookup.ts'
+import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -13,8 +15,17 @@ export const getPackageCapability = defineDomainCapability(
 	{
 		name: 'package_get',
 		description:
-			'Load one saved package metadata record for the signed-in user, including ready-to-import export specifiers.',
-		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
+			'Load one saved package metadata record for the signed-in user, including ready-to-import export specifiers and canonical owner-scoped external invocation URLs for each export.',
+		keywords: [
+			'package',
+			'get',
+			'read',
+			'metadata',
+			'exports',
+			'imports',
+			'invocation url',
+			'package invocation token',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -31,6 +42,11 @@ export const getPackageCapability = defineDomainCapability(
 			if (!saved) {
 				throw new Error('Saved package not found for this user.')
 			}
+			const username = await resolvePublicUsername({
+				db: ctx.env.APP_DB,
+				username: user.username ?? null,
+				email: user.email ?? null,
+			})
 			const loaded = await loadPackageManifestBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -58,6 +74,27 @@ export const getPackageCapability = defineDomainCapability(
 					types_path: exportDetail.typesPath,
 					description: exportDetail.description,
 					type_definition: exportDetail.typeDefinition,
+					external_invocation: username
+						? (() => {
+								const descriptor = buildExternalPackageInvocationDescriptor({
+									baseUrl: ctx.callerContext.baseUrl,
+									ownerUsername: username,
+									kodyId: saved.kodyId,
+									exportName: exportDetail.subpath,
+								})
+								return {
+									method: descriptor.method,
+									url: descriptor.url,
+									path: descriptor.path,
+									owner_username: descriptor.ownerUsername,
+									kody_id: descriptor.kodyId,
+									route_export_name: descriptor.routeExportName,
+									normalized_export_name: descriptor.normalizedExportName,
+									token_setup_url: descriptor.tokenSetupUrl,
+									source_guidance: descriptor.sourceGuidance,
+								}
+							})()
+						: null,
 				})),
 			}
 		},

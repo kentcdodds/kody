@@ -62,7 +62,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'account-package-invocation-token-setup.md',
 		title: 'Account package invocation token setup guide',
 		summary:
-			'Hosted /account/package-invocation-tokens/new URL shape, query params, and bearer-token safety policy for external package invocation clients.',
+			'Hosted /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 	},
 	package_service_pattern: {
 		file: 'package-service-pattern.md',
@@ -146,7 +146,7 @@ const guideFieldSchema = z
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
 			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
 			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
-			'`package_invocation_token_setup`: /account/package-invocation-tokens/new URL shape, query params, and bearer-token safety policy for external package invocation clients.',
+			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
 			'`package_subscriptions`: package-owned event subscriptions, package_subscription_list discovery, and email.message.received metadata-first handler payloads.',
 		].join(' '),

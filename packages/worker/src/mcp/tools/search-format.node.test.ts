@@ -283,6 +283,8 @@ test('package entity detail includes exports, jobs, and referenced local types',
 		id: 'observed-package',
 		title: '@kody/observed-package',
 		description: 'Observed package with an app surface.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'test-user',
 		hostedUrl: 'http://localhost/@test-user/packages/observed-package',
 		record: {
 			id: 'package-123',
@@ -355,6 +357,15 @@ export declare function fetch(request: Request): Promise<Response>
 			}),
 			expect.objectContaining({
 				subpath: './app',
+				externalInvocation: expect.objectContaining({
+					method: 'POST',
+					url: 'http://localhost/@test-user/api/package-invocations/observed-package/app',
+					path: '/@test-user/api/package-invocations/observed-package/app',
+					routeExportName: 'app',
+					normalizedExportName: './app',
+					tokenSetupUrl:
+						'http://localhost/account/package-invocation-tokens/new?packageKodyIds=observed-package&exportNames=app',
+				}),
 				typesSource: null,
 				referencedTypes: [],
 				functions: [
@@ -383,6 +394,8 @@ export declare function fetch(request: Request): Promise<Response>
 		id: 'cursor-cloud-agents',
 		title: '@kentcdodds/cursor-cloud-agents',
 		description: 'Cursor cloud agents package.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'test-user',
 		hostedUrl: null,
 		record: {
 			id: 'package-456',

@@ -53,6 +53,40 @@ export const packageExportSurfaceSchema = z.object({
 		.describe(
 			'Primary export type signature parsed from source when available.',
 		),
+	external_invocation: z
+		.object({
+			method: z.literal('POST'),
+			url: z
+				.string()
+				.describe(
+					'Canonical owner-scoped external invocation URL for this package export.',
+				),
+			path: z
+				.string()
+				.describe(
+					'Canonical owner-scoped external invocation path for this package export.',
+				),
+			owner_username: z.string(),
+			kody_id: z.string(),
+			route_export_name: z
+				.string()
+				.describe(
+					'Export name segment used in the URL path; leading ./ is omitted and the root export uses __root__.',
+				),
+			normalized_export_name: z
+				.string()
+				.describe('Export name after Kody normalization for scope checks.'),
+			token_setup_url: z
+				.string()
+				.describe(
+					'Token setup URL prefilled for this package and export. This is not an invocation URL.',
+				),
+			source_guidance: z.string(),
+		})
+		.nullable()
+		.describe(
+			'HTTP invocation metadata for external trusted callers using package invocation tokens, or null when no public owner username is available.',
+		),
 })
 
 export const packageDetailSchema = packageSummarySchema.extend({

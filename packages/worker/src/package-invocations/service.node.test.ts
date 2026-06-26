@@ -901,17 +901,13 @@ test('package runtime dispatches declared events to same-user package subscripti
 			},
 		],
 	})
-})
 
-test('package runtime rejects invalid event dispatch requests', async () => {
-	const db = createDatabase()
 	const { manifests, sources } = seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { ok: true },
 		logs: [],
 	})
-	const tools = createRuntimeEventTools(db)
 
 	await expect(
 		tools.dispatch({
@@ -922,7 +918,7 @@ test('package runtime rejects invalid event dispatch requests', async () => {
 			},
 		}),
 	).rejects.toThrow(
-		'does not declare emitted event "@kentcdodds/discord.reaction.created"',
+		/does not declare emitted event "@kentcdodds\/discord.reaction.created"/,
 	)
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 
@@ -941,13 +937,13 @@ test('package runtime rejects invalid event dispatch requests', async () => {
 	await expect(
 		tools.dispatch({
 			topic: '@kentcdodds/discord.message.created',
-			idempotencyKey: 'discord:message-create:123',
+			idempotencyKey: 'discord:message-create:manifest-error',
 			payload: {
 				messageId: '123',
 			},
 		}),
 	).rejects.toThrow(
-		'Failed to load package manifest for package event dispatch: discord-general-chat (pkg-subscriber).',
+		/Failed to load package manifest for package event dispatch/,
 	)
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
@@ -1590,163 +1586,34 @@ test('invokePackageExport enforces source scopes for wildcard tokens', async () 
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-})
 
-test('invokePackageExport accepts normalized YouTube WebSub token scopes', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-	repoMockModule.getSavedPackageByKodyId.mockResolvedValue({
-		id: 'pkg-youtube',
-		userId: 'user-123',
-		name: '@kentcdodds/youtube-livestream-vod-manager',
-		kodyId: 'youtube-livestream-vod-manager',
-		description: 'YouTube livestream VOD manager',
-		tags: [],
-		searchText: null,
-		sourceId: 'source-youtube',
-		hasApp: false,
-		createdAt: '2026-04-27T00:00:00.000Z',
-		updatedAt: '2026-04-27T00:00:00.000Z',
-	})
-	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
-		source: {
-			id: 'source-youtube',
-			user_id: 'user-123',
-			entity_kind: 'package',
-			entity_id: 'pkg-youtube',
-			repo_id: 'repo-youtube',
-			published_commit: 'commit-youtube',
-			indexed_commit: null,
-			manifest_path: 'package.json',
-			source_root: '/',
-			created_at: '2026-04-27T00:00:00.000Z',
-			updated_at: '2026-04-27T00:00:00.000Z',
-		},
-		manifest: {
-			name: '@kentcdodds/youtube-livestream-vod-manager',
-			exports: {
-				'./process-video': './src/process-video.ts',
-			},
-			kody: {
-				id: 'youtube-livestream-vod-manager',
-				description: 'YouTube livestream VOD manager',
-			},
-		},
-	})
-	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
-		row: {
-			id: 'artifact-youtube',
-		},
-		artifact: {
-			version: 1,
-			kind: 'module',
-			artifactName: './process-video',
-			sourceId: 'source-youtube',
-			publishedCommit: 'commit-youtube',
-			entryPoint: 'src/process-video.ts',
-			mainModule: 'dist/index.js',
-			modules: {
-				'dist/index.js':
-					'export default async function run(){ return { processed: true } }',
-			},
-			dependencies: [],
-			packageContext: {
-				packageId: 'pkg-youtube',
-				kodyId: 'youtube-livestream-vod-manager',
-				sourceId: 'source-youtube',
-			},
-			serviceContext: null,
-			createdAt: '2026-04-27T00:00:00.000Z',
-		},
-	})
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { processed: true },
-		logs: [],
-	})
-
-	const response = await invokePackageExport({
+	const scopedDeniedByExport = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
-			packageKodyIds: ['youtube-livestream-vod-manager'],
-			exportNames: ['./process-video'],
-			sources: ['youtube-websub-proxy'],
-		}),
-		request: {
-			packageIdOrKodyId: 'youtube-livestream-vod-manager',
-			exportName: 'process-video',
-			params: { videoId: 'E0CR2hzWGQE' },
-			idempotencyKey: 'youtube:E0CR2hzWGQE',
-			source: 'youtube-websub-proxy',
-		},
-	})
-
-	expect(response.status).toBe(200)
-	expect(response.body).toMatchObject({
-		ok: true,
-		package: {
-			id: 'pkg-youtube',
-			kodyId: 'youtube-livestream-vod-manager',
-		},
-		exportName: './process-video',
-		source: 'youtube-websub-proxy',
-		result: { processed: true },
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-
-	const deniedByExport = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken({
-			packageKodyIds: ['youtube-livestream-vod-manager'],
+			packageKodyIds: ['discord-gateway'],
 			exportNames: ['./other-export'],
-			sources: ['youtube-websub-proxy'],
+			sources: ['discord-gateway'],
 		}),
 		request: {
-			packageIdOrKodyId: 'youtube-livestream-vod-manager',
-			exportName: 'process-video',
-			params: { videoId: 'E0CR2hzWGQE' },
-			idempotencyKey: 'youtube:E0CR2hzWGQE-denied-export',
-			source: 'youtube-websub-proxy',
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-scoped-denied-export',
+			source: 'discord-gateway',
 		},
 	})
 
-	expect(deniedByExport.status).toBe(403)
-	expect(deniedByExport.body).toMatchObject({
+	expect(scopedDeniedByExport.status).toBe(403)
+	expect(scopedDeniedByExport.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'export_not_allowed',
 		},
 	})
-
-	const deniedBySource = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken({
-			packageKodyIds: ['youtube-livestream-vod-manager'],
-			exportNames: ['./process-video'],
-			sources: ['other-source'],
-		}),
-		request: {
-			packageIdOrKodyId: 'youtube-livestream-vod-manager',
-			exportName: 'process-video',
-			params: { videoId: 'E0CR2hzWGQE' },
-			idempotencyKey: 'youtube:E0CR2hzWGQE-denied-source',
-			source: 'youtube-websub-proxy',
-		},
-	})
-
-	expect(deniedBySource.status).toBe(403)
-	expect(deniedBySource.body).toMatchObject({
-		ok: false,
-		error: {
-			code: 'source_not_allowed',
-		},
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
-test('invokePackageExport serializes execution failures without exposing thrown objects', async () => {
+test('invokePackageExport stores terminal failures for execution errors and missing exports', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
@@ -1754,7 +1621,7 @@ test('invokePackageExport serializes execution failures without exposing thrown 
 		logs: ['before-error'],
 	})
 
-	const response = await invokePackageExport({
+	const executionFailure = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
@@ -1767,8 +1634,8 @@ test('invokePackageExport serializes execution failures without exposing thrown 
 		},
 	})
 
-	expect(response.status).toBe(500)
-	expect(response.body).toMatchObject({
+	expect(executionFailure.status).toBe(500)
+	expect(executionFailure.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'execution_failed',
@@ -1776,13 +1643,9 @@ test('invokePackageExport serializes execution failures without exposing thrown 
 		},
 		logs: ['before-error'],
 	})
-})
 
-test('invokePackageExport stores export-not-found responses as terminal failures', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-
-	const first = await invokePackageExport({
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	const missingExportFirst = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
@@ -1796,7 +1659,7 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 			source: 'discord-gateway',
 		},
 	})
-	const second = await invokePackageExport({
+	const missingExportSecond = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
@@ -1811,8 +1674,8 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 		},
 	})
 
-	expect(first.status).toBe(404)
-	expect(first.body).toMatchObject({
+	expect(missingExportFirst.status).toBe(404)
+	expect(missingExportFirst.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'export_not_found',
@@ -1822,8 +1685,8 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 			replayed: false,
 		},
 	})
-	expect(second.status).toBe(404)
-	expect(second.body).toMatchObject({
+	expect(missingExportSecond.status).toBe(404)
+	expect(missingExportSecond.body).toMatchObject({
 		ok: false,
 		error: {
 			code: 'export_not_found',

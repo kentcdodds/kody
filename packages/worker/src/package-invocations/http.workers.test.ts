@@ -157,6 +157,11 @@ test('package invocation API rejects missing, invalid, and unsafe tokens before 
 			'/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
 		),
 	).toBe(true)
+	expect(
+		isPackageInvocationApiRequest(
+			'/api/package-invocations/discord-gateway/dispatch-message-created',
+		),
+	).toBe(true)
 	expect(isPackageInvocationApiRequest('/api/me')).toBe(false)
 
 	const route =
@@ -252,6 +257,38 @@ test('package invocation API rejects missing, invalid, and unsafe tokens before 
 	).rejects.toThrow(
 		'Invalid package invocation token record: package_kody_ids_json must be valid JSON.',
 	)
+	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
+})
+
+test('unscoped package invocation route reports missing owner slug instead of token failure', async () => {
+	invocationMockModule.invokePackageExport.mockClear()
+
+	const response = await handlePackageInvocationApiRequest(
+		new Request(
+			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer wrong-token',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ idempotencyKey: 'evt-unscoped' }),
+			},
+		),
+		await createEnv(),
+		createContext(),
+	)
+
+	expect(response.status).toBe(404)
+	expect(response.headers.get('WWW-Authenticate')).toBeNull()
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: {
+			code: 'owner_slug_required',
+			message:
+				'Package invocation endpoints must include the package owner slug: POST /@:username/api/package-invocations/:kodyId/:exportName.',
+		},
+	})
 	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
 })
 
@@ -354,4 +391,53 @@ test('package invocation API invokes the package export with the scoped token co
 		result: { reply: 'hello discord' },
 		logs: ['ran'],
 	})
+})
+
+test('package invocation API translates the root export route segment before invoking', async () => {
+	invocationMockModule.invokePackageExport.mockResolvedValue({
+		status: 200,
+		body: {
+			ok: true,
+			exportName: '.',
+			idempotency: {
+				key: 'evt-root',
+				replayed: false,
+			},
+			result: { ok: true },
+			logs: [],
+		},
+	})
+
+	const response = await handlePackageInvocationApiRequest(
+		new Request(
+			'https://example.com/@my-user/api/package-invocations/discord-gateway/__root__',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer private-token-123',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					params: { content: 'hi' },
+					idempotencyKey: 'evt-root',
+					source: 'discord-gateway',
+				}),
+			},
+		),
+		await createEnv({
+			tokenRow: {
+				export_names_json: JSON.stringify(['.']),
+			},
+		}),
+		createContext(),
+	)
+
+	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledWith(
+		expect.objectContaining({
+			request: expect.objectContaining({
+				exportName: '.',
+			}),
+		}),
+	)
+	expect(response.status).toBe(200)
 })
