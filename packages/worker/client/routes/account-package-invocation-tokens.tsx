@@ -308,6 +308,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
+	function getCurrentSelectedTokenId() {
+		const href =
+			typeof window === 'undefined'
+				? accountPackageInvocationTokensBasePath
+				: window.location.href
+		return getSelectedTokenIdFromPath(href) ?? selectedTokenId
+	}
+
 	async function loadTokens(signal: AbortSignal) {
 		const loadStartedAtMutationVersion = mutationVersion
 		try {
@@ -554,7 +562,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	async function updateSelectedToken(form?: HTMLFormElement) {
-		if (!selectedTokenId || saveState !== 'idle') return
+		const tokenId = getCurrentSelectedTokenId()
+		if (!tokenId || saveState !== 'idle') return
 		const nextEditorState = form ? readEditorStateFromForm(form) : editorState
 		editorState = nextEditorState
 		const packageIds = parseListText(nextEditorState.packageIdsText)
@@ -596,7 +605,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action: 'update',
-					id: selectedTokenId,
+					id: tokenId,
 					name: nextEditorState.name,
 					packageIds,
 					packageKodyIds,
@@ -615,18 +624,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to update token.')
 			}
 			mutationVersion += 1
-			applyPayload(payload, buildTokenDetailPath(selectedTokenId))
+			applyPayload(payload, buildTokenDetailPath(tokenId))
 			saveState = 'idle'
 			editorState = createEmptyEditorState()
 			editMode = false
 			message = 'Saved token.'
 			messageTone = 'info'
 			if (typeof window !== 'undefined') {
-				window.history.pushState(
-					null,
-					'',
-					buildTokenDetailPath(selectedTokenId),
-				)
+				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
 				lastLoadedHref = window.location.href
 			}
 			handle.update()
@@ -640,8 +645,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	async function revokeSelectedToken() {
-		if (!selectedTokenId || saveState !== 'idle') return
-		const tokenId = selectedTokenId
+		const tokenId = getCurrentSelectedTokenId()
+		if (!tokenId || saveState !== 'idle') return
 		saveState = 'revoking'
 		message = null
 		messageTone = 'info'
@@ -656,7 +661,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action: 'revoke',
-					id: selectedTokenId,
+					id: tokenId,
 				}),
 			})
 			if (response.status === 401) {
@@ -692,8 +697,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	async function unrevokeSelectedToken() {
-		if (!selectedTokenId || saveState !== 'idle') return
-		const tokenId = selectedTokenId
+		const tokenId = getCurrentSelectedTokenId()
+		if (!tokenId || saveState !== 'idle') return
 		saveState = 'unrevoking'
 		message = null
 		messageTone = 'info'
@@ -741,7 +746,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	async function deleteSelectedToken() {
-		if (!selectedTokenId || saveState !== 'idle') return
+		const tokenId = getCurrentSelectedTokenId()
+		if (!tokenId || saveState !== 'idle') return
 		saveState = 'deleting'
 		message = null
 		messageTone = 'info'
@@ -756,7 +762,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action: 'delete',
-					id: selectedTokenId,
+					id: tokenId,
 				}),
 			})
 			if (response.status === 401) {
@@ -824,10 +830,18 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		const isMutating = saveState !== 'idle'
 		const isCreatingToken = isNewTokenPath(currentHref)
 		const requestedTokenId = getSelectedTokenIdFromPath(currentHref)
+		const effectiveSelectedTokenId = requestedTokenId ?? selectedTokenId
 		const selectedToken =
-			tokens.find((token) => token.id === selectedTokenId) ?? null
+			tokens.find((token) => token.id === effectiveSelectedTokenId) ?? null
 		const isEditingSelectedToken =
-			editMode && selectedToken != null && !selectedToken.revokedAt
+			editMode &&
+			!isRefreshingForLocationChange &&
+			selectedToken != null &&
+			!selectedToken.revokedAt
+		const showTokenNotFound =
+			requestedTokenId != null &&
+			!selectedToken &&
+			!isRefreshingForLocationChange
 		const endpointTemplate = username
 			? `${invocationUrlOrigin}/@${username}/api/package-invocations/<kodyId>/<exportName>`
 			: ''
@@ -929,7 +943,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									})}
 								>
 									{tokens.map((token) => {
-										const isSelected = selectedTokenId === token.id
+										const isSelected = effectiveSelectedTokenId === token.id
 										return (
 											<li key={token.id}>
 												<button
@@ -1494,7 +1508,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								</section>
 							) : null}
 
-							{requestedTokenId && !selectedToken ? (
+							{showTokenNotFound ? (
 								<section mix={css(cardCss)}>
 									<h2 mix={css(cardTitleCss)}>Token not found</h2>
 									<p mix={css(descriptionCss)}>
