@@ -23,6 +23,16 @@ import {
 	inputCss,
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
+import {
+	AccountManagementHeader,
+	AccountManagementLayout,
+	AccountManagementList,
+	AccountManagementListItemButton,
+	AccountManagementMessage,
+	AccountManagementShell,
+	AccountManagementSidebar,
+	MetadataGrid,
+} from './account-management-components.tsx'
 
 type PackageOption = {
 	id: string
@@ -376,9 +386,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		deleteConfirm = false
 		if (payload.selectedTokenId) {
 			selectedTokenId = payload.selectedTokenId
-			editorState = createEmptyEditorState()
+			const selectedToken = tokens.find(
+				(token) => token.id === payload.selectedTokenId,
+			)
+			editorState =
+				selectedToken && !selectedToken.revokedAt
+					? createEditorStateFromToken(selectedToken)
+					: createEmptyEditorState()
 			lastNewTokenQueryKey = ''
-			editMode = false
+			editMode = Boolean(selectedToken && !selectedToken.revokedAt)
 			return
 		}
 		if (isNewTokenPath(href)) {
@@ -394,9 +410,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		const pathSelectedTokenId = getSelectedTokenIdFromPath(href)
 		if (pathSelectedTokenId) {
 			selectedTokenId = pathSelectedTokenId
-			editorState = createEmptyEditorState()
+			const selectedToken = tokens.find(
+				(token) => token.id === pathSelectedTokenId,
+			)
+			editorState =
+				selectedToken && !selectedToken.revokedAt
+					? createEditorStateFromToken(selectedToken)
+					: createEmptyEditorState()
 			lastNewTokenQueryKey = ''
-			editMode = false
+			editMode = Boolean(selectedToken && !selectedToken.revokedAt)
 			return
 		}
 		editorState = createEmptyEditorState()
@@ -463,6 +485,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		deleteConfirm = false
 		message = null
 		messageTone = 'info'
+		if (typeof window !== 'undefined') {
+			window.history.pushState(null, '', accountPackageInvocationTokensBasePath)
+			lastLoadedHref = window.location.href
+		}
 		handle.update()
 	}
 
@@ -536,7 +562,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			mutationVersion += 1
 			applyPayload(payload, accountPackageInvocationTokensBasePath)
 			saveState = 'idle'
-			editorState = createEmptyEditorState()
 			message =
 				'Created token. The raw token was not stored and will not be shown again.'
 			messageTone = 'info'
@@ -603,6 +628,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 					action: 'update',
 					id: tokenId,
 					name: nextEditorState.name,
+					rawToken: nextEditorState.rawToken,
 					packageIds,
 					packageKodyIds,
 					exportNames,
@@ -622,9 +648,9 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			mutationVersion += 1
 			applyPayload(payload, buildTokenDetailPath(tokenId))
 			saveState = 'idle'
-			editorState = createEmptyEditorState()
-			editMode = false
-			message = 'Saved token.'
+			message = nextEditorState.rawToken
+				? 'Saved token and replaced its raw value.'
+				: 'Saved token.'
 			messageTone = 'info'
 			if (typeof window !== 'undefined') {
 				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
@@ -799,11 +825,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 
 	function selectToken(token: PackageInvocationTokenListItem) {
 		selectedTokenId = token.id
-		editorState = createEmptyEditorState()
+		editorState = token.revokedAt
+			? createEmptyEditorState()
+			: createEditorStateFromToken(token)
 		lastNewTokenQueryKey = ''
 		revokeConfirm = false
 		deleteConfirm = false
-		editMode = false
+		editMode = !token.revokedAt
 		message = null
 		messageTone = 'info'
 		if (typeof window !== 'undefined') {
@@ -844,49 +872,24 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			: ''
 
 		return (
-			<section
-				mix={css({
-					maxWidth: '76rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.xl,
-				})}
-			>
-				<header
-					mix={css({
-						display: 'flex',
-						justifyContent: 'space-between',
-						alignItems: 'flex-start',
-						gap: spacing.md,
-						flexWrap: 'wrap',
-					})}
-				>
-					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<h1
-							mix={css({
-								fontSize: typography.fontSize.xl,
-								fontWeight: typography.fontWeight.semibold,
-								color: colors.text,
-								margin: 0,
-							})}
+			<AccountManagementShell maxWidth="76rem">
+				<AccountManagementHeader
+					title={
+						email
+							? `${email} package invocation tokens`
+							: 'Package invocation tokens'
+					}
+					description="Create bearer tokens for trusted personal clients without storing the raw token in Kody."
+					actions={
+						<button
+							type="button"
+							disabled={isMutating}
+							mix={[on('click', startNewToken), css(primaryButtonCss)]}
 						>
-							{email
-								? `${email} package invocation tokens`
-								: 'Package invocation tokens'}
-						</h1>
-						<p mix={css({ color: colors.textMuted, margin: 0 })}>
-							Create bearer tokens for trusted personal clients without storing
-							the raw token in Kody.
-						</p>
-					</div>
-					<button
-						type="button"
-						disabled={isMutating}
-						mix={[on('click', startNewToken), css(primaryButtonCss)]}
-					>
-						New token
-					</button>
-				</header>
+							New token
+						</button>
+					}
+				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -894,97 +897,54 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<p
-						role="alert"
-						mix={css({
-							color: messageTone === 'error' ? colors.error : colors.text,
-							margin: 0,
-						})}
-					>
+					<AccountManagementMessage tone={messageTone}>
 						{message}
-					</p>
+					</AccountManagementMessage>
 				) : null}
 
 				{status === 'ready' ? (
-					<section
-						mix={css({
-							display: 'grid',
-							gridTemplateColumns: 'minmax(18rem, 24rem) minmax(0, 1fr)',
-							gap: spacing.lg,
-							alignItems: 'start',
-							[mq.mobile]: {
-								gridTemplateColumns: '1fr',
-							},
-						})}
-					>
-						<aside mix={css(cardCss)}>
-							<div mix={css({ display: 'grid', gap: spacing.xs })}>
-								<h2 mix={css(cardTitleCss)}>Tokens</h2>
-								<p mix={css(descriptionCss)}>
-									Revoked tokens remain listed for auditability and no longer
-									authorize external invocation requests.
-								</p>
-							</div>
-							{tokens.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No package invocation tokens yet.
-								</p>
-							) : (
-								<ul
-									mix={css({
-										listStyle: 'none',
-										padding: 0,
-										margin: 0,
-										display: 'grid',
-										gap: spacing.sm,
-									})}
-								>
-									{tokens.map((token) => {
-										const isSelected = effectiveSelectedTokenId === token.id
-										return (
-											<li key={token.id}>
-												<button
-													type="button"
-													mix={[
-														on('click', () => selectToken(token)),
-														css({
-															width: '100%',
-															display: 'grid',
-															gap: spacing.xs,
-															textAlign: 'left',
-															padding: spacing.md,
-															borderRadius: radius.md,
-															border: `1px solid ${
-																isSelected ? colors.primary : colors.border
-															}`,
-															backgroundColor: isSelected
-																? colors.primarySoftest
-																: colors.background,
-															color: colors.text,
-															cursor: 'pointer',
-														}),
-													]}
-												>
-													<strong>{token.name}</strong>
-													<span mix={css(tokenStatusCss(token))}>
-														{tokenStatus(token)}
-													</span>
-													<span
-														mix={css({
-															color: colors.textMuted,
-															fontSize: typography.fontSize.sm,
-														})}
+					<AccountManagementLayout
+						sidebarWidth="minmax(18rem, 24rem)"
+						sidebar={
+							<AccountManagementSidebar
+								title="Tokens"
+								description="Revoked tokens remain listed for auditability and no longer authorize external invocation requests."
+							>
+								{tokens.length === 0 ? (
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										No package invocation tokens yet.
+									</p>
+								) : (
+									<AccountManagementList>
+										{tokens.map((token) => {
+											const isSelected = effectiveSelectedTokenId === token.id
+											return (
+												<li key={token.id}>
+													<AccountManagementListItemButton
+														active={isSelected}
+														onClick={() => selectToken(token)}
 													>
-														Exports: {formatScope(token.exportNames)}
-													</span>
-												</button>
-											</li>
-										)
-									})}
-								</ul>
-							)}
-						</aside>
-
+														<strong>{token.name}</strong>
+														<span mix={css(tokenStatusCss(token))}>
+															{tokenStatus(token)}
+														</span>
+														<span
+															mix={css({
+																color: colors.textMuted,
+																fontSize: typography.fontSize.sm,
+															})}
+														>
+															Exports: {formatScope(token.exportNames)}
+														</span>
+													</AccountManagementListItemButton>
+												</li>
+											)
+										})}
+									</AccountManagementList>
+								)}
+							</AccountManagementSidebar>
+						}
+					>
 						<div mix={css({ display: 'grid', gap: spacing.lg })}>
 							{isCreatingToken || (!requestedTokenId && !selectedToken) ? (
 								<form
@@ -1179,9 +1139,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
 										<h2 mix={css(cardTitleCss)}>Edit token</h2>
 										<p mix={css(descriptionCss)}>
-											Update this token's display name and allowed scopes. The
-											raw token and stored hash are preserved and never shown.
+											Update this token's display name, bearer value, and
+											allowed scopes. The current raw token and stored hash are
+											never shown.
 										</p>
+										<span mix={css(tokenStatusCss(selectedToken))}>
+											{tokenStatus(selectedToken)}
+										</span>
 									</div>
 
 									<label mix={css(fieldCss)}>
@@ -1201,6 +1165,29 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												css(inputCss),
 											]}
 										/>
+									</label>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Replace raw token</span>
+										<input
+											name="rawToken"
+											type="password"
+											value={editorState.rawToken}
+											placeholder="Leave blank to keep the current token value"
+											autoComplete="off"
+											disabled={isMutating}
+											mix={[
+												on('input', (event) => {
+													setEditorField('rawToken', event.currentTarget.value)
+													handle.update()
+												}),
+												css(inputCss),
+											]}
+										/>
+										<span mix={css(descriptionCss)}>
+											Paste a new raw token only when rotating this credential.
+											Kody stores only its hash.
+										</span>
 									</label>
 
 									<div
@@ -1322,6 +1309,50 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										>
 											Cancel
 										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () => {
+													if (!revokeConfirm) {
+														revokeConfirm = true
+														deleteConfirm = false
+														handle.update()
+														return
+													}
+													void revokeSelectedToken()
+												}),
+												css(dangerButtonCss),
+											]}
+										>
+											{saveState === 'revoking'
+												? 'Revoking...'
+												: revokeConfirm
+													? 'Confirm revoke'
+													: 'Revoke token'}
+										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () => {
+													if (!deleteConfirm) {
+														deleteConfirm = true
+														revokeConfirm = false
+														handle.update()
+														return
+													}
+													void deleteSelectedToken()
+												}),
+												css(dangerButtonCss),
+											]}
+										>
+											{saveState === 'deleting'
+												? 'Deleting...'
+												: deleteConfirm
+													? 'Confirm permanent delete'
+													: 'Delete permanently'}
+										</button>
 									</div>
 								</form>
 							) : null}
@@ -1361,66 +1392,42 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											metadata and policy scopes.
 										</p>
 									</div>
-									<dl
-										mix={css({
-											display: 'grid',
-											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-											gap: spacing.md,
-											margin: 0,
-											[mq.mobile]: {
-												gridTemplateColumns: '1fr',
+									<MetadataGrid
+										items={[
+											{
+												label: 'Package Kody IDs',
+												value: formatScope(selectedToken.packageKodyIds),
 											},
-										})}
-									>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Package Kody IDs</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatScope(selectedToken.packageKodyIds)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Package IDs</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatScope(selectedToken.packageIds)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Exports</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatScope(selectedToken.exportNames)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Sources</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatScope(selectedToken.sources)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Last used</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatTimestamp(selectedToken.lastUsedAt)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Created</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatTimestamp(selectedToken.createdAt)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Updated</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatTimestamp(selectedToken.updatedAt)}
-											</dd>
-										</div>
-										<div>
-											<dt mix={css(fieldLabelCss)}>Revoked</dt>
-											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatTimestamp(selectedToken.revokedAt)}
-											</dd>
-										</div>
-									</dl>
+											{
+												label: 'Package IDs',
+												value: formatScope(selectedToken.packageIds),
+											},
+											{
+												label: 'Exports',
+												value: formatScope(selectedToken.exportNames),
+											},
+											{
+												label: 'Sources',
+												value: formatScope(selectedToken.sources),
+											},
+											{
+												label: 'Last used',
+												value: formatTimestamp(selectedToken.lastUsedAt),
+											},
+											{
+												label: 'Created',
+												value: formatTimestamp(selectedToken.createdAt),
+											},
+											{
+												label: 'Updated',
+												value: formatTimestamp(selectedToken.updatedAt),
+											},
+											{
+												label: 'Revoked',
+												value: formatTimestamp(selectedToken.revokedAt),
+											},
+										]}
+									/>
 									<div
 										mix={css({
 											display: 'flex',
@@ -1566,9 +1573,9 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								)}
 							</section>
 						</div>
-					</section>
+					</AccountManagementLayout>
 				) : null}
-			</section>
+			</AccountManagementShell>
 		)
 	}
 }

@@ -251,6 +251,7 @@ async function handleUpdateAction(input: {
 }) {
 	const id = readString(input.body, 'id')
 	const name = readString(input.body, 'name')
+	const rawToken = readString(input.body, 'rawToken')
 	if (!id) {
 		return jsonResponse({ ok: false, error: 'Token id is required.' }, 400)
 	}
@@ -325,16 +326,36 @@ async function handleUpdateAction(input: {
 		return jsonResponse({ ok: false, error: scopeError }, 400)
 	}
 
-	const updated = await updatePackageInvocationToken({
-		db: input.env.APP_DB,
-		userId: input.user.mcpUser.userId,
-		id,
-		name,
-		packageIds,
-		packageKodyIds,
-		exportNames,
-		sources,
-	})
+	const tokenHash = rawToken
+		? await hashPackageInvocationBearerToken(rawToken)
+		: undefined
+	let updated: boolean
+	try {
+		updated = await updatePackageInvocationToken({
+			db: input.env.APP_DB,
+			userId: input.user.mcpUser.userId,
+			id,
+			name,
+			tokenHash,
+			packageIds,
+			packageKodyIds,
+			exportNames,
+			sources,
+		})
+	} catch (error) {
+		const message = error instanceof Error ? error.message : ''
+		if (message.includes('UNIQUE') || message.includes('token_hash')) {
+			return jsonResponse(
+				{
+					ok: false,
+					error:
+						'A package invocation token with that raw value already exists.',
+				},
+				409,
+			)
+		}
+		throw error
+	}
 	if (!updated) {
 		return jsonResponse(
 			{ ok: false, error: 'Package invocation token not found or revoked.' },

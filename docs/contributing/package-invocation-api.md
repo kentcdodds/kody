@@ -77,7 +77,8 @@ The backing same-origin JSON endpoint is:
 - `POST /account/package-invocation-tokens.json` with `action: "create"` —
   create a token from a raw token and allowlists
 - `POST /account/package-invocation-tokens.json` with `action: "update"` —
-  update token name and allowlists without changing the stored token hash
+  update token name, allowlists, and optionally replace the stored token hash
+  from a new raw token
 - `POST /account/package-invocation-tokens.json` with `action: "revoke"` —
   revoke a token by id
 - `POST /account/package-invocation-tokens.json` with `action: "unrevoke"` —
@@ -117,6 +118,11 @@ Snake case and kebab case aliases are accepted for list fields, such as
 `allowed_sources`, and `allowed-sources`. Repeat parameters or comma-separate
 values. Do not put the raw token in the URL; paste it into the form or submit it
 over the authenticated same-origin JSON API.
+
+When editing an existing token in the account UI, the raw token field is
+write-only and optional: leave it blank to preserve the current token hash, or
+paste a new raw token to rotate the bearer value. Existing raw token material
+and stored hashes are never returned by list/detail payloads.
 
 Agents should load `kody_official_guide` with
 `guide: "package_invocation_token_setup"` before sending a user to this page.

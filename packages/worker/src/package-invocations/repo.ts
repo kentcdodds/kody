@@ -267,6 +267,7 @@ export async function updatePackageInvocationToken(input: {
 	userId: string
 	id: string
 	name: string
+	tokenHash?: string
 	packageIds: Array<string>
 	packageKodyIds: Array<string>
 	exportNames: Array<string>
@@ -276,6 +277,7 @@ export async function updatePackageInvocationToken(input: {
 		.prepare(
 			`UPDATE package_invocation_tokens
 			SET name = ?,
+				token_hash = COALESCE(?, token_hash),
 				package_ids_json = ?,
 				package_kody_ids_json = ?,
 				export_names_json = ?,
@@ -287,6 +289,7 @@ export async function updatePackageInvocationToken(input: {
 		)
 		.bind(
 			input.name,
+			input.tokenHash ?? null,
 			JSON.stringify(input.packageIds),
 			JSON.stringify(input.packageKodyIds),
 			JSON.stringify(input.exportNames),

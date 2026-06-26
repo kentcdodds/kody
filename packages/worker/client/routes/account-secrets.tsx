@@ -23,13 +23,10 @@ import {
 	radius,
 	shadows,
 	spacing,
-	transitions,
 	typography,
 } from '#client/styles/tokens.ts'
 import {
 	cardCss,
-	cardTitleCss,
-	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
 	getDangerButtonCss,
@@ -43,6 +40,16 @@ import {
 	normalizeAllowedHosts,
 	normalizeAllowedPackages,
 } from './secret-normalization.ts'
+import {
+	AccountManagementHeader,
+	AccountManagementLayout,
+	AccountManagementList,
+	AccountManagementListItemButton,
+	AccountManagementMessage,
+	AccountManagementShell,
+	AccountManagementSidebar,
+	MetadataGrid,
+} from './account-management-components.tsx'
 
 type SecretScope = 'app' | 'user'
 
@@ -1060,66 +1067,33 @@ export function AccountSecretsRoute(handle: Handle) {
 				: null
 
 		return (
-			<section
-				mix={css({
-					maxWidth: '96rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.xl,
-				})}
-			>
-				<header
-					mix={css({
-						display: 'flex',
-						justifyContent: 'space-between',
-						alignItems: 'flex-start',
-						gap: spacing.md,
-						flexWrap: 'wrap',
-					})}
-				>
-					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<h1
-							mix={css({
-								fontSize: typography.fontSize.xl,
-								fontWeight: typography.fontWeight.semibold,
-								color: colors.text,
-								margin: 0,
-							})}
-						>
-							{email ? `${email} secrets` : 'Secrets'}
-						</h1>
-						<p mix={css({ color: colors.textMuted, margin: 0 })}>
-							Create, update, and delete the secrets available to your account
-							and package apps.
-						</p>
-					</div>
-					<div
-						mix={css({
-							display: 'flex',
-							gap: spacing.sm,
-							flexWrap: 'wrap',
-						})}
-					>
-						<a
-							href="/account/remote-connectors"
-							mix={css({
-								...secondaryButtonCss,
-								textDecoration: 'none',
-							})}
-						>
-							Remote connectors
-						</a>
-						<button
-							type="button"
-							mix={[
-								on('click', () => navigate(buildNewSecretHref())),
-								css(primaryButtonCss),
-							]}
-						>
-							New secret
-						</button>
-					</div>
-				</header>
+			<AccountManagementShell>
+				<AccountManagementHeader
+					title={email ? `${email} secrets` : 'Secrets'}
+					description="Create, update, and delete the secrets available to your account and package apps."
+					actions={
+						<>
+							<a
+								href="/account/remote-connectors"
+								mix={css({
+									...secondaryButtonCss,
+									textDecoration: 'none',
+								})}
+							>
+								Remote connectors
+							</a>
+							<button
+								type="button"
+								mix={[
+									on('click', () => navigate(buildNewSecretHref())),
+									css(primaryButtonCss),
+								]}
+							>
+								New secret
+							</button>
+						</>
+					}
+				/>
 
 				{approvalCard ? (
 					<section
@@ -1257,183 +1231,119 @@ export function AccountSecretsRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<p
-						role="alert"
-						mix={css({
-							color: status === 'error' ? colors.error : colors.text,
-							margin: 0,
-						})}
+					<AccountManagementMessage
+						tone={status === 'error' ? 'error' : 'info'}
 					>
 						{message}
-					</p>
+					</AccountManagementMessage>
 				) : null}
 
-				<section
-					mix={css({
-						display: 'grid',
-						gridTemplateColumns: 'minmax(18rem, 22rem) minmax(0, 1fr)',
-						gap: spacing.lg,
-						alignItems: 'start',
-						[mq.mobile]: {
-							gridTemplateColumns: '1fr',
-						},
-					})}
-				>
-					<aside
-						mix={css({
-							...cardCss,
-							alignSelf: 'start',
-						})}
-					>
-						<div mix={css({ display: 'grid', gap: spacing.xs })}>
-							<h2 mix={css(cardTitleCss)}>Saved secrets</h2>
-							<p mix={css(descriptionCss)}>
-								Select a secret to edit its metadata, value, and allowed hosts.
-							</p>
-						</div>
-						<div
-							mix={css({
-								display: 'grid',
-								gap: spacing.sm,
-							})}
+				<AccountManagementLayout
+					sidebar={
+						<AccountManagementSidebar
+							title="Saved secrets"
+							description="Select a secret to edit its metadata, value, and allowed hosts."
 						>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Search</span>
-								<input
-									type="search"
-									value={filters.search}
-									placeholder="Search secrets"
-									aria-label="Search secrets"
-									mix={[
-										on(
-											'input',
-
-											(event) => {
-												replaceSecretsLocation(
-													buildHrefWithUpdatedFilters({
-														search: event.currentTarget.value,
-													}),
-												)
-											},
-										),
-
-										css({
-											...inputCss,
-											paddingRight: spacing.xl,
-										}),
-									]}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Scope</span>
-								<select
-									value={filters.scope}
-									aria-label="Filter secrets by scope"
-									mix={[
-										on(
-											'change',
-
-											(event) => {
-												const nextScope = event.currentTarget
-													.value as SecretFilterScope
-												replaceSecretsLocation(
-													buildHrefWithUpdatedFilters({
-														scope: nextScope,
-														appId: nextScope === 'user' ? '' : filters.appId,
-													}),
-												)
-											},
-										),
-
-										css(inputCss),
-									]}
-								>
-									<option value="all">All scopes</option>
-									<option value="user">User</option>
-									<option value="app">App</option>
-								</select>
-							</label>
-							{apps.length > 0
-								? filterAppCombobox({
-										id: 'secret-app-filter',
-										label: 'App filter',
-										placeholder: 'Filter by app',
-										value: filters.scope === 'user' ? '' : filters.appId,
-										disabled: filters.scope === 'user',
-										options: filterAppOptions,
-										onChange: (appId) => {
-											replaceSecretsLocation(
-												buildHrefWithUpdatedFilters({
-													appId,
-												}),
-											)
-										},
-										inputCss,
-										listCss: comboboxListCss,
-										optionCss: comboboxOptionCss,
-									})
-								: null}
-						</div>
-						{status === 'ready' && secrets.length === 0 ? (
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								No secrets yet. Create one to get started.
-							</p>
-						) : status === 'ready' && filteredSecrets.length === 0 ? (
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								No secrets match the current filters.
-							</p>
-						) : (
 							<div
 								mix={css({
-									maxHeight: 'min(65vh, 48rem)',
-									overflowY: 'auto',
-									overflowX: 'hidden',
-									paddingRight: spacing.xs,
+									display: 'grid',
+									gap: spacing.sm,
 								})}
 							>
-								<ul
-									mix={css({
-										listStyle: 'none',
-										padding: 0,
-										margin: 0,
-										display: 'grid',
-										gap: spacing.sm,
-									})}
-								>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Search</span>
+									<input
+										type="search"
+										value={filters.search}
+										placeholder="Search secrets"
+										aria-label="Search secrets"
+										mix={[
+											on(
+												'input',
+
+												(event) => {
+													replaceSecretsLocation(
+														buildHrefWithUpdatedFilters({
+															search: event.currentTarget.value,
+														}),
+													)
+												},
+											),
+
+											css({
+												...inputCss,
+												paddingRight: spacing.xl,
+											}),
+										]}
+									/>
+								</label>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Scope</span>
+									<select
+										value={filters.scope}
+										aria-label="Filter secrets by scope"
+										mix={[
+											on(
+												'change',
+
+												(event) => {
+													const nextScope = event.currentTarget
+														.value as SecretFilterScope
+													replaceSecretsLocation(
+														buildHrefWithUpdatedFilters({
+															scope: nextScope,
+															appId: nextScope === 'user' ? '' : filters.appId,
+														}),
+													)
+												},
+											),
+
+											css(inputCss),
+										]}
+									>
+										<option value="all">All scopes</option>
+										<option value="user">User</option>
+										<option value="app">App</option>
+									</select>
+								</label>
+								{apps.length > 0
+									? filterAppCombobox({
+											id: 'secret-app-filter',
+											label: 'App filter',
+											placeholder: 'Filter by app',
+											value: filters.scope === 'user' ? '' : filters.appId,
+											disabled: filters.scope === 'user',
+											options: filterAppOptions,
+											onChange: (appId) => {
+												replaceSecretsLocation(
+													buildHrefWithUpdatedFilters({
+														appId,
+													}),
+												)
+											},
+											inputCss,
+											listCss: comboboxListCss,
+											optionCss: comboboxOptionCss,
+										})
+									: null}
+							</div>
+							{status === 'ready' && secrets.length === 0 ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									No secrets yet. Create one to get started.
+								</p>
+							) : status === 'ready' && filteredSecrets.length === 0 ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									No secrets match the current filters.
+								</p>
+							) : (
+								<AccountManagementList maxHeight="min(65vh, 48rem)">
 									{filteredSecrets.map((secret) => {
 										const isActive = activeSecretId === secret.id
 										return (
 											<li key={secret.id} mix={css({ minWidth: 0 })}>
-												<button
-													type="button"
-													mix={[
-														on(
-															'click',
-
-															() => navigate(buildSecretHref(secret)),
-														),
-
-														css({
-															width: '100%',
-															minWidth: 0,
-															textAlign: 'left',
-															display: 'grid',
-															gap: spacing.xs,
-															padding: spacing.md,
-															overflow: 'hidden',
-															borderRadius: radius.md,
-															border: `1px solid ${
-																isActive ? colors.primary : colors.border
-															}`,
-
-															backgroundColor: isActive
-																? colors.primarySoftest
-																: colors.background,
-															color: colors.text,
-															cursor: 'pointer',
-															transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
-														}),
-													]}
+												<AccountManagementListItemButton
+													active={isActive}
+													onClick={() => navigate(buildSecretHref(secret))}
 												>
 													<div
 														mix={css({
@@ -1488,15 +1398,15 @@ export function AccountSecretsRoute(handle: Handle) {
 															{secret.description}
 														</span>
 													) : null}
-												</button>
+												</AccountManagementListItemButton>
 											</li>
 										)
 									})}
-								</ul>
-							</div>
-						)}
-					</aside>
-
+								</AccountManagementList>
+							)}
+						</AccountManagementSidebar>
+					}
+				>
 					<div
 						mix={css({
 							...cardCss,
@@ -1720,39 +1630,23 @@ export function AccountSecretsRoute(handle: Handle) {
 								</div>
 
 								{selectedSecret ? (
-									<div
-										mix={css({
-											display: 'grid',
-											gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-											gap: spacing.md,
-											padding: spacing.md,
-											borderRadius: radius.md,
-											backgroundColor: colors.background,
-											border: `1px solid ${colors.border}`,
-											[mq.mobile]: {
-												gridTemplateColumns: '1fr',
+									<MetadataGrid
+										columns={3}
+										items={[
+											{
+												label: 'Created',
+												value: formatTimestamp(selectedSecret.createdAt),
 											},
-										})}
-									>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<span mix={css(fieldLabelCss)}>Created</span>
-											<span mix={css({ color: colors.textMuted })}>
-												{formatTimestamp(selectedSecret.createdAt)}
-											</span>
-										</div>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<span mix={css(fieldLabelCss)}>Updated</span>
-											<span mix={css({ color: colors.textMuted })}>
-												{formatTimestamp(selectedSecret.updatedAt)}
-											</span>
-										</div>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<span mix={css(fieldLabelCss)}>Expiry</span>
-											<span mix={css({ color: colors.textMuted })}>
-												{formatRelativeTtl(selectedSecret.ttlMs)}
-											</span>
-										</div>
-									</div>
+											{
+												label: 'Updated',
+												value: formatTimestamp(selectedSecret.updatedAt),
+											},
+											{
+												label: 'Expiry',
+												value: formatRelativeTtl(selectedSecret.ttlMs),
+											},
+										]}
+									/>
 								) : null}
 
 								<div
@@ -1822,8 +1716,8 @@ export function AccountSecretsRoute(handle: Handle) {
 							</div>
 						)}
 					</div>
-				</section>
-			</section>
+				</AccountManagementLayout>
+			</AccountManagementShell>
 		)
 	}
 }

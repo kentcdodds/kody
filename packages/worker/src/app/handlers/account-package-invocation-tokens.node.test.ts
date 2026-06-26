@@ -267,7 +267,6 @@ test('package invocation token API lists, creates, updates, validates, revokes, 
 					packageKodyIds: ['discord-gateway'],
 					exportNames: ['dispatch-message-created'],
 					sources: ['updated-client'],
-					rawToken: 'should-not-be-read',
 					tokenHash: 'should-not-be-read',
 				}),
 			},
@@ -277,11 +276,12 @@ test('package invocation token API lists, creates, updates, validates, revokes, 
 
 	expect(updateResponse.status).toBe(200)
 	expect(mockModule.hashPackageInvocationBearerToken).toHaveBeenCalledTimes(1)
-	expect(mockModule.updatePackageInvocationToken).toHaveBeenCalledWith({
+	expect(mockModule.updatePackageInvocationToken).toHaveBeenNthCalledWith(1, {
 		db: env.APP_DB,
 		userId: 'stable-user-1',
 		id: 'token-1',
 		name: 'Updated personal client',
+		tokenHash: undefined,
 		packageIds: [],
 		packageKodyIds: ['discord-gateway'],
 		exportNames: ['./dispatch-message-created'],
@@ -291,6 +291,49 @@ test('package invocation token API lists, creates, updates, validates, revokes, 
 	expect(updateText).not.toContain('should-not-be-read')
 	expect(updateText).not.toContain('stored-hash')
 	expect(JSON.parse(updateText)).toMatchObject({
+		ok: true,
+		selectedTokenId: 'token-1',
+	})
+
+	const replaceTokenResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/package-invocation-tokens.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'update',
+					id: 'token-1',
+					name: 'Rotated personal client',
+					rawToken: 'replacement-raw-token',
+					packageKodyIds: ['discord-gateway'],
+					exportNames: ['dispatch-message-created'],
+					sources: ['rotated-client'],
+				}),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(replaceTokenResponse.status).toBe(200)
+	expect(mockModule.hashPackageInvocationBearerToken).toHaveBeenCalledTimes(2)
+	expect(mockModule.hashPackageInvocationBearerToken).toHaveBeenLastCalledWith(
+		'replacement-raw-token',
+	)
+	expect(mockModule.updatePackageInvocationToken).toHaveBeenNthCalledWith(2, {
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		id: 'token-1',
+		name: 'Rotated personal client',
+		tokenHash: 'hashed-raw-token',
+		packageIds: [],
+		packageKodyIds: ['discord-gateway'],
+		exportNames: ['./dispatch-message-created'],
+		sources: ['rotated-client'],
+	})
+	const replaceTokenText = await replaceTokenResponse.text()
+	expect(replaceTokenText).not.toContain('replacement-raw-token')
+	expect(JSON.parse(replaceTokenText)).toMatchObject({
 		ok: true,
 		selectedTokenId: 'token-1',
 	})
@@ -318,7 +361,7 @@ test('package invocation token API lists, creates, updates, validates, revokes, 
 		ok: false,
 		error: 'Unknown package Kody id: other-package',
 	})
-	expect(mockModule.updatePackageInvocationToken).toHaveBeenCalledTimes(1)
+	expect(mockModule.updatePackageInvocationToken).toHaveBeenCalledTimes(2)
 
 	const revokeResponse = await handler.handler({
 		request: new Request(

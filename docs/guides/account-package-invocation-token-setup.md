@@ -23,6 +23,11 @@ Use it when:
 Do **not** ask the user to paste bearer tokens into chat. Do **not** include a
 `rawToken`, `token`, `bearer`, or token hash query parameter.
 
+Existing token values can be rotated from the account token editor. That field
+is write-only and optional: leaving it blank keeps the current bearer value,
+while pasting a new raw token replaces the stored hash. The UI never shows the
+existing raw token or token hash.
+
 ## URL format
 
 Provide the user a URL like:
@@ -62,6 +67,8 @@ package id scope.
    scope, export scope, and optional `allowedSources`.
 3. Ask the user to open the URL, paste their locally generated raw token into
    the Raw token field, and create the token.
+   - For rotation, ask the user to open the existing token detail URL and paste
+     the new raw token into the write-only replacement field.
 4. Instruct the external caller to send:
    - `Authorization: Bearer <raw-token>`
    - JSON `source` matching one of the allowed sources when sources are scoped
