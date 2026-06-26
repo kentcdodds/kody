@@ -94,9 +94,9 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 				type_definition: null,
 				external_invocation: {
 					method: 'POST',
-					url: 'https://heykody.dev/@kentcdodds/api/package-invocations/discord-gateway/__root__',
-					path: '/@kentcdodds/api/package-invocations/discord-gateway/__root__',
-					owner_username: 'kentcdodds',
+					url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/__root__',
+					path: '/@kody/api/package-invocations/discord-gateway/__root__',
+					owner_username: 'kody',
 					kody_id: 'discord-gateway',
 					route_export_name: '__root__',
 					normalized_export_name: '.',
@@ -115,9 +115,9 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 				type_definition: null,
 				external_invocation: {
 					method: 'POST',
-					url: 'https://heykody.dev/@kentcdodds/api/package-invocations/discord-gateway/post-message',
-					path: '/@kentcdodds/api/package-invocations/discord-gateway/post-message',
-					owner_username: 'kentcdodds',
+					url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/post-message',
+					path: '/@kody/api/package-invocations/discord-gateway/post-message',
+					owner_username: 'kody',
 					kody_id: 'discord-gateway',
 					route_export_name: 'post-message',
 					normalized_export_name: './post-message',
@@ -183,7 +183,6 @@ test('getPackageCapability keeps package details when no public username is avai
 				user: {
 					userId: 'user-1',
 					email: 'kody@example.com',
-					username: 'kody',
 					displayName: 'Kody',
 				},
 				remoteConnectors: null,
