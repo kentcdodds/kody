@@ -28,6 +28,10 @@ is write-only and optional: leaving it blank keeps the current bearer value,
 while pasting a new raw token replaces the stored hash. The UI never shows the
 existing raw token or token hash.
 
+In the editor, look for the **Token value** section. The **New raw token value**
+field is where the user pastes or generates a replacement token value before
+saving.
+
 When the exact bearer value does not matter, the user can click **Generate** in
 the raw-token field. Kody generates a high-entropy browser-side token, fills the
 password field, and offers a **Copy** control so the user can paste it into the
@@ -75,7 +79,7 @@ package id scope.
    the Raw token field, or click **Generate** and copy/deliver the generated
    value before creating the token.
    - For rotation, ask the user to open the existing token detail URL and paste
-     the new raw token into the write-only replacement field.
+     or generate the new raw token in the **Token value** section.
 4. Instruct the external caller to send:
    - `Authorization: Bearer <raw-token>`
    - JSON `source` matching one of the allowed sources when sources are scoped
