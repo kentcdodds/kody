@@ -1267,6 +1267,63 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										/>
 									</label>
 
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Replace raw token</span>
+										<div
+											mix={css({
+												display: 'grid',
+												gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+												gap: spacing.sm,
+												[mq.mobile]: {
+													gridTemplateColumns: '1fr',
+												},
+											})}
+										>
+											<input
+												name="rawToken"
+												type="password"
+												value={editorState.rawToken}
+												placeholder="Leave blank to keep the current token value"
+												autoComplete="off"
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'rawToken',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(inputCss),
+												]}
+											/>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', generateEditorRawToken),
+													css(secondaryButtonCss),
+												]}
+											>
+												Generate
+											</button>
+											<button
+												type="button"
+												disabled={isMutating || !editorState.rawToken}
+												mix={[
+													on('click', () => void copyEditorRawToken()),
+													css(secondaryButtonCss),
+												]}
+											>
+												Copy
+											</button>
+										</div>
+										<span mix={css(descriptionCss)}>
+											Paste or generate a new raw token only when rotating this
+											credential. Kody stores only its hash.
+										</span>
+									</label>
+
 									<div
 										mix={css({
 											display: 'grid',
