@@ -7,6 +7,8 @@ export const routes = route({
 	accountIntegrationsApi: '/account/integrations.json',
 	accountPackageInvocationTokens: '/account/package-invocation-tokens',
 	accountPackageInvocationTokenNew: '/account/package-invocation-tokens/new',
+	accountPackageInvocationTokenDetail:
+		'/account/package-invocation-tokens/:tokenId',
 	accountPackageInvocationTokensApi: '/account/package-invocation-tokens.json',
 	accountPackageInvocationTokensApiPost: post(
 		'/account/package-invocation-tokens.json',

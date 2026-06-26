@@ -61,6 +61,8 @@ export function createAppRouter(appEnv: AppEnv) {
 				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
 			accountPackageInvocationTokenNew:
 				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
+			accountPackageInvocationTokenDetail:
+				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
 			accountPackageInvocationTokensApi:
 				createAccountPackageInvocationTokensApiHandler(
 					appEnv as unknown as Env,

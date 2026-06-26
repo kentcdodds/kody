@@ -262,6 +262,43 @@ export async function insertPackageInvocationToken(input: {
 		.run()
 }
 
+export async function updatePackageInvocationToken(input: {
+	db: D1Database
+	userId: string
+	id: string
+	name: string
+	packageIds: Array<string>
+	packageKodyIds: Array<string>
+	exportNames: Array<string>
+	sources: Array<string>
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE package_invocation_tokens
+			SET name = ?,
+				package_ids_json = ?,
+				package_kody_ids_json = ?,
+				export_names_json = ?,
+				sources_json = ?,
+				updated_at = ?
+			WHERE id = ?
+				AND user_id = ?
+				AND revoked_at IS NULL`,
+		)
+		.bind(
+			input.name,
+			JSON.stringify(input.packageIds),
+			JSON.stringify(input.packageKodyIds),
+			JSON.stringify(input.exportNames),
+			JSON.stringify(input.sources),
+			new Date().toISOString(),
+			input.id,
+			input.userId,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function revokePackageInvocationToken(input: {
 	db: D1Database
 	userId: string
@@ -277,6 +314,40 @@ export async function revokePackageInvocationToken(input: {
 				AND revoked_at IS NULL`,
 		)
 		.bind(now, now, input.id, input.userId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function unrevokePackageInvocationToken(input: {
+	db: D1Database
+	userId: string
+	id: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE package_invocation_tokens
+			SET revoked_at = NULL, updated_at = ?
+			WHERE id = ?
+				AND user_id = ?
+				AND revoked_at IS NOT NULL`,
+		)
+		.bind(new Date().toISOString(), input.id, input.userId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function deletePackageInvocationToken(input: {
+	db: D1Database
+	userId: string
+	id: string
+}) {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM package_invocation_tokens
+			WHERE id = ?
+				AND user_id = ?`,
+		)
+		.bind(input.id, input.userId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

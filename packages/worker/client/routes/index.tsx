@@ -18,6 +18,9 @@ export const clientRoutes = {
 	'/account/package-invocation-tokens/new': (
 		<AccountPackageInvocationTokensRoute />
 	),
+	'/account/package-invocation-tokens/:tokenId': (
+		<AccountPackageInvocationTokensRoute />
+	),
 	'/account/remote-connectors': <AccountRemoteConnectorsRoute />,
 	'/account/secrets': <AccountSecretsRoute />,
 	'/account/secrets/new': <AccountSecretsRoute />,

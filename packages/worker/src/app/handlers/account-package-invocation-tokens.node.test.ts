@@ -42,6 +42,9 @@ const mockModule = vi.hoisted(() => ({
 		},
 	]),
 	revokePackageInvocationToken: vi.fn(async () => true),
+	unrevokePackageInvocationToken: vi.fn(async () => true),
+	deletePackageInvocationToken: vi.fn(async () => true),
+	updatePackageInvocationToken: vi.fn(async () => true),
 	listSavedPackagesByUserId: vi.fn(async () => [
 		{
 			id: 'pkg-1',
@@ -94,6 +97,12 @@ vi.mock('#worker/package-invocations/repo.ts', () => ({
 		mockModule.listPackageInvocationTokensByUserId(...args),
 	revokePackageInvocationToken: (...args: Array<unknown>) =>
 		mockModule.revokePackageInvocationToken(...args),
+	unrevokePackageInvocationToken: (...args: Array<unknown>) =>
+		mockModule.unrevokePackageInvocationToken(...args),
+	deletePackageInvocationToken: (...args: Array<unknown>) =>
+		mockModule.deletePackageInvocationToken(...args),
+	updatePackageInvocationToken: (...args: Array<unknown>) =>
+		mockModule.updatePackageInvocationToken(...args),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -126,10 +135,13 @@ function resetMocks() {
 	mockModule.insertPackageInvocationToken.mockClear()
 	mockModule.listPackageInvocationTokensByUserId.mockClear()
 	mockModule.revokePackageInvocationToken.mockClear()
+	mockModule.unrevokePackageInvocationToken.mockClear()
+	mockModule.deletePackageInvocationToken.mockClear()
+	mockModule.updatePackageInvocationToken.mockClear()
 	mockModule.listSavedPackagesByUserId.mockClear()
 }
 
-test('package invocation token API lists, creates, validates, and revokes tokens', async () => {
+test('package invocation token API lists, creates, updates, validates, revokes, restores, and deletes tokens', async () => {
 	resetMocks()
 	const env = createEnv()
 	const handler = createAccountPackageInvocationTokensApiHandler(env)
@@ -242,6 +254,72 @@ test('package invocation token API lists, creates, validates, and revokes tokens
 	})
 	expect(mockModule.insertPackageInvocationToken).toHaveBeenCalledTimes(1)
 
+	const updateResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/package-invocation-tokens.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'update',
+					id: 'token-1',
+					name: 'Updated personal client',
+					packageKodyIds: ['discord-gateway'],
+					exportNames: ['dispatch-message-created'],
+					sources: ['updated-client'],
+					rawToken: 'should-not-be-read',
+					tokenHash: 'should-not-be-read',
+				}),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(updateResponse.status).toBe(200)
+	expect(mockModule.hashPackageInvocationBearerToken).toHaveBeenCalledTimes(1)
+	expect(mockModule.updatePackageInvocationToken).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		id: 'token-1',
+		name: 'Updated personal client',
+		packageIds: [],
+		packageKodyIds: ['discord-gateway'],
+		exportNames: ['./dispatch-message-created'],
+		sources: ['updated-client'],
+	})
+	const updateText = await updateResponse.text()
+	expect(updateText).not.toContain('should-not-be-read')
+	expect(updateText).not.toContain('stored-hash')
+	expect(JSON.parse(updateText)).toMatchObject({
+		ok: true,
+		selectedTokenId: 'token-1',
+	})
+
+	const invalidUpdateResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/package-invocation-tokens.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'update',
+					id: 'token-1',
+					name: 'Bad update',
+					packageKodyIds: ['other-package'],
+					exportNames: ['run'],
+				}),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(invalidUpdateResponse.status).toBe(400)
+	await expect(invalidUpdateResponse.json()).resolves.toEqual({
+		ok: false,
+		error: 'Unknown package Kody id: other-package',
+	})
+	expect(mockModule.updatePackageInvocationToken).toHaveBeenCalledTimes(1)
+
 	const revokeResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/package-invocation-tokens.json',
@@ -264,4 +342,55 @@ test('package invocation token API lists, creates, validates, and revokes tokens
 		id: 'token-1',
 	})
 	await expect(revokeResponse.json()).resolves.toMatchObject({ ok: true })
+
+	const unrevokeResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/package-invocation-tokens.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'unrevoke',
+					id: 'token-1',
+				}),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(unrevokeResponse.status).toBe(200)
+	expect(mockModule.unrevokePackageInvocationToken).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		id: 'token-1',
+	})
+	await expect(unrevokeResponse.json()).resolves.toMatchObject({
+		ok: true,
+		selectedTokenId: 'token-1',
+	})
+
+	const deleteResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/package-invocation-tokens.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'delete',
+					id: 'token-1',
+				}),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(deleteResponse.status).toBe(200)
+	expect(mockModule.deletePackageInvocationToken).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		id: 'token-1',
+	})
+	const deletePayload = await deleteResponse.json()
+	expect(deletePayload).toMatchObject({ ok: true })
+	expect(deletePayload).not.toHaveProperty('selectedTokenId')
 })

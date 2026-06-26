@@ -7,11 +7,14 @@ import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
 import {
+	deletePackageInvocationToken,
 	hashPackageInvocationBearerToken,
 	insertPackageInvocationToken,
 	listPackageInvocationTokensByUserId,
 	revokePackageInvocationToken,
 	type PackageInvocationTokenRecord,
+	unrevokePackageInvocationToken,
+	updatePackageInvocationToken,
 } from '#worker/package-invocations/repo.ts'
 import {
 	normalizeExportName,
@@ -98,6 +101,15 @@ export function createAccountPackageInvocationTokensApiHandler(env: Env) {
 			}
 			if (action === 'revoke') {
 				return handleRevokeAction({ env, request, user, body })
+			}
+			if (action === 'unrevoke') {
+				return handleUnrevokeAction({ env, request, user, body })
+			}
+			if (action === 'delete') {
+				return handleDeleteAction({ env, request, user, body })
+			}
+			if (action === 'update') {
+				return handleUpdateAction({ env, request, user, body })
 			}
 
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
@@ -231,6 +243,116 @@ async function handleCreateAction(input: {
 	})
 }
 
+async function handleUpdateAction(input: {
+	env: Env
+	request: Request
+	user: AuthenticatedUser
+	body: object
+}) {
+	const id = readString(input.body, 'id')
+	const name = readString(input.body, 'name')
+	if (!id) {
+		return jsonResponse({ ok: false, error: 'Token id is required.' }, 400)
+	}
+	if (!name) {
+		return jsonResponse({ ok: false, error: 'Token name is required.' }, 400)
+	}
+
+	let packageIds: Array<string>
+	let packageKodyIds: Array<string>
+	let exportNames: Array<string>
+	try {
+		packageIds = normalizeScopeList(
+			readStringArray(input.body, ['packageIds', 'packageId', 'package_ids']),
+			{ allowWildcard: true },
+		)
+		packageKodyIds = normalizeScopeList(
+			readStringArray(input.body, [
+				'packageKodyIds',
+				'packageKodyId',
+				'package_kody_ids',
+				'kodyIds',
+				'kodyId',
+			]),
+			{ allowWildcard: true },
+		)
+		exportNames = normalizeExportScopeList(
+			readStringArray(input.body, [
+				'exportNames',
+				'exportName',
+				'export_names',
+			]),
+		)
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error
+						? error.message
+						: 'Invalid package invocation token scope.',
+			},
+			400,
+		)
+	}
+	const sources = normalizeScopeList(
+		readStringArray(input.body, ['sources', 'source', 'source_names']),
+		{ allowWildcard: false },
+	)
+
+	if (packageIds.length === 0 && packageKodyIds.length === 0) {
+		return jsonResponse(
+			{ ok: false, error: 'Choose at least one package scope.' },
+			400,
+		)
+	}
+	if (exportNames.length === 0) {
+		return jsonResponse(
+			{ ok: false, error: 'Choose at least one export scope.' },
+			400,
+		)
+	}
+
+	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.user.mcpUser.userId,
+	})
+	const scopeError = validatePackageScopes({
+		savedPackages,
+		packageIds,
+		packageKodyIds,
+	})
+	if (scopeError) {
+		return jsonResponse({ ok: false, error: scopeError }, 400)
+	}
+
+	const updated = await updatePackageInvocationToken({
+		db: input.env.APP_DB,
+		userId: input.user.mcpUser.userId,
+		id,
+		name,
+		packageIds,
+		packageKodyIds,
+		exportNames,
+		sources,
+	})
+	if (!updated) {
+		return jsonResponse(
+			{ ok: false, error: 'Package invocation token not found or revoked.' },
+			404,
+		)
+	}
+
+	return jsonResponse({
+		...(await buildPayload({
+			env: input.env,
+			request: input.request,
+			user: input.user,
+			savedPackages,
+		})),
+		selectedTokenId: id,
+	})
+}
+
 async function handleRevokeAction(input: {
 	env: Env
 	request: Request
@@ -247,6 +369,67 @@ async function handleRevokeAction(input: {
 		id,
 	})
 	if (!revoked) {
+		return jsonResponse(
+			{ ok: false, error: 'Package invocation token not found.' },
+			404,
+		)
+	}
+	return jsonResponse(
+		await buildPayload({
+			env: input.env,
+			request: input.request,
+			user: input.user,
+		}),
+	)
+}
+
+async function handleUnrevokeAction(input: {
+	env: Env
+	request: Request
+	user: AuthenticatedUser
+	body: object
+}) {
+	const id = readString(input.body, 'id')
+	if (!id) {
+		return jsonResponse({ ok: false, error: 'Token id is required.' }, 400)
+	}
+	const restored = await unrevokePackageInvocationToken({
+		db: input.env.APP_DB,
+		userId: input.user.mcpUser.userId,
+		id,
+	})
+	if (!restored) {
+		return jsonResponse(
+			{ ok: false, error: 'Package invocation token not found or active.' },
+			404,
+		)
+	}
+	return jsonResponse({
+		...(await buildPayload({
+			env: input.env,
+			request: input.request,
+			user: input.user,
+		})),
+		selectedTokenId: id,
+	})
+}
+
+async function handleDeleteAction(input: {
+	env: Env
+	request: Request
+	user: AuthenticatedUser
+	body: object
+}) {
+	const id = readString(input.body, 'id')
+	if (!id) {
+		return jsonResponse({ ok: false, error: 'Token id is required.' }, 400)
+	}
+	const deleted = await deletePackageInvocationToken({
+		db: input.env.APP_DB,
+		userId: input.user.mcpUser.userId,
+		id,
+	})
+	if (!deleted) {
 		return jsonResponse(
 			{ ok: false, error: 'Package invocation token not found.' },
 			404,

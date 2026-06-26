@@ -19,6 +19,7 @@ import {
 	fieldLabelCss,
 	getDangerButtonCss,
 	getPrimaryButtonCss,
+	getSecondaryButtonCss,
 	inputCss,
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
@@ -124,6 +125,23 @@ function isNewTokenPath(href: string) {
 	return url.pathname === `${accountPackageInvocationTokensBasePath}/new`
 }
 
+function getSelectedTokenIdFromPath(href: string) {
+	const url = new URL(href, 'http://localhost')
+	const detailPrefix = `${accountPackageInvocationTokensBasePath}/`
+	if (
+		url.pathname === `${accountPackageInvocationTokensBasePath}/new` ||
+		!url.pathname.startsWith(detailPrefix)
+	) {
+		return null
+	}
+	const tokenId = decodeURIComponent(url.pathname.slice(detailPrefix.length))
+	return tokenId || null
+}
+
+function buildTokenDetailPath(tokenId: string) {
+	return `${accountPackageInvocationTokensBasePath}/${encodeURIComponent(tokenId)}`
+}
+
 function getNewTokenQueryKey(href: string) {
 	const url = new URL(href, 'http://localhost')
 	if (url.pathname !== `${accountPackageInvocationTokensBasePath}/new`)
@@ -179,9 +197,28 @@ function tokenStatusCss(token: PackageInvocationTokenListItem) {
 	}
 }
 
+function createEditorStateFromToken(
+	token: PackageInvocationTokenListItem,
+): EditorState {
+	return {
+		name: token.name,
+		rawToken: '',
+		packageIdsText: token.packageIds.join('\n'),
+		packageKodyIdsText: token.packageKodyIds.join('\n'),
+		exportNamesText: token.exportNames.join('\n'),
+		sourcesText: token.sources.join('\n'),
+	}
+}
+
 export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
-	let saveState: 'idle' | 'creating' | 'revoking' = 'idle'
+	let saveState:
+		| 'idle'
+		| 'creating'
+		| 'updating'
+		| 'revoking'
+		| 'unrevoking'
+		| 'deleting' = 'idle'
 	let email = ''
 	let username = ''
 	let invocationUrlOrigin = ''
@@ -195,9 +232,12 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let lastNewTokenQueryKey = ''
 	let mutationVersion = 0
 	let revokeConfirm = false
+	let deleteConfirm = false
+	let editMode = false
 
 	const primaryButtonCss = getPrimaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
+	const secondaryButtonCss = getSecondaryButtonCss()
 
 	function redirectToLogin() {
 		saveState = 'idle'
@@ -264,10 +304,12 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		packages = payload.packages
 		tokens = payload.tokens
 		revokeConfirm = false
+		deleteConfirm = false
 		if (payload.selectedTokenId) {
 			selectedTokenId = payload.selectedTokenId
 			editorState = createEmptyEditorState()
 			lastNewTokenQueryKey = ''
+			editMode = false
 			return
 		}
 		if (isNewTokenPath(href)) {
@@ -276,17 +318,22 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				lastNewTokenQueryKey = queryKey
 				editorState = createEditorStateFromNewTokenQuery(href)
 				selectedTokenId = null
+				editMode = false
 			}
+			return
+		}
+		const pathSelectedTokenId = getSelectedTokenIdFromPath(href)
+		if (pathSelectedTokenId) {
+			selectedTokenId = pathSelectedTokenId
+			editorState = createEmptyEditorState()
+			lastNewTokenQueryKey = ''
+			editMode = false
 			return
 		}
 		editorState = createEmptyEditorState()
 		lastNewTokenQueryKey = ''
-		if (
-			selectedTokenId &&
-			!tokens.some((token) => token.id === selectedTokenId)
-		) {
-			selectedTokenId = null
-		}
+		editMode = false
+		selectedTokenId = null
 	}
 
 	function setEditorField(field: keyof EditorState, value: string) {
@@ -312,6 +359,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editorState = createEmptyEditorState()
 		selectedTokenId = null
 		revokeConfirm = false
+		deleteConfirm = false
+		editMode = false
 		message = null
 		messageTone = 'info'
 		if (typeof window !== 'undefined') {
@@ -323,6 +372,32 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			lastLoadedHref = window.location.href
 			lastNewTokenQueryKey = getNewTokenQueryKey(window.location.href)
 		}
+		handle.update()
+	}
+
+	function startEditToken(token: PackageInvocationTokenListItem) {
+		if (token.revokedAt) return
+		editorState = createEditorStateFromToken(token)
+		selectedTokenId = token.id
+		editMode = true
+		revokeConfirm = false
+		deleteConfirm = false
+		message = null
+		messageTone = 'info'
+		if (typeof window !== 'undefined') {
+			window.history.pushState(null, '', buildTokenDetailPath(token.id))
+			lastLoadedHref = window.location.href
+		}
+		handle.update()
+	}
+
+	function cancelEditToken() {
+		editorState = createEmptyEditorState()
+		editMode = false
+		revokeConfirm = false
+		deleteConfirm = false
+		message = null
+		messageTone = 'info'
 		handle.update()
 	}
 
@@ -401,11 +476,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				'Created token. The raw token was not stored and will not be shown again.'
 			messageTone = 'info'
 			if (typeof window !== 'undefined') {
-				window.history.pushState(
-					null,
-					'',
-					accountPackageInvocationTokensBasePath,
-				)
+				const nextPath = payload.selectedTokenId
+					? buildTokenDetailPath(payload.selectedTokenId)
+					: accountPackageInvocationTokensBasePath
+				window.history.pushState(null, '', nextPath)
 				lastLoadedHref = window.location.href
 			}
 			handle.update()
@@ -418,8 +492,95 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
+	async function updateSelectedToken(form?: HTMLFormElement) {
+		if (!selectedTokenId || saveState !== 'idle') return
+		const nextEditorState = form ? readEditorStateFromForm(form) : editorState
+		editorState = nextEditorState
+		const packageIds = parseListText(nextEditorState.packageIdsText)
+		const packageKodyIds = parseListText(nextEditorState.packageKodyIdsText)
+		const exportNames = parseListText(nextEditorState.exportNamesText)
+		const sources = parseListText(nextEditorState.sourcesText)
+
+		if (!nextEditorState.name) {
+			message = 'Token name is required.'
+			messageTone = 'error'
+			handle.update()
+			return
+		}
+		if (packageIds.length === 0 && packageKodyIds.length === 0) {
+			message =
+				'Add at least one package id, Kody id, or wildcard package scope.'
+			messageTone = 'error'
+			handle.update()
+			return
+		}
+		if (exportNames.length === 0) {
+			message = 'Add at least one export name or wildcard export scope.'
+			messageTone = 'error'
+			handle.update()
+			return
+		}
+
+		saveState = 'updating'
+		message = null
+		messageTone = 'info'
+		handle.update()
+		try {
+			const response = await fetch(accountPackageInvocationTokensApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'update',
+					id: selectedTokenId,
+					name: nextEditorState.name,
+					packageIds,
+					packageKodyIds,
+					exportNames,
+					sources,
+				}),
+			})
+			if (response.status === 401) {
+				redirectToLogin()
+				return
+			}
+			const payload = await readJson<
+				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to update token.')
+			}
+			mutationVersion += 1
+			applyPayload(payload, buildTokenDetailPath(selectedTokenId))
+			saveState = 'idle'
+			editorState = createEmptyEditorState()
+			editMode = false
+			message = 'Saved token.'
+			messageTone = 'info'
+			if (typeof window !== 'undefined') {
+				window.history.pushState(
+					null,
+					'',
+					buildTokenDetailPath(selectedTokenId),
+				)
+				lastLoadedHref = window.location.href
+			}
+			handle.update()
+		} catch (error) {
+			saveState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to update token.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
 	async function revokeSelectedToken() {
 		if (!selectedTokenId || saveState !== 'idle') return
+		const tokenId = selectedTokenId
 		saveState = 'revoking'
 		message = null
 		messageTone = 'info'
@@ -448,10 +609,17 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to revoke token.')
 			}
 			mutationVersion += 1
-			applyPayload(payload, accountPackageInvocationTokensBasePath)
+			applyPayload(
+				{ ...payload, selectedTokenId: tokenId },
+				buildTokenDetailPath(tokenId),
+			)
 			saveState = 'idle'
 			message = 'Revoked token.'
 			messageTone = 'info'
+			if (typeof window !== 'undefined') {
+				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
+				lastLoadedHref = window.location.href
+			}
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -462,15 +630,121 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
+	async function unrevokeSelectedToken() {
+		if (!selectedTokenId || saveState !== 'idle') return
+		const tokenId = selectedTokenId
+		saveState = 'unrevoking'
+		message = null
+		messageTone = 'info'
+		handle.update()
+		try {
+			const response = await fetch(accountPackageInvocationTokensApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'unrevoke',
+					id: tokenId,
+				}),
+			})
+			if (response.status === 401) {
+				redirectToLogin()
+				return
+			}
+			const payload = await readJson<
+				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to un-revoke token.')
+			}
+			mutationVersion += 1
+			applyPayload(payload, buildTokenDetailPath(tokenId))
+			saveState = 'idle'
+			message = 'Un-revoked token.'
+			messageTone = 'info'
+			if (typeof window !== 'undefined') {
+				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
+				lastLoadedHref = window.location.href
+			}
+			handle.update()
+		} catch (error) {
+			saveState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to un-revoke token.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
+	async function deleteSelectedToken() {
+		if (!selectedTokenId || saveState !== 'idle') return
+		saveState = 'deleting'
+		message = null
+		messageTone = 'info'
+		handle.update()
+		try {
+			const response = await fetch(accountPackageInvocationTokensApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'delete',
+					id: selectedTokenId,
+				}),
+			})
+			if (response.status === 401) {
+				redirectToLogin()
+				return
+			}
+			const payload = await readJson<
+				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to delete token.')
+			}
+			mutationVersion += 1
+			applyPayload(payload, accountPackageInvocationTokensBasePath)
+			saveState = 'idle'
+			selectedTokenId = null
+			editorState = createEmptyEditorState()
+			editMode = false
+			message = 'Deleted token permanently.'
+			messageTone = 'info'
+			if (typeof window !== 'undefined') {
+				window.history.pushState(
+					null,
+					'',
+					accountPackageInvocationTokensBasePath,
+				)
+				lastLoadedHref = window.location.href
+			}
+			handle.update()
+		} catch (error) {
+			saveState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to delete token.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
 	function selectToken(token: PackageInvocationTokenListItem) {
 		selectedTokenId = token.id
 		editorState = createEmptyEditorState()
 		lastNewTokenQueryKey = ''
 		revokeConfirm = false
+		deleteConfirm = false
+		editMode = false
 		message = null
 		messageTone = 'info'
 		if (typeof window !== 'undefined') {
-			window.history.pushState(null, '', accountPackageInvocationTokensBasePath)
+			window.history.pushState(null, '', buildTokenDetailPath(token.id))
 			lastLoadedHref = window.location.href
 		}
 		handle.update()
@@ -487,8 +761,12 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			handle.queueTask(loadTokens)
 		}
 		const isMutating = saveState !== 'idle'
+		const isCreatingToken = isNewTokenPath(currentHref)
+		const requestedTokenId = getSelectedTokenIdFromPath(currentHref)
 		const selectedToken =
 			tokens.find((token) => token.id === selectedTokenId) ?? null
+		const isEditingSelectedToken =
+			editMode && selectedToken != null && !selectedToken.revokedAt
 		const endpointTemplate = username
 			? `${invocationUrlOrigin}/@${username}/api/package-invocations/<kodyId>/<exportName>`
 			: ''
@@ -636,174 +914,345 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 						</aside>
 
 						<div mix={css({ display: 'grid', gap: spacing.lg })}>
-							<form
-								method="post"
-								noValidate
-								mix={[
-									on('submit', (event) => {
-										event.preventDefault()
-										if (event.currentTarget instanceof HTMLFormElement) {
-											void createToken(event.currentTarget)
-										}
-									}),
-									css(cardCss),
-								]}
-							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>Create token</h2>
-									<p mix={css(descriptionCss)}>
-										Paste the raw token once. Kody stores only its hash, so keep
-										the raw value in the trusted client.
-									</p>
-								</div>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Name</span>
-									<input
-										name="name"
-										type="text"
-										value={editorState.name}
-										placeholder="Personal automation"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												setEditorField('name', event.currentTarget.value)
-												handle.update()
-											}),
-											css(inputCss),
-										]}
-									/>
-								</label>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Raw token</span>
-									<input
-										name="rawToken"
-										type="password"
-										value={editorState.rawToken}
-										placeholder="Paste the locally generated token"
-										autoComplete="off"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												setEditorField('rawToken', event.currentTarget.value)
-												handle.update()
-											}),
-											css(inputCss),
-										]}
-									/>
-								</label>
-
-								<div
-									mix={css({
-										display: 'grid',
-										gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-										gap: spacing.md,
-										[mq.mobile]: {
-											gridTemplateColumns: '1fr',
-										},
-									})}
+							{isCreatingToken || (!requestedTokenId && !selectedToken) ? (
+								<form
+									method="post"
+									noValidate
+									mix={[
+										on('submit', (event) => {
+											event.preventDefault()
+											if (event.currentTarget instanceof HTMLFormElement) {
+												void createToken(event.currentTarget)
+											}
+										}),
+										css(cardCss),
+									]}
 								>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>Create token</h2>
+										<p mix={css(descriptionCss)}>
+											Paste the raw token once. Kody stores only its hash, so
+											keep the raw value in the trusted client.
+										</p>
+									</div>
+
 									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
-										<textarea
-											name="packageKodyIds"
-											value={editorState.packageKodyIdsText}
-											placeholder={'discord-gateway\n*'}
+										<span mix={css(fieldLabelCss)}>Name</span>
+										<input
+											name="name"
+											type="text"
+											value={editorState.name}
+											placeholder="Personal automation"
 											disabled={isMutating}
+											required
 											mix={[
 												on('input', (event) => {
-													setEditorField(
-														'packageKodyIdsText',
-														event.currentTarget.value,
-													)
+													setEditorField('name', event.currentTarget.value)
 													handle.update()
 												}),
-												css(textareaCss),
+												css(inputCss),
 											]}
 										/>
 									</label>
+
 									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Package IDs</span>
-										<textarea
-											name="packageIds"
-											value={editorState.packageIdsText}
-											placeholder="pkg_..."
+										<span mix={css(fieldLabelCss)}>Raw token</span>
+										<input
+											name="rawToken"
+											type="password"
+											value={editorState.rawToken}
+											placeholder="Paste the locally generated token"
+											autoComplete="off"
 											disabled={isMutating}
+											required
 											mix={[
 												on('input', (event) => {
-													setEditorField(
-														'packageIdsText',
-														event.currentTarget.value,
-													)
+													setEditorField('rawToken', event.currentTarget.value)
 													handle.update()
 												}),
-												css(textareaCss),
+												css(inputCss),
 											]}
 										/>
 									</label>
-								</div>
 
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Export names</span>
-									<textarea
-										name="exportNames"
-										value={editorState.exportNamesText}
-										placeholder={'dispatch-message-created\n*'}
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												setEditorField(
-													'exportNamesText',
-													event.currentTarget.value,
-												)
-												handle.update()
-											}),
-											css(textareaCss),
-										]}
-									/>
-								</label>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Allowed sources</span>
-									<textarea
-										name="sources"
-										value={editorState.sourcesText}
-										placeholder="personal-client"
-										disabled={isMutating}
-										mix={[
-											on('input', (event) => {
-												setEditorField('sourcesText', event.currentTarget.value)
-												handle.update()
-											}),
-											css(textareaCss),
-										]}
-									/>
-									<span mix={css(descriptionCss)}>
-										Leave blank to allow requests that omit source. If a request
-										supplies source, it must be listed here exactly.
-									</span>
-								</label>
-
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-									})}
-								>
-									<button
-										type="submit"
-										disabled={isMutating}
-										mix={css(primaryButtonCss)}
+									<div
+										mix={css({
+											display: 'grid',
+											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+											gap: spacing.md,
+											[mq.mobile]: {
+												gridTemplateColumns: '1fr',
+											},
+										})}
 									>
-										{saveState === 'creating' ? 'Creating...' : 'Create token'}
-									</button>
-								</div>
-							</form>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
+											<textarea
+												name="packageKodyIds"
+												value={editorState.packageKodyIdsText}
+												placeholder={'discord-gateway\n*'}
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'packageKodyIdsText',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(textareaCss),
+												]}
+											/>
+										</label>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Package IDs</span>
+											<textarea
+												name="packageIds"
+												value={editorState.packageIdsText}
+												placeholder="pkg_..."
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'packageIdsText',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(textareaCss),
+												]}
+											/>
+										</label>
+									</div>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Export names</span>
+										<textarea
+											name="exportNames"
+											value={editorState.exportNamesText}
+											placeholder={'dispatch-message-created\n*'}
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													setEditorField(
+														'exportNamesText',
+														event.currentTarget.value,
+													)
+													handle.update()
+												}),
+												css(textareaCss),
+											]}
+										/>
+									</label>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Allowed sources</span>
+										<textarea
+											name="sources"
+											value={editorState.sourcesText}
+											placeholder="personal-client"
+											disabled={isMutating}
+											mix={[
+												on('input', (event) => {
+													setEditorField(
+														'sourcesText',
+														event.currentTarget.value,
+													)
+													handle.update()
+												}),
+												css(textareaCss),
+											]}
+										/>
+										<span mix={css(descriptionCss)}>
+											Leave blank to allow requests that omit source. If a
+											request supplies source, it must be listed here exactly.
+										</span>
+									</label>
+
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											flexWrap: 'wrap',
+										})}
+									>
+										<button
+											type="submit"
+											disabled={isMutating}
+											mix={css(primaryButtonCss)}
+										>
+											{saveState === 'creating'
+												? 'Creating...'
+												: 'Create token'}
+										</button>
+									</div>
+								</form>
+							) : null}
+
+							{isEditingSelectedToken ? (
+								<form
+									method="post"
+									noValidate
+									mix={[
+										on('submit', (event) => {
+											event.preventDefault()
+											if (event.currentTarget instanceof HTMLFormElement) {
+												void updateSelectedToken(event.currentTarget)
+											}
+										}),
+										css(cardCss),
+									]}
+								>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>Edit token</h2>
+										<p mix={css(descriptionCss)}>
+											Update this token's display name and allowed scopes. The
+											raw token and stored hash are preserved and never shown.
+										</p>
+									</div>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Name</span>
+										<input
+											name="name"
+											type="text"
+											value={editorState.name}
+											placeholder="Personal automation"
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													setEditorField('name', event.currentTarget.value)
+													handle.update()
+												}),
+												css(inputCss),
+											]}
+										/>
+									</label>
+
+									<div
+										mix={css({
+											display: 'grid',
+											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+											gap: spacing.md,
+											[mq.mobile]: {
+												gridTemplateColumns: '1fr',
+											},
+										})}
+									>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Package Kody IDs</span>
+											<textarea
+												name="packageKodyIds"
+												value={editorState.packageKodyIdsText}
+												placeholder={'discord-gateway\n*'}
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'packageKodyIdsText',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(textareaCss),
+												]}
+											/>
+										</label>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Package IDs</span>
+											<textarea
+												name="packageIds"
+												value={editorState.packageIdsText}
+												placeholder="pkg_..."
+												disabled={isMutating}
+												mix={[
+													on('input', (event) => {
+														setEditorField(
+															'packageIdsText',
+															event.currentTarget.value,
+														)
+														handle.update()
+													}),
+													css(textareaCss),
+												]}
+											/>
+										</label>
+									</div>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Export names</span>
+										<textarea
+											name="exportNames"
+											value={editorState.exportNamesText}
+											placeholder={'dispatch-message-created\n*'}
+											disabled={isMutating}
+											required
+											mix={[
+												on('input', (event) => {
+													setEditorField(
+														'exportNamesText',
+														event.currentTarget.value,
+													)
+													handle.update()
+												}),
+												css(textareaCss),
+											]}
+										/>
+									</label>
+
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Allowed sources</span>
+										<textarea
+											name="sources"
+											value={editorState.sourcesText}
+											placeholder="personal-client"
+											disabled={isMutating}
+											mix={[
+												on('input', (event) => {
+													setEditorField(
+														'sourcesText',
+														event.currentTarget.value,
+													)
+													handle.update()
+												}),
+												css(textareaCss),
+											]}
+										/>
+										<span mix={css(descriptionCss)}>
+											Leave blank to allow requests that omit source. If a
+											request supplies source, it must be listed here exactly.
+										</span>
+									</label>
+
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											flexWrap: 'wrap',
+										})}
+									>
+										<button
+											type="submit"
+											disabled={isMutating}
+											mix={css(primaryButtonCss)}
+										>
+											{saveState === 'updating' ? 'Saving...' : 'Save token'}
+										</button>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', cancelEditToken),
+												css(secondaryButtonCss),
+											]}
+										>
+											Cancel
+										</button>
+									</div>
+								</form>
+							) : null}
 
 							<section mix={css(cardCss)}>
 								<h2 mix={css(cardTitleCss)}>Invocation endpoint</h2>
@@ -828,13 +1277,17 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								</code>
 							</section>
 
-							{selectedToken ? (
+							{selectedToken && !isEditingSelectedToken ? (
 								<section mix={css(cardCss)}>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
 										<h2 mix={css(cardTitleCss)}>{selectedToken.name}</h2>
 										<span mix={css(tokenStatusCss(selectedToken))}>
 											{tokenStatus(selectedToken)}
 										</span>
+										<p mix={css(descriptionCss)}>
+											Token material is hidden permanently. This view only shows
+											metadata and policy scopes.
+										</p>
 									</div>
 									<dl
 										mix={css({
@@ -848,12 +1301,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										})}
 									>
 										<div>
-											<dt mix={css(fieldLabelCss)}>Packages</dt>
+											<dt mix={css(fieldLabelCss)}>Package Kody IDs</dt>
 											<dd mix={css({ margin: 0, color: colors.text })}>
-												{formatScope([
-													...selectedToken.packageKodyIds,
-													...selectedToken.packageIds,
-												])}
+												{formatScope(selectedToken.packageKodyIds)}
+											</dd>
+										</div>
+										<div>
+											<dt mix={css(fieldLabelCss)}>Package IDs</dt>
+											<dd mix={css({ margin: 0, color: colors.text })}>
+												{formatScope(selectedToken.packageIds)}
 											</dd>
 										</div>
 										<div>
@@ -881,37 +1337,132 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											</dd>
 										</div>
 										<div>
+											<dt mix={css(fieldLabelCss)}>Updated</dt>
+											<dd mix={css({ margin: 0, color: colors.text })}>
+												{formatTimestamp(selectedToken.updatedAt)}
+											</dd>
+										</div>
+										<div>
 											<dt mix={css(fieldLabelCss)}>Revoked</dt>
 											<dd mix={css({ margin: 0, color: colors.text })}>
 												{formatTimestamp(selectedToken.revokedAt)}
 											</dd>
 										</div>
 									</dl>
-									{selectedToken.revokedAt ? null : (
-										<div>
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											flexWrap: 'wrap',
+										})}
+									>
+										{selectedToken.revokedAt ? (
 											<button
 												type="button"
 												disabled={isMutating}
 												mix={[
 													on('click', () => {
-														if (!revokeConfirm) {
-															revokeConfirm = true
-															handle.update()
-															return
-														}
-														void revokeSelectedToken()
+														void unrevokeSelectedToken()
 													}),
-													css(dangerButtonCss),
+													css(secondaryButtonCss),
 												]}
 											>
-												{saveState === 'revoking'
-													? 'Revoking...'
-													: revokeConfirm
-														? 'Confirm revoke'
-														: 'Revoke token'}
+												{saveState === 'unrevoking'
+													? 'Un-revoking...'
+													: 'Un-revoke token'}
 											</button>
-										</div>
-									)}
+										) : (
+											<>
+												<button
+													type="button"
+													disabled={isMutating}
+													mix={[
+														on('click', () => startEditToken(selectedToken)),
+														css(secondaryButtonCss),
+													]}
+												>
+													Edit token
+												</button>
+												<button
+													type="button"
+													disabled={isMutating}
+													mix={[
+														on('click', () => {
+															if (!revokeConfirm) {
+																revokeConfirm = true
+																deleteConfirm = false
+																handle.update()
+																return
+															}
+															void revokeSelectedToken()
+														}),
+														css(dangerButtonCss),
+													]}
+												>
+													{saveState === 'revoking'
+														? 'Revoking...'
+														: revokeConfirm
+															? 'Confirm revoke'
+															: 'Revoke token'}
+												</button>
+											</>
+										)}
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () => {
+													if (!deleteConfirm) {
+														deleteConfirm = true
+														revokeConfirm = false
+														handle.update()
+														return
+													}
+													void deleteSelectedToken()
+												}),
+												css(dangerButtonCss),
+											]}
+										>
+											{saveState === 'deleting'
+												? 'Deleting...'
+												: deleteConfirm
+													? 'Confirm permanent delete'
+													: 'Delete permanently'}
+										</button>
+									</div>
+								</section>
+							) : null}
+
+							{requestedTokenId && !selectedToken ? (
+								<section mix={css(cardCss)}>
+									<h2 mix={css(cardTitleCss)}>Token not found</h2>
+									<p mix={css(descriptionCss)}>
+										This package invocation token does not exist for this
+										account or is no longer available.
+									</p>
+									<button
+										type="button"
+										disabled={isMutating}
+										mix={[
+											on('click', () => {
+												selectedTokenId = null
+												editorState = createEmptyEditorState()
+												editMode = false
+												if (typeof window !== 'undefined') {
+													window.history.pushState(
+														null,
+														'',
+														accountPackageInvocationTokensBasePath,
+													)
+													lastLoadedHref = window.location.href
+												}
+												handle.update()
+											}),
+											css(secondaryButtonCss),
+										]}
+									>
+										Back to tokens
+									</button>
 								</section>
 							) : null}
 
