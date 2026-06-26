@@ -1103,7 +1103,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										</div>
 										<span mix={css(descriptionCss)}>
 											Use Generate when the exact bearer value does not matter.
-											Copy or deliver the raw value before saving.
+											Copy or deliver this exact raw value to the external
+											service or secret before saving.
 										</span>
 									</label>
 
@@ -1338,7 +1339,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											</div>
 											<span mix={css(descriptionCss)}>
 												Leave this blank to keep the current token value. Kody
-												stores only the hash of any new value.
+												stores only the hash of any new value, so copy or
+												deliver the exact replacement before saving.
 											</span>
 										</label>
 									</div>

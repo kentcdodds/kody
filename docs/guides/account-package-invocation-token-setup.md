@@ -80,11 +80,30 @@ package id scope.
    value before creating the token.
    - For rotation, ask the user to open the existing token detail URL and paste
      or generate the new raw token in the **Token value** section.
+   - The external service or secret store must receive the exact raw value that
+     was pasted/generated. If invocation later returns `invalid_token`, rotate
+     the package invocation token and update the external secret with the newly
+     copied value.
 4. Instruct the external caller to send:
    - `Authorization: Bearer <raw-token>`
    - JSON `source` matching one of the allowed sources when sources are scoped
 5. Never display, log, store in docs, or send raw token material through chat or
    query params.
+
+## Verification notes for agents
+
+The account token pages are browser-session UI routes. Fetching
+`/account/package-invocation-tokens` from MCP `execute` returns an HTML app
+shell, not the client-loaded token list, and
+`/account/package-invocation-tokens.json` requires the signed-in browser session
+cookie. Agents should not treat missing token metadata in the HTML shell as
+proof that a token was not saved.
+
+For external invocation smoke tests, the first failure boundary is bearer-token
+authentication. A `401 invalid_token` or `Invalid package invocation token`
+response means the presented raw bearer value did not match any active stored
+package invocation token for the route; package export names and `source` policy
+are checked only after authentication succeeds.
 
 ## Related
 
