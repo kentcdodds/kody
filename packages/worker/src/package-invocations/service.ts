@@ -1,4 +1,5 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
+import { normalizePackageInvocationExportName } from '@kody-internal/shared/public-urls.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
@@ -126,14 +127,7 @@ const maxPackageRuntimeInvokeDepth = 8
 export const packageInvocationScopeWildcard = '*'
 
 export function normalizeExportName(exportName: string) {
-	const trimmed = exportName.trim()
-	if (!trimmed) {
-		throw new Error('Package export name must not be empty.')
-	}
-	if (trimmed === '.' || trimmed === './') {
-		return '.'
-	}
-	return trimmed.startsWith('./') ? trimmed : `./${trimmed}`
+	return normalizePackageInvocationExportName(exportName)
 }
 
 function normalizeNullableString(value: string | null | undefined) {

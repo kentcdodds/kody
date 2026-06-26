@@ -64,6 +64,7 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 				user: {
 					userId: 'user-1',
 					email: 'me@kentcdodds.com',
+					username: 'kentcdodds',
 					displayName: 'Kent',
 				},
 				remoteConnectors: null,
@@ -91,6 +92,19 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 				types_path: null,
 				description: null,
 				type_definition: null,
+				external_invocation: {
+					method: 'POST',
+					url: 'https://heykody.dev/@kentcdodds/api/package-invocations/discord-gateway/.',
+					path: '/@kentcdodds/api/package-invocations/discord-gateway/.',
+					owner_username: 'kentcdodds',
+					kody_id: 'discord-gateway',
+					route_export_name: '.',
+					normalized_export_name: '.',
+					token_setup_url:
+						'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=discord-gateway&exportNames=.',
+					source_guidance:
+						'If the package invocation token is scoped to allowedSources, include JSON "source" with the exact allowed source label. Otherwise omit "source" or send null.',
+				},
 			},
 			{
 				subpath: './post-message',
@@ -99,6 +113,19 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 				types_path: 'src/post-message.ts',
 				description: null,
 				type_definition: null,
+				external_invocation: {
+					method: 'POST',
+					url: 'https://heykody.dev/@kentcdodds/api/package-invocations/discord-gateway/post-message',
+					path: '/@kentcdodds/api/package-invocations/discord-gateway/post-message',
+					owner_username: 'kentcdodds',
+					kody_id: 'discord-gateway',
+					route_export_name: 'post-message',
+					normalized_export_name: './post-message',
+					token_setup_url:
+						'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=discord-gateway&exportNames=post-message',
+					source_guidance:
+						'If the package invocation token is scoped to allowedSources, include JSON "source" with the exact allowed source label. Otherwise omit "source" or send null.',
+				},
 			},
 		],
 	})

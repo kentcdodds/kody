@@ -14,6 +14,7 @@ import {
 	type PackageReferencedTypeProjection,
 } from '#worker/package-registry/manifest.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
+import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import {
 	escapeMarkdownText,
 	formatMarkdownInlineCode,
@@ -248,6 +249,17 @@ export type SearchEntityDetailStructured =
 				// Full type source is no longer emitted by default; keep the nullable
 				// field for structured-output compatibility with existing clients.
 				typesSource: string | null
+				externalInvocation: {
+					method: 'POST'
+					url: string
+					path: string
+					ownerUsername: string
+					kodyId: string
+					routeExportName: string
+					normalizedExportName: string
+					tokenSetupUrl: string
+					sourceGuidance: string
+				} | null
 			}>
 			jobs: Array<{
 				name: string
@@ -330,7 +342,9 @@ export type SearchEntityDetail =
 			record: SavedPackageRecord
 			manifest: AuthoredPackageJson
 			files: Record<string, string>
+			baseUrl: string
 			hostedUrl: string | null
+			ownerUsername?: string | null
 	  }
 	| {
 			type: 'secret'
@@ -837,6 +851,14 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				exportDetail.subpath,
 			),
 			typesSource: null,
+			externalInvocation: detail.ownerUsername
+				? buildExternalPackageInvocationDescriptor({
+						baseUrl: detail.baseUrl,
+						ownerUsername: detail.ownerUsername,
+						kodyId: detail.record.kodyId,
+						exportName: exportDetail.subpath,
+					})
+				: null,
 		}))
 		const jobs = Object.entries(detail.manifest.kody.jobs ?? {}).map(
 			([jobName, job]) => ({
@@ -891,6 +913,14 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				lines.push(
 					`- \`${exportDetail.subpath}\` -> \`${exportDetail.importSpecifier}\`${exportDetail.runtimeTarget ? ` (runtime target: \`${exportDetail.runtimeTarget}\`)` : ''}${exportDetail.typesPath ? ` (types: \`${exportDetail.typesPath}\`)` : ''}`,
 				)
+				if (exportDetail.externalInvocation) {
+					lines.push(
+						`  - External invocation: \`${exportDetail.externalInvocation.method} ${exportDetail.externalInvocation.url}\``,
+						`  - Route export name: \`${exportDetail.externalInvocation.routeExportName}\`; normalized export name for token scope checks: \`${exportDetail.externalInvocation.normalizedExportName}\``,
+						`  - Token setup URL: \`${exportDetail.externalInvocation.tokenSetupUrl}\` (setup only; not an invocation URL)`,
+						`  - Source: ${escapeMarkdownText(exportDetail.externalInvocation.sourceGuidance)}`,
+					)
+				}
 				for (const exportedFunction of exportDetail.functions) {
 					if (exportedFunction.description) {
 						lines.push(

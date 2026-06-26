@@ -63,6 +63,20 @@ function notFoundResponse() {
 	)
 }
 
+function ownerSlugRequiredResponse() {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'owner_slug_required',
+				message:
+					'Package invocation endpoints must include the package owner slug: POST /@:username/api/package-invocations/:kodyId/:exportName.',
+			},
+		},
+		{ status: 404 },
+	)
+}
+
 function readBearerToken(request: Request) {
 	const authHeader = request.headers.get('Authorization')
 	if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -98,6 +112,15 @@ function parsePackageInvocationPath(pathname: string) {
 		return null
 	}
 	return { username, kodyId, exportName }
+}
+
+function isUnscopedPackageInvocationPath(pathname: string) {
+	const parts = pathname.split('/').filter(Boolean)
+	return (
+		parts.length >= 4 &&
+		parts[0] === 'api' &&
+		parts[1] === 'package-invocations'
+	)
 }
 
 async function resolveTokenScope(input: {
@@ -170,7 +193,10 @@ async function readRequestBody(
 }
 
 export function isPackageInvocationApiRequest(pathname: string) {
-	return parsePackageInvocationPath(pathname) !== null
+	return (
+		parsePackageInvocationPath(pathname) !== null ||
+		isUnscopedPackageInvocationPath(pathname)
+	)
 }
 
 export async function handlePackageInvocationApiRequest(
@@ -178,7 +204,11 @@ export async function handlePackageInvocationApiRequest(
 	env: Env,
 	ctx?: ExecutionContext,
 ) {
-	const route = parsePackageInvocationPath(new URL(request.url).pathname)
+	const pathname = new URL(request.url).pathname
+	if (isUnscopedPackageInvocationPath(pathname)) {
+		return ownerSlugRequiredResponse()
+	}
+	const route = parsePackageInvocationPath(pathname)
 	if (!route) {
 		return notFoundResponse()
 	}
