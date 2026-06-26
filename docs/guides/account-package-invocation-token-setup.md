@@ -145,15 +145,16 @@ shell, not the client-loaded token list, and
 cookie. Agents should not treat missing token metadata in the HTML shell as
 proof that a token was not saved.
 
-For external invocation smoke tests, the first failure boundary is bearer-token
-authentication on a correctly shaped endpoint. If a request returns
-`invalid_token`, first verify the endpoint includes the `@:username` owner slug
-and that the slug matches the package owner. The correct route shape is
-`/@:username/api/package-invocations/:kodyId/:exportName`;
-`/api/package-invocations/...` is missing the owner slug and is not an
-invocation route. After the endpoint shape and owner slug are confirmed, rotate
-the package invocation token or check that the external secret contains the
-exact active raw bearer value.
+For external invocation smoke tests, check failures in this order:
+
+1. `owner_slug_required`: the endpoint is missing the `@:username` owner slug.
+   Use `/@:username/api/package-invocations/:kodyId/:exportName`;
+   `/api/package-invocations/...` is not an invocation route.
+2. `not_found`: verify the owner slug matches the package owner.
+3. `invalid_token` or `Invalid package invocation token`: the request reached
+   bearer-token authentication on a correctly shaped owner-scoped endpoint.
+   Rotate the package invocation token or check that the external secret
+   contains the exact active raw bearer value.
 
 Package export names and `source` policy are checked only after bearer-token
 authentication succeeds.

@@ -1,6 +1,7 @@
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
 import {
 	invokePackageExport,
 	type PackageInvocationTokenScope,
@@ -107,7 +108,11 @@ function parsePackageInvocationPath(pathname: string) {
 	}
 	const username = decodePathComponent(parts[0].slice(1))
 	const kodyId = decodePathComponent(parts[3] ?? '')
-	const exportName = decodePathComponent(parts.slice(4).join('/'))
+	const routeExportName = decodePathComponent(parts.slice(4).join('/'))
+	const exportName =
+		routeExportName === packageInvocationRootExportRouteSegment
+			? '.'
+			: routeExportName
 	if (!username || !kodyId || !exportName) {
 		return null
 	}

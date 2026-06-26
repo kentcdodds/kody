@@ -20,6 +20,11 @@ export type ExternalPackageInvocationDescriptor = {
 const sourceGuidance =
 	'If the package invocation token is scoped to allowedSources, include JSON "source" with the exact allowed source label. Otherwise omit "source" or send null.'
 
+function buildPackageInvocationTokenSetupExportName(exportName: string) {
+	const normalized = normalizePackageInvocationExportName(exportName)
+	return normalized.startsWith('./') ? normalized.slice(2) : normalized
+}
+
 export function buildPackageInvocationTokenSetupUrl(input: {
 	baseUrl: string
 	kodyId: string
@@ -29,7 +34,7 @@ export function buildPackageInvocationTokenSetupUrl(input: {
 	url.searchParams.set('packageKodyIds', input.kodyId)
 	url.searchParams.set(
 		'exportNames',
-		buildPackageInvocationRouteExportName(input.exportName),
+		buildPackageInvocationTokenSetupExportName(input.exportName),
 	)
 	return url.toString()
 }
@@ -51,12 +56,12 @@ export function buildExternalPackageInvocationDescriptor(input: {
 			origin: input.baseUrl,
 			username: input.ownerUsername,
 			kodyId: input.kodyId,
-			exportName: routeExportName,
+			exportName: normalizedExportName,
 		}),
 		path: buildPackageInvocationPath({
 			username: input.ownerUsername,
 			kodyId: input.kodyId,
-			exportName: routeExportName,
+			exportName: normalizedExportName,
 		}),
 		ownerUsername: input.ownerUsername,
 		kodyId: input.kodyId,
@@ -65,7 +70,7 @@ export function buildExternalPackageInvocationDescriptor(input: {
 		tokenSetupUrl: buildPackageInvocationTokenSetupUrl({
 			baseUrl: input.baseUrl,
 			kodyId: input.kodyId,
-			exportName: routeExportName,
+			exportName: normalizedExportName,
 		}),
 		sourceGuidance,
 	}

@@ -29,6 +29,24 @@ test('canonical package invocation descriptor includes owner slug and normalized
 	expect(descriptor.sourceGuidance).toContain('"source"')
 })
 
+test('canonical root export invocation descriptor uses a URL-safe route segment', () => {
+	const descriptor = buildExternalPackageInvocationDescriptor({
+		baseUrl: 'https://heykody.dev',
+		ownerUsername: 'kentcdodds',
+		kodyId: 'discord-gateway',
+		exportName: '.',
+	})
+
+	expect(descriptor).toMatchObject({
+		url: 'https://heykody.dev/@kentcdodds/api/package-invocations/discord-gateway/__root__',
+		path: '/@kentcdodds/api/package-invocations/discord-gateway/__root__',
+		routeExportName: '__root__',
+		normalizedExportName: '.',
+		tokenSetupUrl:
+			'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=discord-gateway&exportNames=.',
+	})
+})
+
 test('documented full invocation URL examples are owner scoped', async () => {
 	const paths = [
 		'docs/guides/account-package-invocation-token-setup.md',

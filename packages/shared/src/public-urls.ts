@@ -23,6 +23,8 @@ export function buildPackageAppUrl(input: {
 	return `${input.origin.trim().replace(/\/+$/, '')}${buildPackageAppPath(input)}`
 }
 
+export const packageInvocationRootExportRouteSegment = '__root__'
+
 export function normalizePackageInvocationExportName(exportName: string) {
 	const trimmed = exportName.trim()
 	if (!trimmed) {
@@ -36,6 +38,7 @@ export function normalizePackageInvocationExportName(exportName: string) {
 
 export function buildPackageInvocationRouteExportName(exportName: string) {
 	const normalized = normalizePackageInvocationExportName(exportName)
+	if (normalized === '.') return packageInvocationRootExportRouteSegment
 	return normalized.startsWith('./') ? normalized.slice(2) : normalized
 }
 

@@ -47,11 +47,6 @@ export const getPackageCapability = defineDomainCapability(
 				username: user.username ?? null,
 				email: user.email ?? null,
 			})
-			if (!username) {
-				throw new Error(
-					'Username is required to build package invocation URLs.',
-				)
-			}
 			const loaded = await loadPackageManifestBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -79,25 +74,27 @@ export const getPackageCapability = defineDomainCapability(
 					types_path: exportDetail.typesPath,
 					description: exportDetail.description,
 					type_definition: exportDetail.typeDefinition,
-					external_invocation: (() => {
-						const descriptor = buildExternalPackageInvocationDescriptor({
-							baseUrl: ctx.callerContext.baseUrl,
-							ownerUsername: username,
-							kodyId: saved.kodyId,
-							exportName: exportDetail.subpath,
-						})
-						return {
-							method: descriptor.method,
-							url: descriptor.url,
-							path: descriptor.path,
-							owner_username: descriptor.ownerUsername,
-							kody_id: descriptor.kodyId,
-							route_export_name: descriptor.routeExportName,
-							normalized_export_name: descriptor.normalizedExportName,
-							token_setup_url: descriptor.tokenSetupUrl,
-							source_guidance: descriptor.sourceGuidance,
-						}
-					})(),
+					external_invocation: username
+						? (() => {
+								const descriptor = buildExternalPackageInvocationDescriptor({
+									baseUrl: ctx.callerContext.baseUrl,
+									ownerUsername: username,
+									kodyId: saved.kodyId,
+									exportName: exportDetail.subpath,
+								})
+								return {
+									method: descriptor.method,
+									url: descriptor.url,
+									path: descriptor.path,
+									owner_username: descriptor.ownerUsername,
+									kody_id: descriptor.kodyId,
+									route_export_name: descriptor.routeExportName,
+									normalized_export_name: descriptor.normalizedExportName,
+									token_setup_url: descriptor.tokenSetupUrl,
+									source_guidance: descriptor.sourceGuidance,
+								}
+							})()
+						: null,
 				})),
 			}
 		},

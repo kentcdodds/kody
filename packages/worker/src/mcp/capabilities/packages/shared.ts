@@ -71,7 +71,7 @@ export const packageExportSurfaceSchema = z.object({
 			route_export_name: z
 				.string()
 				.describe(
-					'Export name segment used in the URL path; leading ./ is intentionally omitted.',
+					'Export name segment used in the URL path; leading ./ is omitted and the root export uses __root__.',
 				),
 			normalized_export_name: z
 				.string()
@@ -83,8 +83,9 @@ export const packageExportSurfaceSchema = z.object({
 				),
 			source_guidance: z.string(),
 		})
+		.nullable()
 		.describe(
-			'HTTP invocation metadata for external trusted callers using package invocation tokens.',
+			'HTTP invocation metadata for external trusted callers using package invocation tokens, or null when no public owner username is available.',
 		),
 })
 

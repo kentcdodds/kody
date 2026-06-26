@@ -392,3 +392,52 @@ test('package invocation API invokes the package export with the scoped token co
 		logs: ['ran'],
 	})
 })
+
+test('package invocation API translates the root export route segment before invoking', async () => {
+	invocationMockModule.invokePackageExport.mockResolvedValue({
+		status: 200,
+		body: {
+			ok: true,
+			exportName: '.',
+			idempotency: {
+				key: 'evt-root',
+				replayed: false,
+			},
+			result: { ok: true },
+			logs: [],
+		},
+	})
+
+	const response = await handlePackageInvocationApiRequest(
+		new Request(
+			'https://example.com/@my-user/api/package-invocations/discord-gateway/__root__',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer private-token-123',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					params: { content: 'hi' },
+					idempotencyKey: 'evt-root',
+					source: 'discord-gateway',
+				}),
+			},
+		),
+		await createEnv({
+			tokenRow: {
+				export_names_json: JSON.stringify(['.']),
+			},
+		}),
+		createContext(),
+	)
+
+	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledWith(
+		expect.objectContaining({
+			request: expect.objectContaining({
+				exportName: '.',
+			}),
+		}),
+	)
+	expect(response.status).toBe(200)
+})
