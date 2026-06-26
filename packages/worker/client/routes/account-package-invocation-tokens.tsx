@@ -453,10 +453,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		deleteConfirm = false
 		message = null
 		messageTone = 'info'
-		if (typeof window !== 'undefined') {
-			window.history.pushState(null, '', buildTokenDetailPath(token.id))
-			lastLoadedHref = window.location.href
-		}
 		handle.update()
 	}
 
@@ -830,7 +826,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		const isMutating = saveState !== 'idle'
 		const isCreatingToken = isNewTokenPath(currentHref)
 		const requestedTokenId = getSelectedTokenIdFromPath(currentHref)
-		const effectiveSelectedTokenId = requestedTokenId ?? selectedTokenId
+		const effectiveSelectedTokenId =
+			typeof window === 'undefined' ? selectedTokenId : requestedTokenId
 		const selectedToken =
 			tokens.find((token) => token.id === effectiveSelectedTokenId) ?? null
 		const isEditingSelectedToken =
