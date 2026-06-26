@@ -54,16 +54,16 @@ Repeat params or comma-separate values for list fields. The form also accepts
 common snake_case and kebab-case aliases so agents can construct URLs from API
 field names without extra translation.
 
-| Param                                       | Required | Description                                                                                                             |
-| ------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `name`                                      | yes      | Human-readable token name.                                                                                              |
-| `packageKodyIds` / `packageKodyId`          | yes\*    | Saved package `kody.id` values, or `*` for all packages owned by the signed-in Kody user.                               |
-| `kodyIds` / `kodyId`                        | yes\*    | Alias for `packageKodyIds`.                                                                                             |
-| `packageIds` / `packageId`                  | yes\*    | Saved package ids, or `*` for all packages owned by the signed-in Kody user.                                            |
-| `exportNames` / `exportName`                | yes      | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports.                    |
-| `allowedSources` / `allowedSource`          | no       | Optional exact source labels the external caller may send in request JSON.                                              |
-| `sources` / `source`                        | no       | Alias for `allowedSources`.                                                                                             |
-| `package_kody_ids`, `package-kody-ids`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                                    |
+| Param                                       | Required | Description                                                                                         |
+| ------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `name`                                      | yes      | Human-readable token name.                                                                          |
+| `packageKodyIds` / `packageKodyId`          | yes\*    | Saved package `kody.id` values, or `*` for all packages owned by the signed-in Kody user.           |
+| `kodyIds` / `kodyId`                        | yes\*    | Alias for `packageKodyIds`.                                                                         |
+| `packageIds` / `packageId`                  | yes\*    | Saved package ids, or `*` for all packages owned by the signed-in Kody user.                        |
+| `exportNames` / `exportName`                | yes      | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports. |
+| `allowedSources` / `allowedSource`          | no       | Optional exact source labels the external caller may send in request JSON.                          |
+| `sources` / `source`                        | no       | Alias for `allowedSources`.                                                                         |
+| `package_kody_ids`, `package-kody-ids`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                |
 
 \* At least one package scope is required: either a package Kody id scope or a
 package id scope.

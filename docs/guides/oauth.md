@@ -74,7 +74,8 @@ and the current client credentials.
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
-`integration_list` up front when a provider may have multiple accounts connected.
+`integration_list` up front when a provider may have multiple accounts
+connected.
 
 ## Not the same as MCP OAuth
 
