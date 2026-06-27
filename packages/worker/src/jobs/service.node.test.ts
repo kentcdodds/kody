@@ -28,6 +28,7 @@ const repoMockModule = vi.hoisted(() => ({
 		artifactAccessUnavailable: false,
 	})),
 	listRepoSessionsBySource: vi.fn(async () => []),
+	deleteRepoSessionsBySourceForUser: vi.fn(async () => 0),
 	cleanupSessionBranch: vi.fn(async () => ({ ok: true })),
 }))
 
@@ -54,6 +55,8 @@ vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	listRepoSessionsBySource: (...args: Array<unknown>) =>
 		repoMockModule.listRepoSessionsBySource(...args),
+	deleteRepoSessionsBySourceForUser: (...args: Array<unknown>) =>
+		repoMockModule.deleteRepoSessionsBySourceForUser(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-do.ts', () => ({
@@ -80,6 +83,8 @@ afterEach(() => {
 	})
 	repoMockModule.listRepoSessionsBySource.mockClear()
 	repoMockModule.listRepoSessionsBySource.mockResolvedValue([])
+	repoMockModule.deleteRepoSessionsBySourceForUser.mockClear()
+	repoMockModule.deleteRepoSessionsBySourceForUser.mockResolvedValue(0)
 	repoMockModule.cleanupSessionBranch.mockClear()
 	repoMockModule.cleanupSessionBranch.mockResolvedValue({ ok: true })
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
@@ -1157,11 +1162,14 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		userId: callerContext.user.userId,
 		sourceId: created.sourceId,
 	})
-	expect(repoMockModule.cleanupSessionBranch).toHaveBeenCalledWith({
-		sessionId: 'session-1',
-		userId: callerContext.user.userId,
-		reason: 'source_deleted',
-	})
+	expect(repoMockModule.deleteRepoSessionsBySourceForUser).toHaveBeenCalledWith(
+		env.APP_DB,
+		{
+			userId: callerContext.user.userId,
+			sourceId: created.sourceId,
+		},
+	)
+	expect(repoMockModule.cleanupSessionBranch).not.toHaveBeenCalled()
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: callerContext.user.userId,

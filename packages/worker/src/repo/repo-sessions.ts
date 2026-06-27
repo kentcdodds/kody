@@ -119,6 +119,20 @@ export async function listRepoSessionsBySource(
 	return (results ?? []).map(mapRepoSessionRow)
 }
 
+export async function deleteRepoSessionsBySourceForUser(
+	db: D1Database,
+	input: {
+		userId: string
+		sourceId: string
+	},
+): Promise<number> {
+	const result = await db
+		.prepare(`DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?`)
+		.bind(input.userId, input.sourceId)
+		.run()
+	return result.meta.changes ?? 0
+}
+
 export async function listRepoSessionsByUser(
 	db: D1Database,
 	userId: string,

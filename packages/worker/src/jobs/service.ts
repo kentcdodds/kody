@@ -58,8 +58,7 @@ import {
 	getEntitySourceByIdForUser,
 } from '#worker/repo/entity-sources.ts'
 import { cleanupArtifactReposForSource } from '#worker/repo/artifact-repo-cleanup.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import { listRepoSessionsBySource } from '#worker/repo/repo-sessions.ts'
+import { deleteRepoSessionsBySourceForUser } from '#worker/repo/repo-sessions.ts'
 import {
 	loadPublishedEntitySource,
 	type PublishedEntitySource,
@@ -613,27 +612,15 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 	)
 	for (const artifact of due) {
 		try {
-			const source = await getEntitySourceById(
-				input.env.APP_DB,
-				artifact.sourceId,
-			)
+			const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+				id: artifact.sourceId,
+				userId: artifact.userId,
+			})
 			if (
 				source &&
-				source.user_id === artifact.userId &&
 				source.entity_kind === 'job' &&
 				source.entity_id === artifact.jobId
 			) {
-				const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
-					userId: artifact.userId,
-					sourceId: source.id,
-				})
-				for (const session of sessions) {
-					await repoSessionRpc(input.env, session.id).cleanupSessionBranch({
-						sessionId: session.id,
-						userId: artifact.userId,
-						reason: 'source_deleted',
-					})
-				}
 				const artifactCleanup = await cleanupArtifactReposForSource({
 					env: input.env,
 					userId: artifact.userId,
@@ -648,6 +635,10 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 						`Artifact repo cleanup failed for source ${source.id}.`,
 					)
 				}
+				await deleteRepoSessionsBySourceForUser(input.env.APP_DB, {
+					userId: artifact.userId,
+					sourceId: source.id,
+				})
 				await deletePublishedArtifactsForSource({
 					env: input.env,
 					userId: artifact.userId,
@@ -709,17 +700,6 @@ async function cleanupAdHocJobSource(input: {
 	) {
 		return
 	}
-	const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
-		userId: input.userId,
-		sourceId: source.id,
-	})
-	for (const session of sessions) {
-		await repoSessionRpc(input.env, session.id).cleanupSessionBranch({
-			sessionId: session.id,
-			userId: input.userId,
-			reason: 'source_deleted',
-		})
-	}
 	const artifactCleanup = await cleanupArtifactReposForSource({
 		env: input.env,
 		userId: input.userId,
@@ -732,6 +712,10 @@ async function cleanupAdHocJobSource(input: {
 	) {
 		throw new Error(`Artifact repo cleanup failed for source ${source.id}.`)
 	}
+	await deleteRepoSessionsBySourceForUser(input.env.APP_DB, {
+		userId: input.userId,
+		sourceId: source.id,
+	})
 	await deletePublishedArtifactsForSource({
 		env: input.env,
 		userId: input.userId,

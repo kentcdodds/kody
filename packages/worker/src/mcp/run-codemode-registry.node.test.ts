@@ -363,6 +363,22 @@ function createJobMutationDatabase(input: {
 							}
 							if (
 								normalized ===
+								'DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?'
+							) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'repo_sessions',
+											(row) =>
+												row['user_id'] === params[0] &&
+												row['source_id'] === params[1],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							if (
+								normalized ===
 								'DELETE FROM entity_sources WHERE id = ? AND user_id = ?'
 							) {
 								return {
@@ -455,6 +471,33 @@ function createEntitySourceRow(input: {
 	}
 }
 
+function createRepoSessionRow(input: {
+	id: string
+	userId: string
+	sourceId: string
+	sourceRepoId: string
+}) {
+	return {
+		id: input.id,
+		user_id: input.userId,
+		source_id: input.sourceId,
+		source_repo_id: input.sourceRepoId,
+		session_branch: `sessions/${input.id}`,
+		source_branch: 'main',
+		base_commit: 'published-commit-1',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+}
+
 test('buildCodemodeFns updates and deletes jobs through production-shaped bindings', async () => {
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -503,6 +546,14 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 				jobId: job.id,
 				sourceId: job.sourceId,
 				repoId: `job-${job.id}`,
+			}),
+		],
+		repoSessions: [
+			createRepoSessionRow({
+				id: 'session-1',
+				userId: callerContext.user.userId,
+				sourceId: job.sourceId,
+				sourceRepoId: `job-${job.id}-session`,
 			}),
 		],
 	})
@@ -595,6 +646,7 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 			job_id: job.id,
 			deleted: true,
 		})
+		expect(repoSessionAccesses).toEqual([])
 		expect(jobManagerNames).toEqual([
 			callerContext.user.userId,
 			callerContext.user.userId,
@@ -607,12 +659,24 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 			`https://api.cloudflare.test/client/v4/accounts/acct-test/artifacts/namespaces/default/repos/job-${job.id}`,
 			expect.objectContaining({ method: 'DELETE' }),
 		)
+		expect(fetchSpy).toHaveBeenCalledWith(
+			`https://api.cloudflare.test/client/v4/accounts/acct-test/artifacts/namespaces/default/repos/job-${job.id}-session`,
+			expect.objectContaining({ method: 'DELETE' }),
+		)
 		await expect(
 			db
 				.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?')
 				.bind(job.id, callerContext.user.userId)
 				.first<Record<string, unknown>>(),
 		).resolves.toBeNull()
+		await expect(
+			db
+				.prepare(
+					'SELECT * FROM repo_sessions WHERE user_id = ? AND source_id = ? ORDER BY updated_at DESC',
+				)
+				.bind(callerContext.user.userId, job.sourceId)
+				.all<Record<string, unknown>>(),
+		).resolves.toEqual({ results: [] })
 		await expect(
 			db
 				.prepare('SELECT * FROM entity_sources WHERE id = ? AND user_id = ?')
