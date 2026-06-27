@@ -58,6 +58,19 @@ async function createEnv(
 			revoked_at: options.tokenRow?.revoked_at ?? null,
 		},
 	]
+	const remoteConnectorRows = [
+		{
+			id: 'home-default',
+			user_id: tokenUserId,
+			kind: 'home',
+			instance_id: 'default',
+			enabled: 1,
+			attached: 1,
+			encrypted_shared_secret: 'encrypted-secret',
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+		},
+	]
 	return {
 		APP_DB: {
 			prepare(query: string) {
@@ -88,6 +101,20 @@ async function createEnv(
 									) ?? null) as T | null
 								}
 								return null
+							},
+							async all<T = Record<string, unknown>>() {
+								if (query.includes('FROM remote_connector_settings')) {
+									const userId = String(params[0] ?? '')
+									return {
+										results: remoteConnectorRows.filter(
+											(row) =>
+												row.user_id === userId &&
+												row.enabled === 1 &&
+												row.attached === 1,
+										),
+									} as { results: Array<T> }
+								}
+								return { results: [] as Array<T> }
 							},
 							async run() {
 								if (query.includes('UPDATE package_invocation_tokens')) {
@@ -369,6 +396,7 @@ test('package invocation API invokes the package export with the scoped token co
 			packageKodyIds: ['discord-gateway'],
 			exportNames: ['./dispatch-message-created'],
 			sources: ['discord-gateway'],
+			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
 		},
 		request: {
 			packageIdOrKodyId: 'discord-gateway',

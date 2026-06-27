@@ -1,6 +1,7 @@
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
 import {
 	invokePackageExport,
@@ -143,6 +144,10 @@ async function resolveTokenScope(input: {
 		id: record.id,
 	})
 	if (!touched) return null
+	const remoteConnectors = await listAttachedRemoteConnectorRefs({
+		env: input.env,
+		userId: record.user_id,
+	})
 	return {
 		tokenId: record.id,
 		userId: record.user_id,
@@ -152,6 +157,7 @@ async function resolveTokenScope(input: {
 		packageKodyIds: record.packageKodyIds,
 		exportNames: record.exportNames,
 		sources: record.sources,
+		remoteConnectors,
 	}
 }
 
