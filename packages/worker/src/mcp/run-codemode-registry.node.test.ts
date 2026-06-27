@@ -12,6 +12,11 @@ import {
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import {
+	type JobRecord,
+	type PersistedJobCallerContext,
+} from '#worker/jobs/types.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 
 test('createWorkflowTools creates package workflow instances from package context', async () => {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
@@ -186,6 +191,415 @@ vi.mock('#worker/package-runtime/module-graph.ts', async () => {
 					'export default async function main(input = {}) { return input }',
 			},
 		})),
+	}
+})
+
+function createJobMutationDatabase(input: {
+	jobs: Array<Record<string, unknown>>
+	entitySources: Array<Record<string, unknown>>
+	repoSessions?: Array<Record<string, unknown>>
+	publishedBundleArtifacts?: Array<Record<string, unknown>>
+}) {
+	const tables = new Map<string, Array<Record<string, unknown>>>([
+		['jobs', structuredClone(input.jobs)],
+		['entity_sources', structuredClone(input.entitySources)],
+		['repo_sessions', structuredClone(input.repoSessions ?? [])],
+		[
+			'published_bundle_artifacts',
+			structuredClone(input.publishedBundleArtifacts ?? []),
+		],
+	])
+
+	const clone = <T>(value: T): T => structuredClone(value)
+	const table = (name: string) => {
+		const rows = tables.get(name)
+		if (!rows) throw new Error(`Unknown test table: ${name}`)
+		return rows
+	}
+	const selectOne = (
+		name: string,
+		predicate: (row: Record<string, unknown>) => boolean,
+	) => clone(table(name).find(predicate) ?? null)
+	const selectAll = (
+		name: string,
+		predicate: (row: Record<string, unknown>) => boolean,
+	) => clone(table(name).filter(predicate))
+	const deleteWhere = (
+		name: string,
+		predicate: (row: Record<string, unknown>) => boolean,
+	) => {
+		const rows = table(name)
+		const remaining = rows.filter((row) => !predicate(row))
+		tables.set(name, remaining)
+		return rows.length - remaining.length
+	}
+
+	return {
+		prepare(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').trim()
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async first<T = Record<string, unknown>>() {
+							if (
+								normalized === 'SELECT * FROM jobs WHERE id = ? AND user_id = ?'
+							) {
+								return selectOne(
+									'jobs',
+									(row) =>
+										row['id'] === params[0] && row['user_id'] === params[1],
+								) as T | null
+							}
+							if (normalized === 'SELECT * FROM entity_sources WHERE id = ?') {
+								return selectOne(
+									'entity_sources',
+									(row) => row['id'] === params[0],
+								) as T | null
+							}
+							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async all<T = Record<string, unknown>>() {
+							if (
+								normalized ===
+								'SELECT * FROM repo_sessions WHERE user_id = ? AND source_id = ? ORDER BY updated_at DESC'
+							) {
+								return {
+									results: selectAll(
+										'repo_sessions',
+										(row) =>
+											row['user_id'] === params[0] &&
+											row['source_id'] === params[1],
+									) as T[],
+								}
+							}
+							if (
+								normalized ===
+								'SELECT * FROM published_bundle_artifacts WHERE user_id = ? AND source_id = ? ORDER BY updated_at DESC, created_at DESC'
+							) {
+								return {
+									results: selectAll(
+										'published_bundle_artifacts',
+										(row) =>
+											row['user_id'] === params[0] &&
+											row['source_id'] === params[1],
+									) as T[],
+								}
+							}
+							throw new Error(`Unsupported all query: ${query}`)
+						},
+						async run() {
+							if (normalized.startsWith('UPDATE jobs SET')) {
+								const id = params[21]
+								const userId = params[22]
+								const existing = selectOne(
+									'jobs',
+									(row) => row['id'] === id && row['user_id'] === userId,
+								)
+								if (!existing) return { meta: { changes: 0, last_row_id: 0 } }
+								const updated = {
+									...existing,
+									name: params[0],
+									source_id: params[1],
+									published_commit: params[2],
+									repo_check_policy_json: params[3],
+									storage_id: params[4],
+									params_json: params[5],
+									schedule_json: params[6],
+									timezone: params[7],
+									enabled: params[8],
+									kill_switch_enabled: params[9],
+									caller_context_json: params[10],
+									updated_at: params[11],
+									last_run_at: params[12],
+									last_run_status: params[13],
+									last_run_error: params[14],
+									last_duration_ms: params[15],
+									next_run_at: params[16],
+									run_count: params[17],
+									success_count: params[18],
+									error_count: params[19],
+									run_history_json: params[20],
+								}
+								const rows = table('jobs')
+								const index = rows.findIndex(
+									(row) => row['id'] === id && row['user_id'] === userId,
+								)
+								rows[index] = updated
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (
+								normalized === 'DELETE FROM jobs WHERE id = ? AND user_id = ?'
+							) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'jobs',
+											(row) =>
+												row['id'] === params[0] && row['user_id'] === params[1],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							if (
+								normalized ===
+								'DELETE FROM published_bundle_artifacts WHERE user_id = ? AND source_id = ?'
+							) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'published_bundle_artifacts',
+											(row) =>
+												row['user_id'] === params[0] &&
+												row['source_id'] === params[1],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							if (
+								normalized ===
+								'DELETE FROM entity_sources WHERE id = ? AND user_id = ?'
+							) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'entity_sources',
+											(row) =>
+												row['id'] === params[0] && row['user_id'] === params[1],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							throw new Error(`Unsupported run query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as D1Database
+}
+
+function createJobMutationKv() {
+	const deletedKeys: Array<string> = []
+	return {
+		deletedKeys,
+		async get() {
+			return null
+		},
+		async put() {},
+		async delete(key: string) {
+			deletedKeys.push(key)
+		},
+	} as unknown as KVNamespace & { deletedKeys: Array<string> }
+}
+
+function createJobRow(
+	job: JobRecord,
+	callerContext: PersistedJobCallerContext,
+) {
+	return {
+		id: job.id,
+		user_id: job.userId,
+		name: job.name,
+		source_id: job.sourceId,
+		published_commit: job.publishedCommit,
+		repo_check_policy_json: job.repoCheckPolicy
+			? JSON.stringify(job.repoCheckPolicy)
+			: null,
+		storage_id: job.storageId,
+		params_json: job.params ? JSON.stringify(job.params) : null,
+		schedule_json: JSON.stringify(job.schedule),
+		timezone: job.timezone,
+		enabled: job.enabled ? 1 : 0,
+		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
+		caller_context_json: JSON.stringify(callerContext),
+		created_at: job.createdAt,
+		updated_at: job.updatedAt,
+		last_run_at: job.lastRunAt ?? null,
+		last_run_status: job.lastRunStatus ?? null,
+		last_run_error: job.lastRunError ?? null,
+		last_duration_ms: job.lastDurationMs ?? null,
+		next_run_at: job.nextRunAt,
+		run_count: job.runCount,
+		success_count: job.successCount,
+		error_count: job.errorCount,
+		run_history_json: JSON.stringify(job.runHistory),
+	}
+}
+
+function createEntitySourceRow(input: {
+	userId: string
+	jobId: string
+	sourceId: string
+	repoId: string
+}): EntitySourceRow {
+	return {
+		id: input.sourceId,
+		user_id: input.userId,
+		entity_kind: 'job',
+		entity_id: input.jobId,
+		repo_id: input.repoId,
+		published_commit: 'published-commit-1',
+		indexed_commit: null,
+		manifest_path: 'kody.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+}
+
+test('buildCodemodeFns updates and deletes jobs through production-shaped bindings', async () => {
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+		storageContext: {
+			sessionId: null,
+			appId: 'app-123',
+			storageId: null,
+		},
+	}) as PersistedJobCallerContext
+	const job: JobRecord = {
+		version: 1,
+		id: '504513c3-f29e-47f0-9ea1-402569ebef54',
+		userId: callerContext.user.userId,
+		name: 'hrv-discord-reaction-poller',
+		sourceId: 'job-source-1',
+		publishedCommit: 'published-commit-1',
+		storageId: `job:504513c3-f29e-47f0-9ea1-402569ebef54`,
+		params: {
+			channelId: 'discord-channel-1',
+		},
+		schedule: {
+			type: 'interval',
+			every: '5m',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-16T00:05:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+	const db = createJobMutationDatabase({
+		jobs: [createJobRow(job, callerContext)],
+		entitySources: [
+			createEntitySourceRow({
+				userId: callerContext.user.userId,
+				jobId: job.id,
+				sourceId: job.sourceId,
+				repoId: `job-${job.id}`,
+			}),
+		],
+	})
+	const kv = createJobMutationKv()
+	const repoSessionAccesses: Array<string> = []
+	const env = {
+		APP_DB: db,
+		SENTRY_ENVIRONMENT: 'production',
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+		BUNDLE_ARTIFACTS_KV: kv,
+		REPO_SESSION: {
+			idFromName(name: string) {
+				repoSessionAccesses.push(name)
+				throw new Error('metadata-only job updates must not publish source')
+			},
+			get() {
+				throw new Error('metadata-only job updates must not open repo sessions')
+			},
+		},
+		JOB_MANAGER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					async syncAlarm(input: { userId: string }) {
+						return {
+							ok: true as const,
+							userId: input.userId,
+							nextRunAt: null,
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+		new Response(
+			JSON.stringify({
+				success: true,
+				result: { id: 'artifact-repo-1' },
+				errors: [],
+				messages: [],
+			}),
+			{ status: 200 },
+		),
+	)
+
+	try {
+		const codemode = await buildCodemodeFns(env, callerContext)
+		await expect(
+			codemode.job_update({
+				id: job.id,
+				enabled: false,
+			}),
+		).resolves.toMatchObject({
+			job_id: job.id,
+			name: 'hrv-discord-reaction-poller',
+			enabled: false,
+			params: {
+				channelId: 'discord-channel-1',
+			},
+		})
+		expect(repoSessionAccesses).toEqual([])
+		await expect(
+			db
+				.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?')
+				.bind(job.id, callerContext.user.userId)
+				.first<Record<string, unknown>>(),
+		).resolves.toMatchObject({
+			enabled: 0,
+		})
+
+		await expect(codemode.job_delete({ id: job.id })).resolves.toEqual({
+			job_id: job.id,
+			deleted: true,
+		})
+		expect(fetchSpy).toHaveBeenCalledWith(
+			`https://api.cloudflare.test/client/v4/accounts/acct-test/artifacts/namespaces/default/repos/job-${job.id}`,
+			expect.objectContaining({ method: 'DELETE' }),
+		)
+		await expect(
+			db
+				.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?')
+				.bind(job.id, callerContext.user.userId)
+				.first<Record<string, unknown>>(),
+		).resolves.toBeNull()
+		await expect(
+			db
+				.prepare('SELECT * FROM entity_sources WHERE id = ?')
+				.bind(job.sourceId)
+				.first<Record<string, unknown>>(),
+		).resolves.toBeNull()
+		expect(kv.deletedKeys).toEqual([
+			`source-snapshot:v1:${job.sourceId}:published-commit-1`,
+			`source-manifest-snapshot:v1:${job.sourceId}:published-commit-1`,
+		])
+	} finally {
+		fetchSpy.mockRestore()
 	}
 })
 
