@@ -376,6 +376,17 @@ function createDatabase() {
 										row['id'] === params[0] && row['user_id'] === params[1],
 								) as T | null
 							}
+							if (
+								query.includes(
+									'SELECT * FROM entity_sources WHERE id = ? AND user_id = ?',
+								)
+							) {
+								return selectOne(
+									'entity_sources',
+									(row) =>
+										row['id'] === params[0] && row['user_id'] === params[1],
+								) as T | null
+							}
 							if (query.includes('SELECT * FROM entity_sources WHERE id = ?')) {
 								return selectOne(
 									'entity_sources',

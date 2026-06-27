@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	deleteArtifactRepo: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	listEntitySourcesByUser: vi.fn(),
 	listRepoSessionsBySource: vi.fn(async () => []),
 	listRepoSessionsByUser: vi.fn(async () => []),
@@ -20,6 +21,8 @@ vi.mock('./artifacts.ts', () => ({
 vi.mock('./entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 	listEntitySourcesByUser: (...args: Array<unknown>) =>
 		mockModule.listEntitySourcesByUser(...args),
 }))
@@ -70,7 +73,7 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 		}),
 	).toBe(true)
 
-	mockModule.getEntitySourceById.mockResolvedValue({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
 		repo_id: 'package-pkg-1',
@@ -112,7 +115,7 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 	).toBe(2)
 
 	mockModule.listRepoSessionsByUser.mockResolvedValue([])
-	mockModule.getEntitySourceById.mockResolvedValue({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-other',
 		repo_id: 'package-pkg-1',
@@ -152,7 +155,7 @@ test('generic source cleanup deletes the source root with user scope checks', as
 		id: 'repo-deleted',
 		alreadyDeleted: false,
 	})
-	mockModule.getEntitySourceById.mockResolvedValue({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
 		repo_id: 'job-job-1',
@@ -170,7 +173,7 @@ test('generic source cleanup deletes the source root with user scope checks', as
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('job-job-1')
 
 	mockModule.deleteArtifactRepo.mockClear()
-	mockModule.getEntitySourceById.mockResolvedValue({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-2',
 		repo_id: 'job-job-1',
@@ -191,7 +194,7 @@ test('generic source cleanup deletes the source root with user scope checks', as
 	expect(warnings).toHaveLength(1)
 
 	mockModule.hasArtifactsAccess.mockReturnValue(false)
-	mockModule.getEntitySourceById.mockResolvedValue({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
 		repo_id: 'job-job-1',

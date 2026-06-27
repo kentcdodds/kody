@@ -55,6 +55,7 @@ import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
+	getEntitySourceByIdForUser,
 } from '#worker/repo/entity-sources.ts'
 import { cleanupArtifactReposForSource } from '#worker/repo/artifact-repo-cleanup.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
@@ -697,10 +698,12 @@ async function cleanupAdHocJobSource(input: {
 	if (!input.sourceId) {
 		return
 	}
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
 	if (
 		!source ||
-		source.user_id !== input.userId ||
 		source.entity_kind !== 'job' ||
 		source.entity_id !== input.jobId
 	) {
@@ -927,7 +930,9 @@ function shouldSyncJobSourceForUpdate(body: JobUpdateInput) {
 		body.code !== undefined ||
 		body.name !== undefined ||
 		body.schedule !== undefined ||
-		body.timezone !== undefined
+		body.timezone !== undefined ||
+		body.sourceId !== undefined ||
+		body.publishedCommit !== undefined
 	)
 }
 

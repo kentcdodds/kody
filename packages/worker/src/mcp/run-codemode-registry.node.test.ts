@@ -250,10 +250,14 @@ function createJobMutationDatabase(input: {
 										row['id'] === params[0] && row['user_id'] === params[1],
 								) as T | null
 							}
-							if (normalized === 'SELECT * FROM entity_sources WHERE id = ?') {
+							if (
+								normalized ===
+								'SELECT * FROM entity_sources WHERE id = ? AND user_id = ?'
+							) {
 								return selectOne(
 									'entity_sources',
-									(row) => row['id'] === params[0],
+									(row) =>
+										row['id'] === params[0] && row['user_id'] === params[1],
 								) as T | null
 							}
 							throw new Error(`Unsupported first query: ${query}`)
@@ -504,6 +508,8 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 	})
 	const kv = createJobMutationKv()
 	const repoSessionAccesses: Array<string> = []
+	const jobManagerNames: Array<string> = []
+	const jobManagerSyncPayloads: Array<{ userId: string; source?: string }> = []
 	const env = {
 		APP_DB: db,
 		SENTRY_ENVIRONMENT: 'production',
@@ -522,11 +528,18 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 		},
 		JOB_MANAGER: {
 			idFromName(name: string) {
+				jobManagerNames.push(name)
+				if (name !== callerContext.user.userId) {
+					throw new Error(
+						`Expected JOB_MANAGER to be scoped to ${callerContext.user.userId}`,
+					)
+				}
 				return name as unknown as DurableObjectId
 			},
 			get() {
 				return {
 					async syncAlarm(input: { userId: string }) {
+						jobManagerSyncPayloads.push(input)
 						return {
 							ok: true as const,
 							userId: input.userId,
@@ -565,6 +578,10 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 			},
 		})
 		expect(repoSessionAccesses).toEqual([])
+		expect(jobManagerNames).toEqual([callerContext.user.userId])
+		expect(jobManagerSyncPayloads).toMatchObject([
+			{ userId: callerContext.user.userId },
+		])
 		await expect(
 			db
 				.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?')
@@ -578,6 +595,14 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 			job_id: job.id,
 			deleted: true,
 		})
+		expect(jobManagerNames).toEqual([
+			callerContext.user.userId,
+			callerContext.user.userId,
+		])
+		expect(jobManagerSyncPayloads).toMatchObject([
+			{ userId: callerContext.user.userId },
+			{ userId: callerContext.user.userId },
+		])
 		expect(fetchSpy).toHaveBeenCalledWith(
 			`https://api.cloudflare.test/client/v4/accounts/acct-test/artifacts/namespaces/default/repos/job-${job.id}`,
 			expect.objectContaining({ method: 'DELETE' }),
@@ -590,8 +615,8 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 		).resolves.toBeNull()
 		await expect(
 			db
-				.prepare('SELECT * FROM entity_sources WHERE id = ?')
-				.bind(job.sourceId)
+				.prepare('SELECT * FROM entity_sources WHERE id = ? AND user_id = ?')
+				.bind(job.sourceId, callerContext.user.userId)
 				.first<Record<string, unknown>>(),
 		).resolves.toBeNull()
 		expect(kv.deletedKeys).toEqual([

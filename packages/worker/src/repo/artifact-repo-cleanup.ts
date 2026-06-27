@@ -4,7 +4,7 @@ import {
 	type ArtifactDeleteRepoResult,
 } from './artifacts.ts'
 import {
-	getEntitySourceById,
+	getEntitySourceByIdForUser,
 	listEntitySourcesByUser,
 } from './entity-sources.ts'
 import {
@@ -120,7 +120,10 @@ export async function cleanupArtifactReposForPackage(input: {
 	sourceId: string
 	warnings?: Array<string>
 }) {
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
 	if (!source) return 0
 	if (source.user_id !== input.userId) {
 		input.warnings?.push(
@@ -161,7 +164,10 @@ export async function cleanupArtifactReposForSource(input: {
 	deleted: number
 	artifactAccessUnavailable: boolean
 }> {
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
 	if (!source) return { deleted: 0, artifactAccessUnavailable: false }
 	if (source.user_id !== input.userId) {
 		input.warnings?.push(

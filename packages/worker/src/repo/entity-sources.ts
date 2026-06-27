@@ -65,6 +65,20 @@ export async function getEntitySourceById(
 	return result ? mapEntitySourceRow(result) : null
 }
 
+export async function getEntitySourceByIdForUser(
+	db: D1Database,
+	input: {
+		id: string
+		userId: string
+	},
+): Promise<EntitySourceRow | null> {
+	const result = await db
+		.prepare(`SELECT * FROM entity_sources WHERE id = ? AND user_id = ?`)
+		.bind(input.id, input.userId)
+		.first<Record<string, unknown>>()
+	return result ? mapEntitySourceRow(result) : null
+}
+
 export async function getEntitySourceByEntity(
 	db: D1Database,
 	input: {
