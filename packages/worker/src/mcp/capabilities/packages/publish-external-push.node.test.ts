@@ -124,7 +124,7 @@ function createContext() {
 	}
 }
 
-test('publishes a new external Artifacts HEAD', async () => {
+test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per target', async () => {
 	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
@@ -138,13 +138,13 @@ test('publishes a new external Artifacts HEAD', async () => {
 		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
 	})
 
-	const result = await publishExternalPushCapability.handler(
+	const publishedResult = await publishExternalPushCapability.handler(
 		{ package_id: 'package-1' },
 		createContext(),
 	)
 
-	expect(result.status).toBe('published')
-	expect(result).toEqual(
+	expect(publishedResult.status).toBe('published')
+	expect(publishedResult).toEqual(
 		expect.objectContaining({
 			static_dependents: expect.objectContaining({
 				total: 0,
@@ -162,6 +162,56 @@ test('publishes a new external Artifacts HEAD', async () => {
 			rebuildPackageArtifacts: false,
 			expectedPackageScope: 'user',
 		}),
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+
+	const targets = [
+		{
+			kind: 'module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'module',
+		},
+		{
+			kind: 'importable-module',
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			bundleKind: 'importable-module',
+		},
+	]
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+	mockModule.rebuildPublishedPackageArtifact.mockClear()
+
+	const rebuiltResult = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+
+	expect(rebuiltResult.status).toBe('published')
+	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledWith({
+		sourceId: 'source-1',
+		userId: 'user-1',
+	})
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
+		1,
+		{
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-new',
+			target: targets[0],
+			baseUrl: 'https://kody.test',
+		},
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
+		2,
+		{
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-new',
+			target: targets[1],
+			baseUrl: 'https://kody.test',
+		},
 	)
 })
 
@@ -303,68 +353,6 @@ test('published output lists stale static dependents for the new dependency comm
 		sourceId: 'source-1',
 		currentDependencyCommit: 'commit-new',
 	})
-})
-
-test('rebuilds published package bundle artifacts one target at a time after publish', async () => {
-	setupDefaultMocks()
-	const targets = [
-		{
-			kind: 'module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'module',
-		},
-		{
-			kind: 'importable-module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'importable-module',
-		},
-	]
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
-
-	const result = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-
-	expect(result.status).toBe('published')
-	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledWith({
-		sourceId: 'source-1',
-		userId: 'user-1',
-	})
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
-		1,
-		{
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-new',
-			target: targets[0],
-			baseUrl: 'https://kody.test',
-		},
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
-		2,
-		{
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-new',
-			target: targets[1],
-			baseUrl: 'https://kody.test',
-		},
-	)
 })
 
 test('artifact rebuild failures include the failing target and cause', async () => {

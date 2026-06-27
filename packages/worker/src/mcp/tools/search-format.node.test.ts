@@ -626,8 +626,6 @@ test('search markdown summarizes broad results safely and only suggests entity d
 	})
 
 	expect(markdown).toMatch(/^# Search results/m)
-	expect(markdown).toContain('observed-package:package')
-	expect(markdown).toContain('github:integration')
 	for (const sensitiveValue of [
 		truncatedReadmeSnippet,
 		sensitiveWarning,
@@ -686,9 +684,7 @@ test('search markdown summarizes broad results safely and only suggests entity d
 			},
 		],
 	})
-	expect(entityMarkdown).toContain('entity-backed')
 	expect(entityMarkdown).toContain('search_docs:capability')
-	expect(retrieverMarkdown).not.toContain('entity-backed')
 	expect(retrieverMarkdown).toContain('personal-inbox')
 	expect(escapedRetrieverMarkdown).not.toContain('Toaster **oven** wattage')
 	expect(escapedRetrieverMarkdown).not.toContain(

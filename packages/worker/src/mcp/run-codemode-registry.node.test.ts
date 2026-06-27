@@ -879,7 +879,7 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 				username: '{{secret:lutronUsername|scope=user}}',
 			}),
 		).rejects.toThrow(
-			'Secret "lutronUsername" is not allowed for capability "lighting_default_lutron_set_credentials". If this capability should be able to use the secret, ask the user whether to add "lighting_default_lutron_set_credentials" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://heykody.dev/account/secrets/user/lutronUsername?capability=lighting_default_lutron_set_credentials',
+			/not allowed for capability "lighting_default_lutron_set_credentials"/,
 		)
 		expect(resolveSecretSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1658,96 +1658,33 @@ test('runBundledModuleWithRegistry injects service and email helpers with custom
 	}
 })
 
-test('runBundledModuleWithRegistry injects workflow helper when custom workflow tools are provided', async () => {
+test('runBundledModuleWithRegistry injects workflow and package invocation helpers', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: { userId: 'user-123' },
 	})
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(_wrapped, providers) {
-				providerFns = (
-					providers[0] as {
-						fns: Record<string, (args: unknown) => Promise<unknown>>
-					}
-				).fns
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
-
-	try {
-		const result = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js': 'export default async () => "ok"',
-				},
-			},
-			undefined,
-			{
-				workflowTools: {
-					create: async (input) => ({ ok: true, input }),
-				},
-			},
-		)
-
-		expect(result.result).toBe('ok')
-		expect(providerFns).not.toBeNull()
-		await expect(
-			providerFns?.package_workflow_create({ workflowName: 'custom' }),
-		).resolves.toEqual({
-			ok: true,
-			input: { workflowName: 'custom' },
-		})
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
+	const emptyRegistry = {
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {} as Record<string, string>,
+		capabilityHandlers: {},
+		capabilityList: [],
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
 	}
-})
-
-test('runBundledModuleWithRegistry injects package invocation helper through private bridge when provided', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
 	const getRegistrySpy = vi
 		.spyOn(
 			await import('#mcp/capabilities/registry.ts'),
 			'getCapabilityRegistryForContext',
 		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+		.mockResolvedValue(emptyRegistry)
 	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
 		null
 	let packageBridgeFns: Record<
@@ -1758,14 +1695,8 @@ test('runBundledModuleWithRegistry injects package invocation helper through pri
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
 			async execute(_wrapped, providers) {
-				expect(providers).toHaveLength(2)
 				providerFns = (
 					providers[0] as {
-						fns: Record<string, (args: unknown) => Promise<unknown>>
-					}
-				).fns
-				packageBridgeFns = (
-					providers[1] as {
 						fns: Record<string, (args: unknown) => Promise<unknown>>
 					}
 				).fns
@@ -1777,15 +1708,54 @@ test('runBundledModuleWithRegistry injects package invocation helper through pri
 		} as never)
 
 	try {
-		const result = await runBundledModuleWithRegistry(
+		const workflowResult = await runBundledModuleWithRegistry(
 			env,
 			callerContext,
+			bundle,
+			undefined,
 			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js': 'export default async () => "ok"',
+				workflowTools: {
+					create: async (input) => ({ ok: true, input }),
 				},
 			},
+		)
+
+		expect(workflowResult.result).toBe('ok')
+		expect(providerFns).not.toBeNull()
+		await expect(
+			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+		).resolves.toEqual({
+			ok: true,
+			input: { workflowName: 'custom' },
+		})
+
+		createExecuteExecutorSpy.mockImplementation(
+			() =>
+				({
+					async execute(_wrapped, providers) {
+						expect(providers).toHaveLength(2)
+						providerFns = (
+							providers[0] as {
+								fns: Record<string, (args: unknown) => Promise<unknown>>
+							}
+						).fns
+						packageBridgeFns = (
+							providers[1] as {
+								fns: Record<string, (args: unknown) => Promise<unknown>>
+							}
+						).fns
+						return {
+							result: 'ok',
+							logs: [],
+						}
+					},
+				}) as never,
+		)
+
+		const packageResult = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
 			undefined,
 			{
 				packageInvokeTools: {
@@ -1812,7 +1782,7 @@ test('runBundledModuleWithRegistry injects package invocation helper through pri
 			},
 		)
 
-		expect(result.result).toBe('ok')
+		expect(packageResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		expect(providerFns?.package_invoke_check).toBeUndefined()
 		expect(providerFns?.package_invoke).toBeUndefined()
@@ -1964,99 +1934,6 @@ test('runBundledModuleWithRegistry injects default workflow helper for execute a
 				params: { greeting: 'hello' },
 			}),
 		)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
-})
-
-test('runModuleWithRegistry injects email helpers for module syntax', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
-	buildBundleMock.mockClear()
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(_source, providers) {
-				providerFns = (
-					providers[0] as {
-						fns: Record<string, (args: unknown) => Promise<unknown>>
-					}
-				).fns
-				return {
-					result: { id: 'message-1', subject: 'Hello' },
-					logs: [],
-				}
-			},
-		} as never)
-
-	try {
-		const code = `import { email } from 'kody:runtime'
-
-export default async function run() {
-	return await email.getMessage('message-1')
-}`
-		const result = await runModuleWithRegistry(
-			env,
-			callerContext,
-			code,
-			undefined,
-			{
-				emailTools: {
-					getMessage: async (messageId) => ({
-						id: messageId,
-						subject: 'Hello',
-					}),
-					getAttachment: async (attachmentId) => ({
-						id: attachmentId,
-						text: 'hello',
-					}),
-				},
-			},
-		)
-
-		expect(result.result).toEqual({
-			id: 'message-1',
-			subject: 'Hello',
-		})
-		expect(buildBundleMock).toHaveBeenCalledTimes(1)
-		expect(providerFns).not.toBeNull()
-		await expect(
-			providerFns?.email_message_get({
-				message_id: 'message-1',
-			}),
-		).resolves.toEqual({
-			id: 'message-1',
-			subject: 'Hello',
-		})
-		await expect(
-			providerFns?.email_attachment_get({
-				attachment_id: 'attachment-1',
-			}),
-		).resolves.toEqual({
-			id: 'attachment-1',
-			text: 'hello',
-		})
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()

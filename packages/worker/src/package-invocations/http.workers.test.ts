@@ -319,8 +319,8 @@ test('unscoped package invocation route reports missing owner slug instead of to
 	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
 })
 
-test('package invocation API validates the JSON body shape', async () => {
-	const response = await handlePackageInvocationApiRequest(
+test('package invocation API validates requests and invokes exports with scoped token context', async () => {
+	const invalidBodyResponse = await handlePackageInvocationApiRequest(
 		new Request(
 			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
@@ -336,17 +336,15 @@ test('package invocation API validates the JSON body shape', async () => {
 		createContext(),
 	)
 
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
+	expect(invalidBodyResponse.status).toBe(400)
+	await expect(invalidBodyResponse.json()).resolves.toEqual({
 		ok: false,
 		error: {
 			code: 'invalid_params',
 			message: 'params must be a JSON object when provided.',
 		},
 	})
-})
 
-test('package invocation API invokes the package export with the scoped token context', async () => {
 	invocationMockModule.invokePackageExport.mockResolvedValue({
 		status: 200,
 		body: {
@@ -363,7 +361,7 @@ test('package invocation API invokes the package export with the scoped token co
 
 	const ctx = createContext()
 	const expectedUserId = await createStableUserIdFromEmail('me@example.com')
-	const response = await handlePackageInvocationApiRequest(
+	const invokeResponse = await handlePackageInvocationApiRequest(
 		new Request(
 			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
 			{
@@ -407,9 +405,9 @@ test('package invocation API invokes the package export with the scoped token co
 			topic: 'discord.message.created',
 		},
 	})
-	expect(response.status).toBe(200)
+	expect(invokeResponse.status).toBe(200)
 	expect(ctx.waitUntil).toHaveBeenCalled()
-	await expect(response.json()).resolves.toEqual({
+	await expect(invokeResponse.json()).resolves.toEqual({
 		ok: true,
 		exportName: './dispatch-message-created',
 		idempotency: {
@@ -419,9 +417,8 @@ test('package invocation API invokes the package export with the scoped token co
 		result: { reply: 'hello discord' },
 		logs: ['ran'],
 	})
-})
 
-test('package invocation API translates the root export route segment before invoking', async () => {
+	invocationMockModule.invokePackageExport.mockClear()
 	invocationMockModule.invokePackageExport.mockResolvedValue({
 		status: 200,
 		body: {
@@ -436,7 +433,7 @@ test('package invocation API translates the root export route segment before inv
 		},
 	})
 
-	const response = await handlePackageInvocationApiRequest(
+	const rootResponse = await handlePackageInvocationApiRequest(
 		new Request(
 			'https://example.com/@my-user/api/package-invocations/discord-gateway/__root__',
 			{
@@ -467,5 +464,5 @@ test('package invocation API translates the root export route segment before inv
 			}),
 		}),
 	)
-	expect(response.status).toBe(200)
+	expect(rootResponse.status).toBe(200)
 })
