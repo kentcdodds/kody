@@ -966,7 +966,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 						sidebar={
 							<AccountManagementSidebar
 								title="Tokens"
-								description="Revoked tokens remain listed for auditability and no longer authorize external invocation requests."
+								description="Revoked tokens remain listed for auditability and do not authorize external invocation requests."
 							>
 								{tokens.length === 0 ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -1672,7 +1672,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 									<h2 mix={css(cardTitleCss)}>Token not found</h2>
 									<p mix={css(descriptionCss)}>
 										This package invocation token does not exist for this
-										account or is no longer available.
+										account or is unavailable.
 									</p>
 									<button
 										type="button"
