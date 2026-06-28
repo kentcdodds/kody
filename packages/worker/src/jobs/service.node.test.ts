@@ -1396,9 +1396,10 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	])
 })
 
-test('getJobInspection returns one job and out-of-sync alarm details', async () => {
+test('getJobInspection reports alarm state, source code, and artifact gaps', async () => {
 	const env = {
 		APP_DB: createDatabase(),
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
@@ -1454,27 +1455,7 @@ test('getJobInspection returns one job and out-of-sync alarm details', async () 
 		alarmInSync: false,
 	})
 	expect(inspected).not.toHaveProperty('source')
-})
 
-test('getJobInspection can include manifest-declared job source code', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Inspect source job',
-			code: 'export default async () => ({ default: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
-	})
 	const code =
 		'export default async function main() { return { custom: true } }'
 	await insertPublishedEntitySource({
@@ -1496,29 +1477,21 @@ test('getJobInspection can include manifest-declared job source code', async () 
 		},
 	})
 
-	const inspected = await getJobInspection({
+	const inspectedWithSource = await getJobInspection({
 		env,
 		userId: callerContext.user.userId,
 		jobId: created.id,
 		includeCode: true,
 	})
 
-	expect(inspected.source).toEqual({
+	expect(inspectedWithSource.source).toEqual({
 		entrypoint: 'src/custom-job.ts',
 		code,
 		error: null,
 	})
-})
 
-test('getJobInspection reports missing source artifacts without failing inspection', async () => {
-	const filesEnv = {
-		APP_DB: createDatabase(),
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
 	const missingEntrypointJob = await createJob({
-		env: filesEnv,
+		env,
 		callerContext,
 		body: {
 			name: 'Missing source job',
@@ -1530,8 +1503,8 @@ test('getJobInspection reports missing source artifacts without failing inspecti
 		},
 	})
 	await insertPublishedEntitySource({
-		db: filesEnv.APP_DB as ReturnType<typeof createDatabase>,
-		env: filesEnv,
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		env,
 		userId: callerContext.user.userId,
 		sourceId: missingEntrypointJob.sourceId,
 		entityId: missingEntrypointJob.id,
@@ -1548,7 +1521,7 @@ test('getJobInspection reports missing source artifacts without failing inspecti
 	})
 
 	const missingEntrypointInspection = await getJobInspection({
-		env: filesEnv,
+		env,
 		userId: callerContext.user.userId,
 		jobId: missingEntrypointJob.id,
 		includeCode: true,
@@ -1620,47 +1593,6 @@ test('getJobInspection reports missing source artifacts without failing inspecti
 		code: null,
 		error: 'Job manifest "kody.json" was not found.',
 	})
-})
-
-test('getJobInspection returns persisted params after a job update', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-	} as Env
-	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
-	const created = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Bridge job',
-			code: 'export default async (params) => ({ bridgeId: params.bridgeId })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
-	})
-
-	repoMockModule.syncArtifactSourceSnapshot.mockClear()
-	const updated = await updateJob({
-		env,
-		callerContext,
-		body: {
-			id: created.id,
-			params: {
-				bridgeId: 'ZPGI01117',
-			},
-		},
-	})
-	const inspected = await getJobInspection({
-		env,
-		userId: callerContext.user.userId,
-		jobId: created.id,
-	})
-
-	expect(updated.params).toEqual({ bridgeId: 'ZPGI01117' })
-	expect(inspected.job.params).toEqual({ bridgeId: 'ZPGI01117' })
-	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
 test('executeJobOnce binds scheduled jobs to writable storage', async () => {

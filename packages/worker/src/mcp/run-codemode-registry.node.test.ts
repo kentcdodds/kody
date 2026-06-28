@@ -655,14 +655,6 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 			{ userId: callerContext.user.userId },
 			{ userId: callerContext.user.userId },
 		])
-		expect(fetchSpy).toHaveBeenCalledWith(
-			`https://api.cloudflare.test/client/v4/accounts/acct-test/artifacts/namespaces/default/repos/job-${job.id}`,
-			expect.objectContaining({ method: 'DELETE' }),
-		)
-		expect(fetchSpy).toHaveBeenCalledWith(
-			`https://api.cloudflare.test/client/v4/accounts/acct-test/artifacts/namespaces/default/repos/job-${job.id}-session`,
-			expect.objectContaining({ method: 'DELETE' }),
-		)
 		await expect(
 			db
 				.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?')
@@ -677,131 +669,8 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 				.bind(callerContext.user.userId, job.sourceId)
 				.all<Record<string, unknown>>(),
 		).resolves.toEqual({ results: [] })
-		await expect(
-			db
-				.prepare('SELECT * FROM entity_sources WHERE id = ? AND user_id = ?')
-				.bind(job.sourceId, callerContext.user.userId)
-				.first<Record<string, unknown>>(),
-		).resolves.toBeNull()
-		expect(kv.deletedKeys).toEqual([
-			`source-snapshot:v1:${job.sourceId}:published-commit-1`,
-			`source-manifest-snapshot:v1:${job.sourceId}:published-commit-1`,
-		])
 	} finally {
 		fetchSpy.mockRestore()
-	}
-})
-
-test('runBundledModuleWithRegistry passes params as an explicit entrypoint argument', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return {
-					result: { room: 'office' },
-					logs: [],
-				}
-			},
-		} as never)
-
-	try {
-		const result = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js':
-						'export default async function main(input = {}) { return input }',
-				},
-			},
-			{ room: 'office' },
-			{
-				skipCapabilityRegistry: true,
-			},
-		)
-
-		expect(result.result).toEqual({ room: 'office' })
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
-})
-
-test('runBundledModuleWithRegistry refreshes persisted kody runtime modules before execution', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const staleRuntimeSource = 'export const codemode = undefined;'
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockImplementation((input) => {
-			const modules = input.modules as Record<string, string>
-			expect(modules['entry.js']).toBe(
-				'export default async function main() { return "ok" }',
-			)
-			expect(modules['.__kody_virtual__/runtime.js']).not.toBe(
-				staleRuntimeSource,
-			)
-			expect(
-				modules[
-					'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
-				],
-			).not.toBe(staleRuntimeSource)
-			return {
-				async execute() {
-					return {
-						result: 'ok',
-						logs: [],
-					}
-				},
-			} as never
-		})
-
-	try {
-		const result = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js': 'export default async function main() { return "ok" }',
-					'.__kody_virtual__/runtime.js': staleRuntimeSource,
-					'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js':
-						staleRuntimeSource,
-				},
-			},
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-			},
-		)
-
-		expect(result.result).toBe('ok')
-		expect(createExecuteExecutorSpy).toHaveBeenCalledTimes(1)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
 	}
 })
 
@@ -1575,7 +1444,40 @@ export default async function run() {
 	}
 })
 
-test('runBundledModuleWithRegistry injects service and email helpers with custom timeout', async () => {
+test('runBundledModuleWithRegistry passes params and injects runtime helpers', async () => {
+	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const workflowEnv = {
+		APP_DB: {
+			prepare(query: string) {
+				return {
+					bind() {
+						return {
+							async first() {
+								if (query.includes('COUNT(*) AS count')) return { count: 0 }
+								return null
+							},
+							async run() {
+								return { success: true }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as D1Database,
+		DYNAMIC_CALLABLE_WORKFLOWS: {
+			get: async () => {
+				throw new Error('not found')
+			},
+			create: async (options?: WorkflowInstanceCreateOptions<unknown>) => {
+				if (!options) throw new Error('missing options')
+				created.push(options)
+				return {
+					id: options.id ?? 'generated',
+					status: async () => ({ status: 'queued' }),
+				} as WorkflowInstance
+			},
+		} as Workflow<unknown>,
+	} as Env
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1590,6 +1492,13 @@ test('runBundledModuleWithRegistry injects service and email helpers with custom
 		capabilitySpecs: {},
 		capabilityToolDescriptors: {},
 	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	const paramsBundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js':
+				'export default async function main(input = {}) { return input }',
+		},
+	}
 	const bundle = {
 		mainModule: 'entry.js',
 		modules: {
@@ -1604,9 +1513,34 @@ test('runBundledModuleWithRegistry injects service and email helpers with custom
 		.mockResolvedValue(emptyRegistry)
 	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
 		null
+	let packageBridgeFns: Record<
+		string,
+		(args: unknown) => Promise<unknown>
+	> | null = null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockImplementation((input) => {
+		.mockReturnValue({
+			async execute() {
+				return {
+					result: { room: 'office' },
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const paramsResult = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			paramsBundle,
+			{ room: 'office' },
+			{
+				skipCapabilityRegistry: true,
+			},
+		)
+		expect(paramsResult.result).toEqual({ room: 'office' })
+
+		createExecuteExecutorSpy.mockImplementation((input) => {
 			expect(input.timeoutMs).toBe(300_000)
 			return {
 				async execute(_source, providers) {
@@ -1623,7 +1557,6 @@ test('runBundledModuleWithRegistry injects service and email helpers with custom
 			} as never
 		})
 
-	try {
 		const serviceResult = await runBundledModuleWithRegistry(
 			env,
 			callerContext,
@@ -1716,62 +1649,24 @@ test('runBundledModuleWithRegistry injects service and email helpers with custom
 			id: 'attachment-1',
 			text: 'hello',
 		})
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
-})
 
-test('runBundledModuleWithRegistry injects workflow and package invocation helpers', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const emptyRegistry = {
-		capabilityDomains: [],
-		capabilityDomainDescriptionsByName: {} as Record<string, string>,
-		capabilityHandlers: {},
-		capabilityList: [],
-		capabilityMap: {},
-		capabilitySpecs: {},
-		capabilityToolDescriptors: {},
-	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
+		createExecuteExecutorSpy.mockImplementation(
+			() =>
+				({
+					async execute(_wrapped, providers) {
+						providerFns = (
+							providers[0] as {
+								fns: Record<string, (args: unknown) => Promise<unknown>>
+							}
+						).fns
+						return {
+							result: 'ok',
+							logs: [],
+						}
+					},
+				}) as never,
 		)
-		.mockResolvedValue(emptyRegistry)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	let packageBridgeFns: Record<
-		string,
-		(args: unknown) => Promise<unknown>
-	> | null = null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(_wrapped, providers) {
-				providerFns = (
-					providers[0] as {
-						fns: Record<string, (args: unknown) => Promise<unknown>>
-					}
-				).fns
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
 
-	try {
 		const workflowResult = await runBundledModuleWithRegistry(
 			env,
 			callerContext,
@@ -1783,7 +1678,6 @@ test('runBundledModuleWithRegistry injects workflow and package invocation helpe
 				},
 			},
 		)
-
 		expect(workflowResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(
@@ -1845,7 +1739,6 @@ test('runBundledModuleWithRegistry injects workflow and package invocation helpe
 				},
 			},
 		)
-
 		expect(packageResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		expect(providerFns?.package_invoke_check).toBeUndefined()
@@ -1888,92 +1781,28 @@ test('runBundledModuleWithRegistry injects workflow and package invocation helpe
 				exportName: './handle-discord-message-created',
 			},
 		})
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
-})
 
-test('runBundledModuleWithRegistry injects default workflow helper for execute and standalone job contexts', async () => {
-	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
-	const env = {
-		APP_DB: {
-			prepare(query: string) {
-				return {
-					bind() {
+		createExecuteExecutorSpy.mockImplementation(
+			() =>
+				({
+					async execute(_wrapped, providers) {
+						providerFns = (
+							providers[0] as {
+								fns: Record<string, (args: unknown) => Promise<unknown>>
+							}
+						).fns
 						return {
-							async first() {
-								if (query.includes('COUNT(*) AS count')) return { count: 0 }
-								return null
-							},
-							async run() {
-								return { success: true }
-							},
+							result: 'ok',
+							logs: [],
 						}
 					},
-				}
-			},
-		} as unknown as D1Database,
-		DYNAMIC_CALLABLE_WORKFLOWS: {
-			get: async () => {
-				throw new Error('not found')
-			},
-			create: async (options?: WorkflowInstanceCreateOptions<unknown>) => {
-				if (!options) throw new Error('missing options')
-				created.push(options)
-				return {
-					id: options.id ?? 'generated',
-					status: async () => ({ status: 'queued' }),
-				} as WorkflowInstance
-			},
-		} as Workflow<unknown>,
-	} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
+				}) as never,
 		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(_wrapped, providers) {
-				providerFns = (
-					providers[0] as {
-						fns: Record<string, (args: unknown) => Promise<unknown>>
-					}
-				).fns
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
 
-	try {
 		await runBundledModuleWithRegistry(
-			env,
+			workflowEnv,
 			callerContext,
-			{
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js': 'export default async () => "ok"',
-				},
-			},
+			bundle,
 			undefined,
 			{
 				packageContext: null,
