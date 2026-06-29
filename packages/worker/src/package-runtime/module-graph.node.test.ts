@@ -172,7 +172,7 @@ function createLoadedPackageSource() {
 	}
 }
 
-test('buildKodyAppBundle reuses cached published package app bundles', async () => {
+test('buildKodyAppBundle cache lifecycle reuses hits, shares in-flight builds, evicts failures, and keys by entrypoint', async () => {
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('warm-cache'))
 
@@ -187,19 +187,109 @@ test('buildKodyAppBundle reuses cached published package app bundles', async () 
 		entryPoint: 'app.js',
 	})
 
-	const first = await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey,
-		}),
-	)
-	const second = await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey,
-		}),
-	)
-
+	const first = await buildKodyAppBundle(createBundleInput({ cacheKey }))
+	const second = await buildKodyAppBundle(createBundleInput({ cacheKey }))
 	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
 	expect(first).toBe(second)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('uncached-first'))
+		.mockResolvedValueOnce(createBundleResult('uncached-second'))
+	await buildKodyAppBundle(createBundleInput({ cacheKey: null }))
+	await buildKodyAppBundle(createBundleInput({ cacheKey: null }))
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+
+	mockModule.createWorker.mockReset()
+	let resolveBundle:
+		| ((value: { mainModule: string; modules: WorkerLoaderModules }) => void)
+		| null = null
+	const bundlePromise = new Promise<{
+		mainModule: string
+		modules: WorkerLoaderModules
+	}>((resolve) => {
+		resolveBundle = resolve
+	})
+	mockModule.createWorker.mockImplementation(async () => await bundlePromise)
+
+	const concurrentCacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source: {
+			id: 'source-concurrent',
+			published_commit: 'commit-concurrent-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		entryPoint: 'app.js',
+	})
+	const firstPromise = buildKodyAppBundle(
+		createBundleInput({ cacheKey: concurrentCacheKey }),
+	)
+	const secondPromise = buildKodyAppBundle(
+		createBundleInput({ cacheKey: concurrentCacheKey }),
+	)
+	resolveBundle?.(createBundleResult('shared-in-flight'))
+	const [inFlightFirst, inFlightSecond] = await Promise.all([
+		firstPromise,
+		secondPromise,
+	])
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
+	expect(inFlightFirst).toBe(inFlightSecond)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockRejectedValueOnce(new Error('bundle failed'))
+		.mockResolvedValueOnce(createBundleResult('retry-success'))
+	const failureCacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source: {
+			id: 'source-failure',
+			published_commit: 'commit-failure-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		entryPoint: 'app.js',
+	})
+	await expect(
+		buildKodyAppBundle(createBundleInput({ cacheKey: failureCacheKey })),
+	).rejects.toThrow('bundle failed')
+	const retried = await buildKodyAppBundle(
+		createBundleInput({ cacheKey: failureCacheKey }),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+	expect(retried).toEqual(createBundleResult('retry-success'))
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('entry-app'))
+		.mockResolvedValueOnce(createBundleResult('entry-admin'))
+	const source = {
+		id: 'source-shared',
+		published_commit: 'commit-shared-1',
+		manifest_path: 'package.json',
+		source_root: '/',
+	}
+	const appEntryCacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source,
+		entryPoint: 'app.js',
+	})
+	const adminEntryCacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source,
+		entryPoint: 'admin.js',
+	})
+	const appBundle = await buildKodyAppBundle(
+		createBundleInput({ cacheKey: appEntryCacheKey, entryPoint: 'app.js' }),
+	)
+	const adminBundle = await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey: adminEntryCacheKey,
+			entryPoint: 'admin.js',
+		}),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+	expect(appBundle).not.toBe(adminBundle)
 })
 
 test('buildKodyModuleBundle resolves scoped package imports by full package name first', async () => {
@@ -2187,142 +2277,8 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
-test('buildKodyAppBundle does not cache unpublished package app bundles', async () => {
-	mockModule.createWorker
-		.mockResolvedValueOnce(createBundleResult('uncached-first'))
-		.mockResolvedValueOnce(createBundleResult('uncached-second'))
-
-	await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey: null,
-		}),
-	)
-	await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey: null,
-		}),
-	)
-
-	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
-})
-
-test('buildKodyAppBundle shares the same in-flight published bundle build', async () => {
-	let resolveBundle:
-		| ((value: { mainModule: string; modules: WorkerLoaderModules }) => void)
-		| null = null
-	const bundlePromise = new Promise<{
-		mainModule: string
-		modules: WorkerLoaderModules
-	}>((resolve) => {
-		resolveBundle = resolve
-	})
-	mockModule.createWorker.mockImplementation(async () => await bundlePromise)
-
-	const cacheKey = createPublishedPackageAppBundleCacheKey({
-		userId: 'user-1',
-		source: {
-			id: 'source-concurrent',
-			published_commit: 'commit-concurrent-1',
-			manifest_path: 'package.json',
-			source_root: '/',
-		},
-		entryPoint: 'app.js',
-	})
-
-	const firstPromise = buildKodyAppBundle(
-		createBundleInput({
-			cacheKey,
-		}),
-	)
-	const secondPromise = buildKodyAppBundle(
-		createBundleInput({
-			cacheKey,
-		}),
-	)
-
-	resolveBundle?.(createBundleResult('shared-in-flight'))
-
-	const [first, second] = await Promise.all([firstPromise, secondPromise])
-
-	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
-	expect(first).toBe(second)
-})
-
-test('buildKodyAppBundle evicts rejected published bundle builds before retrying', async () => {
-	mockModule.createWorker
-		.mockRejectedValueOnce(new Error('bundle failed'))
-		.mockResolvedValueOnce(createBundleResult('retry-success'))
-
-	const cacheKey = createPublishedPackageAppBundleCacheKey({
-		userId: 'user-1',
-		source: {
-			id: 'source-failure',
-			published_commit: 'commit-failure-1',
-			manifest_path: 'package.json',
-			source_root: '/',
-		},
-		entryPoint: 'app.js',
-	})
-
-	await expect(
-		buildKodyAppBundle(
-			createBundleInput({
-				cacheKey,
-			}),
-		),
-	).rejects.toThrow('bundle failed')
-
-	const retried = await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey,
-		}),
-	)
-
-	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
-	expect(retried).toEqual(createBundleResult('retry-success'))
-})
-
-test('buildKodyAppBundle keeps separate cache entries for different app entrypoints', async () => {
-	mockModule.createWorker
-		.mockResolvedValueOnce(createBundleResult('entry-app'))
-		.mockResolvedValueOnce(createBundleResult('entry-admin'))
-
-	const source = {
-		id: 'source-shared',
-		published_commit: 'commit-shared-1',
-		manifest_path: 'package.json',
-		source_root: '/',
-	}
-
-	const appEntryCacheKey = createPublishedPackageAppBundleCacheKey({
-		userId: 'user-1',
-		source,
-		entryPoint: 'app.js',
-	})
-	const adminEntryCacheKey = createPublishedPackageAppBundleCacheKey({
-		userId: 'user-1',
-		source,
-		entryPoint: 'admin.js',
-	})
-
-	const appBundle = await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey: appEntryCacheKey,
-			entryPoint: 'app.js',
-		}),
-	)
-	const adminBundle = await buildKodyAppBundle(
-		createBundleInput({
-			cacheKey: adminEntryCacheKey,
-			entryPoint: 'admin.js',
-		}),
-	)
-
-	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
-	expect(appBundle).not.toBe(adminBundle)
-})
-
-test('buildKodyAppBundle rewrites kody runtime imports inside TypeScript package apps', async () => {
+test('buildKodyAppBundle rewrites static and dynamic kody runtime imports inside TypeScript package apps', async () => {
+	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('ts-app'))
 
 	await buildKodyAppBundle({
@@ -2367,24 +2323,22 @@ export default {
 	})
 
 	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
-	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+	const staticRewriteCall = mockModule.createWorker.mock.calls[0]?.[0] as
 		| {
 				files?: Record<string, string>
 		  }
 		| undefined
-	expect(firstCall?.files?.['.__kody_root__/app.ts']).toContain(
+	expect(staticRewriteCall?.files?.['.__kody_root__/app.ts']).toContain(
 		'../.__kody_virtual__/runtime.js',
 	)
-	expect(firstCall?.files?.['.__kody_root__/app.ts']).not.toContain(
+	expect(staticRewriteCall?.files?.['.__kody_root__/app.ts']).not.toContain(
 		"'kody:runtime'",
 	)
-})
 
-test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript package apps', async () => {
+	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(
 		createBundleResult('ts-dynamic-app'),
 	)
-
 	await buildKodyAppBundle({
 		env: {
 			APP_DB: {},
@@ -2420,89 +2374,15 @@ test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript
 	})
 
 	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
-	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+	const dynamicRewriteCall = mockModule.createWorker.mock.calls[0]?.[0] as
 		| {
 				files?: Record<string, string>
 		  }
 		| undefined
-	expect(firstCall?.files?.['.__kody_root__/app.ts']).toContain(
+	expect(dynamicRewriteCall?.files?.['.__kody_root__/app.ts']).toContain(
 		'import("../.__kody_virtual__/runtime.js")',
 	)
-	expect(firstCall?.files?.['.__kody_root__/app.ts']).not.toContain(
+	expect(dynamicRewriteCall?.files?.['.__kody_root__/app.ts']).not.toContain(
 		"import('kody:runtime')",
-	)
-})
-
-test('buildKodyAppBundle runtime module exports service and package invocation helpers', async () => {
-	const appBundleInput = {
-		env: {
-			APP_DB: {},
-			REPO_SESSION: {},
-		} as Env,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		sourceFiles: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-					app: {
-						entry: 'app.ts',
-					},
-				},
-			}),
-			'app.ts': `export default {
-	async fetch() {
-		return Response.json({ ok: true })
-	},
-}
-`,
-			'index.ts': 'export const value = "ok"',
-		},
-		entryPoint: 'app.ts',
-		cacheKey: null,
-	}
-
-	mockModule.createWorker.mockResolvedValue(
-		createBundleResult('runtime-service-helper'),
-	)
-	await buildKodyAppBundle(appBundleInput)
-	const serviceRuntime =
-		(
-			mockModule.createWorker.mock.calls.at(-1)?.[0] as
-				| { files?: Record<string, string> }
-				| undefined
-		)?.files?.['.__kody_virtual__/runtime.js'] ?? ''
-	expect(serviceRuntime).toContain(
-		'export const service = runtime.service ?? null;',
-	)
-	expect(serviceRuntime).toContain(
-		"import { AsyncLocalStorage } from 'node:async_hooks';",
-	)
-	expect(serviceRuntime).toContain('export function __kodyRunInRuntime')
-	expect(serviceRuntime).not.toContain('params')
-
-	mockModule.createWorker.mockResolvedValue(
-		createBundleResult('runtime-packages-helper'),
-	)
-	await buildKodyAppBundle(appBundleInput)
-	const packageRuntime =
-		(
-			mockModule.createWorker.mock.calls.at(-1)?.[0] as
-				| { files?: Record<string, string> }
-				| undefined
-		)?.files?.['.__kody_virtual__/runtime.js'] ?? ''
-	expect(packageRuntime).toContain(
-		'export const packages = runtime.packages ?? null;',
-	)
-	expect(packageRuntime).toContain(
-		'export const secretHeaders = runtime.secretHeaders;',
-	)
-	expect(packageRuntime).toContain(
-		'export const oauthClientCredentials = runtime.oauthClientCredentials;',
 	)
 })

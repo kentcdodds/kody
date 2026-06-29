@@ -18,7 +18,7 @@ import {
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
-test('createWorkflowTools creates package workflow instances from package context', async () => {
+test('package workflow tools create instances from package context and honor caller overrides in runModuleWithRegistry', async () => {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const workflowTools = createWorkflowTools({
 		env: {
@@ -110,9 +110,7 @@ test('createWorkflowTools creates package workflow instances from package contex
 			params: { eventId: 'event-1' },
 		}),
 	)
-})
 
-test('runModuleWithRegistry preserves caller-provided workflow tools', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://app.example.com',
@@ -674,9 +672,9 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 	}
 })
 
-test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
+test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inputs', async () => {
 	let toolArguments: Record<string, unknown> | null = null
-	const env = {
+	const connectorEnv = {
 		REMOTE_CONNECTOR_SESSION: {
 			idFromName(name: string) {
 				return name
@@ -712,7 +710,7 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 							],
 						}
 					},
-					async rpcCallTool(name: string, args: Record<string, unknown>) {
+					async rpcCallTool(_name: string, args: Record<string, unknown>) {
 						toolArguments = args
 						return {
 							structuredContent: {
@@ -725,8 +723,8 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 		},
 	} as unknown as Env
 
-	const codemode = await buildCodemodeFns(
-		env,
+	const resolvedCodemode = await buildCodemodeFns(
+		connectorEnv,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
@@ -737,21 +735,17 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 				`${secret.name}-${capabilityName}-resolved`,
 		},
 	)
-
-	await codemode.lighting_default_lutron_set_credentials({
+	await resolvedCodemode.lighting_default_lutron_set_credentials({
 		processorId: 'lutron-192-168-0-41',
 		username: '{{secret:lutronUsername|scope=user}}',
 		password: '{{secret:lutronPassword|scope=user}}',
 	})
-
 	expect(toolArguments).toEqual({
 		processorId: 'lutron-192-168-0-41',
 		username: 'lutronUsername-lighting_default_lutron_set_credentials-resolved',
 		password: 'lutronPassword-lighting_default_lutron_set_credentials-resolved',
 	})
-})
 
-test('buildCodemodeFns denies capability secret placeholders for disallowed capabilities', async () => {
 	const resolveSecretSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue({
@@ -761,54 +755,17 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 			allowedHosts: [],
 			allowedCapabilities: ['some_other_capability'],
 		})
-	const env = {
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName(name: string) {
-				return name
-			},
-			get() {
-				return {
-					async getSnapshot() {
-						return {
-							connectorId: 'default',
-							connectedAt: '2026-03-27T00:00:00.000Z',
-							lastSeenAt: '2026-03-27T00:00:01.000Z',
-							tools: [
-								{
-									name: 'lutron_set_credentials',
-									title: 'Set Lutron Credentials',
-									description: 'Store Lutron credentials.',
-									inputSchema: {
-										type: 'object',
-										properties: {
-											username: {
-												type: 'string',
-												'x-kody-secret': true,
-											},
-										},
-										required: ['username'],
-									},
-								},
-							],
-						}
-					},
-				}
-			},
-		},
-	} as unknown as Env
-
-	const codemode = await buildCodemodeFns(
-		env,
+	const deniedCodemode = await buildCodemodeFns(
+		connectorEnv,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
 			remoteConnectors: [{ kind: 'lighting', instanceId: 'default' }],
 		}),
 	)
-
 	try {
 		await expect(
-			codemode.lighting_default_lutron_set_credentials({
+			deniedCodemode.lighting_default_lutron_set_credentials({
 				username: '{{secret:lutronUsername|scope=user}}',
 			}),
 		).rejects.toThrow(
@@ -824,16 +781,8 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 	} finally {
 		resolveSecretSpy.mockRestore()
 	}
-})
 
-test('buildCodemodeFns tracks values that crossed secret-marked capability inputs', async () => {
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
 	const trackedSecretValues: Array<string> = []
-
 	const getRegistrySpy = vi
 		.spyOn(
 			await import('#mcp/capabilities/registry.ts'),
@@ -926,19 +875,23 @@ test('buildCodemodeFns tracks values that crossed secret-marked capability input
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
 
 	try {
-		const codemode = await buildCodemodeFns(env, callerContext, {
-			trackSecretInputValue(value) {
-				trackedSecretValues.push(value)
+		const trackedCodemode = await buildCodemodeFns(
+			{} as Env,
+			createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+			{
+				trackSecretInputValue(value) {
+					trackedSecretValues.push(value)
+				},
 			},
-		})
-		const result = await codemode.secret_set({
+		)
+		const result = await trackedCodemode.secret_set({
 			name: 'spotifyAccessToken',
 			value: 'fresh-access-token',
 		})
-
-		expect(result).toEqual({
-			name: 'spotifyAccessToken',
-		})
+		expect(result).toEqual({ name: 'spotifyAccessToken' })
 		expect(trackedSecretValues).toEqual(['fresh-access-token'])
 	} finally {
 		getRegistrySpy.mockRestore()

@@ -1121,8 +1121,8 @@ test('runRepoChecks validates static kody package import declarations across mis
 	)
 })
 
-test('runRepoChecks fails bundle validation when runtime bundling cannot resolve a declared dependency', async () => {
-	const files = new Map<string, string>([
+test('runRepoChecks surfaces bundle validation failures when runtime bundling cannot resolve npm dependencies', async () => {
+	const unresolvedModuleFiles = new Map<string, string>([
 		[
 			'package.json',
 			JSON.stringify({
@@ -1144,14 +1144,14 @@ test('runRepoChecks fails bundle validation when runtime bundling cannot resolve
 			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
 		],
 	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
+	const unresolvedSnapshot = createSnapshotFromFiles(unresolvedModuleFiles)
+	const unresolvedTypeScriptFileSystem: MockTypeScriptFileSystem = {
+		...unresolvedSnapshot,
 		write: vi.fn(),
 	}
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(unresolvedSnapshot)
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
+		fileSystem: unresolvedTypeScriptFileSystem,
 		languageService: {
 			getSemanticDiagnostics: vi.fn(() => []),
 		},
@@ -1160,13 +1160,16 @@ test('runRepoChecks fails bundle validation when runtime bundling cannot resolve
 		new Error('No such module "marked" imported from bundle.js'),
 	)
 
-	const result = await runRepoChecks({
+	const unresolvedResult = await runRepoChecks({
 		workspace: {
 			async readFile(path: string) {
-				return files.get(path) ?? null
+				return unresolvedModuleFiles.get(path) ?? null
 			},
 			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+				return Array.from(unresolvedModuleFiles.keys()).map((path) => ({
+					path,
+					type: 'file',
+				}))
 			},
 		},
 		manifestPath: 'package.json',
@@ -1176,8 +1179,8 @@ test('runRepoChecks fails bundle validation when runtime bundling cannot resolve
 		userId: 'user-123',
 	})
 
-	expect(result.ok).toBe(false)
-	expect(result.results).toEqual(
+	expect(unresolvedResult.ok).toBe(false)
+	expect(unresolvedResult.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'bundle',
@@ -1199,6 +1202,80 @@ test('runRepoChecks fails bundle validation when runtime bundling cannot resolve
 			entryPoint: 'src/index.ts',
 			userId: 'user-123',
 		}),
+	)
+
+	const unresolvedVersionFiles = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/broken-npm-package',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'broken-npm-package',
+					description: 'Broken npm dependency',
+				},
+				dependencies: {
+					marked: '18.0.2',
+				},
+			}),
+		],
+		[
+			'src/index.ts',
+			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
+		],
+	])
+	const unresolvedVersionSnapshot = createSnapshotFromFiles(
+		unresolvedVersionFiles,
+	)
+	const unresolvedVersionTypeScriptFileSystem: MockTypeScriptFileSystem = {
+		...unresolvedVersionSnapshot,
+		write: vi.fn(),
+	}
+	mockModule.createFileSystemSnapshot.mockResolvedValue(
+		unresolvedVersionSnapshot,
+	)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: unresolvedVersionTypeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics: vi.fn(() => []),
+		},
+	})
+	mockModule.buildKodyImportableModuleBundle.mockRejectedValueOnce(
+		new Error('Could not resolve version for marked@18.0.2'),
+	)
+
+	const unresolvedVersionResult = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return unresolvedVersionFiles.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(unresolvedVersionFiles.keys()).map((path) => ({
+					path,
+					type: 'file',
+				}))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+	})
+
+	expect(unresolvedVersionResult.ok).toBe(false)
+	expect(unresolvedVersionResult.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining(
+					'src/index.ts: Could not resolve version for marked@18.0.2',
+				),
+			}),
+		]),
 	)
 })
 
@@ -1366,74 +1443,5 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 		expect.objectContaining({
 			entryPoint: 'src/service.ts',
 		}),
-	)
-})
-
-test('runRepoChecks fails when package runtime bundle cannot resolve npm dependency', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			JSON.stringify({
-				name: '@kody/broken-npm-package',
-				exports: {
-					'.': './src/index.ts',
-				},
-				kody: {
-					id: 'broken-npm-package',
-					description: 'Broken npm dependency',
-				},
-				dependencies: {
-					marked: '18.0.2',
-				},
-			}),
-		],
-		[
-			'src/index.ts',
-			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics: vi.fn(() => []),
-		},
-	})
-	mockModule.buildKodyImportableModuleBundle.mockRejectedValueOnce(
-		new Error('Could not resolve version for marked@18.0.2'),
-	)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-		env: {} as Env,
-		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
-	})
-
-	expect(result.ok).toBe(false)
-	expect(result.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: false,
-				message: expect.stringContaining(
-					'src/index.ts: Could not resolve version for marked@18.0.2',
-				),
-			}),
-		]),
 	)
 })
