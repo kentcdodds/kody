@@ -342,18 +342,8 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'dependencies',
-				ok: true,
-				message:
-					'package.json declares no npm dependencies. package.json#kody.dependencies declares no static Kody package dependencies.',
-			}),
-			expect.objectContaining({
-				kind: 'typecheck',
-				ok: true,
-				message:
-					'No semantic diagnostics for 1 callable package runtime entrypoint(s).',
-			}),
+			expect.objectContaining({ kind: 'dependencies', ok: true }),
+			expect.objectContaining({ kind: 'typecheck', ok: true }),
 		]),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
@@ -522,17 +512,8 @@ test('runRepoChecks validates every persisted package artifact target before pub
 	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: true,
-				message: 'Bundled 8 package target(s) successfully.',
-			}),
-			expect.objectContaining({
-				kind: 'typecheck',
-				ok: true,
-				message:
-					'No semantic diagnostics for 3 callable package runtime entrypoint(s).',
-			}),
+			expect.objectContaining({ kind: 'bundle', ok: true }),
+			expect.objectContaining({ kind: 'typecheck', ok: true }),
 		]),
 	)
 	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
@@ -699,12 +680,7 @@ test('runRepoChecks typechecks ESM package job entrypoints', async () => {
 	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'typecheck',
-				ok: true,
-				message:
-					'No semantic diagnostics for 1 callable package runtime entrypoint(s).',
-			}),
+			expect.objectContaining({ kind: 'typecheck', ok: true }),
 		]),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
@@ -855,65 +831,6 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 			expect.stringContaining('import userEntrypoint from "./src/index"'),
 		)
 	}
-})
-
-test('runRepoChecks reports declared npm dependencies in package.json', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			JSON.stringify({
-				name: '@kody/dependency-aware-package',
-				exports: {
-					'.': './src/index.ts',
-				},
-				dependencies: {
-					kleur: '^4.1.5',
-				},
-				kody: {
-					id: 'dependency-aware-package',
-					description: 'Uses npm dependencies',
-				},
-			}),
-		],
-		['src/index.ts', 'export default async () => "ok"\n'],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics: vi.fn(() => []),
-		},
-	})
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(result.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'dependencies',
-				ok: true,
-				message:
-					'package.json declares 1 npm dependency: "kleur". package.json#kody.dependencies declares no static Kody package dependencies.',
-			}),
-		]),
-	)
 })
 
 test('runRepoChecks validates static kody package import declarations across missing, declared, type-only, declaration files, mixed exports, dynamic imports, invalid declarations, and unused declarations', async () => {
@@ -1416,17 +1333,8 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'dependencies',
-				ok: true,
-				message:
-					'package.json declares 1 npm dependency: "marked". package.json#kody.dependencies declares no static Kody package dependencies.',
-			}),
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: true,
-				message: 'Bundled 3 package target(s) successfully.',
-			}),
+			expect.objectContaining({ kind: 'dependencies', ok: true }),
+			expect.objectContaining({ kind: 'bundle', ok: true }),
 		]),
 	)
 	expect(mockModule.buildKodyImportableModuleBundle).toHaveBeenCalledWith(

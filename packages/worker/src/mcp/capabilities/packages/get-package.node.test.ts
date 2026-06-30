@@ -17,10 +17,51 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 const { getPackageCapability } = await import('./get-package.ts')
 
-test('getPackageCapability returns ready-to-import package exports', async () => {
+function createCallerContext(input?: {
+	includeUsername?: boolean
+	username?: string | null
+}) {
+	const appDb = {
+		prepare: () => ({
+			bind: () => ({
+				first: async () => {
+					if (input?.includeUsername === false) return null
+					return { username: input?.username ?? 'kody' }
+				},
+			}),
+		}),
+	} as unknown as D1Database
+
+	const user: {
+		userId: string
+		email: string
+		displayName: string
+		username?: string
+	} = {
+		userId: 'user-1',
+		email: 'kody@example.com',
+		displayName: 'Kody',
+	}
+	if (input?.includeUsername !== false) {
+		user.username = input?.username ?? 'kody'
+	}
+
+	return {
+		env: { APP_DB: appDb } as Env,
+		callerContext: {
+			baseUrl: 'https://heykody.dev',
+			user,
+			remoteConnectors: null,
+			storageContext: null,
+			repoContext: null,
+		},
+	}
+}
+
+test('getPackageCapability returns export metadata and omits external invocation without a public username', async () => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
-	mockModule.getSavedPackageById.mockResolvedValueOnce({
+	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'user-1',
 		name: '@kentcdodds/discord-gateway',
@@ -33,7 +74,7 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
 		source: { id: 'source-1' },
 		manifest: {
 			name: '@kentcdodds/discord-gateway',
@@ -55,26 +96,12 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 		},
 	})
 
-	const result = await getPackageCapability.handler(
+	const withUsername = await getPackageCapability.handler(
 		{ package_id: 'package-1' },
-		{
-			env: { APP_DB: {} } as Env,
-			callerContext: {
-				baseUrl: 'https://heykody.dev',
-				user: {
-					userId: 'user-1',
-					email: 'kody@example.com',
-					username: 'kody',
-					displayName: 'Kody',
-				},
-				remoteConnectors: null,
-				storageContext: null,
-				repoContext: null,
-			},
-		},
+		createCallerContext(),
 	)
 
-	expect(result).toMatchObject({
+	expect(withUsername).toMatchObject({
 		package_id: 'package-1',
 		kody_id: 'discord-gateway',
 		name: '@kentcdodds/discord-gateway',
@@ -123,17 +150,15 @@ test('getPackageCapability returns ready-to-import package exports', async () =>
 		],
 	})
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
-		env: { APP_DB: {} },
+		env: expect.objectContaining({ APP_DB: expect.anything() }),
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
 		sourceId: 'source-1',
 	})
-})
 
-test('getPackageCapability keeps package details when no public username is available', async () => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
-	mockModule.getSavedPackageById.mockResolvedValueOnce({
+	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'user-1',
 		name: '@kentcdodds/discord-gateway',
@@ -146,7 +171,7 @@ test('getPackageCapability keeps package details when no public username is avai
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
 		source: { id: 'source-1' },
 		manifest: {
 			name: '@kentcdodds/discord-gateway',
@@ -160,32 +185,12 @@ test('getPackageCapability keeps package details when no public username is avai
 		},
 	})
 
-	const appDb = {
-		prepare: () => ({
-			bind: () => ({
-				first: async () => null,
-			}),
-		}),
-	} as unknown as D1Database
-	const result = await getPackageCapability.handler(
+	const withoutUsername = await getPackageCapability.handler(
 		{ package_id: 'package-1' },
-		{
-			env: { APP_DB: appDb } as Env,
-			callerContext: {
-				baseUrl: 'https://heykody.dev',
-				user: {
-					userId: 'user-1',
-					email: 'kody@example.com',
-					displayName: 'Kody',
-				},
-				remoteConnectors: null,
-				storageContext: null,
-				repoContext: null,
-			},
-		},
+		createCallerContext({ includeUsername: false }),
 	)
 
-	expect(result.exports).toEqual([
+	expect(withoutUsername.exports).toEqual([
 		expect.objectContaining({
 			subpath: './post-message',
 			external_invocation: null,

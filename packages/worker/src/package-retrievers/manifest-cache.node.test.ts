@@ -46,7 +46,7 @@ function createKv(options?: { list?: boolean }) {
 	}
 }
 
-function createSource(): EntitySourceRow {
+function createSource(overrides?: Partial<EntitySourceRow>): EntitySourceRow {
 	return {
 		id: 'source-1',
 		user_id: 'user-1',
@@ -59,10 +59,13 @@ function createSource(): EntitySourceRow {
 		source_root: '',
 		created_at: '2026-04-20T00:00:00.000Z',
 		updated_at: '2026-04-20T00:00:00.000Z',
+		...overrides,
 	}
 }
 
-function createSavedPackage(): SavedPackageRecord {
+function createSavedPackage(
+	overrides?: Partial<SavedPackageRecord>,
+): SavedPackageRecord {
 	return {
 		id: 'package-1',
 		userId: 'user-1',
@@ -75,13 +78,12 @@ function createSavedPackage(): SavedPackageRecord {
 		hasApp: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
+		...overrides,
 	}
 }
 
-test('refreshPackageRetrieverManifestCache derives KV scope indexes from package metadata', async () => {
-	const { kv, store } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
+function createRetrieverManifest() {
+	return parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/personal-inbox',
 			exports: {
@@ -104,6 +106,12 @@ test('refreshPackageRetrieverManifestCache derives KV scope indexes from package
 			},
 		}),
 	})
+}
+
+test('package retriever manifest cache refreshes, lists, removes entries, and preserves unrelated packages', async () => {
+	const { kv, store } = createKv()
+	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
+	const manifest = createRetrieverManifest()
 
 	await refreshPackageRetrieverManifestCache({
 		env,
@@ -148,32 +156,7 @@ test('refreshPackageRetrieverManifestCache derives KV scope indexes from package
 			entryPoint: 'src/search-notes.ts',
 		}),
 	])
-})
 
-test('removePackageRetrieverManifestCacheEntries removes package references from scope indexes', async () => {
-	const { kv, store } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
 	await refreshPackageRetrieverManifestCache({
 		env,
 		userId: 'user-1',
@@ -181,6 +164,36 @@ test('removePackageRetrieverManifestCacheEntries removes package references from
 		savedPackage: createSavedPackage(),
 		manifest,
 	})
+	expect(kv.delete).not.toHaveBeenCalledWith(
+		'package-retriever-index-entry:v1:user-1:search:package-1:notes-search',
+	)
+
+	const otherPackage = createSavedPackage({
+		id: 'package-2',
+		kodyId: 'other-inbox',
+		name: '@kentcdodds/other-inbox',
+		sourceId: 'source-2',
+	})
+	await refreshPackageRetrieverManifestCache({
+		env,
+		userId: 'user-1',
+		source: createSource({ id: 'source-2', published_commit: 'commit-2' }),
+		savedPackage: otherPackage,
+		manifest,
+	})
+
+	const beforeRemoval = await listPackageRetrieversForScope({
+		env,
+		userId: 'user-1',
+		scope: 'search',
+	})
+	expect(beforeRemoval).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ packageId: 'package-1' }),
+			expect.objectContaining({ packageId: 'package-2' }),
+		]),
+	)
+	expect(beforeRemoval).toHaveLength(2)
 
 	await removePackageRetrieverManifestCacheEntries({
 		env,
@@ -194,8 +207,13 @@ test('removePackageRetrieverManifestCacheEntries removes package references from
 			userId: 'user-1',
 			scope: 'search',
 		}),
-	).resolves.toEqual([])
-	const searchIndex = JSON.parse(
+	).resolves.toEqual([expect.objectContaining({ packageId: 'package-2' })])
+	expect(
+		Array.from(store.keys()).filter((key) =>
+			key.startsWith('package-retriever-manifest:v1:user-1:package-1:'),
+		),
+	).toEqual([])
+	const clearedSearchIndex = JSON.parse(
 		store.get(
 			buildPackageRetrieverScopeIndexKey({
 				userId: 'user-1',
@@ -203,158 +221,27 @@ test('removePackageRetrieverManifestCacheEntries removes package references from
 			}),
 		) ?? '{}',
 	)
-	expect(searchIndex.retrievers).toEqual([])
-})
-
-test('removePackageRetrieverManifestCacheEntries deletes manifest cache rows', async () => {
-	const { kv, store } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: createSource(),
-		savedPackage: createSavedPackage(),
-		manifest,
-	})
-
-	await removePackageRetrieverManifestCacheEntries({
-		env,
-		userId: 'user-1',
-		packageId: 'package-1',
-	})
-
-	expect(
-		Array.from(store.keys()).filter((key) =>
-			key.startsWith('package-retriever-manifest:v1:user-1:package-1:'),
-		),
-	).toEqual([])
-})
-
-test('package-specific scope prefix does not match package ids with shared prefixes', async () => {
-	const { kv } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: createSource(),
-		savedPackage: createSavedPackage(),
-		manifest,
-	})
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: {
-			...createSource(),
-			id: 'source-10',
-			published_commit: 'commit-10',
-		},
-		savedPackage: {
-			...createSavedPackage(),
-			id: 'package-10',
-			kodyId: 'package-10',
-			name: '@kentcdodds/package-10',
-		},
-		manifest,
-	})
-
-	await removePackageRetrieverManifestCacheEntries({
-		env,
-		userId: 'user-1',
-		packageId: 'package-1',
-	})
-
-	await expect(
-		listPackageRetrieversForScope({
-			env,
-			userId: 'user-1',
-			scope: 'search',
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			packageId: 'package-10',
-		}),
+	expect(clearedSearchIndex.retrievers).toEqual([
+		expect.objectContaining({ packageId: 'package-2' }),
 	])
 })
 
-test('listPackageRetrieversForScope applies limit after stale cache entries are filtered', async () => {
+test('listPackageRetrieversForScope filters stale, malformed, and prefix-colliding cache rows', async () => {
 	const { kv, store } = createKv()
 	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
+	const manifest = createRetrieverManifest()
+
 	await refreshPackageRetrieverManifestCache({
 		env,
 		userId: 'user-1',
-		source: {
-			...createSource(),
+		source: createSource({
 			id: 'source-stale',
 			published_commit: 'commit-stale',
-		},
-		savedPackage: {
-			...createSavedPackage(),
+		}),
+		savedPackage: createSavedPackage({
 			id: 'package-stale',
 			sourceId: 'source-stale',
-		},
+		}),
 		manifest,
 	})
 	await refreshPackageRetrieverManifestCache({
@@ -381,39 +268,23 @@ test('listPackageRetrieversForScope applies limit after stale cache entries are 
 			retrieverKey: 'notes-search',
 		}),
 	])
-})
 
-test('listPackageRetrieversForScope ignores malformed index and manifest rows', async () => {
-	const { kv, store } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
 	await refreshPackageRetrieverManifestCache({
 		env,
 		userId: 'user-1',
-		source: createSource(),
-		savedPackage: createSavedPackage(),
+		source: createSource({
+			id: 'source-10',
+			published_commit: 'commit-10',
+		}),
+		savedPackage: createSavedPackage({
+			id: 'package-10',
+			kodyId: 'package-10',
+			name: '@kentcdodds/package-10',
+			sourceId: 'source-10',
+		}),
 		manifest,
 	})
+
 	await kv.put(
 		'package-retriever-index-entry:v1:user-1:search:malformed:index',
 		JSON.stringify({
@@ -449,131 +320,30 @@ test('listPackageRetrieversForScope ignores malformed index and manifest rows', 
 		}),
 	)
 
-	await expect(
-		listPackageRetrieversForScope({
-			env,
-			userId: 'user-1',
-			scope: 'search',
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			packageId: 'package-1',
-		}),
-	])
-})
-
-test('refreshPackageRetrieverManifestCache does not delete persistent entries during refresh', async () => {
-	const { kv } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: createSource(),
-		savedPackage: createSavedPackage(),
-		manifest,
-	})
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: createSource(),
-		savedPackage: createSavedPackage(),
-		manifest,
-	})
-
-	expect(kv.delete).not.toHaveBeenCalledWith(
-		'package-retriever-index-entry:v1:user-1:search:package-1:notes-search',
-	)
-	await expect(
-		listPackageRetrieversForScope({
-			env,
-			userId: 'user-1',
-			scope: 'search',
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			packageId: 'package-1',
-			retrieverKey: 'notes-search',
-		}),
-	])
-})
-
-test('refreshPackageRetrieverManifestCache does not clobber other package scope entries', async () => {
-	const { kv } = createKv()
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/personal-inbox',
-			exports: {
-				'.': './src/index.ts',
-				'./search-notes': './src/search-notes.ts',
-			},
-			kody: {
-				id: 'personal-inbox',
-				description: 'Personal inbox package',
-				retrievers: {
-					'notes-search': {
-						export: './search-notes',
-						name: 'Notes Search',
-						description: 'Searches saved notes',
-						scopes: ['search'],
-					},
-				},
-			},
-		}),
-	})
-	const otherPackage = {
-		...createSavedPackage(),
-		id: 'package-2',
-		kodyId: 'other-inbox',
-		name: '@kentcdodds/other-inbox',
-		sourceId: 'source-2',
-	}
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: { ...createSource(), id: 'source-2', published_commit: 'commit-2' },
-		savedPackage: otherPackage,
-		manifest,
-	})
-	await refreshPackageRetrieverManifestCache({
-		env,
-		userId: 'user-1',
-		source: createSource(),
-		savedPackage: createSavedPackage(),
-		manifest,
-	})
-
-	const retrievers = await listPackageRetrieversForScope({
+	const listed = await listPackageRetrieversForScope({
 		env,
 		userId: 'user-1',
 		scope: 'search',
 	})
-	expect(retrievers).toEqual(
+	expect(listed).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({ packageId: 'package-1' }),
-			expect.objectContaining({ packageId: 'package-2' }),
+			expect.objectContaining({ packageId: 'package-10' }),
 		]),
 	)
-	expect(retrievers).toHaveLength(2)
+	expect(listed).toHaveLength(2)
+
+	await removePackageRetrieverManifestCacheEntries({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	await expect(
+		listPackageRetrieversForScope({
+			env,
+			userId: 'user-1',
+			scope: 'search',
+		}),
+	).resolves.toEqual([expect.objectContaining({ packageId: 'package-10' })])
 })
