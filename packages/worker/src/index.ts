@@ -284,12 +284,16 @@ const appHandler = withCors({
 
 		// Dev route: serve generated UI runtime HTML entry for iframe testing.
 		// This runtime executes attacker-authored HTML/JS delivered via
-		// postMessage, so it must never be reachable in production.
-		if (
-			url.pathname === '/dev/generated-ui' &&
-			isNonProductionRuntime(env) &&
-			(request.method === 'GET' || request.method === 'HEAD')
-		) {
+		// postMessage, so it must never be reachable in production. Return 404
+		// immediately outside non-production so the path can never fall through
+		// to assets or the app router.
+		if (url.pathname === '/dev/generated-ui') {
+			if (
+				!isNonProductionRuntime(env) ||
+				(request.method !== 'GET' && request.method !== 'HEAD')
+			) {
+				return new Response('Not Found', { status: 404 })
+			}
 			const { renderGeneratedUiRuntimeHtmlEntry } =
 				await import('./mcp/apps/generated-ui-runtime-html-entry.ts')
 			const baseUrl = new URL('/', url.origin)
