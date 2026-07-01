@@ -1,0 +1,93 @@
+import { env, exports } from 'cloudflare:workers'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { expect, test } from 'vitest'
+
+function createRequest(
+	path: string,
+	options: RequestInit & { headers?: Record<string, string> } = {},
+): Request {
+	return new Request(`https://test.kody.dev${path}`, options)
+}
+
+async function workerFetch(request: Request): Promise<Response> {
+	const ctx = createExecutionContext()
+	const response = await exports.default.fetch(request, env, ctx)
+	await waitOnExecutionContext(ctx)
+	return response
+}
+
+test('first-party HTML shell carries security headers', async () => {
+	const response = await workerFetch(createRequest('/login'))
+	expect(response.status).toBe(200)
+	const csp = response.headers.get('Content-Security-Policy') ?? ''
+	expect(csp).toContain("script-src 'self'")
+	expect(csp).toContain("frame-ancestors 'none'")
+	expect(response.headers.get('X-Frame-Options')).toBe('DENY')
+	expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+	expect(response.headers.get('Referrer-Policy')).toBe(
+		'strict-origin-when-cross-origin',
+	)
+	expect(response.headers.get('Strict-Transport-Security')).toContain(
+		'max-age=',
+	)
+})
+
+test('generated-ui dev route is reachable in the non-production test env', async () => {
+	// The test wrangler environment sets SENTRY_ENVIRONMENT=test, which is a
+	// non-production runtime, so the developer route is served. In production
+	// (SENTRY_ENVIRONMENT=production) the same request falls through to a 404.
+	const response = await workerFetch(createRequest('/dev/generated-ui'))
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+})
+
+test('oauth authorize login shares the auth rate-limit bucket', async () => {
+	let rateLimited = false
+	for (let i = 0; i < 25; i++) {
+		const response = await workerFetch(
+			createRequest('/oauth/authorize', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+					'CF-Connecting-IP': '203.0.113.7',
+				},
+				body: new URLSearchParams({
+					decision: 'approve',
+					email: 'attacker@example.com',
+					password: 'password123',
+				}).toString(),
+			}),
+		)
+		if (response.status === 429) {
+			rateLimited = true
+			expect(response.headers.get('Retry-After')).toBeTruthy()
+			break
+		}
+	}
+	expect(rateLimited).toBe(true)
+})
+
+test('password-reset confirm is rate limited', async () => {
+	let rateLimited = false
+	for (let i = 0; i < 25; i++) {
+		const response = await workerFetch(
+			createRequest('/password-reset/confirm', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '203.0.113.9',
+				},
+				body: JSON.stringify({
+					token: 'a'.repeat(64),
+					password: 'password123',
+				}),
+			}),
+		)
+		if (response.status === 429) {
+			rateLimited = true
+			expect(response.headers.get('Retry-After')).toBeTruthy()
+			break
+		}
+	}
+	expect(rateLimited).toBe(true)
+})

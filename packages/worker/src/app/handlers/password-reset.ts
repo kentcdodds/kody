@@ -11,6 +11,7 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 const resetTokenBytes = 32
@@ -230,6 +231,19 @@ export function createPasswordResetConfirmHandler(appEnv: AppEnv) {
 					{ error: 'Token and password are required.' },
 					{ status: 400 },
 				)
+			}
+
+			const passwordError = getPasswordPolicyError(password)
+			if (passwordError) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'password_reset_confirm',
+					result: 'failure',
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'weak_password',
+				})
+				return Response.json({ error: passwordError }, { status: 400 })
 			}
 
 			const tokenHash = await hashResetToken(token)

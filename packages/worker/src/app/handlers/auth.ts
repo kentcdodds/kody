@@ -11,6 +11,8 @@ import {
 	createPasswordHash,
 	verifyPassword,
 } from '@kody-internal/shared/password-hash.ts'
+import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 const authModes = ['login', 'signup'] as const
@@ -25,10 +27,12 @@ type AuthMode = (typeof authModes)[number]
  * 'test'; `npm run dev` sets `WRANGLER_IS_LOCAL_DEV=true`.
  */
 function isSignupAllowed(appEnv: AppEnv) {
-	const runtime = appEnv as unknown as Record<string, string | undefined>
-	if (runtime['WRANGLER_IS_LOCAL_DEV'] === 'true') return true
-	const sentryEnv = runtime['SENTRY_ENVIRONMENT']
-	return sentryEnv === 'test' || sentryEnv === 'preview'
+	return isNonProductionRuntime(
+		appEnv as unknown as {
+			WRANGLER_IS_LOCAL_DEV?: string
+			SENTRY_ENVIRONMENT?: string
+		},
+	)
 }
 
 const authRequestSchema = object({
@@ -132,6 +136,19 @@ export function createAuthHandler(appEnv: AppEnv) {
 						reason: 'invalid_username',
 					})
 					return Response.json({ error: usernameError }, { status: 400 })
+				}
+				const passwordError = getPasswordPolicyError(normalizedPassword)
+				if (passwordError) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'weak_password',
+					})
+					return Response.json({ error: passwordError }, { status: 400 })
 				}
 			}
 

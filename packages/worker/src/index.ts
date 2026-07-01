@@ -34,6 +34,7 @@ import {
 	isPackageInvocationApiRequest,
 } from './package-invocations/http.ts'
 import { withCors } from './utils.ts'
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
 import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
@@ -68,6 +69,16 @@ export {
 }
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
+
+// Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
+// so brute-force attempts cannot fan out across parallel paths (password login,
+// OAuth inline login, password-reset request, and password-reset confirm).
+const rateLimitedAuthPaths = new Set([
+	'/auth',
+	'/oauth/authorize',
+	'/password-reset',
+	'/password-reset/confirm',
+])
 
 function isNamespacedPackageInvocationEndpointPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
@@ -159,10 +170,7 @@ const appHandler = withCors({
 	async handler(request, env, ctx) {
 		const url = new URL(request.url)
 
-		if (
-			request.method === 'POST' &&
-			(url.pathname === '/auth' || url.pathname === '/password-reset')
-		) {
+		if (request.method === 'POST' && rateLimitedAuthPaths.has(url.pathname)) {
 			const ip = getRequestIp(request) ?? 'unknown'
 			const rateLimitKey = `auth:ip:${ip}`
 			const result = await checkRateLimit(
@@ -275,8 +283,11 @@ const appHandler = withCors({
 		}
 
 		// Dev route: serve generated UI runtime HTML entry for iframe testing.
+		// This runtime executes attacker-authored HTML/JS delivered via
+		// postMessage, so it must never be reachable in production.
 		if (
 			url.pathname === '/dev/generated-ui' &&
+			isNonProductionRuntime(env) &&
 			(request.method === 'GET' || request.method === 'HEAD')
 		) {
 			const { renderGeneratedUiRuntimeHtmlEntry } =
@@ -315,6 +326,10 @@ const oauthProvider = new OAuthProvider({
 	tokenEndpoint: oauthPaths.token,
 	clientRegistrationEndpoint: oauthPaths.register,
 	scopesSupported: oauthScopes,
+	// Require PKCE S256; reject the weaker `plain` challenge method. MCP clients
+	// all use S256, so this does not break dynamic client registration (which
+	// the MCP OAuth spec requires and we intentionally keep open).
+	allowPlainPKCE: false,
 })
 
 /**

@@ -224,10 +224,22 @@ test('auth handler login and signup workflow', async () => {
 	})
 	expect(productionContext.testDb.users.has('new@example.com')).toBe(false)
 
+	const weakPasswordSignupResponse = await signupContext.request({
+		email: 'weak@example.com',
+		username: 'weak-user',
+		password: 'short',
+		mode: 'signup',
+	})
+	expect(weakPasswordSignupResponse.status).toBe(400)
+	expect(await weakPasswordSignupResponse.json()).toEqual({
+		error: 'Password must be at least 8 characters.',
+	})
+	expect(signupContext.testDb.users.has('weak@example.com')).toBe(false)
+
 	const allowedSignupResponse = await signupContext.request({
 		email: 'allowed@example.com',
 		username: 'allowed-user',
-		password: 'secret',
+		password: 'password123',
 		mode: 'signup',
 	})
 	expect(allowedSignupResponse.status).toBe(200)
@@ -271,7 +283,7 @@ test('auth handler login and signup workflow', async () => {
 	const duplicateUsernameResponse = await signupContext.request({
 		email: 'duplicate@example.com',
 		username: 'Existing-User',
-		password: 'secret',
+		password: 'password123',
 		mode: 'signup',
 	})
 	expect(duplicateUsernameResponse.status).toBe(409)
