@@ -1,5 +1,10 @@
+import { createHref } from 'remix/route-pattern/href'
+
 type AccountSecretRouteScope = 'app' | 'session' | 'user'
 const accountSecretsBasePath = '/account/secrets'
+const accountSecretUserPathPattern = `${accountSecretsBasePath}/user/:secretName`
+const accountSecretAppPathPattern = `${accountSecretsBasePath}/app/:appId/:secretName`
+const accountSecretSessionPathPattern = `${accountSecretsBasePath}/session/:sessionId/:secretName`
 
 export type AccountSecretRouteIdInput = {
 	name: string
@@ -55,16 +60,19 @@ export function parseAccountSecretId(
 }
 
 export function buildAccountSecretPath(input: AccountSecretRouteIdInput) {
-	const name = encodeURIComponent(input.name)
 	if (input.scope === 'user') {
-		return `${accountSecretsBasePath}/user/${name}`
+		return createHref(accountSecretUserPathPattern, { secretName: input.name })
 	}
 	if (input.scope === 'app') {
-		const appId = encodeURIComponent(input.appId ?? '')
-		return `${accountSecretsBasePath}/app/${appId}/${name}`
+		return createHref(accountSecretAppPathPattern, {
+			appId: input.appId ?? '',
+			secretName: input.name,
+		})
 	}
-	const sessionId = encodeURIComponent(input.sessionId ?? '')
-	return `${accountSecretsBasePath}/session/${sessionId}/${name}`
+	return createHref(accountSecretSessionPathPattern, {
+		sessionId: input.sessionId ?? '',
+		secretName: input.name,
+	})
 }
 
 export function parseAccountSecretPath(

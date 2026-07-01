@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
 import {
 	type AccountStatus,
@@ -76,6 +77,7 @@ const accountPackageInvocationTokensApiPath =
 	'/account/package-invocation-tokens.json'
 const accountPackageInvocationTokensBasePath =
 	'/account/package-invocation-tokens'
+const accountPackageInvocationTokenDetailPathPattern = `${accountPackageInvocationTokensBasePath}/:tokenId`
 const wildcardScope = '*'
 
 function createEmptyEditorState(): EditorState {
@@ -184,7 +186,7 @@ function getSelectedTokenIdFromPath(href: string) {
 }
 
 function buildTokenDetailPath(tokenId: string) {
-	return `${accountPackageInvocationTokensBasePath}/${encodeURIComponent(tokenId)}`
+	return createHref(accountPackageInvocationTokenDetailPathPattern, { tokenId })
 }
 
 function getNewTokenQueryKey(href: string) {

@@ -1,4 +1,5 @@
 import { addEventListeners, type Handle } from 'remix/ui'
+import { createMultiMatcher } from 'remix/route-pattern/match'
 
 type RouterSetup = {
 	routes: Record<string, JSX.Element>
@@ -14,6 +15,11 @@ type FormSubmitDetails = {
 	formData: FormData
 }
 
+const clientRouteOrigin = 'https://kody.local'
+const routeMatchers = new WeakMap<
+	Record<string, JSX.Element>,
+	ReturnType<typeof createRouteMatcher>
+>()
 export const routerEvents = new EventTarget()
 let routerInitialized = false
 
@@ -21,28 +27,30 @@ function notify() {
 	routerEvents.dispatchEvent(new Event('navigate'))
 }
 
-function compileRoutePattern(pattern: string) {
-	const regexPattern = pattern
-		.replace(/:([^/]+)/g, '([^/]+)')
-		.replace(/\*/g, '.*')
-
-	return {
-		pattern: new RegExp(`^${regexPattern}$`),
+function createRouteMatcher(routes: Record<string, JSX.Element>) {
+	const matcher = createMultiMatcher<JSX.Element>()
+	for (const [pattern, routeElement] of Object.entries(routes)) {
+		matcher.add(pattern, routeElement)
 	}
+	return matcher
 }
 
-function matchRoute(
+function getRouteMatcher(routes: Record<string, JSX.Element>) {
+	const existing = routeMatchers.get(routes)
+	if (existing) return existing
+	const matcher = createRouteMatcher(routes)
+	routeMatchers.set(routes, matcher)
+	return matcher
+}
+
+export function matchRoute(
 	path: string,
 	routes: Record<string, JSX.Element>,
 ): JSX.Element | null {
-	for (const [pattern, routeElement] of Object.entries(routes)) {
-		const { pattern: compiled } = compileRoutePattern(pattern)
-		const result = compiled.exec(path)
-		if (!result) continue
-		return routeElement
-	}
-
-	return null
+	return (
+		getRouteMatcher(routes).match(new URL(path, clientRouteOrigin))?.data ??
+		null
+	)
 }
 
 function shouldHandleClick(event: MouseEvent, anchor: HTMLAnchorElement) {
