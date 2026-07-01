@@ -600,7 +600,12 @@ export async function handleAuthorizeRequest(
 	}
 
 	const { authRequest } = resolution
-	const pkceError = getPkceValidationError(authRequest)
+	// Reading the fields off the typed `AuthRequest` (rather than passing the
+	// whole object) makes provider field renames a compile-time error here.
+	const pkceError = getPkceValidationError({
+		codeChallenge: authRequest.codeChallenge,
+		codeChallengeMethod: authRequest.codeChallengeMethod,
+	})
 	if (pkceError) {
 		void logAuditEvent({
 			category: 'oauth',
