@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
-import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
 import {
 	createCloudflareRestClient,
 	CloudflareRestClient,
@@ -9,10 +8,38 @@ import {
 
 test('Cloudflare REST clients read mock responses, enforce API paths, and send JSON bodies', async () => {
 	const token = 'cloudflare-client-env-token'
-	await using mock = await startCloudflareMock(token)
+	const baseUrl = 'https://api.cloudflare.test'
+	let accountsRequest: Request | null = null
+	let verifyRequest: Request | null = null
+	let patchRequest: Request | null = null
+
+	using _server = createMswNodeServer([
+		http.get(`${baseUrl}/client/v4/accounts`, ({ request }) => {
+			accountsRequest = request.clone()
+			return HttpResponse.json({
+				success: true,
+				result: [{ id: 'cf_account_mock_123' }],
+			})
+		}),
+		http.get(`${baseUrl}/client/v4/user/tokens/verify`, ({ request }) => {
+			verifyRequest = request.clone()
+			return HttpResponse.json({
+				success: true,
+				result: { id: 'token_mock_123', status: 'active' },
+			})
+		}),
+		http.patch(
+			`${baseUrl}/client/v4/zones/example-zone-id/settings/always_online`,
+			async ({ request }) => {
+				patchRequest = request.clone()
+				return HttpResponse.json({ success: true, result: null })
+			},
+		),
+	])
+
 	const directClient = new CloudflareRestClient({
-		apiToken: mock.token,
-		baseUrl: mock.origin,
+		apiToken: token,
+		baseUrl,
 	})
 	const accountsResponse = await directClient.rawRequest({
 		method: 'GET',
@@ -29,16 +56,18 @@ test('Cloudflare REST clients read mock responses, enforce API paths, and send J
 			(account) => account.id === 'cf_account_mock_123',
 		),
 	).toBe(true)
+	expect(accountsRequest?.headers.get('authorization')).toBe(`Bearer ${token}`)
 
 	const envClient = createCloudflareRestClient({
-		CLOUDFLARE_API_TOKEN: mock.token,
-		CLOUDFLARE_API_BASE_URL: mock.origin,
+		CLOUDFLARE_API_TOKEN: token,
+		CLOUDFLARE_API_BASE_URL: baseUrl,
 	} as Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'>)
 	const verifyResponse = await envClient.rawRequest({
 		method: 'GET',
 		path: '/client/v4/user/tokens/verify',
 	})
 	expect(verifyResponse.status).toBe(200)
+	expect(verifyRequest?.headers.get('authorization')).toBe(`Bearer ${token}`)
 	await expect(
 		envClient.rawRequest({
 			method: 'GET',
@@ -46,21 +75,9 @@ test('Cloudflare REST clients read mock responses, enforce API paths, and send J
 		}),
 	).rejects.toThrow('path must start with `/client/v4/`')
 
-	let capturedRequest: Request | null = null
-
-	using _server = createMswNodeServer([
-		http.patch(
-			'https://api.cloudflare.test/client/v4/zones/example-zone-id/settings/always_online',
-			async ({ request }) => {
-				capturedRequest = request.clone()
-				return HttpResponse.json({ success: true, result: null })
-			},
-		),
-	])
-
 	const patchClient = new CloudflareRestClient({
 		apiToken: 'patch-token',
-		baseUrl: 'https://api.cloudflare.test',
+		baseUrl,
 	})
 	const patchResponse = await patchClient.rawRequest({
 		method: 'PATCH',
@@ -69,11 +86,9 @@ test('Cloudflare REST clients read mock responses, enforce API paths, and send J
 	})
 
 	expect(patchResponse.status).toBe(200)
-	expect(capturedRequest).not.toBeNull()
-	expect(capturedRequest?.method).toBe('PATCH')
-	expect(capturedRequest?.headers.get('authorization')).toBe(
-		'Bearer patch-token',
-	)
-	expect(capturedRequest?.headers.get('content-type')).toBe('application/json')
-	expect(await capturedRequest?.text()).toBe('{"value":"on"}')
-}, 40_000)
+	expect(patchRequest).not.toBeNull()
+	expect(patchRequest?.method).toBe('PATCH')
+	expect(patchRequest?.headers.get('authorization')).toBe('Bearer patch-token')
+	expect(patchRequest?.headers.get('content-type')).toBe('application/json')
+	expect(await patchRequest?.text()).toBe('{"value":"on"}')
+})
