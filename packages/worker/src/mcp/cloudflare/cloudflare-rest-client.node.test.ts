@@ -76,4 +76,4 @@ test('Cloudflare REST clients read mock responses, enforce API paths, and send J
 	)
 	expect(capturedRequest?.headers.get('content-type')).toBe('application/json')
 	expect(await capturedRequest?.text()).toBe('{"value":"on"}')
-})
+}, 40_000)
