@@ -18,6 +18,7 @@ import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import { getUsernameValidationError } from '#app/username.ts'
+import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 
 export const oauthPaths = {
 	authorize: '/oauth/authorize',
@@ -599,6 +600,19 @@ export async function handleAuthorizeRequest(
 	}
 
 	const { authRequest } = resolution
+	const pkceError = getPkceValidationError(authRequest)
+	if (pkceError) {
+		void logAuditEvent({
+			category: 'oauth',
+			action: 'authorize',
+			result: 'failure',
+			ip: requestIp,
+			clientId: authRequest.clientId,
+			reason: 'invalid_pkce_method',
+		})
+		return respondAuthorizeError(request, pkceError)
+	}
+
 	if (decision === 'deny') {
 		const redirectTo = createAccessDeniedRedirectUrl(authRequest)
 		if (!redirectTo) {

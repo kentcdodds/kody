@@ -326,10 +326,11 @@ const oauthProvider = new OAuthProvider({
 	tokenEndpoint: oauthPaths.token,
 	clientRegistrationEndpoint: oauthPaths.register,
 	scopesSupported: oauthScopes,
-	// Require PKCE S256; reject the weaker `plain` challenge method. MCP clients
-	// all use S256, so this does not break dynamic client registration (which
-	// the MCP OAuth spec requires and we intentionally keep open).
-	allowPlainPKCE: false,
+	// NOTE: we intentionally do NOT set `allowPlainPKCE: false`. In this provider
+	// version that option rejects EVERY authorize request whose
+	// `code_challenge_method` is absent or `plain` — including confidential
+	// clients that legitimately use no PKCE — which breaks real MCP clients. See
+	// the OAuth section of docs/contributing/security.md before changing this.
 })
 
 /**
