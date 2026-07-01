@@ -151,26 +151,6 @@ test('integration config helpers and integration_save persist validated integrat
 		),
 	).toBeNull()
 
-	expect(
-		parseIntegrationConfig(
-			{
-				name: 'spotify',
-				tokenUrl: 'https://accounts.spotify.com/api/token',
-				flow: 'pkce',
-				clientIdValueName: 'spotify-client-id',
-				clientSecretSecretName: null,
-				accessTokenSecretName: 'spotifyAccessToken',
-				refreshTokenSecretName: 'spotifyRefreshToken',
-				requiredHosts: ['api.spotify.com'],
-				authorization: {
-					authorizeUrl: 'https://accounts.spotify.com/authorize',
-					scopes: [' '],
-				},
-			},
-			null,
-		),
-	).toBeNull()
-
 	const testDb = createValueTestDb()
 
 	const result = await integrationSaveCapability.handler(

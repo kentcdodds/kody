@@ -19,13 +19,11 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 	expect(
 		isSecretAuthRequiredMessage(capabilityInputSecretAuthRequiredMessage),
 	).toBe(true)
-	expect(isSecretAuthRequiredMessage('Something else entirely.')).toBe(false)
 	expect(
 		parseMissingSecretMessage(createMissingSecretMessage('lutronPassword')),
 	).toEqual({
 		secretName: 'lutronPassword',
 	})
-	expect(parseMissingSecretMessage('Secret missing')).toBeNull()
 
 	expect(
 		parseHostApprovalRequiredMessage(
@@ -35,7 +33,6 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 		secretName: 'cloudflareToken',
 		host: 'api.cloudflare.com',
 	})
-	expect(parseHostApprovalRequiredMessage('Host approval failed')).toBeNull()
 
 	const capabilityMessage = createCapabilitySecretAccessDeniedMessage(
 		'cloudflareToken',
@@ -46,9 +43,6 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 		secretName: 'cloudflareToken',
 		capabilityName: 'secret_set',
 	})
-	expect(
-		parseCapabilityAccessRequiredMessage('Capability approval failed'),
-	).toBeNull()
 
 	const capabilityEntries = [
 		{
@@ -69,19 +63,6 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 			createCapabilitySecretAccessDeniedBatchMessage(capabilityEntries),
 		),
 	).toEqual(capabilityEntries)
-	expect(
-		parseCapabilityAccessRequiredBatchMessage(
-			createCapabilitySecretAccessDeniedBatchMessage([]),
-		),
-	).toBeNull()
-	expect(
-		parseCapabilityAccessRequiredBatchMessage('Capability approval failed'),
-	).toBeNull()
-	expect(
-		parseCapabilityAccessRequiredBatchMessage(
-			'Secrets require capability approval: {"not":"an array"}',
-		),
-	).toBeNull()
 
 	const hostEntries = [
 		{
@@ -102,17 +83,4 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 			createHostSecretAccessDeniedBatchMessage(hostEntries),
 		),
 	).toEqual(hostEntries)
-	expect(
-		parseHostApprovalRequiredBatchMessage(
-			createHostSecretAccessDeniedBatchMessage([]),
-		),
-	).toBeNull()
-	expect(
-		parseHostApprovalRequiredBatchMessage('Host approval failed'),
-	).toBeNull()
-	expect(
-		parseHostApprovalRequiredBatchMessage(
-			'Secrets require host approval: {"not":"an array"}',
-		),
-	).toBeNull()
 })

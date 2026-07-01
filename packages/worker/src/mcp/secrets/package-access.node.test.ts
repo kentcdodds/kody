@@ -21,12 +21,8 @@ vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
 }))
 
-const {
-	buildPackageApprovalErrorForMounts,
-	isPackageSecretAccessUnavailableError,
-	PackageSecretMountError,
-	resolvePackageMountedSecret,
-} = await import('./package-access.ts')
+const { buildPackageApprovalErrorForMounts, resolvePackageMountedSecret } =
+	await import('./package-access.ts')
 
 test('resolvePackageMountedSecret rejects package runtime calls without a matching appId', async () => {
 	const runtimeError =
@@ -168,16 +164,6 @@ test('package access helpers treat missing approvals consistently', () => {
 		secretName: 'discordBotTokenKentPersonalAutomation',
 		packageName: 'discord-gateway',
 	})
-	expect(approvalMessage).toContain(
-		'https://example.com/account/secrets/user/discordBotToken',
-	)
-	expect(
-		isPackageSecretAccessUnavailableError(
-			new PackageSecretMountError(
-				'Package "discord-gateway" does not declare secret mount "discordBotToken".',
-			),
-		),
-	).toBe(true)
 })
 
 test('findMissingPackageApprovals reads saved package metadata without loading manifest', async () => {

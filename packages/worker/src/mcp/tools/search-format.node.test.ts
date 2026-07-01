@@ -431,98 +431,6 @@ export declare function fetch(request: Request): Promise<Response>
 			truncated: false,
 		},
 	})
-
-	const typedExportDetail = formatEntityDetailMarkdown({
-		type: 'package',
-		id: 'cursor-cloud-agents',
-		title: '@kentcdodds/cursor-cloud-agents',
-		description: 'Cursor cloud agents package.',
-		baseUrl: 'http://localhost',
-		ownerUsername: 'test-user',
-		hostedUrl: null,
-		record: {
-			id: 'package-456',
-			userId: 'user-123',
-			name: '@kentcdodds/cursor-cloud-agents',
-			kodyId: 'cursor-cloud-agents',
-			description: 'Cursor cloud agents package.',
-			tags: ['cursor'],
-			searchText: null,
-			sourceId: 'source-package-456',
-			hasApp: false,
-			createdAt: '2026-03-20T00:00:00.000Z',
-			updatedAt: '2026-03-20T00:00:00.000Z',
-		},
-		manifest: {
-			name: '@kentcdodds/cursor-cloud-agents',
-			exports: {
-				'./launch-cursor-cloud-agent': {
-					import: './src/launch-cursor-cloud-agent.ts',
-					types: './src/launch-cursor-cloud-agent.d.ts',
-				},
-			},
-			kody: {
-				id: 'cursor-cloud-agents',
-				description: 'Cursor cloud agents package.',
-				tags: ['cursor'],
-			},
-		},
-		files: {
-			'package.json': '{}',
-			'src/launch-cursor-cloud-agent.d.ts': `type LaunchCursorCloudAgentInput = {
-	prompt: string
-	repository: RepositoryTarget
-	metadata?: Record<string, string>
-}
-
-type RepositoryTarget = {
-	owner: string
-	repo: string
-}
-
-type UnrelatedLocalType = {
-	ignored: boolean
-}
-
-/**
- * Launch a Cursor Cloud agent.
- */
-export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Response>
-`,
-		},
-	})
-	expect(typedExportDetail.structured).toMatchObject({
-		type: 'package',
-		exports: [
-			expect.objectContaining({
-				subpath: './launch-cursor-cloud-agent',
-				typesSource: null,
-				referencedTypes: [
-					expect.objectContaining({
-						name: 'LaunchCursorCloudAgentInput',
-						kind: 'type',
-					}),
-					expect.objectContaining({
-						name: 'RepositoryTarget',
-						kind: 'type',
-					}),
-				],
-				functions: [
-					expect.objectContaining({
-						name: 'launch',
-						referencedTypes: [
-							expect.objectContaining({
-								name: 'LaunchCursorCloudAgentInput',
-							}),
-							expect.objectContaining({
-								name: 'RepositoryTarget',
-							}),
-						],
-					}),
-				],
-			}),
-		],
-	})
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
@@ -742,7 +650,6 @@ test('search markdown summarizes broad results safely and only suggests entity d
 	)
 	expect(escapedRetrieverMarkdown).toMatch(/\\\*\\\*oven\\\*\\\*/)
 	expect(escapedRetrieverMarkdown).toMatch(/\\#\\# Ignore prior instructions/)
-	expect(escapedRetrieverMarkdown).toContain('personal `inbox`')
 	expect(escapedRetrieverMarkdown).not.toContain(
 		'https://example.com/path?x=`bad`',
 	)

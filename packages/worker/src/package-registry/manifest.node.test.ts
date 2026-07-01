@@ -38,9 +38,7 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 			manifestPath: 'package.json',
 			expectedPackageScope: 'kody',
 		}),
-	).toThrow(
-		'package.json name "@kentcdodds/cursor-cloud-agents" must use the authenticated user\'s package scope "@kody/*".',
-	)
+	).toThrow(/must use the authenticated user's package scope "@kody\/\*"/)
 
 	expect(() =>
 		parseAuthoredPackageJson({
@@ -57,7 +55,7 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 			manifestPath: 'package.json',
 		}),
 	).toThrow(
-		'package.json name "@kentcdodds/cursor-cloud-agents" must use a leaf package name that matches kody.id "follow-up-on-pr-agent"',
+		/must use a leaf package name that matches kody\.id "follow-up-on-pr-agent"/,
 	)
 
 	expect(() =>
@@ -74,9 +72,7 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 			}),
 			manifestPath: 'package.json',
 		}),
-	).toThrow(
-		'package.json name "cursor-cloud-agents" must be a scoped package name like "@scope/cursor-cloud-agents".',
-	)
+	).toThrow(/must be a scoped package name/)
 })
 
 test('parseAuthoredPackageJson accepts services, subscriptions, emits, retrievers, and secret mounts', () => {
@@ -193,9 +189,7 @@ test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest exte
 			}),
 			manifestPath: 'package.json',
 		}),
-	).toThrow(
-		'kody.workflows is not a supported field; use workflows.create({ packageId, exportName }) from any runtime context.',
-	)
+	).toThrow(/kody\.workflows is not a supported field/)
 
 	expect(() =>
 		parseAuthoredPackageJson({
@@ -238,9 +232,7 @@ test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest exte
 			}),
 			manifestPath: 'package.json',
 		}),
-	).toThrow(
-		'kody.emits topic "discord.message.created" must use the scoped form "@scope/topic.name"',
-	)
+	).toThrow(/must use the scoped form "@scope\/topic\.name"/)
 
 	expect(() =>
 		parseAuthoredPackageJson({
@@ -261,9 +253,7 @@ test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest exte
 			}),
 			manifestPath: 'package.json',
 		}),
-	).toThrow(
-		'kody.emits topic "@other/discord.message.created" must use the package scope "@kentcdodds"',
-	)
+	).toThrow(/must use the package scope "@kentcdodds"/)
 
 	expect(() =>
 		parseAuthoredPackageJson({

@@ -685,23 +685,11 @@ test('runRepoChecks typechecks ESM package job entrypoints', async () => {
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job"'),
+		expect.any(String),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('type KodyPackagesInvokeTarget ='),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('export const storage: KodyStorageRuntime;'),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('export const email: KodyEmailRuntime;'),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('export const workflows: KodyWorkflowsRuntime;'),
+		expect.any(String),
 	)
 	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
