@@ -47,11 +47,28 @@ request so cookie signing and verification are available to handlers.
 
 ### Signup posture
 
-Signup is open. The auth handler does not gate on email — anyone who can reach
-`POST /auth` with `mode: 'signup'` and a valid body can create an account. There
-is no application-level allowlist, invite flow, or privileged "primary user".
-Operators who want to restrict who can sign up should put the worker behind
-their own network-layer access control.
+Signup is **blocked in production** and only enabled in non-production runtimes
+(local dev, preview, and e2e test). The gate lives in
+`packages/worker/src/app/deployment-env.ts` (`isNonProductionRuntime`), which
+the auth handler consults before honoring `mode: 'signup'`. Production wrangler
+env sets `SENTRY_ENVIRONMENT: 'production'`; `npm run dev` sets
+`WRANGLER_IS_LOCAL_DEV=true`; preview/test set `SENTRY_ENVIRONMENT` to
+`'preview'` / `'test'`. The predicate fails closed: if it cannot positively
+confirm a non-production runtime, signup is denied with `403`.
+
+There is no application-level allowlist, invite flow, or privileged "primary
+user" for the non-production environments where signup is enabled. Operators who
+want to open signup on their own deployment should relax
+`isNonProductionRuntime` deliberately and put the worker behind their own
+network-layer access control.
+
+### Password policy
+
+New passwords (signup and password-reset confirmation) must satisfy the
+server-side policy in `@kody-internal/shared/password-policy.ts`
+(`minPasswordLength`, currently 8). The server is the trust boundary; the
+browser hint is advisory only. Login does **not** re-check length so
+pre-existing accounts are never locked out.
 
 ## Account deletion
 
@@ -109,21 +126,33 @@ Password reset handlers are in
 ## Account secret reveal
 
 The account secrets API (`packages/worker/src/app/handlers/account-secrets.ts`)
-never returns plaintext secret values in `GET /account/secrets.json`. To view a
-stored value, the client calls a separate reveal endpoint:
+returns a decrypted secret value to the **owner** only, and only for the
+currently selected secret:
 
-- `POST /account/secrets/reveal` with JSON body `{ secretId, password }`
-- Requires an active `kody_session` cookie (same as all account endpoints)
-- Requires the user's current password for reauthentication (verified via PBKDF2
-  through `@kody-internal/shared/password-hash.ts`)
-- On success, returns `{ ok: true, value }` with `Cache-Control: no-store`
-- On failure (wrong password), returns 401 and writes an audit log entry with
-  `action: 'secret_reveal'`, `result: 'failure'`
-- Successful reveals also emit an audit log entry with
-  `action: 'secret_reveal'`, `result: 'success'`
+- `GET /account/secrets.json?selected=<secretId>` resolves the value into the
+  `selectedSecret.value` field of the JSON payload
+- Requires an active `kody_session` cookie; the value is scoped to the
+  authenticated user's `mcpUser.userId`, so a session can only ever read its own
+  secrets
+- All responses set `Cache-Control: no-store`
+- There is **no** separate `/account/secrets/reveal` endpoint and **no**
+  password reauthentication step — revealing a secret is inside the owner's own
+  trust boundary (same-origin, session-authenticated)
 
-The UI prompts for the password on each reveal and does not cache the value in
-memory across navigation events.
+This is an intentional design decision, not an oversight. The exfiltration
+concern (XSS or a stolen session reading the owner's secrets) is mitigated by:
+
+- the strict first-party `Content-Security-Policy` (`script-src 'self'`, no
+  inline scripts) plus `HttpOnly` + `SameSite=Lax` session cookies (see
+  `docs/contributing/security.md`), which make script-injection theft hard
+- decryption at rest and per-user scoping on every read
+
+Residual risk: a stolen session cookie can read the owning user's own secrets
+until it expires (sessions are stateless — see the "Accepted residual risks"
+section of `docs/contributing/security.md`). If a future change needs a stronger
+control, the recommended approach is a password-reauthenticated reveal endpoint
+combined with server-side session invalidation. Do not silently reintroduce
+plaintext reveal without also considering that hardening.
 
 ## OAuth for MCP
 
@@ -152,5 +181,7 @@ routed from `packages/worker/src/index.ts`.
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `packages/worker/src/app/auth-session.ts` for cookie format/signing
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
-- `packages/worker/src/app/handlers/account-secrets.ts` for secret reveal with
-  reauth
+- `packages/worker/src/app/handlers/account-secrets.ts` for owner-scoped secret
+  reveal
+- `packages/worker/src/app/deployment-env.ts` for the production/non-production
+  gate shared by signup and developer-only routes
