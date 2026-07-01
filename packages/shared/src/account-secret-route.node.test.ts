@@ -44,3 +44,19 @@ test('generated account secret paths still round-trip through the parser', () =>
 		name: 'api/key',
 	})
 })
+
+test('account secret paths fail fast when scope binding ids are missing', () => {
+	expect(() =>
+		buildAccountSecretPath({
+			scope: 'app',
+			name: 'api/key',
+		}),
+	).toThrow('appId is required for app-scoped account secret paths')
+
+	expect(() =>
+		buildAccountSecretPath({
+			scope: 'session',
+			name: 'api/key',
+		}),
+	).toThrow('sessionId is required for session-scoped account secret paths')
+})

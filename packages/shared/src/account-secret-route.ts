@@ -64,13 +64,21 @@ export function buildAccountSecretPath(input: AccountSecretRouteIdInput) {
 		return createHref(accountSecretUserPathPattern, { secretName: input.name })
 	}
 	if (input.scope === 'app') {
+		if (!input.appId) {
+			throw new Error('appId is required for app-scoped account secret paths')
+		}
 		return createHref(accountSecretAppPathPattern, {
-			appId: input.appId ?? '',
+			appId: input.appId,
 			secretName: input.name,
 		})
 	}
+	if (!input.sessionId) {
+		throw new Error(
+			'sessionId is required for session-scoped account secret paths',
+		)
+	}
 	return createHref(accountSecretSessionPathPattern, {
-		sessionId: input.sessionId ?? '',
+		sessionId: input.sessionId,
 		secretName: input.name,
 	})
 }

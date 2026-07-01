@@ -28,4 +28,7 @@ test('client route matching handles nested static routes over dynamic parents', 
 	expect(matchRoute('/account/secrets/user/github-token', routes)).toBe(
 		userSecretRoute,
 	)
+	expect(matchRoute('/account/secrets/secret-1', routes)).toBe(
+		genericSecretRoute,
+	)
 })
