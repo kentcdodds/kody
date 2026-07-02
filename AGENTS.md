@@ -11,7 +11,7 @@ read/write path must be scoped by `userId`, every Durable Object id that backs
 user-owned state must be namespaced by `userId`, and every search/vector path
 must filter by `userId`. Cross-user data sharing is a bug.
 
-Use Node 24 and npm for installs and scripts (`npm install`, `npm run ...`).
+Use Node 26 and npm for installs and scripts (`npm install`, `npm run ...`).
 
 ## Validation contract
 
@@ -75,11 +75,11 @@ Kody is a single Cloudflare Workers app (Remix 3 UI + OAuth-protected MCP). See
 [`docs/contributing/setup.md`](./docs/contributing/setup.md) for the full local
 dev guide; this section covers Cloud Agent VM gotchas only.
 
-### Node 24
+### Node 26
 
-The repo requires Node **24.x** (`engines` in root `package.json`). Cloud Agent
+The repo requires Node **26.x** (`engines` in root `package.json`). Cloud Agent
 VMs may ship Node 22 at `/exec-daemon/node`, which takes precedence over nvm
-unless nvm’s Node 24 bin directory is prepended to `PATH`. Verify with
+unless nvm’s Node 26 bin directory is prepended to `PATH`. Verify with
 `node --version` before running scripts.
 
 ### Quick commands

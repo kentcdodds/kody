@@ -23,7 +23,7 @@ We have **three** distinct TypeScript environments, each with its own
   - `wrangler-env.ts`
   - `cli.ts`
   - `packages/worker/src/mcp/**/*.mcp-e2e.test.ts`
-- **Environment**: Node 24 (scripts, configs, tests)
+- **Environment**: Node 26 (scripts, configs, tests)
 
 ### Worker
 

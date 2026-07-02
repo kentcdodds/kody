@@ -15,7 +15,7 @@ architecture.
 
 ## Install dependencies
 
-We use npm for installs and scripts, with Node 24 as the runtime.
+We use npm for installs and scripts, with Node 26 as the runtime.
 
 ```bash
 npm install
@@ -28,7 +28,7 @@ inside this repo, run `npx create-epicflare`.
 
 The setup flow assumes:
 
-- Node 24 and npm are installed.
+- Node 26 and npm are installed.
 - You run commands from the repo root (needs `nx.json`, `package.json`, and
   `packages/worker/wrangler.jsonc`).
 - **Cloudflare D1 and KV**: The checked-in

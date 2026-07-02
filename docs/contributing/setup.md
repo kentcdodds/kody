@@ -4,7 +4,7 @@ Quick notes for getting a local kody environment running.
 
 ## Prerequisites
 
-- Node 24 and npm (used for installs and scripts).
+- Node 26 and npm (used for installs and scripts).
 
 ## Install
 
