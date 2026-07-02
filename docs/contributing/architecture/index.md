@@ -28,6 +28,9 @@ to become.
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.
+- [Community Package Registry Direction](./community-package-registry.md):
+  proposed direction for a shared, reference-only package registry with
+  agent-review-based promotion.
 
 ## OAuth integration host allowlist
 
