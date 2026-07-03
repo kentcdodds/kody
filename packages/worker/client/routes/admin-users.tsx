@@ -136,7 +136,10 @@ export function AdminUsersRoute(handle: Handle) {
 		message = null
 		handle.update()
 		try {
-			const response = await fetch(adminUsersApiPath, {
+			// Carry the current query string so the server rebuilds the same
+			// page/pageSize slice the user is viewing, not page one.
+			const search = new URL(getCurrentHref(), 'http://localhost').search
+			const response = await fetch(`${adminUsersApiPath}${search}`, {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
