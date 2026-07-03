@@ -14,10 +14,12 @@ export function Layout({
 	children,
 	title = 'kody',
 	entryScripts = defaultEntryScripts,
+	head,
 }: {
 	children?: SafeHtml
 	title?: string
 	entryScripts?: Array<string> | false
+	head?: SafeHtml
 }) {
 	const scripts = entryScripts === false ? [] : entryScripts
 	const shell = children ?? defaultShell
@@ -46,6 +48,7 @@ export function Layout({
 			<link rel="manifest" href="/site.webmanifest" />
 			<meta name="theme-color" content="#2563eb" />
 			<title>${title}</title>
+			${head ?? ''}
 			<link rel="stylesheet" href="/styles.css" />
 		</head>
 		<body>

@@ -77,12 +77,20 @@ export function AdminRolesRoute(handle: Handle) {
 					title="Admin roles"
 					description="Read-only view of roles and the permissions attached to each."
 					actions={
-						<a
-							href="/admin/users"
-							mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-						>
-							View users
-						</a>
+						<>
+							<a
+								href="/admin/users"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								View users
+							</a>
+							<a
+								href="/admin/community-reports"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								Community reports
+							</a>
+						</>
 					}
 				/>
 				{status === 'loading' ? (

@@ -95,7 +95,8 @@ export function App(handle: Handle) {
 			currentPathname.startsWith('/account/package-invocation-tokens') ||
 			currentPathname.startsWith('/account/remote-connectors') ||
 			currentPathname.startsWith('/account/secrets') ||
-			currentPathname.startsWith('/admin')
+			currentPathname.startsWith('/admin') ||
+			currentPathname.startsWith('/community')
 		const sessionEmail = session?.email ?? ''
 		const sessionDisplayName = getSessionDisplayName(session)
 		const isSessionReady = sessionStatus === 'ready'
@@ -169,6 +170,9 @@ export function App(handle: Handle) {
 								width: 'auto',
 							})}
 						/>
+					</a>
+					<a href="/community" mix={css(navLinkCss)}>
+						Community
 					</a>
 					{showAuthLinks ? (
 						<>

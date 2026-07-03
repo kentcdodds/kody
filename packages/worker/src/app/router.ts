@@ -5,6 +5,10 @@ import {
 	createAdminUsersHandler,
 } from '#app/handlers/admin-users.ts'
 import {
+	createAdminCommunityReportsApiHandler,
+	createAdminCommunityReportsHandler,
+} from '#app/handlers/admin-community-reports.ts'
+import {
 	createAdminRolesApiHandler,
 	createAdminRolesHandler,
 } from '#app/handlers/admin-roles.ts'
@@ -29,6 +33,16 @@ import {
 } from '#app/handlers/account-secrets.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
+import {
+	createCommunityApiHandler,
+	createCommunityHandler,
+} from '#app/handlers/community.ts'
+import {
+	createCommunityDetailApiHandler,
+	createCommunityDetailHandler,
+	createCommunityDetailOgImageHandler,
+	createCommunityReportApiPostHandler,
+} from '#app/handlers/community-detail.ts'
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { home } from '#app/handlers/home.ts'
 import { login } from '#app/handlers/login.ts'
@@ -129,6 +143,27 @@ export function createAppRouter(appEnv: AppEnv) {
 			adminUsersApiPost: createAdminUsersApiHandler(appEnv as unknown as Env),
 			adminRoles: createAdminRolesHandler(appEnv as unknown as Env),
 			adminRolesApi: createAdminRolesApiHandler(appEnv as unknown as Env),
+			adminCommunityReports: createAdminCommunityReportsHandler(
+				appEnv as unknown as Env,
+			),
+			adminCommunityReportsApi: createAdminCommunityReportsApiHandler(
+				appEnv as unknown as Env,
+			),
+			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(
+				appEnv as unknown as Env,
+			),
+			community: createCommunityHandler(appEnv as unknown as Env),
+			communityApi: createCommunityApiHandler(appEnv as unknown as Env),
+			communityDetail: createCommunityDetailHandler(appEnv as unknown as Env),
+			communityDetailApi: createCommunityDetailApiHandler(
+				appEnv as unknown as Env,
+			),
+			communityDetailOgImage: createCommunityDetailOgImageHandler(
+				appEnv as unknown as Env,
+			),
+			communityReportApiPost: createCommunityReportApiPostHandler(
+				appEnv as unknown as Env,
+			),
 			connectOauth: createConnectOauthHandler(appEnv as unknown as Env),
 			auth: createAuthHandler(appEnv),
 			session: createSessionHandler(appEnv as unknown as Env),

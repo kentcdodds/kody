@@ -3,8 +3,11 @@ import { AccountIntegrationsRoute } from './account-integrations.tsx'
 import { AccountPackageInvocationTokensRoute } from './account-package-invocation-tokens.tsx'
 import { AccountRemoteConnectorsRoute } from './account-remote-connectors.tsx'
 import { AccountSecretsRoute } from './account-secrets.tsx'
+import { AdminCommunityReportsRoute } from './admin-community-reports.tsx'
 import { AdminRolesRoute } from './admin-roles.tsx'
 import { AdminUsersRoute } from './admin-users.tsx'
+import { CommunityDetailRoute } from './community-detail.tsx'
+import { CommunityRoute } from './community.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute } from './home.tsx'
 import { LoginRoute } from './login.tsx'
@@ -35,6 +38,9 @@ export const clientRoutes = {
 	'/admin': <AdminUsersRoute />,
 	'/admin/users': <AdminUsersRoute />,
 	'/admin/roles': <AdminRolesRoute />,
+	'/admin/community-reports': <AdminCommunityReportsRoute />,
+	'/community': <CommunityRoute />,
+	'/community/:listingId': <CommunityDetailRoute />,
 	'/login': <LoginRoute />,
 	'/privacy': <PrivacyRoute />,
 	'/signup': <LoginRoute />,

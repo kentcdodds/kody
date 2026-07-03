@@ -213,12 +213,20 @@ export function AdminUsersRoute(handle: Handle) {
 					title="Admin users"
 					description="Review account metadata and manage role assignments. User content is never shown here."
 					actions={
-						<a
-							href="/admin/roles"
-							mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-						>
-							View roles
-						</a>
+						<>
+							<a
+								href="/admin/community-reports"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								Community reports
+							</a>
+							<a
+								href="/admin/roles"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								View roles
+							</a>
+						</>
 					}
 				/>
 				{status === 'loading' ? (
