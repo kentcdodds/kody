@@ -1,7 +1,8 @@
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
-import { on } from '#client/event-mixin.ts'
+import { writeClipboardText } from '#client/clipboard.ts'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
+import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -172,7 +173,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	async function copyForkPrompt() {
 		if (!forkPrompt) return
 		try {
-			await navigator.clipboard.writeText(forkPrompt)
+			await writeClipboardText(forkPrompt)
 			copyState = 'copied'
 			handle.update()
 			window.setTimeout(() => {
@@ -293,9 +294,7 @@ export function CommunityDetailRoute(handle: Handle) {
 					<pre mix={css(promptBlockCss)}>{forkPrompt}</pre>
 					<button
 						mix={[
-							on('click', () => {
-								handle.queueTask(copyForkPrompt)
-							}),
+							on('click', () => void copyForkPrompt()),
 							css(primaryButtonCss),
 						]}
 					>

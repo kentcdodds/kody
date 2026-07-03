@@ -21,6 +21,7 @@ import {
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
 import { type PublicCommunityListing } from '#client/routes/community-types.ts'
+import { readCommunitySearchQueryFromHref } from '#client/routes/community-search.ts'
 
 type CommunityIndexPayload = {
 	ok: true
@@ -50,7 +51,6 @@ function formatAdaptationEffort(value: number | null) {
 export function CommunityRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
 	let listings: Array<PublicCommunityListing> = []
-	let query = ''
 	let message: string | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
@@ -72,7 +72,6 @@ export function CommunityRoute(handle: Handle) {
 				throw new Error('Unable to load community packages.')
 			}
 			listings = payload.listings
-			query = payload.query ?? url.searchParams.get('q') ?? ''
 			status = 'ready'
 			message = null
 			lastLoadedHref = href
@@ -98,6 +97,7 @@ export function CommunityRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = getCurrentHref()
+		const searchQuery = readCommunitySearchQueryFromHref(currentHref)
 		if (status === 'loading' || currentHref !== lastLoadedHref) {
 			handle.queueTask(loadCommunityListings)
 		}
@@ -116,9 +116,10 @@ export function CommunityRoute(handle: Handle) {
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Search</span>
 						<input
+							key={searchQuery}
 							type="search"
 							name="q"
-							value={query}
+							defaultValue={searchQuery}
 							placeholder="Search by name, description, or tags"
 							mix={css(inputCss)}
 						/>
@@ -141,7 +142,7 @@ export function CommunityRoute(handle: Handle) {
 
 				{status === 'ready' && listings.length === 0 ? (
 					<p mix={css(descriptionCss)}>
-						{query
+						{searchQuery
 							? 'No community packages matched your search.'
 							: 'No community packages have been published yet.'}
 					</p>

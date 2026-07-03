@@ -58,6 +58,44 @@ const communityBayesianPriorMean = 3.25
 const communityBayesianPriorWeight = 5
 const intentHeadingPattern = /^##\s+intent\b/im
 
+// Offline deterministic embeddings produce small positive cosine scores for
+// unrelated text (~0.10). Related lexical hits use lexical > 0; vector-only
+// semantic matches on listing documents tend to land above ~0.12.
+export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
+
+export function isCommunityListingSearchMatch(input: {
+	query: string
+	document: string
+}): boolean {
+	const trimmedQuery = input.query.trim()
+	if (!trimmedQuery) return true
+	const lexical = lexicalScore(trimmedQuery, input.document)
+	if (lexical > 0) return true
+	const vector = cosineSimilarity(
+		deterministicEmbedding(trimmedQuery),
+		deterministicEmbedding(input.document),
+	)
+	return vector > COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD
+}
+
+export function buildCommunityListingSearchDocument(
+	listing: CommunityListingRecord,
+) {
+	const readmeSnippet = listing.readmeContent
+		? listing.readmeContent.slice(0, 1_000)
+		: ''
+	return [
+		listing.name,
+		listing.kodyId,
+		listing.description,
+		listing.tags.join(' '),
+		listing.searchText ?? '',
+		readmeSnippet,
+	]
+		.filter((value) => value.length > 0)
+		.join('\n')
+}
+
 export function computeCommunityBayesianScore(input: {
 	averageStars: number | null
 	ratingCount: number
@@ -107,19 +145,7 @@ function assertReadmeIntent(readmeContent: string) {
 }
 
 function buildListingSearchDocument(listing: CommunityListingRecord) {
-	const readmeSnippet = listing.readmeContent
-		? listing.readmeContent.slice(0, 1_000)
-		: ''
-	return [
-		listing.name,
-		listing.kodyId,
-		listing.description,
-		listing.tags.join(' '),
-		listing.searchText ?? '',
-		readmeSnippet,
-	]
-		.filter((value) => value.length > 0)
-		.join('\n')
+	return buildCommunityListingSearchDocument(listing)
 }
 
 async function attachListingAggregates(
@@ -375,23 +401,33 @@ export async function searchCommunityListings(input: {
 	}
 
 	const queryEmbedding = deterministicEmbedding(trimmedQuery)
-	const scored = withAggregates.map((listing) => {
-		const document = buildListingSearchDocument(listing)
-		const lexical = lexicalScore(trimmedQuery, document)
-		const vector = cosineSimilarity(
-			queryEmbedding,
-			deterministicEmbedding(document),
-		)
-		const blended = blendLexicalAndVectorScore(lexical, vector)
-		const bayesian = computeCommunityBayesianScore({
-			averageStars: listing.averageStars,
-			ratingCount: listing.ratingCount,
+	const scored = withAggregates
+		.map((listing) => {
+			const document = buildListingSearchDocument(listing)
+			if (
+				!isCommunityListingSearchMatch({
+					query: trimmedQuery,
+					document,
+				})
+			) {
+				return null
+			}
+			const lexical = lexicalScore(trimmedQuery, document)
+			const vector = cosineSimilarity(
+				queryEmbedding,
+				deterministicEmbedding(document),
+			)
+			const blended = blendLexicalAndVectorScore(lexical, vector)
+			const bayesian = computeCommunityBayesianScore({
+				averageStars: listing.averageStars,
+				ratingCount: listing.ratingCount,
+			})
+			return {
+				listing,
+				score: blended * bayesian,
+			}
 		})
-		return {
-			listing,
-			score: blended * bayesian,
-		}
-	})
+		.filter((entry): entry is NonNullable<typeof entry> => entry != null)
 
 	return scored
 		.sort((left, right) => right.score - left.score)

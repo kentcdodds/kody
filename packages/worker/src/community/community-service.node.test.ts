@@ -299,6 +299,7 @@ test('searchCommunityListings returns the relevant listing first', async () => {
 		limit: 5,
 	})
 
+	expect(results).toHaveLength(1)
 	expect(results[0]?.id).toBe('listing-discord')
 })
 
