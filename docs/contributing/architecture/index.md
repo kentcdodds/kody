@@ -29,8 +29,8 @@ to become.
   for securely reaching local-network systems through an outbound agent
   connection.
 - [Community Package Registry Direction](./community-package-registry.md):
-  proposed direction for a shared, reference-only package registry with
-  agent-review-based promotion.
+  proposed direction for a shared, reference-only package registry with operator
+  promotion, public catalog pages, and review-on-fork.
 
 ## OAuth integration host allowlist
 
