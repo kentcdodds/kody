@@ -249,11 +249,16 @@ export function createAuthHandler(appEnv: AppEnv) {
 				// INSERT OR IGNORE affects zero rows when the seeded `user` role is
 				// missing (partial migration). Fail loudly rather than creating an
 				// account with no roles or permissions.
-				const { assigned } = await assignUserRole({
-					db: appEnv.APP_DB,
-					userId: record.id,
-					roleName: 'user',
-				})
+				let assigned = false
+				try {
+					;({ assigned } = await assignUserRole({
+						db: appEnv.APP_DB,
+						userId: record.id,
+						roleName: 'user',
+					}))
+				} catch (error) {
+					console.error('Failed to assign default role at signup:', error)
+				}
 				if (!assigned) {
 					void logAuditEvent({
 						category: 'auth',

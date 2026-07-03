@@ -43,22 +43,30 @@ export async function buildMcpUserContextFromGrantProps(
 		return user
 	}
 
-	const db = createDb(env.APP_DB)
-	const userRecord = await db.findOne(usersTable, {
-		where: { email },
-	})
-	if (!userRecord) {
+	// A transient D1 failure must not take MCP auth down. Roles and
+	// permissions are optional on the context; falling back to the base
+	// grant-props user simply means no elevated permissions this request.
+	try {
+		const db = createDb(env.APP_DB)
+		const userRecord = await db.findOne(usersTable, {
+			where: { email },
+		})
+		if (!userRecord) {
+			return user
+		}
+
+		const { roles, permissions } = await getUserRolesAndPermissions(
+			env.APP_DB,
+			userRecord.id,
+		)
+
+		return {
+			...user,
+			roles,
+			permissions,
+		}
+	} catch (error) {
+		console.error('Failed to load roles for MCP user context:', error)
 		return user
-	}
-
-	const { roles, permissions } = await getUserRolesAndPermissions(
-		env.APP_DB,
-		userRecord.id,
-	)
-
-	return {
-		...user,
-		roles,
-		permissions,
 	}
 }

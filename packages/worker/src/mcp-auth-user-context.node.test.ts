@@ -85,6 +85,33 @@ test('buildMcpUserContextFromGrantProps omits roles and permissions when the use
 	expect(mockModule.getUserRolesAndPermissions).not.toHaveBeenCalled()
 })
 
+test('buildMcpUserContextFromGrantProps falls back to the base user when the rbac lookup fails', async () => {
+	mockModule.findOne.mockRejectedValueOnce(new Error('D1 unavailable'))
+	const consoleError = vi
+		.spyOn(console, 'error')
+		.mockImplementation(() => undefined)
+
+	try {
+		const user = await buildMcpUserContextFromGrantProps(
+			{ APP_DB: createMockAppDb() } as Env,
+			{
+				userId: 'resilient-id',
+				email: 'resilient@example.com',
+				displayName: 'resilient',
+			},
+		)
+
+		expect(user).toEqual({
+			userId: 'resilient-id',
+			email: 'resilient@example.com',
+			displayName: 'resilient',
+		})
+		expect(consoleError).toHaveBeenCalled()
+	} finally {
+		consoleError.mockRestore()
+	}
+})
+
 test('buildMcpUserContextFromGrantProps skips rbac lookup when grant props omit email', async () => {
 	const user = await buildMcpUserContextFromGrantProps(
 		{ APP_DB: createMockAppDb() } as Env,

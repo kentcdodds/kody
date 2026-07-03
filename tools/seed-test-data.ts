@@ -236,7 +236,7 @@ async function main() {
 	executeSeedSql(sql, options)
 
 	console.log(
-		`Seeded test account in D1 (${options.local ? 'local' : 'remote'}): ${options.email}${options.admin ? ' (admin)' : ''}`,
+		`Seeded test account in D1 (${options.local ? 'local' : 'remote'})${options.admin ? ' (admin)' : ''}`,
 	)
 }
 

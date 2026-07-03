@@ -53,8 +53,8 @@ with SQL (see [First admin bootstrap](#first-admin-bootstrap) below).
 
 ## Database tables
 
-Four D1 tables, all keyed on integer `users.id` (the session identifier), not
-the email-hash MCP `userId`:
+Four D1 tables. The one account-scoped table, `user_roles`, is keyed on integer
+`users.id` (the session identifier), not the email-hash MCP `userId`:
 
 | Table              | Purpose                                       |
 | ------------------ | --------------------------------------------- |
