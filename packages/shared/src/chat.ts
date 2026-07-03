@@ -36,6 +36,8 @@ export const mcpUserContextSchema = object({
 	email: string(),
 	username: optional(string()),
 	displayName: string(),
+	roles: optional(array(string())),
+	permissions: optional(array(string())),
 })
 
 export const mcpStorageContextSchema = object({
@@ -69,7 +71,20 @@ export const mcpCallerContextSchema = object({
 	repoContext: optional(nullable(mcpRepoContextSchema)),
 })
 
-export type McpUserContext = InferOutput<typeof mcpUserContextSchema>
+type McpUserContextInferred = InferOutput<typeof mcpUserContextSchema>
+
+export type McpUserContext = Omit<
+	McpUserContextInferred,
+	'roles' | 'permissions' | 'username'
+> & {
+	username?: string
+	roles?: Array<string>
+	permissions?: Array<string>
+}
 export type McpStorageContext = InferOutput<typeof mcpStorageContextSchema>
 export type McpRepoContext = InferOutput<typeof mcpRepoContextSchema>
-export type McpCallerContext = InferOutput<typeof mcpCallerContextSchema>
+type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
+
+export type McpCallerContext = Omit<McpCallerContextInferred, 'user'> & {
+	user?: McpUserContext | null
+}

@@ -3,6 +3,7 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
@@ -111,17 +112,18 @@ export async function handleMcpRequest({
 	}
 
 	const context = ctx as OAuthExecutionContext
-	const user = tokenSummary.grant.props ?? null
+	const grantProps = tokenSummary.grant.props ?? null
+	const mcpUser = await buildMcpUserContextFromGrantProps(env, grantProps)
 	const remoteConnectors =
-		user && typeof user.userId === 'string'
+		mcpUser && typeof mcpUser.userId === 'string'
 			? await listAttachedRemoteConnectorRefs({
 					env,
-					userId: user.userId,
+					userId: mcpUser.userId,
 				})
 			: null
 	const props: OAuthContextProps = createMcpCallerContext({
 		baseUrl: origin,
-		user,
+		user: mcpUser,
 		remoteConnectors,
 	})
 	context.props = props
