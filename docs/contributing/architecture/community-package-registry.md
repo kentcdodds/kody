@@ -34,17 +34,19 @@ changes the moderation economics:
 - The **operator** (the deployment owner) must be able to approve listings
   automatically for their own packages and retain that authority permanently,
   including after other users exist.
-- The operator identity must **not** be a hardcoded email. It needs real backend
-  support (a role on the user record or an operator-grants table), which is
-  meaningful scope on its own and should be designed and built as **separate,
-  prerequisite work** before this registry lands.
+- The operator identity must **not** be a hardcoded email. The
+  [RBAC primitive](./authorization.md) provides exactly this: an `admin` role
+  bootstrapped by SQL rather than a source-code identity, a typed
+  `action:entity:access` permission registry, and server/MCP guards
+  (`requireUserWithPermission`, `requireMcpUserWithPermission`). In this
+  document, "operator" means a user holding the relevant `…:listing:any`
+  permissions through the `admin` role.
 
-The moderation model below is therefore: automated gates + operator promotion
-
-- mandatory review-on-fork by the consuming agent + a report mechanism. A
-  community reviewer-pool model (quorum promotion by other users' agents) is
-  preserved as a future option in the appendix for when the catalog outgrows
-  operator moderation.
+The moderation model below is therefore: automated gates plus operator
+promotion, plus mandatory review-on-fork by the consuming agent, plus a report
+mechanism. A community reviewer-pool model (quorum promotion by other users'
+agents) is preserved as a future option in the appendix for when the catalog
+outgrows operator moderation.
 
 ## Threat model
 
@@ -97,6 +99,7 @@ parallel pipeline:
 | `bundle-artifacts-kv` (`PublishedSourceSnapshot`)           | Already-immutable source snapshot keyed by `source_id` + commit; the listing's canonical content |
 | `runRepoChecks` (manifest, dependencies, bundle, typecheck) | First automated gate — a package must pass its own publish checks to be listable                 |
 | `capability-registry` / `builtin-domains`                   | New `community` domain slots in beside `packages`, `repo`, etc.                                  |
+| `rbac` (roles, permissions, guards)                         | Operator authority for promotion, kill switch, and report triage via a new `listing` entity      |
 | `vectorize-search` (`CAPABILITY_VECTOR_INDEX`)              | Listing embeddings with `kind: 'community'` metadata — the first deliberately shared corpus      |
 | `repo-sessions`                                             | "Fork to draft" copies a snapshot into a new repo session under the **caller's** `userId`        |
 | `app-ui` (Remix routes)                                     | Hosts the public search page and package details page                                            |
@@ -106,15 +109,30 @@ parallel pipeline:
 
 ## New primitives
 
-### 0. Operator role (prerequisite, separate work)
+### 0. Operator authority via RBAC (extends the existing `rbac` primitive)
 
-A durable, non-hardcoded way to mark a user as the deployment operator — likely
-a `role` column on `users` or a small `operator_grants` table, set through a
-bootstrap/config path rather than an email literal in source. The registry
-consumes this primitive for auto-promotion, kill-switch authority, and report
-triage, but the primitive itself (schema, assignment flow, authorization helper)
-should be designed and shipped in its own change before registry work begins.
-Nothing else in this document works without it.
+The [RBAC primitive](./authorization.md) already provides roles, a typed
+`action:entity:access` permission registry, request/MCP guards, an admin UI, and
+an SQL-bootstrapped first admin — no hardcoded identity. The registry extends it
+with one new permission entity rather than inventing an operator-grants
+mechanism:
+
+- Add `listing` to `permissionEntities` in
+  `packages/worker/src/app/permissions.ts`, plus the migration attaching
+  `create|read|update|delete:listing:own` to the `user` role and `…:listing:any`
+  to the `admin` role (the drift test enforces alignment).
+- Owner actions (publish, unpublish, edit metadata) guard on `…:listing:own`;
+  promotion, kill-switch delisting, and report triage guard on
+  `update:listing:any` via `requireUserWithPermission` (pages) and
+  `requireMcpUserWithPermission` (capabilities — the first real user of that
+  helper).
+- Auto-promotion inside `community_publish` is simply: if the publishing user
+  holds `update:listing:any`, promote in the same call.
+
+One boundary note: RBAC's privacy stance is that admins never see user
+_content_. Listings do not weaken that — a listing is content the owner
+explicitly published for the world to read, and operator permissions apply only
+to listing rows (promote/delist/triage), never to unpublished packages.
 
 ### 1. Community listings (D1 + KV pointer)
 
@@ -322,13 +340,13 @@ trusted header or into MCP tool descriptions.
 
 ## Invariant impact
 
-| Invariant (primitives.yaml)  | Impact                                                                                                                                                                                                                                                                                                            |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `per-user-isolation`         | **Needs an explicit, narrow carve-out**: community listings are deliberately shared, immutable, opt-in snapshots, and the public pages render them to anonymous visitors. All execution, imports, secrets, and mutable state stay per-user. The invariant text should name this exception when the feature ships. |
-| `canonical-repo-source`      | Preserved with a nuance: the listing's canonical content is the pinned KV snapshot, not the live repo — by design, so the listing decision covers fixed bytes.                                                                                                                                                    |
-| `compact-mcp-surface`        | Preserved: everything agent-facing is capabilities in one new domain behind `search`/`execute`; the public pages are app-ui routes, not MCP tools.                                                                                                                                                                |
-| `no-secrets-in-chat`         | Reinforced: the publish gate scans for raw secrets, and nothing in the community path resolves placeholders.                                                                                                                                                                                                      |
-| `integration-host-allowlist` | Untouched: community content is never executed, so no token materialization path is added.                                                                                                                                                                                                                        |
+| Invariant (primitives.yaml)  | Impact                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `per-user-isolation`         | **Needs a second explicit, narrow carve-out**: the invariant already names an RBAC exception for account administration; community listings would add a content-publication exception — deliberately shared, immutable, opt-in snapshots rendered to anonymous visitors. All execution, imports, secrets, and mutable state stay per-user. The invariant text should name this exception when the feature ships. |
+| `canonical-repo-source`      | Preserved with a nuance: the listing's canonical content is the pinned KV snapshot, not the live repo — by design, so the listing decision covers fixed bytes.                                                                                                                                                                                                                                                   |
+| `compact-mcp-surface`        | Preserved: everything agent-facing is capabilities in one new domain behind `search`/`execute`; the public pages are app-ui routes, not MCP tools.                                                                                                                                                                                                                                                               |
+| `no-secrets-in-chat`         | Reinforced: the publish gate scans for raw secrets, and nothing in the community path resolves placeholders.                                                                                                                                                                                                                                                                                                     |
+| `integration-host-allowlist` | Untouched: community content is never executed, so no token materialization path is added.                                                                                                                                                                                                                                                                                                                       |
 
 ## Proposed system map
 
@@ -337,9 +355,6 @@ extended, grey are existing primitives composed as-is:
 
 ```mermaid
 flowchart LR
-	subgraph prereq["Prerequisite (separate work)"]
-		operatorRole["operator-role"]:::added
-	end
 	subgraph new["New"]
 		communityListings["community-listings (D1 + KV pointer)"]:::added
 		reports["community-reports (D1)"]:::added
@@ -350,6 +365,7 @@ flowchart LR
 	bundleKv["bundle-artifacts-kv (snapshots)"]:::untouched
 	repoChecks["runRepoChecks (publish gate)"]:::untouched
 	repoSessions["repo-sessions (fork to draft)"]:::untouched
+	rbac["rbac (listing entity + guards)"]:::extended
 	vectorize["vectorize-search"]:::extended
 	registry["capability-registry"]:::extended
 	appUi["app-ui (Remix routes)"]:::extended
@@ -363,8 +379,8 @@ flowchart LR
 	publicPages --> appSessions
 	communityDomain --> communityListings
 	communityDomain --> reports
-	communityDomain --> operatorRole
-	publicPages --> operatorRole
+	communityDomain --> rbac
+	publicPages --> rbac
 	communityListings --> savedPackages
 	communityListings --> bundleKv
 	communityDomain --> repoChecks
@@ -372,7 +388,7 @@ flowchart LR
 	communityListings --> vectorize
 	communityListings --> d1
 	reports --> d1
-	operatorRole --> d1
+	rbac --> d1
 
 	classDef added fill:#1a7f37,color:#fff
 	classDef extended fill:#9a6700,color:#fff
@@ -381,6 +397,9 @@ flowchart LR
 
 Extension notes:
 
+- `rbac` gains a `listing` permission entity (registry entry + migration
+  attaching `own` permissions to `user` and `any` permissions to `admin`); the
+  guards themselves are used as-is.
 - `vectorize-search` gains a `kind: 'community'` corpus without a `userId`
   filter — the only place the shared corpus touches an existing primitive's
   contract.
@@ -389,20 +408,18 @@ Extension notes:
 - `app-ui` gains the first public unauthenticated content routes; the existing
   public-route hardening (CSP, frame denial) extends to them, plus inert
   rendering of owner-provided content.
-- `d1-app-db` gains the listing and report tables (plus the operator-role schema
-  from the prerequisite work) via normal migrations.
+- `d1-app-db` gains the listing and report tables plus the `listing` permission
+  rows via normal migrations.
 
 ## Phasing
 
 Each phase is independently shippable and safe on its own:
 
-0. **Operator role (separate agent/PR, before everything else)** — the
-   non-hardcoded operator identity: schema, bootstrap/assignment path, and an
-   authorization helper the registry can call. Scoped and designed independently
-   of this document.
-1. **Foundation** — migrations, `community_publish` / `community_unpublish` /
+1. **Foundation** — the `listing` permission entity and role attachments,
+   listing/report migrations, `community_publish` / `community_unpublish` /
    `community_search` / `community_get` with the quarantine envelope and all
-   automated gates; operator auto-promotion via `community_promote`.
+   automated gates; operator auto-promotion via `community_promote` guarded by
+   `update:listing:any`.
 2. **Public pages** — the search and details routes with inert content
    rendering, owner management actions (delist, new version), and operator
    controls.
@@ -426,9 +443,6 @@ Each phase is independently shippable and safe on its own:
 
 ## Open questions
 
-- **Operator-role shape**: role column vs. grants table, and how the first
-  operator is bootstrapped without a hardcoded identity — to be answered by the
-  prerequisite work.
 - **Review-on-fork enforcement**: instructions in the fork response rely on the
   consuming agent following them. Is that enough, or should the draft session be
   marked `review_pending` until the agent submits structured findings (a soft
