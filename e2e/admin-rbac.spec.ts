@@ -6,14 +6,15 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	assignRole,
 	login,
 }) => {
+	const runId = Date.now()
 	const adminUser = await insertNewUser({
-		email: 'admin-rbac@example.com',
-		username: 'admin-rbac',
+		email: `admin-rbac-${runId}@example.com`,
+		username: `admin-rbac-${runId}`,
 		password: 'admin-rbac-password',
 	})
 	const memberUser = await insertNewUser({
-		email: 'member-rbac@example.com',
-		username: 'member-rbac',
+		email: `member-rbac-${runId}@example.com`,
+		username: `member-rbac-${runId}`,
 		password: 'member-rbac-password',
 	})
 
