@@ -38,8 +38,9 @@ that exception:
   helper ever infers `any` from context.
 - Admin permissions cover **account administration** (users, roles), not user
   content. No permission grants cross-user access to secrets, memories,
-  packages, jobs, email, or storage. If content-level admin access is ever
-  needed, that is a separate proposal.
+  packages, jobs, email, or storage. The privacy section below spells out the
+  visibility boundary and how it is enforced. If content-level admin access is
+  ever needed, that is a separate proposal.
 - `docs/contributing/project-intent.md` and
   `docs/contributing/architecture/primitives.yaml` get updated in the
   implementing PR to describe this exception, so the invariant text and the code
@@ -282,6 +283,61 @@ shells return `403` for signed-in non-admins and redirect to
 emit audit log events via the existing `logAuditEvent` helper (category
 `admin`), matching how account mutations are logged today.
 
+## Privacy: what admins can and cannot see
+
+The admin role is an account-administration role, not a data-access role. The
+visibility boundary is:
+
+**Admins can see** account metadata only: user id, username, email, `created_at`
+/ `updated_at`, and role assignments.
+
+**Admins can never see** user content, including: secret values _and_ secret
+metadata (names, scopes, allowlists), package invocation tokens, values,
+memories, packages and their source, jobs, email inboxes and messages, chat
+threads, durable storage contents, remote connector configuration, and OAuth
+grants. None of it appears in any admin endpoint, page, or payload — not even in
+redacted or count form in v1.
+
+This boundary is enforced structurally, not by convention:
+
+- **The permission vocabulary cannot express content access.**
+  `permissionEntities` contains only `user` and `role`, so a guard like
+  `requireUserWithPermission(..., 'read:secret:any')` is a compile error.
+  Granting admins content visibility would require extending the typed registry,
+  writing a migration, and updating this boundary in the docs — a deliberate,
+  reviewable change, never a drive-by.
+- **Admin queries touch identity tables only.** The `/admin/*.json` handlers
+  select explicit column lists from `users`, `user_roles`, and `roles`. They
+  never join content tables. A unit test pins the admin users API response shape
+  to the allowed fields so an accidental widening fails `npm run validate`.
+- **Existing owner-only paths take no admin bypass.** Secret reveal remains
+  session-authenticated and owner-only; secret values stay encrypted at rest
+  with `SECRET_STORE_KEY`. RBAC adds no code path that decrypts or returns
+  another user's data.
+
+One honest caveat, stated on the privacy page rather than hidden: RBAC governs
+the **application surface**. Whoever operates the deployment (holding the
+Cloudflare account, D1 access, and `SECRET_STORE_KEY`) sits outside any
+application-level control, exactly as before this proposal. The admin role
+grants no infrastructure access and infrastructure access needs no admin role.
+
+### Privacy page
+
+A user-facing privacy page ships with the admin UI, so the boundary above is
+visible to the people it protects, not just to contributors:
+
+- **`/privacy`** — public (unauthenticated) in-app page, server shell + client
+  route like other static pages, linked from the login/signup pages and the
+  account page. Plain-language content: what Kody stores per account, what a
+  deployment admin can see (account metadata only), what an admin can never see
+  (the content list above), and the operator caveat.
+- **`docs/use/privacy.md`** — the same content as a usage doc, linked from
+  `docs/use/index.md`, so MCP-side users who never open the web UI can find it.
+
+The page describes shipped behavior in the present tense and is updated in the
+same PR as any future change to admin visibility (documentation gardening
+principle).
+
 ## MCP surface
 
 MCP requests authenticate via OAuth bearer tokens whose grant `props` were
@@ -310,13 +366,16 @@ as capabilities behind `search`/`execute`, never as new top-level tools.
   the typed registry); `getUserRolesAndPermissions` union semantics (multi-role
   users, no roles, unknown permissions); guard behavior (401 unauthenticated,
   403 wrong role, passthrough with role); last-admin guardrail; admin handler
-  tests following `account-secrets.node.test.ts` patterns.
+  tests following `account-secrets.node.test.ts` patterns; privacy-boundary
+  shape test pinning the admin users API payload to account-metadata fields only
+  (fails if a content field or content-table join sneaks in).
 - **Playwright E2E** — extend `e2e/playwright-utils.ts` with an
   `assignRole(email, role)` fixture (direct D1 insert, same mechanism as
   `insertNewUser`). Spec: non-admin gets 403 on `/admin/users` and sees no Admin
   nav link; admin sees the user list, assigns a role to a second seeded user,
   sees it reflected; the promoted user's `/session` payload includes the new
-  role.
+  role; admin viewing a user who owns seeded secrets sees roles and metadata but
+  nothing secret-related; `/privacy` renders without authentication.
 - **Seed script** — `tools/seed-test-data.ts` gains an optional `--admin` flag
   granting the fixture user the `admin` role locally.
 
@@ -349,8 +408,10 @@ Each step is independently shippable and keeps `npm run validate` green:
    `permissions-server.ts` utilities, `readAuthenticatedAppUser` + `/session`
    wiring, signup role assignment, account-deletion table list, seed script
    flag, unit tests.
-2. **Admin UI** — `/admin/users` + `/admin/roles` (server handlers, JSON APIs,
-   client routes, nav link), audit events, handler tests, Playwright E2E.
+2. **Admin UI & privacy page** — `/admin/users` + `/admin/roles` (server
+   handlers, JSON APIs, client routes, nav link), audit events, the public
+   `/privacy` page + `docs/use/privacy.md`, privacy-boundary shape test, handler
+   tests, Playwright E2E.
 3. **MCP context** — roles/permissions on `McpCallerContext`,
    `requireMcpUserWithPermission`, shared schema update, tests.
 4. **Docs & skill** — `authorization.md`, `.agents/skills/rbac/SKILL.md`,
@@ -362,7 +423,8 @@ Each step is independently shippable and keeps `npm run validate` green:
 
 - Role/permission CRUD from the UI (definitions live in code + migrations).
 - Cross-user access to user _content_ (secrets, memories, packages, jobs, email,
-  storage) under any permission.
+  storage) under any permission — see the privacy section for the enforcement
+  mechanics.
 - Per-organization tenancy, team workspaces, or permission delegation between
   users — project intent explicitly excludes these.
 - Embedding roles in session cookies or OAuth grant props (staleness).
