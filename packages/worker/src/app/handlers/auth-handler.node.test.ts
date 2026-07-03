@@ -169,6 +169,16 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 									},
 								}
 							}
+							if (normalizedQuery.includes('delete from users')) {
+								const userId = Number(params[0])
+								for (const [email, user] of users) {
+									if (user.id === userId) {
+										users.delete(email)
+										return { meta: { changes: 1, last_row_id: 0 } }
+									}
+								}
+								return { meta: { changes: 0, last_row_id: 0 } }
+							}
 							return { meta: { changes: 0, last_row_id: 0 } }
 						},
 					}
@@ -357,4 +367,6 @@ test('signup fails when the default user role cannot be assigned', async () => {
 	expect(response.status).toBe(500)
 	expect(await response.json()).toEqual({ error: 'Unable to create account.' })
 	expect(response.headers.get('Set-Cookie')).toBeNull()
+	// The created user row is rolled back so signup can be retried.
+	expect(context.testDb.users.has('roleless@example.com')).toBe(false)
 })

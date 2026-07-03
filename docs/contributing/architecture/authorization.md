@@ -137,7 +137,8 @@ message and logs a failure audit event with reason `last_admin`.
 
 Signup fails with `500` if the seeded `user` role cannot be assigned (for
 example after a partial migration), rather than creating an account with no
-roles.
+roles. The just-created `users` row is rolled back so the signup can be retried
+once the environment is fixed.
 
 ## Session payload and client helpers
 

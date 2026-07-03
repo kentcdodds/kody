@@ -260,6 +260,19 @@ export function createAuthHandler(appEnv: AppEnv) {
 					console.error('Failed to assign default role at signup:', error)
 				}
 				if (!assigned) {
+					// Remove the just-created user row so the signup can be retried;
+					// otherwise the email/username would be stuck as "already
+					// registered" on an account that has no roles.
+					try {
+						await appEnv.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+							.bind(record.id)
+							.run()
+					} catch (error) {
+						console.error(
+							'Failed to remove user row after role assignment failure:',
+							error,
+						)
+					}
 					void logAuditEvent({
 						category: 'auth',
 						action: 'signup',
