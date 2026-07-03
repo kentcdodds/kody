@@ -44,3 +44,51 @@ After the loop: merge → watch `🚀 Deploy (production)` → smoke test produc
 - Production URL: `gh variable get APP_BASE_URL`; preview URL from PR comments
   if testing before merge
 - Mark ready / PR info: `github-pr-tools` package
+
+Discover exports when unsure: `search({ entity: "discord-gateway:package" })` or
+`search({ entity: "github-pr-tools:package" })`.
+
+## Kody examples
+
+Mark ready:
+
+```javascript
+import { packages } from 'kody:runtime'
+
+export default async function main({ owner, repo, number }) {
+	return packages.invokeChecked({
+		kodyId: 'github-pr-tools',
+		exportName: './set-pr-review-status',
+		params: { owner, repo, number, ready: true },
+	})
+}
+```
+
+Discord (default — no channel id):
+
+```javascript
+import { packages } from 'kody:runtime'
+
+export default async function main({ content }) {
+	return packages.invokeChecked({
+		kodyId: 'discord-gateway',
+		exportName: './send-me-a-message',
+		params: { content },
+	})
+}
+```
+
+Discord (specific workflow channel):
+
+```javascript
+import { packages, codemode } from 'kody:runtime'
+
+export default async function main({ valueName, content }) {
+	const channelId = await codemode.value_get({ name: valueName, scope: 'user' })
+	return packages.invokeChecked({
+		kodyId: 'discord-gateway',
+		exportName: './post-message',
+		params: { channelId, content },
+	})
+}
+```
