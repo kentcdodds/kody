@@ -17,8 +17,8 @@ const projectRoot = process.cwd()
 const primaryUserEmail = 'kody@example.com'
 // Must satisfy the server-side password policy (see
 // @kody-internal/shared/password-policy.ts). Matches the documented local seed
-// fixture login (kody@example.com / iliketwix).
-const testUserPassword = 'iliketwix'
+// fixture login (kody@example.com / ilikecode).
+const testUserPassword = 'ilikecode'
 const localhost = '127.0.0.1'
 const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
 const maxPortBindRetries = 5

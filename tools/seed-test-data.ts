@@ -22,10 +22,10 @@ type CliOptions = {
 
 const defaultTestEmail = 'kody@example.com'
 const defaultTestUsername = 'kody'
-const defaultTestPassword = 'iliketwix'
+const defaultTestPassword = 'ilikecode'
 // Companion non-admin fixture so RBAC flows can be tested from both sides.
-const regularTestEmail = 'twix@example.com'
-const regularTestUsername = 'twix'
+const regularTestEmail = 'jane@example.com'
+const regularTestUsername = 'jane'
 
 export function parseArgs(argv: Array<string>): CliOptions {
 	const options: CliOptions = {

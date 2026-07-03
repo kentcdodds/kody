@@ -67,15 +67,15 @@ test('buildSeedSql seeds each account with its roles', () => {
 			admin: true,
 		},
 		{
-			email: 'twix@example.com',
-			username: 'twix',
+			email: 'jane@example.com',
+			username: 'jane',
 			passwordHash: 'hash-b',
 			admin: false,
 		},
 	])
 
 	expect(sql).toContain(`'kody@example.com'`)
-	expect(sql).toContain(`'twix@example.com'`)
+	expect(sql).toContain(`'jane@example.com'`)
 	// Both accounts get the user role; only the admin account gets admin.
 	expect(sql.match(/r\.name = 'user'/g)).toHaveLength(2)
 	expect(sql.match(/r\.name = 'admin'/g)).toHaveLength(1)
@@ -94,6 +94,6 @@ test('companion fixture account is local-only', () => {
 	).toBe(false)
 	// Avoid duplicating the companion when it is the primary account.
 	expect(
-		shouldSeedCompanionAccount({ local: true, email: 'twix@example.com' }),
+		shouldSeedCompanionAccount({ local: true, email: 'jane@example.com' }),
 	).toBe(false)
 })

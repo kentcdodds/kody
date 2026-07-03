@@ -111,8 +111,8 @@ Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
 
 After `npm run migrate:local`, seed the local fixture logins per
 [`docs/contributing/setup.md`](./docs/contributing/setup.md): `kody@example.com`
-/ `iliketwix` (seeded with the `admin` role) and `twix@example.com` /
-`iliketwix` (regular account). These credentials are local test fixtures only.
+/ `ilikecode` (seeded with the `admin` role) and `jane@example.com` /
+`ilikecode` (regular account). These credentials are local test fixtures only.
 The seed script resolves the worker Wrangler config automatically (same default
 as `wrangler-env.ts`), so `node tools/seed-test-data.ts --local` works without
 extra flags.

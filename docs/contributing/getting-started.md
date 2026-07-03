@@ -149,10 +149,10 @@ npm run migrate:local
 node tools/seed-test-data.ts --local
 ```
 
-Default fixture credentials (both use password `iliketwix`):
+Default fixture credentials (both use password `ilikecode`):
 
 - `kody@example.com` — admin fixture (seeded with the `admin` role)
-- `twix@example.com` — regular fixture (`user` role only)
+- `jane@example.com` — regular fixture (`user` role only)
 
 These credentials are a local test fixture only. Pass
 `--email <email> --password <password>` when you need explicit fixture

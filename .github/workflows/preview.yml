@@ -301,7 +301,7 @@ jobs:
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
           set -euo pipefail
-          node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" --email me@kentcdodds.com --password iliketwix
+          node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" --email me@kentcdodds.com --password ilikecode
 
       - name: 🩺 Healthcheck (preview)
         shell: bash

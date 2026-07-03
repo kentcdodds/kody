@@ -3,7 +3,7 @@ import { type APIRequestContext } from '@playwright/test'
 export const primaryTestUser = {
 	email: 'kody@example.com',
 	username: 'kody',
-	password: 'iliketwix',
+	password: 'ilikecode',
 }
 
 export async function ensurePrimaryUserExists(request: APIRequestContext) {
