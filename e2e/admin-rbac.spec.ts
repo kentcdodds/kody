@@ -59,13 +59,15 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(
 		page.getByRole('link', { name: 'Admin', exact: true }),
 	).toBeVisible()
-	await page.goto('/admin/users')
+	await page.goto('/admin/users?pageSize=100')
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
 	await expect(page.getByText(memberUser.email)).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
 	await expect(page.getByText('super-secret-value')).toHaveCount(0)
 
-	const usersApiResponse = await page.request.get('/admin/users.json')
+	const usersApiResponse = await page.request.get(
+		'/admin/users.json?pageSize=100',
+	)
 	expect(usersApiResponse.ok()).toBe(true)
 	const usersPayload = await usersApiResponse.json()
 	expect(usersPayload.ok).toBe(true)
