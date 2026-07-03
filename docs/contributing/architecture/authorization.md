@@ -110,6 +110,22 @@ Guards throw a `Response` on failure:
   `/login?redirectTo=...` for HTML shells.
 - Authenticated but unauthorized: `403`.
 
+Handlers catch the thrown `Response` and return it:
+
+```ts
+import { requireUserWithPermission } from '#app/permissions-server.ts'
+
+async handler({ request }) {
+	try {
+		const actor = await requireUserWithPermission(request, env, 'read:user:any')
+		// ... authorized work
+	} catch (error) {
+		if (error instanceof Response) return error
+		throw error
+	}
+}
+```
+
 Roles and permissions load **fresh per request** in `readAuthenticatedAppUser`
 (`packages/worker/src/app/authenticated-user.ts`). They are not stored in the
 session cookie, so revocation takes effect immediately. If the roles query fails
@@ -140,7 +156,10 @@ Removing the `admin` role from a user is blocked when that user is the last
 remaining admin. The check runs inside the `DELETE` statement itself
 (`removeAdminRolePreservingLastAdmin`), so concurrent removals cannot race a
 stale count and leave zero admins. The API returns `409` with a clear error
-message and logs a failure audit event with reason `last_admin`.
+message and logs a failure audit event with reason `last_admin`. When the helper
+reports nothing was removed, the handler distinguishes "target is the last
+admin" (409) from "target did not have the role" (idempotent no-op) — see
+`handleRemoveRoleAction` in `admin-users.ts`.
 
 Signup fails with `500` if the seeded `user` role cannot be assigned (for
 example after a partial migration), rather than creating an account with no
@@ -242,11 +261,6 @@ node ./wrangler-env.ts d1 execute APP_DB --local --command \
 
 For production, use `--remote`. After the first admin exists, further role
 assignment happens through the admin UI.
-
-## Agent affordances
-
-For copy-pasteable guard examples and step-by-step extension guidance, see
-[`.agents/skills/rbac/SKILL.md`](../../../.agents/skills/rbac/SKILL.md).
 
 ## What to read when changing authorization
 
