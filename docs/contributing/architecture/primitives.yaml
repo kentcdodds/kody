@@ -120,9 +120,9 @@ primitives:
     group: assistant
     name: Capability registry
     summary:
-      Builtin capability domains (apps, coding, email, jobs, meta, packages,
-      repo, secrets, services, storage, values) merged with synthesized
-      remote-connector domains behind search/execute.
+      Builtin capability domains (apps, coding, community, email, jobs, meta,
+      packages, repo, secrets, services, storage, values) merged with
+      synthesized remote-connector domains behind search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
     docs:
@@ -139,6 +139,24 @@ primitives:
       - packages/worker/src/package-registry/
     docs:
       - docs/contributing/architecture/data-storage.md
+
+  - id: community-listings
+    group: assistant
+    name: Community package listings
+    summary:
+      Public pinned snapshots of published saved packages on the same
+      deployment; inert forks, ratings, reports, and admin moderation via the
+      community MCP domain and /community routes.
+    code:
+      - packages/worker/src/community/
+      - packages/worker/src/mcp/capabilities/community/
+      - packages/worker/migrations/0045-community-listings.sql
+      - packages/worker/src/app/handlers/community*
+      - packages/worker/src/app/handlers/admin-community-reports*
+      - packages/worker/client/routes/community*
+    docs:
+      - docs/use/community-packages.md
+      - docs/contributing/community-packages.md
 
   - id: package-apps
     group: assistant
@@ -377,6 +395,17 @@ invariants:
       capabilities behind search/execute, not as new top-level MCP tools.
     docs:
       - docs/contributing/project-intent.md
+
+  - id: community-listing-isolation
+    summary:
+      Public read is deliberate for active community listings only; forks are
+      inert entity sources without a saved_packages row until the forker
+      publishes through a repo session; ratings require a prior fork;
+      cross-scope kody imports never resolve across users; community listings
+      are excluded from general MCP search.
+    docs:
+      - docs/use/community-packages.md
+      - docs/contributing/community-packages.md
 
   - id: no-secrets-in-chat
     summary:

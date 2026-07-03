@@ -11,6 +11,7 @@ style, tests, MCP capabilities, and runtime architecture.
   [testing](./testing-principles.md)
 - [Remix skills](./remix.md)
 - [Packages and manifests](./packages-and-manifests.md)
+- [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)
 - [Architecture](./architecture/index.md) — includes

@@ -4,6 +4,10 @@ The **search** tool finds **built-in capabilities**, **saved packages**,
 **persisted values**, **saved integrations**, and **user secret references**
 (metadata only, not secret values).
 
+**Community package listings** are not included. Use the `community` domain
+(`community_search`, `community_get`) or the public `/community` pages. See
+[Community packages](./community-packages.md).
+
 ## Queries and ranking
 
 Pass a **`query`** string that describes what you want to do. Results are
