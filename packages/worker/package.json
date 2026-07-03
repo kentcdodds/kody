@@ -12,7 +12,7 @@
     "@cloudflare/worker-bundler": "^0.1.3",
     "@cloudflare/workers-oauth-provider": "^0.4.0",
     "@epic-web/invariant": "^1.0.0",
-    "@kody-bot/connector-kit": "^1.1.0",
+    "@kody-bot/connector-kit": "^1.2.0",
     "@kody-internal/shared": "file:../shared",
     "@mcp-ui/server": "6.1.0",
     "@modelcontextprotocol/ext-apps": "^1.2.2",

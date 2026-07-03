@@ -77,7 +77,7 @@ dev guide; this section covers Cloud Agent VM gotchas only.
 
 ### Node 26
 
-The repo requires Node **26.x** (`engines` in root `package.json`). Cloud Agent
+The repo requires Node **>=26** (`engines` in root `package.json`). Cloud Agent
 VMs may ship Node 22 at `/exec-daemon/node`, which takes precedence over nvm
 unless nvm’s Node 26 bin directory is prepended to `PATH`. Verify with
 `node --version` before running scripts.
