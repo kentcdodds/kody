@@ -23,8 +23,12 @@ function createAuthRequest(
 	}
 }
 
-function createAuthTestContext(options: { signupEnabled?: boolean } = {}) {
-	const testDb = createTestDb()
+function createAuthTestContext(
+	options: { signupEnabled?: boolean; failRoleAssignment?: boolean } = {},
+) {
+	const testDb = createTestDb({
+		failRoleAssignment: options.failRoleAssignment ?? false,
+	})
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
@@ -55,7 +59,7 @@ type TestUser = {
 	password_hash: string
 }
 
-function createTestDb() {
+function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 	let nextId = 1
 	const users = new Map<string, TestUser>()
 	const db = {
@@ -156,7 +160,14 @@ function createTestDb() {
 							if (
 								normalizedQuery.includes('insert or ignore into user_roles')
 							) {
-								return { meta: { changes: 1, last_row_id: 0 } }
+								// changes: 0 simulates a missing seeded role (partial
+								// migration), which must fail the signup.
+								return {
+									meta: {
+										changes: options.failRoleAssignment ? 0 : 1,
+										last_row_id: 0,
+									},
+								}
 							}
 							return { meta: { changes: 0, last_row_id: 0 } }
 						},
@@ -329,4 +340,21 @@ test('auth handler login and signup workflow', async () => {
 	expect(secureCookieResponse.headers.get('Set-Cookie') ?? '').toContain(
 		'Secure',
 	)
+})
+
+test('signup fails when the default user role cannot be assigned', async () => {
+	const context = createAuthTestContext({
+		signupEnabled: true,
+		failRoleAssignment: true,
+	})
+
+	const response = await context.request({
+		email: 'roleless@example.com',
+		username: 'roleless-user',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(response.status).toBe(500)
+	expect(await response.json()).toEqual({ error: 'Unable to create account.' })
+	expect(response.headers.get('Set-Cookie')).toBeNull()
 })

@@ -246,11 +246,29 @@ export function createAuthHandler(appEnv: AppEnv) {
 					)
 				}
 
-				await assignUserRole({
+				// INSERT OR IGNORE affects zero rows when the seeded `user` role is
+				// missing (partial migration). Fail loudly rather than creating an
+				// account with no roles or permissions.
+				const { assigned } = await assignUserRole({
 					db: appEnv.APP_DB,
 					userId: record.id,
 					roleName: 'user',
 				})
+				if (!assigned) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'default_role_assignment_failed',
+					})
+					return Response.json(
+						{ error: 'Unable to create account.' },
+						{ status: 500 },
+					)
+				}
 
 				const cookie = await createAuthCookie(
 					{

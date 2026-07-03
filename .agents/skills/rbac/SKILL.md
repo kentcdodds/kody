@@ -169,15 +169,20 @@ Admin endpoints are **metadata-only**. When touching admin code:
 
 ## Last-admin guardrail
 
-Before removing `admin` from a user, check:
+Never remove the `admin` role with a plain delete. Use the atomic helper — the
+last-admin check lives inside the `DELETE` statement so concurrent removals
+cannot race a stale count:
 
 ```ts
-import { countUsersWithRole, removeUserRole } from '#app/permissions-server.ts'
+import { removeAdminRolePreservingLastAdmin } from '#app/permissions-server.ts'
 
-if (roleName === 'admin') {
-	const adminCount = await countUsersWithRole(env.APP_DB, 'admin')
-	// if target is the last admin, return 409 — see admin-users.ts
-}
+const { removed } = await removeAdminRolePreservingLastAdmin({
+	db: env.APP_DB,
+	userId: targetUserId,
+})
+// removed === false means either the target was the last admin (return 409)
+// or the target did not have the role (idempotent no-op) — see
+// handleRemoveRoleAction in admin-users.ts for the disambiguation.
 ```
 
 Copy the full pattern from `handleRemoveRoleAction` in

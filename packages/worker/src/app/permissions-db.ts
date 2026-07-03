@@ -46,14 +46,15 @@ export async function assignUserRole(input: {
 	db: D1Database
 	userId: number
 	roleName: RoleName
-}) {
-	await input.db
+}): Promise<{ assigned: boolean }> {
+	const result = await input.db
 		.prepare(
 			`INSERT OR IGNORE INTO user_roles (user_id, role_id)
 			 SELECT ?, id FROM roles WHERE name = ?`,
 		)
 		.bind(input.userId, input.roleName)
 		.run()
+	return { assigned: (result.meta?.changes ?? 0) > 0 }
 }
 
 export async function removeUserRole(input: {
@@ -71,18 +72,26 @@ export async function removeUserRole(input: {
 		.run()
 }
 
-export async function countUsersWithRole(
-	db: D1Database,
-	roleName: RoleName,
-): Promise<number> {
-	const result = await db
+/**
+ * Removes the admin role from a user only while at least one other admin
+ * remains. The count check lives inside the DELETE statement so concurrent
+ * removals cannot both pass a stale pre-check and leave zero admins.
+ */
+export async function removeAdminRolePreservingLastAdmin(input: {
+	db: D1Database
+	userId: number
+}): Promise<{ removed: boolean }> {
+	const result = await input.db
 		.prepare(
-			`SELECT COUNT(DISTINCT ur.user_id) AS count
-			 FROM user_roles ur
-			 INNER JOIN roles r ON r.id = ur.role_id
-			 WHERE r.name = ?`,
+			`DELETE FROM user_roles
+			 WHERE user_id = ?
+			   AND role_id = (SELECT id FROM roles WHERE name = 'admin')
+			   AND (SELECT COUNT(DISTINCT ur.user_id)
+			        FROM user_roles ur
+			        INNER JOIN roles r ON r.id = ur.role_id
+			        WHERE r.name = 'admin') > 1`,
 		)
-		.bind(roleName)
-		.first<{ count: number }>()
-	return result?.count ?? 0
+		.bind(input.userId)
+		.run()
+	return { removed: (result.meta?.changes ?? 0) > 0 }
 }

@@ -152,6 +152,28 @@ function createAdminTestEnv(input: {
 									}
 									return { meta: { changes: 1 } }
 								}
+								if (
+									normalizedQuery.includes('delete from user_roles') &&
+									normalizedQuery.includes('count(distinct ur.user_id)')
+								) {
+									// Atomic admin removal: only deletes while another admin
+									// remains, mirroring removeAdminRolePreservingLastAdmin.
+									const userId = Number(params[0])
+									const adminCount = new Set(
+										userRoles
+											.filter((row) => row.role_name === 'admin')
+											.map((row) => row.user_id),
+									).size
+									const index = userRoles.findIndex(
+										(row) =>
+											row.user_id === userId && row.role_name === 'admin',
+									)
+									if (adminCount > 1 && index >= 0) {
+										userRoles.splice(index, 1)
+										return { meta: { changes: 1 } }
+									}
+									return { meta: { changes: 0 } }
+								}
 								if (normalizedQuery.includes('delete from user_roles')) {
 									const userId = Number(params[0])
 									const roleName = String(params[1]) as RoleName
@@ -302,6 +324,67 @@ test('remove role rejects removing the last admin account', async () => {
 	} as never)
 
 	expect(response.status).toBe(409)
+})
+
+test('remove role removes admin when another admin remains', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'first-admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+			{
+				id: 2,
+				username: 'second-admin',
+				email: 'second@example.com',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'admin' },
+			{ user_id: 2, role_name: 'admin' },
+			{ user_id: 2, role_name: 'user' },
+		],
+	})
+
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'remove_role',
+				userId: 2,
+				role: 'admin',
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	const secondAdmin = payload.users.find(
+		(user: { id: number }) => user.id === 2,
+	)
+	expect(secondAdmin.roles).not.toContain('admin')
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'remove_role',
+			result: 'success',
+		}),
+	)
 })
 
 test('admin users API returns 403 without read:user:any permission', async () => {

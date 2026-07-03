@@ -5,7 +5,7 @@ import { redirectToLogin } from '#app/auth-redirect.ts'
 import { Layout } from '#app/layout.ts'
 import {
 	assignUserRole,
-	countUsersWithRole,
+	removeAdminRolePreservingLastAdmin,
 	removeUserRole,
 	requireUserWithPermission,
 	requireUserWithRole,
@@ -319,40 +319,50 @@ async function handleRemoveRoleAction(input: {
 	}
 
 	if (roleName === 'admin') {
-		const adminCount = await countUsersWithRole(input.env.APP_DB, 'admin')
-		const targetRoles = await loadRolesByUserIds(input.env.APP_DB, [
-			targetUserId,
-		])
-		const targetHasAdmin = (targetRoles.get(targetUserId) ?? []).includes(
-			'admin',
-		)
-		if (targetHasAdmin && adminCount <= 1) {
-			const requestIp = getRequestIp(input.request) ?? undefined
-			void logAuditEvent({
-				category: 'admin',
-				action: 'remove_role',
-				result: 'failure',
-				email: input.actor.email,
-				ip: requestIp,
-				path: input.url.pathname,
-				reason: 'last_admin',
-			})
-			return jsonResponse(
-				{
-					ok: false,
-					error:
-						'Cannot remove the admin role from the last remaining admin account.',
-				},
-				409,
+		// The last-admin check runs inside the DELETE statement itself so two
+		// concurrent removals cannot both pass a stale count and leave the
+		// deployment with zero admins.
+		const { removed } = await removeAdminRolePreservingLastAdmin({
+			db: input.env.APP_DB,
+			userId: targetUserId,
+		})
+		if (!removed) {
+			const targetRoles = await loadRolesByUserIds(input.env.APP_DB, [
+				targetUserId,
+			])
+			const targetStillAdmin = (targetRoles.get(targetUserId) ?? []).includes(
+				'admin',
 			)
+			if (targetStillAdmin) {
+				const requestIp = getRequestIp(input.request) ?? undefined
+				void logAuditEvent({
+					category: 'admin',
+					action: 'remove_role',
+					result: 'failure',
+					email: input.actor.email,
+					ip: requestIp,
+					path: input.url.pathname,
+					reason: 'last_admin',
+				})
+				return jsonResponse(
+					{
+						ok: false,
+						error:
+							'Cannot remove the admin role from the last remaining admin account.',
+					},
+					409,
+				)
+			}
+			// The target did not have the admin role; removal is an idempotent
+			// no-op, matching non-admin role removal behavior.
 		}
+	} else {
+		await removeUserRole({
+			db: input.env.APP_DB,
+			userId: targetUserId,
+			roleName,
+		})
 	}
-
-	await removeUserRole({
-		db: input.env.APP_DB,
-		userId: targetUserId,
-		roleName,
-	})
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({

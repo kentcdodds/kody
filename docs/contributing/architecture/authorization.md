@@ -91,14 +91,14 @@ To add a new entity:
 `packages/worker/src/app/permissions-server.ts` provides request guards and
 re-exports DB helpers from `permissions-db.ts`:
 
-| Function                     | Behavior                                                |
-| ---------------------------- | ------------------------------------------------------- |
-| `getUserRolesAndPermissions` | One D1 query: union of roles and permissions for a user |
-| `requireUserWithPermission`  | Authenticated + permission; else 401/403                |
-| `requireUserWithRole`        | Authenticated + role; else 401/403                      |
-| `assignUserRole`             | Insert into `user_roles`                                |
-| `removeUserRole`             | Delete from `user_roles`                                |
-| `countUsersWithRole`         | Count distinct users with a given role                  |
+| Function                             | Behavior                                                     |
+| ------------------------------------ | ------------------------------------------------------------ |
+| `getUserRolesAndPermissions`         | One D1 query: union of roles and permissions for a user      |
+| `requireUserWithPermission`          | Authenticated + permission; else 401/403                     |
+| `requireUserWithRole`                | Authenticated + role; else 401/403                           |
+| `assignUserRole`                     | Insert into `user_roles`; returns whether a row was inserted |
+| `removeUserRole`                     | Delete from `user_roles`                                     |
+| `removeAdminRolePreservingLastAdmin` | Atomic admin removal that refuses to delete the last admin   |
 
 Guards throw a `Response` on failure:
 
@@ -130,8 +130,14 @@ Role assignment and removal emit audit events via `logAuditEvent` with category
 ### Last-admin guardrail
 
 Removing the `admin` role from a user is blocked when that user is the last
-remaining admin (`countUsersWithRole('admin') <= 1`). The API returns `409` with
-a clear error message and logs a failure audit event with reason `last_admin`.
+remaining admin. The check runs inside the `DELETE` statement itself
+(`removeAdminRolePreservingLastAdmin`), so concurrent removals cannot race a
+stale count and leave zero admins. The API returns `409` with a clear error
+message and logs a failure audit event with reason `last_admin`.
+
+Signup fails with `500` if the seeded `user` role cannot be assigned (for
+example after a partial migration), rather than creating an account with no
+roles.
 
 ## Session payload and client helpers
 
