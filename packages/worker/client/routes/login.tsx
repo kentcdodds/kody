@@ -289,6 +289,9 @@ export function LoginRoute(handle: Handle) {
 							Forgot password?
 						</a>
 					) : null}
+					<a href="/privacy" mix={css(mutedLinkCss)}>
+						Privacy
+					</a>
 					<a href="/" mix={css(mutedLinkCss)}>
 						Back home
 					</a>

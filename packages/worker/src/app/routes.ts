@@ -36,6 +36,7 @@ export const routes = route({
 	adminRolesApi: '/admin/roles.json',
 	health: '/health',
 	login: '/login',
+	privacy: '/privacy',
 	signup: '/signup',
 	account: '/account',
 	accountDelete: post('/account/delete'),

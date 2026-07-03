@@ -18,6 +18,7 @@ Read in order for a full tour, or jump to a topic.
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets, values, and host approval](./secrets-and-values.md)
 - [Mutating actions and confirmations](./mutating-actions.md)
+- [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
 - [Troubleshooting](./troubleshooting.md)
 - [Memory and conversation context](./memory.md)
 - [Community Project mark](./community-project-mark.md) — logo for unofficial
