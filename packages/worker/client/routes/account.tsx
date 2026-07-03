@@ -9,6 +9,7 @@ import {
 	fieldLabelCss,
 	getPrimaryButtonCss,
 	inputCss,
+	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 import {
@@ -276,6 +277,12 @@ export function AccountRoute(handle: Handle) {
 						</section>
 					</>
 				) : null}
+
+				<p mix={css({ margin: 0 })}>
+					<a href="/privacy" mix={css(mutedLinkCss)}>
+						Privacy
+					</a>
+				</p>
 			</section>
 		)
 	}

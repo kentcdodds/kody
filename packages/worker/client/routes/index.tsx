@@ -6,6 +6,7 @@ import { AccountSecretsRoute } from './account-secrets.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute } from './home.tsx'
 import { LoginRoute } from './login.tsx'
+import { PrivacyRoute } from './privacy.tsx'
 import { OAuthAuthorizeRoute } from './oauth-authorize.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ResetPasswordRoute } from './reset-password.tsx'
@@ -30,6 +31,7 @@ export const clientRoutes = {
 	'/account/secrets/app/:appId/:secretName': <AccountSecretsRoute />,
 	'/account/secrets/session/:sessionId/:secretName': <AccountSecretsRoute />,
 	'/login': <LoginRoute />,
+	'/privacy': <PrivacyRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
 	'/connect/oauth': <ConnectOauthRoute />,

@@ -30,6 +30,7 @@ export const routes = route({
 	accountProfileApiPost: post('/account/profile.json'),
 	health: '/health',
 	login: '/login',
+	privacy: '/privacy',
 	signup: '/signup',
 	account: '/account',
 	accountDelete: post('/account/delete'),
