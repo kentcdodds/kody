@@ -1,5 +1,6 @@
 import { test as base } from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
+import { assignRoleInE2eDatabase } from './d1-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 
 export * from '@playwright/test'
@@ -10,6 +11,7 @@ export const test = base.extend<{
 		username?: string
 		password?: string
 	}): Promise<{ email: string; username: string; password: string }>
+	assignRole(email: string, role: string): Promise<void>
 	login(options?: {
 		email?: string
 		username?: string
@@ -62,6 +64,11 @@ export const test = base.extend<{
 			}
 
 			return { email, username, password }
+		})
+	},
+	assignRole: async ({}, use) => {
+		await use(async (email, role) => {
+			assignRoleInE2eDatabase(email, role)
 		})
 	},
 	login: async ({ page }, use) => {

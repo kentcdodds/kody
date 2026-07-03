@@ -55,3 +55,34 @@ export async function assignUserRole(input: {
 		.bind(input.userId, input.roleName)
 		.run()
 }
+
+export async function removeUserRole(input: {
+	db: D1Database
+	userId: number
+	roleName: RoleName
+}) {
+	await input.db
+		.prepare(
+			`DELETE FROM user_roles
+			 WHERE user_id = ?
+			   AND role_id = (SELECT id FROM roles WHERE name = ?)`,
+		)
+		.bind(input.userId, input.roleName)
+		.run()
+}
+
+export async function countUsersWithRole(
+	db: D1Database,
+	roleName: RoleName,
+): Promise<number> {
+	const result = await db
+		.prepare(
+			`SELECT COUNT(DISTINCT ur.user_id) AS count
+			 FROM user_roles ur
+			 INNER JOIN roles r ON r.id = ur.role_id
+			 WHERE r.name = ?`,
+		)
+		.bind(roleName)
+		.first<{ count: number }>()
+	return result?.count ?? 0
+}

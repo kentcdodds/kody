@@ -11,6 +11,7 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
+import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from './styles/tokens.ts'
 
@@ -93,12 +94,15 @@ export function App(handle: Handle) {
 			currentPathname.startsWith('/account/integrations') ||
 			currentPathname.startsWith('/account/package-invocation-tokens') ||
 			currentPathname.startsWith('/account/remote-connectors') ||
-			currentPathname.startsWith('/account/secrets')
+			currentPathname.startsWith('/account/secrets') ||
+			currentPathname.startsWith('/admin')
 		const sessionEmail = session?.email ?? ''
 		const sessionDisplayName = getSessionDisplayName(session)
 		const isSessionReady = sessionStatus === 'ready'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
 		const showAuthLinks = isSessionReady && !isLoggedIn
+		const showAdminLink =
+			isLoggedIn && session != null && userHasRole(session, 'admin')
 		const oauthRedirectTo =
 			typeof window !== 'undefined' && currentPathname === '/oauth/authorize'
 				? `${currentPathname}${window.location.search}`
@@ -196,6 +200,11 @@ export function App(handle: Handle) {
 							<a href="/account/remote-connectors" mix={css(navLinkCss)}>
 								Connectors
 							</a>
+							{showAdminLink ? (
+								<a href="/admin/users" mix={css(navLinkCss)}>
+									Admin
+								</a>
+							) : null}
 							<form method="post" action="/logout" mix={css({ margin: 0 })}>
 								<button type="submit" mix={css(logOutButtonCss)}>
 									Log out

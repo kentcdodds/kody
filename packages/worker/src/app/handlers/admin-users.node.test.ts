@@ -1,0 +1,321 @@
+import { expect, test, vi } from 'vitest'
+import { adminUserListItemFieldNames } from './admin-users.ts'
+import { type PermissionString, type RoleName } from '#app/permissions.ts'
+
+const mockModule = vi.hoisted(() => ({
+	readAuthenticatedAppUser: vi.fn(),
+	logAuditEvent: vi.fn(async () => undefined),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: (...args: Array<unknown>) =>
+		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#app/audit-log.ts', () => ({
+	getRequestIp: () => '127.0.0.1',
+	logAuditEvent: (...args: Array<unknown>) => mockModule.logAuditEvent(...args),
+}))
+
+type UserRow = {
+	id: number
+	username: string
+	email: string
+	created_at: string
+	updated_at: string
+}
+
+type UserRoleRow = { user_id: number; role_name: RoleName }
+
+function createAdminActor(roles: Array<RoleName>) {
+	const permissions: Array<PermissionString> = roles.includes('admin')
+		? ['read:user:any', 'update:user:any']
+		: ['read:user:own']
+	return {
+		sessionUserId: '1',
+		userId: 1,
+		email: 'admin@example.com',
+		username: 'admin-user',
+		displayName: 'admin-user',
+		roles,
+		permissions,
+		artifactOwnerIds: ['1'],
+		mcpUser: {
+			userId: 'stable-admin',
+			email: 'admin@example.com',
+			username: 'admin-user',
+			displayName: 'admin-user',
+		},
+	}
+}
+
+function createAdminTestEnv(input: {
+	users: Array<UserRow>
+	userRoles: Array<UserRoleRow>
+}) {
+	const users = new Map(input.users.map((user) => [user.id, { ...user }]))
+	const userRoles = input.userRoles.map((row) => ({ ...row }))
+
+	return {
+		COOKIE_SECRET: 'secret',
+		APP_DB: {
+			prepare(query: string) {
+				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				const execute = {
+					async all<T>() {
+						if (
+							normalizedQuery.includes('select count(*) as total from users')
+						) {
+							return {
+								results: [{ total: users.size }] as Array<T>,
+								meta: { changes: 0 },
+							}
+						}
+						return { results: [] as Array<T>, meta: { changes: 0 } }
+					},
+					async first<T>() {
+						if (
+							normalizedQuery.includes('select count(*) as total from users')
+						) {
+							return { total: users.size } as T
+						}
+						return null
+					},
+					async run() {
+						return { meta: { changes: 0 } }
+					},
+				}
+				return {
+					...execute,
+					bind(...params: Array<unknown>) {
+						return {
+							async all<T>() {
+								if (normalizedQuery.startsWith('select id, username, email')) {
+									const pageSize = Number(params[0])
+									const offset = Number(params[1])
+									const results = Array.from(users.values())
+										.sort((a, b) => a.id - b.id)
+										.slice(offset, offset + pageSize)
+									return { results: results as Array<T>, meta: { changes: 0 } }
+								}
+								if (normalizedQuery.includes('where ur.user_id in')) {
+									const userIds = params.map((value) => Number(value))
+									return {
+										results: userRoles
+											.filter((row) => userIds.includes(row.user_id))
+											.map((row) => ({
+												user_id: row.user_id,
+												role_name: row.role_name,
+											})) as Array<T>,
+										meta: { changes: 0 },
+									}
+								}
+								return { results: [] as Array<T>, meta: { changes: 0 } }
+							},
+							async first<T>() {
+								if (
+									normalizedQuery.includes(
+										'select id, email from users where id =',
+									)
+								) {
+									const user = users.get(Number(params[0]))
+									return user ? ({ id: user.id, email: user.email } as T) : null
+								}
+								if (
+									normalizedQuery.includes(
+										'count(distinct ur.user_id) as count',
+									)
+								) {
+									const roleName = String(params[0])
+									const count = new Set(
+										userRoles
+											.filter((row) => row.role_name === roleName)
+											.map((row) => row.user_id),
+									).size
+									return { count } as T
+								}
+								return null
+							},
+							async run() {
+								if (
+									normalizedQuery.includes('insert or ignore into user_roles')
+								) {
+									const userId = Number(params[0])
+									const roleName = String(params[1]) as RoleName
+									if (
+										!userRoles.some(
+											(row) =>
+												row.user_id === userId && row.role_name === roleName,
+										)
+									) {
+										userRoles.push({ user_id: userId, role_name: roleName })
+									}
+									return { meta: { changes: 1 } }
+								}
+								if (normalizedQuery.includes('delete from user_roles')) {
+									const userId = Number(params[0])
+									const roleName = String(params[1]) as RoleName
+									const index = userRoles.findIndex(
+										(row) =>
+											row.user_id === userId && row.role_name === roleName,
+									)
+									if (index >= 0) userRoles.splice(index, 1)
+									return { meta: { changes: 1 } }
+								}
+								return { meta: { changes: 0 } }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as D1Database,
+	}
+}
+
+const { createAdminUsersApiHandler } = await import('./admin-users.ts')
+
+test('admin users list payload exposes only account metadata fields', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'admin-user',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'admin' },
+			{ user_id: 2, role_name: 'user' },
+		],
+	})
+
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			headers: { Accept: 'application/json' },
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(Object.keys(payload).sort()).toEqual(
+		['availableRoles', 'ok', 'page', 'pageSize', 'total', 'users'].sort(),
+	)
+	for (const user of payload.users) {
+		expect(Object.keys(user).sort()).toEqual(
+			[...adminUserListItemFieldNames].sort(),
+		)
+	}
+})
+
+test('assign role action updates user roles and logs audit event', async () => {
+	mockModule.logAuditEvent.mockClear()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 2, role_name: 'user' }],
+	})
+
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'assign_role',
+				userId: 2,
+				role: 'admin',
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload.users[0].roles).toContain('admin')
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({ category: 'admin', action: 'assign_role' }),
+	)
+})
+
+test('remove role rejects removing the last admin account', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'solo-admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 1, role_name: 'admin' }],
+	})
+
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'remove_role',
+				userId: 1,
+				role: 'admin',
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+
+	expect(response.status).toBe(409)
+})
+
+test('admin users API returns 403 without read:user:any permission', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['user']),
+	)
+	const env = createAdminTestEnv({ users: [], userRoles: [] })
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			headers: { Accept: 'application/json' },
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+	expect(response.status).toBe(403)
+})

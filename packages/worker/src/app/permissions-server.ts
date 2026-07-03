@@ -13,7 +13,9 @@ import { wantsJson } from '#worker/utils.ts'
 
 export {
 	assignUserRole,
+	countUsersWithRole,
 	getUserRolesAndPermissions,
+	removeUserRole,
 } from '#app/permissions-db.ts'
 export { userHasPermission, userHasRole } from '#app/permissions.ts'
 

@@ -1,4 +1,13 @@
 import { createRouter } from 'remix/router'
+import {
+	createAdminHandler,
+	createAdminUsersApiHandler,
+	createAdminUsersHandler,
+} from '#app/handlers/admin-users.ts'
+import {
+	createAdminRolesApiHandler,
+	createAdminRolesHandler,
+} from '#app/handlers/admin-roles.ts'
 import { account } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import {
@@ -112,6 +121,12 @@ export function createAppRouter(appEnv: AppEnv) {
 			accountSecretsApiPost: createAccountSecretsApiHandler(
 				appEnv as unknown as Env,
 			),
+			admin: createAdminHandler(appEnv as unknown as Env),
+			adminUsers: createAdminUsersHandler(appEnv as unknown as Env),
+			adminUsersApi: createAdminUsersApiHandler(appEnv as unknown as Env),
+			adminUsersApiPost: createAdminUsersApiHandler(appEnv as unknown as Env),
+			adminRoles: createAdminRolesHandler(appEnv as unknown as Env),
+			adminRolesApi: createAdminRolesApiHandler(appEnv as unknown as Env),
 			connectOauth: createConnectOauthHandler(appEnv as unknown as Env),
 			auth: createAuthHandler(appEnv),
 			session: createSessionHandler(appEnv as unknown as Env),
