@@ -109,13 +109,13 @@ Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
 
 ### Seeding a test account
 
-After `npm run migrate:local`, seed the local E2E fixture login
-(`kody@example.com` / `iliketwix`) per
-[`docs/contributing/setup.md`](./docs/contributing/setup.md). These credentials
-are fixtures only, not privileged runtime accounts. If
-`node tools/seed-test-data.ts --local` fails because Wrangler cannot resolve
-`APP_DB` without the worker config wrapper, run the seed SQL through
-`./wrangler-env.ts` instead (same pattern as the migrate script).
+After `npm run migrate:local`, seed the local fixture logins per
+[`docs/contributing/setup.md`](./docs/contributing/setup.md): `kody@example.com`
+/ `iliketwix` (seeded with the `admin` role) and `twix@example.com` /
+`iliketwix` (regular account). These credentials are local test fixtures only.
+The seed script resolves the worker Wrangler config automatically (same default
+as `wrangler-env.ts`), so `node tools/seed-test-data.ts --local` works without
+extra flags.
 
 ### Local limitations
 

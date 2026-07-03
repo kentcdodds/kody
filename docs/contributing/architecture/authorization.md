@@ -165,8 +165,11 @@ Client checks are cosmetic only; every mutation is re-checked server-side.
 Every new account receives the `user` role in the signup transaction
 (`packages/worker/src/app/handlers/auth.ts` via `assignUserRole`).
 
-`tools/seed-test-data.ts` accepts `--admin` to grant the fixture account the
-`admin` role locally.
+`tools/seed-test-data.ts` seeds the default fixture account (`kody@example.com`)
+with the `admin` role and a companion regular account (`twix@example.com`) with
+the `user` role only, so both sides of RBAC are testable out of the box. Custom
+`--email` accounts stay non-admin unless `--admin` is passed; `--no-admin` opts
+the default account out.
 
 ## MCP context
 

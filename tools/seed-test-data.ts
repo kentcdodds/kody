@@ -1,7 +1,12 @@
+import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
+import {
+	getDefaultWranglerConfigPath,
+	resolveWranglerConfigPath,
+} from './wrangler-env-config.ts'
 
 type CliOptions = {
 	email: string
@@ -18,6 +23,9 @@ type CliOptions = {
 const defaultTestEmail = 'kody@example.com'
 const defaultTestUsername = 'kody'
 const defaultTestPassword = 'iliketwix'
+// Companion non-admin fixture so RBAC flows can be tested from both sides.
+const regularTestEmail = 'twix@example.com'
+const regularTestUsername = 'twix'
 
 export function parseArgs(argv: Array<string>): CliOptions {
 	const options: CliOptions = {
@@ -32,6 +40,7 @@ export function parseArgs(argv: Array<string>): CliOptions {
 		persistTo: undefined,
 	}
 	let usernameProvided = false
+	let adminProvided = false
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index]
@@ -63,7 +72,13 @@ export function parseArgs(argv: Array<string>): CliOptions {
 				break
 			}
 			case '--admin': {
+				adminProvided = true
 				options.admin = true
+				break
+			}
+			case '--no-admin': {
+				adminProvided = true
+				options.admin = false
 				break
 			}
 			case '--env': {
@@ -86,7 +101,7 @@ export function parseArgs(argv: Array<string>): CliOptions {
 					fail(
 						[
 							`Unknown flag: ${arg}`,
-							'Usage: node tools/seed-test-data.ts [--local|--remote] [--admin] [--env <name>] [--config <path>] [--persist-to <path>] [--email <email>] [--username <username>] [--password <password>]',
+							'Usage: node tools/seed-test-data.ts [--local|--remote] [--admin|--no-admin] [--env <name>] [--config <path>] [--persist-to <path>] [--email <email>] [--username <username>] [--password <password>]',
 						].join('\n'),
 					)
 				}
@@ -109,6 +124,11 @@ export function parseArgs(argv: Array<string>): CliOptions {
 			effectiveEmail === defaultTestEmail
 				? defaultTestUsername
 				: usernameFromEmail(effectiveEmail)
+	}
+	// The default fixture account is an admin so RBAC features are testable
+	// out of the box; custom accounts stay non-admin unless requested.
+	if (!adminProvided) {
+		options.admin = effectiveEmail === defaultTestEmail
 	}
 	if (!options.username) {
 		fail('Missing required --username <username> value.')
@@ -166,17 +186,19 @@ function usernameFromEmail(email: string) {
 	return truncated.length >= 3 ? truncated : `user-${truncated || 'test'}`
 }
 
-function buildSeedSql({
-	email,
-	username,
-	passwordHash,
-	admin,
-}: {
+type SeedAccount = {
 	email: string
 	username: string
 	passwordHash: string
 	admin: boolean
-}) {
+}
+
+function buildAccountSeedSql({
+	email,
+	username,
+	passwordHash,
+	admin,
+}: SeedAccount) {
 	const userRoleSql = `
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
@@ -200,6 +222,10 @@ ON CONFLICT(email) DO UPDATE SET
 ${userRoleSql}${adminRoleSql}`.trim()
 }
 
+export function buildSeedSql(accounts: Array<SeedAccount>) {
+	return accounts.map(buildAccountSeedSql).join('\n')
+}
+
 function executeSeedSql(sql: string, options: CliOptions) {
 	const args = ['d1', 'execute', 'APP_DB', '--command', sql]
 	if (options.local) {
@@ -214,8 +240,11 @@ function executeSeedSql(sql: string, options: CliOptions) {
 	if (options.env) {
 		args.push('--env', options.env)
 	}
-	if (options.config) {
-		args.push('--config', options.config)
+	// Wrangler cannot resolve APP_DB without the worker config; fall back to
+	// the repo default (same behavior as wrangler-env.ts) when none is given.
+	const configPath = options.config ?? getDefaultWranglerConfigPath()
+	if (existsSync(resolveWranglerConfigPath(configPath, process.cwd()))) {
+		args.push('--config', configPath)
 	}
 
 	const result = runWrangler(args)
@@ -227,16 +256,28 @@ function executeSeedSql(sql: string, options: CliOptions) {
 async function main() {
 	const options = parseArgs(process.argv.slice(2))
 	const passwordHash = await createPasswordHash(options.password)
-	const sql = buildSeedSql({
-		email: options.email,
-		username: options.username,
-		passwordHash,
-		admin: options.admin,
-	})
+	const accounts: Array<SeedAccount> = [
+		{
+			email: options.email,
+			username: options.username,
+			passwordHash,
+			admin: options.admin,
+		},
+	]
+	if (options.email !== regularTestEmail) {
+		accounts.push({
+			email: regularTestEmail,
+			username: regularTestUsername,
+			passwordHash: await createPasswordHash(defaultTestPassword),
+			admin: false,
+		})
+	}
+	const sql = buildSeedSql(accounts)
 	executeSeedSql(sql, options)
 
+	const primaryLabel = options.admin ? 'admin' : 'regular'
 	console.log(
-		`Seeded test account in D1 (${options.local ? 'local' : 'remote'})${options.admin ? ' (admin)' : ''}`,
+		`Seeded ${accounts.length} test accounts in D1 (${options.local ? 'local' : 'remote'}): 1 ${primaryLabel} + ${accounts.length - 1} regular`,
 	)
 }
 

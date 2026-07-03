@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest'
 
-import { parseArgs, resolveWranglerEnv } from './seed-test-data.ts'
+import {
+	buildSeedSql,
+	parseArgs,
+	resolveWranglerEnv,
+} from './seed-test-data.ts'
 
 test('seed data arg parsing defaults to local mode and derives usernames from email unless overridden', () => {
 	const defaultOptions = parseArgs(['--email', 'alice.dev+preview@example.com'])
@@ -28,4 +32,53 @@ test('seed data arg parsing defaults to local mode and derives usernames from em
 			config: 'packages/worker/wrangler-preview.generated.json',
 		}),
 	).toBe('preview')
+})
+
+test('seed data grants admin to the default fixture account only', () => {
+	// Default account (kody@example.com) is admin so RBAC is testable.
+	const defaultOptions = parseArgs(['--local'])
+	expect(defaultOptions.email).toBe('kody@example.com')
+	expect(defaultOptions.admin).toBe(true)
+
+	// Custom accounts stay non-admin unless requested.
+	const customOptions = parseArgs(['--local', '--email', 'me@example.com'])
+	expect(customOptions.admin).toBe(false)
+
+	const customAdminOptions = parseArgs([
+		'--local',
+		'--email',
+		'me@example.com',
+		'--admin',
+	])
+	expect(customAdminOptions.admin).toBe(true)
+
+	// --no-admin opts the default account out.
+	const optOutOptions = parseArgs(['--local', '--no-admin'])
+	expect(optOutOptions.admin).toBe(false)
+})
+
+test('buildSeedSql seeds each account with its roles', () => {
+	const sql = buildSeedSql([
+		{
+			email: 'kody@example.com',
+			username: 'kody',
+			passwordHash: 'hash-a',
+			admin: true,
+		},
+		{
+			email: 'twix@example.com',
+			username: 'twix',
+			passwordHash: 'hash-b',
+			admin: false,
+		},
+	])
+
+	expect(sql).toContain(`'kody@example.com'`)
+	expect(sql).toContain(`'twix@example.com'`)
+	// Both accounts get the user role; only the admin account gets admin.
+	expect(sql.match(/r\.name = 'user'/g)).toHaveLength(2)
+	expect(sql.match(/r\.name = 'admin'/g)).toHaveLength(1)
+	expect(sql).toContain(
+		`WHERE u.email = 'kody@example.com' AND r.name = 'admin'`,
+	)
 })

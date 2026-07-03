@@ -148,12 +148,16 @@ Use this script to ensure a known test login exists in any deployed environment:
   - `node tools/seed-test-data.ts --remote --config <wrangler-config-path>`
   - Add `--env <name>` when the config uses environment-scoped bindings and the
     environment is not already set via `CLOUDFLARE_ENV`.
-- Default fixture credentials:
-  - email: `kody@example.com`
-  - password: `iliketwix`
-- These credentials are a test fixture only. They are not privileged at runtime
-  and should not be used to describe product behavior.
-- Choose explicit fixture credentials when needed:
+- Default fixture credentials (both use password `iliketwix`):
+  - `kody@example.com` — seeded with the `admin` role so RBAC features (the
+    `/admin` pages) are testable out of the box
+  - `twix@example.com` — regular account (`user` role only), seeded alongside
+    the primary account for testing the non-admin side of RBAC
+- These credentials are a test fixture only and should not be used to describe
+  product behavior. Pass `--no-admin` to seed the default account without the
+  admin role.
+- Choose explicit fixture credentials when needed (custom accounts are non-admin
+  unless you pass `--admin`):
   - `node tools/seed-test-data.ts --email <email> --password <password>`
 - When changing DB schema/model definitions or migrations, review
   `tools/seed-test-data.ts` and update it so seeded data matches the new model
