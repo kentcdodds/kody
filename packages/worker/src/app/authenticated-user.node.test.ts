@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
@@ -58,3 +58,69 @@ function createAuthenticatedUserTestDb() {
 		},
 	} as unknown as D1Database
 }
+
+test('readAuthenticatedAppUser fails closed to empty roles when the rbac query errors', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const cookie = await createAuthCookie(
+		{
+			id: '7',
+			email: 'user@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+
+	const db = {
+		prepare(query: string) {
+			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			return {
+				bind() {
+					return {
+						async all() {
+							if (normalizedQuery.includes('from "users"')) {
+								return {
+									results: [
+										{
+											id: 7,
+											email: 'user@example.com',
+											username: 'resilient-user',
+											password_hash: 'irrelevant',
+										},
+									],
+									meta: { changes: 0 },
+								}
+							}
+							if (normalizedQuery.includes('from user_roles')) {
+								throw new Error('D1 unavailable')
+							}
+							return { results: [], meta: { changes: 0 } }
+						},
+					}
+				},
+			}
+		},
+		async exec() {
+			return
+		},
+	} as unknown as D1Database
+
+	const consoleError = vi
+		.spyOn(console, 'error')
+		.mockImplementation(() => undefined)
+	try {
+		const user = await readAuthenticatedAppUser(
+			new Request('https://example.com/session', {
+				headers: { Cookie: cookie },
+			}),
+			{ APP_DB: db, COOKIE_SECRET: testCookieSecret } as Env,
+		)
+
+		expect(user).not.toBeNull()
+		expect(user?.username).toBe('resilient-user')
+		expect(user?.roles).toEqual([])
+		expect(user?.permissions).toEqual([])
+		expect(consoleError).toHaveBeenCalled()
+	} finally {
+		consoleError.mockRestore()
+	}
+})

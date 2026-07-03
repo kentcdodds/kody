@@ -50,10 +50,19 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 		email: userRecord.email,
 		username: userRecord.username,
 	})
-	const { roles, permissions } = await getUserRolesAndPermissions(
-		env.APP_DB,
-		userId,
-	)
+	// A transient failure of the roles query must not break authentication
+	// entirely. Falling back to empty roles fails closed: the user stays
+	// signed in but holds no permissions until the lookup recovers.
+	let roles: Array<RoleName> = []
+	let permissions: Array<PermissionString> = []
+	try {
+		;({ roles, permissions } = await getUserRolesAndPermissions(
+			env.APP_DB,
+			userId,
+		))
+	} catch (error) {
+		console.error('Failed to load roles for authenticated user:', error)
+	}
 
 	return {
 		sessionUserId: session.id,

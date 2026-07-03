@@ -48,6 +48,10 @@ Migration `packages/worker/migrations/0043-rbac.sql` seeds two roles with
 
 Role names are typed: `roleNames = ['user', 'admin']` in `permissions.ts`.
 
+Migration `packages/worker/migrations/0044-rbac-backfill-user-role.sql`
+backfills the `user` role for accounts created before RBAC existed, so every
+account has the default role regardless of when it signed up.
+
 There is no runtime path that grants `admin`. The first admin is bootstrapped
 with SQL (see [First admin bootstrap](#first-admin-bootstrap) below).
 
@@ -108,7 +112,10 @@ Guards throw a `Response` on failure:
 
 Roles and permissions load **fresh per request** in `readAuthenticatedAppUser`
 (`packages/worker/src/app/authenticated-user.ts`). They are not stored in the
-session cookie, so revocation takes effect immediately.
+session cookie, so revocation takes effect immediately. If the roles query fails
+transiently, the lookup fails closed: the user stays authenticated with empty
+roles and permissions until the query recovers (the MCP context lookup behaves
+the same way).
 
 ### Where guards are used
 
@@ -244,6 +251,8 @@ For copy-pasteable guard examples and step-by-step extension guidance, see
 - `packages/worker/src/app/permissions-db.ts` — D1 queries
 - `packages/worker/src/app/permissions-server.ts` — request guards
 - `packages/worker/migrations/0043-rbac.sql` — schema and seed data
+- `packages/worker/migrations/0044-rbac-backfill-user-role.sql` — role backfill
+  for pre-RBAC accounts
 - `packages/worker/src/app/handlers/admin-users.ts` — users admin API
 - `packages/worker/src/app/handlers/admin-roles.ts` — roles admin API
 - `packages/worker/src/mcp-auth-user-context.ts` — MCP role loading
