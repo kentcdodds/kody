@@ -1,15 +1,18 @@
 import { spawnSync } from 'node:child_process'
-import { resolveLocalBinary } from '../tools/node-runtime.ts'
+import path from 'node:path'
+
+const projectRoot = path.resolve(import.meta.dirname, '..')
 
 function quoteSql(value: string) {
 	return `'${value.replace(/'/g, "''")}'`
 }
 
 export function executeE2eD1Command(sql: string) {
-	const wranglerBin = resolveLocalBinary('wrangler')
 	const result = spawnSync(
-		wranglerBin,
+		process.execPath,
 		[
+			'--env-file=packages/worker/.env',
+			'./wrangler-env.ts',
 			'd1',
 			'execute',
 			'APP_DB',
@@ -20,6 +23,7 @@ export function executeE2eD1Command(sql: string) {
 			sql,
 		],
 		{
+			cwd: projectRoot,
 			encoding: 'utf8',
 			stdio: 'pipe',
 			env: {
