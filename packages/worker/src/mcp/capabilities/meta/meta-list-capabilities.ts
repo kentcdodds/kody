@@ -72,6 +72,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 			domain: z
 				.enum([
 					capabilityDomainNames.apps,
+					capabilityDomainNames.community,
 					capabilityDomainNames.coding,
 					capabilityDomainNames.jobs,
 					capabilityDomainNames.math,

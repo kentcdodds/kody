@@ -1,4 +1,5 @@
 import { appsDomain } from './apps/domain.ts'
+import { communityDomain } from './community/domain.ts'
 import { codingDomain } from './coding/domain.ts'
 import { emailDomain } from './email/domain.ts'
 import { jobsDomain } from './jobs/domain.ts'
@@ -20,6 +21,7 @@ import { valuesDomain } from './values/domain.ts'
  */
 export const builtinDomains = [
 	appsDomain,
+	communityDomain,
 	codingDomain,
 	emailDomain,
 	jobsDomain,
