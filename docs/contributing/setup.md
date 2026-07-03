@@ -152,7 +152,8 @@ Use this script to ensure a known test login exists in any deployed environment:
   - `kody@example.com` — seeded with the `admin` role so RBAC features (the
     `/admin` pages) are testable out of the box
   - `twix@example.com` — regular account (`user` role only), seeded alongside
-    the primary account for testing the non-admin side of RBAC
+    the primary account for testing the non-admin side of RBAC (local seeding
+    only; never seeded into remote environments)
 - These credentials are a test fixture only and should not be used to describe
   product behavior. Pass `--no-admin` to seed the default account without the
   admin role.

@@ -226,6 +226,16 @@ export function buildSeedSql(accounts: Array<SeedAccount>) {
 	return accounts.map(buildAccountSeedSql).join('\n')
 }
 
+/**
+ * The companion fixture uses a fixed, public password, so it is seeded for
+ * local development only — never into remote (deployed) environments.
+ */
+export function shouldSeedCompanionAccount(
+	options: Pick<CliOptions, 'local' | 'email'>,
+) {
+	return options.local && options.email !== regularTestEmail
+}
+
 function executeSeedSql(sql: string, options: CliOptions) {
 	const args = ['d1', 'execute', 'APP_DB', '--command', sql]
 	if (options.local) {
@@ -264,7 +274,7 @@ async function main() {
 			admin: options.admin,
 		},
 	]
-	if (options.email !== regularTestEmail) {
+	if (shouldSeedCompanionAccount(options)) {
 		accounts.push({
 			email: regularTestEmail,
 			username: regularTestUsername,
@@ -276,8 +286,10 @@ async function main() {
 	executeSeedSql(sql, options)
 
 	const primaryLabel = options.admin ? 'admin' : 'regular'
+	const companionSuffix =
+		accounts.length > 1 ? ` + ${accounts.length - 1} regular` : ''
 	console.log(
-		`Seeded ${accounts.length} test accounts in D1 (${options.local ? 'local' : 'remote'}): 1 ${primaryLabel} + ${accounts.length - 1} regular`,
+		`Seeded ${accounts.length} test account${accounts.length > 1 ? 's' : ''} in D1 (${options.local ? 'local' : 'remote'}): 1 ${primaryLabel}${companionSuffix}`,
 	)
 }
 

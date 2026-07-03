@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 
 import {
 	buildSeedSql,
+	shouldSeedCompanionAccount,
 	parseArgs,
 	resolveWranglerEnv,
 } from './seed-test-data.ts'
@@ -81,4 +82,18 @@ test('buildSeedSql seeds each account with its roles', () => {
 	expect(sql).toContain(
 		`WHERE u.email = 'kody@example.com' AND r.name = 'admin'`,
 	)
+})
+
+test('companion fixture account is local-only', () => {
+	expect(
+		shouldSeedCompanionAccount({ local: true, email: 'kody@example.com' }),
+	).toBe(true)
+	// Never seed the fixed-password companion into remote environments.
+	expect(
+		shouldSeedCompanionAccount({ local: false, email: 'kody@example.com' }),
+	).toBe(false)
+	// Avoid duplicating the companion when it is the primary account.
+	expect(
+		shouldSeedCompanionAccount({ local: true, email: 'twix@example.com' }),
+	).toBe(false)
 })
