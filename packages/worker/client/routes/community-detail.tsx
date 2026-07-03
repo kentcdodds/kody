@@ -332,9 +332,7 @@ export function CommunityDetailRoute(handle: Handle) {
 							<button
 								disabled={reportState === 'submitting' || !reportReason.trim()}
 								mix={[
-									on('click', () => {
-										handle.queueTask(submitReport)
-									}),
+									on('click', () => void submitReport()),
 									css(secondaryButtonCss),
 								]}
 							>

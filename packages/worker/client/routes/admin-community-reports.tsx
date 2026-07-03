@@ -347,11 +347,10 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 								<button
 									disabled={isMutating}
 									mix={[
-										on('click', () => {
-											handle.queueTask(() =>
-												submitReportAction(report.id, 'dismiss'),
-											)
-										}),
+										on(
+											'click',
+											() => void submitReportAction(report.id, 'dismiss'),
+										),
 										css(secondaryButtonCss),
 									]}
 								>
@@ -361,9 +360,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 									disabled={isMutating}
 									mix={[
 										...getDestructiveButtonMix(report.id, 'delist', () => {
-											handle.queueTask(() =>
-												submitReportAction(report.id, 'delist'),
-											)
+											void submitReportAction(report.id, 'delist')
 										}),
 										css(dangerButtonCss),
 									]}
@@ -376,9 +373,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 									disabled={isMutating}
 									mix={[
 										...getDestructiveButtonMix(report.id, 'delete', () => {
-											handle.queueTask(() =>
-												submitReportAction(report.id, 'delete'),
-											)
+											void submitReportAction(report.id, 'delete')
 										}),
 										css(dangerButtonCss),
 									]}
@@ -394,9 +389,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 											report.id,
 											'ban_reporter',
 											() => {
-												handle.queueTask(() =>
-													submitReportAction(report.id, 'ban_reporter'),
-												)
+												void submitReportAction(report.id, 'ban_reporter')
 											},
 										),
 										css(dangerButtonCss),
@@ -413,9 +406,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 											report.id,
 											'ban_reportee',
 											() => {
-												handle.queueTask(() =>
-													submitReportAction(report.id, 'ban_reportee'),
-												)
+												void submitReportAction(report.id, 'ban_reportee')
 											},
 										),
 										css(dangerButtonCss),
