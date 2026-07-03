@@ -15,6 +15,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Adding capabilities](./adding-capabilities.md)
 - [Architecture](./architecture/index.md)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
+- Proposals (design notes, not shipped behavior): [RBAC](./proposals/rbac.md)
 
 Documentation for **using** Kody as an MCP server (not building the repo) lives
 under [`docs/use/`](../use/index.md). How we write and maintain those pages (and
