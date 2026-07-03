@@ -37,8 +37,18 @@ type SatoriElement = {
 	props: {
 		style?: Record<string, string | number>
 		children?: SatoriChild | Array<SatoriChild>
+		width?: number
+		height?: number
+		viewBox?: string
+		d?: string
+		fill?: string
+		stroke?: string
+		strokeWidth?: number
 	}
 }
+
+const STAR_PATH =
+	'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'
 
 let renderPipelineReady: Promise<void> | null = null
 
@@ -69,41 +79,55 @@ function formatStarRating(input: CommunityOgImageInput): string {
 	return `${formattedAverage} (${input.ratingCount} ${ratingLabel})`
 }
 
-function createStarGlyphs(input: CommunityOgImageInput): Array<SatoriElement> {
+function createStarSvg(filled: boolean): SatoriElement {
+	return {
+		type: 'div',
+		props: {
+			style: {
+				width: 22,
+				height: 22,
+				marginRight: 4,
+				display: 'flex',
+			},
+			children: {
+				type: 'svg',
+				props: {
+					width: 22,
+					height: 22,
+					viewBox: '0 0 24 24',
+					children: {
+						type: 'path',
+						props: {
+							d: STAR_PATH,
+							fill: filled ? palette.starFilled : 'transparent',
+							stroke: filled ? palette.starFilled : palette.starEmpty,
+							strokeWidth: 1.5,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+function createStarRow(input: CommunityOgImageInput): Array<SatoriElement> {
 	if (input.averageStars === null || input.ratingCount === 0) {
 		return []
 	}
 
 	const filledCount = Math.max(0, Math.min(5, Math.round(input.averageStars)))
-	const glyphs: Array<SatoriElement> = []
+	const stars: Array<SatoriElement> = []
 
 	for (let index = 0; index < 5; index += 1) {
-		const filled = index < filledCount
-		glyphs.push({
-			type: 'div',
-			props: {
-				style: {
-					width: 22,
-					height: 22,
-					marginRight: 4,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					fontSize: 18,
-					lineHeight: 1,
-					color: filled ? palette.starFilled : palette.starEmpty,
-				},
-				children: '★',
-			},
-		})
+		stars.push(createStarSvg(index < filledCount))
 	}
 
-	return glyphs
+	return stars
 }
 
 function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 	const headline = `Use Kody to ${truncateDescription(input.description)}`
-	const starGlyphs = createStarGlyphs(input)
+	const starRow = createStarRow(input)
 	const ratingText = formatStarRating(input)
 
 	return {
@@ -222,8 +246,8 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 													alignItems: 'center',
 												},
 												children: [
-													...(starGlyphs.length > 0
-														? starGlyphs
+													...(starRow.length > 0
+														? starRow
 														: [
 																{
 																	type: 'div',
@@ -236,7 +260,7 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 																	},
 																},
 															]),
-													...(starGlyphs.length > 0
+													...(starRow.length > 0
 														? [
 																{
 																	type: 'div',

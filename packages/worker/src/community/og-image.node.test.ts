@@ -37,4 +37,5 @@ test('renderCommunityOgImage returns a PNG without ratings', async () => {
 	})
 
 	expectPngBytes(png)
+	writeFileSync('/tmp/og-image-norating.png', png)
 })
