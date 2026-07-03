@@ -43,7 +43,10 @@ shared state between users.
 Optimize for:
 
 - Per-user isolation as a first-class invariant, enforced at the storage,
-  durable-object, vectorize, and runtime layers
+  durable-object, vectorize, and runtime layers. RBAC provides a narrow,
+  explicitly-guarded exception for account administration (`access = 'any'`,
+  limited to `user` and `role` entities — never user content). See
+  [Authorization](./architecture/authorization.md).
 - Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
 
@@ -78,7 +81,10 @@ When working in this repo, do not assume:
 - This project is trying to become a generic starter kit for others.
 - This is a single-user system. Per-user isolation is an invariant, not a future
   direction; treat any code path that reads or writes data without a `userId`
-  (or that shares a Durable Object id across users) as a bug.
+  (or that shares a Durable Object id across users) as a bug. The RBAC
+  account-administration exception (`:any` on `user`/`role` only, behind
+  explicit guards) is the sole intentional cross-user boundary — see
+  [Authorization](./architecture/authorization.md).
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes
@@ -104,6 +110,9 @@ If you are an agent working in this repo:
 - Per-user isolation is a hard invariant. Any new feature that touches data must
   be scoped by `userId` at the data layer, by user-namespaced Durable Object ids
   at the runtime layer, and by user-aware filters at the search/vector layer.
+  Cross-user access requires an explicit `:any` permission guard and is limited
+  to account administration — see
+  [Authorization](./architecture/authorization.md).
 - Avoid proposing a large static MCP tool catalog as the default direction.
 - Keep interoperability with MCP hosts in mind, especially around compact tool
   surfaces and clear server instructions.

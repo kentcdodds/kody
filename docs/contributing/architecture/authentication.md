@@ -11,6 +11,10 @@ data.
 1. Cookie-based app sessions for browser users
 2. OAuth bearer tokens for MCP access
 
+Authorization (roles and permissions) is layered on top of authentication. See
+[Authorization](./authorization.md) for the RBAC model, admin routes, and the
+`any`-access exception for account administration.
+
 ## Browser app sessions
 
 Session cookie behavior is implemented in

@@ -15,6 +15,8 @@ to become.
   Worker.
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
+- [Authorization](./authorization.md): role-based access control (RBAC), admin
+  routes, and the `any`-access exception to per-user isolation.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects.
 - [Primitives map](./primitives.yaml): machine-readable map of system primitives

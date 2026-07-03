@@ -13,10 +13,10 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Packages and manifests](./packages-and-manifests.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)
-- [Architecture](./architecture/index.md)
+- [Architecture](./architecture/index.md) — includes
+  [authorization](./architecture/authorization.md) (RBAC)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
-- Proposals (design notes, not shipped behavior): [RBAC](./proposals/rbac.md)
-
-Documentation for **using** Kody as an MCP server (not building the repo) lives
-under [`docs/use/`](../use/index.md). How we write and maintain those pages (and
-contributing docs) is covered in [Documentation principles](./documentation.md).
+  Documentation for **using** Kody as an MCP server (not building the repo)
+  lives under [`docs/use/`](../use/index.md). How we write and maintain those
+  pages (and contributing docs) is covered in
+  [Documentation principles](./documentation.md).

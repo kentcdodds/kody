@@ -101,6 +101,20 @@ primitives:
     docs:
       - docs/contributing/architecture/authentication.md
 
+  - id: rbac
+    group: auth
+    name: Role-based access control
+    summary:
+      Typed action:entity:access permissions, user/admin roles, server and MCP
+      guards, and metadata-only admin routes for account administration.
+    code:
+      - packages/worker/src/app/permissions.ts
+      - packages/worker/src/app/permissions-db.ts
+      - packages/worker/src/app/permissions-server.ts
+      - packages/worker/src/mcp/capabilities/meta/require-permission.ts
+    docs:
+      - docs/contributing/architecture/authorization.md
+
   # --- User-facing assistant primitives -----------------------------------
   - id: capability-registry
     group: assistant
@@ -334,10 +348,13 @@ invariants:
     summary:
       Every read/write path is scoped by userId, every user-owned Durable Object
       id is user-namespaced, and every search/vector path filters by userId.
-      Cross-user data sharing is a bug.
+      Cross-user data sharing is a bug. RBAC provides a narrow exception for
+      account administration only (permissions with access=any on user/role
+      entities, behind explicit guards) — never for user content.
     docs:
       - docs/contributing/project-intent.md
       - docs/contributing/architecture/data-storage.md
+      - docs/contributing/architecture/authorization.md
 
   - id: integration-host-allowlist
     summary:
