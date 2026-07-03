@@ -8,87 +8,34 @@ description: >
 
 # Ship PR
 
-**Default mode:** ready for review → Discord with PR link when done.
+**Default:** ready for review → Discord with PR link when done.
 
-**Merge mode** (when user asks to merge): same loop, then merge, watch
-production deploy, smoke test, Discord summary.
+**Merge mode** (when asked): same loop, then merge, watch
+`🚀 Deploy (production)`, smoke test (`gh variable get APP_BASE_URL`), Discord
+summary.
 
 ## Loop
 
-1. Mark PR ready for review (Kody `github-pr-tools/set-pr-review-status`,
-   `ready: true`)
-2. Wait for CI (`gh pr checks`)
-3. Fix failures; address valid AI-reviewer bot feedback (ignore
-   nits/already-fixed/wrong)
-4. If green and no valid feedback left → break
+1. Mark ready — `kody:@kentcdodds/github-pr-tools/set-pr-review-status` with
+   `{ owner, repo, number, ready: true }` (or `gh pr ready` if Kody unavailable)
+2. Wait for CI — `gh pr checks` (compose `loop-on-ci`, `fix-ci`)
+3. Fix failures; address valid AI-reviewer feedback (ignore nits / already-fixed
+   / wrong)
+4. Green and no valid feedback left → break
 5. Push → repeat
 
-Compose `loop-on-ci`, `fix-ci`, and `get-pr-comments` when helpful.
+## Done → Discord
 
-## Discord (Kody)
-
-Default: `discord-gateway/send-me-a-message` with the PR link and a one-liner.
-No channel id needed — it uses your configured general channel.
-
-Merge mode: include what merged, deploy status, and what you tested.
-
-## Merge-and-verify extras
-
-After the loop: merge → watch `🚀 Deploy (production)` → smoke test production
-(`gh variable get APP_BASE_URL` for the URL) → Discord summary.
-
-## Resolve from Kody/repo (don't ask Kent)
-
-- Discord channel: `./send-me-a-message` (or search `*DiscordChannelId` values
-  if a specific channel is named)
-- Production URL: `gh variable get APP_BASE_URL`; preview URL from PR comments
-  if testing before merge
-- Mark ready / PR info: `github-pr-tools` package
-
-Discover exports when unsure: `search({ entity: "discord-gateway:package" })` or
-`search({ entity: "github-pr-tools:package" })`.
-
-## Kody examples
-
-Mark ready:
+`kody:@kentcdodds/discord-gateway/send-me-a-message` — no channel id; uses your
+general channel. Merge mode: include deploy status and what you tested.
 
 ```javascript
-import { packages } from 'kody:runtime'
-
-export default async function main({ owner, repo, number }) {
-	return packages.invokeChecked({
-		kodyId: 'github-pr-tools',
-		exportName: './set-pr-review-status',
-		params: { owner, repo, number, ready: true },
-	})
-}
-```
-
-Discord (default — no channel id):
-
-```javascript
-import { packages } from 'kody:runtime'
+import sendMeAMessage from 'kody:@kentcdodds/discord-gateway/send-me-a-message'
 
 export default async function main({ content }) {
-	return packages.invokeChecked({
-		kodyId: 'discord-gateway',
-		exportName: './send-me-a-message',
-		params: { content },
-	})
+	return sendMeAMessage({ content })
 }
 ```
 
-Discord (specific workflow channel):
-
-```javascript
-import { packages, codemode } from 'kody:runtime'
-
-export default async function main({ valueName, content }) {
-	const channelId = await codemode.value_get({ name: valueName, scope: 'user' })
-	return packages.invokeChecked({
-		kodyId: 'discord-gateway',
-		exportName: './post-message',
-		params: { channelId, content },
-	})
-}
-```
+Don't ask Kent for channel or production URL — resolve from Kody values /
+`gh variable get APP_BASE_URL` / PR preview comments.
