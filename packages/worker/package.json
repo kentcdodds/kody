@@ -18,6 +18,7 @@
     "@modelcontextprotocol/ext-apps": "^1.2.2",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@remix-run/cookie": "^0.5.1",
+    "@resvg/resvg-wasm": "^2.6.2",
     "@sentry/cloudflare": "^10.45.0",
     "acorn": "^8.16.0",
     "agents": ">=0.11.5 <0.11.8",
@@ -26,6 +27,7 @@
     "isomorphic-git": "^1.37.6",
     "postal-mime": "^2.7.4",
     "remix": "^3.0.0-beta.5",
+    "satori": "^0.26.0",
     "zod": "^4.3.6"
   },
   "imports": {

@@ -11,6 +11,20 @@ export default mergeConfig(
 		resolve: {
 			alias: [
 				{
+					find: '#worker/community/og-image-assets.ts',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/community/og-image-assets.node.ts',
+					),
+				},
+				{
+					find: /\/community\/og-image-assets\.ts$/,
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/community/og-image-assets.node.ts',
+					),
+				},
+				{
 					find: '@sentry/cloudflare',
 					replacement: resolve(
 						rootDir,
