@@ -2,6 +2,8 @@ import {
 	readAuthSessionResult,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
+import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
+import { type PermissionString, type RoleName } from '#app/permissions.ts'
 import { getUsernameValidationError } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -13,6 +15,8 @@ export type AuthenticatedAppUser = {
 	username: string
 	email: string
 	displayName: string
+	roles: Array<RoleName>
+	permissions: Array<PermissionString>
 	mcpUser: McpUserContext
 	artifactOwnerIds: Array<string>
 }
@@ -46,6 +50,10 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 		email: userRecord.email,
 		username: userRecord.username,
 	})
+	const { roles, permissions } = await getUserRolesAndPermissions(
+		env.APP_DB,
+		userId,
+	)
 
 	return {
 		sessionUserId: session.id,
@@ -53,6 +61,8 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 		username: userRecord.username,
 		email: userRecord.email,
 		displayName,
+		roles,
+		permissions,
 		artifactOwnerIds: Array.from(
 			new Set([session.id, emailBasedUserId].filter(Boolean)),
 		),

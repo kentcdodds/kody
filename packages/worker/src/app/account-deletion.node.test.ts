@@ -188,6 +188,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 2, user_id: 1 },
 			{ id: 3, user_id: 2 },
 		],
+		user_roles: [
+			{ user_id: 1, role_id: 1 },
+			{ user_id: 2, role_id: 2 },
+		],
 		mcp_user_server_instructions: [{ user_id: userAaa }],
 		package_invocation_tokens: [{ id: 'pit-1', user_id: userAaa }],
 		package_invocations: [{ id: 'pi-1', user_id: userAaa }],
@@ -243,6 +247,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{ id: 'pba-2', user_id: userBbb, kv_key: 'bundle-artifact:v1:src-2' },
 	])
 	expect(rows.password_resets).toEqual([{ id: 3, user_id: 2 }])
+	expect(rows.user_roles).toEqual([{ user_id: 2, role_id: 2 }])
 
 	// User-scoped data is removed.
 	expect(rows.secret_buckets).toEqual([])
@@ -257,6 +262,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.email_messages).toEqual([])
 	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
 	expect(result.deletedRowCounts.password_resets).toBe(2)
+	expect(result.deletedRowCounts.user_roles).toBe(1)
 
 	// Storage runners for the deleted user's storage_ids were cleared.
 	expect(clearStorageMock).toHaveBeenCalledTimes(1)

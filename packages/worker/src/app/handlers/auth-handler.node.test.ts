@@ -153,6 +153,11 @@ function createTestDb() {
 								const user = insertUser()
 								return { meta: { changes: 1, last_row_id: user.id } }
 							}
+							if (
+								normalizedQuery.includes('insert or ignore into user_roles')
+							) {
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							return { meta: { changes: 0, last_row_id: 0 } }
 						},
 					}

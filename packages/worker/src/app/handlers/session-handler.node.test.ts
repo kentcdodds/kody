@@ -55,6 +55,15 @@ function createSessionTestDb() {
 								meta: { changes: 0, last_row_id: 0 },
 							}
 						}
+						if (
+							normalizedQuery.includes('from user_roles ur') &&
+							normalizedQuery.includes('join roles r')
+						) {
+							return {
+								results: [],
+								meta: { changes: 0, last_row_id: 0 },
+							}
+						}
 						return {
 							results: [],
 							meta: { changes: 0, last_row_id: 0 },
@@ -130,6 +139,8 @@ test('session handler only renews remembered sessions after the renewal window',
 			session: {
 				email: rememberedSession.email,
 				username: 'session-user',
+				roles: [],
+				permissions: [],
 			},
 		})
 		if (scenario.expectSetCookie) {

@@ -4,6 +4,7 @@ import { createAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
+import { assignUserRole } from '#app/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
@@ -244,6 +245,12 @@ export function createAuthHandler(appEnv: AppEnv) {
 						{ status: 500 },
 					)
 				}
+
+				await assignUserRole({
+					db: appEnv.APP_DB,
+					userId: record.id,
+					roleName: 'user',
+				})
 
 				const cookie = await createAuthCookie(
 					{

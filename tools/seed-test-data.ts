@@ -9,6 +9,7 @@ type CliOptions = {
 	password: string
 	local: boolean
 	remote: boolean
+	admin: boolean
 	env?: string
 	config?: string
 	persistTo?: string
@@ -25,6 +26,7 @@ export function parseArgs(argv: Array<string>): CliOptions {
 		password: defaultTestPassword,
 		local: false,
 		remote: false,
+		admin: false,
 		env: undefined,
 		config: undefined,
 		persistTo: undefined,
@@ -60,6 +62,10 @@ export function parseArgs(argv: Array<string>): CliOptions {
 				options.remote = true
 				break
 			}
+			case '--admin': {
+				options.admin = true
+				break
+			}
 			case '--env': {
 				options.env = argv[index + 1] ?? ''
 				index += 1
@@ -80,7 +86,7 @@ export function parseArgs(argv: Array<string>): CliOptions {
 					fail(
 						[
 							`Unknown flag: ${arg}`,
-							'Usage: node tools/seed-test-data.ts [--local|--remote] [--env <name>] [--config <path>] [--persist-to <path>] [--email <email>] [--username <username>] [--password <password>]',
+							'Usage: node tools/seed-test-data.ts [--local|--remote] [--admin] [--env <name>] [--config <path>] [--persist-to <path>] [--email <email>] [--username <username>] [--password <password>]',
 						].join('\n'),
 					)
 				}
@@ -164,11 +170,26 @@ function buildSeedSql({
 	email,
 	username,
 	passwordHash,
+	admin,
 }: {
 	email: string
 	username: string
 	passwordHash: string
+	admin: boolean
 }) {
+	const userRoleSql = `
+INSERT OR IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.email = ${quoteSql(email)} AND r.name = 'user';`
+	const adminRoleSql = admin
+		? `
+INSERT OR IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.email = ${quoteSql(email)} AND r.name = 'admin';`
+		: ''
+
 	return `
 INSERT INTO users (username, email, password_hash)
 VALUES (${quoteSql(username)}, ${quoteSql(email)}, ${quoteSql(passwordHash)})
@@ -176,7 +197,7 @@ ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,
   updated_at = CURRENT_TIMESTAMP;
-`.trim()
+${userRoleSql}${adminRoleSql}`.trim()
 }
 
 function executeSeedSql(sql: string, options: CliOptions) {
@@ -210,11 +231,12 @@ async function main() {
 		email: options.email,
 		username: options.username,
 		passwordHash,
+		admin: options.admin,
 	})
 	executeSeedSql(sql, options)
 
 	console.log(
-		`Seeded test account in D1 (${options.local ? 'local' : 'remote'}): ${options.email}`,
+		`Seeded test account in D1 (${options.local ? 'local' : 'remote'}): ${options.email}${options.admin ? ' (admin)' : ''}`,
 	)
 }
 

@@ -20,6 +20,9 @@ test('seed data arg parsing defaults to local mode and derives usernames from em
 	expect(explicitUsernameOptions.email).toBe('alice@example.com')
 	expect(explicitUsernameOptions.username).toBe('alice')
 
+	const adminOptions = parseArgs(['--local', '--admin'])
+	expect(adminOptions.admin).toBe(true)
+
 	expect(
 		resolveWranglerEnv({
 			config: 'packages/worker/wrangler-preview.generated.json',

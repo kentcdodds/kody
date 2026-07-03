@@ -4,6 +4,7 @@ import {
 	isSecureRequest,
 	readAuthSessionResult,
 } from '#app/auth-session.ts'
+import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 
@@ -45,12 +46,19 @@ export function createSessionHandler(env: Env) {
 				)
 			}
 
+			const { roles, permissions } = await getUserRolesAndPermissions(
+				env.APP_DB,
+				userId,
+			)
+
 			return jsonResponse(
 				{
 					ok: true,
 					session: {
 						email: userRecord.email,
 						username: userRecord.username,
+						roles,
+						permissions,
 					},
 				},
 				setCookie

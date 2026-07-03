@@ -7,8 +7,17 @@
 		"lib": ["DOM", "DOM.Iterable", "ES2022"],
 		"types": [],
 		"jsx": "react-jsx",
-		"jsxImportSource": "remix/ui"
+		"jsxImportSource": "remix/ui",
+		"baseUrl": ".",
+		"paths": {
+			"#app/*": ["./src/app/*"]
+		}
 	},
-	"include": ["./client/**/*.ts", "./client/**/*.tsx", "./client/**/*.d.ts"],
+	"include": [
+		"./client/**/*.ts",
+		"./client/**/*.tsx",
+		"./client/**/*.d.ts",
+		"./src/app/permissions.ts"
+	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
 }

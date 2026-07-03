@@ -91,6 +91,7 @@ const userScopedTables: ReadonlyArray<UserScopedDeleteTarget> = [
 	// stable mcp string user id), so it must be cleared with the database
 	// integer id rather than the mcp user id.
 	{ kind: 'db_user_id', table: 'password_resets' },
+	{ kind: 'db_user_id', table: 'user_roles' },
 ]
 
 async function listUserVectorIds(env: Env, userId: string) {

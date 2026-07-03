@@ -1,6 +1,17 @@
+import {
+	permissionAccesses,
+	permissionActions,
+	permissionEntities,
+	roleNames,
+	type PermissionString,
+	type RoleName,
+} from '#app/permissions.ts'
+
 export type SessionInfo = {
 	email: string
 	username: string
+	roles: Array<RoleName>
+	permissions: Array<PermissionString>
 }
 
 export type SessionStatus = 'idle' | 'loading' | 'ready'
@@ -30,8 +41,44 @@ export async function fetchSessionInfo(
 			typeof payload?.session?.username === 'string'
 				? payload.session.username.trim()
 				: ''
-		return email ? { email, username } : null
+		const roles = readRoleNames(payload?.session?.roles)
+		const permissions = readPermissionStrings(payload?.session?.permissions)
+		return email ? { email, username, roles, permissions } : null
 	} catch {
 		return null
 	}
+}
+
+function isRoleName(value: string): value is RoleName {
+	return (roleNames as ReadonlyArray<string>).includes(value)
+}
+
+function isPermissionString(value: string): value is PermissionString {
+	const parts = value.split(':')
+	if (parts.length !== 3) return false
+	const action = parts[0]
+	const entity = parts[1]
+	const access = parts[2]
+	if (!action || !entity || !access) return false
+	return (
+		(permissionActions as ReadonlyArray<string>).includes(action) &&
+		(permissionEntities as ReadonlyArray<string>).includes(entity) &&
+		(permissionAccesses as ReadonlyArray<string>).includes(access)
+	)
+}
+
+function readRoleNames(value: unknown) {
+	if (!Array.isArray(value)) return []
+	return value.filter(
+		(entry): entry is RoleName =>
+			typeof entry === 'string' && isRoleName(entry),
+	)
+}
+
+function readPermissionStrings(value: unknown) {
+	if (!Array.isArray(value)) return []
+	return value.filter(
+		(entry): entry is PermissionString =>
+			typeof entry === 'string' && isPermissionString(entry),
+	)
 }
