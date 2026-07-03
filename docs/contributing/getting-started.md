@@ -47,10 +47,10 @@ For optional Cloudflare offerings (R2, Workers AI, AI Gateway, extra KV), see
 
 ## Preflight checks
 
-Verify Node 24 and that dependencies are installed:
+Verify Node 26 and that dependencies are installed:
 
 ```bash
-node --version   # expect v24.x
+node --version   # expect v26.x
 npm install
 ```
 
