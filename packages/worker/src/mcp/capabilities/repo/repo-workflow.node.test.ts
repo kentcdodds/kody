@@ -115,15 +115,15 @@ function createPackageSourceRow() {
 	}
 }
 
-test('repo_open_session resolves a package by kody id', async () => {
+test('repo open → run commands → publish session workflow', async () => {
 	resetMocks()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(),
 	)
 	mockModule.getEntitySourceById.mockResolvedValueOnce(createPackageSourceRow())
-	const rpc = createRepoRpc()
-	rpc.openSession.mockResolvedValueOnce({
+	const openRpc = createRepoRpc()
+	openRpc.openSession.mockResolvedValueOnce({
 		id: 'session-1',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -141,32 +141,30 @@ test('repo_open_session resolves a package by kody id', async () => {
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	mockModule.repoSessionRpc.mockReturnValue(openRpc)
 
-	const result = await repoOpenSessionCapability.handler(
+	const opened = await repoOpenSessionCapability.handler(
 		{
 			target: { kind: 'package', kody_id: 'triage-github-pr' },
 		},
 		createCapabilityContext(),
 	)
 
-	expect(result.resolved_target).toEqual({
+	expect(opened.resolved_target).toEqual({
 		kind: 'package',
 		source_id: 'source-package-1',
 		package_id: 'package-1',
 		kody_id: 'triage-github-pr',
 		name: '@kody/triage-github-pr',
 	})
-	expect(rpc.openSession).toHaveBeenCalledWith(
+	expect(openRpc.openSession).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-package-1',
 			userId: 'user-1',
 			sourceRoot: '/',
 		}),
 	)
-})
 
-test('repo_open_session rejects an active conversation session for a different target source', async () => {
 	resetMocks()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce({
 		id: 'session-other',
@@ -190,11 +188,8 @@ test('repo_open_session rejects an active conversation session for a different t
 			createCapabilityContext(),
 		),
 	).rejects.toThrow()
-})
 
-test('repo_run_commands rejects source-only options when opening by target', async () => {
 	resetMocks()
-
 	await expect(
 		repoRunCommandsCapability.handler(
 			{
@@ -206,9 +201,7 @@ test('repo_run_commands rejects source-only options when opening by target', asy
 		),
 	).rejects.toThrow()
 	expect(mockModule.repoSessionRpc).not.toHaveBeenCalled()
-})
 
-test('repo_run_commands reuses resolved target metadata when resuming an existing session', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())
@@ -216,8 +209,8 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(createPackageSourceRow())
 		.mockResolvedValueOnce(createPackageSourceRow())
-	const rpc = createRepoRpc()
-	rpc.getSessionInfo.mockResolvedValueOnce({
+	const resumeRpc = createRepoRpc()
+	resumeRpc.getSessionInfo.mockResolvedValueOnce({
 		id: 'session-existing',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -235,7 +228,7 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.getSessionInfo.mockResolvedValueOnce({
+	resumeRpc.getSessionInfo.mockResolvedValueOnce({
 		id: 'session-existing',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -253,7 +246,7 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.runCommands.mockResolvedValueOnce({
+	resumeRpc.runCommands.mockResolvedValueOnce({
 		session: {
 			id: 'session-existing',
 			source_id: 'source-package-1',
@@ -276,9 +269,9 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 		checks: { status: 'not_requested' },
 		publish: { status: 'not_requested' },
 	})
-	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	mockModule.repoSessionRpc.mockReturnValue(resumeRpc)
 
-	const result = await repoRunCommandsCapability.handler(
+	const resumed = await repoRunCommandsCapability.handler(
 		{
 			session_id: 'session-existing',
 			commands: 'git status',
@@ -288,7 +281,7 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 		createCapabilityContext(),
 	)
 
-	expect(rpc.runCommands).toHaveBeenCalledWith({
+	expect(resumeRpc.runCommands).toHaveBeenCalledWith({
 		sessionId: 'session-existing',
 		userId: 'user-1',
 		commands: 'git status',
@@ -297,19 +290,17 @@ test('repo_run_commands reuses resolved target metadata when resuming an existin
 		publish: false,
 		expectedPackageScope: undefined,
 	})
-	expect(result.commands).toEqual([
+	expect(resumed.commands).toEqual([
 		{ line: 1, command: 'git status', ok: true, output: [] },
 	])
-	expect(result.resolved_target).toEqual({
+	expect(resumed.resolved_target).toEqual({
 		kind: 'package',
 		source_id: 'source-package-1',
 		package_id: 'package-1',
 		kody_id: 'triage-github-pr',
 		name: '@kody/triage-github-pr',
 	})
-})
 
-test('repo_run_commands opens by target and returns failed checks without publish', async () => {
 	resetMocks()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
@@ -319,8 +310,8 @@ test('repo_run_commands opens by target and returns failed checks without publis
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(createPackageSourceRow())
 		.mockResolvedValueOnce(createPackageSourceRow())
-	const rpc = createRepoRpc()
-	rpc.openSession.mockResolvedValueOnce({
+	const failedChecksRpc = createRepoRpc()
+	failedChecksRpc.openSession.mockResolvedValueOnce({
 		id: 'session-1',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -338,7 +329,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.runCommands.mockResolvedValueOnce({
+	failedChecksRpc.runCommands.mockResolvedValueOnce({
 		session: {
 			id: 'session-1',
 			source_id: 'source-package-1',
@@ -386,7 +377,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 			message: 'Publishing skipped because repo checks failed.',
 		},
 	})
-	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	mockModule.repoSessionRpc.mockReturnValue(failedChecksRpc)
 
 	const commands = [
 		"git apply <<'PATCH'",
@@ -394,7 +385,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		'+++ b/src/index.ts',
 		'PATCH',
 	].join('\n')
-	const result = await repoRunCommandsCapability.handler(
+	const failedChecks = await repoRunCommandsCapability.handler(
 		{
 			target: { kind: 'package', kody_id: 'triage-github-pr' },
 			commands,
@@ -404,7 +395,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		createCapabilityContext(),
 	)
 
-	expect(rpc.runCommands).toHaveBeenCalledWith({
+	expect(failedChecksRpc.runCommands).toHaveBeenCalledWith({
 		sessionId: 'session-1',
 		userId: 'user-1',
 		commands,
@@ -413,7 +404,7 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		publish: false,
 		expectedPackageScope: 'user',
 	})
-	expect(result.checks).toMatchObject({
+	expect(failedChecks.checks).toMatchObject({
 		status: 'failed',
 		ok: false,
 		failed_checks: [{ kind: 'typecheck', ok: false }],
@@ -425,14 +416,12 @@ test('repo_run_commands opens by target and returns failed checks without publis
 		run_id: 'check-1',
 		tree_hash: 'tree-1',
 	})
-	expect(result.publish).toMatchObject({
+	expect(failedChecks.publish).toMatchObject({
 		status: 'blocked_by_checks',
 		failed_checks: [{ kind: 'typecheck', ok: false }],
 		run_id: 'check-1',
 	})
-})
 
-test('repo_run_commands returns published result after checks pass', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())
@@ -440,8 +429,8 @@ test('repo_run_commands returns published result after checks pass', async () =>
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(createPackageSourceRow())
 		.mockResolvedValueOnce(createPackageSourceRow())
-	const rpc = createRepoRpc()
-	rpc.getSessionInfo.mockResolvedValueOnce({
+	const publishRpc = createRepoRpc()
+	publishRpc.getSessionInfo.mockResolvedValueOnce({
 		id: 'session-existing',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -459,7 +448,7 @@ test('repo_run_commands returns published result after checks pass', async () =>
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.getSessionInfo.mockResolvedValueOnce({
+	publishRpc.getSessionInfo.mockResolvedValueOnce({
 		id: 'session-existing',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -477,7 +466,7 @@ test('repo_run_commands returns published result after checks pass', async () =>
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.runCommands.mockResolvedValueOnce({
+	publishRpc.runCommands.mockResolvedValueOnce({
 		session: {
 			id: 'session-existing',
 			source_id: 'source-package-1',
@@ -514,13 +503,13 @@ test('repo_run_commands returns published result after checks pass', async () =>
 		},
 		publish: { status: 'not_requested' },
 	})
-	rpc.publishSession.mockResolvedValueOnce({
+	publishRpc.publishSession.mockResolvedValueOnce({
 		status: 'ok',
 		sessionId: 'session-existing',
 		publishedCommit: 'commit-published',
 		message: 'Published session.',
 	})
-	rpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([
+	publishRpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([
 		{
 			kind: 'module',
 			artifactName: '.',
@@ -534,9 +523,9 @@ test('repo_run_commands returns published result after checks pass', async () =>
 			bundleKind: 'importable-module',
 		},
 	])
-	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	mockModule.repoSessionRpc.mockReturnValue(publishRpc)
 
-	const result = await repoRunCommandsCapability.handler(
+	const published = await repoRunCommandsCapability.handler(
 		{
 			session_id: 'session-existing',
 			commands: 'git status',
@@ -546,7 +535,7 @@ test('repo_run_commands returns published result after checks pass', async () =>
 		createCapabilityContext(),
 	)
 
-	expect(result.checks).toMatchObject({
+	expect(published.checks).toMatchObject({
 		status: 'passed',
 		ok: true,
 		manifest: {
@@ -556,12 +545,12 @@ test('repo_run_commands returns published result after checks pass', async () =>
 		},
 		run_id: 'check-1',
 	})
-	expect(result.publish).toMatchObject({
+	expect(published.publish).toMatchObject({
 		status: 'ok',
 		session_id: 'session-existing',
 		published_commit: 'commit-published',
 	})
-	expect(rpc.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+	expect(publishRpc.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 })
 
 test('repo_publish_session covers base_moved repair, artifact rebuild, and rebuild failures', async () => {

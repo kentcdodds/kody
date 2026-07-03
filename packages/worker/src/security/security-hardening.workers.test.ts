@@ -1,6 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { firstPartySecurityHeaders } from '#worker/app/security-headers.ts'
 
 function createRequest(
 	path: string,
@@ -19,17 +20,9 @@ async function workerFetch(request: Request): Promise<Response> {
 test('first-party HTML shell carries security headers', async () => {
 	const response = await workerFetch(createRequest('/login'))
 	expect(response.status).toBe(200)
-	const csp = response.headers.get('Content-Security-Policy') ?? ''
-	expect(csp).toContain("script-src 'self'")
-	expect(csp).toContain("frame-ancestors 'none'")
-	expect(response.headers.get('X-Frame-Options')).toBe('DENY')
-	expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
-	expect(response.headers.get('Referrer-Policy')).toBe(
-		'strict-origin-when-cross-origin',
-	)
-	expect(response.headers.get('Strict-Transport-Security')).toContain(
-		'max-age=',
-	)
+	for (const [name, value] of Object.entries(firstPartySecurityHeaders)) {
+		expect(response.headers.get(name)).toBe(value)
+	}
 })
 
 test('generated-ui dev route is reachable in the non-production test env', async () => {

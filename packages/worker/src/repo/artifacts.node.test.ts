@@ -231,9 +231,15 @@ test('artifacts REST client supports get, create, token, and delete operations',
 	).toBe('http://x:art_v1_secret@127.0.0.1:8787/git/default/repo-1.git')
 })
 
-test('ensureArtifactRepoReady rereads after concurrent create conflicts', async () => {
+test('ensureArtifactRepoReady handles concurrent create conflicts', async () => {
+	const env = {
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+	} as Env
+
 	let getRepoCount = 0
-	const fetchMock = vi
+	const recoverableFetchMock = vi
 		.spyOn(globalThis, 'fetch')
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
@@ -295,17 +301,54 @@ test('ensureArtifactRepoReady rereads after concurrent create conflicts', async 
 			}
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
 
 	await expect(ensureArtifactRepoReady(env, 'repo-1')).resolves.toMatchObject({
 		recreated: false,
 		repo: expect.any(Object),
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(3)
+	expect(recoverableFetchMock).toHaveBeenCalledTimes(3)
+	recoverableFetchMock.mockRestore()
+
+	const genericConflictFetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						result: null,
+						errors: [{ code: 1000, message: 'Repo not found' }],
+						messages: [],
+					}),
+					{
+						status: 404,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			if (method === 'POST' && url.pathname.endsWith('/repos')) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						result: null,
+						errors: [{ code: 9000, message: 'Different conflict' }],
+						messages: [],
+					}),
+					{
+						status: 409,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+		})
+
+	await expect(ensureArtifactRepoReady(env, 'repo-1')).rejects.toThrow(
+		'Different conflict',
+	)
+	expect(genericConflictFetchMock).toHaveBeenCalledTimes(2)
 })
 
 test('source repo HEAD lookup does not recreate missing artifact repos', async () => {
@@ -343,54 +386,6 @@ test('source repo HEAD lookup does not recreate missing artifact repos', async (
 		branch: 'main',
 		commit: null,
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(2)
-})
-
-test('ensureArtifactRepoReady does not swallow generic create conflicts', async () => {
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 1000, message: 'Repo not found' }],
-						messages: [],
-					}),
-					{
-						status: 404,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 9000, message: 'Different conflict' }],
-						messages: [],
-					}),
-					{
-						status: 409,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-
-	await expect(ensureArtifactRepoReady(env, 'repo-1')).rejects.toThrow(
-		'Different conflict',
-	)
 	expect(fetchMock).toHaveBeenCalledTimes(2)
 })
 

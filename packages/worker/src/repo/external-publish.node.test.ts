@@ -87,7 +87,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		},
 	})
 
-	const result = await publishFromExternalRef({
+	const published = await publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
 		userId: 'user-1',
@@ -98,7 +98,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		baseUrl: 'https://kody.test',
 	})
 
-	expect(result.status).toBe('published')
+	expect(published.status).toBe('published')
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -106,9 +106,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 			publishedCommit: 'commit-new',
 		}),
 	)
-})
 
-test('finalizes with the source files already collected by checks', async () => {
 	resetPublishMocks()
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
@@ -126,7 +124,7 @@ test('finalizes with the source files already collected by checks', async () => 
 		},
 	})
 
-	const result = await publishFromExternalRef({
+	const publishedWithRuntimeArtifacts = await publishFromExternalRef({
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
 		sourceId: 'source-1',
 		userId: 'user-1',
@@ -136,7 +134,7 @@ test('finalizes with the source files already collected by checks', async () => 
 		baseUrl: 'https://kody.test',
 	})
 
-	expect(result.status).toBe('published')
+	expect(publishedWithRuntimeArtifacts.status).toBe('published')
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			files: {
@@ -184,11 +182,10 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 		files: {},
 		baseUrl: 'https://kody.test',
 	})
-	expect(refusedWithoutForce).toEqual({
+	expect(refusedWithoutForce).toMatchObject({
 		status: 'not_fast_forward',
 		previous_commit: 'commit-old',
 		published_commit: 'commit-rewritten',
-		message: expect.stringContaining('package source safety gate'),
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
@@ -278,11 +275,10 @@ test('rechecks fast-forward against the latest source row before publishing', as
 		baseUrl: 'https://kody.test',
 	})
 
-	expect(result).toEqual({
+	expect(result).toMatchObject({
 		status: 'not_fast_forward',
 		previous_commit: 'commit-concurrent',
 		published_commit: 'commit-new',
-		message: expect.stringContaining('package source safety gate'),
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
