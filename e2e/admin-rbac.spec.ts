@@ -2,17 +2,17 @@ import { expect, test } from './playwright-utils.ts'
 
 test('admin RBAC controls access, role assignment, and privacy boundaries', async ({
 	page,
-	insertNewUser,
+	seedE2eUser,
 	assignRole,
 	login,
 }) => {
 	const runId = Date.now()
-	const adminUser = await insertNewUser({
+	const adminUser = await seedE2eUser({
 		email: `admin-rbac-${runId}@example.com`,
 		username: `admin-rbac-${runId}`,
 		password: 'admin-rbac-password',
 	})
-	const memberUser = await insertNewUser({
+	const memberUser = await seedE2eUser({
 		email: `member-rbac-${runId}@example.com`,
 		username: `member-rbac-${runId}`,
 		password: 'member-rbac-password',
@@ -23,7 +23,9 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await login({
 		email: memberUser.email,
 		password: memberUser.password,
+		mode: 'login',
 	})
+	await page.goto('/')
 	await page.goto('/admin/users')
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeHidden()
 	await expect(page.getByText('Forbidden')).toBeVisible()
@@ -50,7 +52,9 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await login({
 		email: adminUser.email,
 		password: adminUser.password,
+		mode: 'login',
 	})
+	await page.goto('/')
 
 	await expect(
 		page.getByRole('link', { name: 'Admin', exact: true }),
@@ -87,6 +91,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await login({
 		email: memberUser.email,
 		password: memberUser.password,
+		mode: 'login',
 	})
 	const sessionResponse = await page.request.get('/session')
 	expect(sessionResponse.ok()).toBe(true)

@@ -1,6 +1,6 @@
 import { test as base } from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
-import { assignRoleInE2eDatabase } from './d1-utils.ts'
+import { assignRoleInE2eDatabase, seedUserInE2eDatabase } from './d1-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 
 export * from '@playwright/test'
@@ -12,10 +12,16 @@ export const test = base.extend<{
 		password?: string
 	}): Promise<{ email: string; username: string; password: string }>
 	assignRole(email: string, role: string): Promise<void>
+	seedE2eUser(options?: {
+		email?: string
+		username?: string
+		password?: string
+	}): Promise<{ email: string; username: string; password: string }>
 	login(options?: {
 		email?: string
 		username?: string
 		password?: string
+		mode?: 'login' | 'signup'
 	}): Promise<{ email: string; username: string; password: string }>
 }>({
 	insertNewUser: async ({ page }, use) => {
@@ -71,6 +77,16 @@ export const test = base.extend<{
 			assignRoleInE2eDatabase(email, role)
 		})
 	},
+	seedE2eUser: async ({}, use) => {
+		await use(async (options) => {
+			const runId = Date.now()
+			const email = options?.email ?? `e2e-user-${runId}@example.com`
+			const username = options?.username ?? `e2e-user-${runId}`
+			const password = options?.password ?? 'e2e-test-password'
+			await seedUserInE2eDatabase({ email, username, password })
+			return { email, username, password }
+		})
+	},
 	login: async ({ page }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
@@ -80,33 +96,47 @@ export const test = base.extend<{
 					? primaryTestUser.username
 					: usernameFromEmail(email))
 			const password = options?.password ?? primaryTestUser.password
+			const preferredMode = options?.mode
 
-			let response = await page.request.post('/auth', {
-				data: { email, username, password, mode: 'signup' },
-				headers: { 'Content-Type': 'application/json' },
-			})
-
-			if (response.status() === 409) {
-				const detail = await readResponseDetail(response)
-				if (detail !== 'Email already registered.') {
-					throw new Error(
-						`Failed to seed user (${response.status()}): ${detail}`,
-					)
-				}
+			let response: Awaited<ReturnType<typeof page.request.post>>
+			if (preferredMode === 'login') {
 				response = await page.request.post('/auth', {
 					data: { email, password, mode: 'login' },
 					headers: { 'Content-Type': 'application/json' },
 				})
-
 				if (!response.ok()) {
 					throw new Error(
 						`Failed to login user (${response.status()}): ${await readResponseDetail(response)}`,
 					)
 				}
-			} else if (!response.ok()) {
-				throw new Error(
-					`Failed to seed user (${response.status()}): ${await readResponseDetail(response)}`,
-				)
+			} else {
+				response = await page.request.post('/auth', {
+					data: { email, username, password, mode: 'signup' },
+					headers: { 'Content-Type': 'application/json' },
+				})
+
+				if (response.status() === 409) {
+					const detail = await readResponseDetail(response)
+					if (detail !== 'Email already registered.') {
+						throw new Error(
+							`Failed to seed user (${response.status()}): ${detail}`,
+						)
+					}
+					response = await page.request.post('/auth', {
+						data: { email, password, mode: 'login' },
+						headers: { 'Content-Type': 'application/json' },
+					})
+
+					if (!response.ok()) {
+						throw new Error(
+							`Failed to login user (${response.status()}): ${await readResponseDetail(response)}`,
+						)
+					}
+				} else if (!response.ok()) {
+					throw new Error(
+						`Failed to seed user (${response.status()}): ${await readResponseDetail(response)}`,
+					)
+				}
 			}
 
 			const setCookieHeader = response.headers()['set-cookie']
