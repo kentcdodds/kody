@@ -14,6 +14,15 @@ export type CommunityDetailLoaderData = {
 	forkPrompt: string
 }
 
+/** SSR-embedded shell data for client-only regions on the detail page. */
+export type CommunityDetailShellLoaderData = {
+	ok: true
+	listingId: string
+	forkPrompt: string
+	loggedIn: boolean
+	readmeContent: string | null
+}
+
 /**
  * Route-keyed loader payloads embedded in AppRoot props during SSR.
  * Add a key here when converting a route; handlers and route components
@@ -209,8 +218,7 @@ export type OAuthAuthorizeLoaderData =
 	  }
 
 export type AppLoaderData = {
-	community?: CommunityIndexLoaderData
-	communityDetail?: CommunityDetailLoaderData
+	communityDetailShell?: CommunityDetailShellLoaderData
 	adminUsers?: AdminUsersLoaderData
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData

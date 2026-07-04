@@ -22,6 +22,27 @@ import {
 
 const defaultCommunityListLimit = 50
 
+function isCommunityDataCacheEnabled(env: Env) {
+	const sentryEnv = (env as { SENTRY_ENVIRONMENT?: string }).SENTRY_ENVIRONMENT
+	return sentryEnv !== 'test'
+}
+
+async function loadWithCommunityCache<T>(
+	env: Env,
+	request: Request,
+	key: string,
+	load: () => Promise<T>,
+): Promise<T> {
+	if (!isCommunityDataCacheEnabled(env)) {
+		setRequestDataCacheLookup(request, 'miss')
+		return load()
+	}
+
+	const { value, lookup } = await getOrSetDataCache({ key, load })
+	setRequestDataCacheLookup(request, lookup)
+	return value
+}
+
 function readPositiveInt(
 	value: string | null,
 	input: { defaultValue: number; max: number },
@@ -44,9 +65,11 @@ export async function loadCommunityIndexData(
 	})
 
 	const cacheKey = buildCommunityIndexCacheKey({ query, limit })
-	const { value: listings, lookup } = await getOrSetDataCache({
-		key: cacheKey,
-		load: async () => {
+	const listings = await loadWithCommunityCache(
+		env,
+		request,
+		cacheKey,
+		async () => {
 			const rows = query
 				? await searchCommunityListings({
 						env,
@@ -61,9 +84,7 @@ export async function loadCommunityIndexData(
 					})
 			return rows.map(toPublicCommunityListing)
 		},
-	})
-
-	setRequestDataCacheLookup(request, lookup)
+	)
 
 	return {
 		ok: true,
@@ -78,9 +99,11 @@ export async function loadCommunityDetailData(
 	listingId: string,
 ): Promise<CommunityDetailLoaderData | null> {
 	const cacheKey = buildCommunityDetailListingCacheKey(listingId)
-	const { value: listing, lookup } = await getOrSetDataCache({
-		key: cacheKey,
-		load: async () => {
+	const listing = await loadWithCommunityCache(
+		env,
+		request,
+		cacheKey,
+		async () => {
 			const row = await getCommunityListingWithAggregates({
 				env,
 				listingId,
@@ -89,9 +112,7 @@ export async function loadCommunityDetailData(
 			if (!row) return null
 			return toPublicCommunityListing(row)
 		},
-	})
-
-	setRequestDataCacheLookup(request, lookup)
+	)
 
 	if (!listing) return null
 
