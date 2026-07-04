@@ -6,6 +6,7 @@ import { readRouterPathname, readRouterSearch } from './router-location.tsx'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
+	setSessionRefreshHandler,
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
@@ -59,6 +60,7 @@ export function App(handle: Handle<AppProps>) {
 	// first paint without a flash ('ready' status keeps the refresh silent),
 	// but auth may have changed since the document was rendered.
 	if (typeof document !== 'undefined') {
+		setSessionRefreshHandler(queueSessionRefresh)
 		handle.queueTask(() => {
 			queueSessionRefresh()
 		})
