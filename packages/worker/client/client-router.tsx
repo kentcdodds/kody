@@ -1,6 +1,6 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
-import { type AppLoaderData } from '#client/loader-data-types.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import {
 	readRouterPathname,
 	readRouterUrl,

@@ -13,7 +13,7 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 } from './account-management-components.tsx'
-import { type AdminRolesLoaderData } from '#client/loader-data-types.ts'
+import { type AdminRolesLoaderData } from '#app/loader-data.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 

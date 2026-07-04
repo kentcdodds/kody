@@ -1,24 +1,10 @@
 import { html, type SafeHtml } from 'remix/html-template'
+import { type PublicCommunityListing } from '#app/community-public-types.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
-const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
+export { type PublicCommunityListing } from '#app/community-public-types.ts'
 
-export type PublicCommunityListing = {
-	id: string
-	kodyId: string
-	name: string
-	description: string
-	tags: Array<string>
-	readmeContent: string | null
-	license: string
-	pinnedCommit: string
-	publishedAt: string
-	ownerUsername: string
-	averageStars: number | null
-	ratingCount: number
-	averageAdaptationEffort: number | null
-	forkCount: number
-}
+const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
 export function getOwnerUsernameFromListingName(name: string) {
 	const match = scopedPackageNamePattern.exec(name.trim())

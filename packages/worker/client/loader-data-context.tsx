@@ -1,6 +1,6 @@
 import { type Handle, type RemixNode } from 'remix/ui'
 import { readSsrRouterUrl } from '#client/router-location.tsx'
-import { type AppLoaderData } from '#client/loader-data-types.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 
 export type AppLoaderDataContextValue = {
 	loaderData?: AppLoaderData
@@ -31,10 +31,6 @@ export function AppLoaderDataProvider(
 	})
 
 	return () => handle.props.children
-}
-
-export function readAppLoaderData(handle: Handle) {
-	return handle.context.get(AppLoaderDataProvider).loaderData
 }
 
 /**

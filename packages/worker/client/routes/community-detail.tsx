@@ -24,7 +24,7 @@ import {
 	stackedPageCss,
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
-import { type PublicCommunityListing } from '#client/routes/community-types.ts'
+import { type PublicCommunityListing } from '#app/community-public-types.ts'
 
 type CommunityDetailApiPayload = {
 	ok: true

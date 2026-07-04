@@ -1,4 +1,4 @@
-import { type PublicCommunityListing } from '#app/community-public.ts'
+import { type PublicCommunityListing } from '#app/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 
 export type CommunityIndexLoaderData = {

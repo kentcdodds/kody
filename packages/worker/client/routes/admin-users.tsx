@@ -32,7 +32,7 @@ import { type RoleName } from '#app/permissions.ts'
 import {
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
-} from '#client/loader-data-types.ts'
+} from '#app/loader-data.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 
