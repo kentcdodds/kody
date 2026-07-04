@@ -6,6 +6,7 @@ import { Layout } from '#app/layout.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
+import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	banCommunityUser,
 	listCommunityReports,
@@ -128,11 +129,14 @@ export function createAdminCommunityReportsApiHandler(env: Env) {
 								resolutionNote: note,
 							})
 						} catch (error) {
-							const message =
-								error instanceof Error
-									? error.message
-									: 'Unable to resolve report.'
-							return jsonResponse({ ok: false, error: message }, 400)
+							if (error instanceof CommunityActionError) {
+								return jsonResponse({ ok: false, error: error.message }, 400)
+							}
+							console.error('Community report resolution failed:', error)
+							return jsonResponse(
+								{ ok: false, error: 'Unable to resolve report.' },
+								500,
+							)
 						}
 						break
 					}
@@ -147,9 +151,14 @@ export function createAdminCommunityReportsApiHandler(env: Env) {
 									`Banned via community report moderation (${report.id}).`,
 							})
 						} catch (error) {
-							const message =
-								error instanceof Error ? error.message : 'Unable to ban user.'
-							return jsonResponse({ ok: false, error: message }, 400)
+							if (error instanceof CommunityActionError) {
+								return jsonResponse({ ok: false, error: error.message }, 400)
+							}
+							console.error('Community ban failed:', error)
+							return jsonResponse(
+								{ ok: false, error: 'Unable to ban user.' },
+								500,
+							)
 						}
 						break
 					}
@@ -164,9 +173,14 @@ export function createAdminCommunityReportsApiHandler(env: Env) {
 									`Banned via community report moderation (${report.id}).`,
 							})
 						} catch (error) {
-							const message =
-								error instanceof Error ? error.message : 'Unable to ban user.'
-							return jsonResponse({ ok: false, error: message }, 400)
+							if (error instanceof CommunityActionError) {
+								return jsonResponse({ ok: false, error: error.message }, 400)
+							}
+							console.error('Community ban failed:', error)
+							return jsonResponse(
+								{ ok: false, error: 'Unable to ban user.' },
+								500,
+							)
 						}
 						break
 					}

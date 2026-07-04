@@ -43,7 +43,7 @@ Migration: `packages/worker/migrations/0045-community-listings.sql`
 | `community_forks`    | Fork records linking listing, forker, and inert `source_id`        |
 | `community_ratings`  | Per-user ratings (upsert on `listing_id` + `user_id`)              |
 | `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id` |
-| `community_bans`     | Community-wide bans (publish, rate, report)                        |
+| `community_bans`     | Community-wide bans (publish, fork, rate, report)                  |
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'` and blocks owner re-publish. **Hard
@@ -128,12 +128,12 @@ Route: `/admin/community-reports` (admin role)
 
 Queue shows reporter, reason, and listing metadata. Actions use double-confirm:
 
-| Action                      | Effect                                                     |
-| --------------------------- | ---------------------------------------------------------- |
-| Dismiss                     | Close report, listing unchanged                            |
-| Delist                      | `status = delisted`, blocks owner re-publish               |
-| Hard delete                 | Remove listing, KV snapshot, and ratings                   |
-| Ban reporter / ban reportee | `community_bans` row; user cannot publish, rate, or report |
+| Action                      | Effect                                                           |
+| --------------------------- | ---------------------------------------------------------------- |
+| Dismiss                     | Close report, listing unchanged                                  |
+| Delist                      | `status = delisted`, blocks owner re-publish                     |
+| Hard delete                 | Remove listing, KV snapshot, and ratings                         |
+| Ban reporter / ban reportee | `community_bans` row; user cannot publish, fork, rate, or report |
 
 `resolveCommunityReport` in `service.ts` implements dismiss, delist, and delete.
 `banCommunityUser` / `unbanCommunityUser` manage community-wide bans.

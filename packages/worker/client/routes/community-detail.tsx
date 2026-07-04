@@ -88,6 +88,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let reportState: 'idle' | 'submitting' | 'success' | 'error' = 'idle'
 	let reportMessage: string | null = null
 	let copyState: 'idle' | 'copied' = 'idle'
+	let copyResetTimerId: ReturnType<typeof window.setTimeout> | null = null
 	let loadRequestId = 0
 	let lastLoadedListingId: string | null = null
 
@@ -174,9 +175,14 @@ export function CommunityDetailRoute(handle: Handle) {
 		if (!forkPrompt) return
 		try {
 			await writeClipboardText(forkPrompt)
+			if (copyResetTimerId != null) {
+				window.clearTimeout(copyResetTimerId)
+			}
 			copyState = 'copied'
 			handle.update()
-			window.setTimeout(() => {
+			copyResetTimerId = window.setTimeout(() => {
+				copyResetTimerId = null
+				if (handle.signal.aborted) return
 				copyState = 'idle'
 				handle.update()
 			}, 2000)

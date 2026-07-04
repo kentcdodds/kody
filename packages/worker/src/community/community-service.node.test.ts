@@ -23,6 +23,11 @@ const mockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
 	insertCommunityFork: vi.fn(),
+	deleteCommunityListing: vi.fn(),
+	deleteCommunityRatingsByListingId: vi.fn(),
+	deleteCommunitySnapshot: vi.fn(),
+	setCommunityListingStatus: vi.fn(),
+	resolveCommunityReportRow: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -76,6 +81,14 @@ vi.mock('./repo.ts', () => ({
 		mockModule.getCommunityReportById(...args),
 	insertCommunityFork: (...args: Array<unknown>) =>
 		mockModule.insertCommunityFork(...args),
+	deleteCommunityListing: (...args: Array<unknown>) =>
+		mockModule.deleteCommunityListing(...args),
+	deleteCommunityRatingsByListingId: (...args: Array<unknown>) =>
+		mockModule.deleteCommunityRatingsByListingId(...args),
+	resolveCommunityReportRow: (...args: Array<unknown>) =>
+		mockModule.resolveCommunityReportRow(...args),
+	setCommunityListingStatus: (...args: Array<unknown>) =>
+		mockModule.setCommunityListingStatus(...args),
 }))
 
 vi.mock('./snapshot.ts', () => ({
@@ -83,15 +96,18 @@ vi.mock('./snapshot.ts', () => ({
 		mockModule.writeCommunitySnapshot(...args),
 	readCommunitySnapshot: (...args: Array<unknown>) =>
 		mockModule.readCommunitySnapshot(...args),
-	deleteCommunitySnapshot: vi.fn(),
+	deleteCommunitySnapshot: (...args: Array<unknown>) =>
+		mockModule.deleteCommunitySnapshot(...args),
 }))
 
 const {
 	publishCommunityListing,
+	unpublishCommunityListing,
 	rateCommunityListing,
 	reportCommunityListing,
 	searchCommunityListings,
 	forkCommunityListing,
+	resolveCommunityReport,
 } = await import('./service.ts')
 
 function createEnv() {
@@ -141,6 +157,211 @@ test('publishCommunityListing rejects banned users', async () => {
 			packageId: 'package-1',
 		}),
 	).rejects.toThrow('banned from community participation')
+})
+
+function validPublishSource() {
+	return {
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@owner/discord-gateway',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord helpers',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@owner/discord-gateway',
+				license: 'MIT',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord helpers',
+				},
+			}),
+			'README.md': '# Discord Gateway\n\n## Intent\n\nBridge Discord events.',
+		},
+	}
+}
+
+function validSavedPackage() {
+	return {
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@owner/discord-gateway',
+		kodyId: 'discord-gateway',
+		description: 'Discord helpers',
+		tags: ['discord'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-07-01T00:00:00.000Z',
+		updatedAt: '2026-07-01T00:00:00.000Z',
+	}
+}
+
+test('publishCommunityListing writes D1 before KV and reverts insert on KV failure', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	const callOrder: Array<string> = []
+	mockModule.insertCommunityListing.mockImplementation(async () => {
+		callOrder.push('insert')
+	})
+	mockModule.writeCommunitySnapshot.mockImplementation(async () => {
+		callOrder.push('snapshot')
+		throw new Error('kv down')
+	})
+	mockModule.deleteCommunityListing.mockResolvedValue(true)
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('kv down')
+
+	expect(callOrder).toEqual(['insert', 'snapshot'])
+	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			ownerUserId: 'user-1',
+		}),
+	)
+})
+
+test('publishCommunityListing restores previous D1 row when KV fails on update', async () => {
+	const existingListing = sampleListing()
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		existingListing,
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingById.mockResolvedValue(existingListing)
+	mockModule.writeCommunitySnapshot.mockRejectedValue(new Error('kv down'))
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('kv down')
+
+	expect(mockModule.updateCommunityListing).toHaveBeenCalledTimes(2)
+	expect(mockModule.updateCommunityListing).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			listingId: existingListing.id,
+			pinnedCommit: existingListing.pinnedCommit,
+			publishedAt: existingListing.publishedAt,
+		}),
+	)
+})
+
+test('unpublishCommunityListing skips cascade when listing delete returns false', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.deleteCommunityListing.mockResolvedValue(false)
+
+	await expect(
+		unpublishCommunityListing({
+			env: createEnv(),
+			userId: 'owner-1',
+			listingId: 'listing-1',
+		}),
+	).rejects.toThrow('was not found')
+
+	expect(mockModule.deleteCommunityRatingsByListingId).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
+})
+
+test('resolveCommunityReport delete skips cascade when listing delete returns false', async () => {
+	mockModule.getCommunityReportById.mockResolvedValue({
+		id: 'report-1',
+		listingId: 'listing-1',
+		listingName: '@owner/discord-gateway',
+		listingOwnerUserId: 'owner-1',
+		reporterUserId: 'user-2',
+		reason: 'spam',
+		status: 'open',
+		resolvedByUserId: null,
+		resolvedAt: null,
+		resolutionNote: null,
+		createdAt: '2026-07-02T00:00:00.000Z',
+		updatedAt: '2026-07-02T00:00:00.000Z',
+	})
+	mockModule.deleteCommunityListing.mockResolvedValue(false)
+	mockModule.resolveCommunityReportRow.mockResolvedValue(true)
+
+	await resolveCommunityReport({
+		env: createEnv(),
+		adminUserId: 'admin-1',
+		reportId: 'report-1',
+		action: 'delete',
+	})
+
+	expect(mockModule.deleteCommunityRatingsByListingId).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
+	expect(mockModule.resolveCommunityReportRow).toHaveBeenCalled()
+})
+
+test('forkCommunityListing rejects banned users', async () => {
+	mockModule.getCommunityBan.mockResolvedValue({
+		userId: 'user-2',
+		bannedByUserId: 'admin-1',
+		reason: 'spam',
+		createdAt: '2026-07-01T00:00:00.000Z',
+	})
+
+	await expect(
+		forkCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-2',
+			expectedPackageScope: 'jane',
+			listingId: 'listing-1',
+		}),
+	).rejects.toThrow('banned from community participation')
+})
+
+test('searchCommunityListings returns empty when limit is 0', async () => {
+	const listing = sampleListing()
+	mockModule.listAllCommunityListings.mockResolvedValue([listing])
+	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
+		'listing-1': {
+			listingId: 'listing-1',
+			ratingCount: 1,
+			averageStars: 4,
+			averageAdaptationEffort: 2,
+		},
+	})
+	mockModule.countCommunityForksByListingIds.mockResolvedValue({
+		'listing-1': 0,
+	})
+
+	const emptyQueryResults = await searchCommunityListings({
+		env: createEnv(),
+		query: '',
+		limit: 0,
+	})
+	const queryResults = await searchCommunityListings({
+		env: createEnv(),
+		query: 'discord',
+		limit: 0,
+	})
+
+	expect(emptyQueryResults).toEqual([])
+	expect(queryResults).toEqual([])
 })
 
 test('publishCommunityListing requires MIT license and Intent heading', async () => {

@@ -57,7 +57,12 @@ function ensureRenderPipelineReady(): Promise<void> {
 		renderPipelineReady = Promise.all([
 			initSatori(communityOgYogaWasm),
 			initWasm(communityOgResvgWasm),
-		]).then(() => undefined)
+		])
+			.then(() => undefined)
+			.catch((error) => {
+				renderPipelineReady = null
+				throw error
+			})
 	}
 	return renderPipelineReady
 }

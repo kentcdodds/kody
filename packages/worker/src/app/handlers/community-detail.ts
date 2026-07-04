@@ -11,6 +11,7 @@ import {
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
+import { CommunityActionError } from '#worker/community/errors.ts'
 import { renderCommunityOgImage } from '#worker/community/og-image.ts'
 import {
 	getCommunityListingWithAggregates,
@@ -167,9 +168,14 @@ export function createCommunityReportApiPostHandler(env: Env) {
 				})
 				return jsonResponse({ ok: true })
 			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : 'Unable to submit report.'
-				return jsonResponse({ ok: false, error: message }, 400)
+				if (error instanceof CommunityActionError) {
+					return jsonResponse({ ok: false, error: error.message }, 400)
+				}
+				console.error('Community report submission failed:', error)
+				return jsonResponse(
+					{ ok: false, error: 'Unable to submit report.' },
+					500,
+				)
 			}
 		},
 	} satisfies Action<typeof routes.communityReportApiPost>

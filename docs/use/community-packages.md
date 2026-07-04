@@ -94,6 +94,9 @@ the reporter identity is attached.
 Use reporting for spam, malware patterns, license violations, or other policy
 issues. Admins review reports on `/admin/community-reports`.
 
+Admins can issue **community bans** that block a user from publishing, forking,
+rating, or reporting community listings.
+
 ## Capabilities
 
 Use the MCP `community` domain:

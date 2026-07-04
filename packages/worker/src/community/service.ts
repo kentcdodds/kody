@@ -13,6 +13,7 @@ import {
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import { CommunityActionError } from './errors.ts'
 import {
 	countCommunityForksByListingIds,
 	deleteCommunityListing,
@@ -111,7 +112,7 @@ export function computeCommunityBayesianScore(input: {
 async function assertNotCommunityBanned(db: D1Database, userId: string) {
 	const ban = await getCommunityBan(db, userId)
 	if (ban) {
-		throw new Error('banned from community participation')
+		throw new CommunityActionError('banned from community participation')
 	}
 }
 
@@ -259,7 +260,6 @@ export async function publishCommunityListing(input: {
 		files: loadedSource.files,
 		createdAt: now,
 	}
-	await writeCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, snapshot)
 
 	if (existingListing) {
 		await updateCommunityListing(input.env.APP_DB, {
@@ -295,6 +295,40 @@ export async function publishCommunityListing(input: {
 		})
 	}
 
+	try {
+		await writeCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, snapshot)
+	} catch (snapshotError) {
+		try {
+			if (existingListing) {
+				await updateCommunityListing(input.env.APP_DB, {
+					listingId,
+					ownerUserId: input.userId,
+					sourceId: existingListing.sourceId,
+					kodyId: existingListing.kodyId,
+					name: existingListing.name,
+					description: existingListing.description,
+					tagsJson: JSON.stringify(existingListing.tags),
+					searchText: existingListing.searchText,
+					readmeContent: existingListing.readmeContent,
+					license: existingListing.license,
+					pinnedCommit: existingListing.pinnedCommit,
+					publishedAt: existingListing.publishedAt,
+				})
+			} else {
+				await deleteCommunityListing(input.env.APP_DB, {
+					listingId,
+					ownerUserId: input.userId,
+				})
+			}
+		} catch (revertError) {
+			console.error(
+				'Failed to revert community listing after snapshot failure:',
+				revertError,
+			)
+		}
+		throw snapshotError
+	}
+
 	const listing = await getCommunityListingById(input.env.APP_DB, {
 		listingId,
 		includeDelisted: true,
@@ -318,8 +352,6 @@ export async function unpublishCommunityListing(input: {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
 
-	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
-	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 	const deleted = await deleteCommunityListing(input.env.APP_DB, {
 		listingId: input.listingId,
 		ownerUserId: input.userId,
@@ -327,6 +359,9 @@ export async function unpublishCommunityListing(input: {
 	if (!deleted) {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
+
+	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
+	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 }
 
 export async function getCommunityListingWithAggregates(input: {
@@ -431,7 +466,7 @@ export async function searchCommunityListings(input: {
 
 	return scored
 		.sort((left, right) => right.score - left.score)
-		.slice(0, Math.max(1, input.limit))
+		.slice(0, input.limit)
 		.map((entry) => entry.listing)
 }
 
@@ -443,6 +478,8 @@ export async function forkCommunityListing(input: {
 	listingId: string
 	kodyId?: string
 }): Promise<ForkCommunityListingResult> {
+	await assertNotCommunityBanned(input.env.APP_DB, input.userId)
+
 	const listing = await getCommunityListingById(input.env.APP_DB, {
 		listingId: input.listingId,
 		includeDelisted: false,
@@ -584,12 +621,16 @@ export async function reportCommunityListing(input: {
 		includeDelisted: true,
 	})
 	if (!listing) {
-		throw new Error(`Community listing "${input.listingId}" was not found.`)
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
 	}
 
 	const trimmedReason = input.reason.trim()
 	if (trimmedReason.length < 1 || trimmedReason.length > 2_000) {
-		throw new Error('Report reason must be between 1 and 2000 characters.')
+		throw new CommunityActionError(
+			'Report reason must be between 1 and 2000 characters.',
+		)
 	}
 
 	const reportId = crypto.randomUUID()
@@ -631,7 +672,9 @@ export async function resolveCommunityReport(input: {
 }): Promise<void> {
 	const report = await getCommunityReportById(input.env.APP_DB, input.reportId)
 	if (!report || report.status !== 'open') {
-		throw new Error(`Community report "${input.reportId}" was not found.`)
+		throw new CommunityActionError(
+			`Community report "${input.reportId}" was not found.`,
+		)
 	}
 
 	switch (input.action) {
@@ -643,7 +686,9 @@ export async function resolveCommunityReport(input: {
 				resolutionNote: input.resolutionNote ?? null,
 			})
 			if (!resolved) {
-				throw new Error(`Community report "${input.reportId}" was not found.`)
+				throw new CommunityActionError(
+					`Community report "${input.reportId}" was not found.`,
+				)
 			}
 			return
 		}
@@ -659,22 +704,33 @@ export async function resolveCommunityReport(input: {
 				resolutionNote: input.resolutionNote ?? null,
 			})
 			if (!resolved) {
-				throw new Error(`Community report "${input.reportId}" was not found.`)
+				throw new CommunityActionError(
+					`Community report "${input.reportId}" was not found.`,
+				)
 			}
 			return
 		}
 		case 'delete': {
-			await deleteCommunityRatingsByListingId(
-				input.env.APP_DB,
-				report.listingId,
-			)
-			await deleteCommunitySnapshot(
-				input.env.BUNDLE_ARTIFACTS_KV,
-				report.listingId,
-			)
-			await deleteCommunityListing(input.env.APP_DB, {
+			// Hard delete removes listing metadata, ratings, and KV snapshot only.
+			// Fork rows are preserved for provenance and the rate-after-fork gate;
+			// report rows stay denormalized so moderation history survives deletion.
+			const deleted = await deleteCommunityListing(input.env.APP_DB, {
 				listingId: report.listingId,
 			})
+			if (!deleted) {
+				console.error(
+					`Community listing "${report.listingId}" was already deleted during report resolution.`,
+				)
+			} else {
+				await deleteCommunityRatingsByListingId(
+					input.env.APP_DB,
+					report.listingId,
+				)
+				await deleteCommunitySnapshot(
+					input.env.BUNDLE_ARTIFACTS_KV,
+					report.listingId,
+				)
+			}
 			const resolved = await resolveCommunityReportRow(input.env.APP_DB, {
 				reportId: input.reportId,
 				status: 'resolved',
@@ -682,7 +738,9 @@ export async function resolveCommunityReport(input: {
 				resolutionNote: input.resolutionNote ?? null,
 			})
 			if (!resolved) {
-				throw new Error(`Community report "${input.reportId}" was not found.`)
+				throw new CommunityActionError(
+					`Community report "${input.reportId}" was not found.`,
+				)
 			}
 			return
 		}
@@ -701,7 +759,7 @@ export async function banCommunityUser(input: {
 }): Promise<void> {
 	const trimmedReason = input.reason.trim()
 	if (!trimmedReason) {
-		throw new Error('Ban reason is required.')
+		throw new CommunityActionError('Ban reason is required.')
 	}
 	await insertCommunityBan(input.env.APP_DB, {
 		user_id: input.userId,
