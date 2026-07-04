@@ -178,8 +178,13 @@ export function CommunityDetailRoute(handle: Handle) {
 		void frame.reload()
 
 		// Revalidate the shell alongside the frame so the fork prompt, README,
-		// and report login state stay as fresh as the listing metadata.
+		// and report login state stay as fresh as the listing metadata. When
+		// the listing changed, flip to loading synchronously so the previous
+		// listing's shell never renders under the new listing's header.
 		shellRequestedForListingId = listingId
+		if (shellLoadedForListingId !== listingId) {
+			shellStatus = 'loading'
+		}
 		handle.queueTask(loadDetailShell)
 	})
 
@@ -244,23 +249,30 @@ export function CommunityDetailRoute(handle: Handle) {
 
 		const frameSrc = routes.communityDetail.href({ listingId })
 
+		// Never show another listing's shell data: even if an in-flight fetch
+		// for the previous listing resolves late, mismatched ids render the
+		// loading state until the current listing's shell arrives.
+		const shellMatchesListing = shellLoadedForListingId === listingId
+		const showShellReady = shellStatus === 'ready' && shellMatchesListing
+		const showShellError = shellStatus === 'error' && shellMatchesListing
+
 		return (
 			<section mix={css(pageCss)}>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
-				{shellStatus === 'loading' ? (
+				{!showShellReady && !showShellError ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading community package details…
 					</p>
 				) : null}
 
-				{shellStatus === 'error' ? (
+				{showShellError ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })} role="status">
 						Unable to load fork and report details for this listing.
 					</p>
 				) : null}
 
-				{shellStatus === 'ready' ? (
+				{showShellReady ? (
 					<>
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Fork with your agent</h2>
