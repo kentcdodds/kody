@@ -30,8 +30,9 @@ Re-running `community_publish` updates the public listing to the package's
 current published commit. Private edits after publishing do not change the
 listing until you publish again and re-run `community_publish`.
 
-`community_unpublish` removes the listing. If an admin **delists** a listing,
-the owner cannot re-publish it.
+`community_unpublish` removes an active listing you own. If an admin **delists**
+a listing, the owner cannot unpublish or re-publish it; only an admin hard
+delete can remove the delisted row.
 
 ## Browsing listings
 
@@ -102,7 +103,7 @@ rating, or reporting community listings.
 Use the MCP `community` domain:
 
 - `community_publish` — publish or update a listing from a saved package
-- `community_unpublish` — remove your listing
+- `community_unpublish` — remove your active listing (not delisted listings)
 - `community_search` — search active listings
 - `community_get` — fetch one listing's metadata and aggregates
 - `community_fork` — copy a pinned snapshot into your account (inert until

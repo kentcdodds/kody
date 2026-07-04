@@ -269,6 +269,53 @@ test('publishCommunityListing restores previous D1 row when KV fails on update',
 	)
 })
 
+test('unpublishCommunityListing refuses delisted listings without deleting anything', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({ status: 'delisted' }),
+	)
+
+	await expect(
+		unpublishCommunityListing({
+			env: createEnv(),
+			userId: 'owner-1',
+			listingId: 'listing-1',
+		}),
+	).rejects.toThrow(
+		'This listing was delisted by an administrator and cannot be unpublished.',
+	)
+
+	expect(mockModule.deleteCommunityListing).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunityRatingsByListingId).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
+})
+
+test('unpublishCommunityListing deletes active listings and cascades cleanup', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.deleteCommunityListing.mockResolvedValue(true)
+
+	await unpublishCommunityListing({
+		env: createEnv(),
+		userId: 'owner-1',
+		listingId: 'listing-1',
+	})
+
+	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			listingId: 'listing-1',
+			ownerUserId: 'owner-1',
+		},
+	)
+	expect(mockModule.deleteCommunityRatingsByListingId).toHaveBeenCalledWith(
+		expect.anything(),
+		'listing-1',
+	)
+	expect(mockModule.deleteCommunitySnapshot).toHaveBeenCalledWith(
+		expect.anything(),
+		'listing-1',
+	)
+})
+
 test('unpublishCommunityListing skips cascade when listing delete returns false', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.deleteCommunityListing.mockResolvedValue(false)

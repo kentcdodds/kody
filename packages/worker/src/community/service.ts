@@ -351,6 +351,11 @@ export async function unpublishCommunityListing(input: {
 	if (!listing || listing.ownerUserId !== input.userId) {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
+	if (listing.status === 'delisted') {
+		throw new CommunityActionError(
+			'This listing was delisted by an administrator and cannot be unpublished.',
+		)
+	}
 
 	const deleted = await deleteCommunityListing(input.env.APP_DB, {
 		listingId: input.listingId,

@@ -46,9 +46,9 @@ Migration: `packages/worker/migrations/0045-community-listings.sql`
 | `community_bans`     | Community-wide bans (publish, fork, rate, report)                  |
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
-Admin **delist** sets `status = 'delisted'` and blocks owner re-publish. **Hard
-delete** (admin report action) removes the listing row, KV snapshot, and
-ratings.
+Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
+owner unpublish. **Hard delete** (admin report action) removes the listing row,
+KV snapshot, and ratings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
@@ -131,7 +131,7 @@ Queue shows reporter, reason, and listing metadata. Actions use double-confirm:
 | Action                      | Effect                                                           |
 | --------------------------- | ---------------------------------------------------------------- |
 | Dismiss                     | Close report, listing unchanged                                  |
-| Delist                      | `status = delisted`, blocks owner re-publish                     |
+| Delist                      | `status = delisted`, blocks owner re-publish and unpublish       |
 | Hard delete                 | Remove listing, KV snapshot, and ratings                         |
 | Ban reporter / ban reportee | `community_bans` row; user cannot publish, fork, rate, or report |
 

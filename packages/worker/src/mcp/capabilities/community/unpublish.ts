@@ -9,7 +9,7 @@ export const communityUnpublishCapability = defineDomainCapability(
 	{
 		name: 'community_unpublish',
 		description:
-			'Remove one of your community listings and delete its pinned public snapshot.',
+			'Remove one of your active community listings and delete its pinned public snapshot. Delisted listings cannot be unpublished by the owner.',
 		keywords: ['community', 'unpublish', 'delist', 'remove', 'listing'],
 		readOnly: false,
 		idempotent: false,
