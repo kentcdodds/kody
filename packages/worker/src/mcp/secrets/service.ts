@@ -185,7 +185,7 @@ export async function resolveSecret(
 	const scopes = input.scope
 		? [input.scope]
 		: resolveStorageScopeOrder(input.storageContext ?? null)
-	const scopeResults = await Promise.all(
+	const scopeResults = await Promise.allSettled(
 		scopes.map(async (scope) => {
 			const bucket = await getExistingBucketForScope({
 				db: input.env.APP_DB,
@@ -216,8 +216,12 @@ export async function resolveSecret(
 			}
 		}),
 	)
+	// Preserve sequential precedence semantics: a lower-precedence failure must
+	// not mask a higher-precedence hit, and a failure at the winning scope still
+	// surfaces as an error.
 	for (const result of scopeResults) {
-		if (result) return result
+		if (result.status === 'rejected') throw result.reason
+		if (result.value) return result.value
 	}
 	return {
 		found: false,

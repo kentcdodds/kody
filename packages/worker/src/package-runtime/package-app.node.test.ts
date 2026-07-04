@@ -408,7 +408,7 @@ test('buildPackageAppWorker persists rebuilt app artifacts with artifactName nul
 	await buildPackageAppWorker({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-persist-miss',
+		userId: 'user-1',
 		savedPackage: {
 			id: 'package-persist-miss',
 			kodyId: 'example-miss',
@@ -428,7 +428,7 @@ test('buildPackageAppWorker persists rebuilt app artifacts with artifactName nul
 		runtime: {
 			callerContext: {
 				user: {
-					userId: 'user-persist-miss',
+					userId: 'user-1',
 					email: 'persist-miss@example.com',
 					displayName: 'Persist Miss User',
 				},
@@ -436,18 +436,78 @@ test('buildPackageAppWorker persists rebuilt app artifacts with artifactName nul
 		} as never,
 	})
 
+	expect(packageAppRuntimeMock.getEntitySourceById).not.toHaveBeenCalled()
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 	expect(
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-persist-miss',
+			userId: 'user-1',
 			source,
 			kind: 'app',
 			artifactName: null,
 			entryPoint: 'app.js',
 		}),
 	)
+})
+
+test('buildPackageAppWorker rejects persisting artifacts for a source owned by another user', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env } = createPackageAppTestEnv()
+	const source = createPackageAppTestSource()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		null,
+	)
+	packageAppRuntimeMock.buildKodyAppBundle.mockResolvedValue({
+		mainModule: 'dist/app.js',
+		modules: {
+			'dist/app.js':
+				'export default { fetch() { return new Response("fresh") } }',
+		},
+		dependencies: [],
+		dynamicDependencies: [],
+	})
+	// The pre-resolved source belongs to user-1, so the fast path must be
+	// skipped and the DB lookup (which finds nothing for this user) must fail.
+	packageAppRuntimeMock.getEntitySourceById.mockResolvedValue(null)
+
+	await expect(
+		buildPackageAppWorker({
+			env,
+			baseUrl: 'https://example.com',
+			userId: 'user-other',
+			savedPackage: {
+				id: 'package-other',
+				kodyId: 'example-other',
+				name: '@kody/example-other',
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+				manifestPath: 'package.json',
+				sourceRoot: '/',
+			},
+			source,
+			manifest: createPackageAppTestManifest(),
+			loadSourceFiles: async () => ({
+				'package.json': JSON.stringify(createPackageAppTestManifest()),
+				'app.js':
+					'export default { async fetch() { return new Response("ok") } }',
+			}),
+			runtime: {
+				callerContext: {
+					user: {
+						userId: 'user-other',
+						email: 'other@example.com',
+						displayName: 'Other User',
+					},
+				},
+			} as never,
+		}),
+	).rejects.toThrow('Saved package source "source-1" was not found.')
+
+	expect(packageAppRuntimeMock.getEntitySourceById).toHaveBeenCalledTimes(1)
+	expect(
+		packageAppRuntimeMock.persistPublishedBundleArtifact,
+	).not.toHaveBeenCalled()
 })
 
 test('buildPackageAppWorker skips published artifact lookup when publishedCommit is null', async () => {

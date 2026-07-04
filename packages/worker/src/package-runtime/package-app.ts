@@ -1181,7 +1181,7 @@ async function resolvePersistablePackageSource(input: {
 	source?: EntitySourceRow
 	sourceId: string
 }) {
-	if (input.source?.user_id && input.source.repo_id) {
+	if (input.source?.user_id === input.userId && input.source.repo_id) {
 		return input.source
 	}
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
