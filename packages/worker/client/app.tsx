@@ -10,7 +10,7 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
-import { type AppLoaderData } from '#client/loader-data-types.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from './styles/tokens.ts'

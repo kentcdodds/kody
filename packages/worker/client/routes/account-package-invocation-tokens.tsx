@@ -926,7 +926,11 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		const isMutating = saveState !== 'idle'
 		const isCreatingToken = isNewTokenPath(currentHref)
 		const requestedTokenId = getSelectedTokenIdFromPath(currentHref)
-		const effectiveSelectedTokenId = requestedTokenId ?? selectedTokenId
+		// The URL is the source of truth for selection in every environment:
+		// the base tokens path (no token segment) means nothing is selected,
+		// so falling back to module state here would keep a stale detail
+		// panel open after navigating back to the list.
+		const effectiveSelectedTokenId = requestedTokenId
 		const selectedToken =
 			tokens.find((token) => token.id === effectiveSelectedTokenId) ?? null
 		const isEditingSelectedToken =

@@ -22,7 +22,7 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 } from './account-management-components.tsx'
-import { type AdminCommunityReportsLoaderData } from '#client/loader-data-types.ts'
+import { type AdminCommunityReportsLoaderData } from '#app/loader-data.ts'
 
 type AdminCommunityReportListItem =
 	AdminCommunityReportsLoaderData['reports'][number]
