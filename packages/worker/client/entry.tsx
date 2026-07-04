@@ -1,5 +1,5 @@
 import { run } from 'remix/ui'
-import { REMIX_FRAME_TARGET_HEADER } from '#client/frame-spike-constants.ts'
+import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
 
 const clientRegistry: Record<string, typeof AppRoot> = {

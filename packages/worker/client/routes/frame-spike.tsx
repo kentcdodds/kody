@@ -1,7 +1,7 @@
 import { Frame, type Handle, on } from 'remix/ui'
+import { routes } from '#app/routes.ts'
 import {
 	FRAME_SPIKE_INCREMENT_PATH,
-	FRAME_SPIKE_PATH,
 	FRAME_SPIKE_TARGET,
 } from '#client/frame-spike-constants.ts'
 
@@ -21,7 +21,7 @@ export function FrameSpikeRoute(handle: Handle) {
 				POST increments a module counter, then reloads the named frame without
 				full navigation.
 			</p>
-			<Frame name={FRAME_SPIKE_TARGET} src={FRAME_SPIKE_PATH} />
+			<Frame name={FRAME_SPIKE_TARGET} src={routes.frameSpike.href()} />
 			<button
 				type="button"
 				data-testid="frame-spike-increment"

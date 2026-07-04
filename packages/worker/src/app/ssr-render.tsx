@@ -8,13 +8,13 @@ import {
 	getClientBuildId,
 } from '#app/client-build-id.ts'
 import { getEnv } from '#app/env.ts'
-import { renderFrameSpikeDataHtml } from '#app/frame-spike-content.tsx'
-import { FRAME_SPIKE_TARGET } from '#app/frame-spike-state.ts'
 import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
+import '#app/frame-registrations.ts'
+import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
 
 export type RenderAppPageInput = {
 	request: Request
@@ -39,6 +39,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		extraSetCookies,
 	} = input
 	const { session, setCookie } = await loadSessionInfo(request, env)
+	const requestUrl = new URL(request.url)
 	const url = getRequestUrl(request)
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
@@ -60,16 +61,14 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		{
 			frameSrc: request.url,
 			resolveFrame(src, target, context) {
-				const frameUrl = new URL(src, context?.currentFrameSrc ?? url)
-				if (
-					frameUrl.pathname === '/frame-spike' &&
-					target === FRAME_SPIKE_TARGET
-				) {
-					return renderFrameSpikeDataHtml()
-				}
-				throw new Error(
-					`Unhandled SSR frame resolve: ${src} (target=${target ?? 'none'})`,
-				)
+				return resolveRegisteredFrameHtml({
+					src,
+					target,
+					request,
+					env,
+					pageUrl: requestUrl,
+					currentFrameSrc: context?.currentFrameSrc,
+				})
 			},
 			onError(error) {
 				console.error('SSR render error:', error)

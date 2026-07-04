@@ -1,5 +1,4 @@
 export const FRAME_SPIKE_TARGET = 'spike-data'
-export const REMIX_FRAME_TARGET_HEADER = 'x-remix-target'
 
 let counter = 0
 
