@@ -21,7 +21,10 @@ const runtimeTools = [
 	},
 ] as const
 
-function buildEnv(onGetSnapshot: () => Promise<unknown>) {
+function buildEnv(
+	onGetSnapshot: () => Promise<unknown>,
+	onRpcCallTool?: () => Promise<unknown>,
+) {
 	let snapshotCalls = 0
 	const env = {
 		REMOTE_CONNECTOR_SESSION: {
@@ -33,6 +36,10 @@ function buildEnv(onGetSnapshot: () => Promise<unknown>) {
 					async getSnapshot() {
 						snapshotCalls += 1
 						return onGetSnapshot()
+					},
+					async rpcCallTool() {
+						if (!onRpcCallTool) throw new Error('rpcCallTool not stubbed')
+						return onRpcCallTool()
 					},
 				}
 			},
@@ -95,6 +102,40 @@ test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', 
 	await expect(
 		getCachedRemoteConnectorSnapshot(request),
 	).resolves.not.toBeNull()
+	expect(getSnapshotCalls()).toBe(2)
+})
+
+test('a failed connector RPC evicts the cached snapshot', async () => {
+	const { env, getSnapshotCalls } = buildEnv(
+		async () => ({
+			connectorKind: 'roku',
+			connectorId: 'default',
+			connectedAt: '2026-03-25T00:00:00.000Z',
+			lastSeenAt: '2026-03-25T00:00:01.000Z',
+			tools: runtimeTools,
+		}),
+		async () => {
+			throw new Error('Remote connector websocket closed before RPC response.')
+		},
+	)
+	const request = {
+		env,
+		userId: 'user-1',
+		kind: 'roku',
+		instanceId: 'default',
+	}
+	const client = createRemoteConnectorMcpClient(request)
+
+	await client.getSnapshot()
+	await client.getSnapshot()
+	expect(getSnapshotCalls()).toBe(1)
+
+	await expect(client.callTool('roku_press_key', {})).rejects.toThrow(
+		'websocket closed',
+	)
+
+	// The disconnect signal must not keep serving the stale "connected" view.
+	await client.getSnapshot()
 	expect(getSnapshotCalls()).toBe(2)
 })
 
