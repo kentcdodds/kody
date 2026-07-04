@@ -289,6 +289,14 @@ async function runNavigationWithLoader(
 			const data = await loader(destination, signal)
 			if (signal.aborted) return
 			if (data === null) {
+				// The loader handled the navigation externally (e.g. a 401 →
+				// login redirect). When the browser URL already moved
+				// (popstate), still sync the UI to it so the app does not
+				// render the previous route under the new URL while the full
+				// document navigation loads.
+				if (options?.skipPushState) {
+					notify()
+				}
 				dispatchNavigationEnd()
 				return
 			}
