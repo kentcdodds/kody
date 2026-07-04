@@ -18,8 +18,10 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { renderCommunityOgImage } from '#worker/community/og-image.ts'
-import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
-import { reportCommunityListing } from '#worker/community/service.ts'
+import {
+	getCommunityListingWithAggregates,
+	reportCommunityListing,
+} from '#worker/community/service.ts'
 
 const reportReasonSchema = z
 	.string()

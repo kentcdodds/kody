@@ -51,7 +51,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let forkPrompt = ''
 	let loggedIn = false
 	let readmeContent: string | null = null
-	let shellStatus: 'loading' | 'ready' = 'loading'
+	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
 	let reportReason = ''
 	let reportState: 'idle' | 'submitting' | 'success' | 'error' = 'idle'
@@ -77,7 +77,8 @@ export function CommunityDetailRoute(handle: Handle) {
 			)
 			if (requestId !== shellLoadRequestId) return
 			if (response.status === 404) {
-				shellStatus = 'ready'
+				shellLoadedForListingId = listingId
+				shellStatus = 'error'
 				handle.update()
 				return
 			}
@@ -95,7 +96,10 @@ export function CommunityDetailRoute(handle: Handle) {
 			handle.update()
 		} catch {
 			if (requestId !== shellLoadRequestId) return
-			shellStatus = 'ready'
+			// Mark the listing as attempted so renders do not requeue the load
+			// in a loop; the user can recover via navigation or reload.
+			shellLoadedForListingId = listingId
+			shellStatus = 'error'
 			handle.update()
 		}
 	}
@@ -217,6 +221,10 @@ export function CommunityDetailRoute(handle: Handle) {
 			shellLoadedForListingId !== listingId &&
 			typeof document !== 'undefined'
 		) {
+			// Show the loading state immediately so the previous listing's
+			// shell (fork prompt, README, login state) never renders under the
+			// new listing's header while the refetch is in flight.
+			shellStatus = 'loading'
 			handle.queueTask(loadDetailShell)
 		}
 
@@ -229,6 +237,12 @@ export function CommunityDetailRoute(handle: Handle) {
 				{shellStatus === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading community package details…
+					</p>
+				) : null}
+
+				{shellStatus === 'error' ? (
+					<p mix={css({ color: colors.textMuted, margin: 0 })} role="status">
+						Unable to load fork and report details for this listing.
 					</p>
 				) : null}
 
