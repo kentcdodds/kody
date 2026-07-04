@@ -1,5 +1,5 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
-import { type IntegrationConfig } from '#mcp/capabilities/values/integration-shared.ts'
+import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'

@@ -10,7 +10,7 @@ import {
 	parseIntegrationConfig,
 	parseIntegrationJson,
 	parseIntegrationValueName,
-} from '#mcp/capabilities/values/integration-shared.ts'
+} from '#mcp/capabilities/integrations/integration-shared.ts'
 import { listValues } from '#mcp/values/service.ts'
 
 type AuthenticatedUser = NonNullable<

@@ -31,7 +31,7 @@ import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
 	buildIntegrationValueName,
 	parseIntegrationConfig,
-} from '#mcp/capabilities/values/integration-shared.ts'
+} from '#mcp/capabilities/integrations/integration-shared.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
 

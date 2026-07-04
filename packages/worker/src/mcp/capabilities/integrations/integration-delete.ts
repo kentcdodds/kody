@@ -15,7 +15,7 @@ const outputSchema = z.object({
 })
 
 export const integrationDeleteCapability = defineDomainCapability(
-	capabilityDomainNames.values,
+	capabilityDomainNames.integrations,
 	{
 		name: 'integration_delete',
 		description: 'Delete a saved OAuth integration configuration by name.',

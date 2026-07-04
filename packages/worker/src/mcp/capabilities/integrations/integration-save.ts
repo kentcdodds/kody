@@ -21,7 +21,7 @@ const outputSchema = z.object({
 })
 
 export const integrationSaveCapability = defineDomainCapability(
-	capabilityDomainNames.values,
+	capabilityDomainNames.integrations,
 	{
 		name: 'integration_save',
 		description:
