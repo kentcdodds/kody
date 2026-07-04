@@ -57,6 +57,7 @@ const dynamicPackageImportSpecifierExportName = '__kodyDynamicPackageSpecifier'
 const dynamicPackageImportResolvedMarker = '__kodyDynamicPackageResolved'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
+let cachedRuntimeModuleSource: string | null = null
 
 async function createWorkerBundle(input: {
 	files: Record<string, string>
@@ -143,6 +144,9 @@ function resolveRelativeModulePath(fromPath: string, specifier: string) {
 }
 
 export function createRuntimeModuleSource() {
+	if (cachedRuntimeModuleSource) {
+		return cachedRuntimeModuleSource
+	}
 	// The runtime context for a single execute-call / package-app fetch is
 	// kept in AsyncLocalStorage rather than a single mutable globalThis slot.
 	// AsyncLocalStorage propagates through async chains so concurrent calls
@@ -170,7 +174,7 @@ export function createRuntimeModuleSource() {
 	// late-bound proxy so named imports like \`import { codemode } from
 	// 'kody:runtime'\` still resolve against the current AsyncLocalStorage
 	// store at call time instead of freezing as undefined.
-	return `
+	const source = `
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
@@ -285,6 +289,8 @@ export default
 		? { ...runtime, codemode: __kodyCodemode }
 		: runtime;
 `.trim()
+	cachedRuntimeModuleSource = source
+	return source
 }
 
 function isRuntimeModulePath(modulePath: string) {
@@ -698,44 +704,46 @@ async function resolveDirectKodyDependenciesForEntryPoint(input: {
 		if (imported.packageName === rootPackage?.manifest.name) continue
 		importedPackages.set(imported.packageName, imported.specifier)
 	}
-	const dependencies: Array<BundleArtifactDependency> = []
-	for (const specifier of [...importedPackages.values()].sort((left, right) =>
+	const sortedSpecifiers = [...importedPackages.values()].sort((left, right) =>
 		left.localeCompare(right),
-	)) {
-		const parsed = parseKodyPackageSpecifier(specifier)
-		const cached = input.loadedPackages?.get(parsed.packageName)
-		const row =
-			cached?.row ??
-			(await resolveSavedPackageImport({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				specifier: parsed,
-			}))
-		if (!row) {
-			throw new Error(
-				`Saved package "${parsed.packageName}" was not found for this user.`,
-			)
-		}
-		const loaded =
-			cached ??
-			(await loadPackageSourceBySourceId({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: row.sourceId,
-			}))
-		if (!loaded.source.published_commit) {
-			throw new Error(
-				`Saved package "${row.name}" source "${row.sourceId}" has no published commit.`,
-			)
-		}
-		dependencies.push({
-			sourceId: loaded.source.id,
-			publishedCommit: loaded.source.published_commit,
-			kodyId: row.kodyId,
-			packageName: row.name,
-		})
-	}
+	)
+	const dependencies = await Promise.all(
+		sortedSpecifiers.map(async (specifier) => {
+			const parsed = parseKodyPackageSpecifier(specifier)
+			const cached = input.loadedPackages?.get(parsed.packageName)
+			const row =
+				cached?.row ??
+				(await resolveSavedPackageImport({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					specifier: parsed,
+				}))
+			if (!row) {
+				throw new Error(
+					`Saved package "${parsed.packageName}" was not found for this user.`,
+				)
+			}
+			const loaded =
+				cached ??
+				(await loadPackageSourceBySourceId({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceId: row.sourceId,
+				}))
+			if (!loaded.source.published_commit) {
+				throw new Error(
+					`Saved package "${row.name}" source "${row.sourceId}" has no published commit.`,
+				)
+			}
+			return {
+				sourceId: loaded.source.id,
+				publishedCommit: loaded.source.published_commit,
+				kodyId: row.kodyId,
+				packageName: row.name,
+			}
+		}),
+	)
 	return dependencies.sort(
 		(left, right) =>
 			left.kodyId.localeCompare(right.kodyId) ||
@@ -1120,24 +1128,35 @@ export async function hydrateKodyRuntimeModules(input: {
 	>()
 	while (true) {
 		let installedDynamicImport = false
-		for (const entry of collectDynamicPackageImportsFromModules(modules)) {
-			let resolved = resolvedArtifacts.get(entry.specifier)
-			if (!resolved) {
+		const dynamicImportEntries =
+			collectDynamicPackageImportsFromModules(modules)
+		const unresolvedSpecifiers = [
+			...new Set(
+				dynamicImportEntries
+					.map((entry) => entry.specifier)
+					.filter((specifier) => !resolvedArtifacts.has(specifier)),
+			),
+		]
+		await Promise.all(
+			unresolvedSpecifiers.map(async (specifier) => {
 				const artifact = await resolveCurrentDynamicPackageArtifact({
 					env: input.env,
 					baseUrl: input.baseUrl,
 					userId: input.userId,
-					specifier: entry.specifier,
+					specifier,
 				})
-				resolved = {
+				resolvedArtifacts.set(specifier, {
 					artifactKey: createDynamicPackageImportArtifactKey({
-						specifier: entry.specifier,
+						specifier,
 						artifact,
 					}),
 					artifact,
-				}
-				resolvedArtifacts.set(entry.specifier, resolved)
-			}
+				})
+			}),
+		)
+		for (const entry of dynamicImportEntries) {
+			const resolved = resolvedArtifacts.get(entry.specifier)
+			if (!resolved) continue
 			const existingArtifactMainModule =
 				resolved.installedArtifactMainModule ??
 				installedArtifacts.get(resolved.artifactKey)

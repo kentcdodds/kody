@@ -27,6 +27,7 @@ import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approv
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
+import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 import {
@@ -331,16 +332,19 @@ export async function buildCodemodeFns(
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
+		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ) {
 	const capabilityMap = options?.skipCapabilityRegistry
 		? {}
-		: (
-				await getCapabilityRegistryForContext({
-					env,
-					callerContext,
-				})
-			).capabilityMap
+		: options?.capabilityRegistry
+			? options.capabilityRegistry.capabilityMap
+			: (
+					await getCapabilityRegistryForContext({
+						env,
+						callerContext,
+					})
+				).capabilityMap
 	const additionalTools = options?.additionalTools ?? {}
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
@@ -513,6 +517,7 @@ export async function buildCodemodeProvider(
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
+		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ResolvedProvider> {
 	const tools = await buildCodemodeFns(env, callerContext, options)
@@ -632,6 +637,7 @@ export async function runCodemodeWithRegistry(
 		executorTimeoutMs?: number | null
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
+		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ExecuteResult> {
 	const moduleSource = stripCodeFences(code.trim())
@@ -650,6 +656,7 @@ export async function runCodemodeWithRegistry(
 			packageInvokeTools: options?.packageInvokeTools,
 			packageEventTools: options?.packageEventTools,
 			executorTimeoutMs: options?.executorTimeoutMs,
+			capabilityRegistry: options?.capabilityRegistry,
 		})
 	}
 	const secretRedactor = createExecutionSecretRedactor()
@@ -688,6 +695,7 @@ export async function runCodemodeWithRegistry(
 			: undefined,
 		emailTools: options?.emailTools,
 		workflowTools,
+		capabilityRegistry: options?.capabilityRegistry,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -778,6 +786,7 @@ export async function runModuleWithRegistry(
 		executorTimeoutMs?: number | null
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
+		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -848,6 +857,7 @@ export async function runBundledModuleWithRegistry(
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
 		runtimeDebug?: PackageRuntimeDebugContext | null
+		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ExecuteResult> {
 	const secretRedactor = createExecutionSecretRedactor()
@@ -911,6 +921,7 @@ export async function runBundledModuleWithRegistry(
 			emailTools: options?.emailTools,
 			workflowTools,
 			skipCapabilityRegistry: options?.skipCapabilityRegistry,
+			capabilityRegistry: options?.capabilityRegistry,
 		})
 		const storageHelperPrelude = options?.storageTools
 			? createStorageHelperPrelude({

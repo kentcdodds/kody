@@ -211,6 +211,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						: undefined
 					return await runModuleWithRegistry(env, callerContext, code, params, {
 						executorExports: agent.getLoopbackExports(),
+						capabilityRegistry: registry,
 						storageTools: activeStorageId
 							? {
 									userId: callerContext.user?.userId ?? '',
@@ -288,7 +289,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					...(rawContent ?? [
 						{
 							type: 'text',
-							text: formatLimitedExecutionOutput(limitedResult),
+							text: formatLimitedExecutionOutput({
+								value: limitedResult.value,
+								truncated: limitedResult.truncated,
+								note: limitedResult.note,
+								displayText: limitedResult.displayText,
+							}),
 						},
 					]),
 					...formatSurfacedMemoriesMarkdown(surfacedMemories),

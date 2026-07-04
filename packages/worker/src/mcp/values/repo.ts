@@ -146,6 +146,38 @@ export async function listValueMetadataForBucket(input: {
 	return (results ?? []).map(mapValueMetadataRow)
 }
 
+export async function listValueMetadataForBuckets(input: {
+	db: D1Database
+	userId: string
+	buckets: ReadonlyArray<ValueBucketRow>
+	now?: string
+}): Promise<Array<ValueMetadataRow>> {
+	if (input.buckets.length === 0) return []
+
+	const now = input.now ?? new Date().toISOString()
+	const bucketIds = input.buckets.map((bucket) => bucket.id)
+	const inPlaceholders = bucketIds.map(() => '?').join(', ')
+	const bucketOrderCase = bucketIds
+		.map((_bucketId, index) => `WHEN ? THEN ${index}`)
+		.join(' ')
+
+	const { results } = await input.db
+		.prepare(
+			`SELECT b.scope AS scope, b.binding_key AS binding_key,
+				e.name AS name, e.description AS description, e.value AS value,
+				e.created_at AS created_at, e.updated_at AS updated_at,
+				b.expires_at AS expires_at
+			FROM value_entries e
+			INNER JOIN value_buckets b ON b.id = e.bucket_id
+			WHERE b.user_id = ? AND b.id IN (${inPlaceholders})
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
+			ORDER BY CASE b.id ${bucketOrderCase} END, e.name ASC`,
+		)
+		.bind(input.userId, ...bucketIds, now, ...bucketIds)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapValueMetadataRow)
+}
+
 export async function deleteValueBucketByBinding(input: {
 	db: D1Database
 	userId: string

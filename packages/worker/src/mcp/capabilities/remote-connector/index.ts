@@ -169,14 +169,17 @@ export async function synthesizeRemoteToolDomain(input: {
 	env: Env
 	userId: string
 	ref: RemoteConnectorRef
+	snapshot?: RemoteConnectorSnapshot | null
 }): Promise<SynthesizedRemoteConnectorDomain | null> {
-	const client = createRemoteConnectorMcpClient({
-		env: input.env,
-		userId: input.userId,
-		kind: input.ref.kind,
-		instanceId: input.ref.instanceId,
-	})
-	const snapshot = await client.getSnapshot()
+	const snapshot =
+		input.snapshot !== undefined
+			? input.snapshot
+			: await createRemoteConnectorMcpClient({
+					env: input.env,
+					userId: input.userId,
+					kind: input.ref.kind,
+					instanceId: input.ref.instanceId,
+				}).getSnapshot()
 	const ref = input.ref
 	if (!snapshot || snapshot.tools.length === 0) return null
 

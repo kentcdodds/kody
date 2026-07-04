@@ -6,7 +6,10 @@ import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { getUsernameValidationError } from '#app/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
-import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import {
+	loadPackageManifestBySourceId,
+	loadPackageSourceBySourceId,
+} from '#worker/package-registry/source.ts'
 import {
 	buildPackageAppWorker,
 	createPackageAppCallerContext,
@@ -295,22 +298,24 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 	let forwardedRequest: Request
 	let entrypoint: { fetch(request: Request): Promise<Response> }
 	try {
-		const packageSource = await loadPackageSourceBySourceId({
-			env,
-			baseUrl,
-			userId: user.mcpUser.userId,
-			sourceId: savedPackage.sourceId,
-		})
-		const callerContext = await createPackageAppCallerContext({
-			baseUrl,
-			user: {
+		const [packageManifest, callerContext] = await Promise.all([
+			loadPackageManifestBySourceId({
+				env,
+				baseUrl,
 				userId: user.mcpUser.userId,
-				email: user.email,
-				displayName: user.displayName,
-				username: user.username,
-			},
-			packageId: savedPackage.id,
-		})
+				sourceId: savedPackage.sourceId,
+			}),
+			createPackageAppCallerContext({
+				baseUrl,
+				user: {
+					userId: user.mcpUser.userId,
+					email: user.email,
+					displayName: user.displayName,
+					username: user.username,
+				},
+				packageId: savedPackage.id,
+			}),
+		])
 		const appWorker = await buildPackageAppWorker({
 			env,
 			baseUrl,
@@ -320,11 +325,21 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 				kodyId: savedPackage.kodyId,
 				name: savedPackage.name,
 				sourceId: savedPackage.sourceId,
-				publishedCommit: packageSource.source.published_commit,
-				manifestPath: packageSource.source.manifest_path,
-				sourceRoot: packageSource.source.source_root,
+				publishedCommit: packageManifest.source.published_commit,
+				manifestPath: packageManifest.source.manifest_path,
+				sourceRoot: packageManifest.source.source_root,
 			},
-			sourceFiles: packageSource.files,
+			source: packageManifest.source,
+			manifest: packageManifest.manifest,
+			loadSourceFiles: async () => {
+				const packageSource = await loadPackageSourceBySourceId({
+					env,
+					baseUrl,
+					userId: user.mcpUser.userId,
+					sourceId: savedPackage.sourceId,
+				})
+				return packageSource.files
+			},
 			runtime: {
 				callerContext,
 			},

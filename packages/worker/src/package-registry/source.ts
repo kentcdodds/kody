@@ -125,6 +125,7 @@ async function loadPackageSourceUncached(input: {
 		env: input.env,
 		userId: input.userId,
 		sourceId: input.source.id,
+		source: input.source,
 	})
 	return finalizeLoadedSource({
 		source: input.source,
@@ -200,6 +201,7 @@ export async function loadPackageManifestBySourceId(input: {
 			env: input.env,
 			userId: input.userId,
 			sourceId: source.id,
+			source,
 		})
 		return Object.freeze({
 			source,
@@ -220,6 +222,7 @@ export async function loadPackageManifestBySourceId(input: {
 				env: input.env,
 				userId: input.userId,
 				sourceId: source.id,
+				source,
 			})
 			return Object.freeze({
 				source,

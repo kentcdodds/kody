@@ -10,6 +10,7 @@ import {
 	createExecuteExecutor,
 	extractRawContent,
 	formatExecutionOutput,
+	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 } from './executor.ts'
@@ -201,8 +202,63 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 		}).execute('async () => "ok"', scopedProviders)
 	}
 	expect(bundledLoader.ids).toHaveLength(2)
-	expect(new Set(bundledLoader.ids).size).toBe(2)
-	expect(bundledLoader.factoryCallCount).toBe(2)
+	expect(new Set(bundledLoader.ids).size).toBe(1)
+	expect(bundledLoader.factoryCallCount).toBe(1)
+
+	const differentUserBundledLoader = createFakeWorkerLoader()
+	for (const userId of ['user-1', 'user-2']) {
+		await createExecuteExecutor({
+			env: createExecutorTestEnv(differentUserBundledLoader.loader),
+			exports,
+			gatewayProps: createGatewayProps(userId),
+			modules: {
+				'entry.js': 'export default async function main() { return "ok" }',
+			},
+		}).execute('async () => "ok"', scopedProviders)
+	}
+	expect(differentUserBundledLoader.ids).toHaveLength(2)
+	expect(new Set(differentUserBundledLoader.ids).size).toBe(2)
+	expect(differentUserBundledLoader.factoryCallCount).toBe(2)
+
+	const differentStorageLoader = createFakeWorkerLoader()
+	const storageContexts = [
+		null,
+		{ sessionId: 'session-1', appId: 'app-1', storageId: 'storage-1' },
+	] as const
+	for (const storageContext of storageContexts) {
+		await createExecuteExecutor({
+			env: createExecutorTestEnv(differentStorageLoader.loader),
+			exports,
+			gatewayProps: {
+				...createGatewayProps('user-1'),
+				storageContext,
+			},
+			modules: {
+				'entry.js': 'export default async function main() { return "ok" }',
+			},
+		}).execute('async () => "ok"', scopedProviders)
+	}
+	expect(differentStorageLoader.ids).toHaveLength(2)
+	expect(new Set(differentStorageLoader.ids).size).toBe(2)
+	expect(differentStorageLoader.factoryCallCount).toBe(2)
+
+	const nonHashableModuleLoader = createFakeWorkerLoader()
+	for (let index = 0; index < 2; index += 1) {
+		await createExecuteExecutor({
+			env: createExecutorTestEnv(nonHashableModuleLoader.loader),
+			exports,
+			gatewayProps: createGatewayProps('user-1'),
+			modules: {
+				'entry.js': {
+					js: 'export default async function main() { return "ok" }',
+					onLoad: async () => 'not-hashable',
+				},
+			},
+		}).execute('async () => "ok"', scopedProviders)
+	}
+	expect(nonHashableModuleLoader.ids).toHaveLength(2)
+	expect(new Set(nonHashableModuleLoader.ids).size).toBe(2)
+	expect(nonHashableModuleLoader.factoryCallCount).toBe(2)
 })
 
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
@@ -381,4 +437,63 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	expect(
 		new TextEncoder().encode(String(threeByteLimit.value)).byteLength,
 	).toBe(3)
+})
+
+test('limitExecutionResultValue preserves output for representative small and oversized values', () => {
+	const smallObject = { ok: true, count: 3 }
+	const smallObjectLimited = limitExecutionResultValue(smallObject, 102_400)
+	expect(smallObjectLimited).toMatchObject({
+		value: smallObject,
+		returnedBytes: 21,
+		truncated: false,
+	})
+	expect(smallObjectLimited.displayText).toBe(
+		JSON.stringify(smallObject, null, 2),
+	)
+	expect(
+		formatLimitedExecutionOutput({
+			value: smallObjectLimited.value,
+			truncated: smallObjectLimited.truncated,
+			displayText: smallObjectLimited.displayText,
+		}),
+	).toBe(smallObjectLimited.displayText)
+
+	const oversizedObject = {
+		rows: [{ id: 'message-1', payload: 'abcdef' }],
+	}
+	const oversizedObjectLimited = limitExecutionResultValue(oversizedObject, 10)
+	expect(oversizedObjectLimited).toMatchObject({
+		value: {
+			truncated: true,
+			type: 'object',
+		},
+		returnedBytes: 48,
+		truncated: true,
+		note: 'Returned value was 48 bytes, exceeding responseLimit 10 bytes; output was truncated. Project fields before returning.',
+	})
+	expect(
+		formatLimitedExecutionOutput({
+			value: oversizedObjectLimited.value,
+			truncated: oversizedObjectLimited.truncated,
+			note: oversizedObjectLimited.note,
+			displayText: oversizedObjectLimited.displayText,
+		}),
+	).toBe(
+		`${oversizedObjectLimited.displayText}\n\n--- TRUNCATED ---\n${oversizedObjectLimited.note}`,
+	)
+
+	const oversizedStringLimited = limitExecutionResultValue('hello world', 5)
+	expect(oversizedStringLimited).toMatchObject({
+		value: 'hello',
+		returnedBytes: 11,
+		truncated: true,
+	})
+	expect(oversizedStringLimited.displayText).toBeUndefined()
+	expect(
+		formatLimitedExecutionOutput({
+			value: oversizedStringLimited.value,
+			truncated: oversizedStringLimited.truncated,
+			note: oversizedStringLimited.note,
+		}),
+	).toBe(`hello\n\n--- TRUNCATED ---\n${oversizedStringLimited.note}`)
 })

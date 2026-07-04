@@ -1,5 +1,6 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
+import { getCachedRemoteConnectorSnapshot } from '#worker/remote-connector/snapshot-cache.ts'
 import {
 	type RemoteConnectorSnapshot,
 	type RemoteConnectorToolDescriptor,
@@ -48,7 +49,7 @@ export function createRemoteConnectorMcpClient(input: {
 			return (await stub.rpcCallTool(name, args ?? {})) as CallToolResult
 		},
 		async getSnapshot() {
-			return stub.getSnapshot()
+			return getCachedRemoteConnectorSnapshot(input)
 		},
 	}
 }

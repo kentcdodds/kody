@@ -24,15 +24,27 @@ function base64UrlToBytes(value: string) {
 	return Uint8Array.from(binary, (char) => char.charCodeAt(0))
 }
 
-async function deriveEncryptionKey(secret: string, purpose: string) {
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		textEncoder.encode(`${purpose}:${secret}`),
-	)
-	return crypto.subtle.importKey('raw', digest, 'AES-GCM', false, [
-		'encrypt',
-		'decrypt',
-	])
+const derivedEncryptionKeyCache = new Map<string, Promise<CryptoKey>>()
+
+function deriveEncryptionKey(secret: string, purpose: string) {
+	const cacheKey = `${purpose}:${secret}`
+	const cached = derivedEncryptionKeyCache.get(cacheKey)
+	if (cached) return cached
+
+	const derivationPromise = crypto.subtle
+		.digest('SHA-256', textEncoder.encode(`${purpose}:${secret}`))
+		.then((digest) =>
+			crypto.subtle.importKey('raw', digest, 'AES-GCM', false, [
+				'encrypt',
+				'decrypt',
+			]),
+		)
+		.catch((error) => {
+			derivedEncryptionKeyCache.delete(cacheKey)
+			throw error
+		})
+	derivedEncryptionKeyCache.set(cacheKey, derivationPromise)
+	return derivationPromise
 }
 
 export async function encryptStringWithPurpose(

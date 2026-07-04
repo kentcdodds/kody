@@ -28,7 +28,7 @@ const dynamicWorkerCompatibilityDate = '2025-06-01'
 const dynamicWorkerCompatibilityFlags = ['nodejs_compat'] as const
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'codemode-'
-const dynamicWorkerCacheKeyVersion = 1
+const dynamicWorkerCacheKeyVersion = 2
 const reservedProviderNames = new Set(['__dispatchers', '__logs'])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const javascriptReservedWords = new Set([
@@ -355,9 +355,78 @@ function canReuseDynamicWorkerId(input: {
 }) {
 	if (!input.gatewayProps.userId) return false
 	if (!input.appCommitSha) return false
-	return Object.keys(input.workerOptions.modules).every(
-		(moduleName) => moduleName === dynamicWorkerMainModule,
-	)
+	return areWorkerModulesDeterministicallyHashable(input.workerOptions.modules)
+}
+
+function areWorkerModulesDeterministicallyHashable(
+	modules: WorkerLoaderModules,
+) {
+	for (const moduleValue of Object.values(modules)) {
+		if (!isDeterministicallyHashableWorkerModule(moduleValue)) {
+			return false
+		}
+	}
+	return true
+}
+
+function isDeterministicallyHashableWorkerModule(
+	moduleValue: WorkerLoaderModules[string],
+) {
+	if (typeof moduleValue === 'string') return true
+	if (moduleValue === null || typeof moduleValue !== 'object') return false
+	const record = moduleValue as Record<string, unknown>
+	for (const key of ['js', 'cjs', 'text'] as const) {
+		const value = record[key]
+		if (value !== undefined && typeof value !== 'string') return false
+	}
+	if (record.data !== undefined && !(record.data instanceof ArrayBuffer)) {
+		return false
+	}
+	if (
+		record.json !== undefined &&
+		!isDeterministicallyHashableValue(record.json)
+	) {
+		return false
+	}
+	for (const [key, value] of Object.entries(record)) {
+		if (
+			key !== 'js' &&
+			key !== 'cjs' &&
+			key !== 'text' &&
+			key !== 'data' &&
+			key !== 'json'
+		) {
+			return false
+		}
+		if (key === 'data' || key === 'json') continue
+		if (value !== undefined && typeof value !== 'string') return false
+	}
+	return true
+}
+
+function isDeterministicallyHashableValue(value: unknown): boolean {
+	if (value === null) return true
+	const valueType = typeof value
+	if (
+		valueType === 'string' ||
+		valueType === 'number' ||
+		valueType === 'boolean'
+	) {
+		return true
+	}
+	if (valueType === 'bigint' || valueType === 'undefined') return true
+	if (valueType === 'function' || valueType === 'symbol') return false
+	if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true
+	if (Array.isArray(value)) {
+		return value.every((entry) => isDeterministicallyHashableValue(entry))
+	}
+	if (valueType === 'object') {
+		const record = value as Record<string, unknown>
+		return Object.values(record).every((entry) =>
+			isDeterministicallyHashableValue(entry),
+		)
+	}
+	return false
 }
 
 function canonicalJsonStringify(value: unknown) {
@@ -677,28 +746,46 @@ export function limitExecutionResultValue(
 	value: unknown,
 	responseLimitBytes: number,
 ) {
-	const serialized = stringifyExecutionValueForBytes(value)
-	const returnedBytes = getUtf8ByteLength(serialized)
+	if (typeof value === 'string') {
+		const returnedBytes = getUtf8ByteLength(value)
+		if (returnedBytes <= responseLimitBytes) {
+			return {
+				value,
+				displayText: value,
+				returnedBytes,
+				truncated: false,
+			} as const
+		}
+		const note = `Returned value was ${returnedBytes.toLocaleString()} bytes, exceeding responseLimit ${responseLimitBytes.toLocaleString()} bytes; output was truncated. Project fields before returning.`
+		return {
+			value: truncateUtf8String(value, responseLimitBytes),
+			returnedBytes,
+			truncated: true,
+			note,
+		} as const
+	}
+
+	const compactSerialized = JSON.stringify(value) ?? 'undefined'
+	const returnedBytes = getUtf8ByteLength(compactSerialized)
 
 	if (returnedBytes <= responseLimitBytes) {
 		return {
 			value,
+			displayText: JSON.stringify(value, null, 2) ?? 'undefined',
 			returnedBytes,
 			truncated: false,
 		} as const
 	}
 
 	const note = `Returned value was ${returnedBytes.toLocaleString()} bytes, exceeding responseLimit ${responseLimitBytes.toLocaleString()} bytes; output was truncated. Project fields before returning.`
-	const truncatedValue =
-		typeof value === 'string'
-			? truncateUtf8String(value, responseLimitBytes)
-			: {
-					truncated: true,
-					type: describeExecutionValue(value),
-				}
+	const truncatedValue = {
+		truncated: true,
+		type: describeExecutionValue(value),
+	}
 
 	return {
 		value: truncatedValue,
+		displayText: JSON.stringify(truncatedValue, null, 2) ?? 'undefined',
 		returnedBytes,
 		truncated: true,
 		note,
@@ -709,15 +796,12 @@ export function formatLimitedExecutionOutput(input: {
 	value: unknown
 	truncated: boolean
 	note?: string
+	displayText?: string
 }) {
-	const text = stringifyExecutionValueForOutput(input.value)
+	const text =
+		input.displayText ?? stringifyExecutionValueForOutput(input.value)
 	if (!input.truncated) return text
 	return `${text}\n\n--- TRUNCATED ---\n${input.note}`
-}
-
-function stringifyExecutionValueForBytes(value: unknown) {
-	if (typeof value === 'string') return value
-	return JSON.stringify(value) ?? 'undefined'
 }
 
 function stringifyExecutionValueForOutput(value: unknown) {

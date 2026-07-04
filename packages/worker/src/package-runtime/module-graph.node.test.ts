@@ -172,6 +172,190 @@ function createLoadedPackageSource() {
 	}
 }
 
+test('hydrateKodyRuntimeModules resolves duplicate dynamic specifiers once per pass', async () => {
+	const createDynamicPlaceholder = (specifier: string) =>
+		`export const __kodyDynamicPackageSpecifier = ${JSON.stringify(specifier)};
+throw new Error('unhydrated ${specifier}');
+`
+	const artifact = {
+		version: 1,
+		kind: 'importable-module' as const,
+		artifactName: './value',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		entryPoint: './value.js',
+		mainModule: 'value.js',
+		modules: {
+			'value.js': 'export default function value() { return "resolved" }',
+		},
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: null,
+		serviceContext: null,
+		createdAt: '2026-05-11T00:00:00.000Z',
+	}
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		...createLoadedPackageSource(),
+		manifest: {
+			...createLoadedPackageSource().manifest,
+			exports: {
+				'./value': './value.js',
+			},
+		},
+		files: {
+			'value.js': 'export default function value() { return "resolved" }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: {},
+		artifact,
+	})
+
+	const specifier = 'kody:@kentcdodds/example-package/value'
+	const hydratedModules = await hydrateKodyRuntimeModules({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		modules: {
+			'entry-a.js': `export default async function runA() {
+	const module = await import('./.__kody_virtual__/dynamic-imports/a.js')
+	return module.default
+}
+`,
+			'entry-b.js': `export default async function runB() {
+	const module = await import('./.__kody_virtual__/dynamic-imports/b.js')
+	return module.default
+}
+`,
+			'.__kody_virtual__/dynamic-imports/a.js':
+				createDynamicPlaceholder(specifier),
+			'.__kody_virtual__/dynamic-imports/b.js':
+				createDynamicPlaceholder(specifier),
+		},
+	})
+
+	expect(
+		mockModule.loadPublishedBundleArtifactByIdentity,
+	).toHaveBeenCalledTimes(1)
+	expect(hydratedModules['.__kody_virtual__/dynamic-imports/a.js']).toContain(
+		'__kodyDynamicPackageResolved',
+	)
+	expect(hydratedModules['.__kody_virtual__/dynamic-imports/b.js']).toContain(
+		'__kodyDynamicPackageResolved',
+	)
+})
+
+test('buildKodyModuleBundle keeps deterministic dependency ordering after parallel resolution', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('ordered-deps'))
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				name: string
+			},
+		) => {
+			if (input.name === '@kentcdodds/zebra-package') {
+				return createSavedPackageRecord({
+					name: '@kentcdodds/zebra-package',
+					kodyId: 'zebra-package',
+					sourceId: 'source-zebra',
+				})
+			}
+			if (input.name === '@kentcdodds/alpha-package') {
+				return createSavedPackageRecord({
+					name: '@kentcdodds/alpha-package',
+					kodyId: 'alpha-package',
+					sourceId: 'source-alpha',
+				})
+			}
+			return null
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => ({
+			...createLoadedPackageSource(),
+			source: {
+				id: input.sourceId,
+				published_commit: `commit-${input.sourceId}`,
+			},
+			manifest: {
+				name:
+					input.sourceId === 'source-zebra'
+						? '@kentcdodds/zebra-package'
+						: '@kentcdodds/alpha-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id:
+						input.sourceId === 'source-zebra'
+							? 'zebra-package'
+							: 'alpha-package',
+					description: 'Dependency package',
+				},
+			},
+			files: {
+				'index.js': 'export default async function run() { return "ok" }',
+			},
+		}),
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	const result = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': [
+				'import zebra from "kody:@kentcdodds/zebra-package"',
+				'import alpha from "kody:@kentcdodds/alpha-package"',
+				'export default [zebra, alpha]',
+			].join('\n'),
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(result.dependencies).toEqual([
+		{
+			sourceId: 'source-alpha',
+			publishedCommit: 'commit-source-alpha',
+			kodyId: 'alpha-package',
+			packageName: '@kentcdodds/alpha-package',
+		},
+		{
+			sourceId: 'source-zebra',
+			publishedCommit: 'commit-source-zebra',
+			kodyId: 'zebra-package',
+			packageName: '@kentcdodds/zebra-package',
+		},
+	])
+})
+
+test('createRuntimeModuleSource returns a stable memoized string', () => {
+	const first = createRuntimeModuleSource()
+	const second = createRuntimeModuleSource()
+	expect(first).toBe(second)
+	expect(first).toContain('__kodyCreateRuntimeObjectProxy')
+})
+
 test('buildKodyAppBundle cache lifecycle reuses hits, shares in-flight builds, evicts failures, and keys by entrypoint', async () => {
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('warm-cache'))

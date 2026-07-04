@@ -8,7 +8,7 @@ import {
 	deleteValueEntry,
 	getValueBucket,
 	getValueEntry,
-	listValueMetadataForBucket,
+	listValueMetadataForBuckets,
 	upsertValueBucket,
 	upsertValueEntry,
 } from './repo.ts'
@@ -102,15 +102,12 @@ export async function listValues(
 		scope: input.scope ?? null,
 		storageContext: input.storageContext ?? null,
 	})
-	const results = await Promise.all(
-		buckets.map((bucket) =>
-			listValueMetadataForBucket({
-				db: input.env.APP_DB,
-				bucket,
-			}),
-		),
-	)
-	return results.flat().map((row) =>
+	const rows = await listValueMetadataForBuckets({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		buckets,
+	})
+	return rows.map((row) =>
 		toValueMetadata({
 			name: row.name,
 			scope: row.scope,

@@ -72,13 +72,23 @@ async function resolveStringPlaceholders(
 	const referencedSecrets = parseSecretPlaceholders(value)
 	if (referencedSecrets.length === 0) return value
 
+	const uniqueSecrets = dedupeReferencedSecrets(referencedSecrets)
 	const replacements = new Map<string, string>()
-	for (const secret of referencedSecrets) {
-		const placeholder = buildSecretPlaceholder(secret)
-		if (replacements.has(placeholder)) continue
-		replacements.set(placeholder, await resolveSecretValue(secret))
-	}
+	await Promise.all(
+		uniqueSecrets.map(async (secret) => {
+			const placeholder = buildSecretPlaceholder(secret)
+			replacements.set(placeholder, await resolveSecretValue(secret))
+		}),
+	)
 	return replaceSecretPlaceholders(value, replacements)
+}
+
+function dedupeReferencedSecrets(referencedSecrets: Array<ReferencedSecret>) {
+	const deduped = new Map<string, ReferencedSecret>()
+	for (const secret of referencedSecrets) {
+		deduped.set(buildSecretPlaceholder(secret), secret)
+	}
+	return Array.from(deduped.values())
 }
 
 export function isSecretInputSchema(schema: unknown): boolean {

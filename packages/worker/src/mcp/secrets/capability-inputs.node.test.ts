@@ -74,3 +74,21 @@ test('resolveCapabilityInputSecrets replaces annotated secret placeholders in ne
 		],
 	})
 })
+
+test('resolveCapabilityInputSecrets resolves duplicate secret references once', async () => {
+	const resolveCalls: Array<string> = []
+	const result = await resolveCapabilityInputSecrets({
+		schema: {
+			type: 'string',
+			[secretInputSchemaFlag]: true,
+		},
+		value: '{{secret:apiKey}} and {{secret:apiKey}} again',
+		resolveSecretValue: async (secret) => {
+			resolveCalls.push(secret.name)
+			return 'secret-val'
+		},
+	})
+
+	expect(result).toBe('secret-val and secret-val again')
+	expect(resolveCalls).toEqual(['apiKey'])
+})

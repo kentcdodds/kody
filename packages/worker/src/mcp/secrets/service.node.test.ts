@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { listSecrets, saveSecret } from './service.ts'
+import { listSecrets, resolveSecret, saveSecret } from './service.ts'
 
 type SecretBucketRow = {
 	id: string
@@ -214,4 +214,61 @@ test('reserved internal skill runner secret names cannot be saved or listed', as
 			scope: 'user',
 		}),
 	).resolves.toEqual([])
+})
+
+test('resolveSecret returns the first scope hit in precedence order', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	}
+	const userId = 'user-123'
+	const secretName = 'shared-secret'
+	const storageContext = {
+		sessionId: 'session-abc',
+		appId: 'app-xyz',
+		storageId: 'app-xyz',
+	}
+
+	await saveSecret({
+		env,
+		userId,
+		scope: 'user',
+		name: secretName,
+		value: 'user-value',
+	})
+	await saveSecret({
+		env,
+		userId,
+		scope: 'app',
+		name: secretName,
+		value: 'app-value',
+		storageContext,
+	})
+	await saveSecret({
+		env,
+		userId,
+		scope: 'session',
+		name: secretName,
+		value: 'session-value',
+		storageContext,
+		sessionExpiresAt: '2099-01-01T00:00:00.000Z',
+	})
+
+	const resolved = await resolveSecret({
+		env,
+		userId,
+		name: secretName,
+		storageContext,
+	})
+
+	expect(resolved).toEqual({
+		found: true,
+		value: 'session-value',
+		scope: 'session',
+		allowedHosts: [],
+		allowedCapabilities: [],
+		allowedPackages: [],
+	})
 })

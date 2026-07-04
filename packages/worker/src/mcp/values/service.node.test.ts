@@ -11,6 +11,7 @@ import { type ValueBucketRow, type ValueEntryRow } from './types.ts'
 function createValueTestDb() {
 	const buckets = new Map<string, ValueBucketRow>()
 	const entries = new Map<string, ValueEntryRow>()
+	let listMetadataQueryCount = 0
 
 	function getBucketKey(userId: string, scope: string, bindingKey: string) {
 		return `${userId}:${scope}:${bindingKey}`
@@ -18,6 +19,54 @@ function createValueTestDb() {
 
 	function getEntryKey(bucketId: string, name: string) {
 		return `${bucketId}:${name}`
+	}
+
+	function getBucketById(bucketId: string) {
+		for (const bucket of buckets.values()) {
+			if (bucket.id === bucketId) return bucket
+		}
+		return null
+	}
+
+	function listMetadataRowsFromBuckets(input: {
+		userId: string
+		bucketIds: Array<string>
+		now: string
+	}) {
+		const bucketOrder = new Map(
+			input.bucketIds.map((bucketId, index) => [bucketId, index]),
+		)
+		const results = Array.from(entries.values())
+			.map((entry) => {
+				const bucket = getBucketById(entry.bucket_id)
+				if (!bucket) return null
+				if (bucket.user_id !== input.userId) return null
+				if (!bucketOrder.has(bucket.id)) return null
+				if (bucket.expires_at != null && bucket.expires_at <= input.now) {
+					return null
+				}
+				return {
+					scope: bucket.scope,
+					binding_key: bucket.binding_key,
+					name: entry.name,
+					description: entry.description,
+					value: entry.value,
+					created_at: entry.created_at,
+					updated_at: entry.updated_at,
+					expires_at: bucket.expires_at,
+					bucketId: bucket.id,
+				}
+			})
+			.filter((row): row is NonNullable<typeof row> => row != null)
+			.sort((left, right) => {
+				const orderDiff =
+					(bucketOrder.get(left.bucketId) ?? 0) -
+					(bucketOrder.get(right.bucketId) ?? 0)
+				if (orderDiff !== 0) return orderDiff
+				return left.name.localeCompare(right.name)
+			})
+			.map(({ bucketId: _bucketId, ...row }) => row)
+		return results
 	}
 
 	const db = {
@@ -55,26 +104,44 @@ function createValueTestDb() {
 						},
 						async all<T>() {
 							if (
+								normalizedQuery.includes('from value_entries e') &&
+								normalizedQuery.includes('inner join value_buckets b')
+							) {
+								listMetadataQueryCount += 1
+								const bucketIdCount = (params.length - 2) / 2
+								const bucketIds = params.slice(
+									1,
+									1 + bucketIdCount,
+								) as Array<string>
+								const now = params[1 + bucketIdCount] as string
+								const results = listMetadataRowsFromBuckets({
+									userId: String(params[0]),
+									bucketIds,
+									now,
+								})
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
 								normalizedQuery.startsWith(
 									'select ? as scope, ? as binding_key',
 								) &&
 								normalizedQuery.includes('from value_entries')
 							) {
+								listMetadataQueryCount += 1
 								const [scope, bindingKey, expiresAt, bucketId] =
 									params as Array<string | null>
-								const results = Array.from(entries.values())
-									.filter((entry) => entry.bucket_id === bucketId)
-									.sort((left, right) => left.name.localeCompare(right.name))
-									.map((entry) => ({
-										scope,
-										binding_key: bindingKey,
-										name: entry.name,
-										description: entry.description,
-										value: entry.value,
-										created_at: entry.created_at,
-										updated_at: entry.updated_at,
-										expires_at: expiresAt,
-									}))
+								const results = listMetadataRowsFromBuckets({
+									userId:
+										getBucketById(String(bucketId))?.user_id ?? 'unknown-user',
+									bucketIds: [String(bucketId)],
+									now:
+										expiresAt == null ? new Date(0).toISOString() : expiresAt,
+								}).map((row) => ({
+									...row,
+									scope,
+									binding_key: bindingKey,
+									expires_at: expiresAt,
+								}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							return { results: [] as Array<T>, meta: { changes: 0 } }
@@ -160,7 +227,14 @@ function createValueTestDb() {
 		},
 	} as unknown as D1Database
 
-	return { db, buckets, entries }
+	return {
+		db,
+		buckets,
+		entries,
+		get listMetadataQueryCount() {
+			return listMetadataQueryCount
+		},
+	}
 }
 
 test('value service respects storage context precedence and deletion', async () => {
@@ -338,4 +412,118 @@ test('deleteAllAppScopedValues removes all app-scoped values for one app', async
 	).resolves.toMatchObject({
 		value: 'app-two',
 	})
+})
+
+test('listValues uses one metadata query across buckets and preserves ordering', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+	const storageContext = {
+		sessionId: 'session-456',
+		appId: 'app-456',
+	}
+
+	await saveValue({
+		env,
+		userId: 'user-456',
+		scope: 'user',
+		name: 'zebra',
+		value: 'user-zebra',
+	})
+	await saveValue({
+		env,
+		userId: 'user-456',
+		scope: 'user',
+		name: 'alpha',
+		value: 'user-alpha',
+	})
+	await saveValue({
+		env,
+		userId: 'user-456',
+		scope: 'app',
+		name: 'beta',
+		value: 'app-beta',
+		storageContext,
+	})
+	await saveValue({
+		env,
+		userId: 'user-456',
+		scope: 'session',
+		name: 'gamma',
+		value: 'session-gamma',
+		storageContext,
+		sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+	})
+
+	const metadataQueriesBefore = testDb.listMetadataQueryCount
+	const listed = await listValues({
+		env,
+		userId: 'user-456',
+		storageContext,
+	})
+
+	expect(testDb.listMetadataQueryCount - metadataQueriesBefore).toBe(1)
+	expect(
+		listed.map((value) => `${value.scope}:${value.name}:${value.value}`),
+	).toEqual([
+		'session:gamma:session-gamma',
+		'app:beta:app-beta',
+		'user:alpha:user-alpha',
+		'user:zebra:user-zebra',
+	])
+})
+
+test('listValues ignores empty buckets and returns no values when none exist', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+	const storageContext = {
+		sessionId: 'session-empty',
+		appId: 'app-empty',
+	}
+
+	await saveValue({
+		env,
+		userId: 'user-empty',
+		scope: 'session',
+		name: 'onlySessionValue',
+		value: 'present',
+		storageContext,
+		sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+	})
+	await saveValue({
+		env,
+		userId: 'user-empty',
+		scope: 'app',
+		name: 'temporary',
+		value: 'gone',
+		storageContext,
+	})
+	await deleteValue({
+		env,
+		userId: 'user-empty',
+		name: 'temporary',
+		scope: 'app',
+		storageContext,
+	})
+
+	expect(
+		await listValues({
+			env,
+			userId: 'user-empty',
+			storageContext,
+		}),
+	).toEqual([
+		expect.objectContaining({
+			scope: 'session',
+			name: 'onlySessionValue',
+			value: 'present',
+		}),
+	])
+
+	expect(
+		await listValues({
+			env,
+			userId: 'user-missing',
+			storageContext,
+		}),
+	).toEqual([])
 })

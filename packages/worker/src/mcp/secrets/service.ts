@@ -185,29 +185,39 @@ export async function resolveSecret(
 	const scopes = input.scope
 		? [input.scope]
 		: resolveStorageScopeOrder(input.storageContext ?? null)
-	for (const scope of scopes) {
-		const bucket = await getExistingBucketForScope({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			scope,
-			storageContext: input.storageContext ?? null,
-		})
-		if (!bucket) continue
-		const entry = await getSecretEntry({
-			db: input.env.APP_DB,
-			bucketId: bucket.id,
-			name: input.name,
-		})
-		if (!entry) continue
-		const decrypted = await decryptSecretValue(input.env, entry.encrypted_value)
-		return {
-			found: true,
-			value: decrypted,
-			scope,
-			allowedHosts: parseAllowedHosts(entry.allowed_hosts),
-			allowedCapabilities: parseAllowedCapabilities(entry.allowed_capabilities),
-			allowedPackages: parseAllowedPackages(entry.allowed_packages),
-		}
+	const scopeResults = await Promise.all(
+		scopes.map(async (scope) => {
+			const bucket = await getExistingBucketForScope({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				scope,
+				storageContext: input.storageContext ?? null,
+			})
+			if (!bucket) return null
+			const entry = await getSecretEntry({
+				db: input.env.APP_DB,
+				bucketId: bucket.id,
+				name: input.name,
+			})
+			if (!entry) return null
+			const decrypted = await decryptSecretValue(
+				input.env,
+				entry.encrypted_value,
+			)
+			return {
+				found: true as const,
+				value: decrypted,
+				scope,
+				allowedHosts: parseAllowedHosts(entry.allowed_hosts),
+				allowedCapabilities: parseAllowedCapabilities(
+					entry.allowed_capabilities,
+				),
+				allowedPackages: parseAllowedPackages(entry.allowed_packages),
+			}
+		}),
+	)
+	for (const result of scopeResults) {
+		if (result) return result
 	}
 	return {
 		found: false,

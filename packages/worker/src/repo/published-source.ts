@@ -89,9 +89,15 @@ export async function loadPublishedEntitySource(input: {
 	env: Env
 	userId: string
 	sourceId: string
+	source?: NonNullable<PublishedEntitySource['source']>
 }): Promise<PublishedEntitySource> {
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const source =
+		input.source ??
+		(await getEntitySourceById(input.env.APP_DB, input.sourceId))
 	if (!source || source.user_id !== input.userId) {
+		throw new Error(`Published source "${input.sourceId}" was not found.`)
+	}
+	if (input.source && input.source.id !== input.sourceId) {
 		throw new Error(`Published source "${input.sourceId}" was not found.`)
 	}
 	assertPublishedCommit(source)
@@ -126,9 +132,15 @@ export async function loadPublishedEntityManifest(input: {
 	env: Env
 	userId: string
 	sourceId: string
+	source?: NonNullable<PublishedEntityManifest['source']>
 }): Promise<PublishedEntityManifest> {
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const source =
+		input.source ??
+		(await getEntitySourceById(input.env.APP_DB, input.sourceId))
 	if (!source || source.user_id !== input.userId) {
+		throw new Error(`Published source "${input.sourceId}" was not found.`)
+	}
+	if (input.source && input.source.id !== input.sourceId) {
 		throw new Error(`Published source "${input.sourceId}" was not found.`)
 	}
 	assertPublishedCommit(source)

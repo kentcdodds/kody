@@ -123,6 +123,20 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 		conversationId: 'conv-123',
 	})
 
+	expect(mockModule.getCapabilityRegistryForContext).toHaveBeenCalledTimes(1)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.anything(),
+		'async () => ({ __mcpContent: [] })',
+		undefined,
+		expect.objectContaining({
+			capabilityRegistry: {
+				capabilityHandlers: {
+					kody_official_guide: true,
+				},
+			},
+		}),
+	)
 	expect(mcpContentResponse.isError).toBe(false)
 	expect(mcpContentResponse.content).toEqual([
 		{

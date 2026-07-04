@@ -1785,3 +1785,59 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		getRegistrySpy.mockRestore()
 	}
 })
+
+test('runBundledModuleWithRegistry uses a prebuilt capability registry without reloading', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const emptyRegistry = {
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {} as Record<string, string>,
+		capabilityHandlers: {},
+		capabilityList: [],
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	let loadCount = 0
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockImplementation(async () => {
+			loadCount += 1
+			return emptyRegistry
+		})
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+
+	try {
+		await runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+			capabilityRegistry: emptyRegistry,
+		})
+		expect(loadCount).toBe(0)
+
+		await runBundledModuleWithRegistry(env, callerContext, bundle)
+		expect(loadCount).toBe(1)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
