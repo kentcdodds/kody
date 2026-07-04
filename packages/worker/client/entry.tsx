@@ -1,9 +1,26 @@
-import { createRoot } from 'remix/ui'
-import { App } from './app.tsx'
+import { run } from 'remix/ui'
+import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
 
-const rootElement = document.getElementById('root') ?? document.body
-if (rootElement.childNodes.length > 0) {
-	// Remix alpha.3 auto-hydrates non-empty containers. We render from scratch.
-	rootElement.replaceChildren()
+const clientRegistry: Record<string, typeof AppRoot> = {
+	AppRoot,
 }
-createRoot(rootElement).render(<App />)
+
+const app = run({
+	loadModule(moduleUrl, exportName) {
+		const expectedHref = APP_ROOT_ENTRY_ID.split('#')[0]
+		if (moduleUrl !== expectedHref) {
+			throw new Error(`Unknown client module URL: ${moduleUrl}`)
+		}
+		const component = clientRegistry[exportName]
+		if (!component) {
+			throw new Error(`Unknown client export: ${exportName}`)
+		}
+		return component
+	},
+})
+
+app.addEventListener('error', (event) => {
+	console.error('Client hydration error:', event.error)
+})
+
+void app.ready()

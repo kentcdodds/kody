@@ -5,6 +5,10 @@ import {
 	getPathname,
 	listenToRouterNavigation,
 } from '#client/client-router.tsx'
+import {
+	readRouterPathname,
+	readRouterSearch,
+} from '#client/router-location.tsx'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -24,12 +28,6 @@ import {
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
 
-function getSearchParams() {
-	return typeof window === 'undefined'
-		? new URLSearchParams()
-		: new URLSearchParams(window.location.search)
-}
-
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
 	if (!value.startsWith('/')) return null
@@ -46,12 +44,16 @@ function getAuthModeFromPathname(pathname: string): AuthMode {
 	return pathname === '/signup' ? 'signup' : 'login'
 }
 
-function getCurrentAuthMode() {
-	return getAuthModeFromPathname(getPathname())
+function getSearchParams(handle: Handle) {
+	return new URLSearchParams(readRouterSearch(handle))
 }
 
-function getCurrentRedirectTo() {
-	return normalizeRedirectTo(getSearchParams().get('redirectTo'))
+function getCurrentAuthMode(handle: Handle) {
+	return getAuthModeFromPathname(readRouterPathname(handle))
+}
+
+function getCurrentRedirectTo(handle: Handle) {
+	return normalizeRedirectTo(getSearchParams(handle).get('redirectTo'))
 }
 
 export function LoginRoute(handle: Handle) {
@@ -59,7 +61,7 @@ export function LoginRoute(handle: Handle) {
 	let message: string | null = null
 	let sessionStatus: SessionStatus = 'idle'
 	let sessionEmail = ''
-	let activeMode = getCurrentAuthMode()
+	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
@@ -75,26 +77,28 @@ export function LoginRoute(handle: Handle) {
 
 	listenToRouterNavigation(handle, () => {
 		if (!routePath) return
-		if (getPathname() !== routePath) {
+		if (getPathname(handle) !== routePath) {
 			resetAuthState()
 		}
 	})
 
-	handle.queueTask(async (signal) => {
-		if (sessionStatus !== 'idle') return
-		sessionStatus = 'loading'
+	if (typeof document !== 'undefined') {
+		handle.queueTask(async (signal) => {
+			if (sessionStatus !== 'idle') return
+			sessionStatus = 'loading'
 
-		const session = await fetchSessionInfo(signal)
-		if (signal.aborted) return
-		sessionEmail = session?.email ?? ''
+			const session = await fetchSessionInfo(signal)
+			if (signal.aborted) return
+			sessionEmail = session?.email ?? ''
 
-		sessionStatus = 'ready'
-		if (sessionEmail && typeof window !== 'undefined') {
-			window.location.assign(getCurrentRedirectTo() ?? '/account')
-			return
-		}
-		handle.update()
-	})
+			sessionStatus = 'ready'
+			if (sessionEmail) {
+				window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
+				return
+			}
+			handle.update()
+		})
+	}
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
@@ -103,7 +107,7 @@ export function LoginRoute(handle: Handle) {
 		const formData = new FormData(event.currentTarget)
 		const email = String(formData.get('email') ?? '').trim()
 		const password = String(formData.get('password') ?? '')
-		const mode = getCurrentAuthMode()
+		const mode = getCurrentAuthMode(handle)
 		const username =
 			mode === 'signup' ? String(formData.get('username') ?? '').trim() : ''
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
@@ -144,7 +148,7 @@ export function LoginRoute(handle: Handle) {
 			}
 
 			if (typeof window !== 'undefined') {
-				window.location.assign(getCurrentRedirectTo() ?? '/account')
+				window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
 			}
 		} catch {
 			setState('error', 'Network error. Please try again.')
@@ -152,15 +156,15 @@ export function LoginRoute(handle: Handle) {
 	}
 
 	return () => {
-		const mode = getCurrentAuthMode()
+		const mode = getCurrentAuthMode(handle)
 		if (!routePath) {
-			routePath = getPathname()
+			routePath = getPathname(handle)
 		}
 		if (mode !== activeMode) {
 			activeMode = mode
 			resetAuthState()
 		}
-		const redirectTo = getCurrentRedirectTo()
+		const redirectTo = getCurrentRedirectTo(handle)
 		const isSignup = mode === 'signup'
 		const isSubmitting = status === 'submitting'
 		const title = isSignup ? 'Create your account' : 'Welcome back'

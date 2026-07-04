@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { Layout } from '#app/layout.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	assignUserRole,
 	removeAdminRolePreservingLastAdmin,
@@ -11,7 +11,6 @@ import {
 	requireUserWithRole,
 } from '#app/permissions-server.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
-import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
 
 export const adminUserListItemFieldNames = [
@@ -73,16 +72,16 @@ export function createAdminUsersHandler(env: Env) {
 				throw error
 			}
 
-			const { session, setCookie } = await readAuthSessionResult(request)
+			const { session } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
 			}
 
-			const response = render(Layout({ title: 'Admin users' }))
-			if (setCookie) {
-				response.headers.set('Set-Cookie', setCookie)
-			}
-			return response
+			return renderAppPage({
+				request,
+				env,
+				title: 'Admin users',
+			})
 		},
 	} satisfies Action<typeof routes.adminUsers>
 }

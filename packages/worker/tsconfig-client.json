@@ -10,14 +10,16 @@
 		"jsxImportSource": "remix/ui",
 		"baseUrl": ".",
 		"paths": {
-			"#app/*": ["./src/app/*"]
+			"#app/*": ["./src/app/*"],
+			"#client/*": ["./client/*"]
 		}
 	},
 	"include": [
 		"./client/**/*.ts",
 		"./client/**/*.tsx",
 		"./client/**/*.d.ts",
-		"./src/app/permissions.ts"
+		"./src/app/permissions.ts",
+		"./client/loader-data-types.ts"
 	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
 }

@@ -2,9 +2,8 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { Layout } from '#app/layout.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { requireUserWithRole } from '#app/permissions-server.ts'
-import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
@@ -57,16 +56,16 @@ export function createAdminCommunityReportsHandler(env: Env) {
 				throw error
 			}
 
-			const { session, setCookie } = await readAuthSessionResult(request)
+			const { session } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
 			}
 
-			const response = render(Layout({ title: 'Community reports' }))
-			if (setCookie) {
-				response.headers.set('Set-Cookie', setCookie)
-			}
-			return response
+			return renderAppPage({
+				request,
+				env,
+				title: 'Community reports',
+			})
 		},
 	} satisfies Action<typeof routes.adminCommunityReports>
 }

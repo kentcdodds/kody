@@ -3,6 +3,6 @@
 	"references": [
 		{ "path": "./tsconfig-tools.json" },
 		{ "path": "./packages/worker/tsconfig-client.json" },
-		{ "path": "./packages/worker/tsconfig-worker.json" }
+		{ "path": "./packages/worker/tsconfig-worker-typecheck.json" }
 	]
 }

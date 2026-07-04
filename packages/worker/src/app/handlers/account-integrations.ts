@@ -2,8 +2,7 @@ import { type Action } from 'remix/router'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { Layout } from '#app/layout.ts'
-import { render } from '#app/render.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
 	type IntegrationConfig,
@@ -30,20 +29,20 @@ type AccountIntegrationsPayload = {
 	integrations: Array<AccountIntegrationListItem>
 }
 
-export function createAccountIntegrationsHandler(_env: Env) {
+export function createAccountIntegrationsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session, setCookie } = await readAuthSessionResult(request)
+			const { session } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
 			}
 
-			const response = render(Layout({ title: 'Integrations' }))
-			if (setCookie) {
-				response.headers.set('Set-Cookie', setCookie)
-			}
-			return response
+			return renderAppPage({
+				request,
+				env,
+				title: 'Integrations',
+			})
 		},
 	} satisfies Action<typeof routes.accountIntegrations>
 }

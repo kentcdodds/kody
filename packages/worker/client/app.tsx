@@ -1,32 +1,37 @@
 import { type Handle, css } from 'remix/ui'
 import { clientRoutes } from './routes/index.tsx'
-import {
-	getPathname,
-	listenToRouterNavigation,
-	Router,
-} from './client-router.tsx'
+import { listenToRouterNavigation, Router } from './client-router.tsx'
+import { AppLoaderDataProvider } from './loader-data-context.tsx'
+import { readRouterPathname, readRouterSearch } from './router-location.tsx'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
+import { type AppLoaderData } from '#client/loader-data-types.ts'
 import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from './styles/tokens.ts'
 
-export function App(handle: Handle) {
-	let session: SessionInfo | null = null
-	let sessionStatus: SessionStatus = 'idle'
+type AppProps = {
+	embeddedSession?: SessionInfo | null
+	loaderData?: AppLoaderData
+	notFound?: boolean
+}
+
+export function App(handle: Handle<AppProps>) {
+	let session: SessionInfo | null = handle.props.embeddedSession ?? null
+	let sessionStatus: SessionStatus =
+		handle.props.embeddedSession !== undefined ? 'ready' : 'idle'
 	let sessionRefreshInFlight = false
 	let sessionRefreshQueued = false
-	let currentPathname = getPathname()
+	let currentPathname = readRouterPathname(handle)
 
 	function queueSessionRefresh() {
 		sessionRefreshQueued = true
 		if (sessionRefreshInFlight) return
 
-		// Preserve current nav state during refreshes after first load.
 		if (sessionStatus === 'idle') {
 			sessionStatus = 'loading'
 			handle.update()
@@ -50,14 +55,19 @@ export function App(handle: Handle) {
 		}
 	}
 
-	handle.queueTask(() => {
-		queueSessionRefresh()
-	})
-	listenToRouterNavigation(handle, () => {
-		currentPathname = getPathname()
-		queueSessionRefresh()
-		handle.update()
-	})
+	if (handle.props.embeddedSession === undefined) {
+		handle.queueTask(() => {
+			queueSessionRefresh()
+		})
+	}
+
+	if (typeof document !== 'undefined') {
+		listenToRouterNavigation(handle, () => {
+			currentPathname = readRouterPathname(handle)
+			queueSessionRefresh()
+			handle.update()
+		})
+	}
 
 	const navLinkCss = {
 		color: colors.primaryText,
@@ -90,6 +100,7 @@ export function App(handle: Handle) {
 	}
 
 	return () => {
+		currentPathname = readRouterPathname(handle)
 		const isWideLayout =
 			currentPathname.startsWith('/account/integrations') ||
 			currentPathname.startsWith('/account/package-invocation-tokens') ||
@@ -105,139 +116,143 @@ export function App(handle: Handle) {
 		const showAdminLink =
 			isLoggedIn && session != null && userHasRole(session, 'admin')
 		const oauthRedirectTo =
-			typeof window !== 'undefined' && currentPathname === '/oauth/authorize'
-				? `${currentPathname}${window.location.search}`
+			currentPathname === '/oauth/authorize'
+				? `${currentPathname}${readRouterSearch(handle)}`
 				: null
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
 		const signupHref = buildAuthLink('/signup', oauthRedirectTo)
 
 		return (
-			<main
-				mix={css({
-					maxWidth: isWideLayout ? 'none' : '52rem',
-					width: '100%',
-					margin: isWideLayout ? 0 : '0 auto',
-					padding: isWideLayout
-						? `${spacing.lg} ${spacing.xl} ${spacing.sm}`
-						: spacing['2xl'],
-					minHeight: isWideLayout ? '100vh' : undefined,
-					fontFamily: typography.fontFamily,
-					boxSizing: 'border-box',
-					[mq.tablet]: isWideLayout
-						? {
-								padding: `${spacing.sm} ${spacing.sm} 0`,
-							}
-						: {
-								padding: spacing.xl,
-							},
-					[mq.mobile]: isWideLayout
-						? {
-								padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-							}
-						: {
-								padding: spacing.md,
-							},
-				})}
-			>
-				<nav
+			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
+				<main
 					mix={css({
-						display: 'flex',
-						alignItems: 'center',
-						gap: spacing.md,
-						flexWrap: 'wrap',
-						marginBottom: isWideLayout ? spacing.lg : spacing.xl,
+						maxWidth: isWideLayout ? 'none' : '52rem',
+						width: '100%',
+						margin: isWideLayout ? 0 : '0 auto',
+						padding: isWideLayout
+							? `${spacing.lg} ${spacing.xl} ${spacing.sm}`
+							: spacing['2xl'],
+						minHeight: isWideLayout ? '100vh' : undefined,
+						fontFamily: typography.fontFamily,
+						boxSizing: 'border-box',
 						[mq.tablet]: isWideLayout
 							? {
-									gap: spacing.sm,
-									marginBottom: spacing.sm,
+									padding: `${spacing.sm} ${spacing.sm} 0`,
 								}
-							: {},
-						[mq.mobile]: {
-							gap: spacing.sm,
-							marginBottom: isWideLayout ? spacing.md : spacing.lg,
-						},
+							: {
+									padding: spacing.xl,
+								},
+						[mq.mobile]: isWideLayout
+							? {
+									padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+								}
+							: {
+									padding: spacing.md,
+								},
 					})}
 				>
-					<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
-						<img
-							src="/logo.png"
-							alt=""
-							width={112}
-							height={28}
-							mix={css({
-								display: 'block',
-								height: '1.35em',
-								width: 'auto',
-							})}
-						/>
-					</a>
-					<a href="/community" mix={css(navLinkCss)}>
-						Community
-					</a>
-					{showAuthLinks ? (
-						<>
-							<a href={loginHref} mix={css(navLinkCss)}>
-								Login
-							</a>
-							<a href={signupHref} mix={css(navLinkCss)}>
-								Signup
-							</a>
-						</>
-					) : null}
-					{isLoggedIn ? (
-						<>
-							<a href="/account" mix={css(navLinkCss)}>
-								{sessionDisplayName}
-							</a>
-							<a href="/account/secrets" mix={css(navLinkCss)}>
-								Secrets
-							</a>
-							<a href="/account/integrations" mix={css(navLinkCss)}>
-								Integrations
-							</a>
-							<a
-								href="/account/package-invocation-tokens"
-								mix={css(navLinkCss)}
-							>
-								Package tokens
-							</a>
-							<a href="/account/remote-connectors" mix={css(navLinkCss)}>
-								Connectors
-							</a>
-							{showAdminLink ? (
-								<a href="/admin/users" mix={css(navLinkCss)}>
-									Admin
-								</a>
-							) : null}
-							<form method="post" action="/logout" mix={css({ margin: 0 })}>
-								<button type="submit" mix={css(logOutButtonCss)}>
-									Log out
-								</button>
-							</form>
-						</>
-					) : null}
-				</nav>
-				<Router
-					routes={clientRoutes}
-					fallback={
-						<section>
-							<h2
+					<nav
+						mix={css({
+							display: 'flex',
+							alignItems: 'center',
+							gap: spacing.md,
+							flexWrap: 'wrap',
+							marginBottom: isWideLayout ? spacing.lg : spacing.xl,
+							[mq.tablet]: isWideLayout
+								? {
+										gap: spacing.sm,
+										marginBottom: spacing.sm,
+									}
+								: {},
+							[mq.mobile]: {
+								gap: spacing.sm,
+								marginBottom: isWideLayout ? spacing.md : spacing.lg,
+							},
+						})}
+					>
+						<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
+							<img
+								src="/logo.png"
+								alt=""
+								width={112}
+								height={28}
 								mix={css({
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-									marginBottom: spacing.sm,
-									color: colors.text,
+									display: 'block',
+									height: '1.35em',
+									width: 'auto',
 								})}
-							>
-								Not Found
-							</h2>
-							<p mix={css({ color: colors.textMuted })}>
-								We could not find that page.
-							</p>
-						</section>
-					}
-				/>
-			</main>
+							/>
+						</a>
+						<a href="/community" mix={css(navLinkCss)}>
+							Community
+						</a>
+						{showAuthLinks ? (
+							<>
+								<a href={loginHref} mix={css(navLinkCss)}>
+									Login
+								</a>
+								<a href={signupHref} mix={css(navLinkCss)}>
+									Signup
+								</a>
+							</>
+						) : null}
+						{isLoggedIn ? (
+							<>
+								<a href="/account" mix={css(navLinkCss)}>
+									{sessionDisplayName}
+								</a>
+								<a href="/account/secrets" mix={css(navLinkCss)}>
+									Secrets
+								</a>
+								<a href="/account/integrations" mix={css(navLinkCss)}>
+									Integrations
+								</a>
+								<a
+									href="/account/package-invocation-tokens"
+									mix={css(navLinkCss)}
+								>
+									Package tokens
+								</a>
+								<a href="/account/remote-connectors" mix={css(navLinkCss)}>
+									Connectors
+								</a>
+								{showAdminLink ? (
+									<a href="/admin/users" mix={css(navLinkCss)}>
+										Admin
+									</a>
+								) : null}
+								<form method="post" action="/logout" mix={css({ margin: 0 })}>
+									<button type="submit" mix={css(logOutButtonCss)}>
+										Log out
+									</button>
+								</form>
+							</>
+						) : null}
+					</nav>
+					<Router
+						routes={clientRoutes}
+						loaderData={handle.props.loaderData}
+						notFound={handle.props.notFound}
+						fallback={
+							<section>
+								<h2
+									mix={css({
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										marginBottom: spacing.sm,
+										color: colors.text,
+									})}
+								>
+									Not Found
+								</h2>
+								<p mix={css({ color: colors.textMuted })}>
+									We could not find that page.
+								</p>
+							</section>
+						}
+					/>
+				</main>
+			</AppLoaderDataProvider>
 		)
 	}
 }

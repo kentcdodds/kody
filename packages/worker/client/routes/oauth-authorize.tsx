@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -36,10 +37,8 @@ type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
 
-function getSearchParams() {
-	return typeof window === 'undefined'
-		? new URLSearchParams()
-		: new URLSearchParams(window.location.search)
+function getSearchParams(handle: Handle) {
+	return new URLSearchParams(readRouterSearch(handle))
 }
 
 export function OAuthAuthorizeRoute(handle: Handle) {
@@ -60,7 +59,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	function readQueryError() {
-		const params = getSearchParams()
+		const params = getSearchParams(handle)
 		const description = params.get('error_description')
 		if (description) return description
 		const error = params.get('error')
@@ -69,7 +68,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 
 	async function loadInfo(requestId: number) {
 		try {
-			const query = typeof window === 'undefined' ? '' : window.location.search
+			const query = readRouterSearch(handle)
 			const response = await fetch(`/oauth/authorize-info${query}`, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -199,8 +198,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	return () => {
-		const currentSearch =
-			typeof window === 'undefined' ? '' : window.location.search
+		const currentSearch = readRouterSearch(handle)
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
 			resetCompleted = false
@@ -210,10 +208,13 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			const queryError = readQueryError()
 			message = queryError ? { type: 'error', text: queryError } : null
 			activeInfoRequestId += 1
-			void loadInfo(activeInfoRequestId)
+			const requestId = activeInfoRequestId
+			if (typeof document !== 'undefined') {
+				handle.queueTask(() => loadInfo(requestId))
+			}
 		}
-		if (sessionStatus === 'idle') {
-			void loadSession()
+		if (sessionStatus === 'idle' && typeof document !== 'undefined') {
+			handle.queueTask(() => loadSession())
 		}
 
 		const clientLabel = info?.client?.name ?? 'Unknown client'

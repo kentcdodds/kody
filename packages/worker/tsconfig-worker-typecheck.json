@@ -1,0 +1,25 @@
+{
+	"extends": "./tsconfig-worker.json",
+	"compilerOptions": {
+		"paths": {
+			"#client/app-root.tsx": ["./src/app/ssr-stubs/app-root.ts"],
+			"@modelcontextprotocol/sdk": [
+				"../../node_modules/@modelcontextprotocol/sdk"
+			],
+			"@modelcontextprotocol/sdk/*": [
+				"../../node_modules/@modelcontextprotocol/sdk/*"
+			]
+		}
+	},
+	"exclude": [
+		"**/*.test.ts",
+		"**/*.spec.ts",
+		"./src/test-support/**/*.ts",
+		"./src/mcp/test-process.ts",
+		"./src/community/og-image-assets.node.ts",
+		"../**/*.test.ts",
+		"../**/*.spec.ts",
+		"../../**/*.test.ts",
+		"../../**/*.spec.ts"
+	]
+}

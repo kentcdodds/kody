@@ -12,7 +12,7 @@ import {
 	createAdminRolesApiHandler,
 	createAdminRolesHandler,
 } from '#app/handlers/admin-roles.ts'
-import { account } from '#app/handlers/account.ts'
+import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import {
 	createAccountIntegrationsApiHandler,
@@ -36,137 +36,99 @@ import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
 import {
 	createCommunityApiHandler,
 	createCommunityHandler,
-} from '#app/handlers/community.ts'
+} from '#app/handlers/community.tsx'
 import {
 	createCommunityDetailApiHandler,
 	createCommunityDetailHandler,
 	createCommunityDetailOgImageHandler,
 	createCommunityReportApiPostHandler,
-} from '#app/handlers/community-detail.ts'
+} from '#app/handlers/community-detail.tsx'
 import { createHealthHandler } from '#app/handlers/health.ts'
-import { home } from '#app/handlers/home.ts'
-import { login } from '#app/handlers/login.ts'
-import { privacy } from '#app/handlers/privacy.ts'
+import { createHomeHandler } from '#app/handlers/home.ts'
+import { createLoginHandler } from '#app/handlers/login.ts'
+import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { logout } from '#app/handlers/logout.ts'
 import {
 	createPasswordResetConfirmHandler,
 	createPasswordResetRequestHandler,
 } from '#app/handlers/password-reset.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
-import { signup } from '#app/handlers/signup.ts'
-import { Layout } from '#app/layout.ts'
-import { render } from '#app/render.ts'
+import { createSignupHandler } from '#app/handlers/signup.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#app/routes.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 export function createAppRouter(appEnv: AppEnv) {
+	const env = appEnv as unknown as Env
+
 	const router = createRouter({
 		middleware: [],
-		async defaultHandler() {
-			return render(Layout({}), { status: 404 })
+		async defaultHandler({ request }) {
+			return renderAppPage({
+				request,
+				env,
+				title: 'Not found',
+				notFound: true,
+				status: 404,
+			})
 		},
 	})
 
 	router.map(routes, {
 		actions: {
-			home,
+			home: createHomeHandler(env),
 			health: createHealthHandler(appEnv),
-			login,
-			privacy,
-			signup,
-			account,
-			accountDelete: createAccountDeleteHandler(appEnv as unknown as Env),
-			accountIntegrations: createAccountIntegrationsHandler(
-				appEnv as unknown as Env,
-			),
-			accountIntegrationsApi: createAccountIntegrationsApiHandler(
-				appEnv as unknown as Env,
-			),
+			login: createLoginHandler(env),
+			privacy: createPrivacyHandler(env),
+			signup: createSignupHandler(env),
+			account: createAccountHandler(env),
+			accountDelete: createAccountDeleteHandler(env),
+			accountIntegrations: createAccountIntegrationsHandler(env),
+			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
 			accountPackageInvocationTokens:
-				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
+				createAccountPackageInvocationTokensHandler(env),
 			accountPackageInvocationTokenNew:
-				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
+				createAccountPackageInvocationTokensHandler(env),
 			accountPackageInvocationTokenDetail:
-				createAccountPackageInvocationTokensHandler(appEnv as unknown as Env),
+				createAccountPackageInvocationTokensHandler(env),
 			accountPackageInvocationTokensApi:
-				createAccountPackageInvocationTokensApiHandler(
-					appEnv as unknown as Env,
-				),
+				createAccountPackageInvocationTokensApiHandler(env),
 			accountPackageInvocationTokensApiPost:
-				createAccountPackageInvocationTokensApiHandler(
-					appEnv as unknown as Env,
-				),
-			accountProfileApi: createAccountProfileApiHandler(
-				appEnv as unknown as Env,
-			),
-			accountProfileApiPost: createAccountProfileApiHandler(
-				appEnv as unknown as Env,
-			),
-			accountRemoteConnectors: createAccountRemoteConnectorsHandler(
-				appEnv as unknown as Env,
-			),
-			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(
-				appEnv as unknown as Env,
-			),
-			accountRemoteConnectorsApiPost: createAccountRemoteConnectorsApiHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecrets: createAccountSecretsHandler(appEnv as unknown as Env),
-			accountSecretNew: createAccountSecretsHandler(appEnv as unknown as Env),
-			accountSecretsApprove: createAccountSecretsHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretDetail: createAccountSecretsHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretUserDetail: createAccountSecretsHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretAppDetail: createAccountSecretsHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretSessionDetail: createAccountSecretsHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretPackageDetail: createAccountSecretsHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretsApi: createAccountSecretsApiHandler(
-				appEnv as unknown as Env,
-			),
-			accountSecretsApiPost: createAccountSecretsApiHandler(
-				appEnv as unknown as Env,
-			),
-			admin: createAdminHandler(appEnv as unknown as Env),
-			adminUsers: createAdminUsersHandler(appEnv as unknown as Env),
-			adminUsersApi: createAdminUsersApiHandler(appEnv as unknown as Env),
-			adminUsersApiPost: createAdminUsersApiHandler(appEnv as unknown as Env),
-			adminRoles: createAdminRolesHandler(appEnv as unknown as Env),
-			adminRolesApi: createAdminRolesApiHandler(appEnv as unknown as Env),
-			adminCommunityReports: createAdminCommunityReportsHandler(
-				appEnv as unknown as Env,
-			),
-			adminCommunityReportsApi: createAdminCommunityReportsApiHandler(
-				appEnv as unknown as Env,
-			),
-			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(
-				appEnv as unknown as Env,
-			),
-			community: createCommunityHandler(appEnv as unknown as Env),
-			communityApi: createCommunityApiHandler(appEnv as unknown as Env),
-			communityDetail: createCommunityDetailHandler(appEnv as unknown as Env),
-			communityDetailApi: createCommunityDetailApiHandler(
-				appEnv as unknown as Env,
-			),
-			communityDetailOgImage: createCommunityDetailOgImageHandler(
-				appEnv as unknown as Env,
-			),
-			communityReportApiPost: createCommunityReportApiPostHandler(
-				appEnv as unknown as Env,
-			),
-			connectOauth: createConnectOauthHandler(appEnv as unknown as Env),
+				createAccountPackageInvocationTokensApiHandler(env),
+			accountProfileApi: createAccountProfileApiHandler(env),
+			accountProfileApiPost: createAccountProfileApiHandler(env),
+			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),
+			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(env),
+			accountRemoteConnectorsApiPost:
+				createAccountRemoteConnectorsApiHandler(env),
+			accountSecrets: createAccountSecretsHandler(env),
+			accountSecretNew: createAccountSecretsHandler(env),
+			accountSecretsApprove: createAccountSecretsHandler(env),
+			accountSecretDetail: createAccountSecretsHandler(env),
+			accountSecretUserDetail: createAccountSecretsHandler(env),
+			accountSecretAppDetail: createAccountSecretsHandler(env),
+			accountSecretSessionDetail: createAccountSecretsHandler(env),
+			accountSecretPackageDetail: createAccountSecretsHandler(env),
+			accountSecretsApi: createAccountSecretsApiHandler(env),
+			accountSecretsApiPost: createAccountSecretsApiHandler(env),
+			admin: createAdminHandler(env),
+			adminUsers: createAdminUsersHandler(env),
+			adminUsersApi: createAdminUsersApiHandler(env),
+			adminUsersApiPost: createAdminUsersApiHandler(env),
+			adminRoles: createAdminRolesHandler(env),
+			adminRolesApi: createAdminRolesApiHandler(env),
+			adminCommunityReports: createAdminCommunityReportsHandler(env),
+			adminCommunityReportsApi: createAdminCommunityReportsApiHandler(env),
+			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(env),
+			community: createCommunityHandler(env),
+			communityApi: createCommunityApiHandler(env),
+			communityDetail: createCommunityDetailHandler(env),
+			communityDetailApi: createCommunityDetailApiHandler(env),
+			communityDetailOgImage: createCommunityDetailOgImageHandler(env),
+			communityReportApiPost: createCommunityReportApiPostHandler(env),
+			connectOauth: createConnectOauthHandler(env),
 			auth: createAuthHandler(appEnv),
-			session: createSessionHandler(appEnv as unknown as Env),
+			session: createSessionHandler(env),
 			logout,
 			passwordResetRequest: createPasswordResetRequestHandler(appEnv),
 			passwordResetConfirm: createPasswordResetConfirmHandler(appEnv),

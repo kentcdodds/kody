@@ -1,7 +1,12 @@
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { writeClipboardText } from '#client/clipboard.ts'
-import { listenToRouterNavigation } from '#client/client-router.tsx'
+import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
@@ -35,16 +40,12 @@ type PageStatus = 'loading' | 'ready' | 'error'
 const communityDetailPathPattern = '/community/:listingId'
 const communityApiSuffix = '.json'
 
-function getCurrentHref() {
-	return typeof window === 'undefined' ? '/community' : window.location.href
-}
-
-function getCurrentListingId() {
-	const url = new URL(getCurrentHref(), 'http://localhost')
+function getCurrentListingId(handle: Handle) {
+	const pathname = readRouterPathname(handle)
 	const prefix = '/community/'
-	if (!url.pathname.startsWith(prefix)) return null
+	if (!pathname.startsWith(prefix)) return null
 	const listingId = decodeURIComponent(
-		url.pathname.slice(prefix.length).replace(/\/$/, ''),
+		pathname.slice(prefix.length).replace(/\/$/, ''),
 	)
 	return listingId || null
 }
@@ -93,7 +94,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let lastLoadedListingId: string | null = null
 
 	async function loadCommunityDetail() {
-		const listingId = getCurrentListingId()
+		const listingId = getCurrentListingId(handle)
 		if (!listingId) {
 			status = 'error'
 			message = 'Community package not found.'
@@ -138,7 +139,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 
 	async function submitReport() {
-		const listingId = getCurrentListingId()
+		const listingId = getCurrentListingId(handle)
 		if (!listingId || reportState === 'submitting') return
 
 		reportState = 'submitting'
@@ -193,23 +194,44 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 
 	listenToRouterNavigation(handle, () => {
-		const listingId = getCurrentListingId()
+		const listingId = getCurrentListingId(handle)
 		if (listingId !== lastLoadedListingId) {
 			status = 'loading'
 			handle.update()
 		}
 	})
 
+	function applyEmbeddedLoaderData(listingId: string | null) {
+		const embedded = readAppLoaderData(handle)?.communityDetail
+		if (!embedded || !listingId || embedded.listing.id !== listingId) {
+			return false
+		}
+		listing = embedded.listing
+		loggedIn = embedded.loggedIn
+		forkPrompt = embedded.forkPrompt
+		status = 'ready'
+		message = null
+		reportState = 'idle'
+		reportMessage = null
+		lastLoadedListingId = listingId
+		return true
+	}
+
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
 
 	return () => {
-		const listingId = getCurrentListingId()
+		const listingId = getCurrentListingId(handle)
 		if (
 			status === 'loading' ||
 			(listingId && listingId !== lastLoadedListingId)
 		) {
-			handle.queueTask(loadCommunityDetail)
+			if (
+				!applyEmbeddedLoaderData(listingId) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadCommunityDetail)
+			}
 		}
 
 		if (status === 'loading') {

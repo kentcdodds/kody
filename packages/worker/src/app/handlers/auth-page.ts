@@ -1,6 +1,5 @@
 import { readAuthSessionResult } from '#app/auth-session.ts'
-import { Layout } from '#app/layout.ts'
-import { render } from '#app/render.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
@@ -9,7 +8,7 @@ function normalizeRedirectTo(value: string | null) {
 	return value
 }
 
-export function createAuthPageHandler() {
+export function createAuthPageHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }: { request: Request }) {
@@ -34,7 +33,7 @@ export function createAuthPageHandler() {
 				return Response.redirect(redirectUrl, 302)
 			}
 
-			return render(Layout({}))
+			return renderAppPage({ request, env })
 		},
 	}
 }

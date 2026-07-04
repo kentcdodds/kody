@@ -1,9 +1,13 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
+import { type AppLoaderData } from '#client/loader-data-types.ts'
+import { readRouterPathname, readRouterUrl } from './router-location.tsx'
 
 type RouterSetup = {
 	routes: Record<string, JSX.Element>
 	fallback?: JSX.Element
+	loaderData?: AppLoaderData
+	notFound?: boolean
 }
 
 type FormMethod = 'get' | 'post'
@@ -135,7 +139,6 @@ function resolveFormSubmitDetails(
 		form.getAttribute('enctype') ??
 		'application/x-www-form-urlencoded'
 	)
-
 		.trim()
 		.toLowerCase()
 
@@ -251,6 +254,7 @@ function handleDocumentSubmit(event: Event) {
 }
 
 function ensureRouter() {
+	if (typeof document === 'undefined') return
 	if (routerInitialized) return
 	routerInitialized = true
 	window.addEventListener('popstate', notify)
@@ -262,13 +266,21 @@ export function listenToRouterNavigation(
 	handle: Pick<Handle, 'signal' | 'update'>,
 	listener: () => void,
 ) {
+	if (typeof document === 'undefined') return
 	ensureRouter()
 	addEventListeners(routerEvents, handle.signal, {
 		navigate: () => listener(),
 	})
 }
 
-export function getPathname() {
+export function getPathname(handle?: Pick<Handle, 'context'>) {
+	if (handle) {
+		try {
+			return readRouterPathname(handle as Handle)
+		} catch {
+			// Router location context is unavailable outside the app tree.
+		}
+	}
 	if (typeof window === 'undefined') return '/'
 	return window.location.pathname
 }
@@ -293,17 +305,29 @@ export function navigate(to: string) {
 	notify()
 }
 
-type RouterHandle = Pick<Handle, 'signal' | 'update'> & { props: RouterSetup }
+type RouterHandle = Pick<Handle, 'signal' | 'update' | 'context'> & {
+	props: RouterSetup
+}
 
 export function Router(handle: RouterHandle) {
-	listenToRouterNavigation(handle, () => {
-		void handle.update()
-	})
+	if (typeof document !== 'undefined') {
+		listenToRouterNavigation(handle, () => {
+			void handle.update()
+		})
+	}
 
 	return () => {
-		const path = getPathname()
+		if (handle.props.notFound) {
+			return handle.props.fallback ?? null
+		}
+
+		const path = readRouterPathname(handle)
 		const routeElement = matchRoute(path, handle.props.routes)
 		if (routeElement) return routeElement
 		return handle.props.fallback ?? null
 	}
+}
+
+export function readCurrentRouterHref(handle: Handle) {
+	return readRouterUrl(handle)
 }

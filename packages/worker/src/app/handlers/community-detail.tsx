@@ -1,22 +1,23 @@
+/** @jsxImportSource remix/ui */
+/** @jsxRuntime automatic */
+import { type RemixNode } from 'remix/ui'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
-	buildCommunityDetailOgHead,
 	buildForkPrompt,
 	toPublicCommunityListing,
 	truncateCommunityText,
 } from '#app/community-public.ts'
-import { Layout } from '#app/layout.ts'
-import { render } from '#app/render.ts'
+import { loadCommunityDetailData } from '#app/community-data.ts'
+import { CommunityDetailOgHead } from '#app/ssr-document.tsx'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { renderCommunityOgImage } from '#worker/community/og-image.ts'
-import {
-	getCommunityListingWithAggregates,
-	reportCommunityListing,
-} from '#worker/community/service.ts'
+import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
+import { reportCommunityListing } from '#worker/community/service.ts'
 
 const reportReasonSchema = z
 	.string()
@@ -29,13 +30,13 @@ export function createCommunityDetailHandler(env: Env) {
 		middleware: [],
 		async handler({ request, params }) {
 			const listingId = params.listingId
-			const listing = await getCommunityListingWithAggregates({
-				env,
-				listingId,
-				includeDelisted: false,
-			})
-			if (!listing) {
-				return render(Layout({ title: 'Community package not found' }), {
+			const detail = await loadCommunityDetailData(env, request, listingId)
+			if (!detail) {
+				return renderAppPage({
+					request,
+					env,
+					title: 'Community package not found',
+					notFound: true,
 					status: 404,
 				})
 			}
@@ -43,20 +44,26 @@ export function createCommunityDetailHandler(env: Env) {
 			const origin = getAppBaseUrl({ env, requestUrl: request.url })
 			const canonicalUrl = `${origin}/community/${listingId}`
 			const ogImageUrl = `${canonicalUrl}/og.png`
-			const pageTitle = `${listing.name} — Kody community package`
-			const ogDescription = truncateCommunityText(listing.description, 200)
-
-			return render(
-				Layout({
-					title: pageTitle,
-					head: buildCommunityDetailOgHead({
-						title: pageTitle,
-						description: ogDescription,
-						canonicalUrl,
-						ogImageUrl,
-					}),
-				}),
+			const pageTitle = `${detail.listing.name} — Kody community package`
+			const ogDescription = truncateCommunityText(
+				detail.listing.description,
+				200,
 			)
+
+			return renderAppPage({
+				request,
+				env,
+				title: pageTitle,
+				extraHead: (
+					<CommunityDetailOgHead
+						title={pageTitle}
+						description={ogDescription}
+						canonicalUrl={canonicalUrl}
+						ogImageUrl={ogImageUrl}
+					/>
+				) as RemixNode,
+				loaderData: { communityDetail: detail },
+			})
 		},
 	} satisfies Action<typeof routes.communityDetail>
 }

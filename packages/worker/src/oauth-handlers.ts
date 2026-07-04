@@ -10,9 +10,8 @@ import {
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
-import { Layout } from '#app/layout.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { render } from '#app/render.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -57,8 +56,8 @@ type OAuthClientResetVerification = {
 	reason: 'invalid-client-id-mismatch'
 }
 
-function renderSpaShell(status = 200) {
-	return render(Layout({}), { status })
+function renderSpaShell(request: Request, env: Env, status = 200) {
+	return renderAppPage({ request, env, status })
 }
 
 const dummyPasswordHash =
@@ -576,7 +575,7 @@ export async function handleAuthorizeRequest(
 	env: Env,
 ): Promise<Response> {
 	if (request.method === 'GET') {
-		return renderSpaShell()
+		return renderSpaShell(request, env)
 	}
 
 	if (request.method !== 'POST') {
@@ -781,11 +780,14 @@ export async function handleAuthorizeRequest(
 	return respondAuthorizeError(request, resolvedScopes.error)
 }
 
-export function handleOAuthCallback(request: Request): Response {
+export function handleOAuthCallback(
+	request: Request,
+	env: Env,
+): Promise<Response> {
 	const url = new URL(request.url)
 	const hasError =
 		url.searchParams.has('error') || url.searchParams.has('error_description')
-	return renderSpaShell(hasError ? 400 : 200)
+	return renderSpaShell(request, env, hasError ? 400 : 200)
 }
 
 export const apiHandler = {

@@ -60,7 +60,7 @@
 		"typecheck": {
 			"executor": "nx:run-commands",
 			"options": {
-				"command": "tsc -b --noEmit"
+				"command": "tsc -b packages/worker/tsconfig-client.json packages/worker/tsconfig-worker-typecheck.json --noEmit"
 			}
 		},
 		"test": {

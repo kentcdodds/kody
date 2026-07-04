@@ -56,12 +56,8 @@ vi.mock('#app/auth-redirect.ts', () => ({
 	redirectToLogin: () => new Response(null, { status: 302 }),
 }))
 
-vi.mock('#app/layout.ts', () => ({
-	Layout: () => null,
-}))
-
-vi.mock('#app/render.ts', () => ({
-	render: () => new Response('ok'),
+vi.mock('#app/ssr-render.tsx', () => ({
+	renderAppPage: async () => new Response('ok'),
 }))
 
 vi.mock('#worker/remote-connector/settings-service.ts', () => ({

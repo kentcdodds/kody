@@ -1,5 +1,9 @@
 import { type Handle, css } from 'remix/ui'
-import { listenToRouterNavigation } from '#client/client-router.tsx'
+import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	colors,
@@ -33,8 +37,9 @@ type PageStatus = 'loading' | 'ready' | 'error'
 
 const communityApiPath = '/community.json'
 
-function getCurrentHref() {
-	return typeof window === 'undefined' ? '/community' : window.location.href
+function isCommunityIndexPath(href: string) {
+	const path = new URL(href, 'http://localhost').pathname
+	return path === '/community'
 }
 
 function formatStars(averageStars: number | null, ratingCount: number) {
@@ -56,7 +61,7 @@ export function CommunityRoute(handle: Handle) {
 	let lastLoadedHref = ''
 
 	async function loadCommunityListings() {
-		const href = getCurrentHref()
+		const href = readCurrentRouterHref(handle)
 		const requestId = ++loadRequestId
 		try {
 			const url = new URL(href, 'http://localhost')
@@ -89,18 +94,34 @@ export function CommunityRoute(handle: Handle) {
 	}
 
 	listenToRouterNavigation(handle, () => {
-		const href = getCurrentHref()
+		const href = readCurrentRouterHref(handle)
 		if (href !== lastLoadedHref) {
 			status = 'loading'
 			handle.update()
 		}
 	})
 
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.community
+		if (!embedded || !isCommunityIndexPath(href)) return false
+		listings = embedded.listings
+		status = 'ready'
+		message = null
+		lastLoadedHref = href
+		return true
+	}
+
 	return () => {
-		const currentHref = getCurrentHref()
+		const currentHref = readCurrentRouterHref(handle)
 		const searchQuery = readCommunitySearchQueryFromHref(currentHref)
+
 		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			handle.queueTask(loadCommunityListings)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadCommunityListings)
+			}
 		}
 
 		return (

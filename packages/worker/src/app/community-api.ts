@@ -1,10 +1,5 @@
 import { type Action } from 'remix/router'
-import { Layout } from '#app/layout.ts'
-import {
-	buildCommunityIndexOgHead,
-	toPublicCommunityListing,
-} from '#app/community-public.ts'
-import { render } from '#app/render.ts'
+import { toPublicCommunityListing } from '#app/community-public.ts'
 import { type routes } from '#app/routes.ts'
 import {
 	listCommunityListingsWithAggregates,
@@ -12,20 +7,6 @@ import {
 } from '#worker/community/service.ts'
 
 const defaultCommunityListLimit = 50
-
-export function createCommunityHandler(_env: Env) {
-	return {
-		middleware: [],
-		async handler() {
-			return render(
-				Layout({
-					title: 'Community packages',
-					head: buildCommunityIndexOgHead(),
-				}),
-			)
-		},
-	} satisfies Action<typeof routes.community>
-}
 
 export function createCommunityApiHandler(env: Env) {
 	return {

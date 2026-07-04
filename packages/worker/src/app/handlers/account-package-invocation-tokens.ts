@@ -3,8 +3,7 @@ import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { Layout } from '#app/layout.ts'
-import { render } from '#app/render.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
 	deletePackageInvocationToken,
@@ -55,20 +54,20 @@ type AccountPackageInvocationTokensPayload = {
 	selectedTokenId?: string
 }
 
-export function createAccountPackageInvocationTokensHandler(_env: Env) {
+export function createAccountPackageInvocationTokensHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session, setCookie } = await readAuthSessionResult(request)
+			const { session } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
 			}
 
-			const response = render(Layout({ title: 'Package invocation tokens' }))
-			if (setCookie) {
-				response.headers.set('Set-Cookie', setCookie)
-			}
-			return response
+			return renderAppPage({
+				request,
+				env,
+				title: 'Package invocation tokens',
+			})
 		},
 	} satisfies Action<typeof routes.accountPackageInvocationTokens>
 }

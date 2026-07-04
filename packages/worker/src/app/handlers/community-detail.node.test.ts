@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
-import { createCommunityReportApiPostHandler } from './community-detail.ts'
+import { createCommunityReportApiPostHandler } from './community-detail.tsx'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),

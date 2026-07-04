@@ -222,7 +222,7 @@ const appHandler = withCors({
 		}
 
 		if (url.pathname === oauthPaths.callback) {
-			return handleOAuthCallback(request)
+			return handleOAuthCallback(request, env)
 		}
 
 		if (url.pathname === '/.well-known/appspecific/com.chrome.devtools.json') {

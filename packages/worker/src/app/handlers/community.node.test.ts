@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { createCommunityApiHandler } from './community.ts'
+import { createCommunityApiHandler } from './community.tsx'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({

@@ -1,23 +1,22 @@
 import { type Action } from 'remix/router'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { Layout } from '#app/layout.ts'
-import { render } from '#app/render.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 
-export function createConnectOauthHandler(_env: Env) {
+export function createConnectOauthHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session, setCookie } = await readAuthSessionResult(request)
+			const { session } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
 			}
-			const response = render(Layout({ title: 'Connect OAuth' }))
-			if (setCookie) {
-				response.headers.set('Set-Cookie', setCookie)
-			}
-			return response
+			return renderAppPage({
+				request,
+				env,
+				title: 'Connect OAuth',
+			})
 		},
 	} satisfies Action<typeof routes.connectOauth>
 }

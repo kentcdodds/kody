@@ -4,9 +4,8 @@ import {
 	isSecureRequest,
 	readAuthSessionResult,
 } from '#app/auth-session.ts'
-import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
+import { loadSessionInfo } from '#app/session-info.ts'
 import { type routes } from '#app/routes.ts'
-import { createDb, usersTable } from '#worker/db.ts'
 
 function jsonResponse(data: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(data), {
@@ -20,8 +19,6 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 }
 
 export function createSessionHandler(env: Env) {
-	const db = createDb(env.APP_DB)
-
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -30,41 +27,29 @@ export function createSessionHandler(env: Env) {
 				return jsonResponse({ ok: false })
 			}
 
-			const userId = /^\d+$/.test(session.id) ? Number(session.id) : NaN
-			const userRecord =
-				Number.isSafeInteger(userId) && userId > 0
-					? await db.findOne(usersTable, { where: { id: userId } })
-					: null
-			if (!userRecord) {
+			const loaded = await loadSessionInfo(request, env)
+			if (!loaded.session) {
 				return jsonResponse(
 					{ ok: false },
 					{
 						headers: {
-							'Set-Cookie': await destroyAuthCookie(isSecureRequest(request)),
+							'Set-Cookie':
+								loaded.setCookie ??
+								(await destroyAuthCookie(isSecureRequest(request))),
 						},
 					},
 				)
 			}
 
-			const { roles, permissions } = await getUserRolesAndPermissions(
-				env.APP_DB,
-				userId,
-			)
-
 			return jsonResponse(
 				{
 					ok: true,
-					session: {
-						email: userRecord.email,
-						username: userRecord.username,
-						roles,
-						permissions,
-					},
+					session: loaded.session,
 				},
-				setCookie
+				setCookie || loaded.setCookie
 					? {
 							headers: {
-								'Set-Cookie': setCookie,
+								'Set-Cookie': (setCookie ?? loaded.setCookie) as string,
 							},
 						}
 					: undefined,
