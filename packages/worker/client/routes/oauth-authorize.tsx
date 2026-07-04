@@ -231,7 +231,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const currentSearch = readRouterSearch(handle)
-		if (currentSearch !== lastSearch) {
+		if (status === 'idle' || currentSearch !== lastSearch) {
 			lastSearch = currentSearch
 			resetCompleted = false
 			const queryError = readQueryError()
@@ -245,8 +245,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				if (typeof document !== 'undefined') {
 					handle.queueTask(() => loadInfo(requestId))
 				}
-			} else if (queryError) {
-				message = { type: 'error', text: queryError }
 			}
 		}
 		if (sessionStatus === 'idle' && typeof document !== 'undefined') {
