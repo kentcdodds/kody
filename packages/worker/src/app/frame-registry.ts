@@ -1,4 +1,6 @@
+import { createMatcher } from 'remix/route-pattern/match'
 import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
+import { type routes } from '#app/routes.ts'
 
 export type FrameRenderContext = {
 	request: Request
@@ -10,18 +12,37 @@ export type FrameRenderer = (
 	context: FrameRenderContext,
 ) => Promise<string> | string
 
+type AppRoute = (typeof routes)[keyof typeof routes]
+
 export type RegisteredFrame = {
 	name: string
-	routePathname: string
+	route: AppRoute
 	render: FrameRenderer
 }
 
 const framesByName = new Map<string, RegisteredFrame>()
+const routeMatchers = new WeakMap<AppRoute, ReturnType<typeof createMatcher>>()
+
+function getMatcherForRoute(route: AppRoute) {
+	let matcher = routeMatchers.get(route)
+	if (!matcher) {
+		matcher = createMatcher(route.pattern)
+		routeMatchers.set(route, matcher)
+	}
+	return matcher
+}
+
+export function pathnameMatchesFrameRoute(route: AppRoute, pathname: string) {
+	return (
+		getMatcherForRoute(route).match(new URL(pathname, 'https://kody.local')) !==
+		null
+	)
+}
 
 export function registerFrame(
 	name: string,
 	config: {
-		routePathname: string
+		route: AppRoute
 		render: FrameRenderer
 	},
 ): RegisteredFrame {
@@ -31,7 +52,7 @@ export function registerFrame(
 
 	const frame = {
 		name,
-		routePathname: config.routePathname,
+		route: config.route,
 		render: config.render,
 	} satisfies RegisteredFrame
 
@@ -55,13 +76,13 @@ export function createFrameHtmlResponse(html: string) {
 export async function handleFrameRequest(
 	request: Request,
 	env: Env,
-	routePathname: string,
+	pathname: string,
 ) {
 	const target = request.headers.get(REMIX_FRAME_TARGET_HEADER)
 	if (!target) return null
 
 	const frame = getRegisteredFrame(target)
-	if (!frame || frame.routePathname !== routePathname) return null
+	if (!frame || !pathnameMatchesFrameRoute(frame.route, pathname)) return null
 
 	const html = await frame.render({
 		request,
@@ -90,9 +111,9 @@ export async function resolveRegisteredFrameHtml(input: {
 	}
 
 	const frameUrl = new URL(src, currentFrameSrc ?? pageUrl)
-	if (frameUrl.pathname !== frame.routePathname) {
+	if (!pathnameMatchesFrameRoute(frame.route, frameUrl.pathname)) {
 		throw new Error(
-			`Frame target ${target} is not registered for ${frameUrl.pathname} (expected ${frame.routePathname})`,
+			`Frame target ${target} is not registered for ${frameUrl.pathname}`,
 		)
 	}
 

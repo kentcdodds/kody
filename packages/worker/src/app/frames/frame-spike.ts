@@ -4,6 +4,6 @@ import { FRAME_SPIKE_TARGET } from '#app/frame-spike-state.ts'
 import { routes } from '#app/routes.ts'
 
 registerFrame(FRAME_SPIKE_TARGET, {
-	routePathname: routes.frameSpike.href(),
+	route: routes.frameSpike,
 	render: () => renderFrameSpikeDataHtml(),
 })

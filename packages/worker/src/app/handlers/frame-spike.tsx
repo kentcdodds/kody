@@ -3,7 +3,7 @@ import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { incrementFrameSpikeCounter } from '#app/frame-spike-state.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { routes } from '#app/routes.ts'
+import { type routes } from '#app/routes.ts'
 
 export function createFrameSpikeHandler(env: Env) {
 	return {
@@ -12,7 +12,7 @@ export function createFrameSpikeHandler(env: Env) {
 			const frameResponse = await handleFrameRequest(
 				request,
 				env,
-				routes.frameSpike.href(),
+				new URL(request.url).pathname,
 			)
 			if (frameResponse) return frameResponse
 
