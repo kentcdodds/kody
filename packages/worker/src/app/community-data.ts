@@ -1,10 +1,19 @@
-import { toPublicCommunityListing } from '#app/community-public.ts'
+import {
+	buildForkPrompt,
+	toPublicCommunityListing,
+	type PublicCommunityListing,
+} from '#app/community-public.ts'
+import {
+	buildCommunityDetailListingCacheKey,
+	buildCommunityIndexCacheKey,
+	getOrSetDataCache,
+} from '#app/data-cache.ts'
 import {
 	type CommunityDetailLoaderData,
 	type CommunityIndexLoaderData,
 } from '#app/loader-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { buildForkPrompt } from '#app/community-public.ts'
+import { setRequestDataCacheLookup } from '#app/request-cache.ts'
 import {
 	listCommunityListingsWithAggregates,
 	searchCommunityListings,
@@ -25,31 +34,40 @@ function readPositiveInt(
 
 export async function loadCommunityIndexData(
 	env: Env,
-	requestUrl: string,
+	request: Request,
 ): Promise<CommunityIndexLoaderData> {
-	const url = new URL(requestUrl, 'http://localhost')
+	const url = new URL(request.url)
 	const query = url.searchParams.get('q')?.trim() ?? ''
 	const limit = readPositiveInt(url.searchParams.get('limit'), {
 		defaultValue: defaultCommunityListLimit,
 		max: 100,
 	})
 
-	const listings = query
-		? await searchCommunityListings({
-				env,
-				query,
-				limit,
-			})
-		: await listCommunityListingsWithAggregates({
-				env,
-				includeDelisted: false,
-				limit,
-				offset: 0,
-			})
+	const cacheKey = buildCommunityIndexCacheKey({ query, limit })
+	const { value: listings, lookup } = await getOrSetDataCache({
+		key: cacheKey,
+		load: async () => {
+			const rows = query
+				? await searchCommunityListings({
+						env,
+						query,
+						limit,
+					})
+				: await listCommunityListingsWithAggregates({
+						env,
+						includeDelisted: false,
+						limit,
+						offset: 0,
+					})
+			return rows.map(toPublicCommunityListing)
+		},
+	})
+
+	setRequestDataCacheLookup(request, lookup)
 
 	return {
 		ok: true,
-		listings: listings.map(toPublicCommunityListing),
+		listings,
 		query: query || null,
 	}
 }
@@ -59,18 +77,36 @@ export async function loadCommunityDetailData(
 	request: Request,
 	listingId: string,
 ): Promise<CommunityDetailLoaderData | null> {
-	const listing = await getCommunityListingWithAggregates({
-		env,
-		listingId,
-		includeDelisted: false,
+	const cacheKey = buildCommunityDetailListingCacheKey(listingId)
+	const { value: listing, lookup } = await getOrSetDataCache({
+		key: cacheKey,
+		load: async () => {
+			const row = await getCommunityListingWithAggregates({
+				env,
+				listingId,
+				includeDelisted: false,
+			})
+			if (!row) return null
+			return toPublicCommunityListing(row)
+		},
 	})
+
+	setRequestDataCacheLookup(request, lookup)
+
 	if (!listing) return null
 
 	const user = await readAuthenticatedAppUser(request, env)
+	return composeCommunityDetailLoaderData(listing, Boolean(user))
+}
+
+export function composeCommunityDetailLoaderData(
+	listing: PublicCommunityListing,
+	loggedIn: boolean,
+): CommunityDetailLoaderData {
 	return {
 		ok: true,
-		listing: toPublicCommunityListing(listing),
-		loggedIn: Boolean(user),
+		listing,
+		loggedIn,
 		forkPrompt: buildForkPrompt({
 			name: listing.name,
 			listingId: listing.id,

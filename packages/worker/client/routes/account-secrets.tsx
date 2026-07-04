@@ -11,7 +11,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -1048,7 +1048,11 @@ export function AccountSecretsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.accountSecrets
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'accountSecrets',
+			href,
+		)
 		if (!embedded || !isAccountSecretsPath(href)) return false
 		const selection = getSelectionState(href)
 		applyPayload(embedded, selection, embedded.approvalError)

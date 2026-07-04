@@ -4,7 +4,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -145,7 +145,11 @@ export function AccountRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.accountProfile
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'accountProfile',
+			href,
+		)
 		if (!embedded || !isAccountPath(href)) return false
 		email = embedded.email
 		username = embedded.username

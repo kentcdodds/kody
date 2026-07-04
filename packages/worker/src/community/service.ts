@@ -1,3 +1,4 @@
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
 	blendLexicalAndVectorScore,
 	cosineSimilarity,
@@ -413,6 +414,7 @@ export async function publishCommunityListing(input: {
 	if (!listing) {
 		throw new Error(`Community listing "${listingId}" could not be loaded.`)
 	}
+	invalidateCommunityPublicCache()
 	return listing
 }
 
@@ -444,6 +446,7 @@ export async function unpublishCommunityListing(input: {
 
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
+	invalidateCommunityPublicCache()
 }
 
 export async function getCommunityListingWithAggregates(input: {
@@ -643,6 +646,8 @@ export async function forkCommunityListing(input: {
 			target_kody_id: targetKodyId,
 		})
 
+		invalidateCommunityPublicCache()
+
 		return {
 			forkId,
 			packageId,
@@ -701,6 +706,7 @@ export async function rateCommunityListing(input: {
 		adaptation_effort: input.adaptationEffort,
 		note: input.note?.trim() || null,
 	})
+	invalidateCommunityPublicCache()
 }
 
 export async function reportCommunityListing(input: {
@@ -792,6 +798,7 @@ export async function resolveCommunityReport(input: {
 				listingId: report.listingId,
 				status: 'delisted',
 			})
+			invalidateCommunityPublicCache()
 			const resolved = await resolveCommunityReportRow(input.env.APP_DB, {
 				reportId: input.reportId,
 				status: 'resolved',
@@ -825,6 +832,7 @@ export async function resolveCommunityReport(input: {
 					input.env.BUNDLE_ARTIFACTS_KV,
 					report.listingId,
 				)
+				invalidateCommunityPublicCache()
 			}
 			const resolved = await resolveCommunityReportRow(input.env.APP_DB, {
 				reportId: input.reportId,

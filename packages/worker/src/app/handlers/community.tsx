@@ -11,7 +11,7 @@ export function createCommunityHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const community = await loadCommunityIndexData(env, request.url)
+			const community = await loadCommunityIndexData(env, request)
 			return renderAppPage({
 				request,
 				env,

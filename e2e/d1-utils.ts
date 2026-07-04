@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
@@ -80,5 +81,55 @@ INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
 WHERE u.email = ${quoteSql(email)} AND r.name = ${quoteSql(role)};`.trim()
+	executeE2eD1Command(sql)
+}
+
+export async function seedCommunityListingInE2eDatabase(input: {
+	listingId: string
+	ownerEmail: string
+	name: string
+	description: string
+	tags?: Array<string>
+	kodyId?: string
+	packageId?: string
+	sourceId?: string
+}) {
+	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
+	const tagsJson = JSON.stringify(input.tags ?? [])
+	const kodyId = input.kodyId ?? input.listingId
+	const packageId = input.packageId ?? `pkg-${input.listingId}`
+	const sourceId = input.sourceId ?? `src-${input.listingId}`
+	const sql = `
+INSERT INTO community_listings (
+	id,
+	owner_user_id,
+	package_id,
+	source_id,
+	kody_id,
+	name,
+	description,
+	tags_json,
+	license,
+	pinned_commit,
+	status
+) VALUES (
+	${quoteSql(input.listingId)},
+	${quoteSql(ownerUserId)},
+	${quoteSql(packageId)},
+	${quoteSql(sourceId)},
+	${quoteSql(kodyId)},
+	${quoteSql(input.name)},
+	${quoteSql(input.description)},
+	${quoteSql(tagsJson)},
+	'MIT',
+	'abc1234567890abcdef1234567890abcdef12345678',
+	'active'
+)
+ON CONFLICT(id) DO UPDATE SET
+	name = excluded.name,
+	description = excluded.description,
+	tags_json = excluded.tags_json,
+	status = excluded.status,
+	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
 }

@@ -5,7 +5,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -191,7 +191,7 @@ export function AdminUsersRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.adminUsers
+		const embedded = tryConsumeEmbeddedLoaderData(handle, 'adminUsers', href)
 		if (!embedded || !isAdminUsersPath(href)) return false
 		users = embedded.users
 		availableRoles = embedded.availableRoles

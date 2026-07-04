@@ -3,7 +3,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	colors,
@@ -102,7 +102,7 @@ export function CommunityRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.community
+		const embedded = tryConsumeEmbeddedLoaderData(handle, 'community', href)
 		if (!embedded || !isCommunityIndexPath(href)) return false
 		listings = embedded.listings
 		status = 'ready'

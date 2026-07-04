@@ -4,7 +4,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -201,7 +201,11 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.adminCommunityReports
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'adminCommunityReports',
+			href,
+		)
 		if (!embedded || !isAdminCommunityReportsPath(href)) return false
 		reports = embedded.reports
 		statusFilter = embedded.statusFilter

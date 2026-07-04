@@ -3,7 +3,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import { getSecondaryButtonCss } from '#client/styles/style-primitives.ts'
@@ -75,7 +75,7 @@ export function AdminRolesRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.adminRoles
+		const embedded = tryConsumeEmbeddedLoaderData(handle, 'adminRoles', href)
 		if (!embedded || !isAdminRolesPath(href)) return false
 		roles = embedded.roles
 		status = 'ready'

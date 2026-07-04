@@ -70,6 +70,10 @@ export {
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
 
+function shouldApplyLongLivedAssetCaching(pathname: string) {
+	return pathname === '/client-entry.js' || pathname.startsWith('/assets/')
+}
+
 // Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
 // so brute-force attempts cannot fan out across parallel paths (password login,
 // OAuth inline login, password-reset request, and password-reset confirm).
@@ -309,6 +313,15 @@ const appHandler = withCors({
 		if (env.ASSETS && (request.method === 'GET' || request.method === 'HEAD')) {
 			const response = await env.ASSETS.fetch(request)
 			if (response.ok) {
+				if (shouldApplyLongLivedAssetCaching(url.pathname)) {
+					const headers = new Headers(response.headers)
+					headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+					return new Response(response.body, {
+						status: response.status,
+						statusText: response.statusText,
+						headers,
+					})
+				}
 				return response
 			}
 		}

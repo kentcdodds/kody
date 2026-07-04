@@ -105,6 +105,8 @@
 					"/@*/packages/*",
 					"/mcp-apps/*",
 					"/styles.css",
+					"/client-entry.js",
+					"/assets/*",
 				],
 			},
 			"durable_objects": {
@@ -196,6 +198,8 @@
 					"/@*/packages/*",
 					"/mcp-apps/*",
 					"/styles.css",
+					"/client-entry.js",
+					"/assets/*",
 				],
 			},
 			"durable_objects": {
@@ -287,6 +291,8 @@
 					"/@*/packages/*",
 					"/mcp-apps/*",
 					"/styles.css",
+					"/client-entry.js",
+					"/assets/*",
 				],
 			},
 			"durable_objects": {

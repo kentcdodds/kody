@@ -3,7 +3,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -156,7 +156,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.accountIntegrations
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'accountIntegrations',
+			href,
+		)
 		if (!embedded || !isAccountIntegrationsPath(href)) return false
 		email = embedded.email
 		integrations = embedded.integrations

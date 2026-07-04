@@ -2,15 +2,20 @@
 /** @jsxRuntime automatic */
 import { type Handle, type RemixNode } from 'remix/ui'
 import { AppRoot, type AppRootProps } from '#client/app-root.tsx'
+import { buildClientEntryHref } from '#app/client-build-id.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
 
 export type SsrDocumentProps = AppRootProps & {
 	title?: string
 	extraHead?: RemixNode
+	clientEntryHref?: string
 }
 
 export function SsrDocument(handle: Handle<SsrDocumentProps>) {
+	const clientEntryHref =
+		handle.props.clientEntryHref ?? buildClientEntryHref('dev')
+
 	return () => (
 		<html lang="en">
 			<head>
@@ -38,6 +43,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				<meta name="theme-color" content="#2563eb" />
 				<title>{handle.props.title ?? 'kody'}</title>
 				{handle.props.extraHead ?? null}
+				<link rel="modulepreload" href={clientEntryHref} />
 				<link rel="stylesheet" href="/styles.css" />
 			</head>
 			<body>
@@ -49,7 +55,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 						notFound={handle.props.notFound}
 					/>
 				</div>
-				<script type="module" src={CLIENT_ENTRY_HREF}></script>
+				<script type="module" src={clientEntryHref}></script>
 			</body>
 		</html>
 	)

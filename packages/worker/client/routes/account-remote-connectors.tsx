@@ -4,7 +4,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -557,7 +557,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.accountRemoteConnectors
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'accountRemoteConnectors',
+			href,
+		)
 		if (!embedded || !isAccountRemoteConnectorsPath(href)) return false
 		applyPayload(embedded)
 		status = 'ready'

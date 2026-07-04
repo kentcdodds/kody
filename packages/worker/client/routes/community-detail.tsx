@@ -5,7 +5,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -201,8 +201,12 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	})
 
-	function applyEmbeddedLoaderData(listingId: string | null) {
-		const embedded = readAppLoaderData(handle)?.communityDetail
+	function applyEmbeddedLoaderData(href: string, listingId: string | null) {
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'communityDetail',
+			href,
+		)
 		if (!embedded || !listingId || embedded.listing.id !== listingId) {
 			return false
 		}
@@ -222,12 +226,13 @@ export function CommunityDetailRoute(handle: Handle) {
 
 	return () => {
 		const listingId = getCurrentListingId(handle)
+		const currentHref = readCurrentRouterHref(handle)
 		if (
 			status === 'loading' ||
 			(listingId && listingId !== lastLoadedListingId)
 		) {
 			if (
-				!applyEmbeddedLoaderData(listingId) &&
+				!applyEmbeddedLoaderData(currentHref, listingId) &&
 				typeof document !== 'undefined'
 			) {
 				handle.queueTask(loadCommunityDetail)

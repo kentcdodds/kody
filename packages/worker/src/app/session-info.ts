@@ -1,10 +1,4 @@
-import {
-	destroyAuthCookie,
-	isSecureRequest,
-	readAuthSessionResult,
-} from '#app/auth-session.ts'
-import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
-import { createDb, usersTable } from '#worker/db.ts'
+import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
 
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 
@@ -24,37 +18,21 @@ export async function loadSessionInfo(
 	request: Request,
 	env: Env,
 ): Promise<LoadedSessionResult> {
-	const { session, setCookie } = await readAuthSessionResult(request)
-	if (!session) {
-		return { session: null, setCookie: setCookie ?? undefined }
-	}
-
-	const userId = /^\d+$/.test(session.id) ? Number(session.id) : NaN
-	const db = createDb(env.APP_DB)
-	const userRecord =
-		Number.isSafeInteger(userId) && userId > 0
-			? await db.findOne(usersTable, { where: { id: userId } })
-			: null
-
-	if (!userRecord) {
+	const resolved = await loadResolvedRequestAuth(request, env)
+	if (!resolved.user) {
 		return {
 			session: null,
-			setCookie: await destroyAuthCookie(isSecureRequest(request)),
+			setCookie: resolved.setCookie,
 		}
 	}
 
-	const { roles, permissions } = await getUserRolesAndPermissions(
-		env.APP_DB,
-		userId,
-	)
-
 	return {
 		session: {
-			email: userRecord.email,
-			username: userRecord.username,
-			roles,
-			permissions,
+			email: resolved.user.email,
+			username: resolved.user.username,
+			roles: resolved.user.roles,
+			permissions: resolved.user.permissions,
 		},
-		setCookie: setCookie ?? undefined,
+		setCookie: resolved.setCookie,
 	}
 }

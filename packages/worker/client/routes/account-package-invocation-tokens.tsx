@@ -5,7 +5,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -917,7 +917,11 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
-		const embedded = readAppLoaderData(handle)?.accountPackageInvocationTokens
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'accountPackageInvocationTokens',
+			href,
+		)
 		if (!embedded || !isAccountPackageInvocationTokensPath(href)) return false
 		applyPayload(embedded, href)
 		status = 'ready'
