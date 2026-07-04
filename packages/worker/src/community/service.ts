@@ -11,6 +11,8 @@ import {
 	getSavedPackageByName,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
+import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { CommunityActionError } from './errors.ts'
@@ -22,6 +24,7 @@ import {
 	getCommunityForkByListingAndUser,
 	getCommunityListingById,
 	getCommunityListingByOwnerAndPackage,
+	listCommunityForksByListingAndUser,
 	getCommunityRatingAggregatesByListingId,
 	getCommunityRatingAggregatesByListingIds,
 	getCommunityReportById,
@@ -107,6 +110,67 @@ export function computeCommunityBayesianScore(input: {
 			input.ratingCount * averageStars) /
 		(communityBayesianPriorWeight + input.ratingCount)
 	)
+}
+
+export function compareCommunityListingsByBayesianAndPublishedAt(
+	left: CommunityListingWithAggregates,
+	right: CommunityListingWithAggregates,
+): number {
+	const leftScore = computeCommunityBayesianScore({
+		averageStars: left.averageStars,
+		ratingCount: left.ratingCount,
+	})
+	const rightScore = computeCommunityBayesianScore({
+		averageStars: right.averageStars,
+		ratingCount: right.ratingCount,
+	})
+	if (rightScore !== leftScore) return rightScore - leftScore
+	return right.publishedAt.localeCompare(left.publishedAt)
+}
+
+function buildRepeatForkErrorMessage(input: {
+	targetKodyId: string
+	forkedSourceId: string
+	forkedPackageId: string
+}) {
+	return `You already forked this listing with kody id "${input.targetKodyId}". Resume the existing fork with source_id "${input.forkedSourceId}" (package_id "${input.forkedPackageId}") via repo_open_session, or pass a different kody_id to fork again.`
+}
+
+async function cleanupFailedCommunityFork(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	packageId: string
+}) {
+	await cleanupArtifactReposForPackage({
+		env: input.env,
+		userId: input.userId,
+		sourceId: input.sourceId,
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'community fork artifact repo cleanup failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				sourceId: input.sourceId,
+				error: error instanceof Error ? error.message : String(error),
+			}),
+		)
+	})
+	await deleteEntitySource(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'community fork entity source cleanup failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				sourceId: input.sourceId,
+				error: error instanceof Error ? error.message : String(error),
+			}),
+		)
+	})
 }
 
 async function assertNotCommunityBanned(db: D1Database, userId: string) {
@@ -235,7 +299,14 @@ export async function publishCommunityListing(input: {
 	if (!readme) {
 		throw new Error('Community listings require a root README file.')
 	}
-	assertReadmeIntent(readme.content)
+	const fullReadme = buildPackageReadmeDetail({
+		files: loadedSource.files,
+		maxChars: Number.MAX_SAFE_INTEGER,
+	})
+	if (!fullReadme) {
+		throw new Error('Community listings require a root README file.')
+	}
+	assertReadmeIntent(fullReadme.content)
 
 	const existingListing = await getCommunityListingByOwnerAndPackage(
 		input.env.APP_DB,
@@ -396,18 +467,7 @@ export async function listCommunityListingsWithAggregates(input: {
 		listings,
 	)
 	return withAggregates
-		.sort((left, right) => {
-			const leftScore = computeCommunityBayesianScore({
-				averageStars: left.averageStars,
-				ratingCount: left.ratingCount,
-			})
-			const rightScore = computeCommunityBayesianScore({
-				averageStars: right.averageStars,
-				ratingCount: right.ratingCount,
-			})
-			if (rightScore !== leftScore) return rightScore - leftScore
-			return right.publishedAt.localeCompare(left.publishedAt)
-		})
+		.sort(compareCommunityListingsByBayesianAndPublishedAt)
 		.slice(input.offset, input.offset + input.limit)
 }
 
@@ -426,17 +486,7 @@ export async function searchCommunityListings(input: {
 	const trimmedQuery = input.query.trim()
 	if (!trimmedQuery) {
 		return withAggregates
-			.sort((left, right) => {
-				const leftScore = computeCommunityBayesianScore({
-					averageStars: left.averageStars,
-					ratingCount: left.ratingCount,
-				})
-				const rightScore = computeCommunityBayesianScore({
-					averageStars: right.averageStars,
-					ratingCount: right.ratingCount,
-				})
-				return rightScore - leftScore
-			})
+			.sort(compareCommunityListingsByBayesianAndPublishedAt)
 			.slice(0, input.limit)
 	}
 
@@ -523,8 +573,28 @@ export async function forkCommunityListing(input: {
 		name: rewrittenManifest.targetName,
 	})
 	if (existingByKody || existingByName) {
-		throw new Error(
+		throw new CommunityActionError(
 			`You already have a saved package with kody id "${targetKodyId}". Pass a different kody_id to fork this listing.`,
+		)
+	}
+
+	const existingForks = await listCommunityForksByListingAndUser(
+		input.env.APP_DB,
+		{
+			listingId: input.listingId,
+			userId: input.userId,
+		},
+	)
+	const collidingFork = existingForks.find(
+		(fork) => fork.targetKodyId === targetKodyId,
+	)
+	if (collidingFork) {
+		throw new CommunityActionError(
+			buildRepeatForkErrorMessage({
+				targetKodyId,
+				forkedSourceId: collidingFork.forkedSourceId,
+				forkedPackageId: collidingFork.forkedPackageId,
+			}),
 		)
 	}
 
@@ -546,34 +616,45 @@ export async function forkCommunityListing(input: {
 		entityId: packageId,
 		requirePersistence: true,
 	})
-	await syncArtifactSourceSnapshot({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceId: ensuredSource.id,
-		files: rewrittenFiles,
-		bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
-	})
+	try {
+		await syncArtifactSourceSnapshot({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceId: ensuredSource.id,
+			files: rewrittenFiles,
+			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+		})
 
-	const forkId = crypto.randomUUID()
-	await insertCommunityFork(input.env.APP_DB, {
-		id: forkId,
-		listing_id: input.listingId,
-		forker_user_id: input.userId,
-		origin_commit: listing.pinnedCommit,
-		forked_package_id: packageId,
-		forked_source_id: ensuredSource.id,
-	})
+		const forkId = crypto.randomUUID()
+		await insertCommunityFork(input.env.APP_DB, {
+			id: forkId,
+			listing_id: input.listingId,
+			forker_user_id: input.userId,
+			origin_commit: listing.pinnedCommit,
+			forked_package_id: packageId,
+			forked_source_id: ensuredSource.id,
+			target_kody_id: targetKodyId,
+		})
 
-	return {
-		forkId,
-		packageId,
-		sourceId: ensuredSource.id,
-		targetKodyId,
-		targetName: rewrittenManifest.targetName,
-		originCommit: listing.pinnedCommit,
-		crossScopeReferences,
-		filesCount: Object.keys(rewrittenFiles).length,
+		return {
+			forkId,
+			packageId,
+			sourceId: ensuredSource.id,
+			targetKodyId,
+			targetName: rewrittenManifest.targetName,
+			originCommit: listing.pinnedCommit,
+			crossScopeReferences,
+			filesCount: Object.keys(rewrittenFiles).length,
+		}
+	} catch (error) {
+		await cleanupFailedCommunityFork({
+			env: input.env,
+			userId: input.userId,
+			sourceId: ensuredSource.id,
+			packageId,
+		})
+		throw error
 	}
 }
 

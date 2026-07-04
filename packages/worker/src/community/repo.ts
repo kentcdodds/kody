@@ -59,6 +59,7 @@ function mapCommunityForkRow(
 		originCommit: String(row['origin_commit']),
 		forkedPackageId: String(row['forked_package_id']),
 		forkedSourceId: String(row['forked_source_id']),
+		targetKodyId: String(row['target_kody_id']),
 		createdAt: String(row['created_at']),
 	}
 }
@@ -329,8 +330,8 @@ export async function insertCommunityFork(
 		.prepare(
 			`INSERT INTO community_forks (
 				id, listing_id, forker_user_id, origin_commit, forked_package_id,
-				forked_source_id, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				forked_source_id, target_kody_id, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -339,6 +340,7 @@ export async function insertCommunityFork(
 			row.origin_commit,
 			row.forked_package_id,
 			row.forked_source_id,
+			row.target_kody_id,
 			row.created_at ?? new Date().toISOString(),
 		)
 		.run()
@@ -354,13 +356,33 @@ export async function getCommunityForkByListingAndUser(
 	const row = await db
 		.prepare(
 			`SELECT id, listing_id, forker_user_id, origin_commit, forked_package_id,
-				forked_source_id, created_at
+				forked_source_id, target_kody_id, created_at
 			FROM community_forks
 			WHERE listing_id = ? AND forker_user_id = ?`,
 		)
 		.bind(input.listingId, input.userId)
 		.first<Record<string, unknown>>()
 	return row ? mapCommunityForkRow(row) : null
+}
+
+export async function listCommunityForksByListingAndUser(
+	db: D1Database,
+	input: {
+		listingId: string
+		userId: string
+	},
+): Promise<Array<CommunityForkRecord>> {
+	const result = await db
+		.prepare(
+			`SELECT id, listing_id, forker_user_id, origin_commit, forked_package_id,
+				forked_source_id, target_kody_id, created_at
+			FROM community_forks
+			WHERE listing_id = ? AND forker_user_id = ?
+			ORDER BY created_at ASC`,
+		)
+		.bind(input.listingId, input.userId)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map((row) => mapCommunityForkRow(row))
 }
 
 export async function countCommunityForksByListingIds(

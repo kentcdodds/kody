@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	insertCommunityListing: vi.fn(),
 	updateCommunityListing: vi.fn(),
 	getCommunityForkByListingAndUser: vi.fn(),
+	listCommunityForksByListingAndUser: vi.fn(),
 	upsertCommunityRating: vi.fn(),
 	insertCommunityReport: vi.fn(),
 	getCommunityReportById: vi.fn(),
@@ -22,6 +23,8 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageByName: vi.fn(),
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
+	deleteEntitySource: vi.fn(),
+	cleanupArtifactReposForPackage: vi.fn(),
 	insertCommunityFork: vi.fn(),
 	deleteCommunityListing: vi.fn(),
 	deleteCommunityRatingsByListingId: vi.fn(),
@@ -54,6 +57,16 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 		mockModule.syncArtifactSourceSnapshot(...args),
 }))
 
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	deleteEntitySource: (...args: Array<unknown>) =>
+		mockModule.deleteEntitySource(...args),
+}))
+
+vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
+	cleanupArtifactReposForPackage: (...args: Array<unknown>) =>
+		mockModule.cleanupArtifactReposForPackage(...args),
+}))
+
 vi.mock('./repo.ts', () => ({
 	getCommunityBan: (...args: Array<unknown>) =>
 		mockModule.getCommunityBan(...args),
@@ -73,6 +86,8 @@ vi.mock('./repo.ts', () => ({
 		mockModule.updateCommunityListing(...args),
 	getCommunityForkByListingAndUser: (...args: Array<unknown>) =>
 		mockModule.getCommunityForkByListingAndUser(...args),
+	listCommunityForksByListingAndUser: (...args: Array<unknown>) =>
+		mockModule.listCommunityForksByListingAndUser(...args),
 	upsertCommunityRating: (...args: Array<unknown>) =>
 		mockModule.upsertCommunityRating(...args),
 	insertCommunityReport: (...args: Array<unknown>) =>
@@ -411,6 +426,81 @@ test('searchCommunityListings returns empty when limit is 0', async () => {
 	expect(queryResults).toEqual([])
 })
 
+test('searchCommunityListings empty query uses publishedAt tiebreaker', async () => {
+	const olderListing = sampleListing({
+		id: 'listing-older',
+		publishedAt: '2026-07-01T00:00:00.000Z',
+	})
+	const newerListing = sampleListing({
+		id: 'listing-newer',
+		publishedAt: '2026-07-03T00:00:00.000Z',
+	})
+	mockModule.listAllCommunityListings.mockResolvedValue([
+		olderListing,
+		newerListing,
+	])
+	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
+		'listing-older': {
+			listingId: 'listing-older',
+			ratingCount: 0,
+			averageStars: null,
+			averageAdaptationEffort: null,
+		},
+		'listing-newer': {
+			listingId: 'listing-newer',
+			ratingCount: 0,
+			averageStars: null,
+			averageAdaptationEffort: null,
+		},
+	})
+	mockModule.countCommunityForksByListingIds.mockResolvedValue({
+		'listing-older': 0,
+		'listing-newer': 0,
+	})
+
+	const results = await searchCommunityListings({
+		env: createEnv(),
+		query: '',
+		limit: 10,
+	})
+
+	expect(results.map((listing) => listing.id)).toEqual([
+		'listing-newer',
+		'listing-older',
+	])
+})
+
+test('publishCommunityListing accepts Intent heading beyond storage truncation', async () => {
+	const padding = 'x'.repeat(20_000)
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		...validPublishSource(),
+		files: {
+			...validPublishSource().files,
+			'README.md': `${padding}\n\n## Intent\n\nBridge Discord events.`,
+		},
+	})
+	mockModule.insertCommunityListing.mockResolvedValue(undefined)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.insertCommunityListing).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			readme_content: expect.stringMatching(/…$/),
+		}),
+	)
+})
+
 test('publishCommunityListing requires MIT license and Intent heading', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getSavedPackageById.mockResolvedValue({
@@ -599,6 +689,7 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 	})
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
 	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
 	mockModule.ensureEntitySource.mockResolvedValue({
 		id: 'fork-source-1',
 		bootstrapAccess: { token: 'bootstrap' },
@@ -627,7 +718,146 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
-	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
+	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			target_kody_id: 'my-discord-gateway',
+		}),
+	)
+})
+
+test('forkCommunityListing rejects repeat fork without a new kody_id', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: validPublishSource().files,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([
+		{
+			id: 'fork-1',
+			listingId: 'listing-1',
+			forkerUserId: 'user-2',
+			originCommit: 'commit-1',
+			forkedPackageId: 'package-fork-1',
+			forkedSourceId: 'fork-source-1',
+			targetKodyId: 'discord-gateway',
+			createdAt: '2026-07-01T00:00:00.000Z',
+		},
+	])
+
+	await expect(
+		forkCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-2',
+			expectedPackageScope: 'jane',
+			listingId: 'listing-1',
+		}),
+	).rejects.toThrow(
+		'Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1")',
+	)
+
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+})
+
+test('forkCommunityListing allows repeat fork with a different kody_id', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: validPublishSource().files,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([
+		{
+			id: 'fork-1',
+			listingId: 'listing-1',
+			forkerUserId: 'user-2',
+			originCommit: 'commit-1',
+			forkedPackageId: 'package-fork-1',
+			forkedSourceId: 'fork-source-1',
+			targetKodyId: 'discord-gateway',
+			createdAt: '2026-07-01T00:00:00.000Z',
+		},
+	])
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'fork-source-2',
+		bootstrapAccess: { token: 'bootstrap' },
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-fork-2')
+
+	const result = await forkCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-2',
+		expectedPackageScope: 'jane',
+		listingId: 'listing-1',
+		kodyId: 'my-second-fork',
+	})
+
+	expect(result.targetKodyId).toBe('my-second-fork')
+	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			target_kody_id: 'my-second-fork',
+		}),
+	)
+})
+
+test('forkCommunityListing cleans up entity source when snapshot sync fails', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: validPublishSource().files,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'fork-source-1',
+		bootstrapAccess: { token: 'bootstrap' },
+	})
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(
+		new Error('sync failed'),
+	)
+	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
+	mockModule.deleteEntitySource.mockResolvedValue(true)
+
+	await expect(
+		forkCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-2',
+			expectedPackageScope: 'jane',
+			listingId: 'listing-1',
+			kodyId: 'my-discord-gateway',
+		}),
+	).rejects.toThrow('sync failed')
+
+	expect(mockModule.cleanupArtifactReposForPackage).toHaveBeenCalledWith({
+		env: createEnv(),
+		userId: 'user-2',
+		sourceId: 'fork-source-1',
+	})
+	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: 'fork-source-1',
+			userId: 'user-2',
+		},
+	)
+	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
 })
 
 test('reportCommunityListing inserts denormalized listing metadata', async () => {

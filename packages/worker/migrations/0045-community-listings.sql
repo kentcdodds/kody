@@ -30,6 +30,7 @@ CREATE TABLE community_forks (
 	origin_commit TEXT NOT NULL,
 	forked_package_id TEXT NOT NULL,
 	forked_source_id TEXT NOT NULL,
+	target_kody_id TEXT NOT NULL,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 

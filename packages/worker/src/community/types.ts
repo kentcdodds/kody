@@ -57,6 +57,7 @@ export type CommunityForkRow = {
 	origin_commit: string
 	forked_package_id: string
 	forked_source_id: string
+	target_kody_id: string
 	created_at: string
 }
 
@@ -67,6 +68,7 @@ export type CommunityForkRecord = {
 	originCommit: string
 	forkedPackageId: string
 	forkedSourceId: string
+	targetKodyId: string
 	createdAt: string
 }
 
