@@ -67,6 +67,8 @@ export function AdminUsersRoute(handle: Handle) {
 	let selectedRoleToAssign = 'user' as RoleName
 	let loadRequestId = 0
 	let lastLoadedHref = ''
+	let loadingForHref: string | null = null
+	let lastFailedHref: string | null = null
 
 	function getSelectedUser() {
 		return users.find((user) => user.id === selectedUserId) ?? null
@@ -74,6 +76,7 @@ export function AdminUsersRoute(handle: Handle) {
 
 	async function loadAdminUsers() {
 		const href = readCurrentRouterHref(handle)
+		loadingForHref = href
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
@@ -88,6 +91,7 @@ export function AdminUsersRoute(handle: Handle) {
 			if (response.status === 403) {
 				status = 'error'
 				message = 'You do not have permission to view admin users.'
+				lastFailedHref = href
 				handle.update()
 				return
 			}
@@ -112,13 +116,17 @@ export function AdminUsersRoute(handle: Handle) {
 			}
 			status = 'ready'
 			message = null
+			lastFailedHref = null
 			handle.update()
 		} catch (error) {
 			if (requestId !== loadRequestId) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load admin users.'
+			lastFailedHref = href
 			handle.update()
+		} finally {
+			if (requestId === loadRequestId) loadingForHref = null
 		}
 	}
 
@@ -186,6 +194,7 @@ export function AdminUsersRoute(handle: Handle) {
 			const nextHref = readCurrentRouterHref(handle)
 			if (nextHref !== lastLoadedHref && status !== 'loading') {
 				status = 'loading'
+				lastFailedHref = null
 				handle.update()
 			}
 		})
@@ -221,11 +230,14 @@ export function AdminUsersRoute(handle: Handle) {
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
 
-		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			if (
-				!applyEmbeddedLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
+		const needsLoad =
+			(status === 'loading' || currentHref !== lastLoadedHref) &&
+			currentHref !== lastFailedHref &&
+			loadingForHref !== currentHref
+		if (needsLoad && !applyEmbeddedLoaderData(currentHref)) {
+			if (typeof document !== 'undefined') {
+				status = 'loading'
+				loadingForHref = currentHref
 				handle.queueTask(loadAdminUsers)
 			}
 		}

@@ -71,6 +71,8 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 	let pendingDoubleCheckKey: string | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
+	let loadingForHref: string | null = null
+	let lastFailedHref: string | null = null
 
 	function getDoubleCheckKey(reportId: string, intent: ReportIntent) {
 		return `${reportId}:${intent}`
@@ -117,6 +119,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 
 	async function loadReports() {
 		const href = readCurrentRouterHref(handle)
+		loadingForHref = href
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
@@ -134,6 +137,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 			if (response.status === 403) {
 				status = 'error'
 				message = 'You do not have permission to view community reports.'
+				lastFailedHref = href
 				handle.update()
 				return
 			}
@@ -146,6 +150,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 			status = 'ready'
 			message = null
 			lastLoadedHref = href
+			lastFailedHref = null
 			handle.update()
 		} catch (error) {
 			if (requestId !== loadRequestId) return
@@ -154,7 +159,10 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 				error instanceof Error
 					? error.message
 					: 'Unable to load community reports.'
+			lastFailedHref = href
 			handle.update()
+		} finally {
+			if (requestId === loadRequestId) loadingForHref = null
 		}
 	}
 
@@ -197,6 +205,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		if (href !== lastLoadedHref) {
 			status = 'loading'
+			lastFailedHref = null
 			handle.update()
 		}
 	})
@@ -224,12 +233,15 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		const currentHref = readCurrentRouterHref(handle)
 		const isMutating = actionState !== 'idle'
 
-		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			if (!applyEmbeddedLoaderData(currentHref)) {
-				if (typeof document !== 'undefined') {
-					status = 'loading'
-					handle.queueTask(loadReports)
-				}
+		const needsLoad =
+			(status === 'loading' || currentHref !== lastLoadedHref) &&
+			currentHref !== lastFailedHref &&
+			loadingForHref !== currentHref
+		if (needsLoad && !applyEmbeddedLoaderData(currentHref)) {
+			if (typeof document !== 'undefined') {
+				status = 'loading'
+				loadingForHref = currentHref
+				handle.queueTask(loadReports)
 			}
 		}
 

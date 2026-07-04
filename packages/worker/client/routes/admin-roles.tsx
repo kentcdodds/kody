@@ -29,8 +29,12 @@ export function AdminRolesRoute(handle: Handle) {
 	let message: string | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
+	let loadingForHref: string | null = null
+	let lastFailedHref: string | null = null
 
 	async function loadAdminRoles() {
+		const href = readCurrentRouterHref(handle)
+		loadingForHref = href
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(adminRolesApiPath, {
@@ -45,6 +49,7 @@ export function AdminRolesRoute(handle: Handle) {
 			if (response.status === 403) {
 				status = 'error'
 				message = 'You do not have permission to view admin roles.'
+				lastFailedHref = href
 				handle.update()
 				return
 			}
@@ -56,13 +61,17 @@ export function AdminRolesRoute(handle: Handle) {
 			status = 'ready'
 			message = null
 			lastLoadedHref = readCurrentRouterHref(handle)
+			lastFailedHref = null
 			handle.update()
 		} catch (error) {
 			if (requestId !== loadRequestId) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load admin roles.'
+			lastFailedHref = href
 			handle.update()
+		} finally {
+			if (requestId === loadRequestId) loadingForHref = null
 		}
 	}
 
@@ -70,6 +79,7 @@ export function AdminRolesRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		if (href !== lastLoadedHref) {
 			status = 'loading'
+			lastFailedHref = null
 			handle.update()
 		}
 	})
@@ -90,11 +100,14 @@ export function AdminRolesRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 
-		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			if (
-				!applyEmbeddedLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
+		const needsLoad =
+			(status === 'loading' || currentHref !== lastLoadedHref) &&
+			currentHref !== lastFailedHref &&
+			loadingForHref !== currentHref
+		if (needsLoad && !applyEmbeddedLoaderData(currentHref)) {
+			if (typeof document !== 'undefined') {
+				status = 'loading'
+				loadingForHref = currentHref
 				handle.queueTask(loadAdminRoles)
 			}
 		}
