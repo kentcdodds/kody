@@ -3,6 +3,7 @@ import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
 import {
 	listenToRouterNavigation,
+	navigate,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
 import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
@@ -362,6 +363,11 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		)
 	}
 
+	function syncRouterLocation(nextPath: string) {
+		navigate(nextPath)
+		lastLoadedHref = nextPath
+	}
+
 	async function loadTokens(signal: AbortSignal) {
 		const loadStartedAtMutationVersion = mutationVersion
 		try {
@@ -513,15 +519,9 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editMode = false
 		message = null
 		messageTone = 'info'
-		if (typeof window !== 'undefined') {
-			window.history.pushState(
-				null,
-				'',
-				`${accountPackageInvocationTokensBasePath}/new`,
-			)
-			lastLoadedHref = window.location.href
-			lastNewTokenQueryKey = getNewTokenQueryKey(window.location.href)
-		}
+		const nextPath = `${accountPackageInvocationTokensBasePath}/new`
+		syncRouterLocation(nextPath)
+		lastNewTokenQueryKey = getNewTokenQueryKey(nextPath)
 		handle.update()
 	}
 
@@ -546,16 +546,11 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		deleteConfirm = false
 		message = null
 		messageTone = 'info'
-		if (typeof window !== 'undefined') {
-			window.history.pushState(
-				null,
-				'',
-				tokenId
-					? buildTokenDetailPath(tokenId)
-					: accountPackageInvocationTokensBasePath,
-			)
-			lastLoadedHref = window.location.href
-		}
+		syncRouterLocation(
+			tokenId
+				? buildTokenDetailPath(tokenId)
+				: accountPackageInvocationTokensBasePath,
+		)
 		handle.update()
 	}
 
@@ -632,13 +627,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			message =
 				'Created token. The raw token was not stored and will not be shown again.'
 			messageTone = 'info'
-			if (typeof window !== 'undefined') {
-				const nextPath = payload.selectedTokenId
-					? buildTokenDetailPath(payload.selectedTokenId)
-					: accountPackageInvocationTokensBasePath
-				window.history.pushState(null, '', nextPath)
-				lastLoadedHref = window.location.href
-			}
+			const nextPath = payload.selectedTokenId
+				? buildTokenDetailPath(payload.selectedTokenId)
+				: accountPackageInvocationTokensBasePath
+			syncRouterLocation(nextPath)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -719,10 +711,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				? 'Saved token and replaced its raw value.'
 				: 'Saved token.'
 			messageTone = 'info'
-			if (typeof window !== 'undefined') {
-				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
-				lastLoadedHref = window.location.href
-			}
+			syncRouterLocation(buildTokenDetailPath(tokenId))
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -771,10 +760,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			saveState = 'idle'
 			message = 'Revoked token.'
 			messageTone = 'info'
-			if (typeof window !== 'undefined') {
-				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
-				lastLoadedHref = window.location.href
-			}
+			syncRouterLocation(buildTokenDetailPath(tokenId))
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -820,10 +806,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			saveState = 'idle'
 			message = 'Reinstated token.'
 			messageTone = 'info'
-			if (typeof window !== 'undefined') {
-				window.history.pushState(null, '', buildTokenDetailPath(tokenId))
-				lastLoadedHref = window.location.href
-			}
+			syncRouterLocation(buildTokenDetailPath(tokenId))
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -872,14 +855,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			editMode = false
 			message = 'Deleted token permanently.'
 			messageTone = 'info'
-			if (typeof window !== 'undefined') {
-				window.history.pushState(
-					null,
-					'',
-					accountPackageInvocationTokensBasePath,
-				)
-				lastLoadedHref = window.location.href
-			}
+			syncRouterLocation(accountPackageInvocationTokensBasePath)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -901,10 +877,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editMode = !token.revokedAt
 		message = null
 		messageTone = 'info'
-		if (typeof window !== 'undefined') {
-			window.history.pushState(null, '', buildTokenDetailPath(token.id))
-			lastLoadedHref = window.location.href
-		}
+		syncRouterLocation(buildTokenDetailPath(token.id))
 		handle.update()
 	}
 
@@ -1716,14 +1689,9 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												selectedTokenId = null
 												editorState = createEmptyEditorState()
 												editMode = false
-												if (typeof window !== 'undefined') {
-													window.history.pushState(
-														null,
-														'',
-														accountPackageInvocationTokensBasePath,
-													)
-													lastLoadedHref = window.location.href
-												}
+												syncRouterLocation(
+													accountPackageInvocationTokensBasePath,
+												)
 												handle.update()
 											}),
 											css(secondaryButtonCss),

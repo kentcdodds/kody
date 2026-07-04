@@ -5,7 +5,10 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import {
+	readAppLoaderData,
+	tryConsumeEmbeddedLoaderData,
+} from '#client/loader-data-context.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -203,12 +206,16 @@ export function CommunityDetailRoute(handle: Handle) {
 
 	function applyEmbeddedLoaderData(href: string, listingId: string | null) {
 		if (!listingId) return false
+		const peeked = readAppLoaderData(handle)?.communityDetail
+		if (!peeked || peeked.listing.id !== listingId) {
+			return false
+		}
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'communityDetail',
 			href,
 		)
-		if (!embedded || embedded.listing.id !== listingId) {
+		if (!embedded) {
 			return false
 		}
 		listing = embedded.listing
