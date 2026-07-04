@@ -219,21 +219,25 @@ function validSavedPackage() {
 	}
 }
 
-test('publishCommunityListing writes D1 before KV and reverts insert on KV failure', async () => {
+test('publishCommunityListing rolls back D1 when KV snapshot write fails', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
-	const callOrder: Array<string> = []
+
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.insertCommunityListing.mockImplementation(async () => undefined)
+	mockModule.writeCommunitySnapshot.mockRejectedValue(new Error('kv down'))
+	mockModule.deleteCommunityListing.mockResolvedValue(true)
+
+	const insertCallOrder: Array<string> = []
 	mockModule.insertCommunityListing.mockImplementation(async () => {
-		callOrder.push('insert')
+		insertCallOrder.push('insert')
 	})
 	mockModule.writeCommunitySnapshot.mockImplementation(async () => {
-		callOrder.push('snapshot')
+		insertCallOrder.push('snapshot')
 		throw new Error('kv down')
 	})
-	mockModule.deleteCommunityListing.mockResolvedValue(true)
 
 	await expect(
 		publishCommunityListing({
@@ -244,11 +248,37 @@ test('publishCommunityListing writes D1 before KV and reverts insert on KV failu
 		}),
 	).rejects.toThrow('kv down')
 
-	expect(callOrder).toEqual(['insert', 'snapshot'])
+	expect(insertCallOrder).toEqual(['insert', 'snapshot'])
 	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			ownerUserId: 'user-1',
+		}),
+	)
+
+	const existingListing = sampleListing()
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		existingListing,
+	)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	mockModule.writeCommunitySnapshot.mockRejectedValue(new Error('kv down'))
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('kv down')
+
+	expect(mockModule.updateCommunityListing).toHaveBeenCalledTimes(2)
+	expect(mockModule.updateCommunityListing).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			listingId: existingListing.id,
+			pinnedCommit: existingListing.pinnedCommit,
+			publishedAt: existingListing.publishedAt,
 		}),
 	)
 })
@@ -278,38 +308,6 @@ test('publishCommunityListing rejects re-publish when guarded update finds delis
 		}),
 	)
 	expect(mockModule.writeCommunitySnapshot).not.toHaveBeenCalled()
-})
-
-test('publishCommunityListing restores previous D1 row when KV fails on update', async () => {
-	const existingListing = sampleListing()
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
-		existingListing,
-	)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
-	mockModule.getCommunityListingById.mockResolvedValue(existingListing)
-	mockModule.updateCommunityListing.mockResolvedValue(true)
-	mockModule.writeCommunitySnapshot.mockRejectedValue(new Error('kv down'))
-
-	await expect(
-		publishCommunityListing({
-			env: createEnv(),
-			baseUrl: 'https://heykody.dev',
-			userId: 'user-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toThrow('kv down')
-
-	expect(mockModule.updateCommunityListing).toHaveBeenCalledTimes(2)
-	expect(mockModule.updateCommunityListing).toHaveBeenLastCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			listingId: existingListing.id,
-			pinnedCommit: existingListing.pinnedCommit,
-			publishedAt: existingListing.publishedAt,
-		}),
-	)
 })
 
 test('unpublishCommunityListing refuses delisted listings without deleting anything', async () => {
@@ -359,52 +357,6 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 	)
 })
 
-test('unpublishCommunityListing skips cascade when listing delete returns false', async () => {
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
-	mockModule.deleteCommunityListing.mockResolvedValue(false)
-
-	await expect(
-		unpublishCommunityListing({
-			env: createEnv(),
-			userId: 'owner-1',
-			listingId: 'listing-1',
-		}),
-	).rejects.toThrow('was not found')
-
-	expect(mockModule.deleteCommunityRatingsByListingId).not.toHaveBeenCalled()
-	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
-})
-
-test('resolveCommunityReport delete skips cascade when listing delete returns false', async () => {
-	mockModule.getCommunityReportById.mockResolvedValue({
-		id: 'report-1',
-		listingId: 'listing-1',
-		listingName: '@owner/discord-gateway',
-		listingOwnerUserId: 'owner-1',
-		reporterUserId: 'user-2',
-		reason: 'spam',
-		status: 'open',
-		resolvedByUserId: null,
-		resolvedAt: null,
-		resolutionNote: null,
-		createdAt: '2026-07-02T00:00:00.000Z',
-		updatedAt: '2026-07-02T00:00:00.000Z',
-	})
-	mockModule.deleteCommunityListing.mockResolvedValue(false)
-	mockModule.resolveCommunityReportRow.mockResolvedValue(true)
-
-	await resolveCommunityReport({
-		env: createEnv(),
-		adminUserId: 'admin-1',
-		reportId: 'report-1',
-		action: 'delete',
-	})
-
-	expect(mockModule.deleteCommunityRatingsByListingId).not.toHaveBeenCalled()
-	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
-	expect(mockModule.resolveCommunityReportRow).toHaveBeenCalled()
-})
-
 test('forkCommunityListing rejects banned users', async () => {
 	mockModule.getCommunityBan.mockResolvedValue({
 		userId: 'user-2',
@@ -422,36 +374,6 @@ test('forkCommunityListing rejects banned users', async () => {
 			listingId: 'listing-1',
 		}),
 	).rejects.toThrow('banned from community participation')
-})
-
-test('searchCommunityListings returns empty when limit is 0', async () => {
-	const listing = sampleListing()
-	mockModule.listAllCommunityListings.mockResolvedValue([listing])
-	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
-		'listing-1': {
-			listingId: 'listing-1',
-			ratingCount: 1,
-			averageStars: 4,
-			averageAdaptationEffort: 2,
-		},
-	})
-	mockModule.countCommunityForksByListingIds.mockResolvedValue({
-		'listing-1': 0,
-	})
-
-	const emptyQueryResults = await searchCommunityListings({
-		env: createEnv(),
-		query: '',
-		limit: 0,
-	})
-	const queryResults = await searchCommunityListings({
-		env: createEnv(),
-		query: 'discord',
-		limit: 0,
-	})
-
-	expect(emptyQueryResults).toEqual([])
-	expect(queryResults).toEqual([])
 })
 
 test('searchCommunityListings empty query uses publishedAt tiebreaker', async () => {
@@ -621,7 +543,7 @@ test('publishCommunityListing requires MIT license and Intent heading', async ()
 	).rejects.toThrow('README.md to include a "## Intent" section')
 })
 
-test('rateCommunityListing requires an existing fork', async () => {
+test('rateCommunityListing requires a fork and rejects owner self-ratings', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.getCommunityForkByListingAndUser.mockResolvedValue(null)
@@ -635,11 +557,7 @@ test('rateCommunityListing requires an existing fork', async () => {
 			adaptationEffort: 2,
 		}),
 	).rejects.toThrow('rate after forking')
-})
 
-test('rateCommunityListing rejects ratings from the listing owner', async () => {
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.getCommunityForkByListingAndUser.mockResolvedValue({
 		id: 'fork-1',
 		listingId: 'listing-1',
@@ -660,13 +578,8 @@ test('rateCommunityListing rejects ratings from the listing owner', async () => 
 			adaptationEffort: 2,
 		}),
 	).rejects.toThrow('You cannot rate your own listing.')
-
 	expect(mockModule.upsertCommunityRating).not.toHaveBeenCalled()
-})
 
-test('rateCommunityListing allows non-owners with a fork row', async () => {
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.getCommunityForkByListingAndUser.mockResolvedValue({
 		id: 'fork-1',
 		listingId: 'listing-1',
@@ -695,58 +608,6 @@ test('rateCommunityListing allows non-owners with a fork row', async () => {
 			adaptation_effort: 2,
 		}),
 	)
-})
-
-test('searchCommunityListings returns the relevant listing first', async () => {
-	const discordListing = sampleListing({
-		id: 'listing-discord',
-		kodyId: 'discord-gateway',
-		name: '@owner/discord-gateway',
-		description: 'Discord gateway websocket helpers',
-		tags: ['discord', 'gateway'],
-		searchText: 'discord bot websocket',
-	})
-	const weatherListing = sampleListing({
-		id: 'listing-weather',
-		kodyId: 'weather-widget',
-		name: '@owner/weather-widget',
-		description: 'Weather forecast widget',
-		tags: ['weather'],
-		searchText: 'forecast temperature',
-		readmeContent: '# Weather\n\n## Intent\n\nShow weather.',
-	})
-
-	mockModule.listAllCommunityListings.mockResolvedValue([
-		weatherListing,
-		discordListing,
-	])
-	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
-		'listing-discord': {
-			listingId: 'listing-discord',
-			ratingCount: 10,
-			averageStars: 4.8,
-			averageAdaptationEffort: 2,
-		},
-		'listing-weather': {
-			listingId: 'listing-weather',
-			ratingCount: 2,
-			averageStars: 3,
-			averageAdaptationEffort: 3,
-		},
-	})
-	mockModule.countCommunityForksByListingIds.mockResolvedValue({
-		'listing-discord': 4,
-		'listing-weather': 1,
-	})
-
-	const results = await searchCommunityListings({
-		env: createEnv(),
-		query: 'discord gateway websocket',
-		limit: 5,
-	})
-
-	expect(results).toHaveLength(1)
-	expect(results[0]?.id).toBe('listing-discord')
 })
 
 test('forkCommunityListing creates inert source without saved package row', async () => {

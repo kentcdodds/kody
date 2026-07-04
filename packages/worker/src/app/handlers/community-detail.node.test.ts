@@ -20,11 +20,11 @@ vi.mock('#worker/community/service.ts', () => ({
 
 const env = {} as Env
 
-test('community report POST requires authentication', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-
+test('community report POST enforces auth, validation, and error mapping', async () => {
 	const handler = createCommunityReportApiPostHandler(env)
-	const response = await handler.handler({
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	const unauthorized = await handler.handler({
 		request: new Request(
 			'https://example.com/community/listing-1/report.json',
 			{
@@ -36,51 +36,17 @@ test('community report POST requires authentication', async () => {
 		params: { listingId: 'listing-1' },
 		url: new URL('https://example.com/community/listing-1/report.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(401)
-	expect(body).toEqual({ ok: false, error: 'Unauthorized.' })
+	expect(unauthorized.status).toBe(401)
+	expect(await unauthorized.json()).toEqual({
+		ok: false,
+		error: 'Unauthorized.',
+	})
 	expect(mockModule.reportCommunityListing).not.toHaveBeenCalled()
-})
 
-test('community report POST uses MCP-space user id', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		mcpUser: { userId: 'stable-reporter-id' },
 	})
-	mockModule.reportCommunityListing.mockResolvedValue({ id: 'report-1' })
-
-	const handler = createCommunityReportApiPostHandler(env)
-	const response = await handler.handler({
-		request: new Request(
-			'https://example.com/community/listing-1/report.json',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ reason: 'Unsafe imports' }),
-			},
-		),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1/report.json'),
-	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(200)
-	expect(body).toEqual({ ok: true })
-	expect(mockModule.reportCommunityListing).toHaveBeenCalledWith({
-		env,
-		userId: 'stable-reporter-id',
-		listingId: 'listing-1',
-		reason: 'Unsafe imports',
-	})
-})
-
-test('community report POST validates reason length', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'stable-reporter-id' },
-	})
-
-	const handler = createCommunityReportApiPostHandler(env)
-	const response = await handler.handler({
+	const invalidReason = await handler.handler({
 		request: new Request(
 			'https://example.com/community/listing-1/report.json',
 			{
@@ -92,23 +58,36 @@ test('community report POST validates reason length', async () => {
 		params: { listingId: 'listing-1' },
 		url: new URL('https://example.com/community/listing-1/report.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(400)
-	expect(body.ok).toBe(false)
+	expect(invalidReason.status).toBe(400)
+	expect((await invalidReason.json()).ok).toBe(false)
 	expect(mockModule.reportCommunityListing).not.toHaveBeenCalled()
-})
 
-test('community report POST returns 400 for user-facing service errors', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'stable-reporter-id' },
+	mockModule.reportCommunityListing.mockResolvedValue({ id: 'report-1' })
+	const success = await handler.handler({
+		request: new Request(
+			'https://example.com/community/listing-1/report.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ reason: 'Unsafe imports' }),
+			},
+		),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1/report.json'),
+	} as never)
+	expect(success.status).toBe(200)
+	expect(await success.json()).toEqual({ ok: true })
+	expect(mockModule.reportCommunityListing).toHaveBeenCalledWith({
+		env,
+		userId: 'stable-reporter-id',
+		listingId: 'listing-1',
+		reason: 'Unsafe imports',
 	})
+
 	mockModule.reportCommunityListing.mockRejectedValue(
 		new CommunityActionError('banned from community participation'),
 	)
-
-	const handler = createCommunityReportApiPostHandler(env)
-	const response = await handler.handler({
+	const userFacingError = await handler.handler({
 		request: new Request(
 			'https://example.com/community/listing-1/report.json',
 			{
@@ -120,24 +99,15 @@ test('community report POST returns 400 for user-facing service errors', async (
 		params: { listingId: 'listing-1' },
 		url: new URL('https://example.com/community/listing-1/report.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(400)
-	expect(body).toEqual({
+	expect(userFacingError.status).toBe(400)
+	expect(await userFacingError.json()).toEqual({
 		ok: false,
 		error: 'banned from community participation',
 	})
-})
 
-test('community report POST returns 500 for unexpected service errors', async () => {
 	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'stable-reporter-id' },
-	})
 	mockModule.reportCommunityListing.mockRejectedValue(new Error('db timeout'))
-
-	const handler = createCommunityReportApiPostHandler(env)
-	const response = await handler.handler({
+	const serverError = await handler.handler({
 		request: new Request(
 			'https://example.com/community/listing-1/report.json',
 			{
@@ -149,10 +119,11 @@ test('community report POST returns 500 for unexpected service errors', async ()
 		params: { listingId: 'listing-1' },
 		url: new URL('https://example.com/community/listing-1/report.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(500)
-	expect(body).toEqual({ ok: false, error: 'Unable to submit report.' })
+	expect(serverError.status).toBe(500)
+	expect(await serverError.json()).toEqual({
+		ok: false,
+		error: 'Unable to submit report.',
+	})
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()
 })
