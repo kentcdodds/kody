@@ -316,7 +316,7 @@ export async function publishCommunityListing(input: {
 		},
 	)
 	if (existingListing?.status === 'delisted') {
-		throw new Error(
+		throw new CommunityActionError(
 			`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
 		)
 	}
@@ -333,7 +333,7 @@ export async function publishCommunityListing(input: {
 	}
 
 	if (existingListing) {
-		await updateCommunityListing(input.env.APP_DB, {
+		const updated = await updateCommunityListing(input.env.APP_DB, {
 			listingId,
 			ownerUserId: input.userId,
 			sourceId: savedPackage.sourceId,
@@ -346,7 +346,13 @@ export async function publishCommunityListing(input: {
 			license,
 			pinnedCommit: publishedCommit,
 			publishedAt: now,
+			requireStatus: 'active',
 		})
+		if (!updated) {
+			throw new CommunityActionError(
+				`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
+			)
+		}
 	} else {
 		await insertCommunityListing(input.env.APP_DB, {
 			id: listingId,

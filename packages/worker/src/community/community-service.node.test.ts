@@ -253,6 +253,33 @@ test('publishCommunityListing writes D1 before KV and reverts insert on KV failu
 	)
 })
 
+test('publishCommunityListing rejects re-publish when guarded update finds delisted listing', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing({ status: 'active' }),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.updateCommunityListing.mockResolvedValue(false)
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('was delisted by an admin and cannot be re-published')
+
+	expect(mockModule.updateCommunityListing).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			requireStatus: 'active',
+		}),
+	)
+	expect(mockModule.writeCommunitySnapshot).not.toHaveBeenCalled()
+})
+
 test('publishCommunityListing restores previous D1 row when KV fails on update', async () => {
 	const existingListing = sampleListing()
 	mockModule.getCommunityBan.mockResolvedValue(null)
@@ -262,6 +289,7 @@ test('publishCommunityListing restores previous D1 row when KV fails on update',
 	)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
 	mockModule.getCommunityListingById.mockResolvedValue(existingListing)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
 	mockModule.writeCommunitySnapshot.mockRejectedValue(new Error('kv down'))
 
 	await expect(

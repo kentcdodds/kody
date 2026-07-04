@@ -79,6 +79,7 @@ export function CommunityRoute(handle: Handle) {
 		} catch (error) {
 			if (requestId !== loadRequestId) return
 			status = 'error'
+			listings = []
 			message =
 				error instanceof Error
 					? error.message

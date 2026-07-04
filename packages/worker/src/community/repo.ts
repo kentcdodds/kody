@@ -157,6 +157,7 @@ export async function updateCommunityListing(
 		pinnedCommit?: string
 		status?: CommunityListingStatus
 		publishedAt?: string
+		requireStatus?: CommunityListingStatus
 	},
 ): Promise<boolean> {
 	const assignments: Array<string> = []
@@ -190,13 +191,17 @@ export async function updateCommunityListing(
 	}
 	addAssignment('updated_at', new Date().toISOString())
 
+	const statusClause = input.requireStatus != null ? ' AND status = ?' : ''
+	const statusBindings =
+		input.requireStatus != null ? [input.requireStatus] : []
+
 	const result = await db
 		.prepare(
 			`UPDATE community_listings
 			SET ${assignments.join(', ')}
-			WHERE id = ? AND owner_user_id = ?`,
+			WHERE id = ? AND owner_user_id = ?${statusClause}`,
 		)
-		.bind(...values, input.listingId, input.ownerUserId)
+		.bind(...values, input.listingId, input.ownerUserId, ...statusBindings)
 		.run()
 
 	return (result.meta.changes ?? 0) > 0
