@@ -1,7 +1,11 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#client/loader-data-types.ts'
-import { readRouterPathname, readRouterUrl } from './router-location.tsx'
+import {
+	readRouterPathname,
+	readRouterUrl,
+	readSsrRouterUrl,
+} from './router-location.tsx'
 
 type RouterSetup = {
 	routes: Record<string, JSX.Element>
@@ -317,7 +321,9 @@ export function Router(handle: RouterHandle) {
 	}
 
 	return () => {
-		if (handle.props.notFound) {
+		// The server's 404 verdict only applies to the URL it rendered;
+		// after SPA navigation, match routes normally again.
+		if (handle.props.notFound && isOnSsrUrl(handle)) {
 			return handle.props.fallback ?? null
 		}
 
@@ -326,6 +332,18 @@ export function Router(handle: RouterHandle) {
 		if (routeElement) return routeElement
 		return handle.props.fallback ?? null
 	}
+}
+
+function normalizeHref(href: string) {
+	const url = new URL(href, clientRouteOrigin)
+	return `${url.pathname}${url.search}${url.hash}`
+}
+
+function isOnSsrUrl(handle: Pick<Handle, 'context'>) {
+	return (
+		normalizeHref(readRouterUrl(handle)) ===
+		normalizeHref(readSsrRouterUrl(handle))
+	)
 }
 
 export function readCurrentRouterHref(handle: Handle) {

@@ -95,4 +95,14 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	await expect(page.getByRole('link', { name: alphaListing.name })).toHaveCount(
 		0,
 	)
+
+	// A server-rendered 404 must not pin later SPA navigations to the
+	// not-found fallback.
+	const notFoundResponse = await page.goto('/definitely-not-a-page')
+	expect(notFoundResponse?.status()).toBe(404)
+	await expect(page.getByRole('heading', { name: 'Not Found' })).toBeVisible()
+	await page.getByRole('link', { name: 'Community', exact: true }).click()
+	await expect(page).toHaveURL(/\/community$/)
+	await expect(page.getByText(betaListing.description)).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Not Found' })).toHaveCount(0)
 })

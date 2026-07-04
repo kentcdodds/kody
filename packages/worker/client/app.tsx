@@ -55,11 +55,12 @@ export function App(handle: Handle<AppProps>) {
 		}
 	}
 
-	if (handle.props.embeddedSession === undefined) {
-		handle.queueTask(() => {
-			queueSessionRefresh()
-		})
-	}
+	// Always revalidate after hydration: the embedded session renders the
+	// first paint without a flash ('ready' status keeps the refresh silent),
+	// but auth may have changed since the document was rendered.
+	handle.queueTask(() => {
+		queueSessionRefresh()
+	})
 
 	if (typeof document !== 'undefined') {
 		listenToRouterNavigation(handle, () => {
