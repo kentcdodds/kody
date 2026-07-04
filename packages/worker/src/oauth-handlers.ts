@@ -10,6 +10,7 @@ import {
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
+import { type OAuthAuthorizeLoaderData } from '#app/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createDb, usersTable } from './db.ts'
@@ -56,8 +57,23 @@ type OAuthClientResetVerification = {
 	reason: 'invalid-client-id-mismatch'
 }
 
-function renderSpaShell(request: Request, env: Env, status = 200) {
-	return renderAppPage({ request, env, status })
+function renderSpaShell(
+	request: Request,
+	env: Env,
+	options: {
+		status?: number
+		loaderData?: { oauthAuthorize: OAuthAuthorizeLoaderData }
+		setCookie?: string | null
+	} = {},
+) {
+	const { status = 200, loaderData, setCookie } = options
+	return renderAppPage({
+		request,
+		env,
+		status,
+		loaderData,
+		extraSetCookies: setCookie ? [setCookie] : undefined,
+	})
 }
 
 const dummyPasswordHash =
@@ -516,10 +532,15 @@ async function resolveSessionEmail(request: Request, env: Env) {
 	}
 }
 
-export async function handleAuthorizeInfo(
+export type OAuthAuthorizeDataResult = {
+	data: OAuthAuthorizeLoaderData
+	setCookie: string | null
+}
+
+export async function loadOAuthAuthorizeData(
 	request: Request,
 	env: Env,
-): Promise<Response> {
+): Promise<OAuthAuthorizeDataResult> {
 	const helpers = getOAuthHelpers(env)
 	const resolution = await resolveAuthRequest(helpers, request)
 	if ('error' in resolution) {
@@ -530,13 +551,14 @@ export async function handleAuthorizeInfo(
 				helpers,
 				resolution.error ?? 'Unable to parse OAuth request.',
 			)
-		return jsonResponse(
-			{ ok: false, error: resolution.error, allowClientReset },
-			{
-				status: 400,
-				headers: createSetCookieHeaders([setCookie]),
+		return {
+			data: {
+				ok: false,
+				error: resolution.error ?? 'Unable to parse OAuth request.',
+				allowClientReset,
 			},
-		)
+			setCookie,
+		}
 	}
 
 	const { authRequest, client } = resolution
@@ -546,17 +568,18 @@ export async function handleAuthorizeInfo(
 			: null
 	const resolvedScopes = resolveScopes(authRequest.scope)
 	if (!Array.isArray(resolvedScopes)) {
-		return jsonResponse(
-			{ ok: false, error: resolvedScopes.error, allowClientReset: false },
-			{
-				status: 400,
-				headers: createSetCookieHeaders([clearResetVerificationCookie]),
+		return {
+			data: {
+				ok: false,
+				error: resolvedScopes.error,
+				allowClientReset: false,
 			},
-		)
+			setCookie: clearResetVerificationCookie,
+		}
 	}
 
-	return jsonResponse(
-		{
+	return {
+		data: {
 			ok: true,
 			client: {
 				id: client.clientId,
@@ -564,8 +587,33 @@ export async function handleAuthorizeInfo(
 			},
 			scopes: resolvedScopes,
 		},
+		setCookie: clearResetVerificationCookie,
+	}
+}
+
+export async function handleAuthorizeInfo(
+	request: Request,
+	env: Env,
+): Promise<Response> {
+	const { data, setCookie } = await loadOAuthAuthorizeData(request, env)
+	if (!data.ok) {
+		return jsonResponse(
+			{ ok: false, error: data.error, allowClientReset: data.allowClientReset },
+			{
+				status: 400,
+				headers: createSetCookieHeaders([setCookie]),
+			},
+		)
+	}
+
+	return jsonResponse(
 		{
-			headers: createSetCookieHeaders([clearResetVerificationCookie]),
+			ok: true,
+			client: data.client,
+			scopes: data.scopes,
+		},
+		{
+			headers: createSetCookieHeaders([setCookie]),
 		},
 	)
 }
@@ -575,7 +623,11 @@ export async function handleAuthorizeRequest(
 	env: Env,
 ): Promise<Response> {
 	if (request.method === 'GET') {
-		return renderSpaShell(request, env)
+		const { data, setCookie } = await loadOAuthAuthorizeData(request, env)
+		return renderSpaShell(request, env, {
+			loaderData: { oauthAuthorize: data },
+			setCookie,
+		})
 	}
 
 	if (request.method !== 'POST') {
@@ -787,7 +839,7 @@ export function handleOAuthCallback(
 	const url = new URL(request.url)
 	const hasError =
 		url.searchParams.has('error') || url.searchParams.has('error_description')
-	return renderSpaShell(request, env, hasError ? 400 : 200)
+	return renderSpaShell(request, env, { status: hasError ? 400 : 200 })
 }
 
 export const apiHandler = {

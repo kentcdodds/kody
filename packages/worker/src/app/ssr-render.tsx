@@ -22,10 +22,20 @@ export type RenderAppPageInput = {
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	status?: number
+	extraSetCookies?: Array<string>
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
-	const { request, env, title, extraHead, loaderData, notFound, status } = input
+	const {
+		request,
+		env,
+		title,
+		extraHead,
+		loaderData,
+		notFound,
+		status,
+		extraSetCookies,
+	} = input
 	const { session, setCookie } = await loadSessionInfo(request, env)
 	const url = getRequestUrl(request)
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
@@ -59,6 +69,9 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	})
 	if (setCookie) {
 		headers.append('Set-Cookie', setCookie)
+	}
+	for (const cookie of extraSetCookies ?? []) {
+		headers.append('Set-Cookie', cookie)
 	}
 	const cacheLookup = getRequestDataCacheLookup(request)
 	if (cacheLookup) {

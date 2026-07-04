@@ -196,6 +196,18 @@ export type AccountSecretsLoaderData = {
 	approvalError: string | null
 }
 
+export type OAuthAuthorizeLoaderData =
+	| {
+			ok: true
+			client: { id: string; name: string }
+			scopes: Array<string>
+	  }
+	| {
+			ok: false
+			error: string
+			allowClientReset: boolean
+	  }
+
 export type AppLoaderData = {
 	community?: CommunityIndexLoaderData
 	communityDetail?: CommunityDetailLoaderData
@@ -207,4 +219,5 @@ export type AppLoaderData = {
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
 	accountSecrets?: AccountSecretsLoaderData
+	oauthAuthorize?: OAuthAuthorizeLoaderData
 }

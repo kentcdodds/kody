@@ -1,5 +1,7 @@
 import { type Handle, css } from 'remix/ui'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	fetchSessionInfo,
@@ -39,6 +41,10 @@ type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
 
 function getSearchParams(handle: Handle) {
 	return new URLSearchParams(readRouterSearch(handle))
+}
+
+function isOAuthAuthorizePath(href: string) {
+	return new URL(href, 'http://localhost').pathname === '/oauth/authorize'
 }
 
 export function OAuthAuthorizeRoute(handle: Handle) {
@@ -116,6 +122,31 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 
 		sessionStatus = 'ready'
 		handle.update()
+	}
+
+	function applyEmbeddedLoaderData(currentHref: string) {
+		if (!isOAuthAuthorizePath(currentHref)) return false
+		const embedded = tryConsumeEmbeddedLoaderData(
+			handle,
+			'oauthAuthorize',
+			currentHref,
+		)
+		if (!embedded) return false
+		if (embedded.ok) {
+			info = {
+				client: embedded.client,
+				scopes: embedded.scopes,
+			}
+			status = 'ready'
+			allowClientReset = false
+			message = null
+		} else {
+			info = null
+			status = 'error'
+			allowClientReset = embedded.allowClientReset
+			message = { type: 'error', text: embedded.error }
+		}
+		return true
 	}
 
 	async function submitDecision(
@@ -198,19 +229,24 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	return () => {
+		const currentHref = readCurrentRouterHref(handle)
 		const currentSearch = readRouterSearch(handle)
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
 			resetCompleted = false
-			allowClientReset = false
-			info = null
-			status = 'loading'
 			const queryError = readQueryError()
-			message = queryError ? { type: 'error', text: queryError } : null
-			activeInfoRequestId += 1
-			const requestId = activeInfoRequestId
-			if (typeof document !== 'undefined') {
-				handle.queueTask(() => loadInfo(requestId))
+			if (!applyEmbeddedLoaderData(currentHref)) {
+				allowClientReset = false
+				info = null
+				status = 'loading'
+				message = queryError ? { type: 'error', text: queryError } : null
+				activeInfoRequestId += 1
+				const requestId = activeInfoRequestId
+				if (typeof document !== 'undefined') {
+					handle.queueTask(() => loadInfo(requestId))
+				}
+			} else if (queryError) {
+				message = { type: 'error', text: queryError }
 			}
 		}
 		if (sessionStatus === 'idle' && typeof document !== 'undefined') {

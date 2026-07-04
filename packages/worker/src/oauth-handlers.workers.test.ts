@@ -164,6 +164,21 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		scopes: baseAuthRequest.scope,
 	})
 
+	const authorizeHtmlResponse = await handleAuthorizeRequest(
+		new Request(
+			'https://example.com/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
+		),
+		createEnv(createHelpers()),
+	)
+	expect(authorizeHtmlResponse.status).toBe(200)
+	expect(authorizeHtmlResponse.headers.get('Content-Type')).toContain(
+		'text/html',
+	)
+	const authorizeHtml = await authorizeHtmlResponse.text()
+	expect(authorizeHtml).toContain(baseClient.clientName ?? '')
+	expect(authorizeHtml).not.toContain('Loading authorization details')
+	expect(authorizeHtml).toContain('"oauthAuthorize"')
+
 	const mismatchResponse = await handleAuthorizeInfo(
 		new Request(
 			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
