@@ -66,7 +66,11 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await page.getByRole('link', { name: 'Admin', exact: true }).click()
 	await expect(page).toHaveURL(/\/admin\/users\/?$/)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
-	await expect(page.getByText(adminUser.email)).toBeVisible()
+	// The first user is auto-selected, so the email can render in both the
+	// list and the detail panel — assert on the list entry specifically.
+	await expect(
+		page.getByRole('button', { name: adminUser.username }),
+	).toBeVisible()
 	await expect(page.getByText('Unable to load admin users.')).toHaveCount(0)
 	expect(
 		await page.evaluate(

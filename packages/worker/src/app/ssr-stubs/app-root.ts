@@ -1,5 +1,5 @@
-import  { type AppLoaderData } from '#app/loader-data.ts'
-import  { type EntryComponent } from 'remix/ui'
+import { type AppLoaderData } from '#app/loader-data.ts'
+import { type EntryComponent } from 'remix/ui'
 
 export type AppRootProps = {
 	url: string
