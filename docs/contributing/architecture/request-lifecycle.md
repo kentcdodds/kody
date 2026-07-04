@@ -108,12 +108,26 @@ once with data already present instead of swapping routes into a loading state.
 
 Route loaders are registered in `clientRouteLoaders` (`routes/index.tsx`) and
 matched with the same Remix route-pattern specificity as `clientRoutes`. Loaders
-return `null` to abort the SPA navigation (for example, `401` → full-page login
-redirect). Loader errors still commit the navigation so the destination route
-can fall back to its own fetch. Hash-only changes commit immediately without a
-loader. Back/forward (`popstate`) and same-path refreshes after form POST also
-run loaders before notifying, keeping the previous UI visible until data is
-ready.
+return a `RouteLoaderRedirect` (via `routeLoaderRedirect`) to abort the SPA
+navigation with a full-document redirect (for example, `401` → login). The
+router performs the redirect, never the loader itself, so speculative loader
+runs stay side-effect free. Loader errors still commit the navigation so the
+destination route can fall back to its own fetch. Hash-only changes commit
+immediately without a loader. Back/forward (`popstate`) and same-path refreshes
+after form POST also run loaders before notifying, keeping the previous UI
+visible until data is ready.
+
+### Intent prefetch
+
+Like React Router's `prefetch="intent"`, the client router speculatively runs
+the destination's route loader when the user shows intent to navigate —
+`mouseover`, `focusin`, or `touchstart` on a same-origin link with a registered
+loader (`intent-prefetch.ts`). A single latest-wins slot holds the speculative
+run; hovering a different link aborts the previous prefetch. When the click
+lands, the navigation adopts the in-flight or freshly settled prefetch instead
+of starting the loader from scratch; results expire after a short TTL and
+failures fall back to a normal loader run. Form POSTs abort any pending prefetch
+so pre-mutation data is never shown. Opt a link out with `data-prefetch="none"`.
 
 A thin top-of-viewport **navigation progress bar** listens for `navigationstart`
 / `navigationend` on `routerEvents` and appears only when a navigation is still

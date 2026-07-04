@@ -19,10 +19,11 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 } from './account-management-components.tsx'
+import { type AdminCommunityReportsLoaderData } from '#app/loader-data.ts'
 import {
-	type AdminCommunityReportsLoaderData,
-	type AppLoaderData,
-} from '#app/loader-data.ts'
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 
 type AdminCommunityReportListItem =
 	AdminCommunityReportsLoaderData['reports'][number]
@@ -64,15 +65,14 @@ function buildReportsHref(handle: Handle, status: string) {
 export async function adminCommunityReportsRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const response = await fetch(`${adminCommunityReportsApiPath}${url.search}`, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) {
-		window.location.assign('/login')
-		return null
+		return routeLoaderRedirect('/login')
 	}
 	if (response.status === 403) {
 		throw new Error('You do not have permission to view community reports.')

@@ -11,7 +11,10 @@ import {
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -508,7 +511,7 @@ function buildSecretsApiRequestUrl(href: string) {
 export async function accountSecretsRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const href = `${url.pathname}${url.search}`
 	const requestUrl = buildSecretsApiRequestUrl(href)
 	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
@@ -517,8 +520,7 @@ export async function accountSecretsRouteLoader(
 		signal,
 	})
 	if (response.status === 401) {
-		window.location.assign('/login')
-		return null
+		return routeLoaderRedirect('/login')
 	}
 	const payload = await readJson<AccountSecretsPayload>(response)
 	if (!response.ok || !payload?.ok) {

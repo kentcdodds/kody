@@ -28,8 +28,11 @@ import { type RoleName } from '#app/permissions.ts'
 import {
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
-	type AppLoaderData,
 } from '#app/loader-data.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 
@@ -54,15 +57,14 @@ function buildUsersHref(handle: Handle, page: number) {
 export async function adminUsersRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const response = await fetch(`${adminUsersApiPath}${url.search}`, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) {
-		window.location.assign('/login')
-		return null
+		return routeLoaderRedirect('/login')
 	}
 	if (response.status === 403) {
 		throw new Error('You do not have permission to view admin users.')

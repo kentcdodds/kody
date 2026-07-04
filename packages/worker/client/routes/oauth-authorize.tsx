@@ -3,7 +3,7 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -51,7 +51,7 @@ function isOAuthAuthorizePath(href: string) {
 export async function oauthAuthorizeRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const response = await fetch(`/oauth/authorize-info${url.search}`, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',

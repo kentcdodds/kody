@@ -10,10 +10,11 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 } from './account-management-components.tsx'
+import { type AdminRolesLoaderData } from '#app/loader-data.ts'
 import {
-	type AdminRolesLoaderData,
-	type AppLoaderData,
-} from '#app/loader-data.ts'
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 
@@ -26,15 +27,14 @@ function isAdminRolesPath(href: string) {
 export async function adminRolesRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const response = await fetch(adminRolesApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) {
-		window.location.assign('/login')
-		return null
+		return routeLoaderRedirect('/login')
 	}
 	if (response.status === 403) {
 		throw new Error('You do not have permission to view admin roles.')

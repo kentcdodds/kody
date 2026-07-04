@@ -1,7 +1,7 @@
 import { Frame, type Handle, css } from 'remix/ui'
 import { routes } from '#app/routes.ts'
 import { COMMUNITY_LISTINGS_TARGET } from '#app/community-frame-constants.ts'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
@@ -33,7 +33,7 @@ function buildCommunityListingsFrameSrc(href: string) {
 export async function communityRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	try {
 		const frameSrc = buildCommunityListingsFrameSrc(
 			`${url.pathname}${url.search}`,

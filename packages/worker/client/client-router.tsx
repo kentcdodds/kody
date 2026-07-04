@@ -1,17 +1,20 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#app/loader-data.ts'
+import {
+	abortIntentPrefetch,
+	prefetchRouteOnIntent,
+	takePrefetchedRouteResult,
+} from './intent-prefetch.ts'
 import { setPreloadedNavigationData } from './navigation-data.ts'
+import { isRouteLoaderRedirect, type RouteLoader } from './route-loader.ts'
 import {
 	readRouterPathname,
 	readRouterUrl,
 	readSsrRouterUrl,
 } from './router-location.tsx'
 
-export type RouteLoader = (
-	url: URL,
-	signal: AbortSignal,
-) => Promise<Partial<AppLoaderData> | null>
+export { type RouteLoader } from './route-loader.ts'
 
 type RouterSetup = {
 	routes: Record<string, JSX.Element>
@@ -142,6 +145,46 @@ function handleDocumentClick(event: MouseEvent) {
 	event.preventDefault()
 	const destination = new URL(anchor.href, window.location.href)
 	navigate(`${destination.pathname}${destination.search}${destination.hash}`)
+}
+
+function getPrefetchDestination(target: EventTarget | null): URL | null {
+	if (!(target instanceof Element)) return null
+	const anchor = target.closest('a')
+	if (!anchor || typeof window === 'undefined') return null
+	if (anchor.dataset.prefetch === 'none') return null
+	if (anchor.target && anchor.target !== '_self') return null
+	if (anchor.hasAttribute('download')) return null
+
+	const href = anchor.getAttribute('href')
+	if (!href || href.startsWith('#')) return null
+
+	const destination = new URL(href, window.location.href)
+	if (destination.origin !== window.location.origin) return null
+	if (
+		getPathWithSearchAndHashFromUrl(destination) ===
+		getCurrentPathWithSearchAndHash()
+	) {
+		return null
+	}
+	return destination
+}
+
+/**
+ * Intent prefetch (hover / focus / touch on internal links, like React
+ * Router's `prefetch="intent"`): speculatively runs the destination's route
+ * loader so the data is already in flight — or already here — when the click
+ * lands. Opt out per link with `data-prefetch="none"`.
+ */
+function handleIntentPrefetch(event: Event) {
+	const destination = getPrefetchDestination(event.target)
+	if (!destination) return
+	const loader = matchRouteLoader(destination)
+	if (!loader) return
+	prefetchRouteOnIntent(
+		getPathWithSearchAndHashFromUrl(destination),
+		loader,
+		destination,
+	)
 }
 
 function getFormSubmitter(event: SubmitEvent) {
@@ -286,10 +329,16 @@ async function runNavigationWithLoader(
 	try {
 		let loadedData: Partial<AppLoaderData> | undefined
 		if (loader) {
-			const data = await loader(destination, signal)
+			// Adopt an intent prefetch when one is pending or fresh for this
+			// destination; otherwise run the loader now. Tying the prefetch to
+			// this navigation's signal keeps latest-wins abort semantics.
+			const prefetched = takePrefetchedRouteResult(nextPath, signal)
+			const result = prefetched
+				? await prefetched
+				: await loader(destination, signal)
 			if (signal.aborted) return
-			if (data === null) {
-				// The loader handled the navigation externally (e.g. a 401 →
+			if (isRouteLoaderRedirect(result)) {
+				// The loader wants a full-document navigation (e.g. a 401 →
 				// login redirect). When the browser URL already moved
 				// (popstate), still sync the UI to it so the app does not
 				// render the previous route under the new URL while the full
@@ -298,9 +347,10 @@ async function runNavigationWithLoader(
 					notify()
 				}
 				dispatchNavigationEnd()
+				window.location.assign(result.to)
 				return
 			}
-			loadedData = data
+			loadedData = result
 		}
 
 		if (signal.aborted) return
@@ -351,6 +401,11 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		navigate(buildGetDestination(details.action, details.formData).toString())
 		return
 	}
+
+	// The POST is about to mutate server state, so any speculative loader data
+	// fetched before the mutation must never be adopted by the follow-up
+	// navigation.
+	abortIntentPrefetch()
 
 	// Participate in the latest-wins navigation chain: a newer navigation
 	// aborts this submission's follow-up redirect navigation so a late
@@ -444,6 +499,11 @@ function ensureRouter() {
 	window.addEventListener('popstate', handlePopState)
 	document.addEventListener('click', handleDocumentClick)
 	document.addEventListener('submit', handleDocumentSubmit)
+	document.addEventListener('mouseover', handleIntentPrefetch)
+	document.addEventListener('focusin', handleIntentPrefetch)
+	document.addEventListener('touchstart', handleIntentPrefetch, {
+		passive: true,
+	})
 }
 
 export function listenToRouterNavigation(

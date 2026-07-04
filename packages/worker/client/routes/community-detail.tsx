@@ -8,7 +8,7 @@ import {
 } from '#client/client-router.tsx'
 import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -51,7 +51,7 @@ function getCurrentListingId(handle: Handle) {
 export async function communityDetailRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const listingId = getListingIdFromPathname(url.pathname)
 	if (!listingId) {
 		throw new Error('Community listing not found.')

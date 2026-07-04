@@ -20,7 +20,10 @@ import {
 	accountProfileApiPath,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 
 type AccountProfilePayload = {
 	ok: true
@@ -36,15 +39,14 @@ function isAccountPath(href: string) {
 export async function accountRouteLoader(
 	url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const response = await fetch(`${accountProfileApiPath}${url.search}`, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) {
-		window.location.assign('/login')
-		return null
+		return routeLoaderRedirect('/login')
 	}
 	const payload = await readJson<AccountProfilePayload>(response)
 	if (!response.ok || !payload?.ok) {

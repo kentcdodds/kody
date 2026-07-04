@@ -5,7 +5,10 @@ import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
-import { type AppLoaderData } from '#app/loader-data.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -67,15 +70,14 @@ function isAccountIntegrationsPath(href: string) {
 export async function accountIntegrationsRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
-): Promise<Partial<AppLoaderData> | null> {
+): Promise<RouteLoaderResult> {
 	const response = await fetch(accountIntegrationsApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) {
-		window.location.assign('/login')
-		return null
+		return routeLoaderRedirect('/login')
 	}
 	const payload = await readJson<AccountIntegrationsPayload>(response)
 	if (!response.ok || !payload?.ok) {
