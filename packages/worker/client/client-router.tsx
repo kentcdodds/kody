@@ -252,12 +252,17 @@ function commitNavigation(nextPath: string) {
 	notify()
 }
 
-function commitImmediateNavigation(nextPath: string) {
+function commitImmediateNavigation(
+	nextPath: string,
+	options?: Pick<NavigationRunOptions, 'suppressStart'>,
+) {
 	// A pending loader navigation must not commit after this immediate one
 	// and clobber the URL we are about to push.
 	navigationAbortController?.abort()
 	navigationAbortController = null
-	dispatchNavigationStart()
+	if (!options?.suppressStart) {
+		dispatchNavigationStart()
+	}
 	commitNavigation(nextPath)
 	dispatchNavigationEnd()
 }
@@ -279,6 +284,7 @@ async function runNavigationWithLoader(
 	const loader = matchRouteLoader(destination)
 
 	try {
+		let loadedData: Partial<AppLoaderData> | undefined
 		if (loader) {
 			const data = await loader(destination, signal)
 			if (signal.aborted) return
@@ -286,10 +292,17 @@ async function runNavigationWithLoader(
 				dispatchNavigationEnd()
 				return
 			}
-			setPreloadedNavigationData(nextPath, data)
+			loadedData = data
 		}
 
 		if (signal.aborted) return
+
+		// Store and commit in the same synchronous block so a superseding
+		// navigation can never leave consume-once data behind for a URL the
+		// user did not land on.
+		if (loadedData) {
+			setPreloadedNavigationData(nextPath, loadedData)
+		}
 
 		if (options?.skipPushState) {
 			notify()
@@ -331,6 +344,15 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		return
 	}
 
+	// Participate in the latest-wins navigation chain: a newer navigation
+	// aborts this submission's follow-up redirect navigation so a late
+	// response cannot hijack the URL. The POST itself is a mutation and is
+	// never cancelled client-side.
+	navigationAbortController?.abort()
+	const abortController = new AbortController()
+	navigationAbortController = abortController
+	const { signal } = abortController
+
 	// One `navigationstart` covers the POST fetch and the follow-up loader run;
 	// `navigateWithRefreshForSamePath` / `navigateInternal` suppress a second
 	// start and own the matching `navigationend`.
@@ -358,6 +380,8 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		}
 
 		const response = await fetch(details.action.toString(), init)
+		if (signal.aborted) return
+
 		if (response.redirected) {
 			await navigateWithRefreshForSamePath(
 				new URL(response.url, window.location.href),
@@ -378,8 +402,9 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 			`Expected redirect location after form submit (${response.status} ${response.statusText})`,
 		)
 	} catch (error: unknown) {
-		dispatchNavigationEnd()
 		console.error('Router form submit failed', error)
+		if (signal.aborted) return
+		dispatchNavigationEnd()
 	}
 }
 
@@ -456,7 +481,7 @@ async function navigateInternal(
 		`${destination.pathname}${destination.search}` ===
 		`${current.pathname}${current.search}`
 	if (sameDocumentLocation && destination.hash !== current.hash) {
-		commitImmediateNavigation(nextPath)
+		commitImmediateNavigation(nextPath, options)
 		return
 	}
 
