@@ -682,18 +682,21 @@ export function AccountSecretsRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		loadingDataKey = dataKey
 		try {
-			const requestUrl = new URL(accountSecretsApiPath, href)
-			requestUrl.search = new URL(href).search
+			const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')
+			requestUrl.search = getCurrentSearch()
 			if (selection.selectedSecretId) {
 				requestUrl.searchParams.set('selected', selection.selectedSecretId)
 			} else {
 				requestUrl.searchParams.delete('selected')
 			}
 
-			const response = await fetch(requestUrl.toString(), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
+			const response = await fetch(
+				`${requestUrl.pathname}${requestUrl.search}`,
+				{
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+				},
+			)
 			if (
 				requestId !== loadRequestId ||
 				getDataRefreshKey(getCurrentHref()) !== dataKey
@@ -755,7 +758,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const currentUrl = new URL(getCurrentHref())
+			const currentUrl = new URL(getCurrentHref(), 'http://localhost')
 			const selection = getSelectionState(currentUrl.toString())
 			const requestUrl = new URL(accountSecretsApiPath, currentUrl)
 			requestUrl.search = currentUrl.search
@@ -764,7 +767,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			}
 			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(action, requestUrl.toString())
+			>(action, `${requestUrl.pathname}${requestUrl.search}`)
 			if (!payload) return
 
 			applyPayload(

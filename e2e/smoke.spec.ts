@@ -27,6 +27,15 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		page.getByRole('link', { name: 'Secrets', exact: true }),
 	).toBeVisible()
 
+	// SPA-navigate to secrets: the client refetch must hit the same origin
+	// (regression: absolute placeholder-origin URLs caused "Failed to fetch").
+	await page.getByRole('link', { name: 'Secrets', exact: true }).click()
+	await expect(page).toHaveURL(/\/account\/secrets$/)
+	await expect(
+		page.getByRole('heading', { name: 'Saved secrets', exact: true }),
+	).toBeVisible()
+	await expect(page.getByText('Failed to fetch')).not.toBeVisible()
+
 	await page.context().clearCookies()
 	await page.goto('/privacy')
 	await expect(page.getByRole('heading', { name: 'Privacy' })).toBeVisible()

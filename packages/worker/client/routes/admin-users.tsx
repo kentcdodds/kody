@@ -5,6 +5,7 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
+import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
@@ -76,7 +77,7 @@ export function AdminUsersRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
-				`${adminUsersApiPath}${new URL(href).search}`,
+				`${adminUsersApiPath}${readRouterSearch(handle)}`,
 				{ headers: { Accept: 'application/json' }, credentials: 'include' },
 			)
 			if (requestId !== loadRequestId) return
