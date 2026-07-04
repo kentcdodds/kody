@@ -165,3 +165,20 @@ test('integration_discover rejects oversized response bodies', async () => {
 		integrationDiscoverCapability.handler({ domain: 'linear.app' }, ctx),
 	).rejects.toThrow(/response exceeds 500000 characters/)
 })
+
+test('integration_discover rejects Content-Length above the cap before reading', async () => {
+	const url = buildIntegrationDiscoverUrlForTest('linear.app')
+	using _server = createMswNodeServer([
+		http.get(
+			url,
+			() =>
+				new HttpResponse(JSON.stringify(linearDiscoverFixture), {
+					headers: { 'Content-Length': String(500_001) },
+				}),
+		),
+	])
+
+	await expect(
+		integrationDiscoverCapability.handler({ domain: 'linear.app' }, ctx),
+	).rejects.toThrow(/response exceeds 500000 characters/)
+})

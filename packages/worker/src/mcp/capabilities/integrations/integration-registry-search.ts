@@ -2,9 +2,14 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import {
+	BoundedBodyTooLargeError,
+	readBoundedBody,
+} from './read-bounded-body.ts'
 
 const INTEGRATIONS_SH_API_BASE = 'https://integrations.sh/api'
 const MAX_SEARCH_BODY_CHARS = 500_000
+const SEARCH_FETCH_TIMEOUT_MS = 10_000
 
 const searchResultSchema = z
 	.object({
@@ -66,6 +71,7 @@ async function fetchRegistrySearch(
 		response = await fetch(url, {
 			headers: { Accept: 'application/json' },
 			redirect: 'follow',
+			signal: AbortSignal.timeout(SEARCH_FETCH_TIMEOUT_MS),
 		})
 	} catch (cause) {
 		const message = cause instanceof Error ? cause.message : String(cause)
@@ -78,11 +84,16 @@ async function fetchRegistrySearch(
 		)
 	}
 
-	const body = await response.text()
-	if (body.length > MAX_SEARCH_BODY_CHARS) {
-		throw new Error(
-			`integrations.sh registry search failed: response exceeds ${MAX_SEARCH_BODY_CHARS} characters`,
-		)
+	let body: string
+	try {
+		body = await readBoundedBody(response, MAX_SEARCH_BODY_CHARS)
+	} catch (cause) {
+		if (cause instanceof BoundedBodyTooLargeError) {
+			throw new Error(
+				`integrations.sh registry search failed: ${cause.message}`,
+			)
+		}
+		throw cause
 	}
 
 	let parsed: unknown

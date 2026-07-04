@@ -68,3 +68,20 @@ test('integration_registry_search surfaces non-OK HTTP failures', async () => {
 		integrationRegistrySearchCapability.handler({ query: 'linear' }, ctx),
 	).rejects.toThrow(/integrations\.sh registry search failed: HTTP 502/)
 })
+
+test('integration_registry_search rejects Content-Length above the cap before reading', async () => {
+	const url = buildIntegrationRegistrySearchUrlForTest('linear')
+	using _server = createMswNodeServer([
+		http.get(
+			url,
+			() =>
+				new HttpResponse('{"results":[]}', {
+					headers: { 'Content-Length': String(500_001) },
+				}),
+		),
+	])
+
+	await expect(
+		integrationRegistrySearchCapability.handler({ query: 'linear' }, ctx),
+	).rejects.toThrow(/response exceeds 500000 characters/)
+})

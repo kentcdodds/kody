@@ -2,9 +2,14 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import {
+	BoundedBodyTooLargeError,
+	readBoundedBody,
+} from './read-bounded-body.ts'
 
 const INTEGRATIONS_SH_API_BASE = 'https://integrations.sh/api'
 const MAX_DISCOVER_BODY_CHARS = 500_000
+const DISCOVER_FETCH_TIMEOUT_MS = 30_000
 
 const HOSTNAME_PATTERN =
 	/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/
@@ -172,6 +177,7 @@ async function fetchIntegrationDiscover(
 		response = await fetch(url, {
 			headers: { Accept: 'application/json' },
 			redirect: 'follow',
+			signal: AbortSignal.timeout(DISCOVER_FETCH_TIMEOUT_MS),
 		})
 	} catch (cause) {
 		const message = cause instanceof Error ? cause.message : String(cause)
@@ -190,11 +196,14 @@ async function fetchIntegrationDiscover(
 		)
 	}
 
-	const body = await response.text()
-	if (body.length > MAX_DISCOVER_BODY_CHARS) {
-		throw new Error(
-			`integrations.sh discover failed: response exceeds ${MAX_DISCOVER_BODY_CHARS} characters`,
-		)
+	let body: string
+	try {
+		body = await readBoundedBody(response, MAX_DISCOVER_BODY_CHARS)
+	} catch (cause) {
+		if (cause instanceof BoundedBodyTooLargeError) {
+			throw new Error(`integrations.sh discover failed: ${cause.message}`)
+		}
+		throw cause
 	}
 
 	let parsed: unknown
