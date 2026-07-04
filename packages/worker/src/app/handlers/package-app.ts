@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { getUsernameValidationError } from '#app/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
@@ -246,7 +246,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 	const forwardedPackageRestPath = packagePath.restPath
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
-		return redirectToLogin(request)
+		return redirectToLoginWhenUnauthenticated(request, env)
 	}
 	if (user.username !== packagePath.username) {
 		return new Response('Saved package app not found.', { status: 404 })

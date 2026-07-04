@@ -2,7 +2,10 @@ import { type Action } from 'remix/router'
 import { loadAccountRemoteConnectorsData } from '#app/account-remote-connectors-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import {
+	redirectToLogin,
+	redirectToLoginWhenUnauthenticated,
+} from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
@@ -25,7 +28,7 @@ export function createAccountRemoteConnectorsHandler(env: Env) {
 
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
-				return redirectToLogin(request)
+				return redirectToLoginWhenUnauthenticated(request, env)
 			}
 
 			const accountRemoteConnectors = await loadAccountRemoteConnectorsData({

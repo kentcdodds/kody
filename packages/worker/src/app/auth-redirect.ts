@@ -1,5 +1,8 @@
+import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
+
 type RedirectToLoginOptions = {
 	redirectTo?: string
+	setCookie?: string
 }
 
 function normalizeRedirectTo(value: string | null) {
@@ -23,5 +26,27 @@ export function redirectToLogin(
 		loginUrl.searchParams.set('redirectTo', target)
 	}
 
+	if (options.setCookie) {
+		return new Response(null, {
+			status: 302,
+			headers: {
+				Location: loginUrl.toString(),
+				'Set-Cookie': options.setCookie,
+			},
+		})
+	}
+
 	return Response.redirect(loginUrl, 302)
+}
+
+export async function redirectToLoginWhenUnauthenticated(
+	request: Request,
+	env: Env,
+	options: RedirectToLoginOptions = {},
+) {
+	const resolved = await loadResolvedRequestAuth(request, env)
+	return redirectToLogin(request, {
+		...options,
+		setCookie: resolved.setCookie,
+	})
 }

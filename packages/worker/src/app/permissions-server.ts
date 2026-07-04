@@ -2,7 +2,7 @@ import {
 	readAuthenticatedAppUser,
 	type AuthenticatedAppUser,
 } from '#app/authenticated-user.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import {
 	type PermissionString,
 	type RoleName,
@@ -32,7 +32,7 @@ function unauthorizedResponse(request: Request) {
 	return new Response('Forbidden', { status: 403 })
 }
 
-function unauthenticatedResponse(request: Request) {
+async function unauthenticatedResponse(request: Request, env: Env) {
 	if (wantsJson(request)) {
 		return new Response(JSON.stringify({ ok: false, error: 'Unauthorized.' }), {
 			status: 401,
@@ -42,7 +42,7 @@ function unauthenticatedResponse(request: Request) {
 			},
 		})
 	}
-	return redirectToLogin(request)
+	return redirectToLoginWhenUnauthenticated(request, env)
 }
 
 async function requireAuthorizedUser(
@@ -52,7 +52,7 @@ async function requireAuthorizedUser(
 ): Promise<AuthenticatedAppUser> {
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
-		throw unauthenticatedResponse(request)
+		throw await unauthenticatedResponse(request, env)
 	}
 	if (!check(user)) {
 		throw unauthorizedResponse(request)

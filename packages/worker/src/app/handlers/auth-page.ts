@@ -1,4 +1,4 @@
-import { readAuthSessionResult } from '#app/auth-session.ts'
+import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 
 function normalizeRedirectTo(value: string | null) {
@@ -12,7 +12,7 @@ export function createAuthPageHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }: { request: Request }) {
-			const { session, setCookie } = await readAuthSessionResult(request)
+			const { session, setCookie } = await loadSessionInfo(request, env)
 			if (session) {
 				const url = new URL(request.url)
 				const redirectTo = normalizeRedirectTo(

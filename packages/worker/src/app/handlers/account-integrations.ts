@@ -1,6 +1,9 @@
 import { type Action } from 'remix/router'
 import { loadAccountIntegrationsData } from '#app/account-integrations-data.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import {
+	redirectToLogin,
+	redirectToLoginWhenUnauthenticated,
+} from '#app/auth-redirect.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -17,7 +20,7 @@ export function createAccountIntegrationsHandler(env: Env) {
 
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
-				return redirectToLogin(request)
+				return redirectToLoginWhenUnauthenticated(request, env)
 			}
 
 			const accountIntegrations = await loadAccountIntegrationsData(env, user)
