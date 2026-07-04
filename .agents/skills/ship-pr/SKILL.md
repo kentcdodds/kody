@@ -10,7 +10,7 @@ description: >
 ## Loop
 
 1. Mark ready — `kody:@kentcdodds/github-pr-tools/set-pr-review-status` with
-   `{ owner, repo, number, ready: true }`
+   `{ prUrl, status: 'ready' }`, or `{ owner, repo, prNumber, status: 'ready' }`
 2. Wait for CI — `gh pr checks` (compose `loop-on-ci`, `fix-ci`)
 3. Fix failures; address valid AI-reviewer feedback (ignore insignificant nits /
    already-fixed / wrong)
