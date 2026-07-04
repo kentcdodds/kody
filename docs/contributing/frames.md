@@ -10,8 +10,8 @@ the same handler as the parent page so auth and user scoping stay consistent.
   Register it once in `frame-registry.ts` via `registerFrame(name, ...)`.
   Duplicate names throw at module load.
 - **`src`** (client): the page URL that serves the fragment. Always build with
-  `routes.<routeKey>.href(...)` — never a string literal (enforced by
-  `kody-custom/no-literal-frame-src`).
+  `routes.<routeKey>.href(...)` (the `kody-custom/no-literal-frame-src` lint
+  rule enforces this).
 
 ## Registry and handlers
 
