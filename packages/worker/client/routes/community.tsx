@@ -152,57 +152,59 @@ export function CommunityRoute(handle: Handle) {
 					</p>
 				) : null}
 
-				<div mix={css(listingGridCss)}>
-					{listings.map((listing) => (
-						<article key={listing.id} mix={css(cardCss)}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
-							>
-								<a
-									href={`/community/${listing.id}`}
+				{status === 'ready' && currentHref === lastLoadedHref ? (
+					<div mix={css(listingGridCss)}>
+						{listings.map((listing) => (
+							<article key={listing.id} mix={css(cardCss)}>
+								<h2
 									mix={css({
-										color: colors.primaryText,
-										textDecoration: 'none',
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
 									})}
 								>
-									{listing.name}
-								</a>
-							</h2>
-							<p mix={css(descriptionCss)}>{listing.description}</p>
-							{listing.tags.length > 0 ? (
-								<ul mix={css(tagListCss)}>
-									{listing.tags.map((tag) => (
-										<li key={tag} mix={css(tagPillCss)}>
-											{tag}
-										</li>
-									))}
-								</ul>
-							) : null}
-							<dl mix={css(statsCss)}>
-								<div>
-									<dt>Rating</dt>
-									<dd>
-										{formatStars(listing.averageStars, listing.ratingCount)}
-									</dd>
-								</div>
-								<div>
-									<dt>Forks</dt>
-									<dd>{listing.forkCount}</dd>
-								</div>
-								<div>
-									<dt>Adaptation effort</dt>
-									<dd>
-										{formatAdaptationEffort(listing.averageAdaptationEffort)}
-									</dd>
-								</div>
-							</dl>
-						</article>
-					))}
-				</div>
+									<a
+										href={`/community/${listing.id}`}
+										mix={css({
+											color: colors.primaryText,
+											textDecoration: 'none',
+										})}
+									>
+										{listing.name}
+									</a>
+								</h2>
+								<p mix={css(descriptionCss)}>{listing.description}</p>
+								{listing.tags.length > 0 ? (
+									<ul mix={css(tagListCss)}>
+										{listing.tags.map((tag) => (
+											<li key={tag} mix={css(tagPillCss)}>
+												{tag}
+											</li>
+										))}
+									</ul>
+								) : null}
+								<dl mix={css(statsCss)}>
+									<div>
+										<dt>Rating</dt>
+										<dd>
+											{formatStars(listing.averageStars, listing.ratingCount)}
+										</dd>
+									</div>
+									<div>
+										<dt>Forks</dt>
+										<dd>{listing.forkCount}</dd>
+									</div>
+									<div>
+										<dt>Adaptation effort</dt>
+										<dd>
+											{formatAdaptationEffort(listing.averageAdaptationEffort)}
+										</dd>
+									</div>
+								</dl>
+							</article>
+						))}
+					</div>
+				) : null}
 			</section>
 		)
 	}

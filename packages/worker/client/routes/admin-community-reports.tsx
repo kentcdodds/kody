@@ -286,139 +286,144 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 					{status === 'ready' && reports.length === 0 ? (
 						<p mix={css(descriptionCss)}>No reports in this view.</p>
 					) : null}
-					{reports.map((report) => (
-						<article key={report.id} mix={css(cardCss)}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
-							>
-								<a
-									href={`/community/${report.listingId}`}
-									mix={css({
-										color: colors.primaryText,
-										textDecoration: 'none',
-									})}
-								>
-									{report.listingName}
-								</a>
-							</h2>
-							<p mix={css(descriptionCss)}>
-								<strong>Status:</strong> {report.status}
-							</p>
-							<p mix={css(descriptionCss)}>
-								<strong>Reporter:</strong> <code>{report.reporterUserId}</code>
-							</p>
-							<p mix={css(descriptionCss)}>
-								<strong>Owner:</strong> <code>{report.listingOwnerUserId}</code>
-							</p>
-							<p mix={css(descriptionCss)}>
-								<strong>Created:</strong> {formatTimestamp(report.createdAt)}
-							</p>
-							<p mix={css(descriptionCss)}>{report.reason}</p>
+					{status === 'ready' && currentHref === lastLoadedHref
+						? reports.map((report) => (
+								<article key={report.id} mix={css(cardCss)}>
+									<h2
+										mix={css({
+											margin: 0,
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+										})}
+									>
+										<a
+											href={`/community/${report.listingId}`}
+											mix={css({
+												color: colors.primaryText,
+												textDecoration: 'none',
+											})}
+										>
+											{report.listingName}
+										</a>
+									</h2>
+									<p mix={css(descriptionCss)}>
+										<strong>Status:</strong> {report.status}
+									</p>
+									<p mix={css(descriptionCss)}>
+										<strong>Reporter:</strong>{' '}
+										<code>{report.reporterUserId}</code>
+									</p>
+									<p mix={css(descriptionCss)}>
+										<strong>Owner:</strong>{' '}
+										<code>{report.listingOwnerUserId}</code>
+									</p>
+									<p mix={css(descriptionCss)}>
+										<strong>Created:</strong>{' '}
+										{formatTimestamp(report.createdAt)}
+									</p>
+									<p mix={css(descriptionCss)}>{report.reason}</p>
 
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Moderation note</span>
-								<input
-									value={getNote(report.id)}
-									disabled={isMutating}
-									placeholder="Optional note for dismiss, delist, delete, or ban"
-									mix={[
-										css(inputCss),
-										on('input', (event) => {
-											setNote(
-												report.id,
-												(event.target as HTMLInputElement).value,
-											)
-										}),
-									]}
-								/>
-							</label>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Moderation note</span>
+										<input
+											value={getNote(report.id)}
+											disabled={isMutating}
+											placeholder="Optional note for dismiss, delist, delete, or ban"
+											mix={[
+												css(inputCss),
+												on('input', (event) => {
+													setNote(
+														report.id,
+														(event.target as HTMLInputElement).value,
+													)
+												}),
+											]}
+										/>
+									</label>
 
-							<div
-								mix={css({
-									display: 'flex',
-									gap: spacing.sm,
-									flexWrap: 'wrap',
-								})}
-							>
-								<button
-									disabled={isMutating}
-									mix={[
-										on(
-											'click',
-											() => void submitReportAction(report.id, 'dismiss'),
-										),
-										css(secondaryButtonCss),
-									]}
-								>
-									Dismiss
-								</button>
-								<button
-									disabled={isMutating}
-									mix={[
-										...getDestructiveButtonMix(report.id, 'delist', () => {
-											void submitReportAction(report.id, 'delist')
-										}),
-										css(dangerButtonCss),
-									]}
-								>
-									{isDoubleCheckActive(report.id, 'delist')
-										? 'Confirm delist'
-										: 'Delist'}
-								</button>
-								<button
-									disabled={isMutating}
-									mix={[
-										...getDestructiveButtonMix(report.id, 'delete', () => {
-											void submitReportAction(report.id, 'delete')
-										}),
-										css(dangerButtonCss),
-									]}
-								>
-									{isDoubleCheckActive(report.id, 'delete')
-										? 'Confirm delete'
-										: 'Delete'}
-								</button>
-								<button
-									disabled={isMutating}
-									mix={[
-										...getDestructiveButtonMix(
-											report.id,
-											'ban_reporter',
-											() => {
-												void submitReportAction(report.id, 'ban_reporter')
-											},
-										),
-										css(dangerButtonCss),
-									]}
-								>
-									{isDoubleCheckActive(report.id, 'ban_reporter')
-										? 'Confirm ban reporter'
-										: 'Ban reporter'}
-								</button>
-								<button
-									disabled={isMutating}
-									mix={[
-										...getDestructiveButtonMix(
-											report.id,
-											'ban_reportee',
-											() => {
-												void submitReportAction(report.id, 'ban_reportee')
-											},
-										),
-										css(dangerButtonCss),
-									]}
-								>
-									{isDoubleCheckActive(report.id, 'ban_reportee')
-										? 'Confirm ban owner'
-										: 'Ban owner'}
-								</button>
-							</div>
-						</article>
-					))}
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											flexWrap: 'wrap',
+										})}
+									>
+										<button
+											disabled={isMutating}
+											mix={[
+												on(
+													'click',
+													() => void submitReportAction(report.id, 'dismiss'),
+												),
+												css(secondaryButtonCss),
+											]}
+										>
+											Dismiss
+										</button>
+										<button
+											disabled={isMutating}
+											mix={[
+												...getDestructiveButtonMix(report.id, 'delist', () => {
+													void submitReportAction(report.id, 'delist')
+												}),
+												css(dangerButtonCss),
+											]}
+										>
+											{isDoubleCheckActive(report.id, 'delist')
+												? 'Confirm delist'
+												: 'Delist'}
+										</button>
+										<button
+											disabled={isMutating}
+											mix={[
+												...getDestructiveButtonMix(report.id, 'delete', () => {
+													void submitReportAction(report.id, 'delete')
+												}),
+												css(dangerButtonCss),
+											]}
+										>
+											{isDoubleCheckActive(report.id, 'delete')
+												? 'Confirm delete'
+												: 'Delete'}
+										</button>
+										<button
+											disabled={isMutating}
+											mix={[
+												...getDestructiveButtonMix(
+													report.id,
+													'ban_reporter',
+													() => {
+														void submitReportAction(report.id, 'ban_reporter')
+													},
+												),
+												css(dangerButtonCss),
+											]}
+										>
+											{isDoubleCheckActive(report.id, 'ban_reporter')
+												? 'Confirm ban reporter'
+												: 'Ban reporter'}
+										</button>
+										<button
+											disabled={isMutating}
+											mix={[
+												...getDestructiveButtonMix(
+													report.id,
+													'ban_reportee',
+													() => {
+														void submitReportAction(report.id, 'ban_reportee')
+													},
+												),
+												css(dangerButtonCss),
+											]}
+										>
+											{isDoubleCheckActive(report.id, 'ban_reportee')
+												? 'Confirm ban owner'
+												: 'Ban owner'}
+										</button>
+									</div>
+								</article>
+							))
+						: null}
 				</div>
 			</AccountManagementShell>
 		)
