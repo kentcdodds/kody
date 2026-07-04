@@ -295,7 +295,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 					{status === 'ready' && reports.length === 0 ? (
 						<p mix={css(descriptionCss)}>No reports in this view.</p>
 					) : null}
-					{status === 'ready' && currentHref === lastLoadedHref
+					{status === 'ready'
 						? reports.map((report) => (
 								<article key={report.id} mix={css(cardCss)}>
 									<h2

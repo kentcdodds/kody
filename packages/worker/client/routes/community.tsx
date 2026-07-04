@@ -174,7 +174,7 @@ export function CommunityRoute(handle: Handle) {
 					</p>
 				) : null}
 
-				{status === 'ready' && currentHref === lastLoadedHref ? (
+				{status === 'ready' ? (
 					<div mix={css(listingGridCss)}>
 						{listings.map((listing) => (
 							<article key={listing.id} mix={css(cardCss)}>
