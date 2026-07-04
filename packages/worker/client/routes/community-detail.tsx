@@ -1,18 +1,16 @@
-import { type Handle, css } from 'remix/ui'
-import { createHref } from 'remix/route-pattern/href'
+import { Frame, type Handle, css } from 'remix/ui'
+import { routes } from '#app/routes.ts'
+import { COMMUNITY_DETAIL_TARGET } from '#app/community-frame-constants.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import {
-	readAppLoaderData,
-	tryConsumeEmbeddedLoaderData,
-} from '#client/loader-data-context.tsx'
+import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -23,29 +21,21 @@ import {
 	getSecondaryButtonCss,
 	insetCardCss,
 	mutedLinkCss,
-	pageDescriptionCss,
-	pageHeaderCss,
-	pageTitleCss,
 	stackedPageCss,
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
 import { type PublicCommunityListing } from '#client/routes/community-types.ts'
 
-type CommunityDetailPayload = {
+type CommunityDetailApiPayload = {
 	ok: true
 	listing: PublicCommunityListing
 	loggedIn: boolean
 	forkPrompt: string
 }
 
-type PageStatus = 'loading' | 'ready' | 'error'
-
-const communityDetailPathPattern = '/community/:listingId'
-const communityApiSuffix = '.json'
-
 function getCurrentListingId(handle: Handle) {
 	const pathname = readRouterPathname(handle)
-	const prefix = '/community/'
+	const prefix = `${routes.community.href()}/`
 	if (!pathname.startsWith(prefix)) return null
 	const listingId = decodeURIComponent(
 		pathname.slice(prefix.length).replace(/\/$/, ''),
@@ -53,90 +43,68 @@ function getCurrentListingId(handle: Handle) {
 	return listingId || null
 }
 
-function buildDetailApiPath(listingId: string) {
-	return createHref(`${communityDetailPathPattern}${communityApiSuffix}`, {
-		listingId,
-	})
-}
-
 function buildReportApiPath(listingId: string) {
-	return createHref('/community/:listingId/report.json', { listingId })
-}
-
-function formatStars(averageStars: number | null, ratingCount: number) {
-	if (ratingCount <= 0) return 'No ratings yet'
-	const stars = averageStars == null ? '—' : averageStars.toFixed(1)
-	return `★ ${stars} (${ratingCount})`
-}
-
-function formatAdaptationEffort(value: number | null) {
-	if (value == null) return '—'
-	return value.toFixed(1)
-}
-
-function formatPublishedDate(value: string) {
-	return new Date(value).toLocaleDateString()
-}
-
-function shortCommit(commit: string) {
-	return commit.slice(0, 7)
+	return routes.communityReportApiPost.href({ listingId })
 }
 
 export function CommunityDetailRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
-	let listing: PublicCommunityListing | null = null
-	let loggedIn = false
 	let forkPrompt = ''
-	let message: string | null = null
+	let loggedIn = false
+	let readmeContent: string | null = null
+	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
+	let shellLoadRequestId = 0
 	let reportReason = ''
 	let reportState: 'idle' | 'submitting' | 'success' | 'error' = 'idle'
 	let reportMessage: string | null = null
 	let copyState: 'idle' | 'copied' = 'idle'
 	let copyResetTimerId: ReturnType<typeof window.setTimeout> | null = null
-	let loadRequestId = 0
-	let lastLoadedListingId: string | null = null
+	let shellLoadedForListingId: string | null = null
+	let shellRequestedForListingId: string | null = null
 
-	async function loadCommunityDetail() {
+	async function loadDetailShell() {
 		const listingId = getCurrentListingId(handle)
-		if (!listingId) {
-			status = 'error'
-			message = 'Community package not found.'
+		if (!listingId) return
+
+		const requestId = ++shellLoadRequestId
+		// Same-listing revalidations keep showing the current shell while the
+		// fetch is in flight; only brand-new listings show the loading state.
+		if (shellLoadedForListingId !== listingId) {
+			shellStatus = 'loading'
 			handle.update()
-			return
 		}
 
-		const requestId = ++loadRequestId
 		try {
-			const response = await fetch(buildDetailApiPath(listingId), {
-				headers: { Accept: 'application/json' },
-			})
-			if (requestId !== loadRequestId) return
+			const response = await fetch(
+				routes.communityDetailApi.href({ listingId }),
+				{
+					headers: { Accept: 'application/json' },
+				},
+			)
+			if (requestId !== shellLoadRequestId) return
 			if (response.status === 404) {
-				status = 'error'
-				message = 'Community package not found.'
+				shellLoadedForListingId = listingId
+				shellStatus = 'error'
 				handle.update()
 				return
 			}
-			const payload = await readJson<CommunityDetailPayload>(response)
+			const payload = await readJson<CommunityDetailApiPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load community package.')
 			}
-			listing = payload.listing
-			loggedIn = payload.loggedIn
 			forkPrompt = payload.forkPrompt
-			status = 'ready'
-			message = null
+			loggedIn = payload.loggedIn
+			readmeContent = payload.listing.readmeContent
 			reportState = 'idle'
 			reportMessage = null
-			lastLoadedListingId = listingId
+			shellLoadedForListingId = listingId
+			shellStatus = 'ready'
 			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load community package.'
+		} catch {
+			if (requestId !== shellLoadRequestId) return
+			// Mark the listing as attempted so renders do not requeue the load
+			// in a loop; the user can recover via navigation or reload.
+			shellLoadedForListingId = listingId
+			shellStatus = 'error'
 			handle.update()
 		}
 	}
@@ -198,34 +166,40 @@ export function CommunityDetailRoute(handle: Handle) {
 
 	listenToRouterNavigation(handle, () => {
 		const listingId = getCurrentListingId(handle)
-		if (listingId !== lastLoadedListingId) {
-			status = 'loading'
-			handle.update()
+		if (!listingId) return
+
+		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+		if (!frame) return
+
+		const nextSrc = routes.communityDetail.href({ listingId })
+		if (frame.src !== nextSrc) {
+			frame.src = nextSrc
 		}
+		void frame.reload()
+
+		// Revalidate the shell alongside the frame so the fork prompt, README,
+		// and report login state stay as fresh as the listing metadata.
+		shellRequestedForListingId = listingId
+		handle.queueTask(loadDetailShell)
 	})
 
-	function applyEmbeddedLoaderData(href: string, listingId: string | null) {
-		if (!listingId) return false
-		const peeked = readAppLoaderData(handle)?.communityDetail
-		if (!peeked || peeked.listing.id !== listingId) {
-			return false
-		}
+	function applyEmbeddedShellData(href: string, listingId: string | null) {
+		if (!listingId || shellLoadedForListingId === listingId) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
-			'communityDetail',
+			'communityDetailShell',
 			href,
 		)
-		if (!embedded) {
+		if (!embedded || embedded.listingId !== listingId) {
 			return false
 		}
-		listing = embedded.listing
-		loggedIn = embedded.loggedIn
 		forkPrompt = embedded.forkPrompt
-		status = 'ready'
-		message = null
+		loggedIn = embedded.loggedIn
+		readmeContent = embedded.readmeContent
 		reportState = 'idle'
 		reportMessage = null
-		lastLoadedListingId = listingId
+		shellLoadedForListingId = listingId
+		shellStatus = 'ready'
 		return true
 	}
 
@@ -235,38 +209,16 @@ export function CommunityDetailRoute(handle: Handle) {
 	return () => {
 		const listingId = getCurrentListingId(handle)
 		const currentHref = readCurrentRouterHref(handle)
-		const listingIdMismatch =
-			listingId != null &&
-			(listingId !== lastLoadedListingId ||
-				(listing != null && listing.id !== listingId))
-		if (status === 'loading' || listingIdMismatch) {
-			if (!applyEmbeddedLoaderData(currentHref, listingId)) {
-				if (typeof document !== 'undefined') {
-					status = 'loading'
-					handle.queueTask(loadCommunityDetail)
-				}
-			}
-		}
 
-		if (status === 'loading') {
+		if (!listingId) {
 			return (
 				<section mix={css(pageCss)}>
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading community package…
-					</p>
-				</section>
-			)
-		}
-
-		if (status === 'error' || !listing) {
-			return (
-				<section mix={css(pageCss)}>
-					<h1 mix={css(pageTitleCss)}>Community package not found</h1>
-					<p mix={css(descriptionCss)}>
-						{message ?? 'This listing is unavailable.'}
-					</p>
+					<h1 mix={css({ margin: 0, fontSize: typography.fontSize['2xl'] })}>
+						Community package not found
+					</h1>
+					<p mix={css(descriptionCss)}>This listing is unavailable.</p>
 					<p mix={css({ margin: 0 })}>
-						<a href="/community" mix={css(mutedLinkCss)}>
+						<a href={routes.community.href()} mix={css(mutedLinkCss)}>
 							Back to community packages
 						</a>
 					</p>
@@ -274,134 +226,126 @@ export function CommunityDetailRoute(handle: Handle) {
 			)
 		}
 
+		applyEmbeddedShellData(currentHref, listingId)
+		if (
+			shellLoadedForListingId !== listingId &&
+			shellRequestedForListingId !== listingId &&
+			typeof document !== 'undefined'
+		) {
+			// Show the loading state immediately so the previous listing's
+			// shell (fork prompt, README, login state) never renders under the
+			// new listing's header while the refetch is in flight. Tracking the
+			// requested listing separately keeps re-renders from enqueueing
+			// duplicate fetches while one is already in flight.
+			shellStatus = 'loading'
+			shellRequestedForListingId = listingId
+			handle.queueTask(loadDetailShell)
+		}
+
+		const frameSrc = routes.communityDetail.href({ listingId })
+
 		return (
 			<section mix={css(pageCss)}>
-				<header mix={css(pageHeaderCss)}>
-					<p mix={css({ margin: 0, color: colors.textMuted })}>
-						<a href="/community" mix={css(mutedLinkCss)}>
-							Community packages
-						</a>
+				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
+
+				{shellStatus === 'loading' ? (
+					<p mix={css({ color: colors.textMuted, margin: 0 })}>
+						Loading community package details…
 					</p>
-					<h1 mix={css(pageTitleCss)}>{listing.name}</h1>
-					<p mix={css(pageDescriptionCss)}>by @{listing.ownerUsername}</p>
-				</header>
-
-				<section mix={css(cardCss)}>
-					<p mix={css(descriptionCss)}>{listing.description}</p>
-					{listing.tags.length > 0 ? (
-						<ul mix={css(tagListCss)}>
-							{listing.tags.map((tag) => (
-								<li key={tag} mix={css(tagPillCss)}>
-									{tag}
-								</li>
-							))}
-						</ul>
-					) : null}
-					<dl mix={css(metadataCss)}>
-						<div>
-							<dt>License</dt>
-							<dd>{listing.license}</dd>
-						</div>
-						<div>
-							<dt>Published</dt>
-							<dd>{formatPublishedDate(listing.publishedAt)}</dd>
-						</div>
-						<div>
-							<dt>Pinned commit</dt>
-							<dd>
-								<code>{shortCommit(listing.pinnedCommit)}</code>
-							</dd>
-						</div>
-						<div>
-							<dt>Rating</dt>
-							<dd>{formatStars(listing.averageStars, listing.ratingCount)}</dd>
-						</div>
-						<div>
-							<dt>Adaptation effort</dt>
-							<dd>{formatAdaptationEffort(listing.averageAdaptationEffort)}</dd>
-						</div>
-						<div>
-							<dt>Forks</dt>
-							<dd>{listing.forkCount}</dd>
-						</div>
-					</dl>
-				</section>
-
-				<section mix={css(cardCss)}>
-					<h2 mix={css(cardTitleCss)}>Fork with your agent</h2>
-					<p mix={css(descriptionCss)}>
-						Copy this prompt into your MCP-capable agent to fork and adapt the
-						package safely.
-					</p>
-					<pre mix={css(promptBlockCss)}>{forkPrompt}</pre>
-					<button
-						mix={[
-							on('click', () => void copyForkPrompt()),
-							css(primaryButtonCss),
-						]}
-					>
-						{copyState === 'copied' ? 'Copied' : 'Copy prompt'}
-					</button>
-				</section>
-
-				{listing.readmeContent ? (
-					<section mix={css(cardCss)}>
-						<h2 mix={css(cardTitleCss)}>README</h2>
-						<pre mix={css(readmeBlockCss)}>{listing.readmeContent}</pre>
-					</section>
 				) : null}
 
-				<section mix={css(cardCss)}>
-					<h2 mix={css(cardTitleCss)}>Report this listing</h2>
-					{loggedIn ? (
-						<>
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Reason</span>
-								<textarea
-									value={reportReason}
-									rows={4}
-									maxLength={2000}
-									placeholder="Describe why this listing should be reviewed."
-									mix={[
-										css(textareaCss),
-										on('input', (event) => {
-											reportReason = (event.target as HTMLTextAreaElement).value
-											handle.update()
-										}),
-									]}
-								/>
-							</label>
+				{shellStatus === 'error' ? (
+					<p mix={css({ color: colors.textMuted, margin: 0 })} role="status">
+						Unable to load fork and report details for this listing.
+					</p>
+				) : null}
+
+				{shellStatus === 'ready' ? (
+					<>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Fork with your agent</h2>
+							<p mix={css(descriptionCss)}>
+								Copy this prompt into your MCP-capable agent to fork and adapt
+								the package safely.
+							</p>
+							<pre mix={css(promptBlockCss)}>{forkPrompt}</pre>
 							<button
-								disabled={reportState === 'submitting' || !reportReason.trim()}
 								mix={[
-									on('click', () => void submitReport()),
-									css(secondaryButtonCss),
+									on('click', () => void copyForkPrompt()),
+									css(primaryButtonCss),
 								]}
 							>
-								{reportState === 'submitting' ? 'Submitting…' : 'Submit report'}
+								{copyState === 'copied' ? 'Copied' : 'Copy prompt'}
 							</button>
-							{reportMessage ? (
-								<p
-									mix={css({
-										margin: 0,
-										color:
-											reportState === 'error' ? colors.error : colors.textMuted,
-									})}
-									role={reportState === 'error' ? 'alert' : 'status'}
-								>
-									{reportMessage}
+						</section>
+
+						{readmeContent ? (
+							<section mix={css(cardCss)}>
+								<h2 mix={css(cardTitleCss)}>README</h2>
+								<pre mix={css(readmeBlockCss)}>{readmeContent}</pre>
+							</section>
+						) : null}
+
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Report this listing</h2>
+							{loggedIn ? (
+								<>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Reason</span>
+										<textarea
+											value={reportReason}
+											rows={4}
+											maxLength={2000}
+											placeholder="Describe why this listing should be reviewed."
+											mix={[
+												css(textareaCss),
+												on('input', (event) => {
+													reportReason = (event.target as HTMLTextAreaElement)
+														.value
+													handle.update()
+												}),
+											]}
+										/>
+									</label>
+									<button
+										disabled={
+											reportState === 'submitting' || !reportReason.trim()
+										}
+										mix={[
+											on('click', () => void submitReport()),
+											css(secondaryButtonCss),
+										]}
+									>
+										{reportState === 'submitting'
+											? 'Submitting…'
+											: 'Submit report'}
+									</button>
+									{reportMessage ? (
+										<p
+											mix={css({
+												margin: 0,
+												color:
+													reportState === 'error'
+														? colors.error
+														: colors.textMuted,
+											})}
+											role={reportState === 'error' ? 'alert' : 'status'}
+										>
+											{reportMessage}
+										</p>
+									) : null}
+								</>
+							) : (
+								<p mix={css(descriptionCss)}>
+									<a href="/login" mix={css(mutedLinkCss)}>
+										Log in
+									</a>{' '}
+									to report this listing.
 								</p>
-							) : null}
-						</>
-					) : (
-						<p mix={css(descriptionCss)}>
-							<a href="/login" mix={css(mutedLinkCss)}>
-								Log in
-							</a>{' '}
-							to report this listing.
-						</p>
-					)}
-				</section>
+							)}
+						</section>
+					</>
+				) : null}
 			</section>
 		)
 	}
@@ -412,40 +356,6 @@ const pageCss = {
 	maxWidth: '48rem',
 	margin: '0 auto',
 	width: '100%',
-}
-
-const tagListCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: spacing.xs,
-	margin: 0,
-	padding: 0,
-	listStyle: 'none',
-}
-
-const tagPillCss = {
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.full,
-	backgroundColor: colors.primarySoftest,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.sm,
-}
-
-const metadataCss = {
-	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))',
-	gap: spacing.md,
-	margin: 0,
-	fontSize: typography.fontSize.sm,
-	'& dt': {
-		margin: 0,
-		color: colors.textMuted,
-		fontWeight: typography.fontWeight.medium,
-	},
-	'& dd': {
-		margin: `${spacing.xs} 0 0`,
-		color: colors.text,
-	},
 }
 
 const promptBlockCss = {

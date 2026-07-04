@@ -13,6 +13,8 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
+import '#app/frame-registrations.ts'
+import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
 
 export type RenderAppPageInput = {
 	request: Request
@@ -37,6 +39,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		extraSetCookies,
 	} = input
 	const { session, setCookie } = await loadSessionInfo(request, env)
+	const requestUrl = new URL(request.url)
 	const url = getRequestUrl(request)
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
@@ -57,6 +60,16 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		) as RemixNode,
 		{
 			frameSrc: request.url,
+			resolveFrame(src, target, context) {
+				return resolveRegisteredFrameHtml({
+					src,
+					target,
+					request,
+					env,
+					pageUrl: requestUrl,
+					currentFrameSrc: context?.currentFrameSrc,
+				})
+			},
 			onError(error) {
 				console.error('SSR render error:', error)
 			},

@@ -9,7 +9,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
 - [Setup](./setup.md), [code style](./code-style.md),
   [testing](./testing-principles.md)
-- [Remix skills](./remix.md)
+- [Remix skills](./remix.md), [frames](./frames.md)
 - [Packages and manifests](./packages-and-manifests.md)
 - [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)

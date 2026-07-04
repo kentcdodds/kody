@@ -198,19 +198,24 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	const communityHtml = await readResponseText(communityResponse)
 	expect(communityHtml).toContain('@kentcdodds/github-triage')
 	expect(communityHtml).toContain('Triage GitHub issues.')
+	expect(communityHtml).toContain('data-testid="community-listings-frame"')
 	expect(communityHtml).not.toContain('Loading community packages')
 	expect(communityHtml).toContain('<!-- rmx:h:')
 	const communityProps = readAppRootProps(communityHtml)
-	expect(communityProps.loaderData?.community).toMatchObject({
-		ok: true,
-		listings: [
-			expect.objectContaining({
-				id: 'listing-1',
-				name: '@kentcdodds/github-triage',
-			}),
-		],
-		query: null,
-	})
+	expect(communityProps.loaderData?.community).toBeUndefined()
+
+	const communityFrameResponse = await runHtmlHandler(
+		createCommunityHandler(env),
+		new Request('https://example.com/community', {
+			headers: { 'x-remix-target': 'community-listings' },
+		}),
+	)
+	expect(communityFrameResponse.status).toBe(200)
+	expect(communityFrameResponse.headers.get('Cache-Control')).toBe('no-store')
+	const communityFrameHtml = await readResponseText(communityFrameResponse)
+	expect(communityFrameHtml).toContain('data-testid="community-listings-frame"')
+	expect(communityFrameHtml).toContain('@kentcdodds/github-triage')
+	expect(communityFrameHtml).not.toContain('<html')
 
 	const accountCookie = await createAuthCookie(
 		{

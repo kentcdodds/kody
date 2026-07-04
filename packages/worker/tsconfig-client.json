@@ -19,6 +19,9 @@
 		"./client/**/*.tsx",
 		"./client/**/*.d.ts",
 		"./src/app/permissions.ts",
+		"./src/app/routes.ts",
+		"./src/app/frame-constants.ts",
+		"./src/app/community-frame-constants.ts",
 		"./client/loader-data-types.ts"
 	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]

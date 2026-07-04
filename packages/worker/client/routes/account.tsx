@@ -17,6 +17,7 @@ import {
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
+import { queueSessionRefresh } from '#client/session.ts'
 import {
 	type AccountStatus,
 	accountProfileApiPath,
@@ -126,6 +127,7 @@ export function AccountRoute(handle: Handle) {
 			draftUsername = payload.username
 			message = 'Username saved.'
 			messageTone = 'info'
+			queueSessionRefresh()
 		} catch (error) {
 			message =
 				error instanceof Error ? error.message : 'Unable to save username.'

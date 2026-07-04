@@ -9,7 +9,9 @@ The repo-local skill lives at:
 
 Load that skill before changing Remix routes, controllers, middleware, data
 access, validation, auth, sessions, file uploads, server setup, UI components,
-hydration, navigation, or tests.
+hydration, navigation, frames, or tests.
+
+For `<Frame>` partial reloads, see [frames](./frames.md).
 
 `npx remix@next new <app>` copies this skill from the Remix CLI bootstrap
 template. The CLI does not expose a standalone `remix skills install` command.

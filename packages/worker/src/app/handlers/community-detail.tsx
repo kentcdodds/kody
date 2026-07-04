@@ -10,14 +10,18 @@ import {
 } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { CommunityDetailOgHead } from '#app/ssr-document.tsx'
+import { handleFrameRequest } from '#app/frame-registry.ts'
+import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { renderCommunityOgImage } from '#worker/community/og-image.ts'
-import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
-import { reportCommunityListing } from '#worker/community/service.ts'
+import {
+	getCommunityListingWithAggregates,
+	reportCommunityListing,
+} from '#worker/community/service.ts'
 
 const reportReasonSchema = z
 	.string()
@@ -30,6 +34,13 @@ export function createCommunityDetailHandler(env: Env) {
 		middleware: [],
 		async handler({ request, params }) {
 			const listingId = params.listingId
+			const frameResponse = await handleFrameRequest(
+				request,
+				env,
+				new URL(request.url).pathname,
+			)
+			if (frameResponse) return frameResponse
+
 			const detail = await loadCommunityDetailData(env, request, listingId)
 			if (!detail) {
 				return renderAppPage({
@@ -62,7 +73,15 @@ export function createCommunityDetailHandler(env: Env) {
 						ogImageUrl={ogImageUrl}
 					/>
 				) as RemixNode,
-				loaderData: { communityDetail: detail },
+				loaderData: {
+					communityDetailShell: {
+						ok: true,
+						listingId,
+						forkPrompt: detail.forkPrompt,
+						loggedIn: detail.loggedIn,
+						readmeContent: detail.listing.readmeContent,
+					},
+				},
 			})
 		},
 	} satisfies Action<typeof routes.communityDetail>
