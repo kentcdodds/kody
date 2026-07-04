@@ -80,7 +80,9 @@ test('community detail frame reloads fresh fork counts on return navigation', as
 	const listingId = 'e2e-frame-detail-stale-listing'
 
 	await page.goto(`/community/${listingId}`)
-	await expect(page.getByTestId('community-detail-forks')).toHaveText('0')
+	const initialForkCount = Number(
+		(await page.getByTestId('community-detail-forks').textContent()) ?? '0',
+	)
 
 	await page.evaluate(() => {
 		;(window as Window & { __e2eDetailMarker?: boolean }).__e2eDetailMarker =
@@ -93,7 +95,7 @@ test('community detail frame reloads fresh fork counts on return navigation', as
 	await seedCommunityForkInE2eDatabase({
 		listingId,
 		forkerEmail: primaryTestUser.email,
-		forkId: `fork-${listingId}-1`,
+		forkId: `fork-${listingId}-${Date.now()}`,
 	})
 
 	const frameReload = page.waitForResponse(
@@ -109,7 +111,9 @@ test('community detail frame reloads fresh fork counts on return navigation', as
 	await expect(page).toHaveURL(new RegExp(`/community/${listingId}$`))
 	await frameReload
 
-	await expect(page.getByTestId('community-detail-forks')).toHaveText('1')
+	await expect(page.getByTestId('community-detail-forks')).toHaveText(
+		String(initialForkCount + 1),
+	)
 	expect(
 		await page.evaluate(
 			() =>
