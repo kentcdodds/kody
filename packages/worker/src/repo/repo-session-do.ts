@@ -65,9 +65,11 @@ import {
 	publishFromExternalRef as publishExternalRefSource,
 } from './external-publish.ts'
 import {
+	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
 	assertPublishedPackageSourceRepoHead,
 	buildSourceRecoveryProblemMessage,
+	loadPriorPackageManifestContent,
 } from './source-safety-policy.ts'
 import {
 	attachPublishGitNoteBestEffort,
@@ -1735,6 +1737,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		force?: boolean
 		destructiveOverwriteConfirmed?: boolean
+		privateVisibilityChangeConfirmed?: boolean
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 	}): Promise<RepoSessionPublishResult> {
@@ -1777,6 +1780,25 @@ class RepoSessionBase extends DurableObject<Env> {
 				source,
 				operation: 'repo forced publish',
 				confirmed: input.destructiveOverwriteConfirmed,
+			})
+		}
+		if (source.entity_kind === 'package') {
+			const workspaceFiles = await this.collectWorkspaceFiles()
+			const afterContent = workspaceFiles[source.manifest_path]
+			if (typeof afterContent !== 'string') {
+				throw new Error(`Manifest "${source.manifest_path}" was not found.`)
+			}
+			const beforeContent = await loadPriorPackageManifestContent({
+				env: this.env,
+				userId: input.userId,
+				source,
+			})
+			assertPackagePrivateVisibilityChangeAllowed({
+				beforeContent,
+				afterContent,
+				isNewPackage: false,
+				operation: 'repo publish',
+				confirmed: input.privateVisibilityChangeConfirmed,
 			})
 		}
 		const sessionHeadCommit =

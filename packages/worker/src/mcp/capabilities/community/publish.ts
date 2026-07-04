@@ -13,7 +13,7 @@ export const communityPublishCapability = defineDomainCapability(
 	{
 		name: 'community_publish',
 		description:
-			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, a root README with a `## Intent` section, and a published commit. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit.',
+			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, `"private"` not set to true, a root README with a `## Intent` section, and a published commit. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit.',
 		keywords: [
 			'community',
 			'publish',

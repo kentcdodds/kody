@@ -16,6 +16,7 @@ import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-clean
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { CommunityActionError } from './errors.ts'
 import {
 	countCommunityForksByListingIds,
@@ -292,6 +293,7 @@ export async function publishCommunityListing(input: {
 		throw new Error('Saved packages require a root package.json file.')
 	}
 	const license = parseRawPackageLicense(packageJsonContent)
+	assertPackageNotPrivateForCommunityPublish(packageJsonContent)
 
 	const readme = buildPackageReadmeDetail({
 		files: loadedSource.files,

@@ -649,6 +649,7 @@ test('repo_publish_session covers base_moved repair, artifact rebuild, and rebui
 		userId: 'user-1',
 		rebuildPackageArtifacts: false,
 		expectedPackageScope: 'user',
+		privateVisibilityChangeConfirmed: false,
 	})
 	expect(publishRpc.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sessionId: 'session-1',

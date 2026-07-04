@@ -22,6 +22,7 @@ type SyncArtifactSourceInput = {
 	files: Record<string, string>
 	bootstrapAccess?: ArtifactBootstrapAccess | null
 	destructiveOverwriteConfirmed?: boolean
+	privateVisibilityChangeConfirmed?: boolean
 }
 
 function validateEntitySourceManifest(input: {
@@ -186,6 +187,9 @@ export async function syncArtifactSourceSnapshot(
 			force: true,
 			...(input.destructiveOverwriteConfirmed === true
 				? { destructiveOverwriteConfirmed: true }
+				: {}),
+			...(input.privateVisibilityChangeConfirmed === true
+				? { privateVisibilityChangeConfirmed: true }
 				: {}),
 		})
 		if (publishResult.status !== 'ok') {

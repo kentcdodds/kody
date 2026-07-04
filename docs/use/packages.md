@@ -27,6 +27,9 @@ Use `package.json` as the source of truth.
 Important fields:
 
 - `name` — npm-valid package name
+- `private` — when `true`, blocks public community publishing (like npm); new
+  packages default to `"private": true` unless the user explicitly wants a
+  public community listing
 - `exports` — authoritative import/export map
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — package description for search/detail

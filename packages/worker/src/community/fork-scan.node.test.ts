@@ -45,6 +45,7 @@ test('rewritePackageManifestForFork rewrites scope and kody id while preserving 
 
 	expect(parsed.name).toBe('@jane/my-discord-gateway')
 	expect(parsed.license).toBe('MIT')
+	expect(parsed.private).toBe(true)
 	expect(parsed.exports).toEqual({ '.': './src/index.ts' })
 	expect(parsed.kody.id).toBe('my-discord-gateway')
 	expect(parsed.kody.description).toBe('Discord helpers')

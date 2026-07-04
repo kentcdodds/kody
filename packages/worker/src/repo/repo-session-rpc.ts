@@ -129,6 +129,7 @@ export type RepoSessionRpc = {
 		userId: string
 		force?: boolean
 		destructiveOverwriteConfirmed?: boolean
+		privateVisibilityChangeConfirmed?: boolean
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 	}) => Promise<RepoSessionPublishResult>

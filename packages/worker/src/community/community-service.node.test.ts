@@ -543,6 +543,50 @@ test('publishCommunityListing requires MIT license and Intent heading', async ()
 	).rejects.toThrow('README.md to include a "## Intent" section')
 })
 
+test('publishCommunityListing rejects private packages', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@owner/discord-gateway',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord helpers',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@owner/discord-gateway',
+				private: true,
+				license: 'MIT',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord helpers',
+				},
+			}),
+			'README.md': '# Discord Gateway\n\n## Intent\n\nBridge Discord events.',
+		},
+	})
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow(
+		'community listings cannot publish packages with `"private": true`',
+	)
+})
+
 test('rateCommunityListing requires a fork and rejects owner self-ratings', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())

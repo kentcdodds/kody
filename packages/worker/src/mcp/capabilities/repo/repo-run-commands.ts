@@ -110,6 +110,8 @@ export const repoRunCommandsCapability = defineDomainCapability(
 						userId: user.userId,
 						rebuildPackageArtifacts: false,
 						expectedPackageScope,
+						privateVisibilityChangeConfirmed:
+							args.confirm_private_visibility_change,
 					})
 				} else {
 					publish = { status: 'not_requested' as const }
