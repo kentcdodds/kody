@@ -2,7 +2,12 @@ import { addEventListeners, type Handle, css } from 'remix/ui'
 import { routerEvents } from './client-router.tsx'
 import { colors } from './styles/tokens.ts'
 
+// Spin-delay semantics (https://npm.im/spin-delay): the bar only appears if a
+// navigation is still pending after `showDelayMs`, and once shown it stays
+// visible for at least `minShowDurationMs` so fast completions never flash.
 const showDelayMs = 150
+const minShowDurationMs = 200
+const completePauseMs = 80
 const trickleIntervalMs = 200
 const trickleIncrement = 4
 const maxTrickleProgress = 90
@@ -16,8 +21,10 @@ export function NavigationProgress(handle: Handle) {
 	// (aborted) navigation never dispatches its own `navigationend`, so the
 	// winning navigation's end event must clear the pending state outright.
 	let navigationPending = false
+	let shownAt = 0
 	let showTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 	let trickleIntervalId: ReturnType<typeof globalThis.setInterval> | null = null
+	let completeTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 	let fadeTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 	let resetTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 
@@ -33,7 +40,11 @@ export function NavigationProgress(handle: Handle) {
 		trickleIntervalId = null
 	}
 
-	function clearFadeTimers() {
+	function clearCompletionTimers() {
+		if (completeTimeoutId !== null) {
+			globalThis.clearTimeout(completeTimeoutId)
+			completeTimeoutId = null
+		}
 		if (fadeTimeoutId !== null) {
 			globalThis.clearTimeout(fadeTimeoutId)
 			fadeTimeoutId = null
@@ -59,6 +70,7 @@ export function NavigationProgress(handle: Handle) {
 			showTimeoutId = null
 			if (!navigationPending) return
 			visible = true
+			shownAt = Date.now()
 			opacity = 1
 			if (progress === 0) progress = 8
 			startTrickle()
@@ -68,7 +80,7 @@ export function NavigationProgress(handle: Handle) {
 
 	function onNavigationStart() {
 		navigationPending = true
-		clearFadeTimers()
+		clearCompletionTimers()
 		if (!visible) {
 			scheduleShow()
 			return
@@ -79,20 +91,8 @@ export function NavigationProgress(handle: Handle) {
 		handle.update()
 	}
 
-	function onNavigationEnd() {
-		if (!navigationPending) return
-		navigationPending = false
-
-		clearShowTimeout()
+	function completeAndFadeOut() {
 		clearTrickleInterval()
-
-		// Fast navigations that finished before the show delay stay invisible;
-		// completing the bar for them would cause the flash the delay avoids.
-		if (!visible) {
-			progress = 0
-			return
-		}
-
 		progress = 100
 		opacity = 1
 		handle.update()
@@ -107,7 +107,37 @@ export function NavigationProgress(handle: Handle) {
 				progress = 0
 				handle.update()
 			}, fadeDurationMs)
-		}, 80)
+		}, completePauseMs)
+	}
+
+	function onNavigationEnd() {
+		if (!navigationPending) return
+		navigationPending = false
+
+		clearShowTimeout()
+
+		// Fast navigations that finished before the show delay stay invisible;
+		// completing the bar for them would cause the flash the delay avoids.
+		if (!visible) {
+			clearTrickleInterval()
+			progress = 0
+			return
+		}
+
+		// Once shown, keep the bar up for the minimum duration before
+		// completing so near-instant loads don't flash it.
+		const remainingShowMs = Math.max(
+			0,
+			minShowDurationMs - (Date.now() - shownAt),
+		)
+		if (remainingShowMs === 0) {
+			completeAndFadeOut()
+			return
+		}
+		completeTimeoutId = globalThis.setTimeout(() => {
+			completeTimeoutId = null
+			completeAndFadeOut()
+		}, remainingShowMs)
 	}
 
 	if (typeof document !== 'undefined') {
