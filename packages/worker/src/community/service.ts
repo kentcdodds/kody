@@ -189,13 +189,13 @@ function parseRawPackageLicense(packageJsonContent: string) {
 	}
 	if (typeof parsed !== 'object' || parsed == null || !('license' in parsed)) {
 		throw new Error(
-			'community listings currently require the MIT license in package.json',
+			'community listings require the MIT license in package.json',
 		)
 	}
 	const license = (parsed as { license?: unknown }).license
 	if (typeof license !== 'string' || license.trim() !== 'MIT') {
 		throw new Error(
-			'community listings currently require the MIT license in package.json',
+			'community listings require the MIT license in package.json',
 		)
 	}
 	return license.trim()

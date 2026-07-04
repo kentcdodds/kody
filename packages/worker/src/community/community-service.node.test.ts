@@ -581,7 +581,7 @@ test('publishCommunityListing requires MIT license and Intent heading', async ()
 			packageId: 'package-1',
 		}),
 	).rejects.toThrow(
-		'community listings currently require the MIT license in package.json',
+		'community listings require the MIT license in package.json',
 	)
 
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
