@@ -27,7 +27,14 @@ export function App(handle: Handle<AppProps>) {
 		handle.props.embeddedSession !== undefined ? 'ready' : 'idle'
 	let sessionRefreshInFlight = false
 	let sessionRefreshQueued = false
+	let lastSessionRefreshAt = 0
 	let currentPathname = readRouterPathname(handle)
+
+	// Navigation-triggered refreshes are throttled: auth rarely changes
+	// mid-session and every SPA navigation was previously a /session round
+	// trip (2 D1 queries). Explicit refreshes (login/logout/profile updates
+	// via setSessionRefreshHandler) always bypass the throttle.
+	const sessionRefreshThrottleMs = 30_000
 
 	function queueSessionRefresh() {
 		sessionRefreshQueued = true
@@ -44,6 +51,7 @@ export function App(handle: Handle<AppProps>) {
 			const nextSession = await fetchSessionInfo(signal)
 			sessionRefreshInFlight = false
 			if (signal.aborted) return
+			lastSessionRefreshAt = Date.now()
 			session = nextSession
 			sessionStatus = 'ready'
 			handle.update()
@@ -56,6 +64,16 @@ export function App(handle: Handle<AppProps>) {
 		}
 	}
 
+	function queueThrottledSessionRefresh() {
+		if (
+			sessionStatus === 'ready' &&
+			Date.now() - lastSessionRefreshAt < sessionRefreshThrottleMs
+		) {
+			return
+		}
+		queueSessionRefresh()
+	}
+
 	// Always revalidate after hydration: the embedded session renders the
 	// first paint without a flash ('ready' status keeps the refresh silent),
 	// but auth may have changed since the document was rendered.
@@ -66,7 +84,7 @@ export function App(handle: Handle<AppProps>) {
 		})
 		listenToRouterNavigation(handle, () => {
 			currentPathname = readRouterPathname(handle)
-			queueSessionRefresh()
+			queueThrottledSessionRefresh()
 			handle.update()
 		})
 	}

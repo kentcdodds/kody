@@ -37,25 +37,26 @@ export async function loadAdminUsersData(
 	)
 	const offset = (page - 1) * pageSize
 
-	const totalResult = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS total FROM users`,
-	).first<{ total: number }>()
+	const [totalResult, userRows] = await Promise.all([
+		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users`).first<{
+			total: number
+		}>(),
+		env.APP_DB.prepare(
+			`SELECT id, username, email, created_at, updated_at
+			 FROM users
+			 ORDER BY id ASC
+			 LIMIT ? OFFSET ?`,
+		)
+			.bind(pageSize, offset)
+			.all<{
+				id: number
+				username: string
+				email: string
+				created_at: string
+				updated_at: string
+			}>(),
+	])
 	const total = totalResult?.total ?? 0
-
-	const userRows = await env.APP_DB.prepare(
-		`SELECT id, username, email, created_at, updated_at
-		 FROM users
-		 ORDER BY id ASC
-		 LIMIT ? OFFSET ?`,
-	)
-		.bind(pageSize, offset)
-		.all<{
-			id: number
-			username: string
-			email: string
-			created_at: string
-			updated_at: string
-		}>()
 
 	const userIds = (userRows.results ?? []).map((row) => row.id)
 	const rolesByUserId = await loadRolesByUserIds(env.APP_DB, userIds)

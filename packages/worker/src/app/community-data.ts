@@ -93,7 +93,33 @@ export async function loadCommunityIndexData(
 	}
 }
 
-export async function loadCommunityDetailData(
+// One SSR request loads detail data twice: once in the HTML handler for the
+// loaderData embed and once in the frame renderer during streaming. Memoize
+// per Request so the second call reuses the first load.
+const requestDetailDataStore = new WeakMap<
+	Request,
+	Map<string, Promise<CommunityDetailLoaderData | null>>
+>()
+
+export function loadCommunityDetailData(
+	env: Env,
+	request: Request,
+	listingId: string,
+): Promise<CommunityDetailLoaderData | null> {
+	let byListingId = requestDetailDataStore.get(request)
+	if (!byListingId) {
+		byListingId = new Map()
+		requestDetailDataStore.set(request, byListingId)
+	}
+	let pending = byListingId.get(listingId)
+	if (!pending) {
+		pending = loadCommunityDetailDataUncached(env, request, listingId)
+		byListingId.set(listingId, pending)
+	}
+	return pending
+}
+
+async function loadCommunityDetailDataUncached(
 	env: Env,
 	request: Request,
 	listingId: string,
