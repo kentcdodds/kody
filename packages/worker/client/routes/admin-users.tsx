@@ -239,16 +239,15 @@ export function AdminUsersRoute(handle: Handle) {
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
 
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsLoad =
 			(status === 'loading' || currentHref !== lastLoadedHref) &&
 			currentHref !== lastFailedHref &&
 			loadingForHref !== currentHref
-		if (needsLoad && !applyRouteLoaderData(currentHref)) {
-			if (typeof document !== 'undefined') {
-				status = 'loading'
-				loadingForHref = currentHref
-				handle.queueTask(loadAdminUsers)
-			}
+		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
+			loadingForHref = currentHref
+			handle.queueTask(loadAdminUsers)
 		}
 
 		return (

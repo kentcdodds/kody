@@ -172,15 +172,15 @@ export function AccountRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
-		if (status === 'loading' || isRefreshingForLocationChange) {
-			if (
-				!applyRouteLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadAccountProfile)
-			}
+		if (
+			!appliedRouteData &&
+			(status === 'loading' || isRefreshingForLocationChange) &&
+			typeof document !== 'undefined'
+		) {
+			handle.queueTask(loadAccountProfile)
 		}
 		const isSaving = saveStatus === 'saving'
 		const normalizedDraftUsername = draftUsername.trim().toLowerCase()

@@ -183,15 +183,15 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
-		if (status === 'loading' || isRefreshingForLocationChange) {
-			if (
-				!applyRouteLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadIntegrations)
-			}
+		if (
+			!appliedRouteData &&
+			(status === 'loading' || isRefreshingForLocationChange) &&
+			typeof document !== 'undefined'
+		) {
+			handle.queueTask(loadIntegrations)
 		}
 
 		return (

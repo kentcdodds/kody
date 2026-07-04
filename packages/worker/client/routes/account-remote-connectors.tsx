@@ -583,15 +583,15 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
-		if (status === 'loading' || isRefreshingForLocationChange) {
-			if (
-				!applyRouteLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadRemoteConnectors)
-			}
+		if (
+			!appliedRouteData &&
+			(status === 'loading' || isRefreshingForLocationChange) &&
+			typeof document !== 'undefined'
+		) {
+			handle.queueTask(loadRemoteConnectors)
 		}
 		const isMutating = saveState !== 'idle'
 		const isEditing = Boolean(editorState.id)

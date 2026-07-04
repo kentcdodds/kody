@@ -226,7 +226,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	})
 
 	function applyRouteShellData(href: string, listingId: string | null) {
-		if (!listingId || shellLoadedForListingId === listingId) return false
+		if (!listingId) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'communityDetailShell',

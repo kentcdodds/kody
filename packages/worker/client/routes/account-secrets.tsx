@@ -1101,21 +1101,19 @@ export function AccountSecretsRoute(handle: Handle) {
 		]
 
 		const currentDataKey = getDataRefreshKey(currentHref)
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const isRefreshingForLocationChange =
 			status !== 'loading' &&
 			currentDataKey !== lastLoadedDataKey &&
 			currentDataKey !== lastFailedDataKey
 		const isLoadingCurrentLocation = loadingDataKey === currentDataKey
 		if (
+			!appliedRouteData &&
 			(status === 'loading' || isRefreshingForLocationChange) &&
-			!isLoadingCurrentLocation
+			!isLoadingCurrentLocation &&
+			typeof document !== 'undefined'
 		) {
-			if (
-				!applyRouteLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadAccountSecrets)
-			}
+			handle.queueTask(loadAccountSecrets)
 		}
 
 		const activeSecretId =

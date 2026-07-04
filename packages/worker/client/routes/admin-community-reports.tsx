@@ -247,16 +247,15 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		const currentHref = readCurrentRouterHref(handle)
 		const isMutating = actionState !== 'idle'
 
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsLoad =
 			(status === 'loading' || currentHref !== lastLoadedHref) &&
 			currentHref !== lastFailedHref &&
 			loadingForHref !== currentHref
-		if (needsLoad && !applyRouteLoaderData(currentHref)) {
-			if (typeof document !== 'undefined') {
-				status = 'loading'
-				loadingForHref = currentHref
-				handle.queueTask(loadReports)
-			}
+		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
+			loadingForHref = currentHref
+			handle.queueTask(loadReports)
 		}
 
 		return (

@@ -114,16 +114,15 @@ export function AdminRolesRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsLoad =
 			(status === 'loading' || currentHref !== lastLoadedHref) &&
 			currentHref !== lastFailedHref &&
 			loadingForHref !== currentHref
-		if (needsLoad && !applyRouteLoaderData(currentHref)) {
-			if (typeof document !== 'undefined') {
-				status = 'loading'
-				loadingForHref = currentHref
-				handle.queueTask(loadAdminRoles)
-			}
+		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
+			loadingForHref = currentHref
+			handle.queueTask(loadAdminRoles)
 		}
 
 		return (

@@ -253,6 +253,10 @@ function commitNavigation(nextPath: string) {
 }
 
 function commitImmediateNavigation(nextPath: string) {
+	// A pending loader navigation must not commit after this immediate one
+	// and clobber the URL we are about to push.
+	navigationAbortController?.abort()
+	navigationAbortController = null
 	dispatchNavigationStart()
 	commitNavigation(nextPath)
 	dispatchNavigationEnd()
