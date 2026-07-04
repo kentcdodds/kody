@@ -36,8 +36,8 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	expect(rawHtml).toContain(alphaListing.description)
 	expect(rawHtml).toContain(betaListing.name)
 	expect(rawHtml).not.toContain('Loading community packages')
-	expect(rawHtml).toContain('id="rmx-data"')
-	expect(rawHtml).toContain('"community"')
+	expect(rawHtml).toContain('data-testid="community-listings-frame"')
+	expect(rawHtml).not.toContain('"community"')
 
 	const filteredHtmlResponse = await request.get('/community?q=beta')
 	expect(filteredHtmlResponse.ok()).toBe(true)

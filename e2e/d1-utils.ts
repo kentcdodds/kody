@@ -134,3 +134,43 @@ ON CONFLICT(id) DO UPDATE SET
 	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
 }
+
+export function updateCommunityListingDescriptionInE2eDatabase(input: {
+	listingId: string
+	description: string
+}) {
+	const sql = `
+UPDATE community_listings
+SET description = ${quoteSql(input.description)},
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ${quoteSql(input.listingId)};`.trim()
+	executeE2eD1Command(sql)
+}
+
+export async function seedCommunityForkInE2eDatabase(input: {
+	listingId: string
+	forkerEmail: string
+	forkId?: string
+}) {
+	const forkerUserId = await createStableUserIdFromEmail(input.forkerEmail)
+	const forkId = input.forkId ?? `fork-${input.listingId}`
+	const sql = `
+INSERT INTO community_forks (
+	id,
+	listing_id,
+	forker_user_id,
+	origin_commit,
+	forked_package_id,
+	forked_source_id,
+	target_kody_id
+) VALUES (
+	${quoteSql(forkId)},
+	${quoteSql(input.listingId)},
+	${quoteSql(forkerUserId)},
+	'abc1234567890abcdef1234567890abcdef12345678',
+	${quoteSql(`pkg-fork-${forkId}`)},
+	${quoteSql(`src-fork-${forkId}`)},
+	${quoteSql(input.listingId)}
+);`.trim()
+	executeE2eD1Command(sql)
+}
