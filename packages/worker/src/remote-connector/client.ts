@@ -54,12 +54,18 @@ export function createRemoteConnectorMcpClient(input: {
 
 	return {
 		async listTools() {
-			return stub.rpcListTools().catch(invalidateSnapshotOnFailure)
+			try {
+				return await stub.rpcListTools()
+			} catch (error) {
+				invalidateSnapshotOnFailure(error)
+			}
 		},
 		async callTool(name, args) {
-			return (await stub
-				.rpcCallTool(name, args ?? {})
-				.catch(invalidateSnapshotOnFailure)) as CallToolResult
+			try {
+				return (await stub.rpcCallTool(name, args ?? {})) as CallToolResult
+			} catch (error) {
+				invalidateSnapshotOnFailure(error)
+			}
 		},
 		async getSnapshot() {
 			return getCachedRemoteConnectorSnapshot(input)
