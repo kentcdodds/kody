@@ -70,6 +70,34 @@ test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async ()
 	expect(getSnapshotCalls()).toBe(1)
 })
 
+test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', async () => {
+	let connected = false
+	const { env, getSnapshotCalls } = buildEnv(async () =>
+		connected
+			? {
+					connectorKind: 'roku',
+					connectorId: 'default',
+					connectedAt: '2026-03-25T00:00:00.000Z',
+					lastSeenAt: '2026-03-25T00:00:01.000Z',
+					tools: runtimeTools,
+				}
+			: null,
+	)
+	const request = {
+		env,
+		userId: 'user-1',
+		kind: 'roku',
+		instanceId: 'default',
+	}
+
+	await expect(getCachedRemoteConnectorSnapshot(request)).resolves.toBeNull()
+	connected = true
+	await expect(
+		getCachedRemoteConnectorSnapshot(request),
+	).resolves.not.toBeNull()
+	expect(getSnapshotCalls()).toBe(2)
+})
+
 test('getCachedRemoteConnectorSnapshot does not share entries across users', async () => {
 	const { env, getSnapshotCalls } = buildEnv(async () => ({
 		connectorKind: 'roku',

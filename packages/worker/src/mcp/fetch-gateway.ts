@@ -96,16 +96,16 @@ export async function expandSecretPlaceholders(input: {
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				throw new Error(createMissingSecretMessage(referenced.name))
 			}
-			return { referenced, resolved }
+			return { referenced, resolved, value: resolved.value }
 		}),
 	)
-	for (const { referenced, resolved } of resolvedSecretResults) {
+	for (const { referenced, resolved, value } of resolvedSecretResults) {
 		const placeholder = buildSecretPlaceholder(referenced)
 		if (!replacements.has(placeholder)) {
-			replacements.set(placeholder, resolved.value)
+			replacements.set(placeholder, value)
 		}
 		if (!resolvedValues.has(placeholder)) {
-			resolvedValues.set(placeholder, resolved.value)
+			resolvedValues.set(placeholder, value)
 		}
 		resolvedSecrets.push({ referenced, resolved })
 	}

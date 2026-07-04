@@ -40,6 +40,9 @@ const mockModule = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(async () => {
 		throw new Error('bundle failed')
 	}),
+	loadPackageManifestBySourceId: vi.fn(async () => {
+		throw new Error('manifest load failed')
+	}),
 	createPackageAppCallerContext: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
 	packageRealtimeConnect: vi.fn(
@@ -79,6 +82,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mockModule.loadPackageSourceBySourceId(...args),
+	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageManifestBySourceId(...args),
 }))
 
 vi.mock('#worker/package-runtime/package-app.ts', () => ({
@@ -182,18 +187,15 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 test('handlePackageAppRequest does not report package entrypoint failures to Kody Sentry', async () => {
 	resetMocks()
 
-	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
 		source: {
 			published_commit: 'commit-1',
 			manifest_path: 'package.json',
 			source_root: '/',
 		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@kody/example',
-				kody: { id: 'example', app: { entry: 'app.js' } },
-			}),
-			'app.js': 'export default {}',
+		manifest: {
+			name: '@kody/example',
+			kody: { id: 'example', app: { entry: 'app.js' } },
 		},
 	})
 	mockModule.buildPackageAppWorker.mockResolvedValueOnce({

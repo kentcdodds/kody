@@ -35,7 +35,13 @@ export function getCachedRemoteConnectorSnapshot(input: {
 			const stub = input.env.REMOTE_CONNECTOR_SESSION.get(
 				input.env.REMOTE_CONNECTOR_SESSION.idFromName(cacheKey),
 			)
-			return stub.getSnapshot()
+			const snapshot = await stub.getSnapshot()
+			if (snapshot == null) {
+				// Do not retain disconnected results: a connector that comes online
+				// should be visible on the next lookup instead of after the TTL.
+				remoteConnectorSnapshotCache.delete(cacheKey)
+			}
+			return snapshot
 		},
 	})
 }
