@@ -46,6 +46,7 @@ export const routes = route({
 	health: '/health',
 	login: '/login',
 	privacy: '/privacy',
+	resetPassword: '/reset-password',
 	signup: '/signup',
 	account: '/account',
 	accountDelete: post('/account/delete'),

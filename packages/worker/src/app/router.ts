@@ -47,6 +47,7 @@ import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
+import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { logout } from '#app/handlers/logout.ts'
 import {
 	createPasswordResetConfirmHandler,
@@ -80,6 +81,7 @@ export function createAppRouter(appEnv: AppEnv) {
 			health: createHealthHandler(appEnv),
 			login: createLoginHandler(env),
 			privacy: createPrivacyHandler(env),
+			resetPassword: createResetPasswordHandler(env),
 			signup: createSignupHandler(env),
 			account: createAccountHandler(env),
 			accountDelete: createAccountDeleteHandler(env),

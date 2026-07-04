@@ -1,5 +1,10 @@
 import { type Handle, css } from 'remix/ui'
 import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
@@ -55,6 +60,11 @@ type AccountIntegrationsPayload = {
 }
 
 const accountIntegrationsApiPath = '/account/integrations.json'
+const accountIntegrationsPath = '/account/integrations'
+
+function isAccountIntegrationsPath(href: string) {
+	return new URL(href, 'http://localhost').pathname === accountIntegrationsPath
+}
 
 function formatTimestamp(value: string) {
 	return new Date(value).toLocaleString()
@@ -107,10 +117,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 	async function loadIntegrations(signal: AbortSignal) {
 		try {
-			const href =
-				typeof window === 'undefined'
-					? '/account/integrations'
-					: window.location.href
+			const href = readCurrentRouterHref(handle)
 			lastLoadedHref = href
 			const response = await fetch(accountIntegrationsApiPath, {
 				headers: { Accept: 'application/json' },
@@ -140,15 +147,36 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		}
 	}
 
+	listenToRouterNavigation(handle, () => {
+		const href = readCurrentRouterHref(handle)
+		if (href !== lastLoadedHref && status !== 'loading') {
+			status = 'loading'
+			handle.update()
+		}
+	})
+
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.accountIntegrations
+		if (!embedded || !isAccountIntegrationsPath(href)) return false
+		email = embedded.email
+		integrations = embedded.integrations
+		status = 'ready'
+		message = null
+		lastLoadedHref = href
+		return true
+	}
+
 	return () => {
-		const currentHref =
-			typeof window === 'undefined'
-				? '/account/integrations'
-				: window.location.href
+		const currentHref = readCurrentRouterHref(handle)
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
-			handle.queueTask(loadIntegrations)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadIntegrations)
+			}
 		}
 
 		return (

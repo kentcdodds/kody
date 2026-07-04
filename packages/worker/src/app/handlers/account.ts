@@ -1,5 +1,7 @@
 import { type Action } from 'remix/router'
+import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
@@ -14,10 +16,17 @@ export function createAccountHandler(env: Env) {
 				return redirectToLogin(request)
 			}
 
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return redirectToLogin(request)
+			}
+
+			const accountProfile = await loadAccountProfileData(user)
 			return renderAppPage({
 				request,
 				env,
 				title: 'Account',
+				loaderData: { accountProfile },
 			})
 		},
 	} satisfies Action<typeof routes.account>

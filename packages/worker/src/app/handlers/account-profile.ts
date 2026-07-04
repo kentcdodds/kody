@@ -1,5 +1,9 @@
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import {
+	buildAccountProfilePayload,
+	loadAccountProfileData,
+} from '#app/account-profile-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { type routes } from '#app/routes.ts'
@@ -9,13 +13,6 @@ import { createDb, usersTable } from '#worker/db.ts'
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
-
-type AccountProfilePayload = {
-	ok: true
-	email: string
-	username: string
-	displayName: string
-}
 
 export function createAccountProfileApiHandler(env: Env) {
 	const db = createDb(env.APP_DB)
@@ -29,7 +26,7 @@ export function createAccountProfileApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(buildPayload(user))
+				return jsonResponse(await loadAccountProfileData(user))
 			}
 
 			if (request.method !== 'POST') {
@@ -103,24 +100,15 @@ export function createAccountProfileApiHandler(env: Env) {
 			})
 
 			return jsonResponse(
-				buildPayload({
+				buildAccountProfilePayload({
 					...user,
 					username,
 					displayName: username,
 					mcpUser: { ...user.mcpUser, displayName: username },
-				}),
+				} satisfies AuthenticatedUser),
 			)
 		},
 	} satisfies Action<typeof routes.accountProfileApi>
-}
-
-function buildPayload(user: AuthenticatedUser): AccountProfilePayload {
-	return {
-		ok: true,
-		email: user.email,
-		username: user.username,
-		displayName: user.displayName,
-	}
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

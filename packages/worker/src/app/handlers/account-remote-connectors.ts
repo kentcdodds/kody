@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { loadAccountRemoteConnectorsData } from '#app/account-remote-connectors-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
@@ -6,35 +7,12 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
 	deleteRemoteConnectorSetting,
-	listRemoteConnectorSettingsWithSharedSecrets,
 	saveRemoteConnectorSetting,
 } from '#worker/remote-connector/settings-service.ts'
-import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-connectors.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
-
-type AccountRemoteConnectorListItem = {
-	id: string
-	kind: string
-	instanceId: string
-	connectorUrl: string
-	enabled: boolean
-	attached: boolean
-	hasSharedSecret: boolean
-	sharedSecret: string
-	createdAt: string
-	updatedAt: string
-}
-
-type AccountRemoteConnectorsPayload = {
-	ok: true
-	email: string
-	username: string
-	connectorUrlOrigin: string
-	connectors: Array<AccountRemoteConnectorListItem>
-}
 
 export function createAccountRemoteConnectorsHandler(env: Env) {
 	return {
@@ -45,10 +23,21 @@ export function createAccountRemoteConnectorsHandler(env: Env) {
 				return redirectToLogin(request)
 			}
 
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return redirectToLogin(request)
+			}
+
+			const accountRemoteConnectors = await loadAccountRemoteConnectorsData({
+				env,
+				request,
+				user,
+			})
 			return renderAppPage({
 				request,
 				env,
 				title: 'Remote connectors',
+				loaderData: { accountRemoteConnectors },
 			})
 		},
 	} satisfies Action<typeof routes.accountRemoteConnectors>
@@ -62,11 +51,14 @@ export function createAccountRemoteConnectorsApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-			const connectorUrlOrigin = getConnectorUrlOrigin(request)
 
 			if (request.method === 'GET') {
 				return jsonResponse(
-					await buildPayload({ env, user, connectorUrlOrigin }),
+					await loadAccountRemoteConnectorsData({
+						env,
+						request,
+						user,
+					}),
 				)
 			}
 
@@ -86,7 +78,7 @@ export function createAccountRemoteConnectorsApiHandler(env: Env) {
 						env,
 						user,
 						body,
-						connectorUrlOrigin,
+						request,
 					})
 				}
 				if (action === 'delete') {
@@ -94,7 +86,7 @@ export function createAccountRemoteConnectorsApiHandler(env: Env) {
 						env,
 						user,
 						body,
-						connectorUrlOrigin,
+						request,
 					})
 				}
 			} catch (error) {
@@ -119,7 +111,7 @@ async function handleSaveAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
-	connectorUrlOrigin: string
+	request: Request
 }) {
 	const saved = await saveRemoteConnectorSetting({
 		env: input.env,
@@ -131,10 +123,10 @@ async function handleSaveAction(input: {
 		attached: readBoolean(input.body, 'attached', true),
 		sharedSecret: readOptionalString(input.body, 'sharedSecret'),
 	})
-	const payload = await buildPayload({
+	const payload = await loadAccountRemoteConnectorsData({
 		env: input.env,
+		request: input.request,
 		user: input.user,
-		connectorUrlOrigin: input.connectorUrlOrigin,
 	})
 	return jsonResponse({
 		...payload,
@@ -145,8 +137,8 @@ async function handleSaveAction(input: {
 async function handleDeleteAction(input: {
 	env: Env
 	user: AuthenticatedUser
+	request: Request
 	body: object
-	connectorUrlOrigin: string
 }) {
 	const id = readString(input.body, 'id')
 	if (!id) {
@@ -167,44 +159,12 @@ async function handleDeleteAction(input: {
 		)
 	}
 	return jsonResponse(
-		await buildPayload({
+		await loadAccountRemoteConnectorsData({
 			env: input.env,
+			request: input.request,
 			user: input.user,
-			connectorUrlOrigin: input.connectorUrlOrigin,
 		}),
 	)
-}
-
-async function buildPayload(input: {
-	env: Env
-	user: AuthenticatedUser
-	connectorUrlOrigin: string
-}): Promise<AccountRemoteConnectorsPayload> {
-	const connectors = await listRemoteConnectorSettingsWithSharedSecrets({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-	})
-	return {
-		ok: true,
-		email: input.user.email,
-		username: input.user.username,
-		connectorUrlOrigin: input.connectorUrlOrigin,
-		connectors: connectors.map((connector) => ({
-			...connector,
-			connectorUrl: userScopedConnectorWebSocketUrl({
-				origin: input.connectorUrlOrigin,
-				username: input.user.username,
-				kind: connector.kind,
-				instanceId: connector.instanceId,
-			}),
-		})),
-	}
-}
-
-function getConnectorUrlOrigin(request: Request) {
-	const url = new URL(request.url)
-	const protocol = url.protocol === 'http:' ? 'ws:' : 'wss:'
-	return `${protocol}//${url.host}`
 }
 
 function readString(body: object, key: string) {

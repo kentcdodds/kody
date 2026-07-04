@@ -1,6 +1,11 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { navigate, listenToRouterNavigation } from '#client/client-router.tsx'
+import {
+	navigate,
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -23,39 +28,26 @@ import {
 	MetadataGrid,
 } from './account-management-components.tsx'
 import { type RoleName } from '#app/permissions.ts'
+import {
+	type AdminUserListItem,
+	type AdminUsersLoaderData,
+} from '#client/loader-data-types.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 
-type AdminUserListItem = {
-	id: number
-	username: string
-	email: string
-	created_at: string
-	updated_at: string
-	roles: Array<RoleName>
-}
-
-type AdminUsersPayload = {
-	ok: true
-	users: Array<AdminUserListItem>
-	page: number
-	pageSize: number
-	total: number
-	availableRoles: Array<RoleName>
-}
-
 const adminUsersApiPath = '/admin/users.json'
+
+function isAdminUsersPath(href: string) {
+	const path = new URL(href, 'http://localhost').pathname
+	return path === '/admin/users' || path === '/admin'
+}
 
 function formatTimestamp(value: string) {
 	return new Date(value).toLocaleString()
 }
 
-function getCurrentHref() {
-	return typeof window === 'undefined' ? '/admin/users' : window.location.href
-}
-
-function buildUsersHref(page: number) {
-	const url = new URL(getCurrentHref(), 'http://localhost')
+function buildUsersHref(handle: Handle, page: number) {
+	const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
 	if (page <= 1) url.searchParams.delete('page')
 	else url.searchParams.set('page', String(page))
 	return `${url.pathname}${url.search}`
@@ -80,7 +72,7 @@ export function AdminUsersRoute(handle: Handle) {
 	}
 
 	async function loadAdminUsers() {
-		const href = getCurrentHref()
+		const href = readCurrentRouterHref(handle)
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
@@ -98,7 +90,7 @@ export function AdminUsersRoute(handle: Handle) {
 				handle.update()
 				return
 			}
-			const payload = await readJson<AdminUsersPayload>(response)
+			const payload = await readJson<AdminUsersLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load admin users.')
 			}
@@ -138,7 +130,8 @@ export function AdminUsersRoute(handle: Handle) {
 		try {
 			// Carry the current query string so the server rebuilds the same
 			// page/pageSize slice the user is viewing, not page one.
-			const search = new URL(getCurrentHref(), 'http://localhost').search
+			const search = new URL(readCurrentRouterHref(handle), 'http://localhost')
+				.search
 			const response = await fetch(`${adminUsersApiPath}${search}`, {
 				method: 'POST',
 				headers: {
@@ -157,7 +150,7 @@ export function AdminUsersRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AdminUsersPayload & { ok?: boolean; error?: string }
+				AdminUsersLoaderData & { ok?: boolean; error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to update user roles.')
@@ -168,7 +161,7 @@ export function AdminUsersRoute(handle: Handle) {
 			pageSize = payload.pageSize
 			total = payload.total
 			selectedUserId = selectedUser.id
-			lastLoadedHref = getCurrentHref()
+			lastLoadedHref = readCurrentRouterHref(handle)
 			message =
 				action === 'assign_role'
 					? `Assigned ${selectedRoleToAssign} role.`
@@ -189,7 +182,7 @@ export function AdminUsersRoute(handle: Handle) {
 
 	handle.queueTask(() => {
 		listenToRouterNavigation(handle, () => {
-			const nextHref = getCurrentHref()
+			const nextHref = readCurrentRouterHref(handle)
 			if (nextHref !== lastLoadedHref && status !== 'loading') {
 				status = 'loading'
 				handle.update()
@@ -197,14 +190,42 @@ export function AdminUsersRoute(handle: Handle) {
 		})
 	})
 
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.adminUsers
+		if (!embedded || !isAdminUsersPath(href)) return false
+		users = embedded.users
+		availableRoles = embedded.availableRoles
+		page = embedded.page
+		pageSize = embedded.pageSize
+		total = embedded.total
+		lastLoadedHref = href
+		if (
+			selectedUserId != null &&
+			!users.some((user) => user.id === selectedUserId)
+		) {
+			selectedUserId = users[0]?.id ?? null
+		}
+		if (selectedUserId == null && users.length > 0) {
+			selectedUserId = users[0]?.id ?? null
+		}
+		status = 'ready'
+		message = null
+		return true
+	}
+
 	return () => {
-		const currentHref = getCurrentHref()
+		const currentHref = readCurrentRouterHref(handle)
 		const totalPages = Math.max(1, Math.ceil(total / pageSize))
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
 
 		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			handle.queueTask(loadAdminUsers)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadAdminUsers)
+			}
 		}
 
 		return (
@@ -305,7 +326,9 @@ export function AdminUsersRoute(handle: Handle) {
 										type="button"
 										disabled={page <= 1 || isMutating}
 										mix={[
-											on('click', () => navigate(buildUsersHref(page - 1))),
+											on('click', () =>
+												navigate(buildUsersHref(handle, page - 1)),
+											),
 											css(secondaryButtonCss),
 										]}
 									>
@@ -318,7 +341,9 @@ export function AdminUsersRoute(handle: Handle) {
 										type="button"
 										disabled={page >= totalPages || isMutating}
 										mix={[
-											on('click', () => navigate(buildUsersHref(page + 1))),
+											on('click', () =>
+												navigate(buildUsersHref(handle, page + 1)),
+											),
 											css(secondaryButtonCss),
 										]}
 									>

@@ -1,6 +1,10 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { listenToRouterNavigation } from '#client/client-router.tsx'
+import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -17,27 +21,10 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 } from './account-management-components.tsx'
+import { type AdminCommunityReportsLoaderData } from '#client/loader-data-types.ts'
 
-type ReportStatus = 'open' | 'resolved' | 'dismissed'
-
-type AdminCommunityReportListItem = {
-	id: string
-	listingId: string
-	listingName: string
-	listingOwnerUserId: string
-	reporterUserId: string
-	reason: string
-	status: ReportStatus
-	createdAt: string
-	resolvedAt: string | null
-	resolutionNote: string | null
-}
-
-type AdminCommunityReportsPayload = {
-	ok: true
-	reports: Array<AdminCommunityReportListItem>
-	statusFilter: string
-}
+type AdminCommunityReportListItem =
+	AdminCommunityReportsLoaderData['reports'][number]
 
 type PageStatus = 'loading' | 'ready' | 'error'
 type ReportIntent =
@@ -56,18 +43,18 @@ const statusOptions = [
 	{ value: 'all', label: 'All' },
 ] as const
 
-function getCurrentHref() {
-	return typeof window === 'undefined'
-		? '/admin/community-reports'
-		: window.location.href
+function isAdminCommunityReportsPath(href: string) {
+	return (
+		new URL(href, 'http://localhost').pathname === '/admin/community-reports'
+	)
 }
 
 function formatTimestamp(value: string) {
 	return new Date(value).toLocaleString()
 }
 
-function buildReportsHref(status: string) {
-	const url = new URL(getCurrentHref(), 'http://localhost')
+function buildReportsHref(handle: Handle, status: string) {
+	const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
 	if (status === 'open') url.searchParams.delete('status')
 	else url.searchParams.set('status', status)
 	return `${url.pathname}${url.search}`
@@ -128,7 +115,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 	}
 
 	async function loadReports() {
-		const href = getCurrentHref()
+		const href = readCurrentRouterHref(handle)
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
@@ -149,7 +136,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 				handle.update()
 				return
 			}
-			const payload = await readJson<AdminCommunityReportsPayload>(response)
+			const payload = await readJson<AdminCommunityReportsLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load community reports.')
 			}
@@ -206,22 +193,38 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 	}
 
 	listenToRouterNavigation(handle, () => {
-		const href = getCurrentHref()
+		const href = readCurrentRouterHref(handle)
 		if (href !== lastLoadedHref) {
 			status = 'loading'
 			handle.update()
 		}
 	})
 
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.adminCommunityReports
+		if (!embedded || !isAdminCommunityReportsPath(href)) return false
+		reports = embedded.reports
+		statusFilter = embedded.statusFilter
+		status = 'ready'
+		message = null
+		lastLoadedHref = href
+		return true
+	}
+
 	const secondaryButtonCss = getSecondaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
 
 	return () => {
-		const currentHref = getCurrentHref()
+		const currentHref = readCurrentRouterHref(handle)
 		const isMutating = actionState !== 'idle'
 
 		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			handle.queueTask(loadReports)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadReports)
+			}
 		}
 
 		return (
@@ -251,7 +254,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 					{statusOptions.map((option) => (
 						<a
 							key={option.value}
-							href={buildReportsHref(option.value)}
+							href={buildReportsHref(handle, option.value)}
 							aria-current={statusFilter === option.value ? 'page' : undefined}
 							mix={css({
 								...secondaryButtonCss,

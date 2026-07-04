@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { type Action } from 'remix/router'
+import { loadAdminCommunityReportsData } from '#app/admin-community-reports-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -8,11 +9,9 @@ import { type routes } from '#app/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	banCommunityUser,
-	listCommunityReports,
 	resolveCommunityReport,
 } from '#worker/community/service.ts'
 import { getCommunityReportById } from '#worker/community/repo.ts'
-import { type CommunityReportRecord } from '#worker/community/types.ts'
 
 const adminCommunityReportPostSchema = z.object({
 	intent: z.enum([
@@ -25,25 +24,6 @@ const adminCommunityReportPostSchema = z.object({
 	reportId: z.string().min(1),
 	note: z.string().optional(),
 })
-
-type AdminCommunityReportListItem = {
-	id: string
-	listingId: string
-	listingName: string
-	listingOwnerUserId: string
-	reporterUserId: string
-	reason: string
-	status: CommunityReportRecord['status']
-	createdAt: string
-	resolvedAt: string | null
-	resolutionNote: string | null
-}
-
-type AdminCommunityReportsPayload = {
-	ok: true
-	reports: Array<AdminCommunityReportListItem>
-	statusFilter: string
-}
 
 export function createAdminCommunityReportsHandler(env: Env) {
 	return {
@@ -61,10 +41,16 @@ export function createAdminCommunityReportsHandler(env: Env) {
 				return redirectToLogin(request)
 			}
 
+			const adminCommunityReports = await loadAdminCommunityReportsData(
+				env,
+				request.url,
+			)
+
 			return renderAppPage({
 				request,
 				env,
 				title: 'Community reports',
+				loaderData: { adminCommunityReports },
 			})
 		},
 	} satisfies Action<typeof routes.adminCommunityReports>
@@ -77,14 +63,8 @@ export function createAdminCommunityReportsApiHandler(env: Env) {
 			try {
 				if (request.method === 'GET') {
 					await requireUserWithRole(request, env, 'admin')
-					const url = new URL(request.url)
-					const statusFilter = url.searchParams.get('status') ?? 'open'
-					const reports = await loadAdminCommunityReports(env, statusFilter)
-					return jsonResponse({
-						ok: true,
-						reports,
-						statusFilter,
-					} satisfies AdminCommunityReportsPayload)
+					const payload = await loadAdminCommunityReportsData(env, request.url)
+					return jsonResponse(payload)
 				}
 
 				if (request.method !== 'POST') {
@@ -198,53 +178,6 @@ export function createAdminCommunityReportsApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.adminCommunityReportsApi>
-}
-
-async function loadAdminCommunityReports(
-	env: Env,
-	statusFilter: string,
-): Promise<Array<AdminCommunityReportListItem>> {
-	if (statusFilter === 'all') {
-		const reports = await listCommunityReports({ env })
-		return reports.map(toAdminCommunityReportListItem)
-	}
-
-	const status = readReportStatusFilter(statusFilter)
-	const reports = await listCommunityReports({
-		env,
-		status,
-	})
-	return reports.map(toAdminCommunityReportListItem)
-}
-
-function readReportStatusFilter(
-	statusFilter: string,
-): CommunityReportRecord['status'] {
-	switch (statusFilter) {
-		case 'open':
-		case 'resolved':
-		case 'dismissed':
-			return statusFilter
-		default:
-			return 'open'
-	}
-}
-
-function toAdminCommunityReportListItem(
-	report: CommunityReportRecord,
-): AdminCommunityReportListItem {
-	return {
-		id: report.id,
-		listingId: report.listingId,
-		listingName: report.listingName,
-		listingOwnerUserId: report.listingOwnerUserId,
-		reporterUserId: report.reporterUserId,
-		reason: report.reason,
-		status: report.status,
-		createdAt: report.createdAt,
-		resolvedAt: report.resolvedAt,
-		resolutionNote: report.resolutionNote,
-	}
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

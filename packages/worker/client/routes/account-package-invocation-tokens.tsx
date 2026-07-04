@@ -2,6 +2,11 @@ import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
 import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
@@ -170,6 +175,15 @@ function createEditorStateFromNewTokenQuery(href: string): EditorState {
 function isNewTokenPath(href: string) {
 	const url = new URL(href, 'http://localhost')
 	return url.pathname === `${accountPackageInvocationTokensBasePath}/new`
+}
+
+function isAccountPackageInvocationTokensPath(href: string) {
+	const path = new URL(href, 'http://localhost').pathname
+	return (
+		path === accountPackageInvocationTokensBasePath ||
+		path === `${accountPackageInvocationTokensBasePath}/new` ||
+		path.startsWith(`${accountPackageInvocationTokensBasePath}/`)
+	)
 }
 
 function getSelectedTokenIdFromPath(href: string) {
@@ -342,20 +356,16 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	function getCurrentSelectedTokenId() {
-		const href =
-			typeof window === 'undefined'
-				? accountPackageInvocationTokensBasePath
-				: window.location.href
-		return getSelectedTokenIdFromPath(href) ?? selectedTokenId
+		return (
+			getSelectedTokenIdFromPath(readCurrentRouterHref(handle)) ??
+			selectedTokenId
+		)
 	}
 
 	async function loadTokens(signal: AbortSignal) {
 		const loadStartedAtMutationVersion = mutationVersion
 		try {
-			const href =
-				typeof window === 'undefined'
-					? accountPackageInvocationTokensBasePath
-					: window.location.href
+			const href = readCurrentRouterHref(handle)
 			lastLoadedHref = href
 			const response = await fetch(accountPackageInvocationTokensApiPath, {
 				headers: { Accept: 'application/json' },
@@ -373,10 +383,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error('Unable to load package invocation tokens.')
 			}
 			if (loadStartedAtMutationVersion !== mutationVersion) return
-			const latestHref =
-				typeof window === 'undefined'
-					? accountPackageInvocationTokensBasePath
-					: window.location.href
+			const latestHref = readCurrentRouterHref(handle)
 			if (href !== latestHref) return
 			applyPayload(payload, latestHref)
 			status = 'ready'
@@ -901,21 +908,41 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		handle.update()
 	}
 
+	listenToRouterNavigation(handle, () => {
+		const href = readCurrentRouterHref(handle)
+		if (href !== lastLoadedHref && status !== 'loading') {
+			status = 'loading'
+			handle.update()
+		}
+	})
+
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.accountPackageInvocationTokens
+		if (!embedded || !isAccountPackageInvocationTokensPath(href)) return false
+		applyPayload(embedded, href)
+		status = 'ready'
+		message = null
+		messageTone = 'info'
+		lastLoadedHref = href
+		return true
+	}
+
 	return () => {
-		const currentHref =
-			typeof window === 'undefined'
-				? accountPackageInvocationTokensBasePath
-				: window.location.href
+		const currentHref = readCurrentRouterHref(handle)
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
-			handle.queueTask(loadTokens)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadTokens)
+			}
 		}
 		const isMutating = saveState !== 'idle'
 		const isCreatingToken = isNewTokenPath(currentHref)
 		const requestedTokenId = getSelectedTokenIdFromPath(currentHref)
-		const effectiveSelectedTokenId =
-			typeof window === 'undefined' ? selectedTokenId : requestedTokenId
+		const effectiveSelectedTokenId = requestedTokenId ?? selectedTokenId
 		const selectedToken =
 			tokens.find((token) => token.id === effectiveSelectedTokenId) ?? null
 		const isEditingSelectedToken =

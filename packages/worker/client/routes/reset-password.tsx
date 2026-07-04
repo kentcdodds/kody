@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { readRouterSearch } from '#client/router-location.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -17,10 +18,8 @@ import {
 
 type ResetStatus = 'idle' | 'submitting' | 'success' | 'error'
 
-function getSearchParams() {
-	return typeof window === 'undefined'
-		? new URLSearchParams()
-		: new URLSearchParams(window.location.search)
+function getSearchParams(handle: Handle) {
+	return new URLSearchParams(readRouterSearch(handle))
 }
 
 export function ResetPasswordRoute(handle: Handle) {
@@ -106,7 +105,7 @@ export function ResetPasswordRoute(handle: Handle) {
 	}
 
 	return () => {
-		const searchParams = getSearchParams()
+		const searchParams = getSearchParams(handle)
 		const token = String(searchParams.get('token') ?? '').trim()
 		const mode = token ? 'confirm' : 'request'
 		const isSubmitting = status === 'submitting'

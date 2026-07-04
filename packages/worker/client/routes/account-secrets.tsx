@@ -5,7 +5,13 @@ import {
 	parseAccountSecretId,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
-import { navigate, routerEvents } from '#client/client-router.tsx'
+import {
+	navigate,
+	routerEvents,
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -119,6 +125,11 @@ type SecretFilterState = {
 }
 
 const secretsBasePath = '/account/secrets'
+
+function isAccountSecretsPath(href: string) {
+	const path = new URL(href, 'http://localhost').pathname
+	return path === secretsBasePath || path.startsWith(`${secretsBasePath}/`)
+}
 
 let nextAllowedPackageRowId = 0
 
@@ -322,15 +333,7 @@ function getSelectionState(href: string): SelectionState {
 	}
 }
 
-function getCurrentHref() {
-	return typeof window === 'undefined' ? secretsBasePath : window.location.href
-}
-
-function getCurrentSearch() {
-	return typeof window === 'undefined' ? '' : window.location.search
-}
-
-function buildSecretsHref(pathname: string, search = getCurrentSearch()) {
+function buildSecretsHref(pathname: string, search: string) {
 	return `${pathname}${search}`
 }
 
@@ -450,7 +453,7 @@ function buildSecretHref(
 		scope: SecretScope
 		appId: string | null
 	},
-	search = getCurrentSearch(),
+	search: string,
 ) {
 	return buildSecretsHref(
 		buildAccountSecretPath({
@@ -462,12 +465,12 @@ function buildSecretHref(
 	)
 }
 
-function buildNewSecretHref() {
-	return buildSecretsHref(`${secretsBasePath}/new`)
+function buildNewSecretHref(search = '') {
+	return buildSecretsHref(`${secretsBasePath}/new`, search)
 }
 
-function buildBaseSecretsHref() {
-	return buildSecretsHref(secretsBasePath)
+function buildBaseSecretsHref(search = '') {
+	return buildSecretsHref(secretsBasePath, search)
 }
 
 function replaceSecretsLocation(to: string) {
@@ -575,6 +578,21 @@ export function AccountSecretsRoute(handle: Handle) {
 	const deleteSecretCheck = createDoubleCheck(handle)
 	const filterAppCombobox = TypeaheadCombobox(handle)
 	const editorAppCombobox = TypeaheadCombobox(handle)
+
+	function getCurrentHref() {
+		return readCurrentRouterHref(handle)
+	}
+
+	function getCurrentSearch() {
+		return new URL(getCurrentHref(), 'http://localhost').search
+	}
+
+	function buildSecretsHrefWithSearch(
+		pathname: string,
+		search = getCurrentSearch(),
+	) {
+		return buildSecretsHref(pathname, search)
+	}
 
 	function buildHrefWithUpdatedFilters(
 		nextFilters: Partial<SecretFilterState>,
@@ -918,7 +936,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			)
 			deleteSecretCheck.reset()
 			handle.update()
-			navigate(buildBaseSecretsHref())
+			navigate(buildBaseSecretsHref(getCurrentSearch()))
 		} catch (error) {
 			saveState = 'idle'
 			message =
@@ -1020,6 +1038,25 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
+	listenToRouterNavigation(handle, () => {
+		const href = getCurrentHref()
+		const nextDataKey = getDataRefreshKey(href)
+		if (nextDataKey !== lastLoadedDataKey && status !== 'loading') {
+			status = 'loading'
+			handle.update()
+		}
+	})
+
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.accountSecrets
+		if (!embedded || !isAccountSecretsPath(href)) return false
+		const selection = getSelectionState(href)
+		applyPayload(embedded, selection, embedded.approvalError)
+		lastLoadedDataKey = getDataRefreshKey(href)
+		lastFailedDataKey = null
+		return true
+	}
+
 	return () => {
 		const currentHref = getCurrentHref()
 		const selection = getSelectionState(currentHref)
@@ -1049,7 +1086,12 @@ export function AccountSecretsRoute(handle: Handle) {
 			(status === 'loading' || isRefreshingForLocationChange) &&
 			!isLoadingCurrentLocation
 		) {
-			handle.queueTask(loadAccountSecrets)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadAccountSecrets)
+			}
 		}
 
 		const activeSecretId =
@@ -1092,7 +1134,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								mix={[
 									on('click', () => {
 										if (isMutating) return
-										navigate(buildNewSecretHref())
+										navigate(buildNewSecretHref(getCurrentSearch()))
 									}),
 									css(primaryButtonCss),
 								]}
@@ -1354,7 +1396,9 @@ export function AccountSecretsRoute(handle: Handle) {
 													disabled={isMutating}
 													onClick={() => {
 														if (isMutating) return
-														navigate(buildSecretHref(secret))
+														navigate(
+															buildSecretHref(secret, getCurrentSearch()),
+														)
 													}}
 												>
 													<div

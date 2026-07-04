@@ -1,5 +1,11 @@
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import {
+	loadAdminUsersData,
+	loadRolesByUserIds,
+	adminUserListItemFieldNames,
+	type AdminUserListItem,
+} from '#app/admin-users-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -13,38 +19,7 @@ import {
 import { type RoleName, roleNames } from '#app/permissions.ts'
 import { type routes } from '#app/routes.ts'
 
-export const adminUserListItemFieldNames = [
-	'id',
-	'username',
-	'email',
-	'created_at',
-	'updated_at',
-	'roles',
-] as const
-
-export type AdminUserListItemFieldName =
-	(typeof adminUserListItemFieldNames)[number]
-
-export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
-	id: number
-	username: string
-	email: string
-	created_at: string
-	updated_at: string
-	roles: Array<RoleName>
-}
-
-type AdminUsersListPayload = {
-	ok: true
-	users: Array<AdminUserListItem>
-	page: number
-	pageSize: number
-	total: number
-	availableRoles: Array<RoleName>
-}
-
-const defaultPageSize = 20
-const maxPageSize = 100
+export { adminUserListItemFieldNames, type AdminUserListItem }
 
 export function createAdminHandler(env: Env) {
 	return {
@@ -77,10 +52,13 @@ export function createAdminUsersHandler(env: Env) {
 				return redirectToLogin(request)
 			}
 
+			const adminUsers = await loadAdminUsersData(env, request.url)
+
 			return renderAppPage({
 				request,
 				env,
 				title: 'Admin users',
+				loaderData: { adminUsers },
 			})
 		},
 	} satisfies Action<typeof routes.adminUsers>
@@ -93,10 +71,7 @@ export function createAdminUsersApiHandler(env: Env) {
 			try {
 				if (request.method === 'GET') {
 					await requireUserWithPermission(request, env, 'read:user:any')
-					const payload = await buildAdminUsersListPayload({
-						env,
-						request,
-					})
+					const payload = await loadAdminUsersData(env, request.url)
 					return jsonResponse(payload)
 				}
 
@@ -148,101 +123,6 @@ export function createAdminUsersApiHandler(env: Env) {
 	} satisfies Action<typeof routes.adminUsersApi>
 }
 
-async function buildAdminUsersListPayload(input: {
-	env: Env
-	request: Request
-}): Promise<AdminUsersListPayload> {
-	const requestUrl = new URL(input.request.url)
-	const page = readPositiveInt(requestUrl.searchParams.get('page'), 1)
-	const pageSize = Math.min(
-		readPositiveInt(requestUrl.searchParams.get('pageSize'), defaultPageSize),
-		maxPageSize,
-	)
-	const offset = (page - 1) * pageSize
-
-	const totalResult = await input.env.APP_DB.prepare(
-		`SELECT COUNT(*) AS total FROM users`,
-	).first<{ total: number }>()
-	const total = totalResult?.total ?? 0
-
-	const userRows = await input.env.APP_DB.prepare(
-		`SELECT id, username, email, created_at, updated_at
-		 FROM users
-		 ORDER BY id ASC
-		 LIMIT ? OFFSET ?`,
-	)
-		.bind(pageSize, offset)
-		.all<{
-			id: number
-			username: string
-			email: string
-			created_at: string
-			updated_at: string
-		}>()
-
-	const userIds = (userRows.results ?? []).map((row) => row.id)
-	const rolesByUserId = await loadRolesByUserIds(input.env.APP_DB, userIds)
-
-	return {
-		ok: true,
-		users: (userRows.results ?? []).map((row) =>
-			toAdminUserListItem(row, rolesByUserId.get(row.id) ?? []),
-		),
-		page,
-		pageSize,
-		total,
-		availableRoles: [...roleNames],
-	}
-}
-
-async function loadRolesByUserIds(db: D1Database, userIds: Array<number>) {
-	const rolesByUserId = new Map<number, Array<RoleName>>()
-	if (userIds.length === 0) {
-		return rolesByUserId
-	}
-
-	const placeholders = userIds.map(() => '?').join(', ')
-	const result = await db
-		.prepare(
-			`SELECT ur.user_id, r.name AS role_name
-			 FROM user_roles ur
-			 INNER JOIN roles r ON r.id = ur.role_id
-			 WHERE ur.user_id IN (${placeholders})
-			 ORDER BY ur.user_id ASC, r.name ASC`,
-		)
-		.bind(...userIds)
-		.all<{ user_id: number; role_name: string }>()
-
-	for (const row of result.results ?? []) {
-		if (!isRoleName(row.role_name)) continue
-		const current = rolesByUserId.get(row.user_id) ?? []
-		current.push(row.role_name)
-		rolesByUserId.set(row.user_id, current)
-	}
-
-	return rolesByUserId
-}
-
-function toAdminUserListItem(
-	row: {
-		id: number
-		username: string
-		email: string
-		created_at: string
-		updated_at: string
-	},
-	roles: Array<RoleName>,
-): AdminUserListItem {
-	return {
-		id: row.id,
-		username: row.username,
-		email: row.email,
-		created_at: row.created_at,
-		updated_at: row.updated_at,
-		roles,
-	}
-}
-
 async function handleAssignRoleAction(input: {
 	env: Env
 	request: Request
@@ -285,10 +165,7 @@ async function handleAssignRoleAction(input: {
 		reason: `target_user_id=${targetUserId};role=${roleName}`,
 	})
 
-	const payload = await buildAdminUsersListPayload({
-		env: input.env,
-		request: input.request,
-	})
+	const payload = await loadAdminUsersData(input.env, input.request.url)
 	return jsonResponse(payload)
 }
 
@@ -374,10 +251,7 @@ async function handleRemoveRoleAction(input: {
 		reason: `target_user_id=${targetUserId};role=${roleName}`,
 	})
 
-	const payload = await buildAdminUsersListPayload({
-		env: input.env,
-		request: input.request,
-	})
+	const payload = await loadAdminUsersData(input.env, input.request.url)
 	return jsonResponse(payload)
 }
 

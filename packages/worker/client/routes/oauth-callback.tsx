@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	cardCss,
 	mutedLinkCss,
@@ -9,12 +10,9 @@ import {
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
 
-export function OAuthCallbackRoute(_handle: Handle) {
+export function OAuthCallbackRoute(handle: Handle) {
 	return () => {
-		const params =
-			typeof window === 'undefined'
-				? new URLSearchParams()
-				: new URLSearchParams(window.location.search)
+		const params = new URLSearchParams(readRouterSearch(handle))
 		const error = params.get('error')
 		const description = params.get('error_description')
 		const code = params.get('code')

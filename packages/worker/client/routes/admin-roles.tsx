@@ -1,4 +1,9 @@
 import { type Handle, css } from 'remix/ui'
+import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import { getSecondaryButtonCss } from '#client/styles/style-primitives.ts'
@@ -8,28 +13,22 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 } from './account-management-components.tsx'
-import { type PermissionString } from '#app/permissions.ts'
+import { type AdminRolesLoaderData } from '#client/loader-data-types.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 
-type AdminRoleListItem = {
-	name: string
-	description: string
-	permissions: Array<PermissionString>
-}
-
-type AdminRolesPayload = {
-	ok: true
-	roles: Array<AdminRoleListItem>
-}
-
 const adminRolesApiPath = '/admin/roles.json'
+
+function isAdminRolesPath(href: string) {
+	return new URL(href, 'http://localhost').pathname === '/admin/roles'
+}
 
 export function AdminRolesRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
-	let roles: Array<AdminRoleListItem> = []
+	let roles: AdminRolesLoaderData['roles'] = []
 	let message: string | null = null
 	let loadRequestId = 0
+	let lastLoadedHref = ''
 
 	async function loadAdminRoles() {
 		const requestId = ++loadRequestId
@@ -49,13 +48,14 @@ export function AdminRolesRoute(handle: Handle) {
 				handle.update()
 				return
 			}
-			const payload = await readJson<AdminRolesPayload>(response)
+			const payload = await readJson<AdminRolesLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load admin roles.')
 			}
 			roles = payload.roles
 			status = 'ready'
 			message = null
+			lastLoadedHref = readCurrentRouterHref(handle)
 			handle.update()
 		} catch (error) {
 			if (requestId !== loadRequestId) return
@@ -66,10 +66,37 @@ export function AdminRolesRoute(handle: Handle) {
 		}
 	}
 
+	listenToRouterNavigation(handle, () => {
+		const href = readCurrentRouterHref(handle)
+		if (href !== lastLoadedHref) {
+			status = 'loading'
+			handle.update()
+		}
+	})
+
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.adminRoles
+		if (!embedded || !isAdminRolesPath(href)) return false
+		roles = embedded.roles
+		status = 'ready'
+		message = null
+		lastLoadedHref = href
+		return true
+	}
+
 	const secondaryButtonCss = getSecondaryButtonCss()
 
 	return () => {
-		if (status === 'loading') handle.queueTask(loadAdminRoles)
+		const currentHref = readCurrentRouterHref(handle)
+
+		if (status === 'loading' || currentHref !== lastLoadedHref) {
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadAdminRoles)
+			}
+		}
 
 		return (
 			<AccountManagementShell>

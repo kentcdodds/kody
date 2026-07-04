@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { loadAccountPackageInvocationTokensData } from '#app/account-package-invocation-tokens-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
@@ -9,10 +9,8 @@ import {
 	deletePackageInvocationToken,
 	hashPackageInvocationBearerToken,
 	insertPackageInvocationToken,
-	listPackageInvocationTokensByUserId,
 	reinstatePackageInvocationToken,
 	revokePackageInvocationToken,
-	type PackageInvocationTokenRecord,
 	updatePackageInvocationToken,
 } from '#worker/package-invocations/repo.ts'
 import {
@@ -31,45 +29,45 @@ type SavedPackageSummary = {
 	name: string
 }
 
-type AccountPackageInvocationTokenListItem = {
-	id: string
-	name: string
-	packageIds: Array<string>
-	packageKodyIds: Array<string>
-	exportNames: Array<string>
-	sources: Array<string>
-	createdAt: string
-	updatedAt: string
-	lastUsedAt: string | null
-	revokedAt: string | null
-}
-
-type AccountPackageInvocationTokensPayload = {
-	ok: true
-	email: string
-	username: string
-	invocationUrlOrigin: string
-	packages: Array<SavedPackageSummary>
-	tokens: Array<AccountPackageInvocationTokenListItem>
-	selectedTokenId?: string
-}
-
 export function createAccountPackageInvocationTokensHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request, params }) {
 			const { session } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
 			}
 
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return redirectToLogin(request)
+			}
+
+			const accountPackageInvocationTokens =
+				await loadAccountPackageInvocationTokensData({
+					env,
+					request,
+					user,
+					pathTokenId:
+						typeof params === 'object' &&
+						params !== null &&
+						'tokenId' in params &&
+						typeof params.tokenId === 'string'
+							? params.tokenId
+							: undefined,
+				})
 			return renderAppPage({
 				request,
 				env,
 				title: 'Package invocation tokens',
+				loaderData: { accountPackageInvocationTokens },
 			})
 		},
-	} satisfies Action<typeof routes.accountPackageInvocationTokens>
+	} satisfies Action<
+		| typeof routes.accountPackageInvocationTokens
+		| typeof routes.accountPackageInvocationTokenNew
+		| typeof routes.accountPackageInvocationTokenDetail
+	>
 }
 
 export function createAccountPackageInvocationTokensApiHandler(env: Env) {
@@ -82,7 +80,9 @@ export function createAccountPackageInvocationTokensApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(await buildPayload({ env, request, user }))
+				return jsonResponse(
+					await loadAccountPackageInvocationTokensData({ env, request, user }),
+				)
 			}
 
 			if (request.method !== 'POST') {
@@ -232,7 +232,7 @@ async function handleCreateAction(input: {
 	}
 
 	return jsonResponse({
-		...(await buildPayload({
+		...(await loadAccountPackageInvocationTokensData({
 			env: input.env,
 			request: input.request,
 			user: input.user,
@@ -363,7 +363,7 @@ async function handleUpdateAction(input: {
 	}
 
 	return jsonResponse({
-		...(await buildPayload({
+		...(await loadAccountPackageInvocationTokensData({
 			env: input.env,
 			request: input.request,
 			user: input.user,
@@ -395,7 +395,7 @@ async function handleRevokeAction(input: {
 		)
 	}
 	return jsonResponse(
-		await buildPayload({
+		await loadAccountPackageInvocationTokensData({
 			env: input.env,
 			request: input.request,
 			user: input.user,
@@ -425,7 +425,7 @@ async function handleReinstateAction(input: {
 		)
 	}
 	return jsonResponse({
-		...(await buildPayload({
+		...(await loadAccountPackageInvocationTokensData({
 			env: input.env,
 			request: input.request,
 			user: input.user,
@@ -456,61 +456,12 @@ async function handleDeleteAction(input: {
 		)
 	}
 	return jsonResponse(
-		await buildPayload({
+		await loadAccountPackageInvocationTokensData({
 			env: input.env,
 			request: input.request,
 			user: input.user,
 		}),
 	)
-}
-
-async function buildPayload(input: {
-	env: Env
-	request: Request
-	user: AuthenticatedUser
-	savedPackages?: Array<SavedPackageSummary>
-}): Promise<AccountPackageInvocationTokensPayload> {
-	const userId = input.user.mcpUser.userId
-	const [savedPackages, tokens] = await Promise.all([
-		input.savedPackages ??
-			listSavedPackagesByUserId(input.env.APP_DB, { userId }),
-		listPackageInvocationTokensByUserId({
-			db: input.env.APP_DB,
-			userId,
-		}),
-	])
-	return {
-		ok: true,
-		email: input.user.email,
-		username: input.user.username,
-		invocationUrlOrigin: getAppBaseUrl({
-			env: input.env,
-			requestUrl: input.request.url,
-		}),
-		packages: savedPackages.map((savedPackage) => ({
-			id: savedPackage.id,
-			kodyId: savedPackage.kodyId,
-			name: savedPackage.name,
-		})),
-		tokens: tokens.map(toListItem),
-	}
-}
-
-function toListItem(
-	token: PackageInvocationTokenRecord,
-): AccountPackageInvocationTokenListItem {
-	return {
-		id: token.id,
-		name: token.name,
-		packageIds: token.packageIds,
-		packageKodyIds: token.packageKodyIds,
-		exportNames: token.exportNames,
-		sources: token.sources,
-		createdAt: token.created_at,
-		updatedAt: token.updated_at,
-		lastUsedAt: token.last_used_at,
-		revokedAt: token.revoked_at,
-	}
 }
 
 function validatePackageScopes(input: {

@@ -1,6 +1,11 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
+	listenToRouterNavigation,
+	readCurrentRouterHref,
+} from '#client/client-router.tsx'
+import { readAppLoaderData } from '#client/loader-data-context.tsx'
+import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
@@ -57,7 +62,14 @@ type EditorState = {
 }
 
 const accountRemoteConnectorsApiPath = '/account/remote-connectors.json'
+const accountRemoteConnectorsPath = '/account/remote-connectors'
 const generatedSecretBytes = 32
+
+function isAccountRemoteConnectorsPath(href: string) {
+	return (
+		new URL(href, 'http://localhost').pathname === accountRemoteConnectorsPath
+	)
+}
 
 function createEmptyEditorState(): EditorState {
 	return {
@@ -308,10 +320,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 	async function loadRemoteConnectors(signal: AbortSignal) {
 		try {
-			const href =
-				typeof window === 'undefined'
-					? '/account/remote-connectors'
-					: window.location.href
+			const href = readCurrentRouterHref(handle)
 			lastLoadedHref = href
 			const response = await fetch(accountRemoteConnectorsApiPath, {
 				headers: { Accept: 'application/json' },
@@ -539,15 +548,35 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		})
 	}
 
+	listenToRouterNavigation(handle, () => {
+		const href = readCurrentRouterHref(handle)
+		if (href !== lastLoadedHref && status !== 'loading') {
+			status = 'loading'
+			handle.update()
+		}
+	})
+
+	function applyEmbeddedLoaderData(href: string) {
+		const embedded = readAppLoaderData(handle)?.accountRemoteConnectors
+		if (!embedded || !isAccountRemoteConnectorsPath(href)) return false
+		applyPayload(embedded)
+		status = 'ready'
+		message = null
+		lastLoadedHref = href
+		return true
+	}
+
 	return () => {
-		const currentHref =
-			typeof window === 'undefined'
-				? '/account/remote-connectors'
-				: window.location.href
+		const currentHref = readCurrentRouterHref(handle)
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
-			handle.queueTask(loadRemoteConnectors)
+			if (
+				!applyEmbeddedLoaderData(currentHref) &&
+				typeof document !== 'undefined'
+			) {
+				handle.queueTask(loadRemoteConnectors)
+			}
 		}
 		const isMutating = saveState !== 'idle'
 		const isEditing = Boolean(editorState.id)
