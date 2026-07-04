@@ -59,14 +59,19 @@ export function CommunityDetailRoute(handle: Handle) {
 	let copyState: 'idle' | 'copied' = 'idle'
 	let copyResetTimerId: ReturnType<typeof window.setTimeout> | null = null
 	let shellLoadedForListingId: string | null = null
+	let shellRequestedForListingId: string | null = null
 
 	async function loadDetailShell() {
 		const listingId = getCurrentListingId(handle)
 		if (!listingId) return
 
 		const requestId = ++shellLoadRequestId
-		shellStatus = 'loading'
-		handle.update()
+		// Same-listing revalidations keep showing the current shell while the
+		// fetch is in flight; only brand-new listings show the loading state.
+		if (shellLoadedForListingId !== listingId) {
+			shellStatus = 'loading'
+			handle.update()
+		}
 
 		try {
 			const response = await fetch(
@@ -171,6 +176,11 @@ export function CommunityDetailRoute(handle: Handle) {
 			frame.src = nextSrc
 		}
 		void frame.reload()
+
+		// Revalidate the shell alongside the frame so the fork prompt, README,
+		// and report login state stay as fresh as the listing metadata.
+		shellRequestedForListingId = listingId
+		handle.queueTask(loadDetailShell)
 	})
 
 	function applyEmbeddedShellData(href: string, listingId: string | null) {
@@ -219,12 +229,16 @@ export function CommunityDetailRoute(handle: Handle) {
 		applyEmbeddedShellData(currentHref, listingId)
 		if (
 			shellLoadedForListingId !== listingId &&
+			shellRequestedForListingId !== listingId &&
 			typeof document !== 'undefined'
 		) {
 			// Show the loading state immediately so the previous listing's
 			// shell (fork prompt, README, login state) never renders under the
-			// new listing's header while the refetch is in flight.
+			// new listing's header while the refetch is in flight. Tracking the
+			// requested listing separately keeps re-renders from enqueueing
+			// duplicate fetches while one is already in flight.
 			shellStatus = 'loading'
+			shellRequestedForListingId = listingId
 			handle.queueTask(loadDetailShell)
 		}
 
