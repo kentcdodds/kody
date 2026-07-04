@@ -225,11 +225,11 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		const isMutating = actionState !== 'idle'
 
 		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			if (
-				!applyEmbeddedLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadReports)
+			if (!applyEmbeddedLoaderData(currentHref)) {
+				if (typeof document !== 'undefined') {
+					status = 'loading'
+					handle.queueTask(loadReports)
+				}
 			}
 		}
 

@@ -235,15 +235,16 @@ export function CommunityDetailRoute(handle: Handle) {
 	return () => {
 		const listingId = getCurrentListingId(handle)
 		const currentHref = readCurrentRouterHref(handle)
-		if (
-			status === 'loading' ||
-			(listingId && listingId !== lastLoadedListingId)
-		) {
-			if (
-				!applyEmbeddedLoaderData(currentHref, listingId) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadCommunityDetail)
+		const listingIdMismatch =
+			listingId != null &&
+			(listingId !== lastLoadedListingId ||
+				(listing != null && listing.id !== listingId))
+		if (status === 'loading' || listingIdMismatch) {
+			if (!applyEmbeddedLoaderData(currentHref, listingId)) {
+				if (typeof document !== 'undefined') {
+					status = 'loading'
+					handle.queueTask(loadCommunityDetail)
+				}
 			}
 		}
 

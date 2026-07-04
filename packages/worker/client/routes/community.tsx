@@ -117,11 +117,11 @@ export function CommunityRoute(handle: Handle) {
 		const searchQuery = readCommunitySearchQueryFromHref(currentHref)
 
 		if (status === 'loading' || currentHref !== lastLoadedHref) {
-			if (
-				!applyEmbeddedLoaderData(currentHref) &&
-				typeof document !== 'undefined'
-			) {
-				handle.queueTask(loadCommunityListings)
+			if (!applyEmbeddedLoaderData(currentHref)) {
+				if (typeof document !== 'undefined') {
+					status = 'loading'
+					handle.queueTask(loadCommunityListings)
+				}
 			}
 		}
 
