@@ -227,6 +227,9 @@ function createPackageAppTestEnv() {
 				load: vi.fn(() => ({
 					getEntrypoint,
 				})),
+				get: vi.fn(() => ({
+					getEntrypoint,
+				})),
 			},
 		} as unknown as Env,
 		getEntrypoint,
@@ -312,6 +315,74 @@ test('buildPackageAppWorker loads published app artifacts with artifactName null
 	expect(
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).not.toHaveBeenCalled()
+})
+
+test('buildPackageAppWorker acquires a fresh stub per request while reusing the built worker options', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-1',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("cached") } }',
+				},
+				dependencies: [],
+				dynamicDependencies: [],
+			},
+		},
+	)
+
+	const buildInput = {
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-stub-reuse',
+		savedPackage: {
+			id: 'package-stub-reuse',
+			kodyId: 'example-stub-reuse',
+			name: '@kody/example-stub-reuse',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		},
+		source: createPackageAppTestSource(),
+		manifest: createPackageAppTestManifest(),
+		runtime: {
+			callerContext: {
+				user: {
+					userId: 'user-stub-reuse',
+					email: 'stub-reuse@example.com',
+					displayName: 'Stub Reuse User',
+				},
+			},
+		} as never,
+	}
+
+	await buildPackageAppWorker(buildInput)
+	await buildPackageAppWorker(buildInput)
+
+	const loader = env.APP_LOADER as unknown as {
+		get: ReturnType<typeof vi.fn>
+		load: ReturnType<typeof vi.fn>
+	}
+	// The expensive build (artifact lookup + hydration) runs once; each request
+	// still re-acquires a request-bound stub with the same stable worker id.
+	expect(
+		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
+	).toHaveBeenCalledTimes(1)
+	expect(loader.get).toHaveBeenCalledTimes(2)
+	expect(loader.load).not.toHaveBeenCalled()
+	const [firstWorkerId] = loader.get.mock.calls[0] as [string]
+	const [secondWorkerId] = loader.get.mock.calls[1] as [string]
+	expect(firstWorkerId).toBe(secondWorkerId)
+	expect(firstWorkerId).toMatch(/^package-app-/)
 })
 
 test('buildPackageAppWorker persists rebuilt app artifacts with artifactName null', async () => {
