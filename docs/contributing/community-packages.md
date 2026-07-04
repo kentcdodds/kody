@@ -84,9 +84,9 @@ id to the forker's scope, scans cross-scope references, calls
 `ensureEntitySource` + `syncArtifactSourceSnapshot`, and records
 `community_forks` — **without** inserting `saved_packages`.
 
-`rateCommunityListing` requires a prior fork row for the rater.
-`reportCommunityListing` stores denormalized listing metadata for the admin
-queue.
+`rateCommunityListing` requires a prior fork row for the rater and rejects
+ratings from the listing owner. `reportCommunityListing` stores denormalized
+listing metadata for the admin queue.
 
 ## MCP capabilities
 

@@ -637,6 +637,66 @@ test('rateCommunityListing requires an existing fork', async () => {
 	).rejects.toThrow('rate after forking')
 })
 
+test('rateCommunityListing rejects ratings from the listing owner', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.getCommunityForkByListingAndUser.mockResolvedValue({
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'owner-1',
+		originCommit: 'commit-1',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway',
+		createdAt: '2026-07-01T00:00:00.000Z',
+	})
+
+	await expect(
+		rateCommunityListing({
+			env: createEnv(),
+			userId: 'owner-1',
+			listingId: 'listing-1',
+			stars: 5,
+			adaptationEffort: 2,
+		}),
+	).rejects.toThrow('You cannot rate your own listing.')
+
+	expect(mockModule.upsertCommunityRating).not.toHaveBeenCalled()
+})
+
+test('rateCommunityListing allows non-owners with a fork row', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.getCommunityForkByListingAndUser.mockResolvedValue({
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'user-2',
+		originCommit: 'commit-1',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway',
+		createdAt: '2026-07-01T00:00:00.000Z',
+	})
+
+	await rateCommunityListing({
+		env: createEnv(),
+		userId: 'user-2',
+		listingId: 'listing-1',
+		stars: 5,
+		adaptationEffort: 2,
+	})
+
+	expect(mockModule.upsertCommunityRating).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			listing_id: 'listing-1',
+			user_id: 'user-2',
+			stars: 5,
+			adaptation_effort: 2,
+		}),
+	)
+})
+
 test('searchCommunityListings returns the relevant listing first', async () => {
 	const discordListing = sampleListing({
 		id: 'listing-discord',

@@ -681,6 +681,9 @@ export async function rateCommunityListing(input: {
 	if (!listing) {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
+	if (listing.ownerUserId === input.userId) {
+		throw new CommunityActionError('You cannot rate your own listing.')
+	}
 
 	const fork = await getCommunityForkByListingAndUser(input.env.APP_DB, {
 		listingId: input.listingId,

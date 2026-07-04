@@ -82,7 +82,8 @@ After forking, your agent can call `community_rate` with:
 - optional **`note`**
 
 One rating per user per listing (upsert). Only users who forked a listing can
-rate it. Aggregates influence listing sort order.
+rate it. Listing owners cannot rate their own packages. Aggregates influence
+listing sort order.
 
 Rate honestly: **`stars`** reflects whether the listing was worth forking;
 **`adaptation_effort`** helps others estimate rework, not blame the author.
