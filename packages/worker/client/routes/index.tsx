@@ -1,4 +1,5 @@
-import { AccountRoute } from './account.tsx'
+import { type RouteLoader } from '#client/client-router.tsx'
+import { AccountRoute, accountRouteLoader } from './account.tsx'
 import { AccountIntegrationsRoute } from './account-integrations.tsx'
 import { AccountPackageInvocationTokensRoute } from './account-package-invocation-tokens.tsx'
 import { AccountRemoteConnectorsRoute } from './account-remote-connectors.tsx'
@@ -15,6 +16,10 @@ import { PrivacyRoute } from './privacy.tsx'
 import { OAuthAuthorizeRoute } from './oauth-authorize.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ResetPasswordRoute } from './reset-password.tsx'
+
+export const clientRouteLoaders: Record<string, RouteLoader> = {
+	'/account': accountRouteLoader,
+}
 
 export const clientRoutes = {
 	'/': <HomeRoute />,

@@ -1,4 +1,5 @@
 import { type Handle, type RemixNode } from 'remix/ui'
+import { tryConsumePreloadedLoaderData } from '#client/navigation-data.ts'
 import { readSsrRouterUrl } from '#client/router-location.tsx'
 import { type AppLoaderData } from '#app/loader-data.ts'
 
@@ -63,4 +64,18 @@ export function tryConsumeEmbeddedLoaderData<K extends keyof AppLoaderData>(
 
 	ctx.consumedKeys.add(key)
 	return embedded
+}
+
+/**
+ * Returns loader data for `key` from SSR-embedded props or a preloaded SPA
+ * navigation slot. Each source is consume-once per key.
+ */
+export function tryConsumeRouteLoaderData<K extends keyof AppLoaderData>(
+	handle: Handle,
+	key: K,
+	currentHref: string,
+): AppLoaderData[K] | undefined {
+	const embedded = tryConsumeEmbeddedLoaderData(handle, key, currentHref)
+	if (embedded !== undefined) return embedded
+	return tryConsumePreloadedLoaderData(key, currentHref)
 }

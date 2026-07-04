@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { matchRoute } from './client-router.tsx'
+import {
+	matchRoute,
+	matchRouteLoader,
+	type RouteLoader,
+} from './client-router.tsx'
 
 test('client route matching uses Remix route-pattern specificity', () => {
 	const tokenDetailRoute = 'token-detail-route' as unknown as JSX.Element
@@ -30,5 +34,47 @@ test('client route matching handles nested static routes over dynamic parents', 
 	)
 	expect(matchRoute('/account/secrets/secret-1', routes)).toBe(
 		genericSecretRoute,
+	)
+})
+
+test('route loader matching uses the same route-pattern specificity', () => {
+	const accountLoader = (async () => ({
+		accountProfile: { ok: true },
+	})) as RouteLoader
+	const tokenLoader = (async () => ({
+		accountPackageInvocationTokens: { ok: true },
+	})) as RouteLoader
+	const loaders = {
+		'/account/package-invocation-tokens/:tokenId': tokenLoader,
+		'/account/package-invocation-tokens/new': tokenLoader,
+		'/account': accountLoader,
+	}
+
+	expect(matchRouteLoader('/account', loaders)).toBe(accountLoader)
+	expect(
+		matchRouteLoader('/account/package-invocation-tokens/new', loaders),
+	).toBe(tokenLoader)
+	expect(
+		matchRouteLoader('/account/package-invocation-tokens/token-1', loaders),
+	).toBe(tokenLoader)
+})
+
+test('route loader matching prefers nested static routes over dynamic parents', () => {
+	const genericSecretLoader = (async () => ({
+		accountSecrets: { ok: true },
+	})) as RouteLoader
+	const userSecretLoader = (async () => ({
+		accountSecrets: { ok: true },
+	})) as RouteLoader
+	const loaders = {
+		'/account/secrets/:secretId': genericSecretLoader,
+		'/account/secrets/user/:secretName': userSecretLoader,
+	}
+
+	expect(matchRouteLoader('/account/secrets/user/github-token', loaders)).toBe(
+		userSecretLoader,
+	)
+	expect(matchRouteLoader('/account/secrets/secret-1', loaders)).toBe(
+		genericSecretLoader,
 	)
 })

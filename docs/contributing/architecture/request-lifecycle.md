@@ -95,6 +95,30 @@ submissions (`GET`/`POST`) and routes them in-place through the client router.
 Normal app navigations stay in-place through the client router instead of
 requiring a full document refresh.
 
+### Preload-then-commit
+
+SPA navigations use a **preload-then-commit** model (similar to React Router
+data routers): before `history.pushState` and the route swap, the client router
+runs a registered **route loader** for the destination URL, fetches JSON API
+data, and stores it in a single-slot preloaded navigation store. Only after the
+loader finishes (or is skipped when no loader matches) does the router commit
+the URL change and notify subscribers. Route components consume that payload
+synchronously on first render via `tryConsumeRouteLoaderData`, so the UI updates
+once with data already present instead of swapping routes into a loading state.
+
+Route loaders are registered in `clientRouteLoaders` (`routes/index.tsx`) and
+matched with the same Remix route-pattern specificity as `clientRoutes`. Loaders
+return `null` to abort the SPA navigation (for example, `401` → full-page login
+redirect). Loader errors still commit the navigation so the destination route
+can fall back to its own fetch. Hash-only changes commit immediately without a
+loader. Back/forward (`popstate`) and same-path refreshes after form POST also
+run loaders before notifying, keeping the previous UI visible until data is
+ready.
+
+A thin top-of-viewport **navigation progress bar** listens for `navigationstart`
+/ `navigationend` on `routerEvents` and appears only when a navigation is still
+pending after a short delay.
+
 Full page navigations occur for:
 
 - Explicit browser reloads/new tab loads

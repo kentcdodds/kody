@@ -1,7 +1,12 @@
 import { type Handle, css } from 'remix/ui'
-import { clientRoutes } from './routes/index.tsx'
-import { listenToRouterNavigation, Router } from './client-router.tsx'
+import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
+import {
+	listenToRouterNavigation,
+	registerRouteLoaders,
+	Router,
+} from './client-router.tsx'
 import { AppLoaderDataProvider } from './loader-data-context.tsx'
+import { NavigationProgress } from './navigation-progress.tsx'
 import { readRouterPathname, readRouterSearch } from './router-location.tsx'
 import {
 	fetchSessionInfo,
@@ -14,6 +19,8 @@ import { type AppLoaderData } from '#app/loader-data.ts'
 import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from './styles/tokens.ts'
+
+registerRouteLoaders(clientRouteLoaders)
 
 type AppProps = {
 	embeddedSession?: SessionInfo | null
@@ -144,6 +151,7 @@ export function App(handle: Handle<AppProps>) {
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
+				<NavigationProgress />
 				<main
 					mix={css({
 						maxWidth: isWideLayout ? 'none' : '52rem',

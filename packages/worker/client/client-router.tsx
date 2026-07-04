@@ -1,11 +1,17 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#app/loader-data.ts'
+import { setPreloadedNavigationData } from './navigation-data.ts'
 import {
 	readRouterPathname,
 	readRouterUrl,
 	readSsrRouterUrl,
 } from './router-location.tsx'
+
+export type RouteLoader = (
+	url: URL,
+	signal: AbortSignal,
+) => Promise<Partial<AppLoaderData> | null>
 
 type RouterSetup = {
 	routes: Record<string, JSX.Element>
@@ -23,16 +29,37 @@ type FormSubmitDetails = {
 	formData: FormData
 }
 
+type NavigationRunOptions = {
+	/** Browser already changed the URL (popstate / same-path refresh). */
+	skipPushState?: boolean
+	/** Form POST already dispatched `navigationstart`; loader owns `navigationend`. */
+	suppressStart?: boolean
+}
+
 const clientRouteOrigin = 'https://kody.local'
 const routeMatchers = new WeakMap<
 	Record<string, JSX.Element>,
 	ReturnType<typeof createRouteMatcher>
 >()
+const loaderMatchers = new WeakMap<
+	Record<string, RouteLoader>,
+	ReturnType<typeof createLoaderMatcher>
+>()
 export const routerEvents = new EventTarget()
 let routerInitialized = false
+let registeredRouteLoaders: Record<string, RouteLoader> = {}
+let navigationAbortController: AbortController | null = null
 
 function notify() {
 	routerEvents.dispatchEvent(new Event('navigate'))
+}
+
+function dispatchNavigationStart() {
+	routerEvents.dispatchEvent(new Event('navigationstart'))
+}
+
+function dispatchNavigationEnd() {
+	routerEvents.dispatchEvent(new Event('navigationend'))
 }
 
 function createRouteMatcher(routes: Record<string, JSX.Element>) {
@@ -43,12 +70,41 @@ function createRouteMatcher(routes: Record<string, JSX.Element>) {
 	return matcher
 }
 
+function createLoaderMatcher(loaders: Record<string, RouteLoader>) {
+	const matcher = createMultiMatcher<RouteLoader>()
+	for (const [pattern, loader] of Object.entries(loaders)) {
+		matcher.add(pattern, loader)
+	}
+	return matcher
+}
+
 function getRouteMatcher(routes: Record<string, JSX.Element>) {
 	const existing = routeMatchers.get(routes)
 	if (existing) return existing
 	const matcher = createRouteMatcher(routes)
 	routeMatchers.set(routes, matcher)
 	return matcher
+}
+
+function getLoaderMatcher(loaders: Record<string, RouteLoader>) {
+	const existing = loaderMatchers.get(loaders)
+	if (existing) return existing
+	const matcher = createLoaderMatcher(loaders)
+	loaderMatchers.set(loaders, matcher)
+	return matcher
+}
+
+export function registerRouteLoaders(loaders: Record<string, RouteLoader>) {
+	registeredRouteLoaders = loaders
+	loaderMatchers.delete(loaders)
+}
+
+export function matchRouteLoader(
+	path: string | URL,
+	loaders: Record<string, RouteLoader> = registeredRouteLoaders,
+): RouteLoader | null {
+	const url = typeof path === 'string' ? new URL(path, clientRouteOrigin) : path
+	return getLoaderMatcher(loaders).match(url)?.data ?? null
 }
 
 export function matchRoute(
@@ -186,15 +242,83 @@ function getPathWithSearchAndHashFromUrl(url: URL) {
 	return `${url.pathname}${url.search}${url.hash}`
 }
 
-function navigateWithRefreshForSamePath(destination: URL) {
+function getCurrentPathWithSearchAndHash() {
+	if (typeof window === 'undefined') return '/'
+	return `${window.location.pathname}${window.location.search}${window.location.hash}`
+}
+
+function commitNavigation(nextPath: string) {
+	window.history.pushState({}, '', nextPath)
+	notify()
+}
+
+function commitImmediateNavigation(nextPath: string) {
+	dispatchNavigationStart()
+	commitNavigation(nextPath)
+	dispatchNavigationEnd()
+}
+
+async function runNavigationWithLoader(
+	destination: URL,
+	options?: NavigationRunOptions,
+) {
+	navigationAbortController?.abort()
+	const abortController = new AbortController()
+	navigationAbortController = abortController
+	const { signal } = abortController
+
+	if (!options?.suppressStart) {
+		dispatchNavigationStart()
+	}
+
+	const nextPath = getPathWithSearchAndHashFromUrl(destination)
+	const loader = matchRouteLoader(destination)
+
+	try {
+		if (loader) {
+			const data = await loader(destination, signal)
+			if (signal.aborted) return
+			if (data === null) {
+				dispatchNavigationEnd()
+				return
+			}
+			setPreloadedNavigationData(nextPath, data)
+		}
+
+		if (signal.aborted) return
+
+		if (options?.skipPushState) {
+			notify()
+		} else {
+			commitNavigation(nextPath)
+		}
+		dispatchNavigationEnd()
+	} catch {
+		if (signal.aborted) return
+		if (options?.skipPushState) {
+			notify()
+		} else {
+			commitNavigation(nextPath)
+		}
+		dispatchNavigationEnd()
+	}
+}
+
+async function navigateWithRefreshForSamePath(
+	destination: URL,
+	options?: Pick<NavigationRunOptions, 'suppressStart'>,
+) {
 	if (
 		getPathWithSearchAndHashFromUrl(destination) ===
 		getCurrentPathWithSearchAndHash()
 	) {
-		notify()
+		await runNavigationWithLoader(new URL(window.location.href), {
+			skipPushState: true,
+			suppressStart: options?.suppressStart,
+		})
 		return
 	}
-	navigate(destination.toString())
+	await navigateInternal(destination.toString(), options)
 }
 
 async function submitFormThroughRouter(details: FormSubmitDetails) {
@@ -203,41 +327,56 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		return
 	}
 
-	const init: RequestInit = {
-		method: details.method.toUpperCase(),
-		credentials: 'include',
-		redirect: 'follow',
-	}
+	// One `navigationstart` covers the POST fetch and the follow-up loader run;
+	// `navigateWithRefreshForSamePath` / `navigateInternal` suppress a second
+	// start and own the matching `navigationend`.
+	dispatchNavigationStart()
 
-	if (details.enctype === 'application/x-www-form-urlencoded') {
-		init.body = formDataToSearchParams(details.formData)
-		init.headers = {
-			'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+	try {
+		const init: RequestInit = {
+			method: details.method.toUpperCase(),
+			credentials: 'include',
+			redirect: 'follow',
 		}
-	} else if (details.enctype === 'text/plain') {
-		init.body = formDataToPlainText(details.formData)
-		init.headers = {
-			'Content-Type': 'text/plain;charset=UTF-8',
+
+		if (details.enctype === 'application/x-www-form-urlencoded') {
+			init.body = formDataToSearchParams(details.formData)
+			init.headers = {
+				'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+			}
+		} else if (details.enctype === 'text/plain') {
+			init.body = formDataToPlainText(details.formData)
+			init.headers = {
+				'Content-Type': 'text/plain;charset=UTF-8',
+			}
+		} else {
+			init.body = details.formData
 		}
-	} else {
-		init.body = details.formData
-	}
 
-	const response = await fetch(details.action.toString(), init)
-	if (response.redirected) {
-		navigateWithRefreshForSamePath(new URL(response.url, window.location.href))
-		return
-	}
+		const response = await fetch(details.action.toString(), init)
+		if (response.redirected) {
+			await navigateWithRefreshForSamePath(
+				new URL(response.url, window.location.href),
+				{ suppressStart: true },
+			)
+			return
+		}
 
-	const location = response.headers.get('Location')
-	if (location) {
-		navigateWithRefreshForSamePath(new URL(location, details.action))
-		return
-	}
+		const location = response.headers.get('Location')
+		if (location) {
+			await navigateWithRefreshForSamePath(new URL(location, details.action), {
+				suppressStart: true,
+			})
+			return
+		}
 
-	throw new Error(
-		`Expected redirect location after form submit (${response.status} ${response.statusText})`,
-	)
+		throw new Error(
+			`Expected redirect location after form submit (${response.status} ${response.statusText})`,
+		)
+	} catch (error: unknown) {
+		dispatchNavigationEnd()
+		console.error('Router form submit failed', error)
+	}
 }
 
 function handleDocumentSubmit(event: Event) {
@@ -252,8 +391,12 @@ function handleDocumentSubmit(event: Event) {
 	if (!details) return
 
 	event.preventDefault()
-	void submitFormThroughRouter(details).catch((error: unknown) => {
-		console.error('Router form submit failed', error)
+	void submitFormThroughRouter(details)
+}
+
+function handlePopState() {
+	void runNavigationWithLoader(new URL(window.location.href), {
+		skipPushState: true,
 	})
 }
 
@@ -261,7 +404,7 @@ function ensureRouter() {
 	if (typeof document === 'undefined') return
 	if (routerInitialized) return
 	routerInitialized = true
-	window.addEventListener('popstate', notify)
+	window.addEventListener('popstate', handlePopState)
 	document.addEventListener('click', handleDocumentClick)
 	document.addEventListener('submit', handleDocumentSubmit)
 }
@@ -289,24 +432,38 @@ export function getPathname(handle?: Pick<Handle, 'context'>) {
 	return window.location.pathname
 }
 
-function getCurrentPathWithSearchAndHash() {
-	if (typeof window === 'undefined') return '/'
-	return `${window.location.pathname}${window.location.search}${window.location.hash}`
-}
-
-export function navigate(to: string) {
-	if (typeof window === 'undefined') return
+async function navigateInternal(
+	to: string,
+	options?: Pick<NavigationRunOptions, 'suppressStart'>,
+) {
 	const destination = new URL(to, window.location.href)
 	if (destination.origin !== window.location.origin) {
 		window.location.assign(destination.toString())
 		return
 	}
 
-	const nextPath = `${destination.pathname}${destination.search}${destination.hash}`
-	if (nextPath === getCurrentPathWithSearchAndHash()) return
+	const current = new URL(window.location.href)
+	const nextPath = getPathWithSearchAndHashFromUrl(destination)
+	const currentPath = getCurrentPathWithSearchAndHash()
 
-	window.history.pushState({}, '', nextPath)
-	notify()
+	if (nextPath === currentPath) return
+
+	const sameDocumentLocation =
+		`${destination.pathname}${destination.search}` ===
+		`${current.pathname}${current.search}`
+	if (sameDocumentLocation && destination.hash !== current.hash) {
+		commitImmediateNavigation(nextPath)
+		return
+	}
+
+	await runNavigationWithLoader(destination, options)
+}
+
+export function navigate(to: string): void {
+	if (typeof window === 'undefined') return
+	void navigateInternal(to).catch(() => {
+		// Fire-and-forget: existing callers must not observe rejections.
+	})
 }
 
 type RouterHandle = Pick<Handle, 'signal' | 'update' | 'context'> & {
