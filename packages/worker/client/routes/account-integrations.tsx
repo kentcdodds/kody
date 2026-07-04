@@ -1,13 +1,11 @@
 import { type Handle, css } from 'remix/ui'
-import {
-	listenToRouterNavigation,
-	readCurrentRouterHref,
-} from '#client/client-router.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -64,6 +62,26 @@ const accountIntegrationsPath = '/account/integrations'
 
 function isAccountIntegrationsPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === accountIntegrationsPath
+}
+
+export async function accountIntegrationsRouteLoader(
+	_url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const response = await fetch(accountIntegrationsApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) {
+		window.location.assign('/login')
+		return null
+	}
+	const payload = await readJson<AccountIntegrationsPayload>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load integrations.')
+	}
+	return { accountIntegrations: payload }
 }
 
 function formatTimestamp(value: string) {
@@ -147,24 +165,16 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		}
 	}
 
-	listenToRouterNavigation(handle, () => {
-		const href = readCurrentRouterHref(handle)
-		if (href !== lastLoadedHref && status !== 'loading') {
-			status = 'loading'
-			handle.update()
-		}
-	})
-
-	function applyEmbeddedLoaderData(href: string) {
+	function applyRouteLoaderData(href: string) {
 		if (!isAccountIntegrationsPath(href)) return false
-		const embedded = tryConsumeEmbeddedLoaderData(
+		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountIntegrations',
 			href,
 		)
-		if (!embedded) return false
-		email = embedded.email
-		integrations = embedded.integrations
+		if (!routeData) return false
+		email = routeData.email
+		integrations = routeData.integrations
 		status = 'ready'
 		message = null
 		lastLoadedHref = href
@@ -177,7 +187,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
 			if (
-				!applyEmbeddedLoaderData(currentHref) &&
+				!applyRouteLoaderData(currentHref) &&
 				typeof document !== 'undefined'
 			) {
 				handle.queueTask(loadIntegrations)

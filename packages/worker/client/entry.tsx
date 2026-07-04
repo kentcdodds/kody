@@ -1,5 +1,6 @@
 import { run } from 'remix/ui'
 import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
+import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
 
 const clientRegistry: Record<string, typeof AppRoot> = {
@@ -19,6 +20,10 @@ const app = run({
 		return component
 	},
 	async resolveFrame(src, signal, target) {
+		const cached = consumePrefetchedFrame(src, target)
+		if (cached !== undefined) {
+			return cached
+		}
 		const headers = new Headers({ Accept: 'text/html' })
 		if (target) {
 			headers.set(REMIX_FRAME_TARGET_HEADER, target)

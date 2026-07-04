@@ -1,16 +1,13 @@
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
-import {
-	listenToRouterNavigation,
-	navigate,
-	readCurrentRouterHref,
-} from '#client/client-router.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import {
 	colors,
 	mq,
@@ -185,6 +182,27 @@ function isAccountPackageInvocationTokensPath(href: string) {
 		path === `${accountPackageInvocationTokensBasePath}/new` ||
 		path.startsWith(`${accountPackageInvocationTokensBasePath}/`)
 	)
+}
+
+export async function accountPackageInvocationTokensRouteLoader(
+	_url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const response = await fetch(accountPackageInvocationTokensApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) {
+		window.location.assign('/login')
+		return null
+	}
+	const payload =
+		await readJson<AccountPackageInvocationTokensPayload>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load package invocation tokens.')
+	}
+	return { accountPackageInvocationTokens: payload }
 }
 
 function getSelectedTokenIdFromPath(href: string) {
@@ -887,23 +905,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		handle.update()
 	}
 
-	listenToRouterNavigation(handle, () => {
-		const href = readCurrentRouterHref(handle)
-		if (href !== lastLoadedHref && status !== 'loading') {
-			status = 'loading'
-			handle.update()
-		}
-	})
-
-	function applyEmbeddedLoaderData(href: string) {
+	function applyRouteLoaderData(href: string) {
 		if (!isAccountPackageInvocationTokensPath(href)) return false
-		const embedded = tryConsumeEmbeddedLoaderData(
+		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountPackageInvocationTokens',
 			href,
 		)
-		if (!embedded) return false
-		applyPayload(embedded, href)
+		if (!routeData) return false
+		applyPayload(routeData, href)
 		status = 'ready'
 		message = null
 		messageTone = 'info'
@@ -917,7 +927,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
 			if (
-				!applyEmbeddedLoaderData(currentHref) &&
+				!applyRouteLoaderData(currentHref) &&
 				typeof document !== 'undefined'
 			) {
 				handle.queueTask(loadTokens)

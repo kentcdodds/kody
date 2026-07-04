@@ -8,10 +8,10 @@ import {
 import {
 	navigate,
 	routerEvents,
-	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -492,6 +492,41 @@ function getDataRefreshKey(href: string) {
 	return `${url.pathname}?allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}&new-secret=${newSecretQuery}`
 }
 
+function buildSecretsApiRequestUrl(href: string) {
+	const pageUrl = new URL(href, 'http://localhost')
+	const selection = getSelectionState(href)
+	const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')
+	requestUrl.search = pageUrl.search
+	if (selection.selectedSecretId) {
+		requestUrl.searchParams.set('selected', selection.selectedSecretId)
+	} else {
+		requestUrl.searchParams.delete('selected')
+	}
+	return requestUrl
+}
+
+export async function accountSecretsRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const href = `${url.pathname}${url.search}`
+	const requestUrl = buildSecretsApiRequestUrl(href)
+	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) {
+		window.location.assign('/login')
+		return null
+	}
+	const payload = await readJson<AccountSecretsPayload>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load your secrets.')
+	}
+	return { accountSecrets: payload }
+}
+
 function readFilterState(
 	href: string,
 	apps: Array<PackageAppOption>,
@@ -682,13 +717,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		loadingDataKey = dataKey
 		try {
-			const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')
-			requestUrl.search = getCurrentSearch()
-			if (selection.selectedSecretId) {
-				requestUrl.searchParams.set('selected', selection.selectedSecretId)
-			} else {
-				requestUrl.searchParams.delete('selected')
-			}
+			const requestUrl = buildSecretsApiRequestUrl(href)
 
 			const response = await fetch(
 				`${requestUrl.pathname}${requestUrl.search}`,
@@ -1041,25 +1070,12 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	listenToRouterNavigation(handle, () => {
-		const href = getCurrentHref()
-		const nextDataKey = getDataRefreshKey(href)
-		if (nextDataKey !== lastLoadedDataKey && status !== 'loading') {
-			status = 'loading'
-			handle.update()
-		}
-	})
-
-	function applyEmbeddedLoaderData(href: string) {
+	function applyRouteLoaderData(href: string) {
 		if (!isAccountSecretsPath(href)) return false
-		const embedded = tryConsumeEmbeddedLoaderData(
-			handle,
-			'accountSecrets',
-			href,
-		)
-		if (!embedded) return false
+		const routeData = tryConsumeRouteLoaderData(handle, 'accountSecrets', href)
+		if (!routeData) return false
 		const selection = getSelectionState(href)
-		applyPayload(embedded, selection, embedded.approvalError)
+		applyPayload(routeData, selection, routeData.approvalError)
 		lastLoadedDataKey = getDataRefreshKey(href)
 		lastFailedDataKey = null
 		return true
@@ -1095,7 +1111,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			!isLoadingCurrentLocation
 		) {
 			if (
-				!applyEmbeddedLoaderData(currentHref) &&
+				!applyRouteLoaderData(currentHref) &&
 				typeof document !== 'undefined'
 			) {
 				handle.queueTask(loadAccountSecrets)

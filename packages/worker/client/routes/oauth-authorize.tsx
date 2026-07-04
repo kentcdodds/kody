@@ -1,8 +1,9 @@
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -45,6 +46,38 @@ function getSearchParams(handle: Handle) {
 
 function isOAuthAuthorizePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/oauth/authorize'
+}
+
+export async function oauthAuthorizeRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const response = await fetch(`/oauth/authorize-info${url.search}`, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	const payload = await response.json().catch(() => null)
+	if (!response.ok || !payload?.ok) {
+		const errorText =
+			typeof payload?.error === 'string'
+				? payload.error
+				: 'Unable to load authorization details.'
+		return {
+			oauthAuthorize: {
+				ok: false,
+				error: errorText,
+				allowClientReset: payload?.allowClientReset === true,
+			},
+		}
+	}
+	return {
+		oauthAuthorize: {
+			ok: true,
+			client: payload.client,
+			scopes: payload.scopes,
+		},
+	}
 }
 
 export function OAuthAuthorizeRoute(handle: Handle) {
@@ -124,18 +157,18 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applyEmbeddedLoaderData(currentHref: string) {
+	function applyRouteLoaderData(currentHref: string) {
 		if (!isOAuthAuthorizePath(currentHref)) return false
-		const embedded = tryConsumeEmbeddedLoaderData(
+		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'oauthAuthorize',
 			currentHref,
 		)
-		if (!embedded) return false
-		if (embedded.ok) {
+		if (!routeData) return false
+		if (routeData.ok) {
 			info = {
-				client: embedded.client,
-				scopes: embedded.scopes,
+				client: routeData.client,
+				scopes: routeData.scopes,
 			}
 			status = 'ready'
 			allowClientReset = false
@@ -143,8 +176,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		} else {
 			info = null
 			status = 'error'
-			allowClientReset = embedded.allowClientReset
-			message = { type: 'error', text: embedded.error }
+			allowClientReset = routeData.allowClientReset
+			message = { type: 'error', text: routeData.error }
 		}
 		return true
 	}
@@ -235,7 +268,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			lastSearch = currentSearch
 			resetCompleted = false
 			const queryError = readQueryError()
-			if (!applyEmbeddedLoaderData(currentHref)) {
+			if (!applyRouteLoaderData(currentHref)) {
 				allowClientReset = false
 				info = null
 				status = 'loading'

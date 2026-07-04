@@ -1,24 +1,67 @@
 import { type RouteLoader } from '#client/client-router.tsx'
 import { AccountRoute, accountRouteLoader } from './account.tsx'
-import { AccountIntegrationsRoute } from './account-integrations.tsx'
-import { AccountPackageInvocationTokensRoute } from './account-package-invocation-tokens.tsx'
-import { AccountRemoteConnectorsRoute } from './account-remote-connectors.tsx'
-import { AccountSecretsRoute } from './account-secrets.tsx'
-import { AdminCommunityReportsRoute } from './admin-community-reports.tsx'
-import { AdminRolesRoute } from './admin-roles.tsx'
-import { AdminUsersRoute } from './admin-users.tsx'
-import { CommunityDetailRoute } from './community-detail.tsx'
-import { CommunityRoute } from './community.tsx'
+import {
+	AccountIntegrationsRoute,
+	accountIntegrationsRouteLoader,
+} from './account-integrations.tsx'
+import {
+	AccountPackageInvocationTokensRoute,
+	accountPackageInvocationTokensRouteLoader,
+} from './account-package-invocation-tokens.tsx'
+import {
+	AccountRemoteConnectorsRoute,
+	accountRemoteConnectorsRouteLoader,
+} from './account-remote-connectors.tsx'
+import {
+	AccountSecretsRoute,
+	accountSecretsRouteLoader,
+} from './account-secrets.tsx'
+import {
+	AdminCommunityReportsRoute,
+	adminCommunityReportsRouteLoader,
+} from './admin-community-reports.tsx'
+import { AdminRolesRoute, adminRolesRouteLoader } from './admin-roles.tsx'
+import { AdminUsersRoute, adminUsersRouteLoader } from './admin-users.tsx'
+import {
+	CommunityDetailRoute,
+	communityDetailRouteLoader,
+} from './community-detail.tsx'
+import { CommunityRoute, communityRouteLoader } from './community.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute } from './home.tsx'
 import { LoginRoute } from './login.tsx'
 import { PrivacyRoute } from './privacy.tsx'
-import { OAuthAuthorizeRoute } from './oauth-authorize.tsx'
+import {
+	OAuthAuthorizeRoute,
+	oauthAuthorizeRouteLoader,
+} from './oauth-authorize.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ResetPasswordRoute } from './reset-password.tsx'
 
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/account': accountRouteLoader,
+	'/account/integrations': accountIntegrationsRouteLoader,
+	'/account/package-invocation-tokens':
+		accountPackageInvocationTokensRouteLoader,
+	'/account/package-invocation-tokens/new':
+		accountPackageInvocationTokensRouteLoader,
+	'/account/package-invocation-tokens/:tokenId':
+		accountPackageInvocationTokensRouteLoader,
+	'/account/remote-connectors': accountRemoteConnectorsRouteLoader,
+	'/account/secrets': accountSecretsRouteLoader,
+	'/account/secrets/new': accountSecretsRouteLoader,
+	'/account/secrets/approve': accountSecretsRouteLoader,
+	'/account/secrets/:secretId': accountSecretsRouteLoader,
+	'/account/secrets/user/:secretName': accountSecretsRouteLoader,
+	'/account/secrets/app/:appId/:secretName': accountSecretsRouteLoader,
+	'/account/secrets/session/:sessionId/:secretName': accountSecretsRouteLoader,
+	'/admin': adminUsersRouteLoader,
+	'/admin/users': adminUsersRouteLoader,
+	'/admin/roles': adminRolesRouteLoader,
+	'/admin/community-reports': adminCommunityReportsRouteLoader,
+	'/community': communityRouteLoader,
+	'/community/:listingId': communityDetailRouteLoader,
+	'/oauth/authorize': oauthAuthorizeRouteLoader,
 }
 
 export const clientRoutes = {

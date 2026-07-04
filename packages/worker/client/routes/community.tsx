@@ -1,10 +1,12 @@
 import { Frame, type Handle, css } from 'remix/ui'
 import { routes } from '#app/routes.ts'
 import { COMMUNITY_LISTINGS_TARGET } from '#app/community-frame-constants.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
+import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	fieldCss,
@@ -26,6 +28,21 @@ function isCommunityIndexPath(href: string) {
 function buildCommunityListingsFrameSrc(href: string) {
 	const url = new URL(href, 'http://localhost')
 	return `${routes.community.href()}${url.search}`
+}
+
+export async function communityRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	try {
+		const frameSrc = buildCommunityListingsFrameSrc(
+			`${url.pathname}${url.search}`,
+		)
+		await prefetchFrame(frameSrc, COMMUNITY_LISTINGS_TARGET, signal)
+	} catch {
+		// Prefetch failures degrade to the post-commit frame fetch.
+	}
+	return {}
 }
 
 export function CommunityRoute(handle: Handle) {

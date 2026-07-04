@@ -6,7 +6,9 @@ import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { prefetchFrame } from '#client/frame-prefetch.ts'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -33,14 +35,59 @@ type CommunityDetailApiPayload = {
 	forkPrompt: string
 }
 
-function getCurrentListingId(handle: Handle) {
-	const pathname = readRouterPathname(handle)
+function getListingIdFromPathname(pathname: string) {
 	const prefix = `${routes.community.href()}/`
 	if (!pathname.startsWith(prefix)) return null
 	const listingId = decodeURIComponent(
 		pathname.slice(prefix.length).replace(/\/$/, ''),
 	)
 	return listingId || null
+}
+
+function getCurrentListingId(handle: Handle) {
+	return getListingIdFromPathname(readRouterPathname(handle))
+}
+
+export async function communityDetailRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const listingId = getListingIdFromPathname(url.pathname)
+	if (!listingId) {
+		throw new Error('Community listing not found.')
+	}
+
+	const frameSrc = routes.communityDetail.href({ listingId })
+	const shellPromise = fetch(routes.communityDetailApi.href({ listingId }), {
+		headers: { Accept: 'application/json' },
+		signal,
+	})
+	const framePrefetchPromise = prefetchFrame(
+		frameSrc,
+		COMMUNITY_DETAIL_TARGET,
+		signal,
+	)
+
+	const response = await shellPromise
+	if (response.status === 404) {
+		throw new Error('Community listing not found.')
+	}
+	const payload = await readJson<CommunityDetailApiPayload>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load community package.')
+	}
+
+	await framePrefetchPromise
+
+	return {
+		communityDetailShell: {
+			ok: true,
+			listingId,
+			forkPrompt: payload.forkPrompt,
+			loggedIn: payload.loggedIn,
+			readmeContent: payload.listing.readmeContent,
+		},
+	}
 }
 
 function buildReportApiPath(listingId: string) {
@@ -176,31 +223,21 @@ export function CommunityDetailRoute(handle: Handle) {
 			frame.src = nextSrc
 		}
 		void frame.reload()
-
-		// Revalidate the shell alongside the frame so the fork prompt, README,
-		// and report login state stay as fresh as the listing metadata. When
-		// the listing changed, flip to loading synchronously so the previous
-		// listing's shell never renders under the new listing's header.
-		shellRequestedForListingId = listingId
-		if (shellLoadedForListingId !== listingId) {
-			shellStatus = 'loading'
-		}
-		handle.queueTask(loadDetailShell)
 	})
 
-	function applyEmbeddedShellData(href: string, listingId: string | null) {
+	function applyRouteShellData(href: string, listingId: string | null) {
 		if (!listingId || shellLoadedForListingId === listingId) return false
-		const embedded = tryConsumeEmbeddedLoaderData(
+		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'communityDetailShell',
 			href,
 		)
-		if (!embedded || embedded.listingId !== listingId) {
+		if (!routeData || routeData.listingId !== listingId) {
 			return false
 		}
-		forkPrompt = embedded.forkPrompt
-		loggedIn = embedded.loggedIn
-		readmeContent = embedded.readmeContent
+		forkPrompt = routeData.forkPrompt
+		loggedIn = routeData.loggedIn
+		readmeContent = routeData.readmeContent
 		reportState = 'idle'
 		reportMessage = null
 		shellLoadedForListingId = listingId
@@ -231,7 +268,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			)
 		}
 
-		applyEmbeddedShellData(currentHref, listingId)
+		applyRouteShellData(currentHref, listingId)
 		if (
 			shellLoadedForListingId !== listingId &&
 			shellRequestedForListingId !== listingId &&

@@ -1,14 +1,12 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import {
-	listenToRouterNavigation,
-	readCurrentRouterHref,
-} from '#client/client-router.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import { type AppLoaderData } from '#app/loader-data.ts'
 import {
 	colors,
 	mq,
@@ -69,6 +67,26 @@ function isAccountRemoteConnectorsPath(href: string) {
 	return (
 		new URL(href, 'http://localhost').pathname === accountRemoteConnectorsPath
 	)
+}
+
+export async function accountRemoteConnectorsRouteLoader(
+	_url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const response = await fetch(accountRemoteConnectorsApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) {
+		window.location.assign('/login')
+		return null
+	}
+	const payload = await readJson<AccountRemoteConnectorsPayload>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load remote connector settings.')
+	}
+	return { accountRemoteConnectors: payload }
 }
 
 function createEmptyEditorState(): EditorState {
@@ -548,23 +566,15 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		})
 	}
 
-	listenToRouterNavigation(handle, () => {
-		const href = readCurrentRouterHref(handle)
-		if (href !== lastLoadedHref && status !== 'loading') {
-			status = 'loading'
-			handle.update()
-		}
-	})
-
-	function applyEmbeddedLoaderData(href: string) {
+	function applyRouteLoaderData(href: string) {
 		if (!isAccountRemoteConnectorsPath(href)) return false
-		const embedded = tryConsumeEmbeddedLoaderData(
+		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountRemoteConnectors',
 			href,
 		)
-		if (!embedded) return false
-		applyPayload(embedded)
+		if (!routeData) return false
+		applyPayload(routeData)
 		status = 'ready'
 		message = null
 		lastLoadedHref = href
@@ -577,7 +587,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (status === 'loading' || isRefreshingForLocationChange) {
 			if (
-				!applyEmbeddedLoaderData(currentHref) &&
+				!applyRouteLoaderData(currentHref) &&
 				typeof document !== 'undefined'
 			) {
 				handle.queueTask(loadRemoteConnectors)

@@ -1,12 +1,8 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import {
-	navigate,
-	listenToRouterNavigation,
-	readCurrentRouterHref,
-} from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { tryConsumeEmbeddedLoaderData } from '#client/loader-data-context.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -32,6 +28,7 @@ import { type RoleName } from '#app/permissions.ts'
 import {
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
+	type AppLoaderData,
 } from '#app/loader-data.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
@@ -52,6 +49,29 @@ function buildUsersHref(handle: Handle, page: number) {
 	if (page <= 1) url.searchParams.delete('page')
 	else url.searchParams.set('page', String(page))
 	return `${url.pathname}${url.search}`
+}
+
+export async function adminUsersRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<Partial<AppLoaderData> | null> {
+	const response = await fetch(`${adminUsersApiPath}${url.search}`, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) {
+		window.location.assign('/login')
+		return null
+	}
+	if (response.status === 403) {
+		throw new Error('You do not have permission to view admin users.')
+	}
+	const payload = await readJson<AdminUsersLoaderData>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load admin users.')
+	}
+	return { adminUsers: payload }
 }
 
 export function AdminUsersRoute(handle: Handle) {
@@ -189,26 +209,15 @@ export function AdminUsersRoute(handle: Handle) {
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
 
-	handle.queueTask(() => {
-		listenToRouterNavigation(handle, () => {
-			const nextHref = readCurrentRouterHref(handle)
-			if (nextHref !== lastLoadedHref && status !== 'loading') {
-				status = 'loading'
-				lastFailedHref = null
-				handle.update()
-			}
-		})
-	})
-
-	function applyEmbeddedLoaderData(href: string) {
+	function applyRouteLoaderData(href: string) {
 		if (!isAdminUsersPath(href)) return false
-		const embedded = tryConsumeEmbeddedLoaderData(handle, 'adminUsers', href)
-		if (!embedded) return false
-		users = embedded.users
-		availableRoles = embedded.availableRoles
-		page = embedded.page
-		pageSize = embedded.pageSize
-		total = embedded.total
+		const routeData = tryConsumeRouteLoaderData(handle, 'adminUsers', href)
+		if (!routeData) return false
+		users = routeData.users
+		availableRoles = routeData.availableRoles
+		page = routeData.page
+		pageSize = routeData.pageSize
+		total = routeData.total
 		lastLoadedHref = href
 		if (
 			selectedUserId != null &&
@@ -234,7 +243,7 @@ export function AdminUsersRoute(handle: Handle) {
 			(status === 'loading' || currentHref !== lastLoadedHref) &&
 			currentHref !== lastFailedHref &&
 			loadingForHref !== currentHref
-		if (needsLoad && !applyEmbeddedLoaderData(currentHref)) {
+		if (needsLoad && !applyRouteLoaderData(currentHref)) {
 			if (typeof document !== 'undefined') {
 				status = 'loading'
 				loadingForHref = currentHref
