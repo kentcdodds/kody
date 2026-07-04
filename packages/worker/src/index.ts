@@ -321,10 +321,13 @@ const appHandler = withCors({
 			})
 		}
 
-		// Try to serve static assets for safe methods only
+		// Try to serve static assets for safe methods only. Any non-404 status
+		// (including 304 Not Modified for conditional requests) must be passed
+		// through; treating 304 as a miss would fall through to the app router
+		// and return 404 for every browser revalidation request.
 		if (env.ASSETS && (request.method === 'GET' || request.method === 'HEAD')) {
 			const response = await env.ASSETS.fetch(request)
-			if (response.ok) {
+			if (response.status !== 404) {
 				if (shouldApplyLongLivedAssetCaching(url.pathname, env)) {
 					const headers = new Headers(response.headers)
 					headers.set('Cache-Control', 'public, max-age=31536000, immutable')
