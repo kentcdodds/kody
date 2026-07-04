@@ -22,7 +22,7 @@ const sampleManifest = `{
 }
 `
 
-test('rewritePackageManifestForFork preserves fields and rewrites scope and kody id', () => {
+test('rewritePackageManifestForFork rewrites scope and kody id while preserving other fields', () => {
 	const { content, targetName } = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
 		expectedPackageScope: 'jane',
@@ -54,59 +54,44 @@ test('rewritePackageManifestForFork preserves fields and rewrites scope and kody
 		'@forker/local-lib',
 	])
 	expect(content).toContain('\t')
-})
 
-test('rewritePackageManifestForFork supports kody id override independent of listing id', () => {
-	const { content } = rewritePackageManifestForFork({
+	const override = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
 		expectedPackageScope: '@jane',
 		targetKodyId: 'custom-id',
 	})
-	const parsed = JSON.parse(content) as { name: string; kody: { id: string } }
-	expect(parsed.name).toBe('@jane/custom-id')
-	expect(parsed.kody.id).toBe('custom-id')
+	const overrideParsed = JSON.parse(override.content) as {
+		name: string
+		kody: { id: string }
+	}
+	expect(overrideParsed.name).toBe('@jane/custom-id')
+	expect(overrideParsed.kody.id).toBe('custom-id')
 })
 
-test('scanCrossScopeReferences detects kody.dependencies from other scopes', () => {
-	const references = scanCrossScopeReferences({
+test('scanCrossScopeReferences finds foreign scopes and ignores same-scope references', () => {
+	const crossScope = scanCrossScopeReferences({
 		files: {
 			'package.json': sampleManifest,
-		},
-		expectedPackageScope: 'jane',
-	})
-
-	expect(references).toEqual([
-		{ file: 'package.json', specifier: '@forker/local-lib' },
-		{ file: 'package.json', specifier: '@owner/shared-utils' },
-	])
-})
-
-test('scanCrossScopeReferences detects kody: imports in source files', () => {
-	const references = scanCrossScopeReferences({
-		files: {
-			'package.json': `{
-	"name": "@owner/pkg",
-	"kody": { "id": "pkg", "description": "Pkg" },
-	"exports": { ".": "./src/index.ts" }
-}
-`,
 			'src/index.ts': `import { helper } from 'kody:@owner/shared-utils/helper'
 import { local } from 'kody:@jane/local-lib/local'
 const sameScope = 'kody:@jane/pkg'
 `,
-			'src/util.ts': `export const value = "kody:@other-scope/dep/file.ts"`,
+			'src/util.ts': `export const value = "kody:@other-scope/dep/file.ts"
+import 'kody:@owner/a/x'
+import 'kody:@owner/a/y'`,
 		},
 		expectedPackageScope: 'jane',
 	})
 
-	expect(references).toEqual([
+	expect(crossScope).toEqual([
+		{ file: 'package.json', specifier: '@forker/local-lib' },
+		{ file: 'package.json', specifier: '@owner/shared-utils' },
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
 		{ file: 'src/util.ts', specifier: 'kody:@other-scope/' },
+		{ file: 'src/util.ts', specifier: 'kody:@owner/' },
 	])
-})
 
-test('scanCrossScopeReferences ignores same-scope references', () => {
-	const references = scanCrossScopeReferences({
+	const sameScopeOnly = scanCrossScopeReferences({
 		files: {
 			'package.json': `{
 	"name": "@jane/pkg",
@@ -123,19 +108,5 @@ test('scanCrossScopeReferences ignores same-scope references', () => {
 		expectedPackageScope: 'jane',
 	})
 
-	expect(references).toEqual([])
-})
-
-test('scanCrossScopeReferences deduplicates repeated specifiers per file', () => {
-	const references = scanCrossScopeReferences({
-		files: {
-			'src/index.ts': `import 'kody:@owner/a/x'
-import 'kody:@owner/a/y'`,
-		},
-		expectedPackageScope: 'jane',
-	})
-
-	expect(references).toEqual([
-		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
-	])
+	expect(sameScopeOnly).toEqual([])
 })

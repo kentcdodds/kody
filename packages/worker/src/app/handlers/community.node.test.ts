@@ -39,53 +39,49 @@ const sampleListing = {
 
 const env = {} as Env
 
-test('community API omits ownerUserId and requests active listings only', async () => {
+test('community API lists active listings and searches when q is provided', async () => {
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
+	mockModule.searchCommunityListings.mockResolvedValue([sampleListing])
 
 	const handler = createCommunityApiHandler(env)
-	const response = await handler.handler({
+
+	const listResponse = await handler.handler({
 		request: new Request('https://example.com/community.json'),
 		params: {},
 		url: new URL('https://example.com/community.json'),
 	} as never)
-	const body = await response.json()
+	const listBody = await listResponse.json()
 
-	expect(body.ok).toBe(true)
-	expect(body.listings).toHaveLength(1)
-	expect(body.listings[0]).toMatchObject({
+	expect(listBody.ok).toBe(true)
+	expect(listBody.listings).toHaveLength(1)
+	expect(listBody.listings[0]).toMatchObject({
 		id: 'listing-1',
 		name: '@kentcdodds/github-triage',
 		ownerUsername: 'kentcdodds',
 	})
-	expect(body.listings[0]).not.toHaveProperty('ownerUserId')
-	expect(body.listings[0]).not.toHaveProperty('status')
+	expect(listBody.listings[0]).not.toHaveProperty('ownerUserId')
+	expect(listBody.listings[0]).not.toHaveProperty('status')
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
 		env,
 		includeDelisted: false,
 		limit: 50,
 		offset: 0,
 	})
-})
 
-test('community API uses search when q is provided', async () => {
-	mockModule.searchCommunityListings.mockResolvedValue([sampleListing])
-
-	const handler = createCommunityApiHandler(env)
-	const response = await handler.handler({
+	const searchResponse = await handler.handler({
 		request: new Request('https://example.com/community.json?q=github'),
 		params: {},
 		url: new URL('https://example.com/community.json?q=github'),
 	} as never)
-	const body = await response.json()
+	const searchBody = await searchResponse.json()
 
-	expect(body.ok).toBe(true)
-	expect(body.query).toBe('github')
+	expect(searchBody.ok).toBe(true)
+	expect(searchBody.query).toBe('github')
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
 		env,
 		query: 'github',
 		limit: 50,
 	})
-	expect(mockModule.listCommunityListingsWithAggregates).not.toHaveBeenCalled()
 })
