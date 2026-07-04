@@ -1,6 +1,6 @@
 export class BoundedBodyTooLargeError extends Error {
 	constructor(maxBytes: number) {
-		super(`response exceeds ${maxBytes} characters`)
+		super(`response exceeds ${maxBytes} bytes`)
 		this.name = 'BoundedBodyTooLargeError'
 	}
 }
@@ -28,7 +28,7 @@ export async function readBoundedBody(
 
 	if (response.body == null) {
 		const body = await response.text()
-		if (body.length > maxBytes) {
+		if (new TextEncoder().encode(body).byteLength > maxBytes) {
 			throw new BoundedBodyTooLargeError(maxBytes)
 		}
 		return body
@@ -59,9 +59,6 @@ export async function readBoundedBody(
 		}
 
 		body += decoder.decode()
-		if (body.length > maxBytes) {
-			throw new BoundedBodyTooLargeError(maxBytes)
-		}
 		return body
 	} catch (error) {
 		if (error instanceof BoundedBodyTooLargeError) {

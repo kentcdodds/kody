@@ -163,7 +163,7 @@ test('integration_discover rejects oversized response bodies', async () => {
 
 	await expect(
 		integrationDiscoverCapability.handler({ domain: 'linear.app' }, ctx),
-	).rejects.toThrow(/response exceeds 500000 characters/)
+	).rejects.toThrow(/response exceeds 500000 bytes/)
 })
 
 test('integration_discover rejects Content-Length above the cap before reading', async () => {
@@ -180,5 +180,5 @@ test('integration_discover rejects Content-Length above the cap before reading',
 
 	await expect(
 		integrationDiscoverCapability.handler({ domain: 'linear.app' }, ctx),
-	).rejects.toThrow(/response exceeds 500000 characters/)
+	).rejects.toThrow(/response exceeds 500000 bytes/)
 })

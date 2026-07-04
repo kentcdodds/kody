@@ -8,7 +8,7 @@ import {
 } from './read-bounded-body.ts'
 
 const INTEGRATIONS_SH_API_BASE = 'https://integrations.sh/api'
-const MAX_SEARCH_BODY_CHARS = 500_000
+const MAX_SEARCH_BODY_BYTES = 500_000
 const SEARCH_FETCH_TIMEOUT_MS = 10_000
 
 const searchResultSchema = z
@@ -86,7 +86,7 @@ async function fetchRegistrySearch(
 
 	let body: string
 	try {
-		body = await readBoundedBody(response, MAX_SEARCH_BODY_CHARS)
+		body = await readBoundedBody(response, MAX_SEARCH_BODY_BYTES)
 	} catch (cause) {
 		if (cause instanceof BoundedBodyTooLargeError) {
 			throw new Error(

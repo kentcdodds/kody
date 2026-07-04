@@ -83,5 +83,5 @@ test('integration_registry_search rejects Content-Length above the cap before re
 
 	await expect(
 		integrationRegistrySearchCapability.handler({ query: 'linear' }, ctx),
-	).rejects.toThrow(/response exceeds 500000 characters/)
+	).rejects.toThrow(/response exceeds 500000 bytes/)
 })

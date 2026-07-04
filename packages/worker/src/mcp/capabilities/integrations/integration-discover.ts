@@ -8,7 +8,7 @@ import {
 } from './read-bounded-body.ts'
 
 const INTEGRATIONS_SH_API_BASE = 'https://integrations.sh/api'
-const MAX_DISCOVER_BODY_CHARS = 500_000
+const MAX_DISCOVER_BODY_BYTES = 500_000
 const DISCOVER_FETCH_TIMEOUT_MS = 30_000
 
 const HOSTNAME_PATTERN =
@@ -198,7 +198,7 @@ async function fetchIntegrationDiscover(
 
 	let body: string
 	try {
-		body = await readBoundedBody(response, MAX_DISCOVER_BODY_CHARS)
+		body = await readBoundedBody(response, MAX_DISCOVER_BODY_BYTES)
 	} catch (cause) {
 		if (cause instanceof BoundedBodyTooLargeError) {
 			throw new Error(`integrations.sh discover failed: ${cause.message}`)
