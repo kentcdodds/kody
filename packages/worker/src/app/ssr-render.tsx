@@ -8,6 +8,8 @@ import {
 	getClientBuildId,
 } from '#app/client-build-id.ts'
 import { getEnv } from '#app/env.ts'
+import { renderFrameSpikeDataHtml } from '#app/frame-spike-content.tsx'
+import { FRAME_SPIKE_TARGET } from '#app/frame-spike-state.ts'
 import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
@@ -57,6 +59,18 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		) as RemixNode,
 		{
 			frameSrc: request.url,
+			resolveFrame(src, target, context) {
+				const frameUrl = new URL(src, context?.currentFrameSrc ?? url)
+				if (
+					frameUrl.pathname === '/frame-spike' &&
+					target === FRAME_SPIKE_TARGET
+				) {
+					return renderFrameSpikeDataHtml()
+				}
+				throw new Error(
+					`Unhandled SSR frame resolve: ${src} (target=${target ?? 'none'})`,
+				)
+			},
 			onError(error) {
 				console.error('SSR render error:', error)
 			},

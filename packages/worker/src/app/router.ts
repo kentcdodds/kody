@@ -43,6 +43,10 @@ import {
 	createCommunityDetailOgImageHandler,
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
+import {
+	createFrameSpikeHandler,
+	createFrameSpikeIncrementHandler,
+} from '#app/handlers/frame-spike.tsx'
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
@@ -78,6 +82,8 @@ export function createAppRouter(appEnv: AppEnv) {
 	router.map(routes, {
 		actions: {
 			home: createHomeHandler(env),
+			frameSpike: createFrameSpikeHandler(env),
+			frameSpikeIncrement: createFrameSpikeIncrementHandler(env),
 			health: createHealthHandler(appEnv),
 			login: createLoginHandler(env),
 			privacy: createPrivacyHandler(env),

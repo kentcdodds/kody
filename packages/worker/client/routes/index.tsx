@@ -9,6 +9,7 @@ import { AdminUsersRoute } from './admin-users.tsx'
 import { CommunityDetailRoute } from './community-detail.tsx'
 import { CommunityRoute } from './community.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
+import { FrameSpikeRoute } from './frame-spike.tsx'
 import { HomeRoute } from './home.tsx'
 import { LoginRoute } from './login.tsx'
 import { PrivacyRoute } from './privacy.tsx'
@@ -46,6 +47,7 @@ export const clientRoutes = {
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
 	'/connect/oauth': <ConnectOauthRoute />,
+	'/frame-spike': <FrameSpikeRoute />,
 	'/oauth/authorize': <OAuthAuthorizeRoute />,
 	'/oauth/callback': <OAuthCallbackRoute />,
 }
