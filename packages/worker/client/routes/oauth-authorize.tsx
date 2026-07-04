@@ -165,6 +165,10 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			currentHref,
 		)
 		if (!routeData) return false
+		// Invalidate any in-flight fallback fetch so a stale response cannot
+		// overwrite the fresher consumed payload.
+		activeInfoRequestId += 1
+		resetCompleted = false
 		if (routeData.ok) {
 			info = {
 				client: routeData.client,
@@ -264,20 +268,23 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const currentSearch = readRouterSearch(handle)
-		if (status === 'idle' || currentSearch !== lastSearch) {
+		// Consume on every render so same-path preload-then-commit refreshes
+		// (unchanged search) still apply fresh loader data.
+		const appliedRouteData = applyRouteLoaderData(currentHref)
+		if (appliedRouteData) {
+			lastSearch = currentSearch
+		} else if (status === 'idle' || currentSearch !== lastSearch) {
 			lastSearch = currentSearch
 			resetCompleted = false
 			const queryError = readQueryError()
-			if (!applyRouteLoaderData(currentHref)) {
-				allowClientReset = false
-				info = null
-				status = 'loading'
-				message = queryError ? { type: 'error', text: queryError } : null
-				activeInfoRequestId += 1
-				const requestId = activeInfoRequestId
-				if (typeof document !== 'undefined') {
-					handle.queueTask(() => loadInfo(requestId))
-				}
+			allowClientReset = false
+			info = null
+			status = 'loading'
+			message = queryError ? { type: 'error', text: queryError } : null
+			activeInfoRequestId += 1
+			const requestId = activeInfoRequestId
+			if (typeof document !== 'undefined') {
+				handle.queueTask(() => loadInfo(requestId))
 			}
 		}
 		if (sessionStatus === 'idle' && typeof document !== 'undefined') {
