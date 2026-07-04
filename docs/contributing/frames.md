@@ -48,8 +48,7 @@ SSR (fail loud in dev).
 Frames that render user-scoped data must derive auth from the **same `Request`**
 as the full page — use `loadResolvedRequestAuth`, `readAuthenticatedAppUser`, or
 the same loader helpers the page handler uses. Never read user state from global
-module variables unless it is explicitly request-scoped (the spike counter is
-intentionally global for demo purposes only).
+module variables.
 
 ## Client typed routes
 
@@ -57,8 +56,11 @@ Client code imports `routes` from `#app/routes.ts` (included in
 `tsconfig-client.json`). The route table is isomorphic plain data from
 `remix/routes`; esbuild bundles it via the root `package.json` `imports` map.
 
-Example (`client/routes/frame-spike.tsx`):
+Example (`client/routes/community.tsx`):
 
 ```tsx
-<Frame name={FRAME_SPIKE_TARGET} src={routes.frameSpike.href()} />
+<Frame name={COMMUNITY_LISTINGS_TARGET} src={frameSrc} />
 ```
+
+`COMMUNITY_LISTINGS_TARGET` lives in `community-frame-constants.ts` alongside
+the server-side `registerFrame` call in `frames/community-listings.ts`.

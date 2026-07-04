@@ -43,8 +43,6 @@ export const routes = route({
 	communityDetailApi: '/community/:listingId.json',
 	communityDetailOgImage: '/community/:listingId/og.png',
 	communityReportApiPost: post('/community/:listingId/report.json'),
-	frameSpike: '/frame-spike',
-	frameSpikeIncrement: post('/frame-spike/increment'),
 	health: '/health',
 	login: '/login',
 	privacy: '/privacy',
