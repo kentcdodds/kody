@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { repoRunCommandsCommandsFieldDescription } from './repo-run-commands-text.ts'
 import { entityKindValues } from '#worker/repo/types.ts'
+import { privateVisibilityChangeConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
 
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
 export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
@@ -42,6 +43,14 @@ export const repoResolvedTargetSchema = z.union([
 
 export const repoSessionIdSchema = z.object({
 	session_id: z.string().min(1).describe('Active repo session id.'),
+})
+
+export const repoPublishSessionInputSchema = repoSessionIdSchema.extend({
+	confirm_private_visibility_change: z
+		.boolean()
+		.optional()
+		.default(false)
+		.describe(privateVisibilityChangeConfirmationDescription),
 })
 
 export const repoOpenSessionInputSchema = z
@@ -328,6 +337,11 @@ export const repoRunCommandsInputSchema = z
 			.describe(
 				'Publish after successful checks. Requires run_checks to be true.',
 			),
+		confirm_private_visibility_change: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe(privateVisibilityChangeConfirmationDescription),
 	})
 	.superRefine((value, ctx) => {
 		const openRefCount =

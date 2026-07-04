@@ -7,9 +7,14 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import {
 	assertPackageSourceOverwriteAllowed,
+	assertPackagePrivateVisibilityChangeAllowed,
+	defaultPackagePrivateGuidance,
 	destructiveOverwriteConfirmationDescription,
+	loadPriorPackageManifestContent,
+	privateVisibilityChangeConfirmationDescription,
 	productionPackageSourceSafetyPolicy,
 } from '#worker/repo/source-safety-policy.ts'
+import { injectDefaultPrivateField } from '#worker/package-registry/package-private.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -42,6 +47,11 @@ const inputSchema = z
 			.optional()
 			.default(false)
 			.describe(destructiveOverwriteConfirmationDescription),
+		confirm_private_visibility_change: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe(privateVisibilityChangeConfirmationDescription),
 	})
 	.superRefine((value, ctx) => {
 		const hasPackageJson = value.files.some(
@@ -69,7 +79,7 @@ export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_save',
-		description: `Create or replace a saved package by writing a complete package file set. Prefer package_get_git_remote or repo sessions for iterative edits. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${productionPackageSourceSafetyPolicy}`,
+		description: `Create or replace a saved package by writing a complete package file set. Prefer package_get_git_remote or repo sessions for iterative edits. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
 		keywords: [
 			'package',
 			'save',
@@ -87,8 +97,8 @@ export const savePackageCapability = defineDomainCapability(
 		outputSchema: packageSummarySchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const files = normalizeFiles(args.files)
-			const packageJsonContent = files['package.json']
+			let files = normalizeFiles(args.files)
+			let packageJsonContent = files['package.json']
 			if (!packageJsonContent) {
 				throw new Error('Saved packages require a root package.json file.')
 			}
@@ -96,11 +106,6 @@ export const savePackageCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user,
 			)
-			const manifest = parseAuthoredPackageJson({
-				content: packageJsonContent,
-				manifestPath: 'package.json',
-				expectedPackageScope,
-			})
 			const existing =
 				args.package_id !== undefined
 					? await getSavedPackageById(ctx.env.APP_DB, {
@@ -109,8 +114,21 @@ export const savePackageCapability = defineDomainCapability(
 						})
 					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
 							userId: user.userId,
-							kodyId: manifest.kody.id,
+							kodyId: parseAuthoredPackageJson({
+								content: packageJsonContent,
+								manifestPath: 'package.json',
+								expectedPackageScope,
+							}).kody.id,
 						})
+			if (!existing) {
+				packageJsonContent = injectDefaultPrivateField(packageJsonContent)
+				files = { ...files, 'package.json': packageJsonContent }
+			}
+			const manifest = parseAuthoredPackageJson({
+				content: packageJsonContent,
+				manifestPath: 'package.json',
+				expectedPackageScope,
+			})
 			const packageId = existing?.id ?? args.package_id ?? crypto.randomUUID()
 			const canonicalExistingSource =
 				existing == null
@@ -129,6 +147,24 @@ export const savePackageCapability = defineDomainCapability(
 				sourceRoot: '/',
 				manifestPath: 'package.json',
 				requirePersistence: true,
+			})
+			const priorManifestContent =
+				existing == null
+					? null
+					: await loadPriorPackageManifestContent({
+							env: ctx.env,
+							userId: user.userId,
+							source:
+								canonicalExistingSource?.id === ensuredSource.id
+									? canonicalExistingSource
+									: ensuredSource,
+						})
+			assertPackagePrivateVisibilityChangeAllowed({
+				beforeContent: priorManifestContent,
+				afterContent: packageJsonContent,
+				isNewPackage: existing == null,
+				operation: 'package_save',
+				confirmed: args.confirm_private_visibility_change,
 			})
 			if (existing) {
 				await assertPackageSourceOverwriteAllowed({
@@ -150,6 +186,8 @@ export const savePackageCapability = defineDomainCapability(
 				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 				files,
 				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+				privateVisibilityChangeConfirmed:
+					args.confirm_private_visibility_change,
 			})
 			if (!existing) {
 				const now = new Date().toISOString()

@@ -34,6 +34,7 @@ export function rewritePackageManifestForFork(input: {
 	const next = {
 		...parsed,
 		name: targetName,
+		private: true,
 		kody: {
 			...(typeof parsed['kody'] === 'object' && parsed['kody'] != null
 				? (parsed['kody'] as Record<string, unknown>)

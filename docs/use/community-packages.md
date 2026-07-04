@@ -21,6 +21,9 @@ Requirements:
 
 - **`package.json#license`** must be `"MIT"`. Community publishing accepts
   permissive licensing only; MIT is the only accepted value.
+- **`package.json#private`** must not be `true`. Like npm, `"private": true`
+  blocks public community publishing; set `"private": false` or remove `private`
+  only after the user explicitly approves public sharing.
 - A root **`README.md`** with a **`## Intent`** section (same guidance as
   [Packages](./packages.md#save-and-edit-packages)).
 - A **published** saved package commit. Publishing creates a **pinned snapshot**

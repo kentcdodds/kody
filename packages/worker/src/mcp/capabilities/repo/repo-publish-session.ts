@@ -4,8 +4,8 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {
+	repoPublishSessionInputSchema,
 	repoPublishSessionOutputSchema,
-	repoSessionIdSchema,
 } from './repo-shared.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 
@@ -14,12 +14,12 @@ export const repoPublishSessionCapability = defineDomainCapability(
 	{
 		name: 'repo_publish_session',
 		description:
-			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current.',
+			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Changing package.json `"private"` requires confirm_private_visibility_change after explicit user approval.',
 		keywords: ['repo', 'publish', 'session', 'checks', 'artifact'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
-		inputSchema: repoSessionIdSchema,
+		inputSchema: repoPublishSessionInputSchema,
 		outputSchema: repoPublishSessionOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -36,6 +36,8 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					sessionInfo.entity_type === 'package'
 						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
 						: undefined,
+				privateVisibilityChangeConfirmed:
+					args.confirm_private_visibility_change,
 			})
 			if (result.status === 'ok') {
 				if (sessionInfo.entity_type === 'package') {

@@ -32,3 +32,20 @@ This package exists to ...
 
 Keep the section concise. It should explain why the package exists and what
 success means for the user, not duplicate every implementation detail.
+
+## Package visibility (`private`)
+
+Default new saved packages to `"private": true` in `package.json` unless the
+user explicitly wants public **community** publishing.
+
+Like npm, `"private": true` blocks community listings on this deployment.
+Account publishing still works so the owner can run the package privately.
+
+- Set `"private": true` when creating or forking a package unless the user asks
+  to share it publicly.
+- Require explicit user approval before changing `"private"` or creating a
+  package without `"private": true`.
+- Pass `confirm_private_visibility_change: true` on `package_save` or repo
+  publish only after that approval.
+- Community publish additionally requires `"private": false` or omitting
+  `private`, plus MIT license and README `## Intent`.

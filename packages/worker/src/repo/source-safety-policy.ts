@@ -1,5 +1,10 @@
 import { loadPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
+	requiresPrivateVisibilityConfirmation,
+	type PackagePrivateFieldValue,
+	parsePackagePrivateField,
+} from '#worker/package-registry/package-private.ts'
+import {
 	type ArtifactRepoHandle,
 	resolveArtifactDefaultBranchHead,
 	resolveExistingArtifactSourceRepo,
@@ -9,11 +14,20 @@ import { type EntitySourceRow } from './types.ts'
 export const productionPackageSourceSafetyPolicy =
 	'Production package source safety policy: never replace source history, force publish, or package_save over an existing package unless Kody has created a restorable backup snapshot and the user explicitly approved destructive overwrite. If existing source cannot be cloned or verified, stop and report the source recovery problem.'
 
+export const defaultPackagePrivateGuidance =
+	'Default new saved packages to `"private": true` in package.json unless the user explicitly wants public community publishing. Like npm, `"private": true` blocks community listings on this deployment.'
+
 export const destructiveOverwriteConfirmationField =
 	'confirm_destructive_overwrite'
 
 export const destructiveOverwriteConfirmationDescription =
 	'Set to true only when the user explicitly approved destructive overwrite of existing package source history. Kody still verifies a restorable backup snapshot before publishing.'
+
+export const privateVisibilityChangeConfirmationField =
+	'confirm_private_visibility_change'
+
+export const privateVisibilityChangeConfirmationDescription =
+	'Set to true only when the user explicitly approved changing package.json `"private"` or creating a package without `"private": true`. This gates community publishing the same way npm blocks public registry publish for private packages.'
 
 export function buildSourceRecoveryProblemMessage(input: {
 	source: EntitySourceRow
@@ -239,4 +253,86 @@ export async function assertPackageSourceOverwriteAllowed(input: {
 		)
 	}
 	return await assertRestorablePackageSourceSnapshot(input)
+}
+
+function describePackagePrivateField(
+	value: PackagePrivateFieldValue | 'missing',
+): string {
+	if (value === true) return '"private": true'
+	if (value === false) return '"private": false'
+	return 'no "private" field'
+}
+
+function buildPrivateVisibilityChangeConfirmationMessage(input: {
+	operation: string
+	beforeContent: string | null | undefined
+	afterContent: string
+	isNewPackage: boolean
+}) {
+	const afterValue = parsePackagePrivateField(input.afterContent)
+	const beforeValue =
+		input.beforeContent == null
+			? 'missing'
+			: parsePackagePrivateField(input.beforeContent)
+	if (input.isNewPackage) {
+		return [
+			`${input.operation} would create a package that is not private-only (${describePackagePrivateField(afterValue)}).`,
+			`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves making the package eligible for public community publishing.`,
+		].join(' ')
+	}
+	return [
+		`${input.operation} would change package.json private visibility from ${describePackagePrivateField(beforeValue)} to ${describePackagePrivateField(afterValue)}.`,
+		`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves the visibility change.`,
+	].join(' ')
+}
+
+export function assertPackagePrivateVisibilityChangeAllowed(input: {
+	beforeContent: string | null | undefined
+	afterContent: string
+	isNewPackage: boolean
+	operation: string
+	confirmed?: boolean
+}) {
+	if (
+		!requiresPrivateVisibilityConfirmation({
+			beforeContent: input.beforeContent,
+			afterContent: input.afterContent,
+			isNewPackage: input.isNewPackage,
+		})
+	) {
+		return
+	}
+	if (input.confirmed !== true) {
+		throw new Error(
+			buildPrivateVisibilityChangeConfirmationMessage({
+				operation: input.operation,
+				beforeContent: input.beforeContent,
+				afterContent: input.afterContent,
+				isNewPackage: input.isNewPackage,
+			}),
+		)
+	}
+}
+
+export async function loadPriorPackageManifestContent(input: {
+	env: Env
+	userId: string
+	source: EntitySourceRow
+}): Promise<string | null> {
+	if (
+		input.source.entity_kind !== 'package' ||
+		!input.source.published_commit
+	) {
+		return null
+	}
+	const snapshot = await loadPublishedSourceSnapshot({
+		env: input.env,
+		userId: input.userId,
+		source: input.source,
+	})
+	if (!snapshot) {
+		return null
+	}
+	const manifestContent = snapshot.files[input.source.manifest_path]
+	return typeof manifestContent === 'string' ? manifestContent : null
 }
