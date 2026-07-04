@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { renderCommunityOgImage } from './og-image.ts'
 
@@ -11,8 +10,8 @@ function expectPngBytes(png: Uint8Array) {
 	}
 }
 
-test('renderCommunityOgImage returns a PNG with ratings', async () => {
-	const png = await renderCommunityOgImage({
+test('renderCommunityOgImage returns valid PNG bytes with and without ratings', async () => {
+	const withRatings = await renderCommunityOgImage({
 		name: '@kody/github-triage',
 		description:
 			'automatically triage new GitHub issues with labels, assignees, and a friendly first response for your open-source repos',
@@ -21,13 +20,9 @@ test('renderCommunityOgImage returns a PNG with ratings', async () => {
 		ratingCount: 12,
 		forkCount: 37,
 	})
+	expectPngBytes(withRatings)
 
-	expectPngBytes(png)
-	writeFileSync('/tmp/og-image-sample.png', png)
-})
-
-test('renderCommunityOgImage returns a PNG without ratings', async () => {
-	const png = await renderCommunityOgImage({
+	const withoutRatings = await renderCommunityOgImage({
 		name: '@kody/new-package',
 		description: 'summarize your inbox every morning',
 		ownerUsername: 'jane',
@@ -35,7 +30,5 @@ test('renderCommunityOgImage returns a PNG without ratings', async () => {
 		ratingCount: 0,
 		forkCount: 2,
 	})
-
-	expectPngBytes(png)
-	writeFileSync('/tmp/og-image-norating.png', png)
+	expectPngBytes(withoutRatings)
 })

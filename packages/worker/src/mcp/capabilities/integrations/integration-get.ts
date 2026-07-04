@@ -20,7 +20,7 @@ const outputSchema = z.object({
 })
 
 export const integrationGetCapability = defineDomainCapability(
-	capabilityDomainNames.values,
+	capabilityDomainNames.integrations,
 	{
 		name: 'integration_get',
 		description: 'Read an OAuth integration configuration by name.',

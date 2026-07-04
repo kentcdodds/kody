@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
-import { buildIntegrationValueName } from '#mcp/capabilities/values/integration-shared.ts'
+import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {

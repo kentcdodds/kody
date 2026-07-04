@@ -50,13 +50,15 @@ const adminActor = {
 
 const env = { APP_DB: {} } as Env
 
-test('admin community reports POST dispatches dismiss to resolveCommunityReport', async () => {
+test('admin community reports POST dispatches moderation intents', async () => {
 	mockModule.requireUserWithRole.mockResolvedValue(adminActor)
 	mockModule.getCommunityReportById.mockResolvedValue(sampleReport)
 	mockModule.resolveCommunityReport.mockResolvedValue(undefined)
+	mockModule.banCommunityUser.mockResolvedValue(undefined)
 
 	const handler = createAdminCommunityReportsApiHandler(env)
-	const response = await handler.handler({
+
+	const dismiss = await handler.handler({
 		request: new Request('https://example.com/admin/community-reports.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -69,10 +71,8 @@ test('admin community reports POST dispatches dismiss to resolveCommunityReport'
 		params: {},
 		url: new URL('https://example.com/admin/community-reports.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(200)
-	expect(body).toEqual({ ok: true })
+	expect(dismiss.status).toBe(200)
+	expect(await dismiss.json()).toEqual({ ok: true })
 	expect(mockModule.resolveCommunityReport).toHaveBeenCalledWith({
 		env,
 		adminUserId: 'admin-mcp-id',
@@ -81,15 +81,11 @@ test('admin community reports POST dispatches dismiss to resolveCommunityReport'
 		resolutionNote: 'Looks fine',
 	})
 	expect(mockModule.banCommunityUser).not.toHaveBeenCalled()
-})
 
-test('admin community reports POST ban_reporter targets reporter user id', async () => {
-	mockModule.requireUserWithRole.mockResolvedValue(adminActor)
-	mockModule.getCommunityReportById.mockResolvedValue(sampleReport)
-	mockModule.banCommunityUser.mockResolvedValue(undefined)
+	mockModule.resolveCommunityReport.mockClear()
+	mockModule.banCommunityUser.mockClear()
 
-	const handler = createAdminCommunityReportsApiHandler(env)
-	const response = await handler.handler({
+	const banReporter = await handler.handler({
 		request: new Request('https://example.com/admin/community-reports.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -101,8 +97,7 @@ test('admin community reports POST ban_reporter targets reporter user id', async
 		params: {},
 		url: new URL('https://example.com/admin/community-reports.json'),
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(banReporter.status).toBe(200)
 	expect(mockModule.banCommunityUser).toHaveBeenCalledWith({
 		env,
 		adminUserId: 'admin-mcp-id',
@@ -110,15 +105,10 @@ test('admin community reports POST ban_reporter targets reporter user id', async
 		reason: 'Banned via community report moderation (report-1).',
 	})
 	expect(mockModule.resolveCommunityReport).not.toHaveBeenCalled()
-})
 
-test('admin community reports POST ban_reportee targets listing owner user id', async () => {
-	mockModule.requireUserWithRole.mockResolvedValue(adminActor)
-	mockModule.getCommunityReportById.mockResolvedValue(sampleReport)
-	mockModule.banCommunityUser.mockResolvedValue(undefined)
+	mockModule.banCommunityUser.mockClear()
 
-	const handler = createAdminCommunityReportsApiHandler(env)
-	const response = await handler.handler({
+	const banReportee = await handler.handler({
 		request: new Request('https://example.com/admin/community-reports.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -131,22 +121,16 @@ test('admin community reports POST ban_reportee targets listing owner user id', 
 		params: {},
 		url: new URL('https://example.com/admin/community-reports.json'),
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(banReportee.status).toBe(200)
 	expect(mockModule.banCommunityUser).toHaveBeenCalledWith({
 		env,
 		adminUserId: 'admin-mcp-id',
 		userId: 'owner-mcp-id',
 		reason: 'Repeated abuse',
 	})
-})
 
-test('admin community reports POST delete dispatches delete action', async () => {
-	mockModule.requireUserWithRole.mockResolvedValue(adminActor)
-	mockModule.getCommunityReportById.mockResolvedValue(sampleReport)
-	mockModule.resolveCommunityReport.mockResolvedValue(undefined)
+	mockModule.resolveCommunityReport.mockClear()
 
-	const handler = createAdminCommunityReportsApiHandler(env)
 	await handler.handler({
 		request: new Request('https://example.com/admin/community-reports.json', {
 			method: 'POST',

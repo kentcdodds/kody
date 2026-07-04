@@ -120,9 +120,9 @@ primitives:
     group: assistant
     name: Capability registry
     summary:
-      Builtin capability domains (apps, coding, community, email, jobs, meta,
-      packages, repo, secrets, services, storage, values) merged with
-      synthesized remote-connector domains behind search/execute.
+      Builtin capability domains (apps, coding, community, email, integrations,
+      jobs, meta, packages, repo, secrets, services, storage, values) merged
+      with synthesized remote-connector domains behind search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
     docs:

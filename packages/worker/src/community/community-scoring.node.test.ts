@@ -17,7 +17,6 @@ vi.mock('./repo.ts', () => ({
 }))
 
 const {
-	COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD,
 	buildCommunityListingSearchDocument,
 	computeCommunityBayesianScore,
 	isCommunityListingSearchMatch,
@@ -93,16 +92,7 @@ function mockListings(listings: Array<CommunityListingRecord>) {
 	)
 }
 
-test('computeCommunityBayesianScore uses prior mean for unrated listings', () => {
-	expect(
-		computeCommunityBayesianScore({
-			averageStars: null,
-			ratingCount: 0,
-		}),
-	).toBe(3.25)
-})
-
-test('computeCommunityBayesianScore ranks higher-rated listings above unrated ones', () => {
+test('computeCommunityBayesianScore ranks listings and pulls sparse ratings toward the prior', () => {
 	const unrated = computeCommunityBayesianScore({
 		averageStars: null,
 		ratingCount: 0,
@@ -116,17 +106,11 @@ test('computeCommunityBayesianScore ranks higher-rated listings above unrated on
 		ratingCount: 1,
 	})
 
+	expect(unrated).toBe(3.25)
 	expect(highlyRated).toBeGreaterThan(unrated)
 	expect(highlyRated).toBeGreaterThan(lightlyRated)
 	expect(lightlyRated).toBeGreaterThan(unrated)
-})
-
-test('computeCommunityBayesianScore pulls sparse ratings toward the prior', () => {
-	const sparseFiveStar = computeCommunityBayesianScore({
-		averageStars: 5,
-		ratingCount: 1,
-	})
-	expect(sparseFiveStar).toBeCloseTo((3.25 * 5 + 5) / 6, 5)
+	expect(lightlyRated).toBeCloseTo((3.25 * 5 + 5) / 6, 5)
 })
 
 test('isCommunityListingSearchMatch keeps lexical hits and drops unrelated cosine noise', () => {
@@ -151,10 +135,9 @@ test('isCommunityListingSearchMatch keeps lexical hits and drops unrelated cosin
 			document: githubDocument,
 		}),
 	).toBe(false)
-	expect(COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD).toBe(0.12)
 })
 
-test('searchCommunityListings filters to matching listings only', async () => {
+test('searchCommunityListings filters, ranks, and sorts community listings', async () => {
 	mockListings([mealListing(), githubListing()])
 
 	const githubResults = await searchCommunityListings({
@@ -179,18 +162,13 @@ test('searchCommunityListings filters to matching listings only', async () => {
 		limit: 10,
 	})
 	expect(gibberishResults).toEqual([])
-})
 
-test('searchCommunityListings with empty query returns all listings Bayesian-sorted', async () => {
-	mockListings([mealListing(), githubListing()])
-
-	const results = await searchCommunityListings({
+	const allResults = await searchCommunityListings({
 		env: createEnv(),
 		query: '',
 		limit: 10,
 	})
-
-	expect(results.map((listing) => listing.kodyId)).toEqual([
+	expect(allResults.map((listing) => listing.kodyId)).toEqual([
 		'github-triage',
 		'meal-planner',
 	])

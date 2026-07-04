@@ -19,7 +19,7 @@ const outputSchema = z.object({
 })
 
 export const integrationListCapability = defineDomainCapability(
-	capabilityDomainNames.values,
+	capabilityDomainNames.integrations,
 	{
 		name: 'integration_list',
 		description: 'List saved OAuth integration configurations.',

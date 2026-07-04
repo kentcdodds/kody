@@ -20,7 +20,7 @@ Ask your agent to publish a saved package to the community with
 Requirements:
 
 - **`package.json#license`** must be `"MIT"`. Community publishing accepts
-  permissive licensing only; MIT is the only accepted value today.
+  permissive licensing only; MIT is the only accepted value.
 - A root **`README.md`** with a **`## Intent`** section (same guidance as
   [Packages](./packages.md#save-and-edit-packages)).
 - A **published** saved package commit. Publishing creates a **pinned snapshot**
@@ -119,4 +119,4 @@ cross-user data flows are the public listing snapshot and aggregate ratings.
 
 Owner user ids are not exposed on public pages or through community
 capabilities. The package name scope reveals the owner's **username**, as it
-does for normal package URLs today.
+does for normal package URLs.

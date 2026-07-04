@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { writeClipboardText } from './clipboard.ts'
 
-test('writeClipboardText uses navigator.clipboard when available', async () => {
+test('writeClipboardText uses clipboard API when available and falls back to execCommand', async () => {
 	const writeText = vi.fn(async () => undefined)
 	vi.stubGlobal('navigator', { clipboard: { writeText } })
 	vi.stubGlobal('document', {
@@ -13,9 +13,7 @@ test('writeClipboardText uses navigator.clipboard when available', async () => {
 	await writeClipboardText('fork prompt')
 
 	expect(writeText).toHaveBeenCalledWith('fork prompt')
-})
 
-test('writeClipboardText falls back to execCommand when clipboard API is missing', async () => {
 	const execCommand = vi.fn(() => true)
 	const textArea = {
 		value: '',
