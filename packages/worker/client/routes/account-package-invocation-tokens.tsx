@@ -363,9 +363,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		)
 	}
 
+	function normalizeRouterHref(href: string) {
+		if (typeof window === 'undefined') return href
+		const destination = new URL(href, window.location.href)
+		return `${destination.pathname}${destination.search}${destination.hash}`
+	}
+
 	function syncRouterLocation(nextPath: string) {
+		lastLoadedHref = normalizeRouterHref(nextPath)
 		navigate(nextPath)
-		lastLoadedHref = nextPath
 	}
 
 	async function loadTokens(signal: AbortSignal) {
