@@ -917,12 +917,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAccountPackageInvocationTokensPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'accountPackageInvocationTokens',
 			href,
 		)
-		if (!embedded || !isAccountPackageInvocationTokensPath(href)) return false
+		if (!embedded) return false
 		applyPayload(embedded, href)
 		status = 'ready'
 		message = null

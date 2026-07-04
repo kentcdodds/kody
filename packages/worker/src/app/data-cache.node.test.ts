@@ -73,3 +73,34 @@ test('buildCommunityDetailListingCacheKey includes listing id and version', () =
 		'community-detail-listing:v1:id=listing-1',
 	)
 })
+
+test('setDataCache sweeps expired entries on write', () => {
+	resetDataCacheForTests()
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-07-04T00:00:00.000Z'))
+
+		setDataCache('expired', 'old', 1_000)
+		setDataCache('fresh', 'new', 60_000)
+
+		vi.setSystemTime(new Date('2026-07-04T00:00:02.000Z'))
+		setDataCache('another', 'value', 60_000)
+
+		expect(peekDataCache('expired')).toBeUndefined()
+		expect(peekDataCache('fresh')).toBe('new')
+		expect(peekDataCache('another')).toBe('value')
+	} finally {
+		vi.useRealTimers()
+		resetDataCacheForTests()
+	}
+})
+
+test('setDataCache evicts oldest entries when over max bound', () => {
+	resetDataCacheForTests()
+	for (let index = 0; index < 257; index += 1) {
+		setDataCache(`key-${index}`, index)
+	}
+	expect(peekDataCache('key-0')).toBeUndefined()
+	expect(peekDataCache('key-1')).toBe(1)
+	expect(peekDataCache('key-256')).toBe(256)
+})

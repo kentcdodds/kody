@@ -102,8 +102,9 @@ export function CommunityRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isCommunityIndexPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(handle, 'community', href)
-		if (!embedded || !isCommunityIndexPath(href)) return false
+		if (!embedded) return false
 		listings = embedded.listings
 		status = 'ready'
 		message = null

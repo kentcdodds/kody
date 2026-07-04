@@ -16,6 +16,7 @@ type CacheEntry<T> = {
 }
 
 const defaultTtlMs = 60_000
+const maxCacheEntries = 256
 
 const store = new Map<string, CacheEntry<unknown>>()
 
@@ -41,6 +42,21 @@ export function buildCommunityDetailListingCacheKey(listingId: string) {
 	return `community-detail-listing:v${communityPublicCacheVersion}:id=${listingId}`
 }
 
+function sweepExpiredEntries(now = Date.now()) {
+	for (const [key, entry] of store) {
+		if (entry.expiresAt <= now) {
+			store.delete(key)
+		}
+	}
+}
+
+function evictOldestEntry() {
+	const oldestKey = store.keys().next().value
+	if (oldestKey !== undefined) {
+		store.delete(oldestKey)
+	}
+}
+
 export function peekDataCache<T>(key: string): T | undefined {
 	const entry = store.get(key)
 	if (!entry) return undefined
@@ -56,10 +72,17 @@ export function setDataCache<T>(
 	value: T,
 	ttlMs: number = defaultTtlMs,
 ) {
+	if (store.has(key)) {
+		store.delete(key)
+	}
+	sweepExpiredEntries()
 	store.set(key, {
 		value,
 		expiresAt: Date.now() + ttlMs,
 	})
+	while (store.size > maxCacheEntries) {
+		evictOldestEntry()
+	}
 }
 
 export async function getOrSetDataCache<T>(input: {

@@ -145,12 +145,13 @@ export function AccountRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAccountPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'accountProfile',
 			href,
 		)
-		if (!embedded || !isAccountPath(href)) return false
+		if (!embedded) return false
 		email = embedded.email
 		username = embedded.username
 		draftUsername = embedded.username

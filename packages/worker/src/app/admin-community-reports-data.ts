@@ -20,7 +20,8 @@ export async function loadAdminCommunityReportsData(
 	requestUrl: string,
 ): Promise<AdminCommunityReportsLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
-	const statusFilter = url.searchParams.get('status') ?? 'open'
+	const rawStatusFilter = url.searchParams.get('status') ?? 'open'
+	const statusFilter = normalizeReportStatusFilter(rawStatusFilter)
 	const reports = await loadAdminCommunityReports(env, statusFilter)
 	return {
 		ok: true,
@@ -44,6 +45,11 @@ async function loadAdminCommunityReports(
 		status,
 	})
 	return reports.map(toAdminCommunityReportListItem)
+}
+
+function normalizeReportStatusFilter(statusFilter: string): string {
+	if (statusFilter === 'all') return 'all'
+	return readReportStatusFilter(statusFilter)
 }
 
 function readReportStatusFilter(

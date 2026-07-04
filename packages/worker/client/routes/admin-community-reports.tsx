@@ -202,12 +202,13 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAdminCommunityReportsPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'adminCommunityReports',
 			href,
 		)
-		if (!embedded || !isAdminCommunityReportsPath(href)) return false
+		if (!embedded) return false
 		reports = embedded.reports
 		statusFilter = embedded.statusFilter
 		status = 'ready'

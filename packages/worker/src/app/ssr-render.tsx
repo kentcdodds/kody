@@ -2,7 +2,11 @@
 /** @jsxRuntime automatic */
 import { renderToStream } from 'remix/ui/server'
 import { type RemixNode } from 'remix/ui'
-import { buildClientEntryHref, getClientBuildId } from '#app/client-build-id.ts'
+import {
+	buildClientEntryHref,
+	buildStylesheetHref,
+	getClientBuildId,
+} from '#app/client-build-id.ts'
 import { getEnv } from '#app/env.ts'
 import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
@@ -25,6 +29,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	const { session, setCookie } = await loadSessionInfo(request, env)
 	const url = getRequestUrl(request)
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
+	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
 
 	const stream = renderToStream(
 		// Remix server components accept props via handle.props; JSX typing is loose here.
@@ -37,6 +42,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				loaderData={loaderData}
 				notFound={notFound}
 				clientEntryHref={clientEntryHref}
+				stylesheetHref={stylesheetHref}
 			/>
 		) as RemixNode,
 		{

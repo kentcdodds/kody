@@ -1051,12 +1051,13 @@ export function AccountSecretsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAccountSecretsPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'accountSecrets',
 			href,
 		)
-		if (!embedded || !isAccountSecretsPath(href)) return false
+		if (!embedded) return false
 		const selection = getSelectionState(href)
 		applyPayload(embedded, selection, embedded.approvalError)
 		lastLoadedDataKey = getDataRefreshKey(href)

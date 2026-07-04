@@ -557,12 +557,13 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAccountRemoteConnectorsPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'accountRemoteConnectors',
 			href,
 		)
-		if (!embedded || !isAccountRemoteConnectorsPath(href)) return false
+		if (!embedded) return false
 		applyPayload(embedded)
 		status = 'ready'
 		message = null

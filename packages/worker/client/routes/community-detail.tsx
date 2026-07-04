@@ -202,12 +202,13 @@ export function CommunityDetailRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string, listingId: string | null) {
+		if (!listingId) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'communityDetail',
 			href,
 		)
-		if (!embedded || !listingId || embedded.listing.id !== listingId) {
+		if (!embedded || embedded.listing.id !== listingId) {
 			return false
 		}
 		listing = embedded.listing

@@ -126,6 +126,7 @@ INSERT INTO community_listings (
 	'active'
 )
 ON CONFLICT(id) DO UPDATE SET
+	owner_user_id = excluded.owner_user_id,
 	name = excluded.name,
 	description = excluded.description,
 	tags_json = excluded.tags_json,

@@ -75,8 +75,9 @@ export function AdminRolesRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAdminRolesPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(handle, 'adminRoles', href)
-		if (!embedded || !isAdminRolesPath(href)) return false
+		if (!embedded) return false
 		roles = embedded.roles
 		status = 'ready'
 		message = null

@@ -156,12 +156,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAccountIntegrationsPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(
 			handle,
 			'accountIntegrations',
 			href,
 		)
-		if (!embedded || !isAccountIntegrationsPath(href)) return false
+		if (!embedded) return false
 		email = embedded.email
 		integrations = embedded.integrations
 		status = 'ready'

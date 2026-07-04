@@ -41,6 +41,10 @@ export function readAppLoaderData(handle: Handle) {
  * Returns SSR-embedded loader data for `key` only when `currentHref` matches
  * the document's SSR URL and this key has not been consumed yet. Successful
  * reads mark the key consumed so SPA navigations always refetch.
+ *
+ * Callers must run their own URL/path guards **before** calling this helper.
+ * Consumption is irreversible; if a guard rejects after a successful read the
+ * embedded payload is lost and the route can render a permanent loading state.
  */
 export function tryConsumeEmbeddedLoaderData<K extends keyof AppLoaderData>(
 	handle: Handle,

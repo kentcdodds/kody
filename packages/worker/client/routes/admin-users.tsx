@@ -192,8 +192,9 @@ export function AdminUsersRoute(handle: Handle) {
 	})
 
 	function applyEmbeddedLoaderData(href: string) {
+		if (!isAdminUsersPath(href)) return false
 		const embedded = tryConsumeEmbeddedLoaderData(handle, 'adminUsers', href)
-		if (!embedded || !isAdminUsersPath(href)) return false
+		if (!embedded) return false
 		users = embedded.users
 		availableRoles = embedded.availableRoles
 		page = embedded.page

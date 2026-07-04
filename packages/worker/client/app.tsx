@@ -58,11 +58,10 @@ export function App(handle: Handle<AppProps>) {
 	// Always revalidate after hydration: the embedded session renders the
 	// first paint without a flash ('ready' status keeps the refresh silent),
 	// but auth may have changed since the document was rendered.
-	handle.queueTask(() => {
-		queueSessionRefresh()
-	})
-
 	if (typeof document !== 'undefined') {
+		handle.queueTask(() => {
+			queueSessionRefresh()
+		})
 		listenToRouterNavigation(handle, () => {
 			currentPathname = readRouterPathname(handle)
 			queueSessionRefresh()
