@@ -113,7 +113,7 @@ export function CommunityRoute(handle: Handle) {
 				</header>
 
 				<form method="get" action="/community" mix={css(searchFormCss)}>
-					<label mix={css(fieldCss)}>
+					<label mix={css(searchFieldCss)}>
 						<span mix={css(fieldLabelCss)}>Search</span>
 						<input
 							key={searchQuery}
@@ -124,7 +124,10 @@ export function CommunityRoute(handle: Handle) {
 							mix={css(inputCss)}
 						/>
 					</label>
-					<button type="submit" mix={css(getPrimaryButtonCss())}>
+					<button
+						type="submit"
+						mix={css({ ...getPrimaryButtonCss(), ...searchSubmitButtonCss })}
+					>
 						Search
 					</button>
 				</form>
@@ -216,6 +219,18 @@ const searchFormCss = {
 	gap: spacing.md,
 	alignItems: 'end',
 	flexWrap: 'wrap' as const,
+	width: '100%',
+}
+
+const searchFieldCss = {
+	...fieldCss,
+	flex: 1,
+	minWidth: '20rem',
+	maxWidth: '40rem',
+}
+
+const searchSubmitButtonCss = {
+	flexShrink: 0,
 }
 
 const listingGridCss = {
