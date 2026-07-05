@@ -5,12 +5,12 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
-	buildKodyFns,
+	buildCapabilitiesFns,
 	createWorkflowTools,
-	runKodyWithRegistry,
+	runCapabilitiesWithRegistry,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
-} from './run-kody-registry.ts'
+} from './run-capabilities-registry.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
@@ -20,7 +20,7 @@ import {
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
-test('buildKodyFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
+test('buildCapabilitiesFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
 	const adminOnlyCapability = defineDomainCapability('admin', {
 		name: 'admin_user_list',
 		description: 'List admin user account metadata',
@@ -40,7 +40,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 			capabilities: [adminOnlyCapability],
 		},
 	])
-	const tools = await buildKodyFns(
+	const tools = await buildCapabilitiesFns(
 		{} as Env,
 		createMcpCallerContext({
 			baseUrl: 'https://example.com',
@@ -502,7 +502,7 @@ function createEntitySourceRow(input: {
 		repo_id: input.repoId,
 		published_commit: 'published-commit-1',
 		indexed_commit: null,
-		manifest_path: 'kody.json',
+		manifest_path: 'capabilities.json',
 		source_root: '/',
 		last_external_check_at: null,
 		created_at: '2026-04-16T00:00:00.000Z',
@@ -537,7 +537,7 @@ function createRepoSessionRow(input: {
 	}
 }
 
-test('buildKodyFns updates and deletes jobs through production-shaped bindings', async () => {
+test('buildCapabilitiesFns updates and deletes jobs through production-shaped bindings', async () => {
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
@@ -653,9 +653,9 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	)
 
 	try {
-		const kody = await buildKodyFns(env, callerContext)
+		const capabilities = await buildCapabilitiesFns(env, callerContext)
 		await expect(
-			kody.job_update({
+			capabilities.job_update({
 				id: job.id,
 				enabled: false,
 			}),
@@ -681,7 +681,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 			enabled: 0,
 		})
 
-		await expect(kody.job_delete({ id: job.id })).resolves.toEqual({
+		await expect(capabilities.job_delete({ id: job.id })).resolves.toEqual({
 			job_id: job.id,
 			deleted: true,
 		})
@@ -713,7 +713,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	}
 })
 
-test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs', async () => {
+test('buildCapabilitiesFns resolves, denies, and tracks secret-marked capability inputs', async () => {
 	let toolArguments: Record<string, unknown> | null = null
 	const connectorEnv = {
 		REMOTE_CONNECTOR_SESSION: {
@@ -764,7 +764,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		},
 	} as unknown as Env
 
-	const resolvedKody = await buildKodyFns(
+	const resolvedKody = await buildCapabilitiesFns(
 		connectorEnv,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
@@ -800,7 +800,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 			allowedHosts: [],
 			allowedCapabilities: ['some_other_capability'],
 		})
-	const deniedKody = await buildKodyFns(
+	const deniedKody = await buildCapabilitiesFns(
 		connectorEnv,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
@@ -920,7 +920,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
 
 	try {
-		const trackedKody = await buildKodyFns(
+		const trackedKody = await buildCapabilitiesFns(
 			{} as Env,
 			createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
@@ -943,7 +943,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 	}
 })
 
-test('buildKodyFns rejects storage kody tools that collide with capabilities', async () => {
+test('buildCapabilitiesFns rejects storage kody tools that collide with capabilities', async () => {
 	const env = {
 		STORAGE_RUNNER: {
 			idFromName(name: string) {
@@ -1029,20 +1029,22 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 
 	try {
 		await expect(
-			buildKodyFns(env, callerContext, {
+			buildCapabilitiesFns(env, callerContext, {
 				storageTools: {
 					userId: 'user-123',
 					storageId: 'exec:test-storage',
 					writable: false,
 				},
 			}),
-		).rejects.toThrow('Kody helper "storage_get" collides with a capability.')
+		).rejects.toThrow(
+			'Capabilities helper "storage_get" collides with a capability.',
+		)
 	} finally {
 		getRegistrySpy.mockRestore()
 	}
 })
 
-test('runKodyWithRegistry redacts secret keys and survives cyclic results', async () => {
+test('runCapabilitiesWithRegistry redacts secret keys and survives cyclic results', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1178,10 +1180,10 @@ test('runKodyWithRegistry redacts secret keys and survives cyclic results', asyn
 		const result = await runModuleWithRegistry(
 			env,
 			callerContext,
-			`import { kody } from 'kody:runtime'
+			`import { capabilities } from 'kody:runtime'
 
 export default async function run() {
-	await kody.secret_set({
+	await capabilities.secret_set({
 		name: 'spotifyAccessToken',
 		value: 'fresh-access-token',
 	})
@@ -1212,7 +1214,7 @@ export default async function run() {
 	}
 })
 
-test('runKodyWithRegistry routes module and snippet inputs through the expected execution path', async () => {
+test('runCapabilitiesWithRegistry routes module and snippet inputs through the expected execution path', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1246,16 +1248,16 @@ test('runKodyWithRegistry routes module and snippet inputs through the expected 
 		} as never)
 
 	try {
-		const moduleCode = `import { kody } from 'kody:runtime'
+		const moduleCode = `import { capabilities } from 'kody:runtime'
 
 export default async function run() {
-	return await kody.meta_list_capabilities({})
+	return await capabilities.meta_list_capabilities({})
 }`
 		const fencedModuleCode = `\`\`\`ts
-import { kody } from 'kody:runtime'
+import { capabilities } from 'kody:runtime'
 
 export default async function run() {
-	return await kody.meta_list_capabilities({})
+	return await capabilities.meta_list_capabilities({})
 }
 \`\`\``
 		const typescriptModuleCode = `import type { ExecuteResult } from '@cloudflare/codemode'
@@ -1265,7 +1267,7 @@ type ModuleOutput = ExecuteResult | null
 export default async function run(): Promise<ModuleOutput> {
 	return null
 }`
-		const moduleResult = await runKodyWithRegistry(
+		const moduleResult = await runCapabilitiesWithRegistry(
 			env,
 			callerContext,
 			moduleCode,
@@ -1281,7 +1283,7 @@ export default async function run(): Promise<ModuleOutput> {
 			}),
 		)
 
-		const fencedModuleResult = await runKodyWithRegistry(
+		const fencedModuleResult = await runCapabilitiesWithRegistry(
 			env,
 			callerContext,
 			fencedModuleCode,
@@ -1291,17 +1293,17 @@ export default async function run(): Promise<ModuleOutput> {
 			2,
 			expect.objectContaining({
 				sourceFiles: {
-					'entry.ts': `import { kody } from 'kody:runtime'
+					'entry.ts': `import { capabilities } from 'kody:runtime'
 
 export default async function run() {
-	return await kody.meta_list_capabilities({})
+	return await capabilities.meta_list_capabilities({})
 }
 `,
 				},
 			}),
 		)
 
-		const typescriptModuleResult = await runKodyWithRegistry(
+		const typescriptModuleResult = await runCapabilitiesWithRegistry(
 			env,
 			callerContext,
 			typescriptModuleCode,
@@ -1316,7 +1318,7 @@ export default async function run() {
 			}),
 		)
 
-		const snippetResult = await runKodyWithRegistry(
+		const snippetResult = await runCapabilitiesWithRegistry(
 			env,
 			callerContext,
 			'return "ok"',
@@ -1329,7 +1331,7 @@ export default async function run() {
 	}
 })
 
-test('runKodyWithRegistry forwards package context for module syntax', async () => {
+test('runCapabilitiesWithRegistry forwards package context for module syntax', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1397,7 +1399,7 @@ test('runKodyWithRegistry forwards package context for module syntax', async () 
 export default async function run() {
 	return packageContext?.packageId ?? null
 }`
-		const result = await runKodyWithRegistry(
+		const result = await runCapabilitiesWithRegistry(
 			env,
 			callerContext,
 			code,

@@ -19,7 +19,7 @@ export function buildJobSourceFiles(input: {
 		entrypoint: 'src/job.ts',
 	}
 	const files: Record<string, string> = {
-		'kody.json': stringifyManifest(manifest),
+		'capabilities.json': stringifyManifest(manifest),
 	}
 	if (input.moduleSource != null) {
 		files['src/job.ts'] = `${input.moduleSource.trim()}\n`

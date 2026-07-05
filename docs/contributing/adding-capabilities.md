@@ -433,8 +433,8 @@ add alias/deprecation machinery for the current Kent-only cleanup.
   the handler must validate the args explicitly before reading them.
 - Remote connector capability entity ids use `remote:<name>:<tool>` (for example
   `remote:home:set_pin`). In execute/kody code, remote capabilities are not flat
-  functions. Use `kody.remote["<name>"].<tool>(input)`, for example
-  `kody.remote["home"].set_pin({ pin })`.
+  functions. Use `capabilities.remote["<name>"].<tool>(input)`, for example
+  `capabilities.remote["home"].set_pin({ pin })`.
 - Remote connector descriptions, keywords, schemas, and annotations cross a
   trust boundary from the connector into Kody search and execute. Keep them
   concise, non-secret, and stable; Kody records connector provenance on

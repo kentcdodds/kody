@@ -54,7 +54,7 @@ vi.mock('#worker/repo/checks.ts', () => ({
 		repoMockModule.typecheckPackageEntrypointsFromSourceFiles(...args),
 }))
 
-vi.mock('#mcp/run-kody-registry.ts', () => ({
+vi.mock('#mcp/run-capabilities-registry.ts', () => ({
 	runBundledModuleWithRegistry: (...args: Array<unknown>) =>
 		repoMockModule.runBundledModuleWithRegistry(...args),
 }))

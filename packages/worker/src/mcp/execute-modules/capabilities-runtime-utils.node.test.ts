@@ -3,14 +3,14 @@ import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
 	type CapabilityArgs,
-	type KodyNamespace,
+	type CapabilitiesNamespace,
 	type ExecuteRequestInput,
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
 	type oauthClientCredentials,
 	refreshAccessToken,
 	type secretHeaders,
-} from './kody-runtime-utils.ts'
+} from './capabilities-runtime-utils.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 type SecretSetCall = {
@@ -47,9 +47,9 @@ const spotifyIntegration = {
 	requiredHosts: ['api.spotify.test'],
 }
 
-function createKody() {
+function createCapabilities() {
 	const secretSetCalls: Array<SecretSetCall> = []
-	const kody = {
+	const capabilities = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
@@ -68,9 +68,9 @@ function createKody() {
 				scope: call.scope,
 			}
 		},
-	} satisfies KodyNamespace
+	} satisfies CapabilitiesNamespace
 
-	return { kody, secretSetCalls }
+	return { capabilities, secretSetCalls }
 }
 
 function createSpotifyHandlers(options: {
@@ -161,8 +161,8 @@ function createSpotifyFetchInterceptor(
 
 test('kody oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
 	const rotatedRefreshFetchCalls: Array<Request> = []
-	const { kody: rotatedKody, secretSetCalls: rotatedSecretSetCalls } =
-		createKody()
+	const { capabilities: rotatedKody, secretSetCalls: rotatedSecretSetCalls } =
+		createCapabilities()
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -195,8 +195,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 
 	const storedTokenFetchCalls: Array<Request> = []
-	const { kody: storedTokenKody, secretSetCalls: storedSecretSetCalls } =
-		createKody()
+	const {
+		capabilities: storedTokenKody,
+		secretSetCalls: storedSecretSetCalls,
+	} = createCapabilities()
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -223,8 +225,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	expect(storedSecretSetCalls).toEqual([])
 
 	const missingTokenFetchCalls: Array<Request> = []
-	const { kody: missingTokenKody, secretSetCalls: missingSecretSetCalls } =
-		createKody()
+	const {
+		capabilities: missingTokenKody,
+		secretSetCalls: missingSecretSetCalls,
+	} = createCapabilities()
 	{
 		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
@@ -257,8 +261,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 
 	const expiredTokenFetchCalls: Array<Request> = []
-	const { kody: expiredTokenKody, secretSetCalls: expiredSecretSetCalls } =
-		createKody()
+	const {
+		capabilities: expiredTokenKody,
+		secretSetCalls: expiredSecretSetCalls,
+	} = createCapabilities()
 	{
 		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
@@ -297,12 +303,12 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, authenticated fetch, secrets, and client credentials', async () => {
 	const prelude = createExecuteHelperPrelude()
 	const createSandboxHelpers = new Function(
-		'kody',
+		'capabilities',
 		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
-	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
+	) as (capabilitiesNamespace: CapabilitiesNamespace) => SandboxHelpers
 
 	const fetchCalls: Array<Request> = []
-	const { kody, secretSetCalls } = createKody()
+	const { capabilities, secretSetCalls } = createCapabilities()
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -313,7 +319,7 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 				fetchCalls,
 			}),
 		)
-		const helpers = createSandboxHelpers(kody)
+		const helpers = createSandboxHelpers(capabilities)
 		const accessToken = await helpers.refreshAccessToken('spotify')
 		const authenticatedFetch = await helpers.createAuthenticatedFetch('spotify')
 		await authenticatedFetch('/me')
@@ -336,7 +342,7 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
 
-	const helpers = createSandboxHelpers(createKody().kody)
+	const helpers = createSandboxHelpers(createCapabilities().capabilities)
 	expect(
 		helpers.secretHeaders.basic({
 			usernameSecret: 'paypalClientId',

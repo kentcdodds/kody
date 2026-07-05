@@ -33,8 +33,8 @@ Reviewed:
 - Secret policy allowlists persist capability names in
   `secret_entries.allowed_capabilities`
   (`packages/worker/migrations/0010-secret-allowed-capabilities.sql`).
-- Kody runtime exposes capabilities as `kody.<capabilityName>()` in
-  `packages/worker/src/mcp/run-kody-registry.ts`.
+- Kody runtime exposes capabilities as `capabilities.<capabilityName>()` in
+  `packages/worker/src/mcp/run-capabilities-registry.ts`.
 - `meta_list_capabilities` returns TypeScript call shapes from
   `packages/worker/src/mcp/capabilities/meta/meta-list-capabilities.ts`.
 
@@ -83,14 +83,14 @@ they are.
 This PR makes the breaking change now:
 
 - Remote capability entity ids are `remote:<name>:<tool>`.
-- Built-ins remain flat in kody (`kody.value_get(...)`).
-- Remote capabilities move to `kody.remote["<name>"].<tool>(input)` and
-  disappear from flat `kody.<kind>_<instance>_<tool>` calls.
+- Built-ins remain flat in kody (`capabilities.value_get(...)`).
+- Remote capabilities move to `capabilities.remote["<name>"].<tool>(input)` and
+  disappear from flat `capabilities.<kind>_<instance>_<tool>` calls.
 - Connector names are explicit user-chosen names, validated as lowercase
   alphanumeric plus dashes, and globally unique per user. `kind` remains
   connector protocol metadata, but does not key the runtime namespace. This
-  keeps the common single-connector case clean (`kody.remote["home"]`) and makes
-  Proxy error messages shorter.
+  keeps the common single-connector case clean (`capabilities.remote["home"]`)
+  and makes Proxy error messages shorter.
 - First-class provenance metadata (`source: 'builtin' | 'remote-connector'`,
   connector name, and clean tool name) is surfaced in `meta_list_capabilities`,
   capability search rows, capability detail structured output, and MCP logs.
@@ -343,7 +343,7 @@ This PR documents the grammar and static/dynamic distinction in
   types, registry specs, `meta_list_capabilities`, search result structures, and
   MCP capability logs.
 - Changed remote connector capability ids to `remote:<name>:<tool>` and moved
-  execute/kody calls to `kody.remote["<name>"].<tool>(input)`.
+  execute/kody calls to `capabilities.remote["<name>"].<tool>(input)`.
 - Folded the new account export capability domain into the audit and primitive
   map; `account_export_manifest` and `account_export_section` are read-only and
   explicitly avoid secret values.

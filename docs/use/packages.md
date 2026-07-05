@@ -100,9 +100,9 @@ exhaustive.
   literal `import("kody:@scope/my-package/export")` when you want
   current-version runtime resolution.
 - `kody:runtime` is always host-owned and request-scoped. Static imports such as
-  `import { kody } from "kody:runtime"` stay valid, but saved package artifacts
-  do not persist Kody's runtime implementation; execution always uses the
-  deployed host runtime.
+  `import { capabilities } from "kody:runtime"` stay valid, but saved package
+  artifacts do not persist Kody's runtime implementation; execution always uses
+  the deployed host runtime.
 - Exports are normal modules. They may expose a default export, named exports,
   or both.
 - Direct package invocation calls the resolved module's default export when that

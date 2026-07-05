@@ -2,16 +2,16 @@ import { type RepoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 import { type RepoSessionTreeResult } from './types.ts'
 
-export const repoKodyModuleTypecheckHarnessPath =
+export const repoCapabilitiesModuleTypecheckHarnessPath =
 	'.__kody_repo_module_check__.ts'
 
 export const repoBackedModuleEntrypointExportErrorMessage =
 	'Repo-backed package export entrypoints and job entrypoints must default export a function so Kody can invoke them with execute semantics.'
 
-const repoKodySourceReadConcurrency = 8
-const repoKodySourceMaxFiles = 250
-const repoKodySourceMaxBytes = 2 * 1024 * 1024
-const repoKodyImportExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+const repoCapabilitiesSourceReadConcurrency = 8
+const repoCapabilitiesSourceMaxFiles = 250
+const repoCapabilitiesSourceMaxBytes = 2 * 1024 * 1024
+const repoCapabilitiesImportExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
 function stripTrailingSlashes(value: string) {
 	return value.replace(/\/+$/, '')
@@ -19,7 +19,7 @@ function stripTrailingSlashes(value: string) {
 
 function createRelativeImportSpecifier(path: string) {
 	const normalizedPath = normalizeRepoWorkspacePath(path).replace(
-		repoKodyImportExtensionPattern,
+		repoCapabilitiesImportExtensionPattern,
 		'',
 	)
 	return JSON.stringify(`./${normalizedPath}`)
@@ -84,14 +84,14 @@ export async function loadRepoSourceFilesFromSession(input: {
 			if (shouldStop || file.content == null) continue
 			const relativePath = toRelativeSourcePath(path, input.sourceRoot)
 			if (!relativePath) continue
-			if (files.length >= repoKodySourceMaxFiles) {
-				limitError = `Repo-backed source root "${input.sourceRoot}" exceeded the ${repoKodySourceMaxFiles}-file bundle limit.`
+			if (files.length >= repoCapabilitiesSourceMaxFiles) {
+				limitError = `Repo-backed source root "${input.sourceRoot}" exceeded the ${repoCapabilitiesSourceMaxFiles}-file bundle limit.`
 				shouldStop = true
 				return
 			}
 			const fileBytes = encoder.encode(file.content).byteLength
-			if (totalBytes + fileBytes > repoKodySourceMaxBytes) {
-				limitError = `Repo-backed source root "${input.sourceRoot}" exceeded the ${repoKodySourceMaxBytes}-byte bundle limit.`
+			if (totalBytes + fileBytes > repoCapabilitiesSourceMaxBytes) {
+				limitError = `Repo-backed source root "${input.sourceRoot}" exceeded the ${repoCapabilitiesSourceMaxBytes}-byte bundle limit.`
 				shouldStop = true
 				return
 			}
@@ -105,7 +105,7 @@ export async function loadRepoSourceFilesFromSession(input: {
 			{
 				length: Math.max(
 					1,
-					Math.min(repoKodySourceReadConcurrency, filePaths.length),
+					Math.min(repoCapabilitiesSourceReadConcurrency, filePaths.length),
 				),
 			},
 			() => readNextFile(),
@@ -117,7 +117,7 @@ export async function loadRepoSourceFilesFromSession(input: {
 	return Object.fromEntries(files)
 }
 
-export function createRepoKodyModuleTypecheckHarness(input: {
+export function createRepoCapabilitiesModuleTypecheckHarness(input: {
 	entryPoint: string
 }) {
 	return `/// <reference path="./.__kody_repo_runtime__.d.ts" />

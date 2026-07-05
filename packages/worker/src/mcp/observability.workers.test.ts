@@ -33,7 +33,8 @@ function resetRepoPersistenceMocks() {
 			repo_id: `${entityKind}-${entityId}`,
 			published_commit: null,
 			indexed_commit: null,
-			manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
+			manifest_path:
+				entityKind === 'package' ? 'package.json' : 'capabilities.json',
 			source_root: sourceRoot ?? '/',
 			created_at: '2026-04-18T00:00:00.000Z',
 			updated_at: '2026-04-18T00:00:00.000Z',

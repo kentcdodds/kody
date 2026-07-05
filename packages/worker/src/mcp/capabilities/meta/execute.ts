@@ -104,7 +104,7 @@ export const executeCapability = defineDomainCapability(
 			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const { runModuleWithRegistry } =
-				await import('#mcp/run-kody-registry.ts')
+				await import('#mcp/run-capabilities-registry.ts')
 			const result = await runModuleWithRegistry(
 				ctx.env,
 				callerContext,

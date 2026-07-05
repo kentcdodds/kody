@@ -234,20 +234,20 @@ that two different users always resolve to two different object ids:
 
 Kody `execute` calls and package-app worker entrypoints store the current
 request's runtime in an `AsyncLocalStorage` shared between the wrapper and the
-`kody:runtime` virtual module via `Symbol.for('kody.runtimeStorage')`. Two
-concurrent calls in the same isolate observe their own runtime view through the
-ALS rather than racing on a shared mutable `globalThis` slot. See
+`capabilities:runtime` virtual module via `Symbol.for('kody.runtimeStorage')`.
+Two concurrent calls in the same isolate observe their own runtime view through
+the ALS rather than racing on a shared mutable `globalThis` slot. See
 `packages/worker/src/package-runtime/module-graph.ts`,
-`packages/worker/src/mcp/run-kody-registry.ts`, and
+`packages/worker/src/mcp/run-capabilities-registry.ts`, and
 `packages/worker/src/package-runtime/package-app.ts` for the wrapper
 implementations, and
 `packages/worker/src/package-runtime/runtime-isolation.node.test.ts` for the
 concurrent two-runtime test that pins this invariant.
 
-`kody:runtime` is also a host-external package-runtime module. Saved package
-bundle artifacts reserve `.__kody_virtual__/runtime.js` import paths but strip
-the runtime source before persistence. Execution loaders hydrate those paths
-with the deployed host runtime source for every package surface (exports,
+`capabilities:runtime` is also a host-external package-runtime module. Saved
+package bundle artifacts reserve `.__kody_virtual__/runtime.js` import paths but
+strip the runtime source before persistence. Execution loaders hydrate those
+paths with the deployed host runtime source for every package surface (exports,
 subscriptions, jobs, services, package apps, workflows, and ad hoc execute).
 Static `kody:@...` package imports remain pinned snapshots, while literal
 dynamic `import("kody:@...")` imports are hydrated at execution time from the

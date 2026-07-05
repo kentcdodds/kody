@@ -415,10 +415,10 @@ function coerceSecretMetadata(
 	}
 }
 
-function buildKodyCapabilityExecuteCode(name: string, args: JsonRecord = {}) {
+function buildCapabilitiesExecuteCode(name: string, args: JsonRecord = {}) {
 	return [
 		'async () => {',
-		'  return await kody[' +
+		'  return await capabilities[' +
 			JSON.stringify(name) +
 			'](' +
 			JSON.stringify(args ?? {}) +
@@ -1517,7 +1517,7 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 			}
 			try {
 				const result = await kodyWidget.executeCode(
-					buildKodyCapabilityExecuteCode('value_set', {
+					buildCapabilitiesExecuteCode('value_set', {
 						name: input.name,
 						value: input.value,
 						description:
@@ -1589,7 +1589,7 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 				throw new Error('Value name is required.')
 			}
 			const result = await kodyWidget.executeCode(
-				buildKodyCapabilityExecuteCode('value_get', {
+				buildCapabilitiesExecuteCode('value_get', {
 					name: input.name,
 					...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
 				}),
@@ -1601,7 +1601,7 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 				isRecord(input) ? input.scope : undefined,
 			)
 			const result = await kodyWidget.executeCode(
-				buildKodyCapabilityExecuteCode('value_list', {
+				buildCapabilitiesExecuteCode('value_list', {
 					...(scope ? { scope } : {}),
 				}),
 			)
@@ -1623,7 +1623,7 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 			}
 			try {
 				const result = await kodyWidget.executeCode(
-					buildKodyCapabilityExecuteCode('value_delete', {
+					buildCapabilitiesExecuteCode('value_delete', {
 						name: input.name,
 						scope,
 					}),

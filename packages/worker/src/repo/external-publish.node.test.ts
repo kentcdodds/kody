@@ -95,7 +95,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		isFastForward: async () => true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 	})
 
 	expect(published.status).toBe('published')
@@ -131,7 +131,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		newCommit: 'commit-new',
 		isFastForward: async () => true,
 		workspace: workspace(),
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 	})
 
 	expect(publishedWithRuntimeArtifacts.status).toBe('published')
@@ -158,7 +158,7 @@ test('returns no-op when commit is already current', async () => {
 			isFastForward: async () => true,
 			workspace: workspace(),
 			files: {},
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		}),
 	).resolves.toEqual({
 		status: 'already_published',
@@ -180,7 +180,7 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 		isFastForward: async () => false,
 		workspace: workspace(),
 		files: {},
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 	})
 	expect(refusedWithoutForce).toMatchObject({
 		status: 'not_fast_forward',
@@ -200,7 +200,7 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 			allowForce: true,
 			workspace: workspace(),
 			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		}),
 	).rejects.toThrow('confirm_destructive_overwrite')
 
@@ -216,7 +216,7 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 			destructiveOverwriteConfirmed: true,
 			workspace: workspace(),
 			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		}),
 	).rejects.toThrow('Stop and report this source recovery problem')
 
@@ -239,7 +239,7 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 		destructiveOverwriteConfirmed: true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 	})
 	expect(published).toEqual(
 		expect.objectContaining({
@@ -272,7 +272,7 @@ test('rechecks fast-forward against the latest source row before publishing', as
 		isFastForward: async (previousCommit) => previousCommit === 'commit-old',
 		workspace: workspace(),
 		files: {},
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 	})
 
 	expect(result).toMatchObject({
@@ -308,7 +308,7 @@ test('check failure leaves D1 untouched', async () => {
 		isFastForward: async () => true,
 		workspace: workspace(),
 		files: {},
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		runId: 'run-1',
 	})
 
@@ -350,7 +350,7 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 			isFastForward: async () => true,
 			workspace: workspace(),
 			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		}),
 	).rejects.toThrow('projection failed')
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
@@ -390,7 +390,7 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 			isFastForward: async () => true,
 			workspace: workspace(),
 			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		}),
 	).rejects.toThrow('projection unavailable')
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()

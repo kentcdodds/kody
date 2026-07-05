@@ -446,16 +446,16 @@ function buildCapabilityUsage(spec: {
 	source?: CapabilitySpec['source']
 	remoteConnector?: CapabilitySpec['remoteConnector']
 }) {
-	return `execute with ${buildKodyCapabilityAccessor(spec)}(args)`
+	return `execute with ${buildCapabilitiesAccessor(spec)}(args)`
 }
 
-function buildKodyCapabilityAccessor(spec: {
+function buildCapabilitiesAccessor(spec: {
 	name: string
 	source?: CapabilitySpec['source']
 	remoteConnector?: CapabilitySpec['remoteConnector']
 }) {
 	if (spec.source === 'remote-connector' && spec.remoteConnector) {
-		const connectorAccessor = `kody.remote[${JSON.stringify(spec.remoteConnector.connectorName)}]`
+		const connectorAccessor = `capabilities.remote[${JSON.stringify(spec.remoteConnector.connectorName)}]`
 		const toolName = spec.remoteConnector.toolName
 		if (/^[A-Za-z_$][\w$]*$/.test(toolName)) {
 			return `${connectorAccessor}.${toolName}`
@@ -464,16 +464,16 @@ function buildKodyCapabilityAccessor(spec: {
 	}
 	const { name } = spec
 	if (/^[A-Za-z_$][\w$]*$/.test(name)) {
-		return `kody.${name}`
+		return `capabilities.${name}`
 	}
-	return `kody[${JSON.stringify(name)}]`
+	return `capabilities[${JSON.stringify(name)}]`
 }
 
 function buildCapabilityExecuteExample(spec: CapabilitySpec) {
-	return `import { kody } from 'kody:runtime'
+	return `import { capabilities } from 'kody:runtime'
 
 export default async function main(input = {}) {
-\treturn await ${buildKodyCapabilityAccessor(spec)}(input)
+\treturn await ${buildCapabilitiesAccessor(spec)}(input)
 }`
 }
 
@@ -515,11 +515,11 @@ function buildPackageAppUsage(kodyId: string) {
 }
 
 function buildValueUsage(name: string, scope: string) {
-	return `kody.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
+	return `capabilities.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
 }
 
 function buildIntegrationUsage(name: string) {
-	return `kody.integration_get({ name: ${JSON.stringify(name)} })`
+	return `capabilities.integration_get({ name: ${JSON.stringify(name)} })`
 }
 
 function buildSecretUsage(name: string) {
@@ -1050,7 +1050,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Read this value',
 			'',
 			`- \`${buildValueUsage(detail.row.name, detail.row.scope)}\``,
-			`- \`kody.value_list({ scope: ${JSON.stringify(detail.row.scope)} })\``,
+			`- \`capabilities.value_list({ scope: ${JSON.stringify(detail.row.scope)} })\``,
 			'',
 			'## Stored value',
 			'',
@@ -1098,7 +1098,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Read this integration',
 			'',
 			`- \`${buildIntegrationUsage(detail.config.name)}\``,
-			'- `kody.integration_list({})`',
+			'- `capabilities.integration_list({})`',
 			'',
 			'## Related stored names',
 			'',
@@ -1163,7 +1163,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		`- Placeholder: \`${buildSecretUsage(detail.row.name)}\``,
 		'- Use placeholders only in execute-time fetch URL/header/body fields or capability inputs that explicitly opt into secret placeholders.',
 		'- Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.',
-		'- List secret metadata with `kody.secret_list(...)` inside `execute` when needed.',
+		'- List secret metadata with `capabilities.secret_list(...)` inside `execute` when needed.',
 	]
 	return {
 		markdown: lines.join('\n'),

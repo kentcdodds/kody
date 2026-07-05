@@ -389,7 +389,7 @@ function setCommonSessionFixtures() {
 		user_id: 'user-1',
 		repo_id: 'source-repo',
 		published_commit: 'commit-base',
-		manifest_path: 'kody.json',
+		manifest_path: 'capabilities.json',
 		source_root: '/',
 	})
 	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
@@ -610,7 +610,7 @@ test('runCommands fetches session metadata after publish side effects', async ()
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published'
 	mockModule.workspaceGlob.mockResolvedValue([
-		{ type: 'file', path: '/session/kody.json' },
+		{ type: 'file', path: '/session/capabilities.json' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue(
 		'{"name":"@kody/demo","exports":{"./index":"./src/index.ts"},"kody":{"id":"demo","description":"Demo package"}}',
@@ -632,7 +632,7 @@ test('runCommands fetches session metadata after publish side effects', async ()
 		repo_id: 'source-repo',
 		entity_kind: 'job',
 		published_commit: 'commit-base',
-		manifest_path: 'kody.json',
+		manifest_path: 'capabilities.json',
 		source_root: '/',
 	}
 	mockModule.getEntitySourceById.mockImplementation(async () => source)
@@ -669,17 +669,17 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 	mockModule.gitState.headCommit = 'commit-published-new'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
 	mockModule.writePublishedSourceSnapshot.mockClear()
-	// Include the manifest file (kody.json per setCommonSessionFixtures) so
+	// Include the manifest file (capabilities.json per setCommonSessionFixtures) so
 	// the assertion mirrors the real writePublishedSourceSnapshot contract,
 	// which requires the manifest_path entry to be present in files.
 	mockModule.workspaceGlob.mockResolvedValue([
-		{ type: 'file', path: '/session/kody.json' },
+		{ type: 'file', path: '/session/capabilities.json' },
 		{ type: 'file', path: '/session/package.json' },
 		{ type: 'file', path: '/session/src/index.ts' },
 		{ type: 'file', path: '/session/.git/config' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
-		if (path === '/session/kody.json') {
+		if (path === '/session/capabilities.json') {
 			return '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
 		}
 		if (path === '/session/package.json') {
@@ -708,7 +708,7 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 	expect(snapshotCall.source.id).toBe('source-1')
 	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
 	expect(snapshotCall.files).toEqual({
-		'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
+		'capabilities.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
 		'src/index.ts': 'export default {}',
 	})
@@ -736,7 +736,7 @@ test('publishSession handles snapshot collection and persistence failures withou
 	)
 	mockModule.updateEntitySource.mockClear()
 	mockModule.workspaceGlob.mockResolvedValue([
-		{ type: 'file', path: '/session/kody.json' },
+		{ type: 'file', path: '/session/capabilities.json' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue(
 		'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
@@ -778,7 +778,7 @@ test('publishSession handles snapshot collection and persistence failures withou
 		.mockResolvedValueOnce(undefined)
 		.mockRejectedValueOnce(new Error('d1 revert failed'))
 	mockModule.workspaceGlob.mockResolvedValue([
-		{ type: 'file', path: '/session/kody.json' },
+		{ type: 'file', path: '/session/capabilities.json' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockResolvedValue(
 		'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
@@ -799,11 +799,11 @@ test('publishSession handles snapshot collection and persistence failures withou
 	mockModule.writePublishedSourceSnapshot.mockReset()
 	mockModule.updateEntitySource.mockClear()
 	mockModule.workspaceGlob.mockResolvedValue([
-		{ type: 'file', path: '/session/kody.json' },
+		{ type: 'file', path: '/session/capabilities.json' },
 		{ type: 'file', path: '/session/src/index.ts' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
-		if (path === '/session/kody.json') {
+		if (path === '/session/capabilities.json') {
 			return '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
 		}
 		return null
@@ -1164,7 +1164,7 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 		repo_id: 'job-job-1',
 		published_commit: 'commit-base',
 		indexed_commit: null,
-		manifest_path: 'kody.json',
+		manifest_path: 'capabilities.json',
 		source_root: '/',
 		created_at: '2026-04-16T00:00:00.000Z',
 		updated_at: '2026-04-16T00:00:00.000Z',
@@ -1190,11 +1190,11 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	const file = await repoSession.readFile({
 		sessionId: 'job-runtime-session-replica-lag',
 		userId: 'user-1',
-		path: 'kody.json',
+		path: 'capabilities.json',
 	})
 
 	expect(file).toEqual({
-		path: 'kody.json',
+		path: 'capabilities.json',
 		content: '{"version":1,"kind":"job"}',
 	})
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
@@ -1284,7 +1284,7 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 		user_id: 'user-1',
 		repo_id: 'source-repo',
 		published_commit: 'commit-initial',
-		manifest_path: 'kody.json',
+		manifest_path: 'capabilities.json',
 		source_root: '/',
 	}
 	const initialSession = {
@@ -1348,7 +1348,7 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 		repo_id: 'job-job-1',
 		published_commit: 'commit-base',
 		indexed_commit: null,
-		manifest_path: 'kody.json',
+		manifest_path: 'capabilities.json',
 		source_root: '/',
 		created_at: '2026-04-16T00:00:00.000Z',
 		updated_at: '2026-04-16T00:00:00.000Z',
@@ -1397,11 +1397,11 @@ test('readFile re-reads D1 for updated session rows and falls back when rows are
 	const cachedFallbackFile = await cachedFallbackSession.readFile({
 		sessionId: 'job-runtime-session-1',
 		userId: 'user-1',
-		path: 'kody.json',
+		path: 'capabilities.json',
 	})
 
 	expect(cachedFallbackFile).toEqual({
-		path: 'kody.json',
+		path: 'capabilities.json',
 		content: 'export default {}',
 	})
 })

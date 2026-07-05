@@ -111,7 +111,7 @@ function createContext() {
 			},
 		} as unknown as Env,
 		callerContext: {
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
@@ -200,7 +200,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			userId: 'user-1',
 			publishedCommit: 'commit-new',
 			target: targets[0],
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		},
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
@@ -210,7 +210,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			userId: 'user-1',
 			publishedCommit: 'commit-new',
 			target: targets[1],
-			baseUrl: 'https://kody.test',
+			baseUrl: 'https://capabilities.test',
 		},
 	)
 })
@@ -254,7 +254,7 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 		userId: 'user-1',
 		publishedCommit: 'commit-old',
 		target: targets[0],
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 	})
 
 	setupDefaultMocks()

@@ -19,10 +19,10 @@ import {
 import { collectStaticKodyPackageImportsFromFiles } from '#worker/package-runtime/static-kody-imports.ts'
 import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import {
-	createRepoKodyModuleTypecheckHarness,
+	createRepoCapabilitiesModuleTypecheckHarness,
 	repoBackedModuleEntrypointExportErrorMessage,
-	repoKodyModuleTypecheckHarnessPath,
-} from './repo-kody-execution.ts'
+	repoCapabilitiesModuleTypecheckHarnessPath,
+} from './repo-capabilities-execution.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 export type RepoCheckKind =
@@ -333,7 +333,7 @@ type KodyEventsRuntime = {
   }): Promise<unknown>;
 } | null;
 
-declare const kody: Record<
+declare const capabilities: Record<
   string,
   (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
 >;
@@ -368,7 +368,7 @@ declare const service:
   | null;
 
 declare module "kody:runtime" {
-  export const kody: Record<
+  export const capabilities: Record<
     string,
     (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
   >;
@@ -714,15 +714,15 @@ function getPackageTypecheckDiagnostics(input: {
 			}),
 		)
 		input.fileSystem.write(
-			repoKodyModuleTypecheckHarnessPath,
-			createRepoKodyModuleTypecheckHarness({
+			repoCapabilitiesModuleTypecheckHarnessPath,
+			createRepoCapabilitiesModuleTypecheckHarness({
 				entryPoint: target.path,
 			}),
 		)
 		return {
 			fileName: target.path,
 			diagnostics: input.languageService.getSemanticDiagnostics(
-				repoKodyModuleTypecheckHarnessPath,
+				repoCapabilitiesModuleTypecheckHarnessPath,
 			),
 		}
 	})

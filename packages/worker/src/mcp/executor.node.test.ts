@@ -8,8 +8,8 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
-	createKodyRemoteProxy,
-	createKodyProviderProxySource,
+	createCapabilitiesRemoteProxy,
+	createCapabilitiesProviderProxySource,
 	createExecuteExecutor,
 	extractRawContent,
 	formatExecutionOutput,
@@ -77,7 +77,7 @@ function createExecutorTestEnv(loader: Env['LOADER']) {
 
 function createExecutorTestExports() {
 	return {
-		KodyFetchGateway: ({ props }: { props: unknown }) => ({ props }),
+		CapabilitiesFetchGateway: ({ props }: { props: unknown }) => ({ props }),
 	} as never
 }
 
@@ -91,7 +91,7 @@ function createGatewayProps(userId: string) {
 
 test('kody remote proxy dispatches and reports connector/capability errors clearly', async () => {
 	const calls: Array<{ dispatchName: string; args: unknown }> = []
-	const remote = createKodyRemoteProxy({
+	const remote = createCapabilitiesRemoteProxy({
 		remoteConnectors: [
 			{
 				name: 'home',
@@ -154,8 +154,8 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 
 test('generated kody provider source wires remote proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
-	const source = createKodyProviderProxySource({
-		providerName: 'kody',
+	const source = createCapabilitiesProviderProxySource({
+		providerName: 'capabilities',
 		remoteConnectors: [
 			{
 				name: 'home',
@@ -177,8 +177,11 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 			},
 		],
 	})
-	const kody = new Function('__dispatchers', `${source}; return kody;`)({
-		kody: {
+	const capabilities = new Function(
+		'__dispatchers',
+		`${source}; return capabilities;`,
+	)({
+		capabilities: {
 			async call(name: string, argsJson: string) {
 				calls.push({ name, argsJson })
 				return JSON.stringify({ result: { ok: true } })
@@ -189,7 +192,9 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 		[key: string]: unknown
 	}
 
-	await expect(kody.remote['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+	await expect(
+		capabilities.remote['home']?.set_pin({ pin: '1234' }),
+	).resolves.toEqual({
 		ok: true,
 	})
 	expect(calls).toEqual([
@@ -198,7 +203,7 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 			argsJson: JSON.stringify({ pin: '1234' }),
 		},
 	])
-	expect(() => kody['remote:home:set_pin']).toThrow(
+	expect(() => capabilities['remote:home:set_pin']).toThrow(
 		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
 	)
 })
@@ -209,7 +214,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 	const exports = createExecutorTestExports()
 	const providers = [
 		{
-			name: 'kody',
+			name: 'capabilities',
 			fns: {
 				search: async () => ({ ok: true }),
 			},
@@ -227,7 +232,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 		gatewayProps: createGatewayProps('user-1'),
 	}).execute('async () => "ok"', [
 		{
-			name: 'kody',
+			name: 'capabilities',
 			fns: {
 				search: async () => ({ ok: 'different dispatcher same worker' }),
 			},
@@ -241,7 +246,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 
 	const scopedProviders = [
 		{
-			name: 'kody',
+			name: 'capabilities',
 			fns: {},
 		},
 	]
@@ -403,7 +408,7 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 		},
 	}
 	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
+	const providers = [{ name: 'capabilities', fns: {} }]
 
 	// Successful sandbox run: one success event.
 	const successLoader = createFakeWorkerLoader()
@@ -537,16 +542,16 @@ test('createExecuteExecutor disables dispatchers after execution completes', asy
 		env: createExecutorTestEnv(fakeLoader.loader),
 		exports: createExecutorTestExports(),
 		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => await kody.search({ q: "ok" })', [
+	}).execute('async () => await capabilities.search({ q: "ok" })', [
 		{
-			name: 'kody',
+			name: 'capabilities',
 			fns: {
 				search: async () => ({ ok: true }),
 			},
 		},
 	])
 	const dispatchers = fakeLoader.evaluations[0]
-	const result = await dispatchers?.kody?.call('search', '{}')
+	const result = await dispatchers?.capabilities?.call('search', '{}')
 
 	expect(JSON.parse(result ?? '{}')).toEqual({
 		error: 'Execution has already completed.',

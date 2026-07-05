@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { expect, test } from 'vitest'
 import { createRuntimeModuleSource } from './module-graph.ts'
 
-// The kody:runtime virtual module captures its named exports statically
+// The capabilities:runtime virtual module captures its named exports statically
 // when it evaluates inside the surrounding AsyncLocalStorage context. The
 // surrounding wrapper (kody executor / package-app worker) loads the
 // bundle fresh per request, so each request gets a fresh evaluation with
@@ -25,13 +25,13 @@ type RuntimeModule = {
 		value: unknown,
 		callback: () => Promise<T>,
 	) => Promise<T>
-	kody: { tool_call: (args: unknown) => Promise<unknown> } | undefined
+	capabilities: { tool_call: (args: unknown) => Promise<unknown> } | undefined
 	codemode?: unknown
 	storage: { get: (key: string) => Promise<unknown> } | undefined
 	email: unknown
 	packageContext: Record<string, unknown> | null
 	default: {
-		kody?: { tool_call: (args: unknown) => Promise<unknown> }
+		capabilities?: { tool_call: (args: unknown) => Promise<unknown> }
 		codemode?: unknown
 	}
 }
@@ -87,7 +87,7 @@ test('two concurrent runs observe their own runtime values', async () => {
 
 		function buildRuntime(userId: string) {
 			return {
-				kody: {
+				capabilities: {
 					async tool_call() {
 						return { ok: true, userId }
 					},
@@ -111,8 +111,8 @@ test('two concurrent runs observe their own runtime values', async () => {
 				await new Promise<void>((resolve) => setImmediate(resolve))
 				const mod = (await import(url)) as RuntimeModule
 				await new Promise<void>((resolve) => setImmediate(resolve))
-				const tool = mod.kody
-				if (!tool) throw new Error('kody missing')
+				const tool = mod.capabilities
+				if (!tool) throw new Error('capabilities missing')
 				const toolResult = (await tool.tool_call({})) as {
 					ok: true
 					userId: string
@@ -169,11 +169,11 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 		// Each missing export must be falsy so user code that does
 		// `if (email) {...}` continues to skip the branch.
 		expect(mod.email).toBeNull()
-		expect(mod.kody).toBeUndefined()
+		expect(mod.capabilities).toBeUndefined()
 		expect(mod.codemode).toBeUndefined()
 		expect(mod.storage).toBeUndefined()
 		expect(Boolean(mod.email)).toBe(false)
-		expect(Boolean(mod.kody)).toBe(false)
+		expect(Boolean(mod.capabilities)).toBe(false)
 		expect(Boolean(mod.codemode)).toBe(false)
 		expect(Boolean(mod.storage)).toBe(false)
 		// Provided exports survive.
@@ -194,15 +194,15 @@ test('preloaded kody exports resolve from the active runtime store', async () =>
 
 		const namedExportResult = await sharedStorage.run(
 			{
-				kody: {
+				capabilities: {
 					async tool_call(args: unknown) {
 						return { ok: true, args }
 					},
 				},
 			},
 			async () => {
-				const tool = mod.kody
-				if (!tool) throw new Error('kody missing')
+				const tool = mod.capabilities
+				if (!tool) throw new Error('capabilities missing')
 				return await tool.tool_call({ value: 'active-store' })
 			},
 		)
@@ -214,15 +214,15 @@ test('preloaded kody exports resolve from the active runtime store', async () =>
 
 		const defaultExportResult = await sharedStorage.run(
 			{
-				kody: {
+				capabilities: {
 					async tool_call(args: unknown) {
 						return { ok: true, args }
 					},
 				},
 			},
 			async () => {
-				const tool = mod.default.kody
-				if (!tool) throw new Error('default kody missing')
+				const tool = mod.default.capabilities
+				if (!tool) throw new Error('default capabilities missing')
 				return await tool.tool_call({ value: 'default-active-store' })
 			},
 		)

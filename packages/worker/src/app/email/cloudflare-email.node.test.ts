@@ -25,7 +25,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		},
 		{
 			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
+			from: 'reset@capabilities.dev',
 			subject: 'Reset your kody password',
 			html: '<p>Reset link</p>',
 			text: 'Reset link',
@@ -49,7 +49,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	}
 	expect(payload.count).toBe(1)
 	expect(payload.messages[0]).toMatchObject({
-		from_email: 'reset@kody.dev',
+		from_email: 'reset@capabilities.dev',
 		subject: 'Reset your kody password',
 		text: 'Reset link',
 	})
@@ -81,7 +81,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		},
 		{
 			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
+			from: 'reset@capabilities.dev',
 			subject: 'Default base URL',
 			html: '<p>body</p>',
 			text: 'body',
@@ -99,7 +99,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 			{},
 			{
 				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
+				from: 'reset@capabilities.dev',
 				subject: 'Skipped email',
 				html: '<p>secret body</p>',
 				text: 'secret text',
@@ -133,7 +133,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		},
 		{
 			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
+			from: 'reset@capabilities.dev',
 			subject: 'Request failure',
 			html: '<p>body</p>',
 		},
@@ -162,7 +162,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 			},
 			{
 				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
+				from: 'reset@capabilities.dev',
 				subject: 'Invalid JSON',
 				html: '<p>body</p>',
 			},

@@ -291,11 +291,11 @@ function buildRecommendedNextStep(
 			const connectorName = topMatch.remoteConnector.connectorName
 			const toolName = topMatch.remoteConnector.toolName
 			const accessor = /^[A-Za-z_$][\w$]*$/.test(toolName)
-				? `kody.remote[${JSON.stringify(connectorName)}].${toolName}`
-				: `kody.remote[${JSON.stringify(connectorName)}][${JSON.stringify(toolName)}]`
+				? `capabilities.remote[${JSON.stringify(connectorName)}].${toolName}`
+				: `capabilities.remote[${JSON.stringify(connectorName)}][${JSON.stringify(toolName)}]`
 			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
 		}
-		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`kody.${topMatch.name}(args)\`.`
+		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`capabilities.${topMatch.name}(args)\`.`
 	}
 	return undefined
 }
@@ -1398,11 +1398,11 @@ Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishi
 For package creation or material updates, load \`coding_guide_get\` with
 \`guide: "package_authoring"\` and maintain a root README.md Intent section.
 Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
-Secrets: results expose metadata; use \`kody.secret_list\` during execute,
+Secrets: results expose metadata; use \`capabilities.secret_list\` during execute,
 \`/account/secrets/new\` for API key/PAT entry and rotation, and
 \`/connect/oauth\` for OAuth integrations.
-Persisted values use \`kody.value_get\` / \`kody.value_list\`. Integrations
-use \`kody.integration_get\` / \`kody.integration_list\`.
+Persisted values use \`capabilities.value_get\` / \`capabilities.value_list\`. Integrations
+use \`capabilities.integration_get\` / \`capabilities.integration_list\`.
 
 Integration-backed packages, package apps, and workflows: search for the provider
 and \`coding_guide_get\`, inspect exact \`integration\` or \`secret\` entities,

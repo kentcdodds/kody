@@ -1022,7 +1022,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			env: this.env,
 			baseUrl: getAppBaseUrl({
 				env: this.env,
-				requestUrl: 'https://kody.invalid/',
+				requestUrl: 'https://capabilities.invalid/',
 			}),
 			token: {
 				tokenId: packageWorkflowTokenId,
@@ -1058,7 +1058,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 	): Promise<JsonValue> {
 		const [{ runModuleWithRegistry }, { createMcpCallerContext }] =
 			await Promise.all([
-				import('#mcp/run-kody-registry.ts'),
+				import('#mcp/run-capabilities-registry.ts'),
 				import('#mcp/context.ts'),
 			])
 		const remoteConnectors = await listAttachedRemoteConnectorRefs({
@@ -1070,7 +1070,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			createMcpCallerContext({
 				baseUrl: getAppBaseUrl({
 					env: this.env,
-					requestUrl: 'https://kody.invalid/',
+					requestUrl: 'https://capabilities.invalid/',
 				}),
 				user: {
 					userId: payload.userId,

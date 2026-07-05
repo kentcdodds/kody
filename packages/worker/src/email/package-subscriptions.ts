@@ -151,7 +151,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 }) {
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
-		requestUrl: 'https://kody.invalid',
+		requestUrl: 'https://capabilities.invalid',
 	})
 	const attachments = await listEmailAttachmentsForMessage({
 		db: input.env.APP_DB,

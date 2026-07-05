@@ -503,19 +503,19 @@ export function createStorageHelperPrelude(input: {
 	return `
 const storage = {
   id: ${JSON.stringify(input.storageId)},
-  get: async (key) => (await kody.storage_get({ key })).value,
-  list: async (options = {}) => await kody.storage_list(options),
+  get: async (key) => (await capabilities.storage_get({ key })).value,
+  list: async (options = {}) => await capabilities.storage_list(options),
   sql: async (query, params = []) =>
-    await kody.storage_sql({
+    await capabilities.storage_sql({
       query,
       params,
       writable: ${input.writable ? 'true' : 'false'},
     }),
   ${
 		input.writable
-			? `set: async (key, value) => await kody.storage_set({ key, value }),
-  delete: async (key) => await kody.storage_delete({ key }),
-  clear: async () => await kody.storage_clear({}),`
+			? `set: async (key, value) => await capabilities.storage_set({ key, value }),
+  delete: async (key) => await capabilities.storage_delete({ key }),
+  clear: async () => await capabilities.storage_clear({}),`
 			: ''
 	}
 };

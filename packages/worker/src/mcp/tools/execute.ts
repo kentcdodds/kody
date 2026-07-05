@@ -9,7 +9,7 @@ import {
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
-import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import { runModuleWithRegistry } from '#mcp/run-capabilities-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	callerContextFields,
@@ -48,7 +48,7 @@ Saved package surface:
 
 Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.
-- \`import { kody } from 'kody:runtime'\` for builtin capabilities discovered by \`search\`; call valid identifier names as \`await kody.capability_id(input)\`. If a capability id is not a valid JavaScript identifier, use bracket notation: \`await kody["capability-id"](input)\`. Capability detail from \`search({ entity: "{name}:capability" })\` includes the exact snippet.
+- \`import { capabilities } from 'kody:runtime'\` for builtin capabilities discovered by \`search\`; call valid identifier names as \`await capabilities.capability_id(input)\`. If a capability id is not a valid JavaScript identifier, use bracket notation: \`await capabilities["capability-id"](input)\`. Capability detail from \`search({ entity: "{name}:capability" })\` includes the exact snippet.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`. \`storage.sql\` returns \`{ columns, rows, rowCount, rowsRead, rowsWritten }\`; read query rows from \`.rows\`.
 - \`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials, secretHeaders } from 'kody:runtime'\` for OAuth integrations and secret-derived auth headers. Integration \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`integration_list\` first when the task involves a provider that may have multiple accounts connected. For APIs such as PayPal that require client-credentials Basic Auth, save the client id and client secret separately and use \`secretHeaders.basic({ usernameSecret: 'paypalClientId', passwordSecret: 'paypalClientSecret', scope: 'user' })\` in the Authorization header, or \`oauthClientCredentials(...)\` for the token request. Do not ask users to precompute or save a derived Basic header.
 - \`import { workflows } from 'kody:runtime'\` for durable Cloudflare Workflows. \`workflows.create\` accepts either inline \`code\` or a saved-package \`exportName\`; use \`workflow_run_list\` to inspect recent runs.
@@ -59,7 +59,7 @@ Sandbox surface:
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
 - Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
 - Never place placeholder text into user-visible or third-party-visible content such as issue bodies, comments, prompts, logs, or returned strings. If you need to describe a placeholder literally, obfuscate it instead of embedding the exact \`{{secret:...}}\` token into content that may be sent over \`fetch\`.
-- \`await kody.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only.
+- \`await capabilities.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only.
 - No \`secret_get\` / \`secrets\` helpers in the sandbox.
 - \`value_get\` / \`value_list\` for non-secret persisted config.
 
@@ -71,11 +71,11 @@ For integration-backed packages, package apps, or workflows, use \`search\` and 
 
 Example:
 
-\`import { kody } from 'kody:runtime'
+\`import { capabilities } from 'kody:runtime'
 
 export default async function main(input = {}) {
   void input;
-  return await kody.coding_guide_get({
+  return await capabilities.coding_guide_get({
     guide: 'integration_bootstrap',
   });
 }\`

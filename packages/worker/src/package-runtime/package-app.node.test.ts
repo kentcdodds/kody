@@ -24,28 +24,31 @@ async function extractCreatePackageAppWorkerSource() {
 	return `${proxySource}; return createWorkflowsProxy(runtimeBridge);`
 }
 
-async function extractCreateKodyProxySource() {
+async function extractCreateCapabilitiesProxySource() {
 	const sourceText = await readFile(
 		new URL('./package-app.ts', import.meta.url),
 		'utf8',
 	)
-	const start = sourceText.indexOf('function createKodyProxy(runtimeBridge) {')
+	const start = sourceText.indexOf(
+		'function createCapabilitiesProxy(runtimeBridge) {',
+	)
 	const end = sourceText.indexOf('\nfunction createStorageProxy', start)
 	if (start < 0 || end < 0) {
-		throw new Error('createKodyProxy source was not found.')
+		throw new Error('createCapabilitiesProxy source was not found.')
 	}
 	const proxySource = sourceText
 		.slice(start, end)
 		.replaceAll('\\\\', '\\')
 		.replaceAll('\\`', '`')
 		.replaceAll('\\${', '${')
-	return `${proxySource}; return createKodyProxy(runtimeBridge);`
+	return `${proxySource}; return createCapabilitiesProxy(runtimeBridge);`
 }
 
-async function createKodyProxyForTest(runtimeBridge: unknown) {
-	return new Function('runtimeBridge', await extractCreateKodyProxySource())(
-		runtimeBridge,
-	) as Record<string, unknown>
+async function createCapabilitiesProxyForTest(runtimeBridge: unknown) {
+	return new Function(
+		'runtimeBridge',
+		await extractCreateCapabilitiesProxySource(),
+	)(runtimeBridge) as Record<string, unknown>
 }
 
 async function createWorkflowsProxyForTest(runtimeBridge: unknown) {
@@ -57,9 +60,9 @@ async function createWorkflowsProxyForTest(runtimeBridge: unknown) {
 	}
 }
 
-test('package app kody proxy supports remote namespace calls', async () => {
+test('package app capabilities proxy supports remote namespace calls', async () => {
 	const calls: Array<{ name: string; args: unknown }> = []
-	const kody = await createKodyProxyForTest({
+	const capabilities = await createCapabilitiesProxyForTest({
 		callCapability: async (input: { name: string; args: unknown }) => {
 			calls.push(input)
 			return { ok: true }
@@ -68,7 +71,7 @@ test('package app kody proxy supports remote namespace calls', async () => {
 
 	await expect(
 		(
-			kody.remote as Record<
+			capabilities.remote as Record<
 				string,
 				Record<string, (args: unknown) => Promise<unknown>>
 			>
@@ -80,7 +83,7 @@ test('package app kody proxy supports remote namespace calls', async () => {
 			args: { pin: '1234' },
 		},
 	])
-	expect(() => kody['remote:home:set_pin']).toThrow(
+	expect(() => capabilities['remote:home:set_pin']).toThrow(
 		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
 	)
 })

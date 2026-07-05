@@ -76,7 +76,7 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 
 	const result = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
 		staleAfterMinutes: 10,
 	})
@@ -116,7 +116,7 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 
 	const missingHead = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
 	})
 
@@ -135,7 +135,7 @@ test('reconcile records source checks and continues the batch when a source or i
 
 	const singleFailure = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
 	})
 
@@ -168,7 +168,7 @@ test('reconcile records source checks and continues the batch when a source or i
 
 	const batchFailure = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
 	})
 
@@ -199,7 +199,7 @@ test('reconcile runs token cleanup in the 03:00 UTC window without blocking publ
 
 	const cleanupResult = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		now: new Date('2026-05-04T03:02:00.000Z'),
 	})
 
@@ -228,7 +228,7 @@ test('reconcile runs token cleanup in the 03:00 UTC window without blocking publ
 
 	const publishDespiteCleanupFailure = await reconcileArtifactsPushes({
 		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://kody.test',
+		baseUrl: 'https://capabilities.test',
 		now: new Date('2026-05-04T03:02:00.000Z'),
 	})
 

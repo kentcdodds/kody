@@ -51,8 +51,8 @@ import {
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
-import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-capabilities-execution.ts'
+import { runBundledModuleWithRegistry } from '#mcp/run-capabilities-registry.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	deleteEntitySource,
@@ -282,7 +282,10 @@ async function resolvePublishedJobSource(input: {
 	}
 	const artifactName =
 		publishedSource.entity_kind === 'package' ? input.job.name : input.job.id
-	if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
+	if (
+		manifestPath === 'capabilities.json' ||
+		publishedSource.entity_kind === 'job'
+	) {
 		const manifest = parseRepoManifest({
 			content: manifestContent,
 			manifestPath,

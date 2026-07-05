@@ -9,7 +9,7 @@ import {
 
 function executeUsageSnippet(usage: string) {
 	const calls: Array<{ toolName: string; args: unknown }> = []
-	const kody = {
+	const capabilities = {
 		integration_get(args: unknown) {
 			calls.push({
 				toolName: 'integration_get',
@@ -23,7 +23,7 @@ function executeUsageSnippet(usage: string) {
 			})
 		},
 	}
-	new Script(usage).runInContext(createContext({ kody }))
+	new Script(usage).runInContext(createContext({ capabilities }))
 	return calls
 }
 
@@ -50,7 +50,7 @@ async function executeCapabilityExample(executeExample: string) {
 			},
 		},
 	)
-	const kody = new Proxy(
+	const capabilities = new Proxy(
 		{} as Record<string, (args: unknown) => Promise<unknown>>,
 		{
 			get(_target, prop: string) {
@@ -63,11 +63,11 @@ async function executeCapabilityExample(executeExample: string) {
 		},
 	)
 	const moduleCode = executeExample
-		.replace("import { kody } from 'kody:runtime'\n\n", '')
+		.replace("import { capabilities } from 'kody:runtime'\n\n", '')
 		.replace('export default async function main', 'async function main')
 	const result = await new Script(
 		`(async () => { ${moduleCode}; return await main({ owner: "o", repo: "r", title: "t" }) })()`,
-	).runInNewContext({ kody })
+	).runInNewContext({ capabilities })
 	return { calls, result }
 }
 
@@ -380,7 +380,9 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 				'type RemoteHomeDefaultSetPinInput = {\n\tpin: string\n}',
 		},
 	})
-	expect(remoteDetail.markdown).toContain('kody.remote["home"].set_pin(input)')
+	expect(remoteDetail.markdown).toContain(
+		'capabilities.remote["home"].set_pin(input)',
+	)
 	expect(remoteDetail.structured).toMatchObject({
 		source: 'remote-connector',
 		remoteConnector: {
@@ -388,7 +390,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			toolName: 'set_pin',
 		},
 		executeExample: expect.stringContaining(
-			'kody.remote["home"].set_pin(input)',
+			'capabilities.remote["home"].set_pin(input)',
 		),
 	})
 	const remoteExecution = await executeCapabilityExample(
