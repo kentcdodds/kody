@@ -167,6 +167,9 @@
 					"index_name": "kody-capabilities-prod",
 				},
 			],
+			"ai": {
+				"binding": "AI",
+			},
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"ARTIFACTS_NAMESPACE": "production",
@@ -260,6 +263,9 @@
 					"index_name": "kody-capabilities-preview",
 				},
 			],
+			"ai": {
+				"binding": "AI",
+			},
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",

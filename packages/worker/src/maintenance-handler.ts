@@ -1,8 +1,6 @@
 import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 
-type MaintenanceResult = {
-	upserted: number
-}
+type MaintenanceResult = Record<string, unknown>
 
 type SecretMaintenanceRequestInput = {
 	request: Request
@@ -35,8 +33,8 @@ export async function handleSecretMaintenanceRequest(
 	}
 
 	try {
-		const { upserted } = await input.run()
-		return Response.json({ ok: true, upserted })
+		const result = await input.run()
+		return Response.json({ ok: true, ...result })
 	} catch (error) {
 		return Response.json(
 			{ ok: false, error: getErrorMessage(error) },
