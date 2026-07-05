@@ -5,7 +5,7 @@ import {
 	type RouteLoader,
 } from './client-router.tsx'
 
-test('client route matching uses Remix route-pattern specificity', () => {
+test('client route and loader matching prefer specific static routes over dynamic parents', () => {
 	const tokenDetailRoute = 'token-detail-route' as unknown as JSX.Element
 	const newTokenRoute = 'new-token-route' as unknown as JSX.Element
 	const routes = {
@@ -19,25 +19,21 @@ test('client route matching uses Remix route-pattern specificity', () => {
 	expect(matchRoute('/account/package-invocation-tokens/token-1', routes)).toBe(
 		tokenDetailRoute,
 	)
-})
 
-test('client route matching handles nested static routes over dynamic parents', () => {
 	const genericSecretRoute = 'generic-secret-route' as unknown as JSX.Element
 	const userSecretRoute = 'user-secret-route' as unknown as JSX.Element
-	const routes = {
+	const nestedRoutes = {
 		'/account/secrets/:secretId': genericSecretRoute,
 		'/account/secrets/user/:secretName': userSecretRoute,
 	}
 
-	expect(matchRoute('/account/secrets/user/github-token', routes)).toBe(
+	expect(matchRoute('/account/secrets/user/github-token', nestedRoutes)).toBe(
 		userSecretRoute,
 	)
-	expect(matchRoute('/account/secrets/secret-1', routes)).toBe(
+	expect(matchRoute('/account/secrets/secret-1', nestedRoutes)).toBe(
 		genericSecretRoute,
 	)
-})
 
-test('route loader matching uses the same route-pattern specificity', () => {
 	const accountLoader = (async () => ({
 		accountProfile: { ok: true },
 	})) as RouteLoader
@@ -57,24 +53,22 @@ test('route loader matching uses the same route-pattern specificity', () => {
 	expect(
 		matchRouteLoader('/account/package-invocation-tokens/token-1', loaders),
 	).toBe(tokenLoader)
-})
 
-test('route loader matching prefers nested static routes over dynamic parents', () => {
 	const genericSecretLoader = (async () => ({
 		accountSecrets: { ok: true },
 	})) as RouteLoader
 	const userSecretLoader = (async () => ({
 		accountSecrets: { ok: true },
 	})) as RouteLoader
-	const loaders = {
+	const secretLoaders = {
 		'/account/secrets/:secretId': genericSecretLoader,
 		'/account/secrets/user/:secretName': userSecretLoader,
 	}
 
-	expect(matchRouteLoader('/account/secrets/user/github-token', loaders)).toBe(
-		userSecretLoader,
-	)
-	expect(matchRouteLoader('/account/secrets/secret-1', loaders)).toBe(
+	expect(
+		matchRouteLoader('/account/secrets/user/github-token', secretLoaders),
+	).toBe(userSecretLoader)
+	expect(matchRouteLoader('/account/secrets/secret-1', secretLoaders)).toBe(
 		genericSecretLoader,
 	)
 })

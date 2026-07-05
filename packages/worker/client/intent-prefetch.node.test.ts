@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	abortIntentPrefetch,
 	maxPrefetchAgeMs,
@@ -28,12 +28,8 @@ function createDeferredLoader() {
 
 const accountUrl = new URL('https://kody.local/account')
 
-afterEach(() => {
+test('intent prefetch adoption returns in-flight results once and aborts on navigate-away', async () => {
 	abortIntentPrefetch()
-	vi.useRealTimers()
-})
-
-test('takePrefetchedRouteResult returns the in-flight promise once', async () => {
 	const deferred = createDeferredLoader()
 	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
 
@@ -43,69 +39,71 @@ test('takePrefetchedRouteResult returns the in-flight promise once', async () =>
 
 	deferred.resolve({ accountProfile: { ok: true } as never })
 	await expect(taken).resolves.toEqual({ accountProfile: { ok: true } })
-})
 
-test('navigating elsewhere aborts and clears the prefetch slot', () => {
-	const deferred = createDeferredLoader()
-	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
+	abortIntentPrefetch()
+	const redirectDeferred = createDeferredLoader()
+	prefetchRouteOnIntent('/account', redirectDeferred.loader, accountUrl)
+	const redirectTaken = takePrefetchedRouteResult('/account')
+	redirectDeferred.resolve(routeLoaderRedirect('/login'))
+	await expect(redirectTaken).resolves.toEqual(routeLoaderRedirect('/login'))
 
-	// A navigation to a different destination consumes nothing but must
-	// invalidate the speculative result so a later navigation to /account
-	// cannot adopt data prefetched before the user went elsewhere.
+	abortIntentPrefetch()
+	const navigateAway = createDeferredLoader()
+	prefetchRouteOnIntent('/account', navigateAway.loader, accountUrl)
 	expect(takePrefetchedRouteResult('/account/secrets')).toBeNull()
-	expect(deferred.calls[0]?.signal.aborted).toBe(true)
+	expect(navigateAway.calls[0]?.signal.aborted).toBe(true)
 	expect(takePrefetchedRouteResult('/account')).toBeNull()
+
+	abortIntentPrefetch()
+	const adoptingNavigation = createDeferredLoader()
+	prefetchRouteOnIntent('/account', adoptingNavigation.loader, accountUrl)
+	const navigation = new AbortController()
+	const adopted = takePrefetchedRouteResult('/account', navigation.signal)
+	expect(adopted).not.toBeNull()
+	adoptingNavigation.calls[0]?.signal.addEventListener('abort', () =>
+		adoptingNavigation.reject(new DOMException('aborted', 'AbortError')),
+	)
+	void adopted?.catch(() => {})
+	navigation.abort()
+	expect(adoptingNavigation.calls[0]?.signal.aborted).toBe(true)
 })
 
-test('repeat intent for the same href reuses the in-flight run', () => {
+test('intent prefetch reuses in-flight runs, aborts superseded hrefs, and retries after failures', async () => {
+	abortIntentPrefetch()
 	const deferred = createDeferredLoader()
 	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
 	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
 	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
-
 	expect(deferred.calls).toHaveLength(1)
-})
 
-test('intent for a different href aborts the previous prefetch', () => {
+	abortIntentPrefetch()
 	const first = createDeferredLoader()
 	prefetchRouteOnIntent('/account', first.loader, accountUrl)
-
 	const second = createDeferredLoader()
 	prefetchRouteOnIntent(
 		'/account/secrets',
 		second.loader,
 		new URL('https://kody.local/account/secrets'),
 	)
-
 	expect(first.calls[0]?.signal.aborted).toBe(true)
-	// Consume the fresh prefetch first; taking a mismatched href clears the
-	// slot, so the stale href is checked after.
 	expect(takePrefetchedRouteResult('/account/secrets')).not.toBeNull()
 	expect(takePrefetchedRouteResult('/account')).toBeNull()
-})
 
-test('failed prefetches are not adopted so navigations retry the loader', async () => {
-	const deferred = createDeferredLoader()
-	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
-	deferred.reject(new Error('network down'))
+	abortIntentPrefetch()
+	const failed = createDeferredLoader()
+	prefetchRouteOnIntent('/account', failed.loader, accountUrl)
+	failed.reject(new Error('network down'))
 	await Promise.resolve()
-
 	expect(takePrefetchedRouteResult('/account')).toBeNull()
-})
 
-test('failed prefetches allow a fresh run on the next intent', async () => {
-	const first = createDeferredLoader()
-	prefetchRouteOnIntent('/account', first.loader, accountUrl)
-	first.reject(new Error('network down'))
-	await Promise.resolve()
-
-	const second = createDeferredLoader()
-	prefetchRouteOnIntent('/account', second.loader, accountUrl)
-	expect(second.calls).toHaveLength(1)
+	const retry = createDeferredLoader()
+	prefetchRouteOnIntent('/account', retry.loader, accountUrl)
+	expect(retry.calls).toHaveLength(1)
 	expect(takePrefetchedRouteResult('/account')).not.toBeNull()
 })
 
-test('settled prefetches expire after maxPrefetchAgeMs', async () => {
+test('settled intent prefetches expire and restart on the next intent', async () => {
+	abortIntentPrefetch()
 	vi.useFakeTimers()
 	const deferred = createDeferredLoader()
 	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
@@ -114,43 +112,11 @@ test('settled prefetches expire after maxPrefetchAgeMs', async () => {
 
 	vi.advanceTimersByTime(maxPrefetchAgeMs + 1)
 	expect(takePrefetchedRouteResult('/account')).toBeNull()
-})
 
-test('expired prefetches restart on the next intent for the same href', async () => {
-	vi.useFakeTimers()
-	const first = createDeferredLoader()
-	prefetchRouteOnIntent('/account', first.loader, accountUrl)
-	first.resolve({})
-	await Promise.resolve()
-
-	vi.advanceTimersByTime(maxPrefetchAgeMs + 1)
 	const second = createDeferredLoader()
 	prefetchRouteOnIntent('/account', second.loader, accountUrl)
 	expect(second.calls).toHaveLength(1)
-})
 
-test('aborting the adopting navigation aborts the underlying prefetch', () => {
-	const deferred = createDeferredLoader()
-	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
-
-	const navigation = new AbortController()
-	const taken = takePrefetchedRouteResult('/account', navigation.signal)
-	expect(taken).not.toBeNull()
-	// Swallow the eventual AbortError rejection from the loader promise.
-	deferred.calls[0]?.signal.addEventListener('abort', () =>
-		deferred.reject(new DOMException('aborted', 'AbortError')),
-	)
-	void taken?.catch(() => {})
-
-	navigation.abort()
-	expect(deferred.calls[0]?.signal.aborted).toBe(true)
-})
-
-test('redirect results flow through prefetch adoption', async () => {
-	const deferred = createDeferredLoader()
-	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
-	const taken = takePrefetchedRouteResult('/account')
-	deferred.resolve(routeLoaderRedirect('/login'))
-
-	await expect(taken).resolves.toEqual(routeLoaderRedirect('/login'))
+	abortIntentPrefetch()
+	vi.useRealTimers()
 })
