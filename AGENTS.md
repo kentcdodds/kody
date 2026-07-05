@@ -82,6 +82,33 @@ VMs may ship Node 22 at `/exec-daemon/node`, which takes precedence over nvm
 unless nvm’s Node 26 bin directory is prepended to `PATH`. Verify with
 `node --version` before running scripts.
 
+### Playwright browsers
+
+Playwright's Chromium (used by `npm run test:e2e:run` / `validate`) is
+pre-installed in `~/.cache/ms-playwright` and persists in the VM snapshot, so
+normally nothing extra is needed. The **non-obvious gotcha**:
+`playwright install` (and `test:e2e:install` / `test:e2e:ensure`) **hangs** on
+this VM kernel — its Node-based zip extractor stalls on an `io_uring` write
+partway through (around `libwidevinecdm.so`), and `UV_USE_IO_URING=0` does not
+stop it. The browser zip downloads fine; only the built-in extraction hangs.
+
+If browsers are ever missing (e.g. a Playwright version bump changes the
+revision), do **not** rely on `playwright install`. Instead download and extract
+manually with native `unzip`:
+
+1. Get the revision + Chrome-for-Testing version from
+   `node_modules/playwright-core/browsers.json` and the CDN URL printed by
+   `npx playwright install chromium` (form:
+   `https://cdn.playwright.dev/builds/cft/<cft-version>/linux64/chrome-linux64.zip`
+   and `.../chrome-headless-shell-linux64.zip`).
+2. `curl -fsSL -o /tmp/c.zip <chrome-linux64.zip>` then
+   `unzip -q /tmp/c.zip -d ~/.cache/ms-playwright/chromium-<rev>/` and
+   `touch ~/.cache/ms-playwright/chromium-<rev>/INSTALLATION_COMPLETE`.
+3. Repeat for the headless shell into
+   `~/.cache/ms-playwright/chromium_headless_shell-<rev>/` (Playwright launches
+   headless via the separate headless-shell binary, so both are required).
+4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries.
+
 ### Quick commands
 
 | Task             | Command                                                         |
