@@ -1,5 +1,8 @@
 import { capabilitySpecs } from './mcp/capabilities/registry.ts'
-import { handleSecretMaintenanceRequest } from './maintenance-handler.ts'
+import {
+	handleSecretMaintenanceRequest,
+	MaintenanceFailureError,
+} from './maintenance-handler.ts'
 import { reindexCapabilityVectors } from './mcp/capabilities/capability-reindex.ts'
 import { reindexJobVectors } from './jobs/job-reindex.ts'
 import { reindexMemoryVectors } from './mcp/memory/memory-reindex.ts'
@@ -9,6 +12,7 @@ import { getErrorMessage } from './mcp/capabilities/error-message.ts'
 type ReindexStepResult = {
 	upserted: number
 	error?: string
+	failed?: number
 }
 
 async function runReindexStep(
@@ -61,12 +65,13 @@ export async function handleCapabilityReindexRequest(
 					typeof entry[1].error === 'string',
 			)
 			if (failed.length > 0) {
-				throw new Error(
+				throw new MaintenanceFailureError(
 					`Capability search vector reindex failed for ${failed
 						.map(([kind]) => kind)
 						.join(', ')}: ${failed
 						.map(([kind, step]) => `${kind}: ${step.error}`)
 						.join('; ')}`,
+					result,
 				)
 			}
 			return result

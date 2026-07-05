@@ -111,6 +111,10 @@ test('capability reindex maintenance route attempts every vector kind before rep
 	expect(response.status).toBe(500)
 	await expect(response.json()).resolves.toEqual({
 		ok: false,
+		capabilities: { upserted: 3 },
+		memories: { upserted: 0, error: 'memory failed' },
+		jobs: { upserted: 1 },
+		packages: { upserted: 4 },
 		error:
 			'Capability search vector reindex failed for memories: memories: memory failed',
 	})

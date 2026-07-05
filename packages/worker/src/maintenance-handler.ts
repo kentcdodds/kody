@@ -1,6 +1,16 @@
 import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
 
-type MaintenanceResult = Record<string, unknown>
+type MaintenanceResult = Record<string, unknown> & { ok?: never }
+
+export class MaintenanceFailureError extends Error {
+	readonly result: MaintenanceResult
+
+	constructor(message: string, result: MaintenanceResult) {
+		super(message)
+		this.name = 'MaintenanceFailureError'
+		this.result = result
+	}
+}
 
 type SecretMaintenanceRequestInput = {
 	request: Request
@@ -34,8 +44,14 @@ export async function handleSecretMaintenanceRequest(
 
 	try {
 		const result = await input.run()
-		return Response.json({ ok: true, ...result })
+		return Response.json({ ...result, ok: true })
 	} catch (error) {
+		if (error instanceof MaintenanceFailureError) {
+			return Response.json(
+				{ ...error.result, ok: false, error: error.message },
+				{ status: 500 },
+			)
+		}
 		return Response.json(
 			{ ok: false, error: getErrorMessage(error) },
 			{ status: 500 },

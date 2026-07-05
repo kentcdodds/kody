@@ -36,7 +36,17 @@ vi.mock('./source.ts', () => ({
 
 const { reindexSavedPackageVectors } = await import('./package-reindex.ts')
 
+function resetMocks() {
+	mockModule.buildSavedPackageEmbedText.mockReset()
+	mockModule.embedTextsForVectorize.mockReset()
+	mockModule.getCapabilityVectorIndex.mockReset()
+	mockModule.isCapabilitySearchOffline.mockReset()
+	mockModule.listAllSavedPackages.mockReset()
+	mockModule.loadPackageManifestBySourceId.mockReset()
+}
+
 test('saved package reindex embeds full manifests with user-scoped metadata', async () => {
+	resetMocks()
 	const upsert = vi.fn()
 	const env = {
 		APP_DB: {},
@@ -98,4 +108,87 @@ test('saved package reindex embeds full manifests with user-scoped metadata', as
 			},
 		},
 	])
+})
+
+test('saved package reindex skips failed manifest loads and continues the batch', async () => {
+	resetMocks()
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	const upsert = vi.fn()
+	const env = {
+		APP_DB: {},
+	} as Env
+	const manifest = {
+		name: '@user/tasks',
+		exports: {
+			'.': './index.ts',
+		},
+		kody: {
+			id: 'tasks',
+			description: 'Tasks package',
+		},
+	}
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.listAllSavedPackages.mockResolvedValue([
+		{
+			id: 'pkg-bad',
+			userId: 'user-1',
+			name: '@user/bad',
+			kodyId: 'bad',
+			description: 'Bad package',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-bad',
+			hasApp: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+		{
+			id: 'pkg-good',
+			userId: 'user-1',
+			name: '@user/tasks',
+			kodyId: 'tasks',
+			description: 'Tasks package',
+			tags: ['tasks'],
+			searchText: null,
+			sourceId: 'source-good',
+			hasApp: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+	])
+	mockModule.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			if (input.sourceId === 'source-bad') {
+				throw new Error('manifest missing')
+			}
+			return { manifest }
+		},
+	)
+	mockModule.buildSavedPackageEmbedText.mockReturnValue('tasks manifest embed')
+	mockModule.embedTextsForVectorize.mockResolvedValue([[0.4, 0.5, 0.6]])
+
+	try {
+		await expect(
+			reindexSavedPackageVectors(env, {
+				baseUrl: 'https://kody.example.com',
+			}),
+		).resolves.toEqual({ upserted: 1, failed: 1 })
+
+		expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [
+			'tasks manifest embed',
+		])
+		expect(upsert).toHaveBeenCalledWith([
+			{
+				id: 'package_pkg-good',
+				values: [0.4, 0.5, 0.6],
+				metadata: {
+					kind: 'package',
+					userId: 'user-1',
+				},
+			},
+		])
+	} finally {
+		consoleError.mockRestore()
+	}
 })
