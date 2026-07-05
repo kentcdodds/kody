@@ -17,12 +17,12 @@ Module: `packages/worker/src/entitlements/`
 
 ## The NULL-plan invariant
 
-`users.plan` is a nullable TEXT column (migration
-`0048-user-plans-and-entitlement-counters.sql`). **NULL means
-legacy/unlimited**: nothing is enforced, and no counting query runs, for users
-without a plan. Unknown stored plan values are also treated as NULL so plan
-renames can never lock users out. Enforcement activates only when a known plan
-name is set — existing accounts keep working unchanged.
+`users.plan` is a nullable TEXT column (added by migration
+`0046-invites-email-verification.sql`). **NULL means legacy/unlimited**: nothing
+is enforced, and no counting query runs, for users without a plan. Unknown
+stored plan values are also treated as NULL so plan renames can never lock users
+out. Enforcement activates only when a known plan name is set — existing
+accounts keep working unchanged.
 
 ## Plan lookup
 
@@ -172,9 +172,9 @@ The exemplar is job scheduling: `createJob` in
 
 ## Related tables and coordination
 
-- `users.plan` — added in migration 0048 on this branch. A parallel
-  invite-signup branch may introduce the same column in migration 0046; if it
-  lands first, drop the `ALTER TABLE` from 0048 at rebase time. Two migrations
-  must never add the same column.
-- `entitlement_daily_counters` — rate counters; included in the account-deletion
-  cascade (`packages/worker/src/app/account-deletion.ts`).
+- `users.plan` — added by the invite-signup migration
+  (`0046-invites-email-verification.sql`); the entitlements module is the
+  consumer of that column.
+- `entitlement_daily_counters` — rate counters, created by migration
+  `0048-user-plans-and-entitlement-counters.sql`; included in the
+  account-deletion cascade (`packages/worker/src/app/account-deletion.ts`).
