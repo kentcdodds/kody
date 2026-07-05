@@ -31,6 +31,7 @@ const redactedColumnsByTable: Readonly<Record<string, ReadonlyArray<string>>> =
 		email_verifications: ['token_hash'],
 		package_invocation_tokens: ['token_hash'],
 		password_resets: ['token_hash'],
+		remote_connector_settings: ['encrypted_shared_secret'],
 		secret_entries: ['encrypted_value', 'lookup_hash'],
 		users: ['password_hash'],
 	}

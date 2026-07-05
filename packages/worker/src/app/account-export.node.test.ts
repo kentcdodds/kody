@@ -172,6 +172,25 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at)
 		VALUES (1, 1, 'reset-token-hash-a', 2000000000, '2026-07-05');
 
+		INSERT INTO remote_connector_settings (
+			id,
+			user_id,
+			kind,
+			instance_id,
+			encrypted_shared_secret,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			'connector-a',
+			'user-aaa',
+			'home',
+			'default',
+			'encrypted-connector-secret',
+			'2026-07-05',
+			'2026-07-05'
+		);
+
 		INSERT INTO mcp_memories (id, user_id, subject, summary, details)
 		VALUES
 			('memory-a', 'user-aaa', 'Favorite color', 'Blue', 'Likes navy.'),
@@ -223,6 +242,16 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(accountExport.d1.password_resets.rows[0]).not.toHaveProperty(
 		'token_hash',
 	)
+	expect(accountExport.d1.remote_connector_settings.rows[0]).toEqual(
+		expect.objectContaining({
+			id: 'connector-a',
+			kind: 'home',
+			instance_id: 'default',
+		}),
+	)
+	expect(accountExport.d1.remote_connector_settings.rows[0]).not.toHaveProperty(
+		'encrypted_shared_secret',
+	)
 	expect(accountExport.d1.value_entries.rows).toEqual([
 		expect.objectContaining({ value: 'America/Denver' }),
 	])
@@ -235,6 +264,10 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(
 		accountExport.manifest.sections['d1.secret_entries']?.redactedColumns,
 	).toEqual(['encrypted_value', 'lookup_hash'])
+	expect(
+		accountExport.manifest.sections['d1.remote_connector_settings']
+			?.redactedColumns,
+	).toEqual(['encrypted_shared_secret'])
 })
 
 test('createAccountExport records partial-failure warnings and section pagination works', async () => {
