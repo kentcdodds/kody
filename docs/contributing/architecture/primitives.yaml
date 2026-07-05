@@ -328,15 +328,15 @@ primitives:
       - packages/worker/src/mcp/capabilities/storage/
 
   # --- Execution runtimes --------------------------------------------------
-  - id: codemode-execute
+  - id: capabilities-execute
     group: runtime
-    name: Codemode execute
+    name: Capabilities execute runtime
     summary:
       Sandboxed ESM module execution with the kody:runtime virtual module;
       per-request runtime isolation via AsyncLocalStorage.
     code:
       - packages/worker/src/mcp/execute-modules/
-      - packages/worker/src/mcp/run-codemode-registry.ts
+      - packages/worker/src/mcp/run-capabilities-registry.ts
     docs:
       - docs/contributing/architecture/data-storage.md
 
