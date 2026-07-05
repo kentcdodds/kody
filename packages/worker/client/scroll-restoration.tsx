@@ -11,6 +11,7 @@ import {
 const scrollPositionsSessionKey = 'kody:router-scroll-positions'
 const savedScrollPositions = new Map<string, ScrollPosition>()
 let positionsLoaded = false
+let restoreScrollRequestId = 0
 
 function isScrollPosition(value: unknown): value is ScrollPosition {
 	return (
@@ -81,7 +82,23 @@ function isRouterNavigationEvent(
 	)
 }
 
-function restoreWindowScroll(detail: RouterNavigationEventDetail) {
+function scheduleScrollRestoration(
+	applyScroll: () => void,
+	signal: AbortSignal,
+) {
+	const requestId = ++restoreScrollRequestId
+	const run = () => {
+		if (signal.aborted || requestId !== restoreScrollRequestId) return
+		applyScroll()
+	}
+	if (typeof window.requestAnimationFrame === 'function') {
+		window.requestAnimationFrame(run)
+		return
+	}
+	window.setTimeout(run, 0)
+}
+
+function applyWindowScroll(detail: RouterNavigationEventDetail) {
 	const key = getCurrentScrollRestorationKey()
 	const target = getScrollRestorationTarget({
 		historyAction: detail.historyAction,
@@ -116,6 +133,13 @@ function restoreWindowScroll(detail: RouterNavigationEventDetail) {
 	}
 }
 
+function restoreWindowScroll(
+	detail: RouterNavigationEventDetail,
+	signal: AbortSignal,
+) {
+	scheduleScrollRestoration(() => applyWindowScroll(detail), signal)
+}
+
 function handleNavigationStart(event: Event) {
 	if (isRouterNavigationEvent(event) && event.detail.historyAction === 'pop') {
 		return
@@ -139,7 +163,7 @@ export function ScrollRestoration(handle: Handle) {
 			navigationstart: handleNavigationStart,
 			navigationend(event: Event) {
 				if (!isRouterNavigationEvent(event)) return
-				restoreWindowScroll(event.detail)
+				restoreWindowScroll(event.detail, handle.signal)
 			},
 		})
 		addEventListeners(window, handle.signal, {

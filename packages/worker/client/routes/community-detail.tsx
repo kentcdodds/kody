@@ -345,7 +345,9 @@ export function CommunityDetailRoute(handle: Handle) {
 						) : null}
 
 						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Report this listing</h2>
+							<h2 id="report" mix={css(cardTitleCss)}>
+								Report this listing
+							</h2>
 							{loggedIn ? (
 								<>
 									<label mix={css(fieldCss)}>

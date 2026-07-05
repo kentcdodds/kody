@@ -106,24 +106,6 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 		.poll(() => page.evaluate(() => window.scrollY))
 		.toBeGreaterThan(0)
 
-	await page
-		.getByRole('heading', { name: 'Report this listing' })
-		.evaluate((heading) => {
-			heading.id = 'report-heading'
-		})
-	await page.evaluate(() => {
-		window.scrollTo(0, 0)
-		const link = document.createElement('a')
-		link.href = `${window.location.pathname}#report-heading`
-		link.textContent = 'Jump to report'
-		document.body.prepend(link)
-	})
-	await page.getByRole('link', { name: 'Jump to report' }).click()
-	await expect(page).toHaveURL(/#report-heading$/)
-	await expect
-		.poll(() => page.evaluate(() => window.scrollY))
-		.toBeGreaterThan(0)
-
 	await page.getByRole('link', { name: 'Community', exact: true }).click()
 	await expect(page).toHaveURL(/\/community$/)
 	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
@@ -132,6 +114,23 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,
 		),
 	).toBe(true)
+
+	await page.getByRole('link', { name: betaListing.name }).evaluate((link) => {
+		link.setAttribute('href', `${link.getAttribute('href')}#report`)
+	})
+	await page.getByRole('link', { name: betaListing.name }).click()
+	await expect(page).toHaveURL(
+		new RegExp(`/community/${betaListing.listingId}#report$`),
+	)
+	await expect(
+		page.getByRole('heading', { name: 'Report this listing' }),
+	).toBeVisible()
+	await expect
+		.poll(() => page.evaluate(() => window.scrollY))
+		.toBeGreaterThan(0)
+
+	await page.getByRole('link', { name: 'Community', exact: true }).click()
+	await expect(page).toHaveURL(/\/community$/)
 
 	await page
 		.getByPlaceholder('Search by name, description, or tags')

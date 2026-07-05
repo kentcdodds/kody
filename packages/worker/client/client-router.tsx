@@ -539,7 +539,7 @@ async function navigateWithRefreshForSamePath(
 	) {
 		await runNavigationWithLoader(new URL(window.location.href), {
 			historyAction: 'replace',
-			preventScrollReset: true,
+			preventScrollReset: options?.preventScrollReset ?? false,
 			skipPushState: true,
 			suppressStart: options?.suppressStart,
 		})
