@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { CAPABILITY_EMBEDDING_DIMENSIONS } from '#mcp/capabilities/capability-search.ts'
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
@@ -320,6 +321,16 @@ test('searchUnified hides admin capabilities from non-admins in Vectorize-backed
 	)
 	const env = {
 		SENTRY_ENVIRONMENT: 'production',
+		AI: {
+			async run() {
+				return {
+					data: [
+						Array.from({ length: CAPABILITY_EMBEDDING_DIMENSIONS }, () => 0.1),
+					],
+					shape: [1, CAPABILITY_EMBEDDING_DIMENSIONS],
+				}
+			},
+		},
 		CAPABILITY_VECTOR_INDEX: {
 			async query() {
 				return {
