@@ -7,7 +7,7 @@ import {
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
 import { prefetchFrame } from '#client/frame-prefetch.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { spacing } from '#client/styles/tokens.ts'
 import {
 	fieldCss,
 	fieldLabelCss,
