@@ -25,8 +25,6 @@ export const capabilityDomainDescriptionsByName =
 
 export const capabilityMap = staticRegistry.capabilityMap
 
-export const capabilityAliases = staticRegistry.capabilityAliases
-
 export const capabilitySpecs = staticRegistry.capabilitySpecs
 
 export const capabilityToolDescriptors =
