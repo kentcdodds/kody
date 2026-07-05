@@ -53,6 +53,81 @@ Deletion must cover these user-owned surfaces:
   `repo_sessions` are deleted through the REST client in
   `packages/worker/src/repo/artifacts.ts`.
 
+## Account export inventory
+
+Account export is implemented in `packages/worker/src/app/account-export.ts`. It
+mirrors the deletion inventory so portability and account migration cover the
+same user-owned storage surfaces. The D1 table list is shared with account
+deletion (`accountUserDataTargets`), and
+`packages/worker/src/app/account-export.node.test.ts` applies the live
+migrations to SQLite and fails if a `user_id` / `*_user_id` column is not
+covered by the export list. The hard invariant is the same as every storage
+path: callers pass the authenticated user's stable MCP `userId`, and every query
+or Durable Object lookup is scoped to that id.
+
+Exports are versioned JSON documents:
+
+- `manifest.schemaVersion` — currently `1`.
+- `manifest.generatedAt` — UTC timestamp.
+- `manifest.sections` — per-section counts, warnings, and redacted columns.
+- `manifest.security.secretValuesExported` — always `false`.
+- `d1` — user-scoped D1 rows grouped by table.
+- `durableObjects` — exported user-scoped Durable Object state where it is
+  durable and enumerable.
+- `oauthGrants` — OAuth grant metadata only.
+- `artifactRepos` — Artifacts repo pointers from `entity_sources`.
+- `kvKeys` — KV source/cache keys that belong to the user.
+
+Secret values are **never** exported. `secret_entries` rows are metadata-only:
+name, description, bucket, allowed hosts, allowed capabilities, allowed
+packages, and timestamps. The encrypted payload (`encrypted_value`) and lookup
+hash (`lookup_hash`) are omitted. The same redaction rule is applied to other
+credential-equivalent fields such as password hashes, password/email reset token
+hashes, package invocation token hashes, and email reply token hashes. The
+manifest states these redactions explicitly so a partial or intentionally
+redacted export is not mistaken for a complete secret backup.
+
+The browser route `GET /account/export.json` downloads a full JSON export for
+the signed-in user. The MCP capability domain `account` provides a
+migration-safe chunked interface:
+
+- `account_export_manifest` returns the manifest, counts, warnings, and chunking
+  instructions.
+- `account_export_section` pages through one section at a time. D1 rows are read
+  with `section: "d1_table"` and a table name. Durable storage buckets are read
+  with `section: "storage_runner"` and a `storage_id`, using the same
+  StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
+  storage export capability.
+
+Durable Object export behavior:
+
+- `StorageRunner` bucket contents are exported with paged entries. These buckets
+  hold application/job/service durable state and are the primary account
+  migration surface for Durable Object storage.
+- `JobManager` exposes scheduler alarm/debug state through an export RPC.
+- `RemoteConnectorSession` exposes persisted connector metadata and tool
+  descriptors through an export RPC.
+- `PackageServiceInstance` uses its status RPC as the stable persisted service
+  state summary.
+- `MCP`, `RepoSession`, and `PackageRealtimeSession` are documented exclusions:
+  MCP objects are SDK session-keyed and not globally enumerable; RepoSession is
+  an ephemeral editing workspace; PackageRealtimeSession is live websocket
+  state. Canonical repo-backed source and durable package app state are covered
+  by Artifacts pointers and StorageRunner buckets instead.
+
+Vectorize entries are intentionally excluded. Memory text and metadata, job
+metadata, and package projections are exported from D1; vectors are derived and
+should be rebuilt by reindexing after import.
+
+Cloudflare Artifacts repo contents are not inlined in the JSON export. D1 stores
+metadata/projections, while canonical package, job, and app source lives in the
+Artifacts repos referenced by `entity_sources.repo_id` and
+`repo_sessions.source_repo_id`. For account migration to a new Cloudflare
+account, first run `account_export_manifest`, page through export sections as
+needed, then separately fetch or clone every repo listed in `artifactRepos`
+using Artifacts access and recreate those repos in the destination account
+before importing D1 projections or republishing packages.
+
 ## D1 (`APP_DB`)
 
 Relational app data lives in D1.

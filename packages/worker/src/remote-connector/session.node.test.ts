@@ -117,6 +117,23 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		description: 'Local lighting automation.',
 		tools: [{ name: 'bond_shade_set_position' }],
 	})
+	await expect(
+		restored.session.rpcExportUserSession({
+			userId: 'user-123',
+			kind: 'lights',
+			instanceId: 'default',
+		}),
+	).resolves.toEqual({
+		persisted: {
+			connectorId: 'default',
+			connectorKind: 'lights',
+			description: 'Local lighting automation.',
+			connectedAt: '2026-04-26T05:00:00.000Z',
+			lastSeenAt: '2026-04-26T05:01:00.000Z',
+		},
+		tools: [{ name: 'bond_shade_set_position' }],
+		connected: true,
+	})
 
 	const disconnected = await createRemoteConnectorSession({
 		storedState: {

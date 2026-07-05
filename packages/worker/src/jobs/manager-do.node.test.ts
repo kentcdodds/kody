@@ -213,6 +213,29 @@ test('syncAlarm arms, clears, and logs scheduler state transitions', async () =>
 	})
 })
 
+test('exportUser returns the scheduler state for account export', async () => {
+	resetMocks()
+	const nextRunAt = '2026-04-20T18:30:00.000Z'
+	mockModule.getNextRunnableJob.mockResolvedValue({
+		id: 'job-123',
+		nextRunAt,
+	})
+	const state = createState({
+		currentAlarmAt: Date.parse(nextRunAt),
+	})
+	const manager = new JobManagerBase(state.state, {} as Env)
+
+	await expect(manager.exportUser({ userId: 'user-123' })).resolves.toEqual({
+		bindingAvailable: true,
+		status: 'armed',
+		storedUserId: 'user-123',
+		alarmScheduledFor: nextRunAt,
+		nextRunnableJobId: 'job-123',
+		nextRunnableRunAt: nextRunAt,
+		alarmInSync: true,
+	})
+})
+
 test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async () => {
 	resetMocks()
 	mockModule.runDueJobsForUser.mockResolvedValue({

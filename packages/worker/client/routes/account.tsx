@@ -312,6 +312,24 @@ export function AccountRoute(handle: Handle) {
 							</div>
 						</section>
 						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Your data</h2>
+							<p mix={css(descriptionCss)}>
+								Download a portable JSON export of your Kody account data for
+								backup or migration. Secret values are never included; secret
+								entries export metadata such as names, hosts, and allowlists
+								only.
+							</p>
+							<div>
+								<a
+									href="/account/export.json"
+									download="kody-account-export.json"
+									mix={css(primaryLinkCss)}
+								>
+									Download account export
+								</a>
+							</div>
+						</section>
+						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Integrations</h2>
 							<p mix={css(descriptionCss)}>
 								Review saved OAuth provider configurations and reconnect
