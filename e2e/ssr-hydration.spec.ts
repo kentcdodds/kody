@@ -80,9 +80,10 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 		),
 	).toBe(true)
 
-	await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+	await page.evaluate(() => window.scrollTo(0, 40))
 	const detailScrollY = await page.evaluate(() => window.scrollY)
 	expect(detailScrollY).toBeGreaterThan(0)
+	expect(detailScrollY).not.toBe(communityScrollY)
 	await page.goBack()
 	await expect(page).toHaveURL(/\/community$/)
 	await expect
@@ -105,6 +106,24 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 		new RegExp(`/community/${betaListing.listingId}$`),
 	)
 	await expect(page.getByText(betaListing.description)).toBeVisible()
+	await expect
+		.poll(() => page.evaluate(() => window.scrollY))
+		.toBeGreaterThan(0)
+
+	await page
+		.getByRole('heading', { name: 'Report this listing' })
+		.evaluate((heading) => {
+			heading.id = 'report-heading'
+		})
+	await page.evaluate(() => {
+		window.scrollTo(0, 0)
+		const link = document.createElement('a')
+		link.href = `${window.location.pathname}#report-heading`
+		link.textContent = 'Jump to report'
+		document.body.prepend(link)
+	})
+	await page.getByRole('link', { name: 'Jump to report' }).click()
+	await expect(page).toHaveURL(/#report-heading$/)
 	await expect
 		.poll(() => page.evaluate(() => window.scrollY))
 		.toBeGreaterThan(0)

@@ -79,10 +79,6 @@ function notify() {
 	routerEvents.dispatchEvent(new Event('navigate'))
 }
 
-function dispatchNavigationStart() {
-	routerEvents.dispatchEvent(new Event('navigationstart'))
-}
-
 function createNavigationEventDetail(
 	location: string,
 	options?: NavigationRunOptions,
@@ -93,6 +89,17 @@ function createNavigationEventDetail(
 			options?.historyAction ?? (options?.skipPushState ? 'replace' : 'push'),
 		preventScrollReset: options?.preventScrollReset ?? false,
 	}
+}
+
+function dispatchNavigationStart(options?: NavigationRunOptions) {
+	routerEvents.dispatchEvent(
+		new CustomEvent<RouterNavigationEventDetail>('navigationstart', {
+			detail: createNavigationEventDetail(
+				getCurrentPathWithSearchAndHash(),
+				options,
+			),
+		}),
+	)
 }
 
 function dispatchNavigationEnd(detail: RouterNavigationEventDetail) {
@@ -425,7 +432,7 @@ function commitImmediateNavigation(
 	navigationAbortController?.abort()
 	navigationAbortController = null
 	if (!options?.suppressStart) {
-		dispatchNavigationStart()
+		dispatchNavigationStart(options)
 	}
 	commitNavigation(nextPath)
 	dispatchNavigationEnd(createNavigationEventDetail(nextPath, options))
@@ -445,7 +452,7 @@ async function runNavigationWithLoader(
 	const { signal } = abortController
 
 	if (!options?.suppressStart) {
-		dispatchNavigationStart()
+		dispatchNavigationStart(options)
 	}
 
 	const nextPath = getPathWithSearchAndHashFromUrl(destination)
@@ -567,7 +574,9 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 	// One `navigationstart` covers the POST fetch and the follow-up loader run;
 	// `navigateWithRefreshForSamePath` / `navigateInternal` suppress a second
 	// start and own the matching `navigationend`.
-	dispatchNavigationStart()
+	dispatchNavigationStart({
+		preventScrollReset: details.preventScrollReset,
+	})
 
 	try {
 		const init: RequestInit = {
@@ -653,7 +662,7 @@ function handlePopState() {
 		// one and clobber the URL the browser already restored.
 		navigationAbortController?.abort()
 		navigationAbortController = null
-		dispatchNavigationStart()
+		dispatchNavigationStart({ historyAction: 'pop' })
 		notify()
 		dispatchNavigationEnd(
 			createNavigationEventDetail(getCurrentPathWithSearchAndHash(), {

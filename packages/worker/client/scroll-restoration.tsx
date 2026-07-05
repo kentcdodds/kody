@@ -116,6 +116,13 @@ function restoreWindowScroll(detail: RouterNavigationEventDetail) {
 	}
 }
 
+function handleNavigationStart(event: Event) {
+	if (isRouterNavigationEvent(event) && event.detail.historyAction === 'pop') {
+		return
+	}
+	saveWindowScrollPosition()
+}
+
 export function ScrollRestoration(handle: Handle) {
 	if (typeof document !== 'undefined') {
 		loadSavedScrollPositions()
@@ -129,13 +136,14 @@ export function ScrollRestoration(handle: Handle) {
 		}
 
 		addEventListeners(routerEvents, handle.signal, {
-			navigationstart: saveWindowScrollPosition,
+			navigationstart: handleNavigationStart,
 			navigationend(event: Event) {
 				if (!isRouterNavigationEvent(event)) return
 				restoreWindowScroll(event.detail)
 			},
 		})
 		addEventListeners(window, handle.signal, {
+			scroll: saveWindowScrollPosition,
 			pagehide() {
 				saveWindowScrollPosition()
 				persistSavedScrollPositions()
