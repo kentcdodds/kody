@@ -100,6 +100,45 @@ async function countRows(db: D1Database, sql: string, params: Array<unknown>) {
  */
 const runningServiceCountWindowMs = 24 * 60 * 60 * 1000
 
+/**
+ * Count distinct recently-running package services for a user. Enforcement
+ * points that start a specific service should pass `excludeService` so a
+ * stale 'running' row for that same service can never block its own
+ * restart (starting it again does not add a new running service).
+ */
+export async function countRunningPackageServices(input: {
+	db: D1Database
+	userId: string
+	excludeService?: { packageId: string; serviceName: string }
+	now?: Date
+}): Promise<number> {
+	const now = input.now ?? new Date()
+	const windowStart = new Date(
+		now.valueOf() - runningServiceCountWindowMs,
+	).toISOString()
+	const exclusion = input.excludeService
+		? `AND NOT (package_id = ? AND COALESCE(name, '') = ?)`
+		: ''
+	const params: Array<unknown> = [input.userId, windowStart]
+	if (input.excludeService) {
+		params.push(
+			input.excludeService.packageId,
+			input.excludeService.serviceName,
+		)
+	}
+	return await countRows(
+		input.db,
+		`SELECT COUNT(DISTINCT package_id || '/' || COALESCE(name, '')) AS count
+		FROM package_runtime_runs
+		WHERE user_id = ?
+			AND surface = 'service'
+			AND status = 'running'
+			AND started_at >= ?
+			${exclusion}`,
+		params,
+	)
+}
+
 async function countEntitlementUsage(input: {
 	db: D1Database
 	userId: string

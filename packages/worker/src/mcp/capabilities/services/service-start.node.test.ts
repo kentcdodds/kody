@@ -34,10 +34,10 @@ const { serviceStartCapability } = await import('./service-start.ts')
 
 function createEntitlementsTestDb(input: {
 	users?: Array<{ email: string; plan: string | null }>
-	packageServiceCount?: number
+	runningServices?: Array<{ packageId: string; name: string }>
 }) {
 	const users = input.users ?? []
-	const packageServiceCount = input.packageServiceCount ?? 0
+	const runningServices = input.runningServices ?? []
 
 	return {
 		prepare(query: string) {
@@ -50,7 +50,16 @@ function createEntitlementsTestDb(input: {
 								return (user ? { plan: user.plan } : null) as T | null
 							}
 							if (query.includes('FROM package_runtime_runs')) {
-								return { count: packageServiceCount } as T
+								const hasExclusion = query.includes('AND NOT (package_id = ?')
+								const excludedPackageId = hasExclusion ? params[2] : null
+								const excludedName = hasExclusion ? params[3] : null
+								const counted = runningServices.filter(
+									(service) =>
+										!hasExclusion ||
+										service.packageId !== excludedPackageId ||
+										service.name !== excludedName,
+								)
+								return { count: counted.length } as T
 							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
@@ -148,6 +157,13 @@ function mockServiceRpc(input: {
 	}))
 }
 
+function buildRunningServices(count: number) {
+	return Array.from({ length: count }, (_, index) => ({
+		packageId: `other-package-${index}`,
+		name: `service-${index}`,
+	}))
+}
+
 test('service_start denies persistent services for personal plan users', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -192,7 +208,7 @@ test('service_start denies bounded starts at the package_services limit', async 
 	const env = {
 		APP_DB: createEntitlementsTestDb({
 			users: [{ email, plan: 'personal' }],
-			packageServiceCount: limit,
+			runningServices: buildRunningServices(limit),
 		}),
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
@@ -231,7 +247,7 @@ test('service_start skips enforcement when the service is already running', asyn
 	const env = {
 		APP_DB: createEntitlementsTestDb({
 			users: [{ email, plan: 'personal' }],
-			packageServiceCount: limit,
+			runningServices: buildRunningServices(limit),
 		}),
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
@@ -263,6 +279,44 @@ test('service_start skips enforcement when the service is already running', asyn
 	expect(mockModule.listSavedPackageServices).not.toHaveBeenCalled()
 })
 
+test('service_start lets a stale running row for the same service restart at the limit', async () => {
+	const email = 'stale-restart@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.personal.maxPackageServices
+	if (limit === null) {
+		throw new Error('Expected a numeric personal package service limit.')
+	}
+	// The target service itself holds one of the 'running' telemetry rows
+	// (stale after a hard eviction); excluding it keeps the restart under
+	// the limit.
+	const env = {
+		APP_DB: createEntitlementsTestDb({
+			users: [{ email, plan: 'personal' }],
+			runningServices: [
+				...buildRunningServices(limit - 1),
+				{ packageId: 'package-123', name: 'realtime-supervisor' },
+			],
+		}),
+	} as Env
+	const callerContext = createPlanUserCallerContext({ userId, email })
+
+	mockModule.getSavedPackageById.mockResolvedValue(
+		createSavedPackage({ userId }),
+	)
+	mockDeclaredServices('bounded')
+	mockServiceRpc({ status: 'stopped' })
+
+	await expect(
+		serviceStartCapability.handler(
+			{ service_name: 'realtime-supervisor' },
+			{ env, callerContext },
+		),
+	).resolves.toMatchObject({
+		ok: true,
+		run_id: 'run-123',
+	})
+})
+
 test('service_start stays unlimited for users without a plan', async () => {
 	const email = 'legacy@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -273,7 +327,7 @@ test('service_start stays unlimited for users without a plan', async () => {
 	const env = {
 		APP_DB: createEntitlementsTestDb({
 			users: [{ email, plan: null }],
-			packageServiceCount: limit + 1,
+			runningServices: buildRunningServices(limit + 1),
 		}),
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })

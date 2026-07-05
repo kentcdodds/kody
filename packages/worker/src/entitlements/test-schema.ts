@@ -1,8 +1,8 @@
 /**
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
- * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at),
- * and 0048 (users.plan + entitlement_daily_counters).
+ * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at and
+ * users.plan), and 0048 (entitlement_daily_counters).
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db

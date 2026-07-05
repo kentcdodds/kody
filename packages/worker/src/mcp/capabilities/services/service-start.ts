@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import {
+	assertWithinEntitlement,
+	countRunningPackageServices,
+} from '#worker/entitlements/service.ts'
 import {
 	requirePackageServiceContext,
 	resolveDeclaredPackageService,
@@ -66,6 +69,18 @@ export const serviceStartCapability = defineDomainCapability(
 					userId: serviceContext.user.userId,
 					email: serviceContext.user.email,
 					resource: 'package_services',
+					// Exclude this service from the running count so a stale
+					// 'running' telemetry row for it can never block its own
+					// restart.
+					getCurrent: async () =>
+						await countRunningPackageServices({
+							db: ctx.env.APP_DB,
+							userId: serviceContext.user.userId,
+							excludeService: {
+								packageId: serviceContext.savedPackage.id,
+								serviceName: args.service_name,
+							},
+						}),
 				})
 			}
 			return await serviceContext.service.start()
