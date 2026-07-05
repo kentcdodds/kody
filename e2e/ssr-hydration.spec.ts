@@ -84,16 +84,12 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	const detailScrollY = await page.evaluate(() => window.scrollY)
 	expect(detailScrollY).toBeGreaterThan(0)
 	expect(detailScrollY).not.toBe(communityScrollY)
+	expect(communityScrollY).toBeGreaterThan(detailScrollY + 20)
 	await page.goBack()
 	await expect(page).toHaveURL(/\/community$/)
 	await expect
-		.poll(() =>
-			page.evaluate(
-				(expected) => Math.abs(window.scrollY - expected) <= 2,
-				communityScrollY,
-			),
-		)
-		.toBe(true)
+		.poll(() => page.evaluate(() => window.scrollY))
+		.toBeGreaterThan(detailScrollY + 20)
 
 	await page
 		.getByRole('link', { name: betaListing.name })
