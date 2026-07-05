@@ -103,7 +103,8 @@ await recordUsage(env, {
 Guarantees and rules:
 
 - `recordUsage` **never throws and never rejects.** Metering must not break the
-  path it observes. Failures are logged at debug level.
+  path it observes. Sink failures are logged at warn level; expected local-dev
+  degradation is logged at debug level.
 - It accepts any object with optional `USAGE_EVENTS` / `APP_DB` bindings
   (`UsageEnv`), so the full `Env` can be passed directly.
 - **Graceful degradation:** in local dev and tests where the Analytics Engine

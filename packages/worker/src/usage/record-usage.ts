@@ -83,13 +83,17 @@ export async function recordUsage(
 	env: UsageEnv,
 	event: UsageEvent,
 ): Promise<void> {
-	if (!event.userId) {
-		console.debug('usage-event-skipped', 'missing userId', event.eventType)
-		return
+	try {
+		if (!event.userId) {
+			console.debug('usage-event-skipped', 'missing userId', event.eventType)
+			return
+		}
+		const timestamp = event.timestamp ?? new Date().toISOString()
+		writeUsageDataPoint(env, event, timestamp)
+		await writeUsageRollup(env, event, timestamp)
+	} catch (error) {
+		console.warn('usage-event-record-failed', error)
 	}
-	const timestamp = event.timestamp ?? new Date().toISOString()
-	writeUsageDataPoint(env, event, timestamp)
-	await writeUsageRollup(env, event, timestamp)
 }
 
 function writeUsageDataPoint(
@@ -114,7 +118,7 @@ function writeUsageDataPoint(
 			doubles: [event.durationMs ?? 0, event.cpuMs ?? 0, event.bytes ?? 0],
 		})
 	} catch (error) {
-		console.debug('usage-event-analytics-failed', error)
+		console.warn('usage-event-analytics-failed', error)
 	}
 }
 
@@ -141,6 +145,6 @@ async function writeUsageRollup(
 			)
 			.run()
 	} catch (error) {
-		console.debug('usage-rollup-failed', error)
+		console.warn('usage-rollup-failed', error)
 	}
 }
