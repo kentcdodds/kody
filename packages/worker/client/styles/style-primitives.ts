@@ -96,6 +96,13 @@ export const stackedPageCss = {
 	gap: spacing.lg,
 }
 
+export const layoutMaxWidths = {
+	narrow: '48rem',
+	content: '64rem',
+	extended: '72rem',
+	wide: '96rem',
+} as const
+
 export const pageHeaderCss = {
 	display: 'grid',
 	gap: spacing.xs,

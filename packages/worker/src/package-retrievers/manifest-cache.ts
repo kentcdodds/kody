@@ -475,6 +475,51 @@ export async function removePackageRetrieverManifestCacheEntries(input: {
 	)
 }
 
+export async function deleteAllPackageRetrieverCacheEntriesForUser(input: {
+	env: Env
+	userId: string
+	packageIds: ReadonlyArray<string>
+}) {
+	if (!hasRetrieverKv(input.env)) return 0
+	const keys = new Set<string>()
+	for (const packageId of input.packageIds) {
+		for (const key of await listManifestCacheKeys({
+			env: input.env,
+			userId: input.userId,
+			packageId,
+		})) {
+			keys.add(key)
+		}
+		for (const scope of [
+			'search',
+			'context',
+		] satisfies Array<PackageRetrieverScope>) {
+			for (const key of await listScopeEntryKeys({
+				env: input.env,
+				userId: input.userId,
+				scope,
+				packageId,
+			})) {
+				keys.add(key)
+			}
+		}
+	}
+	for (const scope of [
+		'search',
+		'context',
+	] satisfies Array<PackageRetrieverScope>) {
+		keys.add(
+			buildPackageRetrieverScopeIndexKey({
+				userId: input.userId,
+				scope,
+			}),
+		)
+	}
+	const kv = getRetrieverKv(input.env)
+	await Promise.all(Array.from(keys).map(async (key) => await kv.delete(key)))
+	return keys.size
+}
+
 async function writeLegacyScopeIndex(input: {
 	env: Env
 	userId: string

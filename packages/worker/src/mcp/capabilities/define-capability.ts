@@ -15,6 +15,7 @@ import {
 	createCapabilityTypeName,
 	createSchemaTypeDefinition,
 } from './schema-type-definitions.ts'
+import { assertCallerCanAccessCapability } from './access-control.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
 // consumed by the registry and sandbox search surface.
@@ -40,6 +41,12 @@ export function defineCapability<
 		readOnly: definition.readOnly ?? false,
 		idempotent: definition.idempotent ?? false,
 		destructive: definition.destructive ?? false,
+		...(definition.requiredRole
+			? { requiredRole: definition.requiredRole }
+			: {}),
+		...(definition.requiredPermission
+			? { requiredPermission: definition.requiredPermission }
+			: {}),
 		inputSchema,
 		...(outputSchema ? { outputSchema } : {}),
 		inputTypeDefinition: createSchemaTypeDefinition({
@@ -57,6 +64,7 @@ export function defineCapability<
 		async handler(args, ctx) {
 			const startedAt = performance.now()
 			const { baseUrl, hasUser } = callerContextFields(ctx.callerContext)
+			assertCallerCanAccessCapability(ctx.callerContext, definition)
 
 			let parsedArgs: InferCapabilitySchema<TInputSchema>
 			try {

@@ -50,7 +50,9 @@ Quick notes for getting a local kody environment running.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
-  Vectorize plus Workers AI; see `docs/contributing/environment-variables.md`.
+  Vectorize plus the Workers AI `@cf/baai/bge-small-en-v1.5` embedding model
+  through the `AI` binding, optionally routed through AI Gateway; see
+  `docs/contributing/environment-variables.md`.
 - Add new mock API servers by following `docs/contributing/mock-api-servers.md`.
 - If you only need the client bundle or worker, use:
   - `npm run dev:client`

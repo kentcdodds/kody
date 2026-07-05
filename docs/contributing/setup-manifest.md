@@ -26,7 +26,12 @@ This project uses the following resources:
     `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
     (same for preview). **Dimensions must match** the embedding model in
     `packages/worker/src/mcp/capabilities/capability-search.ts`
-    (`@cf/baai/bge-small-en-v1.5`).
+    (`@cf/baai/bge-small-en-v1.5`, 384 dimensions, `cls` pooling).
+- Workers AI binding for semantic search embeddings
+  - `binding`: `AI`
+  - Production and preview route embedding calls through this binding. When
+    `AI_GATEWAY_ID` is configured, calls are sent through AI Gateway via the
+    Workers AI binding options.
 
 The checked-in
 [`packages/worker/wrangler.jsonc`](../../packages/worker/wrangler.jsonc)
@@ -96,10 +101,13 @@ automatically:
 - `ARTIFACTS_NAMESPACE` (optional Worker var; defaults to `default`. Set per
   Wrangler environment in `packages/worker/wrangler.jsonc` — e.g. `production`
   and `preview` — so Artifacts repos are partitioned by deploy environment.)
+- `AI_GATEWAY_ID` (optional Worker secret; routes Workers AI embedding calls
+  through the configured Cloudflare AI Gateway when set)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
-  `POST /__maintenance/reindex-capabilities` to refresh built-in capability
-  embeddings in Vectorize. Saved package projections refresh when packages are
-  saved or published.)
+  `POST /__maintenance/reindex-capabilities` to refresh all capability-search
+  vectors in Vectorize: built-in capabilities, memories, jobs, and saved
+  packages. Saved package projections also refresh when packages are saved or
+  published.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.
@@ -116,9 +124,10 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
   deploy as the canonical public app origin, the password-reset email sender
   hostname, and written into the generated Worker `vars` config before deploy)
-- `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
-- `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
-  inference)
+- `AI_GATEWAY_ID` (optional for production deploys; enables AI Gateway routing
+  for Workers AI embeddings)
+- `AI_GATEWAY_ID_PREVIEW` (optional for preview deploys; enables AI Gateway
+  routing for Workers AI embeddings)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
@@ -155,7 +164,8 @@ How to get/set each value:
     binding name.
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
-    gateway ID.
+    gateway ID. The Worker uses this for Workers AI embedding calls when set;
+    leave unset only if direct Workers AI calls are preferred.
   - Store that value as the production GitHub Actions secret.
 - `AI_GATEWAY_ID_PREVIEW`
   - Create a separate Cloudflare AI Gateway for previews and copy its gateway
@@ -179,7 +189,10 @@ How to get/set each value:
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to
     `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` to
-    refresh built-in capability embeddings.
+    refresh built-in capability, memory, job, and saved-package embeddings. Run
+    the same POST manually after changing the embedding model, pooling, or
+    Vectorize index dimensions so existing rows are rebuilt with compatible
+    vectors.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

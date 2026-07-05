@@ -694,6 +694,25 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		})
 	}
 
+	private async handlePurgeRequest(input: {
+		binding: PackageServiceBindingState
+	}) {
+		try {
+			await this.handleStopRequest(input)
+		} catch {
+			// Continue with hard deletion even if package/source lookup fails.
+		}
+		this.stateSnapshot = createInitialPackageServiceState()
+		this.activeRunPromise = null
+		await this.ctx.storage.deleteAlarm().catch(() => {
+			// Best effort cleanup before deleteAll.
+		})
+		await this.ctx.storage.deleteAll()
+		return Response.json({
+			ok: true,
+		})
+	}
+
 	async fetch(request: Request) {
 		const url = new URL(request.url)
 		const body = (await request.json().catch(() => null)) as {
@@ -711,6 +730,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 		if (request.method === 'POST' && url.pathname.endsWith('/stop')) {
 			return await this.handleStopRequest({ binding })
+		}
+		if (request.method === 'POST' && url.pathname.endsWith('/purge')) {
+			return await this.handlePurgeRequest({ binding })
 		}
 		return new Response('Not found', { status: 404 })
 	}
@@ -818,6 +840,9 @@ export function packageServiceRpc(input: {
 		},
 		async stop() {
 			return await callService<{ ok: true }>('/service/stop')
+		},
+		async purge() {
+			return await callService<{ ok: true }>('/service/purge')
 		},
 	}
 }

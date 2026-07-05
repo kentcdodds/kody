@@ -23,6 +23,7 @@ import {
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	insetCardCss,
+	layoutMaxWidths,
 	mutedLinkCss,
 	stackedPageCss,
 	textareaCss,
@@ -413,7 +414,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 const pageCss = {
 	...stackedPageCss,
-	maxWidth: '48rem',
+	maxWidth: layoutMaxWidths.narrow,
 	margin: '0 auto',
 	width: '100%',
 }

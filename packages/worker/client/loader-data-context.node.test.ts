@@ -4,14 +4,12 @@ import {
 	normalizeRouterHref,
 } from './loader-data-context.tsx'
 
-test('normalizeRouterHref keeps pathname, search, and hash', () => {
+test('loader href helpers normalize URLs and compare pathname and search', () => {
 	expect(normalizeRouterHref('/community?q=beta')).toBe('/community?q=beta')
 	expect(normalizeRouterHref('https://kody.local/community?q=beta#top')).toBe(
 		'/community?q=beta#top',
 	)
-})
 
-test('hrefMatchesSsrUrl compares normalized pathname and search', () => {
 	expect(hrefMatchesSsrUrl('/community?q=beta', '/community?q=beta')).toBe(true)
 	expect(
 		hrefMatchesSsrUrl(

@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
@@ -17,6 +19,45 @@ import {
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+
+test('buildCodemodeFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
+	const adminOnlyCapability = defineDomainCapability('admin', {
+		name: 'admin_user_list',
+		description: 'List admin user account metadata',
+		readOnly: true,
+		idempotent: true,
+		requiredRole: 'admin',
+		inputSchema: {
+			type: 'object',
+			properties: {},
+		},
+		handler: async () => ({ ok: true }),
+	})
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'admin',
+			description: 'Admin capabilities',
+			capabilities: [adminOnlyCapability],
+		},
+	])
+	const tools = await buildCodemodeFns(
+		{} as Env,
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'user',
+				roles: ['user'],
+			},
+		}),
+		{ capabilityRegistry: registry },
+	)
+
+	await expect(tools.admin_user_list({})).rejects.toThrow(
+		'MCP user lacks required role "admin" for capability "admin_user_list".',
+	)
+})
 
 test('package workflow tools create instances from package context and honor caller overrides in runModuleWithRegistry', async () => {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []

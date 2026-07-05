@@ -36,6 +36,10 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 	}) => Promise<RepoSessionDiscardResult>
+	purgeSession: (payload: {
+		sessionId: string
+		userId: string
+	}) => Promise<{ ok: true; sessionId: string }>
 	cleanupSessionBranch: (payload: {
 		sessionId: string
 		userId: string

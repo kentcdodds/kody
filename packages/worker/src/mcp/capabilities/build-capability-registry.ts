@@ -93,6 +93,12 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 					readOnly: capability.readOnly,
 					idempotent: capability.idempotent,
 					destructive: capability.destructive,
+					...(capability.requiredRole
+						? { requiredRole: capability.requiredRole }
+						: {}),
+					...(capability.requiredPermission
+						? { requiredPermission: capability.requiredPermission }
+						: {}),
 					inputFields: getSchemaPropertyNames(capability.inputSchema),
 					requiredInputFields: getSchemaRequiredFields(capability.inputSchema),
 					outputFields: capability.outputSchema

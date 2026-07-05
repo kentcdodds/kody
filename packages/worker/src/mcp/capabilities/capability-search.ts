@@ -1,6 +1,17 @@
 import { type CapabilitySpec } from './types.ts'
 
-type CapabilityVectorizeEnv = { CAPABILITY_VECTOR_INDEX?: VectorizeIndex }
+type CapabilityVectorizeEnv = {
+	AI?: Ai
+	AI_GATEWAY_ID?: string
+	CAPABILITY_VECTOR_INDEX?: VectorizeIndex
+	SENTRY_ENVIRONMENT?: string
+	WRANGLER_IS_LOCAL_DEV?: string
+}
+
+type WorkersAiEmbeddingResponse = {
+	data?: unknown
+	shape?: unknown
+}
 
 export function getCapabilityVectorIndex(env: Env): VectorizeIndex | undefined {
 	return (env as unknown as CapabilityVectorizeEnv).CAPABILITY_VECTOR_INDEX
@@ -8,6 +19,7 @@ export function getCapabilityVectorIndex(env: Env): VectorizeIndex | undefined {
 
 /** Must match Vectorize index dimensions for production indexes. */
 export const CAPABILITY_EMBEDDING_DIMENSIONS = 384
+export const CAPABILITY_EMBEDDING_MODEL = '@cf/baai/bge-small-en-v1.5'
 
 export const CAPABILITY_SEARCH_RRF_K = 60
 
@@ -193,9 +205,80 @@ export async function embedTextsForVectorize(
 	env: Env,
 	texts: ReadonlyArray<string>,
 ): Promise<Array<Array<number>>> {
-	void env
 	if (texts.length === 0) return []
-	return texts.map((text) => deterministicEmbedding(text))
+
+	const runtime = env as unknown as CapabilityVectorizeEnv
+	if (!runtime.AI) {
+		if (runtime.SENTRY_ENVIRONMENT !== 'production') {
+			return texts.map((text) => deterministicEmbedding(text))
+		}
+		throw new Error(
+			'AI binding is required for capability embeddings in production.',
+		)
+	}
+
+	const options =
+		runtime.AI_GATEWAY_ID && runtime.AI_GATEWAY_ID.trim().length > 0
+			? {
+					gateway: {
+						id: runtime.AI_GATEWAY_ID.trim(),
+					},
+				}
+			: undefined
+	const response = (await runtime.AI.run(
+		CAPABILITY_EMBEDDING_MODEL,
+		{
+			text: [...texts],
+			pooling: 'cls',
+		},
+		options,
+	)) as WorkersAiEmbeddingResponse
+
+	return parseWorkersAiEmbeddingResponse(response, texts.length)
+}
+
+function parseWorkersAiEmbeddingResponse(
+	response: WorkersAiEmbeddingResponse,
+	expectedRows: number,
+): Array<Array<number>> {
+	if (!Array.isArray(response.data)) {
+		throw new Error('Workers AI embedding response did not include data rows.')
+	}
+	if (response.data.length !== expectedRows) {
+		throw new Error(
+			`Workers AI embedding response row count mismatch: expected ${expectedRows}, received ${response.data.length}.`,
+		)
+	}
+	if (Array.isArray(response.shape)) {
+		const [rows, dimensions] = response.shape
+		if (
+			rows !== expectedRows ||
+			dimensions !== CAPABILITY_EMBEDDING_DIMENSIONS
+		) {
+			throw new Error(
+				`Workers AI embedding response shape mismatch: expected [${expectedRows}, ${CAPABILITY_EMBEDDING_DIMENSIONS}], received ${JSON.stringify(response.shape)}.`,
+			)
+		}
+	}
+
+	return response.data.map((row, rowIndex) => {
+		if (!Array.isArray(row)) {
+			throw new Error(`Workers AI embedding row ${rowIndex} is not an array.`)
+		}
+		if (row.length !== CAPABILITY_EMBEDDING_DIMENSIONS) {
+			throw new Error(
+				`Workers AI embedding row ${rowIndex} dimension mismatch: expected ${CAPABILITY_EMBEDDING_DIMENSIONS}, received ${row.length}.`,
+			)
+		}
+		return row.map((value, columnIndex) => {
+			if (typeof value !== 'number' || !Number.isFinite(value)) {
+				throw new Error(
+					`Workers AI embedding value at row ${rowIndex}, column ${columnIndex} is not a finite number.`,
+				)
+			}
+			return value
+		})
+	})
 }
 
 export async function searchCapabilities(input: {

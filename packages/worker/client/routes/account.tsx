@@ -12,6 +12,7 @@ import {
 	fieldLabelCss,
 	getPrimaryButtonCss,
 	inputCss,
+	layoutMaxWidths,
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
@@ -197,7 +198,7 @@ export function AccountRoute(handle: Handle) {
 		return (
 			<section
 				mix={css({
-					maxWidth: '64rem',
+					maxWidth: layoutMaxWidths.content,
 					margin: '0 auto',
 					display: 'grid',
 					gap: spacing.xl,

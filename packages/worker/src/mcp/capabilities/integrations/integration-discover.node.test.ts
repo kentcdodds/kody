@@ -151,24 +151,21 @@ test('integration_discover surfaces 404 with integration_registry_search hint', 
 	)
 })
 
-test('integration_discover rejects oversized response bodies', async () => {
+test('integration_discover rejects oversized response bodies before or while reading', async () => {
 	const url = buildIntegrationDiscoverUrlForTest('linear.app')
 	const oversizedBody = JSON.stringify({
 		...linearDiscoverFixture,
 		padding: 'x'.repeat(500_001),
 	})
-	using _server = createMswNodeServer([
+	using oversizedServer = createMswNodeServer([
 		http.get(url, () => new HttpResponse(oversizedBody)),
 	])
 
 	await expect(
 		integrationDiscoverCapability.handler({ domain: 'linear.app' }, ctx),
 	).rejects.toThrow(/response exceeds 500000 bytes/)
-})
 
-test('integration_discover rejects Content-Length above the cap before reading', async () => {
-	const url = buildIntegrationDiscoverUrlForTest('linear.app')
-	using _server = createMswNodeServer([
+	using contentLengthServer = createMswNodeServer([
 		http.get(
 			url,
 			() =>

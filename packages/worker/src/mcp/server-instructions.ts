@@ -1,8 +1,12 @@
-import { builtinDomains } from '#mcp/capabilities/builtin-domains.ts'
+import { type CapabilityDomainMetadata } from '#mcp/capabilities/types.ts'
 
-const domainInstructions = builtinDomains
-	.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
-	.join('\n')
+function formatDomainInstructions(
+	domains: ReadonlyArray<CapabilityDomainMetadata>,
+) {
+	return domains
+		.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
+		.join('\n')
+}
 
 const maxRemoteConnectorDescriptionChars = 240
 
@@ -41,9 +45,11 @@ export const conversationIdGuidance =
 
 export function buildBaseMcpServerInstructions(
 	input: {
+		domains?: ReadonlyArray<CapabilityDomainMetadata>
 		remoteConnectors?: ReadonlyArray<RemoteConnectorInstructionSummary>
 	} = {},
 ): string {
+	const domainInstructions = formatDomainInstructions(input.domains ?? [])
 	return `
 End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use
@@ -108,12 +114,14 @@ export function buildMcpServerInstructions(
 		| undefined
 		| {
 				userOverlay?: string | null | undefined
+				domains?: ReadonlyArray<CapabilityDomainMetadata>
 				remoteConnectors?: ReadonlyArray<RemoteConnectorInstructionSummary>
 		  },
 ): string {
 	const normalizedInput =
 		typeof input === 'object' && input !== null ? input : { userOverlay: input }
 	const base = buildBaseMcpServerInstructions({
+		domains: normalizedInput.domains,
 		remoteConnectors: normalizedInput.remoteConnectors,
 	})
 	const userOverlay = normalizedInput.userOverlay

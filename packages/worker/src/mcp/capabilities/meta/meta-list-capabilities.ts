@@ -71,6 +71,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 		inputSchema: z.object({
 			domain: z
 				.enum([
+					capabilityDomainNames.admin,
 					capabilityDomainNames.apps,
 					capabilityDomainNames.community,
 					capabilityDomainNames.coding,

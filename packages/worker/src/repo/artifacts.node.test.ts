@@ -63,11 +63,6 @@ test('artifacts REST client scopes API paths to configured or stored namespaces'
 	})
 	expect(bindingFetch).toHaveBeenCalledTimes(1)
 	bindingFetch.mockRestore()
-
-	expect(getArtifactsNamespace({} as Env)).toBe('default')
-	expect(
-		getArtifactsNamespace({ ARTIFACTS_NAMESPACE: ' preview ' } as Env),
-	).toBe('preview')
 })
 
 test('artifacts REST client supports get, create, token, and delete operations', async () => {
@@ -351,8 +346,13 @@ test('ensureArtifactRepoReady handles concurrent create conflicts', async () => 
 	expect(genericConflictFetchMock).toHaveBeenCalledTimes(2)
 })
 
-test('source repo HEAD lookup does not recreate missing artifact repos', async () => {
-	const fetchMock = vi
+test('artifacts REST client error paths and missing source repos', async () => {
+	expect(getArtifactsNamespace({} as Env)).toBe('default')
+	expect(
+		getArtifactsNamespace({ ARTIFACTS_NAMESPACE: ' preview ' } as Env),
+	).toBe('preview')
+
+	const missingRepoFetch = vi
 		.spyOn(globalThis, 'fetch')
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
@@ -386,10 +386,9 @@ test('source repo HEAD lookup does not recreate missing artifact repos', async (
 		branch: 'main',
 		commit: null,
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(2)
-})
+	expect(missingRepoFetch).toHaveBeenCalledTimes(2)
+	missingRepoFetch.mockRestore()
 
-test('artifacts REST client uses fallback API error text when envelope errors are missing', async () => {
 	vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 		new Response(
 			JSON.stringify({
@@ -403,22 +402,12 @@ test('artifacts REST client uses fallback API error text when envelope errors ar
 			},
 		),
 	)
-
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-
-	const binding = getArtifactsBinding(env)
-
-	await expect(binding.get('repo-1')).rejects.toThrow(
+	await expect(getArtifactsBinding(env).get('repo-1')).rejects.toThrow(
 		/Artifacts API request failed \(500\)/,
 	)
-})
+	vi.mocked(globalThis.fetch).mockRestore()
 
-test('artifacts REST client rejects tokens without parseable expiry timestamps', async () => {
-	const fetchMock = vi
+	const invalidTokenFetch = vi
 		.spyOn(globalThis, 'fetch')
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
@@ -447,17 +436,8 @@ test('artifacts REST client rejects tokens without parseable expiry timestamps',
 			}
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
-
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-
-	const binding = getArtifactsBinding(env)
-
-	await expect(binding.create('repo-1')).rejects.toThrow(
+	await expect(getArtifactsBinding(env).create('repo-1')).rejects.toThrow(
 		/parseable expires timestamp/,
 	)
-	expect(fetchMock).toHaveBeenCalledTimes(1)
+	expect(invalidTokenFetch).toHaveBeenCalledTimes(1)
 })

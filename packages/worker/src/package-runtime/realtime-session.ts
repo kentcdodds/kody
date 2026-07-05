@@ -399,6 +399,21 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		await this.ctx.storage.put(sessionStateStorageKey, this.stateSnapshot)
 	}
 
+	private async purgeSessionState() {
+		for (const socket of this.ctx.getWebSockets()) {
+			try {
+				socket.close(1000, 'account-deleted')
+			} catch {
+				// Ignore sockets that are already closing.
+			}
+		}
+		this.stateSnapshot = createInitialState()
+		this.cachedAppWorkerKey = null
+		this.cachedAppWorkerKeyLookup = null
+		this.cachedAppWorkerPromise = null
+		await this.ctx.storage.deleteAll()
+	}
+
 	private async initializeBinding(binding: PackageRealtimeBindingState) {
 		if (!this.stateSnapshot.binding) {
 			this.stateSnapshot.binding = binding
@@ -749,6 +764,15 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			return Response.json({ ok: true })
 		}
 
+		if (request.method === 'POST' && url.pathname.endsWith('/purge')) {
+			const body = (await request.json()) as {
+				binding: PackageRealtimeBindingState
+			}
+			await this.initializeBinding(body.binding)
+			await this.purgeSessionState()
+			return Response.json({ ok: true })
+		}
+
 		return new Response('Not found', { status: 404 })
 	}
 
@@ -976,6 +1000,20 @@ export function packageRealtimeSessionRpc(input: {
 				}),
 			)
 			return await response.json()
+		},
+		async purge() {
+			const response = await stub.fetch(
+				new Request('https://package-realtime.invalid/session/purge', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						binding,
+					}),
+				}),
+			)
+			return (await response.json()) as { ok: true }
 		},
 	}
 }

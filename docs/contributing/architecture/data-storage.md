@@ -1,6 +1,6 @@
 # Data storage
 
-This project uses three Cloudflare storage systems for different purposes.
+This project uses several Cloudflare storage systems for different purposes.
 
 ## Per-user isolation invariant
 
@@ -8,10 +8,50 @@ Kody is multi-user with strict per-user isolation. Every storage layer described
 below is scoped by `user_id` (D1 columns, Vectorize metadata, KV key prefixes,
 Durable Object names) and every read/write path takes a `userId` argument. Two
 users with the same logical identifier (for example the same `kind`/`instanceId`
-pair on a remote connector, or the same `sessionId` on an agent turn) land on
+pair on a remote connector, the same package id, or the same storage id) land on
 different durable objects and different rows. Any new persistence layer added to
 the project must follow the same convention; user-scoped tests should exercise
 both the "happy" path and a cross-user denial path.
+
+## Account deletion inventory
+
+Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
+and is intentionally inventory driven. The operation first enumerates user-owned
+identifiers while D1 rows still exist, then best-effort deletes out-of-band
+stores, then deletes or clears D1 rows, revokes OAuth grants, and finally
+deletes the `users` row. Each step records deleted counts, updated counts for
+cleared references, and warnings so the HTTP response states what was removed
+and what needs operator attention. Re-running the operation is safe: missing
+rows, missing KV keys, missing vectors, deleted Artifacts repos, and
+already-cleared Durable Objects are treated as successful no-ops or warning-only
+failures.
+
+Deletion must cover these user-owned surfaces:
+
+- **D1:** every live table with `user_id` / `*_user_id` ownership columns, plus
+  transitive children (`secret_entries`, `value_entries`, `email_attachments`)
+  and listing children for community-owned listings. The guardrail test in
+  `packages/worker/src/app/account-deletion.node.test.ts` applies the live
+  migrations to SQLite and fails if a user-owned schema column is not
+  represented in the deletion target list, or if the deletion target list
+  references a stale column.
+- **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
+  `RemoteConnectorSession`, `PackageRealtimeSession`, and
+  `PackageServiceInstance` are purged through account-deletion RPCs after their
+  D1 identifiers are collected. `MCP` objects are session-keyed by the MCP SDK
+  rather than user-keyed and are not globally enumerable; account deletion
+  revokes OAuth grants/tokens so those sessions cannot continue making
+  authorized user requests.
+- **Vectorize:** memory, job, and saved-package vector ids are derived from D1
+  rows and removed with `deleteByIds`.
+- **KV:** published bundle artifact keys, source/manifest snapshot keys,
+  community listing snapshots, and per-user package retriever cache/index keys
+  in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
+  OAuth token/grant KV is owned by the OAuth provider and is handled through
+  provider grant revocation rather than app-level key scans.
+- **Cloudflare Artifacts:** source repos referenced by `entity_sources` and
+  `repo_sessions` are deleted through the REST client in
+  `packages/worker/src/repo/artifacts.ts`.
 
 ## D1 (`APP_DB`)
 
@@ -38,16 +78,22 @@ App access pattern:
   `remix/data-table` (including `findOne`, `create`, `update`, `deleteMany`, and
   `count`)
 
-## KV (`OAUTH_KV`)
+## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
-OAuth provider state is stored in KV through the
-`@cloudflare/workers-oauth-provider` integration.
+OAuth provider state is stored in `OAUTH_KV` through the
+`@cloudflare/workers-oauth-provider` integration. Published package/job source
+snapshots, bundle artifacts, package retriever caches, and community listing
+snapshots are stored in `BUNDLE_ARTIFACTS_KV`.
 
-- Binding is configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
+- Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
-  checked-in config)
-- This supports OAuth client and token flows without custom storage code in the
-  app handlers
+  checked-in config).
+- `OAUTH_KV` supports OAuth client and token flows without custom storage code
+  in the app handlers; account deletion revokes all provider grants for the
+  user.
+- `BUNDLE_ARTIFACTS_KV` keys are deleted from account deletion using D1-derived
+  source ids, published commits, bundle artifact rows, community listing ids,
+  and package ids.
 
 ## Durable Objects (`MCP_OBJECT`)
 
@@ -88,24 +134,23 @@ that two different users always resolve to two different object ids:
   (`packages/worker/src/jobs/manager-client.ts`).
 - `StorageRunner` — `idFromName(JSON.stringify([userId, storageId]))`
   (`packages/worker/src/storage-runner.ts`).
+- `RepoSession` — keyed by `repo_sessions.id`; every RPC validates the D1
+  session row's `user_id` before touching the workspace. Account deletion
+  enumerates the user's session ids before deleting D1 rows and purges each DO.
 - `PackageRealtimeSession` and `PackageServiceInstance` — keyed by
   `(userId, packageId, ...)` via the helpers in
-  `packages/worker/src/package-runtime/`.
+  `packages/worker/src/package-runtime/`. Account deletion enumerates app
+  packages and observed service instances, closes live sessions/services, clears
+  alarms, and deletes DO storage.
 - `RemoteConnectorSession` —
   `userScopedConnectorSessionKey(userId, kind, instanceId)`. Connectors must
   connect through the username-scoped ingress URL
   `/@{username}/connectors/{kind}/{instanceId}`. The DO carries the ingress user
   id forward via headers + websocket attachment and verifies the shared secret
-  against that user's row only.
-- `AgentTurnRunner` — `idFromName(JSON.stringify([userId, sessionId]))`. The
-  runner DO also requires every request to carry an `X-Kody-User-Id` header,
-  persists `ownerUserId` on first contact, and rejects mismatched callers with
-  HTTP 403.
-
-The `MCP` and `ChatAgent` Durable Objects are addressed by request
-session/thread id rather than user id; ownership is enforced at the request
-boundary by validating the authenticated user against the `McpCallerContext` /
-`chat_threads` row before routing.
+  against that user's row only. The `MCP` Durable Object is addressed by MCP
+  session id rather than user id; ownership is enforced at the request boundary
+  by validating the authenticated user against the `McpCallerContext` on every
+  request.
 
 ## Per-user runtime context (no shared `globalThis`)
 
@@ -137,9 +182,14 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 
 - `APP_DB` (D1)
 - `OAUTH_KV` (KV)
+- `BUNDLE_ARTIFACTS_KV` (KV)
 - `MCP_OBJECT` (Durable Objects)
+- `REMOTE_CONNECTOR_SESSION` (Durable Objects)
 - `JOB_MANAGER` (Durable Objects)
 - `STORAGE_RUNNER` (Durable Objects)
+- `REPO_SESSION` (Durable Objects)
+- `PACKAGE_REALTIME_SESSION` (Durable Objects)
+- `PACKAGE_SERVICE_INSTANCE` (Durable Objects)
 - `ASSETS` (static assets bucket)
 
 ## Repo-backed source and Artifacts
