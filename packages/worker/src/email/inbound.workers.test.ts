@@ -18,6 +18,43 @@ import {
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+
+async function seedVerifiedAccount(input: {
+	db: D1Database
+	email: string
+	username: string
+}) {
+	await input.db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS users (
+				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+				username TEXT NOT NULL UNIQUE,
+				email TEXT NOT NULL UNIQUE,
+				password_hash TEXT NOT NULL,
+				email_verified_at TEXT,
+				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+			)`,
+		)
+		.run()
+	await input.db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at)
+			 VALUES (?, ?, ?, ?)
+			 ON CONFLICT(email) DO UPDATE SET
+			   username = excluded.username,
+			   email_verified_at = excluded.email_verified_at,
+			   updated_at = CURRENT_TIMESTAMP`,
+		)
+		.bind(
+			input.username,
+			input.email,
+			'test-password-hash',
+			new Date().toISOString(),
+		)
+		.run()
+}
 
 function createForwardableEmailMessage(input: {
 	from: string
@@ -304,7 +341,8 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 
 test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `email-subscription-user-${crypto.randomUUID()}`
+	const accountEmail = `email-subscription-user-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
 	const address = requireNormalizedEmailAddress(
 		`package-inbox-${crypto.randomUUID()}@example.com`,
 	)
@@ -315,6 +353,11 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 	const replyFrom = `package-reply-${crypto.randomUUID()}@example.com`
 
 	const db = env.APP_DB
+	await seedVerifiedAccount({
+		db,
+		email: accountEmail,
+		username: `email-subscription-${crypto.randomUUID()}`,
+	})
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS saved_packages (

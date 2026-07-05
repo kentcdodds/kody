@@ -17,6 +17,7 @@ import {
 	assertWithinEntitlement,
 	getWorkflowConcurrencyBackstop,
 } from '#worker/entitlements/service.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	activeWorkflowStatusValues,
 	terminalWorkflowStatusValues,
@@ -128,6 +129,14 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 		backoff: 'exponential',
 	},
 	timeout: '5 minutes',
+}
+
+type DynamicCallableWorkflowStep = {
+	do(
+		name: string,
+		config: WorkflowStepDoConfig,
+		callback: () => Promise<JsonValue>,
+	): Promise<JsonValue>
 }
 
 const packageWorkflowTokenId = 'internal:package-workflows'
@@ -900,13 +909,17 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		if (runAt.getTime() > Date.now()) {
 			await step.sleepUntil('wait until dynamic workflow runAt', runAt)
 		}
-		const typedStep = step as unknown as {
-			do(
-				name: string,
-				config: WorkflowStepDoConfig,
-				callback: () => Promise<JsonValue>,
-			): Promise<JsonValue>
-		}
+		const typedStep = step as unknown as DynamicCallableWorkflowStep
+		// Captured inside a step so replays after interruption reuse the original
+		// start time. The clock starts after the scheduled runAt sleep so a
+		// workflow queued days ahead does not record days of "runtime".
+		const startedAtMs = Number(
+			await typedStep.do(
+				'capture usage start time',
+				workflowStepDoConfig,
+				async () => Date.now(),
+			),
+		)
 		await typedStep.do(
 			'mark workflow running',
 			workflowStepDoConfig,
@@ -920,8 +933,9 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				return { ok: true }
 			},
 		)
+		let result: JsonValue
 		try {
-			const result = await typedStep.do(
+			result = await typedStep.do(
 				payload.sourceType === 'package'
 					? 'invoke saved package workflow export'
 					: 'execute inline workflow code',
@@ -933,14 +947,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					return await this.invokeInlineWorkflowCode(payload)
 				},
 			)
-			await updateWorkflowRunStatus({
-				env: this.env,
-				id: event.instanceId,
-				payload,
-				status: 'complete',
-				completedAt: new Date().toISOString(),
-			})
-			return result
 		} catch (error) {
 			await updateWorkflowRunStatus({
 				env: this.env,
@@ -950,8 +956,59 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				lastError: error instanceof Error ? error.message : String(error),
 				completedAt: new Date().toISOString(),
 			})
+			await this.recordWorkflowRunUsage({
+				typedStep,
+				payload,
+				instanceId: event.instanceId,
+				startedAtMs,
+				outcome: 'error',
+			})
 			throw error
 		}
+		// The catch above only wraps workflow execution: a failing terminal
+		// status write must not relabel a successful run as an error.
+		await updateWorkflowRunStatus({
+			env: this.env,
+			id: event.instanceId,
+			payload,
+			status: 'complete',
+			completedAt: new Date().toISOString(),
+		})
+		await this.recordWorkflowRunUsage({
+			typedStep,
+			payload,
+			instanceId: event.instanceId,
+			startedAtMs,
+			outcome: 'success',
+		})
+		return result
+	}
+
+	private async recordWorkflowRunUsage(input: {
+		typedStep: DynamicCallableWorkflowStep
+		payload: DynamicCallableWorkflowPayload
+		instanceId: string
+		startedAtMs: number
+		outcome: 'success' | 'error'
+	}) {
+		if (!input.payload.userId) return
+		// Emitted inside a step so a replayed run() returns the cached result
+		// instead of recording the event again. The outcome is part of the step
+		// name so cached results from one path can never shadow the other.
+		await input.typedStep.do(
+			`record workflow usage (${input.outcome})`,
+			workflowStepDoConfig,
+			async () => {
+				await recordUsage(this.env, {
+					userId: input.payload.userId,
+					eventType: 'workflow_run',
+					entityId: input.instanceId,
+					durationMs: Date.now() - input.startedAtMs,
+					outcome: input.outcome,
+				})
+				return { ok: true }
+			},
+		)
 	}
 
 	private async invokePackageWorkflowExport(

@@ -22,6 +22,8 @@ to become.
   (NULL plan = legacy/unlimited).
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects.
+- [Usage Metering](./usage-metering.md): per-user usage events, the
+  `recordUsage()` helper contract, and the D1 rollup table.
 - [Primitives map](./primitives.yaml): machine-readable map of system primitives
   and invariants, used by the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`) to classify PR risk. Update it in the

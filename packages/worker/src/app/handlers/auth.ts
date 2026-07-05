@@ -3,6 +3,13 @@ import { enum_, object, parseSafe, string } from 'remix/data-schema'
 import { createAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
+import { createEmailVerification } from '#app/email-verification.ts'
+import {
+	consumeInviteCode,
+	getInviteFailureMessage,
+	normalizeInviteCode,
+	releaseInviteUse,
+} from '#app/invites.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
@@ -19,16 +26,8 @@ import { type AppEnv } from '#worker/env-schema.ts'
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
 
-/**
- * Signups are blocked in real deployments and allowed in local dev,
- * preview, and e2e test runs so the existing tooling (Playwright seed
- * helpers, manual local testing) keeps working without a second
- * auth-bypass code path. Production wrangler env sets
- * `SENTRY_ENVIRONMENT: 'production'`; preview/test set 'preview' /
- * 'test'; `npm run dev` sets `WRANGLER_IS_LOCAL_DEV=true`.
- */
-function isSignupAllowed(appEnv: AppEnv) {
-	return isNonProductionRuntime(
+function isInviteRequiredForSignup(appEnv: AppEnv) {
+	return !isNonProductionRuntime(
 		appEnv as unknown as {
 			WRANGLER_IS_LOCAL_DEV?: string
 			SENTRY_ENVIRONMENT?: string
@@ -78,6 +77,10 @@ export function createAuthHandler(appEnv: AppEnv) {
 					? (body as Record<string, unknown>).username
 					: undefined,
 			)
+			const inviteCode =
+				typeof body === 'object' && body !== null
+					? (body as Record<string, unknown>).inviteCode
+					: undefined
 			const rememberMeValue =
 				typeof body === 'object' && body !== null
 					? (body as Record<string, unknown>).rememberMe
@@ -107,21 +110,6 @@ export function createAuthHandler(appEnv: AppEnv) {
 				return Response.json(
 					{ error: 'Email, password, and mode are required.' },
 					{ status: 400 },
-				)
-			}
-			if (normalizedMode === 'signup' && !isSignupAllowed(appEnv)) {
-				void logAuditEvent({
-					category: 'auth',
-					action: 'signup',
-					result: 'failure',
-					email: normalizedEmail,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'signup_disabled',
-				})
-				return Response.json(
-					{ error: 'Signups are disabled.' },
-					{ status: 403 },
 				)
 			}
 			if (normalizedMode === 'signup') {
@@ -192,6 +180,45 @@ export function createAuthHandler(appEnv: AppEnv) {
 				}
 
 				const passwordHash = await createPasswordHash(normalizedPassword)
+				let consumedInviteCode: string | null = null
+				async function releaseConsumedInvite() {
+					if (!consumedInviteCode) return
+					await releaseInviteUse({
+						db: appEnv.APP_DB,
+						code: consumedInviteCode,
+					})
+					consumedInviteCode = null
+				}
+
+				const inviteRequired = isInviteRequiredForSignup(appEnv)
+				if (inviteRequired || normalizeInviteCode(inviteCode)) {
+					const inviteResult = await consumeInviteCode({
+						db: appEnv.APP_DB,
+						code: inviteCode,
+					})
+					if (!inviteResult.ok) {
+						void logAuditEvent({
+							category: 'auth',
+							action: 'signup',
+							result: 'failure',
+							email: normalizedEmail,
+							ip: requestIp,
+							path: url.pathname,
+							reason: `invite_${inviteResult.reason}`,
+						})
+						return Response.json(
+							{ error: getInviteFailureMessage(inviteResult.reason) },
+							{
+								status:
+									inviteResult.reason === 'missing' && inviteRequired
+										? 400
+										: 403,
+							},
+						)
+					}
+					consumedInviteCode = inviteResult.invite.code
+				}
+
 				let record: { id: number } | null = null
 				try {
 					const createdUser = await db.create(
@@ -209,6 +236,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 				} catch (error) {
 					const uniqueField = getUniqueConstraintField(error)
 					if (uniqueField === 'email' || uniqueField === 'username') {
+						await releaseConsumedInvite()
 						const isUsernameConflict = uniqueField === 'username'
 						void logAuditEvent({
 							category: 'auth',
@@ -228,6 +256,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 							{ status: 409 },
 						)
 					}
+					await releaseConsumedInvite()
 					throw error
 				}
 				if (!record) {
@@ -240,6 +269,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 						path: url.pathname,
 						reason: 'insert_failed',
 					})
+					await releaseConsumedInvite()
 					return Response.json(
 						{ error: 'Unable to create account.' },
 						{ status: 500 },
@@ -273,6 +303,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 							error,
 						)
 					}
+					await releaseConsumedInvite()
 					void logAuditEvent({
 						category: 'auth',
 						action: 'signup',
@@ -281,6 +312,41 @@ export function createAuthHandler(appEnv: AppEnv) {
 						ip: requestIp,
 						path: url.pathname,
 						reason: 'default_role_assignment_failed',
+					})
+					return Response.json(
+						{ error: 'Unable to create account.' },
+						{ status: 500 },
+					)
+				}
+
+				try {
+					await createEmailVerification({
+						appEnv,
+						userId: record.id,
+						email: normalizedEmail,
+						requestUrl: url,
+					})
+				} catch (error) {
+					console.error('Failed to create email verification at signup:', error)
+					try {
+						await appEnv.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+							.bind(record.id)
+							.run()
+					} catch (deleteError) {
+						console.error(
+							'Failed to remove user row after verification setup failure:',
+							deleteError,
+						)
+					}
+					await releaseConsumedInvite()
+					void logAuditEvent({
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'email_verification_setup_failed',
 					})
 					return Response.json(
 						{ error: 'Unable to create account.' },
@@ -304,8 +370,24 @@ export function createAuthHandler(appEnv: AppEnv) {
 					ip: requestIp,
 					path: url.pathname,
 				})
+				if (consumedInviteCode) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'invite_use',
+						result: 'success',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: `invite_code=${consumedInviteCode};user_id=${record.id}`,
+					})
+				}
 				return Response.json(
-					{ ok: true, mode: normalizedMode },
+					{
+						ok: true,
+						mode: normalizedMode,
+						emailVerificationRequired: true,
+						message: 'Check your email to verify your account.',
+					},
 					{
 						headers: {
 							'Set-Cookie': cookie,

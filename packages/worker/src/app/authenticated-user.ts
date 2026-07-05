@@ -8,6 +8,7 @@ export type AuthenticatedAppUser = {
 	userId: number
 	username: string
 	email: string
+	emailVerified: boolean
 	displayName: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
@@ -25,6 +26,7 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 		userId: resolved.user.userId,
 		username: resolved.user.username,
 		email: resolved.user.email,
+		emailVerified: resolved.user.emailVerified,
 		displayName: resolved.user.displayName,
 		roles: resolved.user.roles,
 		permissions: resolved.user.permissions,

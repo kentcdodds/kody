@@ -1,5 +1,7 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
 import {
 	createEmailThread,
@@ -16,6 +18,7 @@ type SendEmailEnv = Pick<
 	Env,
 	| 'APP_DB'
 	| 'EMAIL'
+	| 'USAGE_EVENTS'
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
@@ -24,8 +27,11 @@ type SendEmailEnv = Pick<
 export type EmailSendInput = {
 	env: SendEmailEnv
 	userId: string
-	/** Acting user's account email for plan lookup (not the message from/to). */
-	userEmail?: string | null
+	/**
+	 * Acting user's account email (not the message from/to). Used for the
+	 * verified-account gate and for entitlement plan lookup.
+	 */
+	accountEmail: string
 	from: string
 	to: string | Array<string>
 	subject: string
@@ -161,9 +167,28 @@ async function sendViaRestFallback(input: {
 	return result.messageId ?? null
 }
 
+function outboundEmailContentBytes(
+	text: string | null,
+	html: string | null,
+): number | undefined {
+	if (!text && !html) return undefined
+	let bytes = 0
+	if (text) bytes += new TextEncoder().encode(text).byteLength
+	if (html) bytes += new TextEncoder().encode(html).byteLength
+	return bytes
+}
+
 export async function sendOutboundEmail(
 	input: EmailSendInput,
 ): Promise<EmailSendResult> {
+	const accountEmailVerified = await isAccountEmailVerified({
+		db: input.env.APP_DB,
+		email: input.accountEmail,
+		stableUserId: input.userId,
+	})
+	if (!accountEmailVerified) {
+		throw new Error('Account email must be verified before sending email.')
+	}
 	const from = normalizeEmailAddress(input.from)
 	if (!from) throw new Error('A valid from email address is required.')
 	const senderIdentity = await getVerifiedSenderIdentity({
@@ -201,7 +226,7 @@ export async function sendOutboundEmail(
 	await consumeDailyEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		email: input.userEmail,
+		email: input.accountEmail,
 		resource: 'email_sends_per_day',
 	})
 
@@ -270,6 +295,9 @@ export async function sendOutboundEmail(
 		detail: { to, from, subject },
 	})
 
+	const messageContentBytes = outboundEmailContentBytes(text, html)
+	const sendStartedAtMs = Date.now()
+	let sendOutcome: 'success' | 'error' = 'success'
 	try {
 		const bindingResult = await sendViaBinding({
 			env: input.env,
@@ -326,6 +354,7 @@ export async function sendOutboundEmail(
 			error: null,
 		}
 	} catch (error) {
+		sendOutcome = 'error'
 		const messageText = error instanceof Error ? error.message : String(error)
 		await updateEmailMessageDelivery({
 			db: input.env.APP_DB,
@@ -359,6 +388,17 @@ export async function sendOutboundEmail(
 			providerMessageId: null,
 			status: 'failed',
 			error: messageText,
+		}
+	} finally {
+		if (input.userId) {
+			await recordUsage(input.env, {
+				userId: input.userId,
+				eventType: 'email_send',
+				entityId: message.id,
+				bytes: messageContentBytes,
+				durationMs: Date.now() - sendStartedAtMs,
+				outcome: sendOutcome,
+			})
 		}
 	}
 }

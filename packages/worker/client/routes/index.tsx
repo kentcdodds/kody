@@ -20,6 +20,7 @@ import {
 	AdminCommunityReportsRoute,
 	adminCommunityReportsRouteLoader,
 } from './admin-community-reports.tsx'
+import { AdminInvitesRoute, adminInvitesRouteLoader } from './admin-invites.tsx'
 import { AdminRolesRoute, adminRolesRouteLoader } from './admin-roles.tsx'
 import { AdminUsersRoute, adminUsersRouteLoader } from './admin-users.tsx'
 import {
@@ -37,6 +38,7 @@ import {
 } from './oauth-authorize.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ResetPasswordRoute } from './reset-password.tsx'
+import { VerifyEmailRoute } from './verify-email.tsx'
 
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/account': accountRouteLoader,
@@ -57,6 +59,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/account/secrets/session/:sessionId/:secretName': accountSecretsRouteLoader,
 	'/admin': adminUsersRouteLoader,
 	'/admin/users': adminUsersRouteLoader,
+	'/admin/invites': adminInvitesRouteLoader,
 	'/admin/roles': adminRolesRouteLoader,
 	'/admin/community-reports': adminCommunityReportsRouteLoader,
 	'/community': communityRouteLoader,
@@ -85,6 +88,7 @@ export const clientRoutes = {
 	'/account/secrets/session/:sessionId/:secretName': <AccountSecretsRoute />,
 	'/admin': <AdminUsersRoute />,
 	'/admin/users': <AdminUsersRoute />,
+	'/admin/invites': <AdminInvitesRoute />,
 	'/admin/roles': <AdminRolesRoute />,
 	'/admin/community-reports': <AdminCommunityReportsRoute />,
 	'/community': <CommunityRoute />,
@@ -93,6 +97,7 @@ export const clientRoutes = {
 	'/privacy': <PrivacyRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
+	'/verify-email': <VerifyEmailRoute />,
 	'/connect/oauth': <ConnectOauthRoute />,
 	'/oauth/authorize': <OAuthAuthorizeRoute />,
 	'/oauth/callback': <OAuthCallbackRoute />,

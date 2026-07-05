@@ -9,6 +9,11 @@ import {
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	recordUsage,
+	type UsageEvent,
+	type UsageOutcome,
+} from '#worker/usage/record-usage.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 
 const serviceStateStorageKey = 'package-service-state'
@@ -138,6 +143,32 @@ export function buildPackageServiceStorageId(
 	return `service:${encodeURIComponent(packageId)}:${encodeURIComponent(serviceName)}`
 }
 
+export function buildServiceRuntimeUsageEvent(input: {
+	binding: PackageServiceBindingState
+	startedAt: string | null
+	/**
+	 * `null` when the run's end time is unknown (a Durable Object eviction
+	 * interrupted it); the event then carries no duration rather than an
+	 * approximation.
+	 */
+	finishedAtMs: number | null
+	failed: boolean
+}): UsageEvent | null {
+	if (!input.binding.userId || !input.startedAt) return null
+	const startedAtMs = Date.parse(input.startedAt)
+	if (Number.isNaN(startedAtMs)) return null
+	const outcome: UsageOutcome = input.failed ? 'error' : 'success'
+	return {
+		userId: input.binding.userId,
+		eventType: 'service_runtime',
+		entityId: `${input.binding.packageId}:${input.binding.serviceName}`,
+		...(input.finishedAtMs === null
+			? {}
+			: { durationMs: Math.max(0, input.finishedAtMs - startedAtMs) }),
+		outcome,
+	}
+}
+
 async function loadSavedPackageService(input: {
 	env: Env
 	binding: PackageServiceBindingState
@@ -232,11 +263,28 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			// restored in-flight run must be downgraded to a recoverable stopped
 			// state.
 			const wasExplicitlyStopping = this.stateSnapshot.status === 'stopping'
+			const orphanedRunBinding = this.stateSnapshot.binding
+			const orphanedRunStartedAt = this.stateSnapshot.lastStartedAt
 			this.stateSnapshot.currentRunId = null
 			this.stateSnapshot.stopRequested = wasExplicitlyStopping
 			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
 			await this.persistState()
+			// The eviction interrupted the run at an unknown time, so meter the run
+			// itself (it happened, and was not a user-code failure) without a
+			// duration instead of never metering it or approximating one.
+			const orphanedRunUsageEvent =
+				orphanedRunBinding === null
+					? null
+					: buildServiceRuntimeUsageEvent({
+							binding: orphanedRunBinding,
+							startedAt: orphanedRunStartedAt,
+							finishedAtMs: null,
+							failed: false,
+						})
+			if (orphanedRunUsageEvent) {
+				this.ctx.waitUntil(recordUsage(this.env, orphanedRunUsageEvent))
+			}
 			if (
 				this.stateSnapshot.autoStart &&
 				!this.stateSnapshot.stopRequested &&
@@ -368,6 +416,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		lastError?: string | null
 	}) {
 		if (this.stateSnapshot.currentRunId !== input.runId) return
+		const binding = this.stateSnapshot.binding
+		const startedAt = this.stateSnapshot.lastStartedAt
+		const finishedAtMs = Date.now()
 		const stopRequested = this.stateSnapshot.stopRequested
 		this.stateSnapshot.status = input.nextStatus
 		this.stateSnapshot.currentRunId = null
@@ -378,7 +429,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if ('lastError' in input) {
 			this.stateSnapshot.lastError = input.lastError ?? null
 		}
-		this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
+		this.stateSnapshot.lastRunFinishedAt = new Date(finishedAtMs).toISOString()
 		this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 		await this.persistState()
 		if (stopRequested) {
@@ -393,6 +444,20 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				runAt: buildPackageServiceRetryTime(),
 				source: 'auto-start',
 			})
+		}
+		const usageEvent =
+			binding === null
+				? null
+				: buildServiceRuntimeUsageEvent({
+						binding,
+						startedAt,
+						finishedAtMs,
+						// A run that threw counts as an error even when a concurrent stop
+						// request downgrades its terminal status to 'stopped'.
+						failed: input.lastError != null,
+					})
+		if (usageEvent) {
+			this.ctx.waitUntil(recordUsage(this.env, usageEvent))
 		}
 	}
 

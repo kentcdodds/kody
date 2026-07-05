@@ -1,8 +1,8 @@
 /**
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
- * needs. Mirrors migrations 0001 (users) and 0048 (users.plan +
- * entitlement_daily_counters).
+ * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at),
+ * and 0048 (users.plan + entitlement_daily_counters).
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db
@@ -12,16 +12,19 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	username TEXT NOT NULL UNIQUE,
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
+	email_verified_at TEXT,
 	plan TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
 		)
 		.run()
-	try {
-		await db.prepare(`ALTER TABLE users ADD COLUMN plan TEXT`).run()
-	} catch {
-		// The plan column already exists (fresh CREATE above or migrations).
+	for (const column of ['email_verified_at TEXT', 'plan TEXT']) {
+		try {
+			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()
+		} catch {
+			// The column already exists (fresh CREATE above or migrations).
+		}
 	}
 	await db
 		.prepare(

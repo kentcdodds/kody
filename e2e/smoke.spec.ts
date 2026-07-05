@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
+import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
 
 test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await ensurePrimaryUserExists(page.request)
@@ -13,6 +14,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await expect(page.getByLabel('Email')).toBeVisible()
 	await expect(page.getByLabel('Password')).toBeVisible()
 
+	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Email').fill(primaryTestUser.email)
 	await page.getByLabel('Password').fill(primaryTestUser.password)
 	await page.getByRole('button', { name: 'Sign in' }).click()

@@ -29,6 +29,14 @@ const optionalSendEmailSchema = createSchema<unknown, SendEmail | undefined>(
 	},
 )
 
+const optionalAnalyticsEngineDatasetSchema = createSchema<
+	unknown,
+	AnalyticsEngineDataset | undefined
+>((value, _context) => {
+	if (value === undefined) return { value: undefined }
+	return { value: value as AnalyticsEngineDataset }
+})
+
 const optionalAiSchema = createSchema<unknown, Ai | undefined>(
 	(value, _context) => {
 		if (value === undefined) return { value: undefined }
@@ -165,6 +173,7 @@ export const EnvSchema = object({
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
+	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,

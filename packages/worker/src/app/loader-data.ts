@@ -76,12 +76,48 @@ export type AdminCommunityReportsLoaderData = {
 	statusFilter: string
 }
 
+export type AdminInviteListItem = {
+	code: string
+	createdBy: number | null
+	createdByEmail: string | null
+	note: string
+	maxUses: number
+	useCount: number
+	expiresAt: string | null
+	revokedAt: string | null
+	createdAt: string
+}
+
+export type AdminInvitesLoaderData = {
+	ok: true
+	invites: Array<AdminInviteListItem>
+}
+
+export type AdminCreatedUserSetup = {
+	userId: number
+	email: string
+	username: string
+	setupLink: string
+	setupTokenExpiresAt: number
+}
+
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
+	emailVerified: boolean
 	username: string
 	displayName: string
 }
+
+export type EmailVerificationLoaderData =
+	| {
+			ok: true
+			message: string
+	  }
+	| {
+			ok: false
+			error: string
+	  }
 
 export type AccountIntegrationListItem = {
 	name: string
@@ -222,11 +258,13 @@ export type AppLoaderData = {
 	adminUsers?: AdminUsersLoaderData
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
+	adminInvites?: AdminInvitesLoaderData
 	accountProfile?: AccountProfileLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
 	accountSecrets?: AccountSecretsLoaderData
+	emailVerification?: EmailVerificationLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 }
 

@@ -213,11 +213,12 @@ WHERE u.email = ${quoteSql(email)} AND r.name = 'admin';`
 		: ''
 
 	return `
-INSERT INTO users (username, email, password_hash)
-VALUES (${quoteSql(username)}, ${quoteSql(email)}, ${quoteSql(passwordHash)})
+INSERT INTO users (username, email, password_hash, email_verified_at)
+VALUES (${quoteSql(username)}, ${quoteSql(email)}, ${quoteSql(passwordHash)}, CURRENT_TIMESTAMP)
 ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,
+  email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
   updated_at = CURRENT_TIMESTAMP;
 ${userRoleSql}${adminRoleSql}`.trim()
 }

@@ -52,6 +52,7 @@ import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 type AdditionalCodemodeTools = Record<
@@ -883,6 +884,24 @@ export async function runBundledModuleWithRegistry(
 		context: runtimeDebugContext,
 	})
 	let runtimeDebugFinished = false
+	// The metering span covers the whole bundled run (module hydration,
+	// provider assembly, and sandbox execution) so pre-executor failures are
+	// still counted as failed package runs.
+	const usageStartedAtMs = Date.now()
+	let usageRecorded = false
+	async function recordPackageExportUsage(outcome: 'success' | 'error') {
+		if (usageRecorded) return
+		usageRecorded = true
+		const userId = callerContext.user?.userId
+		if (!options?.packageContext || !userId) return
+		await recordUsage(env, {
+			userId,
+			eventType: 'package_export',
+			entityId: options.packageContext.packageId,
+			durationMs: Date.now() - usageStartedAtMs,
+			outcome,
+		})
+	}
 	try {
 		const executor = createExecuteExecutor({
 			env,
@@ -1015,6 +1034,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 					logs: sanitizedResult.logs ?? [],
 				})
 				runtimeDebugFinished = true
+				await recordPackageExportUsage('success')
 				return sanitizedResult
 			}
 			const batchMessage = await rewriteCapabilitySecretError({
@@ -1036,6 +1056,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 				error: finalResult.error,
 			})
 			runtimeDebugFinished = true
+			await recordPackageExportUsage('error')
 			return finalResult
 		} catch (error) {
 			if (!runtimeDebugFinished) {
@@ -1058,6 +1079,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 				error,
 			})
 		}
+		await recordPackageExportUsage('error')
 		throw error
 	}
 }

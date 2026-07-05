@@ -81,11 +81,14 @@ primitives:
     group: auth
     name: Browser sessions
     summary:
-      Signed kody_session cookie auth for browser users; signup gated to
-      non-production runtimes.
+      Signed kody_session cookie auth for browser users; production signup
+      invite-gated, non-production signup open, and account email verification
+      surfaced in session state.
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
+      - packages/worker/src/app/invites.ts
+      - packages/worker/src/app/email-verification.ts
     docs:
       - docs/contributing/architecture/authentication.md
 
@@ -372,6 +375,19 @@ primitives:
       - packages/worker/src/mcp/capabilities/capability-search.ts
     docs:
       - docs/contributing/adding-capabilities.md
+
+  - id: usage-metering
+    group: storage
+    name: Usage metering
+    summary:
+      Per-user usage events recorded at runtime chokepoints via recordUsage();
+      raw events go to the USAGE_EVENTS Analytics Engine dataset and per-user,
+      per-metric, per-month counters accumulate in the D1 usage_rollups table.
+    code:
+      - packages/worker/src/usage/record-usage.ts
+      - packages/worker/migrations/0047-usage-rollups.sql
+    docs:
+      - docs/contributing/architecture/usage-metering.md
 
 invariants:
   - id: per-user-isolation

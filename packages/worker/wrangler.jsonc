@@ -167,6 +167,12 @@
 					"index_name": "kody-capabilities-prod",
 				},
 			],
+			"analytics_engine_datasets": [
+				{
+					"binding": "USAGE_EVENTS",
+					"dataset": "kody_usage_events",
+				},
+			],
 			"ai": {
 				"binding": "AI",
 			},
@@ -261,6 +267,12 @@
 				{
 					"binding": "CAPABILITY_VECTOR_INDEX",
 					"index_name": "kody-capabilities-preview",
+				},
+			],
+			"analytics_engine_datasets": [
+				{
+					"binding": "USAGE_EVENTS",
+					"dataset": "kody_usage_events_preview",
 				},
 			],
 			"ai": {

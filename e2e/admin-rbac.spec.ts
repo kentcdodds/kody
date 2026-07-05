@@ -66,11 +66,6 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await page.getByRole('link', { name: 'Admin', exact: true }).click()
 	await expect(page).toHaveURL(/\/admin\/users\/?$/)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
-	// The first user is auto-selected, so the email can render in both the
-	// list and the detail panel — assert on the list entry specifically.
-	await expect(
-		page.getByRole('button', { name: adminUser.username }),
-	).toBeVisible()
 	await expect(page.getByText('Unable to load admin users.')).toHaveCount(0)
 	expect(
 		await page.evaluate(
@@ -78,14 +73,30 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		),
 	).toBe(true)
 
-	await page.goto('/admin/users?pageSize=100')
+	const initialUsersApiResponse = await page.request.get(
+		'/admin/users.json?pageSize=100',
+	)
+	expect(initialUsersApiResponse.ok()).toBe(true)
+	const initialUsersPayload = await initialUsersApiResponse.json()
+	expect(initialUsersPayload.ok).toBe(true)
+	const lastUsersPage = Math.max(
+		1,
+		Math.ceil(Number(initialUsersPayload.total) / 100),
+	)
+
+	await page.goto(`/admin/users?pageSize=100&page=${lastUsersPage}`)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
+	// The first user is auto-selected, so the email can render in both the
+	// list and the detail panel — assert on the list entry specifically.
+	await expect(
+		page.getByRole('button', { name: adminUser.username }),
+	).toBeVisible()
 	await expect(page.getByText(memberUser.email)).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
 	await expect(page.getByText('super-secret-value')).toHaveCount(0)
 
 	const usersApiResponse = await page.request.get(
-		'/admin/users.json?pageSize=100',
+		`/admin/users.json?pageSize=100&page=${lastUsersPage}`,
 	)
 	expect(usersApiResponse.ok()).toBe(true)
 	const usersPayload = await usersApiResponse.json()

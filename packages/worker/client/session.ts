@@ -9,6 +9,7 @@ import {
 
 export type SessionInfo = {
 	email: string
+	emailVerified: boolean
 	username: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
@@ -53,7 +54,8 @@ export async function fetchSessionInfo(
 				: ''
 		const roles = readRoleNames(payload?.session?.roles)
 		const permissions = readPermissionStrings(payload?.session?.permissions)
-		return email ? { email, username, roles, permissions } : null
+		const emailVerified = payload?.session?.emailVerified === true
+		return email ? { email, emailVerified, username, roles, permissions } : null
 	} catch {
 		return null
 	}

@@ -1882,3 +1882,168 @@ test('runBundledModuleWithRegistry uses a prebuilt capability registry without r
 		getRegistrySpy.mockRestore()
 	}
 })
+
+test('runBundledModuleWithRegistry records package_export usage for bundled runs with package context', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-metered',
+			email: 'metered@example.com',
+			displayName: 'Metered User',
+		},
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const packageContext = {
+		packageId: 'pkg-metered',
+		kodyId: 'metered-package',
+		sourceId: 'source-metered',
+	}
+	const emptyRegistry = {
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {} as Record<string, string>,
+		capabilityHandlers: {},
+		capabilityList: [],
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue(emptyRegistry)
+	const usageModule = await import('#worker/usage/record-usage.ts')
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	let executeResult: { result: unknown; error?: unknown; logs: Array<string> } =
+		{
+			result: 'ok',
+			logs: [],
+		}
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return executeResult
+			},
+		} as never)
+
+	try {
+		const successResult = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				packageContext,
+				skipCapabilityRegistry: true,
+			},
+		)
+		expect(successResult.result).toBe('ok')
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(
+			env,
+			expect.objectContaining({
+				userId: 'user-metered',
+				eventType: 'package_export',
+				entityId: 'pkg-metered',
+				outcome: 'success',
+				durationMs: expect.any(Number),
+			}),
+		)
+		expect(
+			recordUsageSpy.mock.calls[0]?.[1]?.durationMs,
+		).toBeGreaterThanOrEqual(0)
+
+		recordUsageSpy.mockClear()
+		executeResult = {
+			result: undefined,
+			error: 'sandbox failed',
+			logs: [],
+		}
+		const errorResult = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				packageContext,
+				skipCapabilityRegistry: true,
+			},
+		)
+		expect(errorResult.error).toBe('sandbox failed')
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(
+			env,
+			expect.objectContaining({
+				userId: 'user-metered',
+				eventType: 'package_export',
+				entityId: 'pkg-metered',
+				outcome: 'error',
+				durationMs: expect.any(Number),
+			}),
+		)
+
+		recordUsageSpy.mockClear()
+		executeResult = {
+			result: 'ok',
+			logs: [],
+		}
+		await runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+			skipCapabilityRegistry: true,
+		})
+		expect(recordUsageSpy).not.toHaveBeenCalled()
+
+		recordUsageSpy.mockClear()
+		const anonymousCallerContext = createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: null,
+		})
+		await runBundledModuleWithRegistry(
+			env,
+			anonymousCallerContext,
+			bundle,
+			undefined,
+			{
+				packageContext,
+				skipCapabilityRegistry: true,
+			},
+		)
+		expect(recordUsageSpy).not.toHaveBeenCalled()
+
+		// Failures before the sandbox ever runs (executor construction, module
+		// hydration, provider assembly) still count as failed package runs.
+		recordUsageSpy.mockClear()
+		createExecuteExecutorSpy.mockImplementation(() => {
+			throw new Error('executor construction failed')
+		})
+		await expect(
+			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+				packageContext,
+				skipCapabilityRegistry: true,
+			}),
+		).rejects.toThrow('executor construction failed')
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(
+			env,
+			expect.objectContaining({
+				userId: 'user-metered',
+				eventType: 'package_export',
+				entityId: 'pkg-metered',
+				outcome: 'error',
+			}),
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+		recordUsageSpy.mockRestore()
+	}
+})

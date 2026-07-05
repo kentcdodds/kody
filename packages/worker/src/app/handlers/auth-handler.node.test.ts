@@ -59,9 +59,18 @@ type TestUser = {
 	password_hash: string
 }
 
+type TestInvite = {
+	code: string
+	max_uses: number
+	use_count: number
+	expires_at: string | null
+	revoked_at: string | null
+}
+
 function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 	let nextId = 1
 	const users = new Map<string, TestUser>()
+	const invites = new Map<string, TestInvite>()
 	const db = {
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -105,6 +114,18 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						users.set(normalizedEmail, user)
 						return user
 					}
+					const readInvite = () => {
+						const code = String(params[0] ?? '').toUpperCase()
+						const invite = invites.get(code)
+						return invite
+							? {
+									...invite,
+									created_by: 1,
+									note: '',
+									created_at: '2026-07-05T00:00:00.000Z',
+								}
+							: null
+					}
 
 					const executeAll = async () => {
 						if (
@@ -137,6 +158,23 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 								meta: { changes: 1, last_row_id: user.id },
 							}
 						}
+						if (normalizedQuery.includes('insert into "email_verifications"')) {
+							return {
+								results: [],
+								meta: { changes: 1, last_row_id: 1 },
+							}
+						}
+						if (
+							normalizedQuery.startsWith('select') &&
+							normalizedQuery.includes('from invites') &&
+							normalizedQuery.includes('where code =')
+						) {
+							const invite = readInvite()
+							return {
+								results: invite ? [invite] : [],
+								meta: { changes: 0, last_row_id: 0 },
+							}
+						}
 
 						return {
 							results: [],
@@ -156,6 +194,42 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 							if (normalizedQuery.includes('insert into "users"')) {
 								const user = insertUser()
 								return { meta: { changes: 1, last_row_id: user.id } }
+							}
+							if (
+								normalizedQuery.includes('delete from "email_verifications"') ||
+								normalizedQuery.includes('insert into "email_verifications"')
+							) {
+								return { meta: { changes: 1, last_row_id: 1 } }
+							}
+							if (
+								normalizedQuery.startsWith('update invites') &&
+								normalizedQuery.includes('set use_count = use_count + 1')
+							) {
+								const code = String(params[0] ?? '').toUpperCase()
+								const nowIso = String(params[1] ?? '')
+								const invite = invites.get(code)
+								if (
+									invite &&
+									!invite.revoked_at &&
+									(!invite.expires_at || invite.expires_at > nowIso) &&
+									invite.use_count < invite.max_uses
+								) {
+									invite.use_count += 1
+									return { meta: { changes: 1, last_row_id: 0 } }
+								}
+								return { meta: { changes: 0, last_row_id: 0 } }
+							}
+							if (
+								normalizedQuery.startsWith('update invites') &&
+								normalizedQuery.includes('set use_count = use_count - 1')
+							) {
+								const code = String(params[0] ?? '').toUpperCase()
+								const invite = invites.get(code)
+								if (invite && invite.use_count > 0) {
+									invite.use_count -= 1
+									return { meta: { changes: 1, last_row_id: 0 } }
+								}
+								return { meta: { changes: 0, last_row_id: 0 } }
 							}
 							if (
 								normalizedQuery.includes('insert or ignore into user_roles')
@@ -203,7 +277,17 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 		return user
 	}
 
-	return { db, users, addUser }
+	function addInvite(code: string) {
+		invites.set(code.toUpperCase(), {
+			code: code.toUpperCase(),
+			max_uses: 1,
+			use_count: 0,
+			expires_at: '2099-01-01T00:00:00.000Z',
+			revoked_at: null,
+		})
+	}
+
+	return { db, users, invites, addUser, addInvite }
 }
 
 beforeAll(() => {
@@ -241,14 +325,32 @@ test('auth handler login and signup workflow', async () => {
 	const blockedSignupResponse = await productionContext.request({
 		email: 'new@example.com',
 		username: 'new-user',
-		password: 'secret',
+		password: 'password123',
 		mode: 'signup',
 	})
-	expect(blockedSignupResponse.status).toBe(403)
+	expect(blockedSignupResponse.status).toBe(400)
 	expect(await blockedSignupResponse.json()).toEqual({
-		error: 'Signups are disabled.',
+		error: 'Invite code is required.',
 	})
 	expect(productionContext.testDb.users.has('new@example.com')).toBe(false)
+
+	productionContext.testDb.addInvite('PROD-INVITE')
+	const invitedSignupResponse = await productionContext.request({
+		email: 'invited@example.com',
+		username: 'invited-user',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'prod-invite',
+	})
+	expect(invitedSignupResponse.status).toBe(200)
+	expect(await invitedSignupResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	})
+	expect(productionContext.testDb.users.has('invited@example.com')).toBe(true)
+	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(1)
 
 	const weakPasswordSignupResponse = await signupContext.request({
 		email: 'weak@example.com',
@@ -272,6 +374,8 @@ test('auth handler login and signup workflow', async () => {
 	expect(await allowedSignupResponse.json()).toEqual({
 		ok: true,
 		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
 	})
 	expect(signupContext.testDb.users.has('allowed@example.com')).toBe(true)
 	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(

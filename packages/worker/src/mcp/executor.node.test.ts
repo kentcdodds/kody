@@ -261,6 +261,137 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 	expect(nonHashableModuleLoader.factoryCallCount).toBe(2)
 })
 
+test('createExecuteExecutor records one usage event per sandbox run with duration and outcome', async () => {
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	const rollupWrites: Array<Array<unknown>> = []
+	const usageBindings = {
+		USAGE_EVENTS: {
+			writeDataPoint(point?: AnalyticsEngineDataPoint) {
+				if (point) dataPoints.push(point)
+			},
+		},
+		APP_DB: {
+			prepare(_sql: string) {
+				return {
+					bind(...args: Array<unknown>) {
+						return {
+							async run() {
+								rollupWrites.push(args)
+								return {}
+							},
+						}
+					},
+				}
+			},
+		},
+	}
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'codemode', fns: {} }]
+
+	// Successful sandbox run: one success event.
+	const successLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(successLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-1'),
+	}).execute('async () => "ok"', providers)
+
+	expect(dataPoints).toHaveLength(1)
+	expect(dataPoints[0]?.indexes).toEqual(['usage-user-1'])
+	expect(dataPoints[0]?.blobs?.slice(0, 4)).toEqual([
+		'usage-user-1',
+		'execute',
+		'',
+		'success',
+	])
+	expect(dataPoints[0]?.doubles?.[0]).toBeGreaterThanOrEqual(0)
+	expect(rollupWrites).toHaveLength(1)
+	expect(rollupWrites[0]?.slice(0, 4)).toEqual([
+		'usage-user-1',
+		'execute',
+		String(rollupWrites[0]?.[7]).slice(0, 7),
+		0,
+	])
+
+	// Sandbox run returning an error result: one error event.
+	const errorLoader = {
+		get() {
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							return { result: undefined, error: 'boom', logs: [] }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	const errorResult = await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(errorLoader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-1'),
+	}).execute('async () => "ok"', providers)
+
+	expect(errorResult.error).toBe('boom')
+	expect(dataPoints).toHaveLength(2)
+	expect(dataPoints[1]?.blobs?.[3]).toBe('error')
+	expect(rollupWrites).toHaveLength(2)
+	expect(rollupWrites[1]?.[3]).toBe(1)
+
+	// Loader throwing: error event recorded, original error rethrown.
+	const throwingLoader = {
+		get() {
+			throw new Error('loader unavailable')
+		},
+	} as unknown as Env['LOADER']
+	await expect(
+		createExecuteExecutor({
+			env: {
+				...createExecutorTestEnv(throwingLoader),
+				...usageBindings,
+			} as Env,
+			exports,
+			gatewayProps: createGatewayProps('usage-user-1'),
+		}).execute('async () => "ok"', providers),
+	).rejects.toThrow('loader unavailable')
+	expect(dataPoints).toHaveLength(3)
+	expect(dataPoints[2]?.blobs?.[3]).toBe('error')
+
+	// No signed-in user: nothing recorded.
+	const anonymousLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(anonymousLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: { ...createGatewayProps('usage-user-1'), userId: null },
+	}).execute('async () => "ok"', providers)
+	expect(dataPoints).toHaveLength(3)
+	expect(rollupWrites).toHaveLength(3)
+
+	// Provider validation failure never reaches the sandbox: nothing recorded.
+	const validationLoader = createFakeWorkerLoader()
+	const validationResult = await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(validationLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-1'),
+	}).execute('async () => "ok"', [{ name: 'class', fns: {} }])
+	expect(validationResult.error).toContain('reserved')
+	expect(dataPoints).toHaveLength(3)
+	expect(rollupWrites).toHaveLength(3)
+})
+
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	for (const name of ['class', 'private']) {
