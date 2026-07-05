@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import {
+	CAPABILITY_EMBEDDING_DIMENSIONS,
+	deterministicEmbedding,
+} from '#mcp/capabilities/capability-search.ts'
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
@@ -63,6 +67,21 @@ const emptyOptionalSearchRows = {
 	OptionalSearchRowsResult,
 	'packageRows' | 'userSecretRows' | 'userValueRows'
 >
+
+function createDeterministicAiBinding(): Ai {
+	return {
+		async run(...args: Array<unknown>) {
+			const input = args[1] as { text?: unknown }
+			const texts = Array.isArray(input.text)
+				? input.text.map(String)
+				: [String(input.text ?? '')]
+			return {
+				data: texts.map((text) => deterministicEmbedding(text)),
+				shape: [texts.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+			}
+		},
+	} as unknown as Ai
+}
 
 function createPackageExportProjection(
 	subpath: string,
@@ -320,6 +339,7 @@ test('searchUnified hides admin capabilities from non-admins in Vectorize-backed
 	)
 	const env = {
 		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
 		CAPABILITY_VECTOR_INDEX: {
 			async query() {
 				return {
