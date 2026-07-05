@@ -102,6 +102,17 @@ WHERE u.email = ${quoteSql(email)} AND r.name = ${quoteSql(role)};`.trim()
 	executeE2eD1Command(sql)
 }
 
+export function clearAuthRateLimitsInE2eDatabase() {
+	executeE2eD1Command(
+		`CREATE TABLE IF NOT EXISTS _rate_limits (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			key TEXT NOT NULL,
+			ts INTEGER NOT NULL
+		);
+		DELETE FROM _rate_limits WHERE key LIKE 'auth:ip:%';`,
+	)
+}
+
 export async function setEmailVerificationTokenInE2eDatabase(input: {
 	email: string
 	token: string

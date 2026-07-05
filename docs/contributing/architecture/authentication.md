@@ -77,6 +77,22 @@ Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
 guard, not an owner-scoped content bypass. Invite creation, use, and revocation
 emit audit events.
 
+The same admin page can create a user directly by email for manually invited
+people. That flow calls `adminCreateUserWithPasswordSetup` in
+`packages/worker/src/app/admin-user-creation.ts` instead of going through the
+web route logic directly, so future admin MCP capabilities can reuse the same
+service. It:
+
+- requires a unique email and either a unique explicit username or an
+  auto-generated unique username derived from the email
+- stores a sentinel `password_hash` that never verifies as a usable password
+- marks `users.email_verified_at` immediately because the admin knows the
+  recipient
+- creates a `password_resets` token with a 7-day expiry and returns the
+  `/reset-password?token=...` setup link to the admin UI
+- never sends email automatically; the operator copies the displayed setup link
+  into a manual email
+
 There is no privileged "primary user" at runtime. The first admin is still
 bootstrapped through SQL; after that, admin role assignment and invite
 management happen through admin routes.
@@ -221,6 +237,8 @@ routed from `packages/worker/src/index.ts`.
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
 - `packages/worker/src/app/invites.ts` and
   `packages/worker/src/app/handlers/admin-invites.ts` for invite management
+- `packages/worker/src/app/admin-user-creation.ts` for admin-created account
+  setup links
 - `packages/worker/src/app/email-verification.ts` and
   `packages/worker/src/app/handlers/verify-email.ts` for verification tokens
 - `packages/worker/src/app/handlers/account-secrets.ts` for owner-scoped secret

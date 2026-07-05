@@ -164,10 +164,10 @@ reports nothing was removed, the handler distinguishes "target is the last
 admin" (409) from "target did not have the role" (idempotent no-op) — see
 `handleRemoveRoleAction` in `admin-users.ts`.
 
-Signup fails with `500` if the seeded `user` role cannot be assigned (for
-example after a partial migration), rather than creating an account with no
-roles. The just-created `users` row is rolled back so the signup can be retried
-once the environment is fixed.
+Signup and admin-created user setup fail with `500` if the seeded `user` role
+cannot be assigned (for example after a partial migration), rather than creating
+an account with no roles. The just-created `users` row is rolled back so the
+account creation can be retried once the environment is fixed.
 
 ## Session payload and client helpers
 
@@ -189,6 +189,12 @@ Every new account receives the `user` role in the signup transaction
 required production invite has been atomically consumed. If role assignment
 fails, the user row is rolled back and the invite use is released so signup can
 be retried.
+
+Admins can also create a pre-verified account by email from `/admin/invites`.
+That action is guarded by `requireUserWithRole('admin')`, uses the shared
+`adminCreateUserWithPasswordSetup` service, assigns only the default `user`
+role, and returns a password-setup link for the admin to send manually. It does
+not grant admin and does not send email automatically.
 
 `tools/seed-test-data.ts` seeds the default fixture account (`kody@example.com`)
 with the `admin` role and a companion regular account (`jane@example.com`) with

@@ -1,5 +1,8 @@
 import { expect, test } from './playwright-utils.ts'
-import { setEmailVerificationTokenInE2eDatabase } from './d1-utils.ts'
+import {
+	clearAuthRateLimitsInE2eDatabase,
+	setEmailVerificationTokenInE2eDatabase,
+} from './d1-utils.ts'
 
 test('admin invite signup and email verification happy path', async ({
 	page,
@@ -18,6 +21,9 @@ test('admin invite signup and email verification happy path', async ({
 	const invitedPassword = 'invite-user-password'
 	const inviteCode = `E2E-${runId}`
 	const verificationToken = `verify-${runId}`
+	const adminCreatedEmail = `admin-created-${runId}@example.com`
+	const adminCreatedUsername = `admin-created-${runId}`
+	const adminCreatedPassword = 'admin-created-password'
 
 	await assignRole(adminUser.email, 'admin')
 	await login({
@@ -37,8 +43,46 @@ test('admin invite signup and email verification happy path', async ({
 	await expect(page.getByText('Invite created.')).toBeVisible()
 	await expect(page.getByRole('heading', { name: inviteCode })).toBeVisible()
 
+	await page.getByLabel('User email').fill(adminCreatedEmail)
+	await page.getByLabel('Username (optional)').fill(adminCreatedUsername)
+	await page.getByRole('button', { name: 'Create user', exact: true }).click()
+	await expect(
+		page.getByText('User created. Copy the setup link below.'),
+	).toBeVisible()
+	const setupLink =
+		(await page
+			.getByRole('link', { name: 'Open setup link' })
+			.getAttribute('href')) ?? ''
+	expect(setupLink).toContain('/reset-password?token=')
+
+	await page.context().clearCookies()
+	await page.goto(setupLink)
+	await expect(
+		page.getByRole('heading', { name: 'Choose a new password' }),
+	).toBeVisible()
+	await page.getByLabel('New password').fill(adminCreatedPassword)
+	clearAuthRateLimitsInE2eDatabase()
+	await page.getByRole('button', { name: 'Update password' }).click()
+	await expect(
+		page.getByText('Password updated. You can sign in.'),
+	).toBeVisible()
+
+	await page.goto('/login')
+	clearAuthRateLimitsInE2eDatabase()
+	await page.getByLabel('Email').fill(adminCreatedEmail)
+	await page.getByLabel('Password').fill(adminCreatedPassword)
+	await page.getByRole('button', { name: 'Sign in' }).click()
+	await expect(page).toHaveURL(/\/account$/)
+	await expect(
+		page.getByText(`Email: ${adminCreatedEmail} (verified)`),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Verify your email' }),
+	).toHaveCount(0)
+
 	await page.context().clearCookies()
 	await page.goto('/signup')
+	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Username').fill(invitedUsername)
 	await page.getByLabel('Email').fill(invitedEmail)
 	await page.getByLabel('Password').fill(invitedPassword)

@@ -21,7 +21,10 @@ import {
 	AccountManagementShell,
 	MetadataGrid,
 } from './account-management-components.tsx'
-import { type AdminInvitesLoaderData } from '#app/loader-data.ts'
+import {
+	type AdminCreatedUserSetup,
+	type AdminInvitesLoaderData,
+} from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -75,9 +78,10 @@ export async function adminInvitesRouteLoader(
 export function AdminInvitesRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
 	let invites: Array<AdminInviteListItem> = []
+	let createdUser: AdminCreatedUserSetup | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
-	let actionState: 'idle' | 'creating' | 'revoking' = 'idle'
+	let actionState: 'idle' | 'creating' | 'creatingUser' | 'revoking' = 'idle'
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
@@ -129,8 +133,13 @@ export function AdminInvitesRoute(handle: Handle) {
 		}
 	}
 
-	async function submitInviteAction(body: Record<string, unknown>) {
-		actionState = body.action === 'create_invite' ? 'creating' : 'revoking'
+	async function submitAdminAction(body: Record<string, unknown>) {
+		actionState =
+			body.action === 'create_invite'
+				? 'creating'
+				: body.action === 'create_user'
+					? 'creatingUser'
+					: 'revoking'
 		message = null
 		messageTone = 'info'
 		handle.update()
@@ -145,14 +154,23 @@ export function AdminInvitesRoute(handle: Handle) {
 				body: JSON.stringify(body),
 			})
 			const payload = await readJson<
-				AdminInvitesLoaderData & { ok?: boolean; error?: string }
+				AdminInvitesLoaderData & {
+					ok?: boolean
+					error?: string
+					createdUser?: AdminCreatedUserSetup
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error ?? 'Unable to update invites.')
 			}
 			applyData(payload)
+			createdUser = payload.createdUser ?? createdUser
 			message =
-				body.action === 'create_invite' ? 'Invite created.' : 'Invite revoked.'
+				body.action === 'create_invite'
+					? 'Invite created.'
+					: body.action === 'create_user'
+						? 'User created. Copy the setup link below.'
+						: 'Invite revoked.'
 			messageTone = 'info'
 		} catch (error) {
 			message =
@@ -168,7 +186,7 @@ export function AdminInvitesRoute(handle: Handle) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const formData = new FormData(event.currentTarget)
-		void submitInviteAction({
+		void submitAdminAction({
 			action: 'create_invite',
 			code: String(formData.get('code') ?? '').trim(),
 			note: String(formData.get('note') ?? '').trim(),
@@ -176,6 +194,21 @@ export function AdminInvitesRoute(handle: Handle) {
 			expiresAt: String(formData.get('expiresAt') ?? '').trim(),
 		})
 		event.currentTarget.reset()
+	}
+
+	function handleCreateUserSubmit(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
+		const formData = new FormData(form)
+		createdUser = null
+		void submitAdminAction({
+			action: 'create_user',
+			email: String(formData.get('email') ?? '').trim(),
+			username: String(formData.get('username') ?? '').trim(),
+		}).then(() => {
+			if (createdUser) form.reset()
+		})
 	}
 
 	const primaryButtonCss = getPrimaryButtonCss()
@@ -238,6 +271,85 @@ export function AdminInvitesRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
+				<AccountManagementPanel
+					title="Create user"
+					description="Create a verified account with no usable password, then copy the setup link into a manual email."
+					asForm
+					onSubmit={handleCreateUserSubmit}
+				>
+					<div
+						mix={css({
+							display: 'grid',
+							gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
+							gap: spacing.md,
+							alignItems: 'end',
+						})}
+					>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>User email</span>
+							<input
+								name="email"
+								type="email"
+								required
+								placeholder="person@example.com"
+								disabled={isMutating}
+								mix={css(inputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Username (optional)</span>
+							<input
+								name="username"
+								type="text"
+								placeholder="Auto-generated from email"
+								disabled={isMutating}
+								mix={css(inputCss)}
+							/>
+						</label>
+						<button
+							type="submit"
+							disabled={isMutating}
+							mix={css(primaryButtonCss)}
+						>
+							{actionState === 'creatingUser' ? 'Creating...' : 'Create user'}
+						</button>
+					</div>
+					{createdUser ? (
+						<div
+							mix={css({
+								display: 'grid',
+								gap: spacing.sm,
+								padding: spacing.md,
+								border: `1px solid ${colors.primary}`,
+								borderRadius: '0.75rem',
+								backgroundColor: colors.primarySoftest,
+							})}
+						>
+							<p mix={css({ margin: 0 })}>
+								Setup link for <strong>{createdUser.email}</strong>:
+							</p>
+							<input
+								readOnly
+								aria-label="Password setup link"
+								value={createdUser.setupLink}
+								mix={css(inputCss)}
+							/>
+							<a
+								href={createdUser.setupLink}
+								mix={css({ color: colors.primary })}
+							>
+								Open setup link
+							</a>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								Expires{' '}
+								{formatTimestamp(
+									new Date(createdUser.setupTokenExpiresAt).toISOString(),
+								)}
+								.
+							</p>
+						</div>
+					) : null}
+				</AccountManagementPanel>
 				<AccountManagementPanel
 					title="Create invite"
 					description="Leave the code blank to generate one automatically."
@@ -353,7 +465,7 @@ export function AdminInvitesRoute(handle: Handle) {
 											on(
 												'click',
 												() =>
-													void submitInviteAction({
+													void submitAdminAction({
 														action: 'revoke_invite',
 														code: invite.code,
 													}),

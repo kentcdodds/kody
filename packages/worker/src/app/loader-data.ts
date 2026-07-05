@@ -93,6 +93,14 @@ export type AdminInvitesLoaderData = {
 	invites: Array<AdminInviteListItem>
 }
 
+export type AdminCreatedUserSetup = {
+	userId: number
+	email: string
+	username: string
+	setupLink: string
+	setupTokenExpiresAt: number
+}
+
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string

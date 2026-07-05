@@ -8,14 +8,15 @@ import {
 } from '#app/audit-log.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
+import {
+	createPasswordResetToken,
+	hashPasswordResetToken,
+	passwordResetTokenExpiryMs,
+} from '#app/password-reset-tokens.ts'
 import { type routes } from '#app/routes.ts'
-import { toHex } from '@kody-internal/shared/hex.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
-
-const resetTokenBytes = 32
-const resetTokenExpiryMs = 60 * 60 * 1000
 
 const resetRequestSchema = object({
 	email: string(),
@@ -47,18 +48,6 @@ function buildResetEmail(resetUrl: string) {
   </body>
 </html>`,
 	}
-}
-
-function generateResetToken() {
-	const bytes = new Uint8Array(resetTokenBytes)
-	crypto.getRandomValues(bytes)
-	return toHex(bytes)
-}
-
-async function hashResetToken(token: string) {
-	const data = new TextEncoder().encode(token)
-	const digest = await crypto.subtle.digest('SHA-256', data)
-	return toHex(new Uint8Array(digest))
 }
 
 function logMissingEmailConfig(payload: { to: string; subject: string }) {
@@ -121,20 +110,16 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 				? getPasswordResetEmailConfig(appEnv)
 				: null
 
-			const token = generateResetToken()
-			const tokenHash = await hashResetToken(token)
-			const expiresAt = Date.now() + resetTokenExpiryMs
+			const expiresAt = Date.now() + passwordResetTokenExpiryMs
+			const resetToken = userRecord
+				? await createPasswordResetToken({
+						db: appEnv.APP_DB,
+						userId: userRecord.id,
+						expiresAt,
+					})
+				: null
 
-			if (userRecord) {
-				await db.deleteMany(passwordResetsTable, {
-					where: { user_id: userRecord.id },
-				})
-				await db.create(passwordResetsTable, {
-					user_id: userRecord.id,
-					token_hash: tokenHash,
-					expires_at: expiresAt,
-				})
-			}
+			const token = resetToken?.token ?? ''
 
 			if (userRecord) {
 				const resetUrl = new URL(
@@ -246,7 +231,7 @@ export function createPasswordResetConfirmHandler(appEnv: AppEnv) {
 				return Response.json({ error: passwordError }, { status: 400 })
 			}
 
-			const tokenHash = await hashResetToken(token)
+			const tokenHash = await hashPasswordResetToken(token)
 			const resetRecord = await db.findOne(passwordResetsTable, {
 				where: { token_hash: tokenHash },
 			})
