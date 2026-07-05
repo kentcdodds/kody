@@ -252,24 +252,7 @@ jobs:
           exit 1
 
       - name: 🧭 Reindex capability vectors (Vectorize)
-        shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
           CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CAPABILITY_REINDEX_SECRET:-}" ]; then
-            echo "Skipping capability reindex (CAPABILITY_REINDEX_SECRET not set)."
-            exit 0
-          fi
-          if [ -z "${DEPLOY_URL:-}" ]; then
-            echo "Skipping capability reindex (no deploy URL)."
-            exit 0
-          fi
-          base="${DEPLOY_URL%/}"
-          echo "POST ${base}/__maintenance/reindex-capabilities"
-          curl --fail --silent --show-error --location --max-time 120 \
-            -X POST \
-            -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
-            -H "Accept: application/json" \
-            "${base}/__maintenance/reindex-capabilities"
+        run: node tools/ci/post-deploy-capability-reindex.ts
