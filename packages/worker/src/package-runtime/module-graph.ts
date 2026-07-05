@@ -168,10 +168,10 @@ export function createRuntimeModuleSource() {
 	// value so \`if (email) { ... }\` guards stay falsy when a wrapper
 	// intentionally omits that export.
 	//
-	// \`capabilities\` is different: every execute/package runtime should provide
+	// \`kody\` is different: every execute/package runtime should provide
 	// it, and Worker module loaders may evaluate this virtual module before
 	// the wrapper installs the per-run store. In that preload case, expose a
-	// late-bound proxy so named imports like \`import { capabilities } from
+	// late-bound proxy so named imports like \`import { kody } from
 	// 'kody:runtime'\` still resolve against the current AsyncLocalStorage
 	// store at call time instead of freezing as undefined.
 	const source = `
@@ -192,7 +192,7 @@ function __kodyReadRuntimeExport(exportName) {
 	const runtimeExport = currentRuntime?.[exportName];
 	if (runtimeExport == null) {
 		throw new Error(
-			\`capabilities:runtime export "\${exportName}" is not available in this execution context.\`,
+			\`kody:runtime export "\${exportName}" is not available in this execution context.\`,
 		);
 	}
 	return runtimeExport;
@@ -264,12 +264,12 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 
 const __kodyInitialRuntime = __kodyRuntimeStorage.getStore();
 const runtime = __kodyInitialRuntime ?? {};
-const __kodyCapabilities =
+const __kodyObject =
 	__kodyInitialRuntime === undefined
-		? __kodyCreateRuntimeObjectProxy('capabilities')
-		: runtime.capabilities;
+		? __kodyCreateRuntimeObjectProxy('kody')
+		: runtime.kody;
 
-export const capabilities = __kodyCapabilities;
+export const kody = __kodyObject;
 export const storage = runtime.storage;
 export const refreshAccessToken = runtime.refreshAccessToken;
 export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
@@ -286,7 +286,7 @@ export const events = runtime.events ?? null;
 
 export default
 	__kodyInitialRuntime === undefined
-		? { ...runtime, capabilities: __kodyCapabilities }
+		? { ...runtime, kody: __kodyObject }
 		: runtime;
 `.trim()
 	cachedRuntimeModuleSource = source

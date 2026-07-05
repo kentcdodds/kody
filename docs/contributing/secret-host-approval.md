@@ -43,7 +43,7 @@ target host is not already approved for that secret, the correct behavior is:
 
 Do not design or document any MCP capability, generated UI helper, or client
 library that allows agent-controlled writes to a secret's allowed hosts or
-allowed capabilities.
+allowed kody.
 
 Specifically, do not:
 

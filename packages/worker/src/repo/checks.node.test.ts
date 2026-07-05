@@ -305,7 +305,7 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 		[
 			'src/job.ts',
 			`export default async (params) => {
-  await capabilities.value_get({ name: 'projectId' })
+  await kody.value_get({ name: 'projectId' })
   await storage.get('count')
   return params
 }
@@ -470,7 +470,7 @@ test('runRepoChecks validates every persisted package artifact target before pub
 		[
 			'src/job.ts',
 			`export default async (params) => {
-  const result = await capabilities.value_get({ name: 'projectId' })
+  const result = await kody.value_get({ name: 'projectId' })
   await storage.get('count')
   return { params, result }
 }

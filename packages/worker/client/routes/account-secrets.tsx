@@ -416,9 +416,7 @@ function getAlreadyAddedNotice(input: {
 		requestedCapability != null &&
 		allowedCapabilities.includes(requestedCapability)
 	) {
-		items.push(
-			`Capability ${requestedCapability} is already in allowed capabilities.`,
-		)
+		items.push(`Capability ${requestedCapability} is already in allowed kody.`)
 	}
 	const packageAlreadyAdded =
 		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)

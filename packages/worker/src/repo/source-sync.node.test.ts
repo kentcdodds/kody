@@ -35,7 +35,7 @@ const bootstrapAccess: ArtifactBootstrapAccess = {
 }
 
 const jobFiles = {
-	'capabilities.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
+	'kody.json': '{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 	'src/job.ts': 'export default async function main() { return { ok: true } }',
 }
 
@@ -95,7 +95,7 @@ function createUnpublishedSourceRow() {
 		repo_id: 'job-1',
 		published_commit: null,
 		indexed_commit: null,
-		manifest_path: 'capabilities.json',
+		manifest_path: 'kody.json',
 		source_root: '/',
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
@@ -150,8 +150,8 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 		edits: [
 			{
 				kind: 'write',
-				path: 'capabilities.json',
-				content: jobFiles['capabilities.json'],
+				path: 'kody.json',
+				content: jobFiles['kody.json'],
 			},
 			{
 				kind: 'write',
@@ -183,7 +183,7 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	const bootstrapAccessCommit = await syncArtifactSourceSnapshot({
 		...syncInput,
 		bootstrapAccess,
-		files: { 'capabilities.json': jobFiles['capabilities.json'] },
+		files: { 'kody.json': jobFiles['kody.json'] },
 	})
 
 	expect(bootstrapAccessCommit).toBe('commit-bootstrap-2')
@@ -223,7 +223,7 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 
 	const sessionCommit = await syncArtifactSourceSnapshot({
 		...syncInput,
-		files: { 'capabilities.json': jobFiles['capabilities.json'] },
+		files: { 'kody.json': jobFiles['kody.json'] },
 	})
 
 	expect(sessionCommit).toBe('commit-session-2')

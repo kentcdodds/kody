@@ -105,9 +105,8 @@ automatically:
   through the configured Cloudflare AI Gateway when set)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities` to refresh all capability-search
-  vectors in Vectorize: built-in capabilities, memories, jobs, and saved
-  packages. Saved package projections also refresh when packages are saved or
-  published.)
+  vectors in Vectorize: built-in kody, memories, jobs, and saved packages. Saved
+  package projections also refresh when packages are saved or published.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.

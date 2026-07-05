@@ -120,6 +120,6 @@ Use the MCP `community` domain:
 Forks are copies. Cross-user package imports never resolve. The only deliberate
 cross-user data flows are the public listing snapshot and aggregate ratings.
 
-Owner user ids are not exposed on public pages or through community
-capabilities. The package name scope reveals the owner's **username**, as it
-does for normal package URLs.
+Owner user ids are not exposed on public pages or through community kody. The
+package name scope reveals the owner's **username**, as it does for normal
+package URLs.

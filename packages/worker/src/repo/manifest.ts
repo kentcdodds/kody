@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { repoManifestSchema, type RepoManifest } from './types.ts'
 
-const defaultManifestPath = 'capabilities.json'
+const defaultManifestPath = 'kody.json'
 
 export function parseRepoManifest(input: {
 	content: string

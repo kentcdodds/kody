@@ -9,13 +9,13 @@ when a token already exists inside trusted code.
 Use **search** first to discover saved secret references or integrations before
 switching to **execute**.
 
-During **execute**, **`await capabilities.secret_list({})`** (or a narrowed
-**`scope`** such as **`app`**) returns **metadata only**: names, descriptions,
-allowed hosts, allowed capabilities — not plaintext values.
+During **execute**, **`await kody.secret_list({})`** (or a narrowed **`scope`**
+such as **`app`**) returns **metadata only**: names, descriptions, allowed
+hosts, allowed capabilities — not plaintext values.
 
-**`capabilities.secret_set(...)`** persists a value that is already available
-inside execution (for example a refreshed OAuth token). It does not return
-secret values.
+**`kody.secret_set(...)`** persists a value that is already available inside
+execution (for example a refreshed OAuth token). It does not return secret
+values.
 
 ## Placeholders in `fetch` and capability inputs
 
@@ -58,8 +58,8 @@ them.
 
 ## Signing JWTs with saved private keys
 
-Use **`capabilities.secret_jwt_sign(...)`** when a workflow needs a JWT signed
-by a private key stored in a saved secret. The primitive returns
+Use **`kody.secret_jwt_sign(...)`** when a workflow needs a JWT signed by a
+private key stored in a saved secret. The primitive returns
 **`{ jwt, algorithm }`**: use **`result.jwt`** as the compact JWT and
 **`result.algorithm`** for the signing algorithm. It never returns private key
 material. The saved secret must approve the **`secret_jwt_sign`** capability

@@ -117,8 +117,7 @@ function mockRepoPersistence() {
 				entityKind,
 				entityId,
 				publishedCommit: 'published-commit-1',
-				manifestPath:
-					entityKind === 'package' ? 'package.json' : 'capabilities.json',
+				manifestPath: entityKind === 'package' ? 'package.json' : 'kody.json',
 				sourceRoot: sourceRoot ?? '/',
 			})
 			return {
@@ -129,8 +128,7 @@ function mockRepoPersistence() {
 				repo_id: `${entityKind}-${entityId}`,
 				published_commit: 'published-commit-1',
 				indexed_commit: null,
-				manifest_path:
-					entityKind === 'package' ? 'package.json' : 'capabilities.json',
+				manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
 				source_root: sourceRoot ?? '/',
 				created_at: '2026-04-18T00:00:00.000Z',
 				updated_at: '2026-04-18T00:00:00.000Z',
@@ -156,9 +154,7 @@ function mockRepoPersistence() {
 						(existing['entity_kind'] as 'job' | 'package' | undefined) ?? 'job',
 					entityId: String(existing['entity_id'] ?? sourceId),
 					publishedCommit: 'published-commit-1',
-					manifestPath: String(
-						existing['manifest_path'] ?? 'capabilities.json',
-					),
+					manifestPath: String(existing['manifest_path'] ?? 'kody.json'),
 					sourceRoot: String(existing['source_root'] ?? '/'),
 				})
 				if (env.BUNDLE_ARTIFACTS_KV) {
@@ -179,9 +175,7 @@ function mockRepoPersistence() {
 							repo_id: String(existing['repo_id'] ?? sourceId),
 							published_commit: 'published-commit-1',
 							indexed_commit: null,
-							manifest_path: String(
-								existing['manifest_path'] ?? 'capabilities.json',
-							),
+							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
 							source_root: String(existing['source_root'] ?? '/'),
 							created_at: String(
 								existing['created_at'] ?? '2026-04-16T00:00:00.000Z',
@@ -1035,7 +1029,7 @@ async function insertPublishedEntitySource(input: {
 			`${input.entityKind ?? 'job'}-${input.entityId}`,
 			input.publishedCommit,
 			null,
-			input.manifestPath ?? 'capabilities.json',
+			input.manifestPath ?? 'kody.json',
 			input.sourceRoot ?? '/',
 			'2026-04-16T00:00:00.000Z',
 			'2026-04-16T00:00:00.000Z',
@@ -1061,7 +1055,7 @@ async function insertPublishedEntitySource(input: {
 				repo_id: `${input.entityKind ?? 'job'}-${input.entityId}`,
 				published_commit: input.publishedCommit,
 				indexed_commit: null,
-				manifest_path: input.manifestPath ?? 'capabilities.json',
+				manifest_path: input.manifestPath ?? 'kody.json',
 				source_root: input.sourceRoot ?? '/',
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
@@ -1578,7 +1572,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		entityId: created.id,
 		publishedCommit: 'published-commit-2',
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Inspect source job',
@@ -1622,7 +1616,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		entityId: missingEntrypointJob.id,
 		publishedCommit: 'published-commit-2',
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Missing source job',
@@ -1683,7 +1677,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 			entityKind: 'job',
 			entityId: missingManifestJob.id,
 			publishedCommit: 'published-commit-2',
-			manifestPath: 'capabilities.json',
+			manifestPath: 'kody.json',
 			sourceRoot: '/',
 			files: {
 				'src/job.ts': 'export default async () => ({ ok: true })',
@@ -1703,7 +1697,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	expect(missingManifestInspection.source).toEqual({
 		entrypoint: null,
 		code: null,
-		error: 'Job manifest "capabilities.json" was not found.',
+		error: 'Job manifest "kody.json" was not found.',
 	})
 })
 
@@ -1777,9 +1771,9 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		entityKind: 'job',
 		entityId: jobView.id,
 		publishedCommit: 'published-commit-1',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Storage bridge',
@@ -1794,7 +1788,7 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -1889,7 +1883,7 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	}
 })
 
-test('executeJobOnce runs repo-backed one-off jobs from capabilities.json manifests', async () => {
+test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', async () => {
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
@@ -1959,9 +1953,9 @@ test('executeJobOnce runs repo-backed one-off jobs from capabilities.json manife
 		entityKind: 'job',
 		entityId: jobView.id,
 		publishedCommit: 'published-commit-1',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Capability-created one-off job',
@@ -1975,7 +1969,7 @@ test('executeJobOnce runs repo-backed one-off jobs from capabilities.json manife
 
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -2001,14 +1995,14 @@ test('executeJobOnce runs repo-backed one-off jobs from capabilities.json manife
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 				published_commit: 'published-commit-1',
-				manifest_path: 'capabilities.json',
+				manifest_path: 'kody.json',
 				entity_type: 'job' as const,
 			})),
 			runChecks: vi.fn(),
 			readFile: vi.fn(async ({ path }: { path: string }) => ({
 				path,
 				content:
-					path === 'capabilities.json'
+					path === 'kody.json'
 						? JSON.stringify({
 								version: 1,
 								kind: 'job',
@@ -2026,8 +2020,8 @@ test('executeJobOnce runs repo-backed one-off jobs from capabilities.json manife
 				size: 0,
 				children: [
 					{
-						path: 'capabilities.json',
-						name: 'capabilities.json',
+						path: 'kody.json',
+						name: 'kody.json',
 						type: 'file' as const,
 						size: 1,
 					},
@@ -2071,7 +2065,7 @@ test('executeJobOnce runs repo-backed one-off jobs from capabilities.json manife
 			repoContext: expect.objectContaining({
 				entityKind: 'job',
 				entityId: jobView.id,
-				manifestPath: 'capabilities.json',
+				manifestPath: 'kody.json',
 			}),
 		})
 		expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
@@ -2142,9 +2136,9 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 		entityKind: 'job',
 		entityId: jobView.id,
 		publishedCommit: 'published-commit-1',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Use kody semantics',
@@ -2158,7 +2152,7 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -2406,7 +2400,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -2443,10 +2437,10 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 		entityKind: 'job',
 		entityId: 'job-stale-bundle',
 		publishedCommit: 'commit-1',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		kv: bundleKv,
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Stale bundle job',
@@ -2491,10 +2485,10 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 		entityKind: 'job',
 		entityId: 'job-stale-bundle',
 		publishedCommit: 'commit-2',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		kv: bundleKv,
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Stale bundle job',
@@ -2540,7 +2534,7 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 	}
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -2672,7 +2666,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -2829,7 +2823,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -2985,7 +2979,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi.spyOn(
-		await import('#mcp/run-capabilities-registry.ts'),
+		await import('#mcp/run-kody-registry.ts'),
 		'runBundledModuleWithRegistry',
 	)
 	const formatJobErrorSpy = vi.spyOn(
@@ -3169,7 +3163,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -3274,7 +3268,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		'formatJobError',
 	)
 	const executeSpy = vi.spyOn(
-		await import('#mcp/run-capabilities-registry.ts'),
+		await import('#mcp/run-kody-registry.ts'),
 		'runBundledModuleWithRegistry',
 	)
 
@@ -3436,7 +3430,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi.spyOn(
-		await import('#mcp/run-capabilities-registry.ts'),
+		await import('#mcp/run-kody-registry.ts'),
 		'runBundledModuleWithRegistry',
 	)
 	const bundleSpy = vi.spyOn(
@@ -3444,7 +3438,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		'buildKodyModuleBundle',
 	)
 	const loadFilesSpy = vi.spyOn(
-		await import('#worker/repo/repo-capabilities-execution.ts'),
+		await import('#worker/repo/repo-kody-execution.ts'),
 		'loadRepoSourceFilesFromSession',
 	)
 
@@ -3560,7 +3554,7 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -3763,7 +3757,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -3836,7 +3830,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		entityKind: 'job',
 		entityId: jobView.id,
 		publishedCommit: 'published-commit-1',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		files: buildJobSourceFiles({
 			job: jobView,
 			moduleSource:
@@ -3940,7 +3934,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
@@ -4045,9 +4039,9 @@ test('executeJobOnce records job_run usage for success and failure without chang
 		entityKind: 'job',
 		entityId: jobView.id,
 		publishedCommit: 'published-commit-1',
-		manifestPath: 'capabilities.json',
+		manifestPath: 'kody.json',
 		files: {
-			'capabilities.json': JSON.stringify({
+			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
 				title: 'Usage-metered job',
@@ -4060,7 +4054,7 @@ test('executeJobOnce records job_run usage for success and failure without chang
 	})
 	const executeSpy = vi
 		.spyOn(
-			await import('#mcp/run-capabilities-registry.ts'),
+			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValueOnce({
@@ -4089,14 +4083,14 @@ test('executeJobOnce records job_run usage for success and failure without chang
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'published-commit-1',
-			manifest_path: 'capabilities.json',
+			manifest_path: 'kody.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(),
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'capabilities.json'
+				path === 'kody.json'
 					? JSON.stringify({
 							version: 1,
 							kind: 'job',
@@ -4114,8 +4108,8 @@ test('executeJobOnce records job_run usage for success and failure without chang
 			size: 0,
 			children: [
 				{
-					path: 'capabilities.json',
-					name: 'capabilities.json',
+					path: 'kody.json',
+					name: 'kody.json',
 					type: 'file' as const,
 					size: 1,
 				},

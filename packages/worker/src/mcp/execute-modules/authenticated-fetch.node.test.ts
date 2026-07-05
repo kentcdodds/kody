@@ -2,10 +2,10 @@ import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
 	type CapabilityArgs,
-	type CapabilitiesNamespace,
+	type KodyNamespace,
 	IntegrationHostNotAllowedError,
 	createAuthenticatedFetch,
-} from './capabilities-runtime-utils.ts'
+} from './kody-runtime-utils.ts'
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
@@ -31,9 +31,9 @@ const spotifyIntegration = {
 	requiredHosts: ['api.spotify.com', 'cdn.spotify.com'],
 }
 
-function createCapabilities() {
+function createKody() {
 	const secretSetCalls: Array<SecretSetCall> = []
-	const capabilities = {
+	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
@@ -49,9 +49,9 @@ function createCapabilities() {
 			secretSetCalls.push(call)
 			return { name: call.name, scope: call.scope }
 		},
-	} satisfies CapabilitiesNamespace
+	} satisfies KodyNamespace
 
-	return { capabilities, secretSetCalls }
+	return { kody, secretSetCalls }
 }
 
 function createSpotifyHandlers(fetchCalls: Array<Request>) {
@@ -74,14 +74,11 @@ function createSpotifyHandlers(fetchCalls: Array<Request>) {
 }
 
 test('createAuthenticatedFetch enforces integration host allowlists and fails closed without configured hosts', async () => {
-	const { capabilities } = createCapabilities()
+	const { kody } = createKody()
 	const fetchCalls: Array<Request> = []
 
 	using _server = createMswNodeServer(createSpotifyHandlers(fetchCalls))
-	const authenticatedFetch = await createAuthenticatedFetch(
-		capabilities,
-		'spotify',
-	)
+	const authenticatedFetch = await createAuthenticatedFetch(kody, 'spotify')
 
 	const fetchCallsAfterSetup = fetchCalls.length
 
@@ -140,7 +137,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 			const call = args as { name: string; value: string; scope: string }
 			return { name: call.name, scope: call.scope }
 		},
-	} satisfies CapabilitiesNamespace
+	} satisfies KodyNamespace
 
 	const emptyAllowlistFetchCalls: Array<Request> = []
 	using _emptyAllowlistServer = createMswNodeServer([

@@ -72,7 +72,7 @@ endpoint-oriented.
 At a high level, the flow looks like this:
 
 1. The local agent opens an outbound WebSocket connection to the cloud layer.
-2. The agent authenticates and announces its capabilities.
+2. The agent authenticates and announces its kody.
 3. The cloud layer routes commands to that connected agent.
 4. The agent executes the command locally and sends back a correlated result.
 5. The agent may also push state updates when local context changes.

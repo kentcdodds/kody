@@ -4,8 +4,7 @@ This repository maintains two audiences:
 
 - **[`docs/use/`](../use/index.md)** — People who connect an agent to Kody over
   MCP. Progressive disclosure: short pages linked from the usage index.
-- **`docs/contributing/`** — People who develop Kody (code, capabilities,
-  infra).
+- **`docs/contributing/`** — People who develop Kody (code, kody, infra).
 
 ## Principles
 

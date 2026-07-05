@@ -5,7 +5,7 @@
 - **Rephrase the query** using domain vocabulary from the search tool’s domain
   hints (for example “GitHub”, “Cloudflare”, “meta capabilities”).
 - Try **`meta_list_capabilities`** for the full live registry, including dynamic
-  capabilities.
+  kody.
 - **`entity: "id:capability"`** looks up a **known** id. It does **not** turn an
   empty ranked **`query`** into better matches — rephrase or list capabilities
   instead.

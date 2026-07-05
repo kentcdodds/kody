@@ -1,7 +1,7 @@
 # Contributing to Kody
 
 Documentation for people and agents **developing this repository**: setup, code
-style, tests, MCP capabilities, and runtime architecture.
+style, tests, MCP kody, and runtime architecture.
 
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Environment variables](./environment-variables.md),
@@ -14,7 +14,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Packages and manifests](./packages-and-manifests.md)
 - [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
-- [Adding capabilities](./adding-capabilities.md)
+- [Adding capabilities](./adding-kody.md)
 - [Architecture](./architecture/index.md) — includes
   [authorization](./architecture/authorization.md) (RBAC)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)

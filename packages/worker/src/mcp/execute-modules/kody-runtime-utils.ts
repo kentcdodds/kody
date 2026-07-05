@@ -10,7 +10,7 @@ type SecretScope = 'session' | 'app' | 'user'
 
 export type CapabilityArgs = Record<string, unknown>
 
-export type CapabilitiesNamespace = Record<
+export type KodyNamespace = Record<
 	string,
 	(args: CapabilityArgs) => Promise<CapabilityResult>
 >
@@ -100,7 +100,7 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
  * `createAuthenticatedFetch` which performs this enforcement automatically.
  */
 export async function refreshAccessToken(
-	kody: CapabilitiesNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 ): Promise<string> {
 	const integration = await readIntegrationConfig(kody, providerName)
@@ -108,7 +108,7 @@ export async function refreshAccessToken(
 }
 
 export async function createAuthenticatedFetch(
-	kody: CapabilitiesNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 ): Promise<
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
@@ -196,14 +196,12 @@ export async function oauthClientCredentials(
 }
 
 async function readIntegrationConfig(
-	capabilities: CapabilitiesNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 ) {
-	const integrationGet = capabilities.integration_get
+	const integrationGet = kody.integration_get
 	if (typeof integrationGet !== 'function') {
-		throw new Error(
-			'capabilities.integration_get is not available in this sandbox.',
-		)
+		throw new Error('kody.integration_get is not available in this sandbox.')
 	}
 	const result = (await integrationGet({
 		name: providerName,
@@ -216,12 +214,12 @@ async function readIntegrationConfig(
 }
 
 async function readClientId(
-	capabilities: CapabilitiesNamespace,
+	kody: KodyNamespace,
 	integration: IntegrationConfig,
 ) {
-	const valueGet = capabilities.value_get
+	const valueGet = kody.value_get
 	if (typeof valueGet !== 'function') {
-		throw new Error('capabilities.value_get is not available in this sandbox.')
+		throw new Error('kody.value_get is not available in this sandbox.')
 	}
 	const value = (await valueGet({
 		name: integration.clientIdValueName,
@@ -235,15 +233,15 @@ async function readClientId(
 }
 
 async function persistSecret(
-	capabilities: CapabilitiesNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 	secretName: string,
 	secretKind: 'access token' | 'refresh token',
 	value: string,
 ) {
-	const secretSet = capabilities.secret_set
+	const secretSet = kody.secret_set
 	if (typeof secretSet !== 'function') {
-		throw new Error('capabilities.secret_set is not available in this sandbox.')
+		throw new Error('kody.secret_set is not available in this sandbox.')
 	}
 	const normalizedSecretName = secretName.trim()
 	if (!normalizedSecretName) {
@@ -259,7 +257,7 @@ async function persistSecret(
 }
 
 async function refreshAccessTokenWithIntegration(
-	kody: CapabilitiesNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 	integration: IntegrationConfig,
 ) {
@@ -581,9 +579,9 @@ const secretHeaders = {
   },
 };
 const __kodyReadIntegrationConfig = async (providerName) => {
-  const integrationGet = capabilities.integration_get;
+  const integrationGet = kody.integration_get;
   if (typeof integrationGet !== 'function') {
-    throw new Error('capabilities.integration_get is not available in this sandbox.');
+    throw new Error('kody.integration_get is not available in this sandbox.');
   }
   const result = await integrationGet({ name: providerName });
   const integration = result?.integration ?? null;
@@ -593,9 +591,9 @@ const __kodyReadIntegrationConfig = async (providerName) => {
   return integration;
 };
 const __kodyReadClientId = async (integration) => {
-  const valueGet = capabilities.value_get;
+  const valueGet = kody.value_get;
   if (typeof valueGet !== 'function') {
-    throw new Error('capabilities.value_get is not available in this sandbox.');
+    throw new Error('kody.value_get is not available in this sandbox.');
   }
   const value = await valueGet({ name: integration.clientIdValueName });
   if (!value?.value) {
@@ -611,9 +609,9 @@ const __kodyPersistSecret = async (
   secretKind,
   value,
 ) => {
-  const secretSet = capabilities.secret_set;
+  const secretSet = kody.secret_set;
   if (typeof secretSet !== 'function') {
-    throw new Error('capabilities.secret_set is not available in this sandbox.');
+    throw new Error('kody.secret_set is not available in this sandbox.');
   }
   const normalizedSecretName = secretName.trim();
   if (!normalizedSecretName) {

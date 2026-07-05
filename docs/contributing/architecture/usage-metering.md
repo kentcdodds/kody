@@ -39,16 +39,16 @@ stays reviewable in one place.
 
 ### Metrics and their chokepoints
 
-| `eventType`        | Metered unit                                    | Recorded at                                                                                  | `entityId`                  |
-| ------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------- |
-| `execute`          | one dynamic-worker sandbox evaluation           | `packages/worker/src/mcp/executor.ts` (`execute`)                                            | none                        |
-| `package_export`   | one saved-package bundled-code run              | `packages/worker/src/mcp/run-capabilities-registry.ts` (bundled runs with a package context) | package id                  |
-| `job_run`          | one job execution                               | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                     | job id                      |
-| `workflow_run`     | one Cloudflare Workflow run                     | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`)   | workflow instance id        |
-| `service_runtime`  | one package service run (bounded or persistent) | `packages/worker/src/package-runtime/package-service.ts` (run finalization)                  | `{packageId}:{serviceName}` |
-| `realtime_session` | one realtime websocket session                  | reserved — not yet instrumented                                                              | session id                  |
-| `outbound_fetch`   | one outbound fetch through the gateway          | `packages/worker/src/mcp/fetch-gateway.ts` (`CapabilitiesFetchGateway.fetch`)                | request host                |
-| `email_send`       | one outbound email send attempt                 | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                | email message id            |
+| `eventType`        | Metered unit                                    | Recorded at                                                                                | `entityId`                  |
+| ------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- |
+| `execute`          | one dynamic-worker sandbox evaluation           | `packages/worker/src/mcp/executor.ts` (`execute`)                                          | none                        |
+| `package_export`   | one saved-package bundled-code run              | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)       | package id                  |
+| `job_run`          | one job execution                               | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                   | job id                      |
+| `workflow_run`     | one Cloudflare Workflow run                     | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`) | workflow instance id        |
+| `service_runtime`  | one package service run (bounded or persistent) | `packages/worker/src/package-runtime/package-service.ts` (run finalization)                | `{packageId}:{serviceName}` |
+| `realtime_session` | one realtime websocket session                  | reserved — not yet instrumented                                                            | session id                  |
+| `outbound_fetch`   | one outbound fetch through the gateway          | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                      | request host                |
+| `email_send`       | one outbound email send attempt                 | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                              | email message id            |
 
 ### Nesting: metrics are independent, do not sum across types
 

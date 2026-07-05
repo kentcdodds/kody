@@ -115,7 +115,7 @@ export type CapabilityDomainMetadata = {
 }
 
 /**
- * Single source of truth for a domain: metadata plus its capabilities.
+ * Single source of truth for a domain: metadata plus its kody.
  * Pass an array of these to `buildCapabilityRegistry` (see `builtin-domains.ts`).
  */
 export type DomainSpec = {

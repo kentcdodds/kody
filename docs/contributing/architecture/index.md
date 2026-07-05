@@ -68,10 +68,10 @@ token and then attaches it to an outbound request.
   `packages/worker/src/mcp/capabilities/builtin-domains.ts`, built by
   `packages/worker/src/mcp/capabilities/build-capability-registry.ts`,
   re-exported from `packages/worker/src/mcp/capabilities/registry.ts` (see
-  [`../adding-capabilities.md`](../adding-capabilities.md)).
+  [`../adding-kody.md`](../adding-kody.md)).
 - Workflow runtime hub:
   `packages/worker/src/package-runtime/package-workflows.ts` defines the shared
   `DynamicCallableWorkflow` Cloudflare Workflow used by every runtime context.
   Runtime injection is wired through
-  `packages/worker/src/mcp/run-capabilities-registry.ts` for bundled code and
+  `packages/worker/src/mcp/run-kody-registry.ts` for bundled code and
   `packages/worker/src/package-runtime/package-app.ts` for package apps.

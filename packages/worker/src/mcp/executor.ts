@@ -26,9 +26,9 @@ import {
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import {
-	type CapabilitiesRemoteConnectorMetadata,
-	type CapabilitiesResolvedProvider,
-} from '#mcp/capabilities-remote-types.ts'
+	type KodyRemoteConnectorMetadata,
+	type KodyResolvedProvider,
+} from '#mcp/kody-remote-types.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -119,8 +119,8 @@ type DynamicWorkerEntrypoint = {
 	}>
 }
 
-export function createCapabilitiesRemoteProxy(input: {
-	remoteConnectors: Array<CapabilitiesRemoteConnectorMetadata>
+export function createKodyRemoteProxy(input: {
+	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	callTool: (dispatchName: string, args: unknown) => Promise<unknown>
 }) {
 	const connectors = Object.fromEntries(
@@ -198,9 +198,9 @@ export function createExecuteExecutor(input: {
 	timeoutMs?: number | null
 }) {
 	const loopbackExports = input.exports ?? workerExports
-	if (!loopbackExports?.CapabilitiesFetchGateway) {
+	if (!loopbackExports?.KodyFetchGateway) {
 		throw new Error(
-			'CapabilitiesFetchGateway export is required for execute-time fetch.',
+			'KodyFetchGateway export is required for execute-time fetch.',
 		)
 	}
 	const timeout =
@@ -210,7 +210,7 @@ export function createExecuteExecutor(input: {
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
-		globalOutbound: loopbackExports.CapabilitiesFetchGateway({
+		globalOutbound: loopbackExports.KodyFetchGateway({
 			props: input.gatewayProps,
 		}),
 		modules: input.modules,
@@ -384,9 +384,9 @@ function createExecutorModule(input: {
 }
 
 function createProviderProxySource(provider: ResolvedProvider) {
-	const kodyProvider = provider as CapabilitiesResolvedProvider
-	if (provider.name === 'capabilities' && kodyProvider.kodyRemoteConnectors) {
-		return createCapabilitiesProviderProxySource({
+	const kodyProvider = provider as KodyResolvedProvider
+	if (provider.name === 'kody' && kodyProvider.kodyRemoteConnectors) {
+		return createKodyProviderProxySource({
 			providerName: provider.name,
 			remoteConnectors: kodyProvider.kodyRemoteConnectors,
 		})
@@ -396,13 +396,13 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
 }
 
-export function createCapabilitiesProviderProxySource(input: {
+export function createKodyProviderProxySource(input: {
 	providerName: string
-	remoteConnectors: Array<CapabilitiesRemoteConnectorMetadata>
+	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 }) {
 	const metadataJson = JSON.stringify(input.remoteConnectors)
-	return `    const __kodyCreateCapabilitiesRemoteProxy = ${createCapabilitiesRemoteProxy.toString()};
-    const __kodyRemote = __kodyCreateCapabilitiesRemoteProxy({
+	return `    const __kodyCreateRemoteProxy = ${createKodyRemoteProxy.toString()};
+    const __kodyRemote = __kodyCreateRemoteProxy({
       remoteConnectors: ${metadataJson},
       callTool: async (dispatchName, args) => {
         const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
@@ -417,7 +417,7 @@ export function createCapabilitiesProviderProxySource(input: {
         if (toolName === 'remote') return __kodyRemote;
         const normalizedToolName = String(toolName);
         if (normalizedToolName.startsWith('remote:')) {
-          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat capabilities function. Use capabilities.remote[connectorName].capabilityName(input) instead.\`);
+          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat kody function. Use kody.remote[connectorName].capabilityName(input) instead.\`);
         }
         return async (args) => {
           const resJson = await __dispatchers.${input.providerName}.call(normalizedToolName, JSON.stringify(args ?? {}));

@@ -103,8 +103,8 @@ Capabilities:
 - `community_report`
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
-builtin domains (see [Adding capabilities](./adding-capabilities.md)). Do not
-surface community listings through the general capability/package search path.
+builtin domains (see [Adding capabilities](./adding-kody.md)). Do not surface
+community listings through the general capability/package search path.
 
 ## Public routes and Open Graph images
 
@@ -185,6 +185,6 @@ Empty queries sort by Bayesian score, then `publishedAt`.
 
 - [Packages and manifests](./packages-and-manifests.md) — saved package model
 - [Repo-backed editing sessions](../use/repo-sessions.md) — fork activation path
-- [Adding capabilities](./adding-capabilities.md) — domain registration
+- [Adding capabilities](./adding-kody.md) — domain registration
 - [Primitives map](./architecture/primitives.yaml) — `community-listings`
   primitive entry

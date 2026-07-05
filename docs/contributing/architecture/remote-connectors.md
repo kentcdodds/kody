@@ -94,7 +94,7 @@ saved remote connector settings. Operators can manage those settings at
 
 - **`kind`** is protocol metadata, and **`instanceId`** is the user-chosen
   connector name. Names are unique per user across all kinds because they key
-  `capabilities.remote[name]`.
+  `kody.remote[name]`.
 - **`enabled`** controls whether the saved shared secret can authenticate
   `connector.hello` for that ref.
 - **`attached`** controls whether the ref is included in normal Kody MCP/chat
@@ -111,13 +111,12 @@ Source: `packages/shared/src/chat.ts`,
 - The Worker uses distinct **domain ids** (for example `remote:<name>`) and
   remote capability **entity ids** of the form `remote:<name>:<tool>`.
 - In execute/runtime code, remote connector tools are visibly separate from
-  built-ins: use `capabilities.remote["<name>"].<tool>(input)`. Built-ins remain
-  flat (`capabilities.value_get(...)`), but remote tools are never exposed as
-  flat `capabilities.<kind>_<instance>_<tool>` functions.
+  built-ins: use `kody.remote["<name>"].<tool>(input)`. Built-ins remain flat
+  (`kody.value_get(...)`), but remote tools are never exposed as flat
+  `kody.<kind>_<instance>_<tool>` functions.
 - Search capability detail returns the exact remote call snippet. If a connector
-  is missing, disconnected, or exposes a different tool list, the
-  `capabilities.remote` Proxy throws an error listing available connectors or
-  capabilities.
+  is missing, disconnected, or exposes a different tool list, the `kody.remote`
+  Proxy throws an error listing available connectors or kody.
 
 ## Connector checklist
 

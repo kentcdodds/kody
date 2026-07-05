@@ -33,10 +33,10 @@ import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-contro
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
 import {
-	type CapabilitiesRemoteConnectorMetadata,
-	type CapabilitiesResolvedProvider,
-} from '#mcp/capabilities-remote-types.ts'
-import { createExecuteHelperPrelude } from '#mcp/execute-modules/capabilities-runtime-utils.ts'
+	type KodyRemoteConnectorMetadata,
+	type KodyResolvedProvider,
+} from '#mcp/kody-remote-types.ts'
+import { createExecuteHelperPrelude } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import {
 	hasTopLevelModuleSyntax,
 	stripCodeFences,
@@ -66,10 +66,7 @@ import {
 } from '#worker/remote-connector/status.ts'
 import { remoteConnectorKodyName } from '#worker/remote-connector/remote-domain-id.ts'
 
-type AdditionalCapabilitiesTools = Record<
-	string,
-	(args: unknown) => Promise<unknown>
->
+type AdditionalKodyTools = Record<string, (args: unknown) => Promise<unknown>>
 
 type StorageToolOptions = {
 	userId: string
@@ -225,17 +222,17 @@ export function createWorkflowTools(input: {
 function createServiceHelperPrelude() {
 	return `
 const service = {
-  getStatus: async () => await capabilities.service_get_status({}),
+  getStatus: async () => await kody.service_get_status({}),
   shouldStop: async () => {
-    const result = await capabilities.service_should_stop({});
+    const result = await kody.service_should_stop({});
     return result?.shouldStop === true;
   },
   setAlarm: async (runAt) => {
     const normalizedRunAt =
       runAt instanceof Date ? runAt.toISOString() : String(runAt ?? '');
-    return await capabilities.service_set_alarm({ runAt: normalizedRunAt });
+    return await kody.service_set_alarm({ runAt: normalizedRunAt });
   },
-  clearAlarm: async () => await capabilities.service_clear_alarm({}),
+  clearAlarm: async () => await kody.service_clear_alarm({}),
 };
 	`.trim()
 }
@@ -248,7 +245,7 @@ const packageSecrets = {
     if (!normalizedAlias) {
       throw new Error('packageSecrets.get requires a non-empty alias.')
     }
-    const result = await capabilities.package_secret_get({ alias: normalizedAlias });
+    const result = await kody.package_secret_get({ alias: normalizedAlias });
     return typeof result?.value === 'string' ? result.value : '';
   },
   has: async (alias) => {
@@ -256,7 +253,7 @@ const packageSecrets = {
     if (!normalizedAlias) {
       throw new Error('packageSecrets.has requires a non-empty alias.')
     }
-    const result = await capabilities.package_secret_has({ alias: normalizedAlias });
+    const result = await kody.package_secret_has({ alias: normalizedAlias });
     return result?.has === true;
   },
 };
@@ -272,7 +269,7 @@ const email = {
     if (!normalizedMessageId) {
       throw new Error('email.getMessage requires a non-empty message id.')
     }
-    return await capabilities.email_message_get({ message_id: normalizedMessageId });
+    return await kody.email_message_get({ message_id: normalizedMessageId });
   },
   getAttachment: async (attachmentId) => {
     const normalizedAttachmentId =
@@ -280,7 +277,7 @@ const email = {
     if (!normalizedAttachmentId) {
       throw new Error('email.getAttachment requires a non-empty attachment id.')
     }
-    const result = await capabilities.email_attachment_get({
+    const result = await kody.email_attachment_get({
       attachment_id: normalizedAttachmentId,
     });
     if (!result || typeof result !== 'object') {
@@ -295,7 +292,7 @@ const email = {
         typeof result.data_base64 === 'string' ? result.data_base64 : null,
     };
   },
-  reply: async (input) => await capabilities.email_reply(input ?? {}),
+  reply: async (input) => await kody.email_reply(input ?? {}),
 };
 	`.trim()
 }
@@ -303,7 +300,7 @@ const email = {
 function createWorkflowsHelperPrelude() {
 	return `
 const workflows = {
-  create: async (input) => await capabilities.package_workflow_create(input ?? {}),
+  create: async (input) => await kody.package_workflow_create(input ?? {}),
 };
 	`.trim()
 }
@@ -330,7 +327,7 @@ const events = {
 	`.trim()
 }
 
-export async function buildCapabilitiesFns(
+export async function buildKodyFns(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
@@ -339,7 +336,7 @@ export async function buildCapabilitiesFns(
 			capabilityName: string,
 		) => Promise<string>
 		trackSecretInputValue?: (value: string) => void
-		additionalTools?: AdditionalCapabilitiesTools
+		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
@@ -349,10 +346,10 @@ export async function buildCapabilitiesFns(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ) {
-	return (await buildCapabilitiesToolContext(env, callerContext, options)).tools
+	return (await buildKodyToolContext(env, callerContext, options)).tools
 }
 
-async function buildCapabilitiesToolContext(
+async function buildKodyToolContext(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
@@ -361,7 +358,7 @@ async function buildCapabilitiesToolContext(
 			capabilityName: string,
 		) => Promise<string>
 		trackSecretInputValue?: (value: string) => void
-		additionalTools?: AdditionalCapabilitiesTools
+		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
@@ -371,8 +368,8 @@ async function buildCapabilitiesToolContext(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<{
-	tools: AdditionalCapabilitiesTools
-	remoteConnectors: Array<CapabilitiesRemoteConnectorMetadata>
+	tools: AdditionalKodyTools
+	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 }> {
 	const capabilityMap = options?.skipCapabilityRegistry
 		? {}
@@ -384,7 +381,7 @@ async function buildCapabilitiesToolContext(
 						callerContext,
 					})
 				).capabilityMap
-	const remoteConnectors = await buildCapabilitiesRemoteConnectorMetadata({
+	const remoteConnectors = await buildKodyRemoteConnectorMetadata({
 		env,
 		callerContext,
 		capabilityMap,
@@ -392,7 +389,7 @@ async function buildCapabilitiesToolContext(
 	const additionalTools = options?.additionalTools ?? {}
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
-	const capabilityCapabilitiesTools = Object.fromEntries(
+	const capabilityKodyTools = Object.fromEntries(
 		Object.entries(capabilityMap).map(([capabilityName, capability]) => [
 			capabilityName,
 			async (args: unknown) => {
@@ -421,8 +418,8 @@ async function buildCapabilitiesToolContext(
 				})
 			},
 		]),
-	) as AdditionalCapabilitiesTools
-	const storageCapabilitiesTools: AdditionalCapabilitiesTools = storageTools
+	) as AdditionalKodyTools
+	const storageKodyTools: AdditionalKodyTools = storageTools
 		? await createStorageKodyTools({
 				env,
 				userId: callerContext.user?.userId ?? '',
@@ -430,9 +427,9 @@ async function buildCapabilitiesToolContext(
 				writable: storageTools.writable,
 			})
 		: {}
-	assertNoCapabilityCollisions(capabilityMap, storageCapabilitiesTools)
+	assertNoCapabilityCollisions(capabilityMap, storageKodyTools)
 	const serviceTools = options?.serviceTools
-	const serviceCapabilitiesTools: AdditionalCapabilitiesTools = serviceTools
+	const serviceKodyTools: AdditionalKodyTools = serviceTools
 		? {
 				service_get_status: async () => await serviceTools.getStatus(),
 				service_should_stop: async () => ({
@@ -460,34 +457,33 @@ async function buildCapabilitiesToolContext(
 				service_clear_alarm: async () => await serviceTools.clearAlarm(),
 			}
 		: {}
-	assertNoCapabilityCollisions(capabilityMap, serviceCapabilitiesTools)
+	assertNoCapabilityCollisions(capabilityMap, serviceKodyTools)
 	const packageSecretTools = options?.packageSecretTools
-	const packageSecretCapabilitiesTools: AdditionalCapabilitiesTools =
-		packageSecretTools
-			? {
-					package_secret_get: async (args: unknown) => {
-						const alias =
-							typeof args === 'object' && args !== null && 'alias' in args
-								? String((args as { alias: unknown }).alias ?? '')
-								: ''
-						return {
-							value: await packageSecretTools.get(alias),
-						}
-					},
-					package_secret_has: async (args: unknown) => {
-						const alias =
-							typeof args === 'object' && args !== null && 'alias' in args
-								? String((args as { alias: unknown }).alias ?? '')
-								: ''
-						return {
-							has: await packageSecretTools.has(alias),
-						}
-					},
-				}
-			: {}
-	assertNoCapabilityCollisions(capabilityMap, packageSecretCapabilitiesTools)
+	const packageSecretKodyTools: AdditionalKodyTools = packageSecretTools
+		? {
+				package_secret_get: async (args: unknown) => {
+					const alias =
+						typeof args === 'object' && args !== null && 'alias' in args
+							? String((args as { alias: unknown }).alias ?? '')
+							: ''
+					return {
+						value: await packageSecretTools.get(alias),
+					}
+				},
+				package_secret_has: async (args: unknown) => {
+					const alias =
+						typeof args === 'object' && args !== null && 'alias' in args
+							? String((args as { alias: unknown }).alias ?? '')
+							: ''
+					return {
+						has: await packageSecretTools.has(alias),
+					}
+				},
+			}
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, packageSecretKodyTools)
 	const emailTools = options?.emailTools
-	const emailCapabilitiesTools: AdditionalCapabilitiesTools = emailTools
+	const emailKodyTools: AdditionalKodyTools = emailTools
 		? {
 				...(capabilityMap.email_message_get
 					? {}
@@ -520,23 +516,23 @@ async function buildCapabilitiesToolContext(
 						}),
 			}
 		: {}
-	assertNoCapabilityCollisions(capabilityMap, emailCapabilitiesTools)
+	assertNoCapabilityCollisions(capabilityMap, emailKodyTools)
 	const workflowTools = options?.workflowTools
-	const workflowCapabilitiesTools: AdditionalCapabilitiesTools = workflowTools
+	const workflowKodyTools: AdditionalKodyTools = workflowTools
 		? {
 				package_workflow_create: async (args: unknown) =>
 					await workflowTools.create(args as PackageWorkflowCreateInput),
 			}
 		: {}
-	assertNoCapabilityCollisions(capabilityMap, workflowCapabilitiesTools)
+	assertNoCapabilityCollisions(capabilityMap, workflowKodyTools)
 	return {
 		tools: {
-			...capabilityCapabilitiesTools,
-			...storageCapabilitiesTools,
-			...serviceCapabilitiesTools,
-			...packageSecretCapabilitiesTools,
-			...emailCapabilitiesTools,
-			...workflowCapabilitiesTools,
+			...capabilityKodyTools,
+			...storageKodyTools,
+			...serviceKodyTools,
+			...packageSecretKodyTools,
+			...emailKodyTools,
+			...workflowKodyTools,
 			...additionalTools,
 		},
 		remoteConnectors,
@@ -545,25 +541,23 @@ async function buildCapabilitiesToolContext(
 
 function assertNoCapabilityCollisions(
 	capabilityMap: Record<string, unknown>,
-	tools: AdditionalCapabilitiesTools,
+	tools: AdditionalKodyTools,
 ) {
 	for (const name of Object.keys(tools)) {
 		if (capabilityMap[name]) {
-			throw new Error(
-				`Capabilities helper "${name}" collides with a capability.`,
-			)
+			throw new Error(`Kody helper "${name}" collides with a capability.`)
 		}
 	}
 }
 
-async function buildCapabilitiesRemoteConnectorMetadata(input: {
+async function buildKodyRemoteConnectorMetadata(input: {
 	env: Env
 	callerContext: McpCallerContext
 	capabilityMap: Record<string, Capability>
-}): Promise<Array<CapabilitiesRemoteConnectorMetadata>> {
+}): Promise<Array<KodyRemoteConnectorMetadata>> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
 	const userId = input.callerContext.user?.userId ?? null
-	const connectors = new Map<string, CapabilitiesRemoteConnectorMetadata>()
+	const connectors = new Map<string, KodyRemoteConnectorMetadata>()
 
 	for (const ref of refs) {
 		const name = remoteConnectorKodyName(ref)
@@ -617,7 +611,7 @@ async function buildCapabilitiesRemoteConnectorMetadata(input: {
 					unavailableMessage: `The ${remote.kind} connector "${remote.instanceId}" is connected.`,
 				},
 				capabilities: [],
-			} satisfies CapabilitiesRemoteConnectorMetadata)
+			} satisfies KodyRemoteConnectorMetadata)
 		existing.capabilities.push({
 			name: remote.toolName,
 			dispatchName: capability.name,
@@ -635,12 +629,12 @@ async function buildCapabilitiesRemoteConnectorMetadata(input: {
 	)
 }
 
-export async function buildCapabilitiesProvider(
+export async function buildKodyProvider(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
 		trackSecretInputValue?: (value: string) => void
-		additionalTools?: AdditionalCapabilitiesTools
+		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
@@ -650,13 +644,13 @@ export async function buildCapabilitiesProvider(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ResolvedProvider> {
-	const { tools, remoteConnectors } = await buildCapabilitiesToolContext(
+	const { tools, remoteConnectors } = await buildKodyToolContext(
 		env,
 		callerContext,
 		options,
 	)
 	const provider: ToolProvider = {
-		name: 'capabilities',
+		name: 'kody',
 		tools: Object.fromEntries(
 			Object.entries(tools).map(([name, execute]) => [
 				name,
@@ -668,7 +662,7 @@ export async function buildCapabilitiesProvider(
 	}
 	return Object.assign(resolveProvider(provider), {
 		kodyRemoteConnectors: remoteConnectors,
-	}) satisfies CapabilitiesResolvedProvider
+	}) satisfies KodyResolvedProvider
 }
 
 function createPackageInvokeRuntimeBridgeProvider(
@@ -756,14 +750,14 @@ function createCapabilityInputSecretResolver(
 	}
 }
 
-export async function runCapabilitiesWithRegistry(
+export async function runKodyWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
 	code: string,
 	params?: Record<string, unknown>,
 	options?: {
 		executorExports?: typeof workerExports
-		additionalTools?: AdditionalCapabilitiesTools
+		additionalTools?: AdditionalKodyTools
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
@@ -815,7 +809,7 @@ export async function runCapabilitiesWithRegistry(
 		callerContext,
 		packageContext: options?.packageContext ?? null,
 	})
-	const provider = await buildCapabilitiesProvider(env, callerContext, {
+	const provider = await buildKodyProvider(env, callerContext, {
 		trackSecretInputValue: (value) => {
 			secretRedactor.track(value)
 		},
@@ -913,7 +907,7 @@ export async function runModuleWithRegistry(
 	params?: Record<string, unknown>,
 	options?: {
 		executorExports?: typeof workerExports
-		additionalTools?: AdditionalCapabilitiesTools
+		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageContext?: PackageContextOptions
@@ -979,7 +973,7 @@ export async function runBundledModuleWithRegistry(
 	params?: Record<string, unknown>,
 	options?: {
 		executorExports?: typeof workerExports
-		additionalTools?: AdditionalCapabilitiesTools
+		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		packageContext?: PackageContextOptions
 		serviceContext?: {
@@ -1058,7 +1052,7 @@ export async function runBundledModuleWithRegistry(
 				callerContext,
 				packageContext: options?.packageContext ?? null,
 			})
-		const provider = await buildCapabilitiesProvider(env, callerContext, {
+		const provider = await buildKodyProvider(env, callerContext, {
 			trackSecretInputValue: (value) => {
 				secretRedactor.track(value)
 			},
@@ -1120,7 +1114,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
     __kodyGlobal[__kodyRuntimeStorageSymbol] ??
     (__kodyGlobal[__kodyRuntimeStorageSymbol] = new __KodyAsyncLocalStorage());
   const __kodyRuntime = {
-    capabilities,
+    kody,
     storage: typeof storage === 'undefined' ? undefined : storage,
     refreshAccessToken,
     createAuthenticatedFetch,

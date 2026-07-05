@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createWorker } from '@cloudflare/worker-bundler'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-capabilities-registry.ts'
+import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
@@ -457,15 +457,15 @@ test('subscription bundles refresh stale nested runtime modules from static pack
 				].join('\n'),
 				'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/index.js':
 					[
-						"import { capabilities } from './.__kody_virtual__/runtime.js'",
+						"import { kody } from './.__kody_virtual__/runtime.js'",
 						'',
 						'export default async function runDependency(input = {}) {',
-						"\treturn await capabilities.service_start({ source: input.source ?? 'email' })",
+						"\treturn await kody.service_start({ source: input.source ?? 'email' })",
 						'}',
 					].join('\n'),
 				[nestedRuntimeModule]: [
 					'const runtime = {}',
-					'export const capabilities = runtime.capabilities',
+					'export const kody = runtime.kody',
 					'export default runtime',
 				].join('\n'),
 			},
@@ -567,13 +567,13 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 		sourceFiles: {
 			'package.json': packageJson,
 			'src/index.ts': [
-				"import { capabilities, packageContext, packages } from 'kody:runtime'",
+				"import { kody, packageContext, packages } from 'kody:runtime'",
 				'',
 				'export default async function main(input = {}) {',
-				'\t// Direct capabilities.package_invoke_checked should reject; packages.invokeChecked is the public API.',
+				'\t// Direct kody.package_invoke_checked should reject; packages.invokeChecked is the public API.',
 				'\tlet directKodyInvokeChecked;',
 				'\ttry {',
-				'\t\tawait capabilities.package_invoke_checked({',
+				'\t\tawait kody.package_invoke_checked({',
 				"\t\t\tkodyId: 'target-package',",
 				"\t\t\texportName: './run',",
 				'\t\t});',
@@ -688,13 +688,13 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 		userId: 'user-workers-test',
 		sourceFiles: {
 			'entry.ts': [
-				"import { capabilities, packageContext, packages } from 'kody:runtime'",
+				"import { kody, packageContext, packages } from 'kody:runtime'",
 				'',
 				'export default async function main(input = {}) {',
-				'\t// Direct capabilities.package_invoke_checked should reject; packages.invokeChecked is the public API.',
+				'\t// Direct kody.package_invoke_checked should reject; packages.invokeChecked is the public API.',
 				'\tlet directKodyInvokeChecked;',
 				'\ttry {',
-				'\t\tawait capabilities.package_invoke_checked({',
+				'\t\tawait kody.package_invoke_checked({',
 				"\t\t\tkodyId: 'target-package',",
 				"\t\t\texportName: './run',",
 				'\t\t});',

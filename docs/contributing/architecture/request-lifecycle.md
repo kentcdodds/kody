@@ -57,8 +57,7 @@ Saved packages may also declare long-lived package services under
 - Package services are **not** routed through a public HTTP path the way package
   apps are.
 - Instead, the Worker hosts them via the `PackageServiceInstance` Durable Object
-  binding and controls them through package runtime bridges and MCP
-  capabilities.
+  binding and controls them through package runtime bridges and MCP kody.
 - Package services share package identity with apps/jobs and can publish into
   package app realtime sessions, but they own their own durable storage bucket
   and lifecycle.

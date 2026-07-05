@@ -19,7 +19,7 @@ Reviewed:
 - D1 migrations through `packages/worker/migrations/0049-audit-events.sql`.
 - Durable Object, KV, Vectorize, entity-source, and package import code under
   `packages/worker/src/`.
-- Architecture docs, especially `adding-capabilities.md`, `data-storage.md`, and
+- Architecture docs, especially `adding-kody.md`, `data-storage.md`, and
   `primitives.yaml`.
 
 ## Findings by migration risk
@@ -32,11 +32,11 @@ Reviewed:
   `packages/worker/src/mcp/capabilities/build-capability-registry.ts`.
 - Secret policy allowlists persist capability names in
   `secret_entries.allowed_capabilities`
-  (`packages/worker/migrations/0010-secret-allowed-capabilities.sql`).
-- Kody runtime exposes capabilities as `capabilities.<capabilityName>()` in
-  `packages/worker/src/mcp/run-capabilities-registry.ts`.
+  (`packages/worker/migrations/0010-secret-allowed-kody.sql`).
+- Kody runtime exposes capabilities as `kody.<capabilityName>()` in
+  `packages/worker/src/mcp/run-kody-registry.ts`.
 - `meta_list_capabilities` returns TypeScript call shapes from
-  `packages/worker/src/mcp/capabilities/meta/meta-list-capabilities.ts`.
+  `packages/worker/src/mcp/capabilities/meta/meta-list-kody.ts`.
 
 **Blast radius**
 
@@ -52,8 +52,8 @@ Kent can manually update saved packages, jobs, memories, and secret allowlists
 from the PR migration punch list.
 
 This PR documents the later compatibility policy in
-`docs/contributing/adding-capabilities.md`: additive-only inputs, never-remove
-outputs, and an explicit compatibility plan before open signup.
+`docs/contributing/adding-kody.md`: additive-only inputs, never-remove outputs,
+and an explicit compatibility plan before open signup.
 
 ### Critical: remote connector capability names are dynamic and unvalidated
 
@@ -83,15 +83,14 @@ they are.
 This PR makes the breaking change now:
 
 - Remote capability entity ids are `remote:<name>:<tool>`.
-- Built-ins remain flat on the capabilities object
-  (`capabilities.value_get(...)`).
-- Remote capabilities move to `capabilities.remote["<name>"].<tool>(input)` and
-  disappear from flat `capabilities.<kind>_<instance>_<tool>` calls.
+- Built-ins remain flat on the kody object (`kody.value_get(...)`).
+- Remote capabilities move to `kody.remote["<name>"].<tool>(input)` and
+  disappear from flat `kody.<kind>_<instance>_<tool>` calls.
 - Connector names are explicit user-chosen names, validated as lowercase
   alphanumeric plus dashes, and globally unique per user. `kind` remains
   connector protocol metadata, but does not key the runtime namespace. This
-  keeps the common single-connector case clean (`capabilities.remote["home"]`)
-  and makes Proxy error messages shorter.
+  keeps the common single-connector case clean (`kody.remote["home"]`) and makes
+  Proxy error messages shorter.
 - First-class provenance metadata (`source: 'builtin' | 'remote-connector'`,
   connector name, and clean tool name) is surfaced in `meta_list_capabilities`,
   capability search rows, capability detail structured output, and MCP logs.
@@ -121,8 +120,7 @@ change remote id or capabilities namespace rules without a migration plan.
 - Email JSON metadata in `0030-email-primitives.sql` and
   `0031-unified-email-receipt.sql`.
 - Secret policy arrays in `0009-secret-allowed-hosts.sql`,
-  `0010-secret-allowed-capabilities.sql`, and
-  `0023-secret-allowed-packages.sql`.
+  `0010-secret-allowed-kody.sql`, and `0023-secret-allowed-packages.sql`.
 - Runtime debug JSON in `0037-package-runtime-debug.sql`.
 - Account export sections in `packages/worker/src/app/account-export.ts` mirror
   the account-deletion inventory and read D1, Durable Object, KV, and Vectorize
@@ -233,10 +231,10 @@ before external docs mention it.
 **Evidence**
 
 - The old input schema in
-  `packages/worker/src/mcp/capabilities/meta/meta-list-capabilities.ts` only
-  allowed `admin`, `apps`, `community`, `coding`, `jobs`, `math`, and `meta`. It
-  omitted packages, repo, secrets, services, storage, values, email,
-  integrations, and `remote:*` domains.
+  `packages/worker/src/mcp/capabilities/meta/meta-list-kody.ts` only allowed
+  `admin`, `apps`, `community`, `coding`, `jobs`, `math`, and `meta`. It omitted
+  packages, repo, secrets, services, storage, values, email, integrations, and
+  `remote:*` domains.
 
 **Blast radius**
 
@@ -344,14 +342,14 @@ This PR documents the grammar and static/dynamic distinction in
   types, registry specs, `meta_list_capabilities`, search result structures, and
   MCP capability logs.
 - Changed remote connector capability ids to `remote:<name>:<tool>` and moved
-  execute/runtime calls to `capabilities.remote["<name>"].<tool>(input)`.
+  execute/runtime calls to `kody.remote["<name>"].<tool>(input)`.
 - Folded the new account export capability domain into the audit and primitive
   map; `account_export_manifest` and `account_export_section` are read-only and
   explicitly avoid secret values.
 - Fixed `meta_list_capabilities` domain filtering to accept all built-in and
   synthesized remote domains.
 - Added structured execute error details for `EntitlementLimitError`.
-- Updated compatibility/versioning docs in `adding-capabilities.md`.
+- Updated compatibility/versioning docs in `adding-kody.md`.
 - Documented D1 JSON shadow schemas, Durable Object keys, KV keys, Vectorize
   metadata, `entity_sources`, package import grammar, and retention watch-list
   items in `data-storage.md`.

@@ -144,7 +144,7 @@ export const searchCapability = defineDomainCapability(
 	{
 		name: 'search',
 		description:
-			'Search Kody capabilities, saved packages, values, integrations, and secret references using a natural language query. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
+			'Search Kody kody, saved packages, values, integrations, and secret references using a natural language query. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
 		keywords: [
 			'search',
 			'discover',

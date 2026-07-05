@@ -22,7 +22,7 @@ import {
 	createRepoCapabilitiesModuleTypecheckHarness,
 	repoBackedModuleEntrypointExportErrorMessage,
 	repoCapabilitiesModuleTypecheckHarnessPath,
-} from './repo-capabilities-execution.ts'
+} from './repo-kody-execution.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 export type RepoCheckKind =
@@ -368,7 +368,7 @@ declare const service:
   | null;
 
 declare module "kody:runtime" {
-  export const capabilities: Record<
+  export const kody: Record<
     string,
     (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
   >;

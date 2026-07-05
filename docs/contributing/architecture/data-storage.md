@@ -79,9 +79,9 @@ Exports are versioned JSON documents:
 - `kvKeys` — KV source/cache keys that belong to the user.
 
 Secret values are **never** exported. `secret_entries` rows are metadata-only:
-name, description, bucket, allowed hosts, allowed capabilities, allowed
-packages, and timestamps. The encrypted payload (`encrypted_value`) and lookup
-hash (`lookup_hash`) are omitted. The same redaction rule is applied to other
+name, description, bucket, allowed hosts, allowed kody, allowed packages, and
+timestamps. The encrypted payload (`encrypted_value`) and lookup hash
+(`lookup_hash`) are omitted. The same redaction rule is applied to other
 credential-equivalent fields such as password hashes, password/email reset token
 hashes, package invocation token hashes, and email reply token hashes. The
 manifest states these redactions explicitly so a partial or intentionally
@@ -238,7 +238,7 @@ request's runtime in an `AsyncLocalStorage` shared between the wrapper and the
 Two concurrent calls in the same isolate observe their own runtime view through
 the ALS rather than racing on a shared mutable `globalThis` slot. See
 `packages/worker/src/package-runtime/module-graph.ts`,
-`packages/worker/src/mcp/run-capabilities-registry.ts`, and
+`packages/worker/src/mcp/run-kody-registry.ts`, and
 `packages/worker/src/package-runtime/package-app.ts` for the wrapper
 implementations, and
 `packages/worker/src/package-runtime/runtime-isolation.node.test.ts` for the
@@ -426,7 +426,7 @@ on write unless a migration backfills existing rows.
 - `secret_entries.allowed_hosts`, `secret_entries.allowed_capabilities`, and
   `secret_entries.allowed_packages` are JSON string lists used as security
   policy inputs (`0009-secret-allowed-hosts.sql`,
-  `0010-secret-allowed-capabilities.sql`, `0023-secret-allowed-packages.sql`).
+  `0010-secret-allowed-kody.sql`, `0023-secret-allowed-packages.sql`).
   Tightening parse-error behavior requires explicit compatibility review.
 - `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
   (`0037-package-runtime-debug.sql`) store bounded debug metadata and log

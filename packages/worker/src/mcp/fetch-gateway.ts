@@ -29,10 +29,7 @@ type FetchGatewayProps = {
 }
 export type { FetchGatewayProps }
 
-export class CapabilitiesFetchGateway extends WorkerEntrypoint<
-	Env,
-	FetchGatewayProps
-> {
+export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
 			env: this.env,

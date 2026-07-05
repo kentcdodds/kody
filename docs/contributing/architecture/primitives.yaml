@@ -51,7 +51,7 @@ primitives:
       - packages/worker/src/mcp/
     docs:
       - docs/contributing/project-intent.md
-      - docs/contributing/adding-capabilities.md
+      - docs/contributing/adding-kody.md
 
   - id: connector-ingress
     group: surfaces
@@ -156,7 +156,7 @@ primitives:
     code:
       - packages/worker/src/mcp/capabilities/
     docs:
-      - docs/contributing/adding-capabilities.md
+      - docs/contributing/adding-kody.md
 
   - id: saved-packages
     group: assistant
@@ -336,7 +336,7 @@ primitives:
       per-request runtime isolation via AsyncLocalStorage.
     code:
       - packages/worker/src/mcp/execute-modules/
-      - packages/worker/src/mcp/run-capabilities-registry.ts
+      - packages/worker/src/mcp/run-kody-registry.ts
     docs:
       - docs/contributing/architecture/data-storage.md
 
@@ -409,7 +409,7 @@ primitives:
     code:
       - packages/worker/src/mcp/capabilities/capability-search.ts
     docs:
-      - docs/contributing/adding-capabilities.md
+      - docs/contributing/adding-kody.md
 
   - id: usage-metering
     group: storage
