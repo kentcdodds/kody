@@ -257,6 +257,10 @@ function handleIntentHoverEnd(event: MouseEvent) {
 function handleImmediateIntent(event: Event) {
 	const link = getPrefetchableLink(event.target)
 	if (!link) return
+	// A pending hover timer (possibly for a different link) must not fire
+	// after this deliberate intent and abort its prefetch — the slot is
+	// latest-wins and this is the latest intent.
+	cancelHoverIntent()
 	runIntentPrefetch(link.destination)
 }
 
