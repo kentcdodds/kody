@@ -883,6 +883,24 @@ export async function runBundledModuleWithRegistry(
 		context: runtimeDebugContext,
 	})
 	let runtimeDebugFinished = false
+	// The metering span covers the whole bundled run (module hydration,
+	// provider assembly, and sandbox execution) so pre-executor failures are
+	// still counted as failed package runs.
+	const usageStartedAtMs = Date.now()
+	let usageRecorded = false
+	async function recordPackageExportUsage(outcome: 'success' | 'error') {
+		if (usageRecorded) return
+		usageRecorded = true
+		const userId = callerContext.user?.userId
+		if (!options?.packageContext || !userId) return
+		await recordUsage(env, {
+			userId,
+			eventType: 'package_export',
+			entityId: options.packageContext.packageId,
+			durationMs: Date.now() - usageStartedAtMs,
+			outcome,
+		})
+	}
 	try {
 		const executor = createExecuteExecutor({
 			env,
@@ -1005,29 +1023,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 					createPackageEventRuntimeBridgeProvider(options.packageEventTools),
 				)
 			}
-			const startedAtMs = Date.now()
-			let outcome: 'success' | 'error' = 'success'
-			let result: ExecuteResult
-			try {
-				result = await executor.execute(wrapped, providers)
-				if (result.error) {
-					outcome = 'error'
-				}
-			} catch (error) {
-				outcome = 'error'
-				throw error
-			} finally {
-				const userId = callerContext.user?.userId
-				if (options?.packageContext && userId) {
-					await recordUsage(env, {
-						userId,
-						eventType: 'package_export',
-						entityId: options.packageContext.packageId,
-						durationMs: Date.now() - startedAtMs,
-						outcome,
-					})
-				}
-			}
+			const result = await executor.execute(wrapped, providers)
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
 				await finishPackageRuntimeRunBestEffort({
@@ -1037,6 +1033,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 					logs: sanitizedResult.logs ?? [],
 				})
 				runtimeDebugFinished = true
+				await recordPackageExportUsage('success')
 				return sanitizedResult
 			}
 			const batchMessage = await rewriteCapabilitySecretError({
@@ -1058,6 +1055,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 				error: finalResult.error,
 			})
 			runtimeDebugFinished = true
+			await recordPackageExportUsage('error')
 			return finalResult
 		} catch (error) {
 			if (!runtimeDebugFinished) {
@@ -1080,6 +1078,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 				error,
 			})
 		}
+		await recordPackageExportUsage('error')
 		throw error
 	}
 }

@@ -2018,6 +2018,29 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 			},
 		)
 		expect(recordUsageSpy).not.toHaveBeenCalled()
+
+		// Failures before the sandbox ever runs (executor construction, module
+		// hydration, provider assembly) still count as failed package runs.
+		recordUsageSpy.mockClear()
+		createExecuteExecutorSpy.mockImplementation(() => {
+			throw new Error('executor construction failed')
+		})
+		await expect(
+			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
+				packageContext,
+				skipCapabilityRegistry: true,
+			}),
+		).rejects.toThrow('executor construction failed')
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(
+			env,
+			expect.objectContaining({
+				userId: 'user-metered',
+				eventType: 'package_export',
+				entityId: 'pkg-metered',
+				outcome: 'error',
+			}),
+		)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
