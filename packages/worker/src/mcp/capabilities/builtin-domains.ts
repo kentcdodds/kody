@@ -1,3 +1,4 @@
+import { accountDomain } from './account/domain.ts'
 import { adminDomain } from './admin/domain.ts'
 import { appsDomain } from './apps/domain.ts'
 import { communityDomain } from './community/domain.ts'
@@ -22,6 +23,7 @@ import { valuesDomain } from './values/domain.ts'
  * (Workers typically snapshot capabilities at deploy time).
  */
 export const builtinDomains = [
+	accountDomain,
 	adminDomain,
 	appsDomain,
 	communityDomain,

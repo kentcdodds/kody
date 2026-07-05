@@ -133,6 +133,10 @@ export class JobManagerBase extends DurableObject<Env> {
 		}
 	}
 
+	async exportUser(input: { userId: string }): Promise<JobManagerDebugState> {
+		return this.getDebugState(input)
+	}
+
 	async alarm(alarmInfo?: {
 		retryCount?: number
 		isRetry?: boolean

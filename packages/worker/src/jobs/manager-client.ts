@@ -31,6 +31,7 @@ type JobManagerRpc = {
 		ok: true
 		userId: string
 	}>
+	exportUser: (payload: { userId: string }) => Promise<JobManagerDebugState>
 	syncAlarm: (payload: {
 		userId: string
 		source?: 'alarm' | 'rpc' | 'run_now'
@@ -140,6 +141,27 @@ export async function getJobManagerDebugState(input: {
 		}
 	}
 	return rpc.getDebugState({
+		userId: input.userId,
+	})
+}
+
+export async function exportJobManagerForUser(input: {
+	env: Env
+	userId: string
+}) {
+	const rpc = jobManagerRpc(input.env, input.userId)
+	if (!rpc) {
+		return {
+			bindingAvailable: false,
+			status: 'missing_binding' as const,
+			storedUserId: null,
+			alarmScheduledFor: null,
+			nextRunnableJobId: null,
+			nextRunnableRunAt: null,
+			alarmInSync: null,
+		} satisfies JobManagerDebugState
+	}
+	return rpc.exportUser({
 		userId: input.userId,
 	})
 }

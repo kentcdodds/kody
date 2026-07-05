@@ -6,6 +6,7 @@ import {
 	type RemoteConnectorHelloMessage,
 	type RemoteConnectorJsonRpcResponse,
 	type RemoteConnectorPersistedState,
+	type RemoteConnectorSessionExport,
 	type RemoteConnectorServerMessage,
 	type RemoteConnectorSnapshot,
 } from './types.ts'
@@ -232,6 +233,22 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			connectedAt,
 			lastSeenAt,
 			tools: this.stateSnapshot.tools,
+		}
+	}
+
+	async rpcExportUserSession(input: {
+		userId: string
+		kind: string
+		instanceId: string
+	}): Promise<RemoteConnectorSessionExport> {
+		const sessionKey = userScopedConnectorSessionKey(input)
+		if (!sessionKey) {
+			throw new Error('Remote connector session key was invalid.')
+		}
+		return {
+			persisted: { ...this.stateSnapshot.persisted },
+			tools: this.stateSnapshot.tools.map((tool) => ({ ...tool })),
+			connected: this.ctx.getWebSockets(connectorTag).length > 0,
 		}
 	}
 

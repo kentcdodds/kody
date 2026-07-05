@@ -52,6 +52,12 @@ export type RemoteConnectorPersistedState = {
 	lastSeenAt: string | null
 }
 
+export type RemoteConnectorSessionExport = {
+	persisted: RemoteConnectorPersistedState
+	tools: Array<RemoteConnectorToolDescriptor>
+	connected: boolean
+}
+
 export type RemoteConnectorJsonRpcResponse =
 	| JSONRPCResultResponse
 	| JSONRPCErrorResponse
