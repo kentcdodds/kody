@@ -472,6 +472,28 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		fetchStub.mockClear()
 		waitUntil.mockClear()
 
+		// Error path with waitUntil available: metering is deferred, never blocks.
+		fetchStub.mockRejectedValue(new Error('network failed with waitUntil'))
+		await expect(
+			executeGatewayFetch({
+				env,
+				props,
+				request: new Request('https://api.example.com/fail-deferred'),
+				globalFetch: fetchStub,
+				waitUntil,
+			}),
+		).rejects.toThrow('network failed with waitUntil')
+		expect(waitUntil).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+			entityId: 'api.example.com',
+			outcome: 'error',
+		})
+
+		recordUsageSpy.mockClear()
+		fetchStub.mockClear()
+		waitUntil.mockClear()
+
 		fetchStub.mockResolvedValue(new Response('ok'))
 		await executeGatewayFetch({
 			env,
@@ -482,5 +504,73 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		expect(recordUsageSpy).not.toHaveBeenCalled()
 	} finally {
 		recordUsageSpy.mockRestore()
+	}
+})
+
+test('gateway fetch metering never derives a hostname from expanded secret placeholders', async () => {
+	const usageModule = await import('#worker/usage/record-usage.ts')
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'resolved-secret-value',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedCapabilities: [],
+		})
+	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
+	const createPathOnlyRequest = (url: string) =>
+		({
+			url,
+			method: 'GET',
+			headers: new Headers(),
+			redirect: 'follow',
+			credentials: 'same-origin',
+			mode: 'cors',
+			cache: 'default',
+			integrity: '',
+			keepalive: false,
+			signal: undefined,
+			text: async () => '',
+		}) as unknown as Request
+	const fetchStub = vi.fn(async () => new Response('ok'))
+
+	try {
+		// Path-only URL without placeholders: the transformed (baseUrl) host is
+		// literal and safe to meter.
+		await executeGatewayFetch({
+			env,
+			props,
+			request: createPathOnlyRequest('/api/status'),
+			globalFetch: fetchStub,
+		})
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+			entityId: 'example.com',
+			outcome: 'success',
+		})
+
+		// Unparseable original URL containing a placeholder: the expanded host
+		// could contain secret material, so no hostname is metered.
+		recordUsageSpy.mockClear()
+		fetchStub.mockClear()
+		await executeGatewayFetch({
+			env,
+			props,
+			request: createPathOnlyRequest('/api?key={{secret:token}}'),
+			globalFetch: fetchStub,
+		})
+		expect(fetchStub).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+			entityId: '',
+			outcome: 'success',
+		})
+	} finally {
+		recordUsageSpy.mockRestore()
+		resolveSpy.mockRestore()
 	}
 })

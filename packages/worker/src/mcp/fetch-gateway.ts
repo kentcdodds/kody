@@ -51,11 +51,10 @@ export async function executeGatewayFetch(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Response> {
 	const globalFetch = input.globalFetch ?? fetch
-	const entityId = readRequestHostname(input.request.url)
 	const startedAtMs = Date.now()
 	let outcome: 'success' | 'error' = 'success'
 	let response: Response | undefined
-	let meteredEntityId = entityId
+	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
 
 	try {
 		const transformed = await expandSecretPlaceholders({
@@ -63,7 +62,10 @@ export async function executeGatewayFetch(input: {
 			props: input.props,
 			env: input.env,
 		})
-		meteredEntityId = readRequestHostname(transformed.url)
+		meteredEntityId = readMeteredRequestHostname(
+			input.request.url,
+			transformed.url,
+		)
 		response = await globalFetch(transformed)
 		return response
 	} catch (error) {
@@ -80,13 +82,32 @@ export async function executeGatewayFetch(input: {
 				...(response ? readResponseContentLengthBytes(response) : {}),
 			}
 			const usagePromise = recordUsage(input.env, usageEvent)
-			if (outcome === 'success' && response && input.waitUntil) {
+			if (input.waitUntil) {
 				input.waitUntil(usagePromise)
 			} else {
 				await usagePromise
 			}
 		}
 	}
+}
+
+/**
+ * Resolve the hostname to meter without ever leaking expanded secret values.
+ * A hostname parsed from the original request URL is always literal (secret
+ * placeholders contain `:`, which cannot appear in a parsed hostname). When
+ * the original URL has no parseable host, the transformed URL's host is only
+ * safe when no placeholder could have expanded into it.
+ */
+function readMeteredRequestHostname(
+	originalUrl: string,
+	transformedUrl: string | null,
+) {
+	const originalHostname = readRequestHostname(originalUrl)
+	if (originalHostname) return originalHostname
+	if (parseSecretPlaceholders(originalUrl).length > 0) return ''
+	if (parseBasicAuthSecretPlaceholders(originalUrl).length > 0) return ''
+	if (transformedUrl === null) return ''
+	return readRequestHostname(transformedUrl)
 }
 
 function readRequestHostname(url: string) {
