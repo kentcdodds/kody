@@ -12,7 +12,7 @@ import {
 	createGeneratedUiAppSession,
 	verifyGeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { runKodyWithRegistry } from '#mcp/run-kody-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
 import { containsSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
@@ -147,7 +147,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 							...context.params,
 							...body.data.params,
 						}
-			const result = await runCodemodeWithRegistry(
+			const result = await runKodyWithRegistry(
 				env,
 				createMcpCallerContext({
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),

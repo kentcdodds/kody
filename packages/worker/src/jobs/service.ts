@@ -51,8 +51,8 @@ import {
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
-import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-codemode-execution.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
+import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	deleteEntitySource,

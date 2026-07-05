@@ -27,8 +27,9 @@ All messages are **JSON objects** with a **`type`** field.
 
 1. **`connector.hello`** (required first logical message after open)
    - **`type`:** `"connector.hello"`
-   - **`connectorId`:** string — instance id (for example `default`,
-     `example-instance`).
+   - **`connectorId`:** string — the explicit user-chosen connector name
+     (`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`, for example `home` or
+     `living-room`). Connector names are globally unique per user.
    - **`sharedSecret`:** string — must match an enabled shared secret saved for
      the connector ref in D1.
    - **`connectorKind`:** non-empty string. Lowercase values are normalized.
@@ -83,15 +84,17 @@ External connector authors only need the **WebSocket**.
 For capabilities to be synthesized from a connector, the MCP session must list
 that connector:
 
-- **`remoteConnectors`:** optional array of `{ kind, instanceId }`. When present
-  (including empty), it fully defines the set of remote connectors for that
-  session.
+- **`remoteConnectors`:** optional array of `{ kind, instanceId }`, where
+  `instanceId` is the explicit connector name. When present (including empty),
+  it fully defines the set of remote connectors for that session.
 
 Regular authenticated MCP and chat sessions load this array from the user's
 saved remote connector settings. Operators can manage those settings at
 `/account/remote-connectors`:
 
-- **`kind`** and **`instanceId`** identify the connector ref generically.
+- **`kind`** is protocol metadata, and **`instanceId`** is the user-chosen
+  connector name. Names are unique per user across all kinds because they key
+  `kody.remote[name]`.
 - **`enabled`** controls whether the saved shared secret can authenticate
   `connector.hello` for that ref.
 - **`attached`** controls whether the ref is included in normal Kody MCP/chat
@@ -105,22 +108,20 @@ Source: `packages/shared/src/chat.ts`,
 
 ## Capability naming (search / execute)
 
-- The Worker uses distinct **domain ids** (for example
-  `remote:<kind>:<instance>`) and remote capability **entity ids** of the form
-  `remote:<kind>/<instance>:<tool>`.
-- In execute/codemode code, remote connector tools are visibly separate from
-  built-ins: use `codemode.remote["<kind>/<instance>"].<tool>(input)`. Built-ins
-  remain flat (`codemode.value_get(...)`), but remote tools are never exposed as
-  flat `codemode.<kind>_<instance>_<tool>` functions.
+- The Worker uses distinct **domain ids** (for example `remote:<name>`) and
+  remote capability **entity ids** of the form `remote:<name>:<tool>`.
+- In execute/kody code, remote connector tools are visibly separate from
+  built-ins: use `kody.remote["<name>"].<tool>(input)`. Built-ins remain flat
+  (`kody.value_get(...)`), but remote tools are never exposed as flat
+  `kody.<kind>_<instance>_<tool>` functions.
 - Search capability detail returns the exact remote call snippet. If a connector
-  is missing, disconnected, or exposes a different tool list, the
-  `codemode.remote` Proxy throws an error listing available connectors or
-  capabilities.
+  is missing, disconnected, or exposes a different tool list, the `kody.remote`
+  Proxy throws an error listing available connectors or capabilities.
 
 ## Connector checklist
 
 1. **Outbound WebSocket** to your connector URL:
-   `wss://<worker-origin>/@<username>/connectors/<kind>/<instanceId>`.
+   `wss://<worker-origin>/@<username>/connectors/<kind>/<connectorName>`.
 2. **Hello first** with matching **`connectorKind`** + **`connectorId`** and a
    **valid `sharedSecret`** for that `kind:instanceId` pair.
 3. Implement **`tools/list`** and **`tools/call`** on the socket via

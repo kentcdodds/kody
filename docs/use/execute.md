@@ -18,9 +18,9 @@ export default async function main(input = {}) {
 Import runtime APIs from **`kody:runtime`** when you need Kody helpers. These
 helpers are runtime exports:
 
-- use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
-  discovered by **search** as **`await codemode.capability_id(input)`** for
-  valid identifier names, or **`await codemode["capability-id"](input)`** for
+- use **`import { kody } from 'kody:runtime'`** to call builtin capabilities
+  discovered by **search** as **`await kody.capability_id(input)`** for valid
+  identifier names, or **`await kody["capability-id"](input)`** for
   non-identifier capability ids
 - use
   **`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
@@ -100,7 +100,7 @@ To read field shapes while coding, use **search** with
 **`entity: "{name}:capability"`** for builtin capability type definitions, or
 inspect the relevant saved package with **`entity: "{kody_id}:package"`**.
 Capability detail includes a complete **execute** module snippet; the runtime
-call itself is always through the imported `codemode` object.
+call itself is always through the imported `kody` object.
 
 ## Saved packages
 
@@ -117,22 +117,22 @@ module-oriented runtime model:
 - package services are optional long-lived runtimes declared under
   `package.json#kody.services`
 - non-package jobs can also be scheduled directly with
-  **`codemode.job_schedule(...)`** without creating a saved package
-- **`codemode.job_schedule_once(...)`** provides a convenience alias for one-off
+  **`kody.job_schedule(...)`** without creating a saved package
+- **`kody.job_schedule_once(...)`** provides a convenience alias for one-off
   schedules
-- **`codemode.job_update(...)`** updates an existing scheduled job by id for
-  safe mutable fields such as name, ES module code with a default-exported
-  function, params, schedule, timezone, enabled/disabled state, or kill switch
-  state. Providing `code` republishes the job's repo-backed source so subsequent
-  runs execute the updated module; the replacement must default export a
-  function that receives `params` from its first argument (there is no `params`
-  export from `kody:runtime`)
-- **`codemode.job_get({ id, includeCode: true })`** returns the scheduled job
+- **`kody.job_update(...)`** updates an existing scheduled job by id for safe
+  mutable fields such as name, ES module code with a default-exported function,
+  params, schedule, timezone, enabled/disabled state, or kill switch state.
+  Providing `code` republishes the job's repo-backed source so subsequent runs
+  execute the updated module; the replacement must default export a function
+  that receives `params` from its first argument (there is no `params` export
+  from `kody:runtime`)
+- **`kody.job_get({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored repo-backed entrypoint path and source code
   when you need to inspect the current module before changing it
-- **`codemode.job_delete(...)`** removes an existing scheduled job by id for the
+- **`kody.job_delete(...)`** removes an existing scheduled job by id for the
   signed-in user
-- **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and
+- **`kody.job_run_now(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging
 
 Static saved-package imports from ad hoc **execute** run under the ad hoc
@@ -309,7 +309,7 @@ to be approved for both secrets, and only sends the derived Basic header in the
 outbound request.
 
 See [Secrets, values, and host approval](./secrets-and-values.md) for
-placeholders, host approval, and **`codemode.secret_list`** / **`secret_set`**.
+placeholders, host approval, and **`kody.secret_list`** / **`secret_set`**.
 
 Treat placeholder syntax as operational wiring, not prose. Do not place the
 exact **`{{secret:...}}`** token into issue bodies, comments, prompts, logs, or
@@ -319,8 +319,8 @@ token.
 
 ## Values
 
-Readable non-secret configuration uses **`codemode.value_get`** and
-**`codemode.value_list`** (for example data generated UI should persist).
+Readable non-secret configuration uses **`kody.value_get`** and
+**`kody.value_list`** (for example data generated UI should persist).
 
 ## Returning content blocks
 

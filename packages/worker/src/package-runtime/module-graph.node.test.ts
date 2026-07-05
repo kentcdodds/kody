@@ -929,7 +929,7 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 
 test('hydrateKodyRuntimeModules replaces stale persisted kody runtime modules', async () => {
 	const staleRuntimeSource =
-		'export const codemode = { stale: true }; export default { codemode };'
+		'export const kody = { stale: true }; export default { kody };'
 	const hydratedModules = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
@@ -939,10 +939,10 @@ test('hydrateKodyRuntimeModules replaces stale persisted kody runtime modules', 
 		userId: 'user-1',
 		modules: {
 			'.__kody_virtual__/runtime.js': staleRuntimeSource,
-			'entry.js': `import { __kodyRunInRuntime, codemode } from './.__kody_virtual__/runtime.js'
+			'entry.js': `import { __kodyRunInRuntime, kody } from './.__kody_virtual__/runtime.js'
 
 export async function runWithRuntime(runtime) {
-	return await __kodyRunInRuntime(runtime, async () => codemode.hostRuntimeVersion({}))
+	return await __kodyRunInRuntime(runtime, async () => kody.hostRuntimeVersion({}))
 }
 `,
 		},
@@ -957,7 +957,7 @@ export async function runWithRuntime(runtime) {
 			runWithRuntime: (runtime: Record<string, unknown>) => Promise<unknown>
 		}
 		const result = await entry.runWithRuntime({
-			codemode: {
+			kody: {
 				async hostRuntimeVersion() {
 					return 'current-host-runtime'
 				},
@@ -974,7 +974,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
 	const staleRuntimeSource = [
 		'const runtime = {}',
-		'export const codemode = runtime.codemode',
+		'export const kody = runtime.kody',
 		'export default runtime',
 	].join('\n')
 	const modules = {
@@ -989,10 +989,10 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		].join('\n'),
 		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/index.js':
 			[
-				"import { codemode } from './.__kody_virtual__/runtime.js'",
+				"import { kody } from './.__kody_virtual__/runtime.js'",
 				'',
 				'export default async function runDependency() {',
-				'\treturn await codemode.service_start({ source: "email" })',
+				'\treturn await kody.service_start({ source: "email" })',
 				'}',
 			].join('\n'),
 		[nestedRuntimePath]: staleRuntimeSource,
@@ -1004,7 +1004,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		}
 		await expect(
 			staleEntry.runWithRuntime({
-				codemode: {
+				kody: {
 					async service_start() {
 						return { ok: true }
 					},
@@ -1035,7 +1035,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 			runWithRuntime: (runtime: Record<string, unknown>) => Promise<unknown>
 		}
 		const result = await hydratedEntry.runWithRuntime({
-			codemode: {
+			kody: {
 				async service_start(args: unknown) {
 					return { ok: true, args }
 				},
@@ -1055,7 +1055,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 test('buildKodyModuleBundle refreshes nested artifact runtimes before static import rebundling', async () => {
 	const staleRuntimeSource = [
 		'const runtime = {}',
-		'export const codemode = runtime.codemode',
+		'export const kody = runtime.kody',
 		'export default runtime',
 	].join('\n')
 	mockModule.createWorker.mockResolvedValue(
@@ -1095,7 +1095,7 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 				},
 			}),
 			'src/index.ts':
-				'import { codemode } from "kody:runtime"\nexport async function runAgentTurnNonStreaming() { return await codemode.value_get({ name: "ai-chat" }) }',
+				'import { kody } from "kody:runtime"\nexport async function runAgentTurnNonStreaming() { return await kody.value_get({ name: "ai-chat" }) }',
 		},
 	})
 	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
@@ -1110,9 +1110,9 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 			mainModule: 'dist/index.js',
 			modules: {
 				'dist/index.js': [
-					"import { codemode } from './.__kody_virtual__/runtime.js'",
+					"import { kody } from './.__kody_virtual__/runtime.js'",
 					'export async function runAgentTurnNonStreaming() {',
-					'\treturn await codemode.value_get({ name: "ai-chat" })',
+					'\treturn await kody.value_get({ name: "ai-chat" })',
 					'}',
 				].join('\n'),
 				'dist/.__kody_virtual__/runtime.js': staleRuntimeSource,
@@ -1554,16 +1554,16 @@ test.each([
 	{
 		name: 'subscription service start',
 		entryPoint: 'src/handle-email-message-received.ts',
-		source: `import { codemode } from 'kody:runtime'
+		source: `import { kody } from 'kody:runtime'
 
 export default async function handleEmailMessageReceived() {
-	return await codemode.service_start({
+	return await kody.service_start({
 		package_id: 'pkg-1',
 		service_name: 'email-agent-processor',
 	})
 }
 `,
-		codemode: {
+		kody: {
 			async service_start(input: unknown) {
 				return { ok: true, tool: 'service_start', input }
 			},
@@ -1580,13 +1580,13 @@ export default async function handleEmailMessageReceived() {
 	{
 		name: 'export secret list',
 		entryPoint: 'src/launch-agent.ts',
-		source: `import { codemode } from 'kody:runtime'
+		source: `import { kody } from 'kody:runtime'
 
 export default async function launchAgent() {
-	return await codemode.secret_list({ scope: 'user' })
+	return await kody.secret_list({ scope: 'user' })
 }
 `,
-		codemode: {
+		kody: {
 			async secret_list(input: unknown) {
 				return { ok: true, tool: 'secret_list', input }
 			},
@@ -1598,8 +1598,8 @@ export default async function launchAgent() {
 		},
 	},
 ])(
-	'buildKodyModuleBundle keeps codemode available for a preloaded package $name runtime',
-	async ({ entryPoint, source, codemode, expected }) => {
+	'buildKodyModuleBundle keeps kody available for a preloaded package $name runtime',
+	async ({ entryPoint, source, kody, expected }) => {
 		mockModule.createWorker.mockImplementation(
 			async (input: { files: Record<string, string>; entryPoint: string }) => ({
 				mainModule: input.entryPoint,
@@ -1655,15 +1655,12 @@ export default async function launchAgent() {
 				'.__kody_virtual__/runtime.js',
 				{ cacheBust: false },
 			)) as RuntimeModule
-			const result = await runtime.__kodyRunInRuntime(
-				{ codemode },
-				async () => {
-					const entry = (await moduleGraph.importModule(bundle.mainModule, {
-						cacheBust: false,
-					})) as { default: (input?: unknown) => Promise<unknown> }
-					return await entry.default({})
-				},
-			)
+			const result = await runtime.__kodyRunInRuntime({ kody }, async () => {
+				const entry = (await moduleGraph.importModule(bundle.mainModule, {
+					cacheBust: false,
+				})) as { default: (input?: unknown) => Promise<unknown> }
+				return await entry.default({})
+			})
 
 			expect(result).toEqual(expected)
 		} finally {
@@ -2486,7 +2483,7 @@ test('buildKodyAppBundle rewrites static and dynamic kody runtime imports inside
 					},
 				},
 			}),
-			'app.ts': `import { codemode } from 'kody:runtime'
+			'app.ts': `import { kody } from 'kody:runtime'
 
 type CapabilityRecord = {
 	name: string
@@ -2495,7 +2492,7 @@ type CapabilityRecord = {
 export default {
 	async fetch() {
 		const result: Array<CapabilityRecord> =
-			await codemode.meta_list_capabilities({})
+			await kody.meta_list_capabilities({})
 		return Response.json({ count: result.length })
 	},
 }
@@ -2547,7 +2544,7 @@ export default {
 			'app.ts': `export default {
 	async fetch() {
 		const runtime = await import('kody:runtime')
-		return Response.json({ hasCodemode: typeof runtime.codemode === 'object' })
+		return Response.json({ hasKody: typeof runtime.kody === 'object' })
 	},
 }
 `,

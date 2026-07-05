@@ -73,5 +73,5 @@ token and then attaches it to an outbound request.
   `packages/worker/src/package-runtime/package-workflows.ts` defines the shared
   `DynamicCallableWorkflow` Cloudflare Workflow used by every runtime context.
   Runtime injection is wired through
-  `packages/worker/src/mcp/run-codemode-registry.ts` for bundled code and
+  `packages/worker/src/mcp/run-kody-registry.ts` for bundled code and
   `packages/worker/src/package-runtime/package-app.ts` for package apps.

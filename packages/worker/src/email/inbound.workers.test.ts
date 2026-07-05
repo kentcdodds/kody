@@ -539,7 +539,7 @@ const __kodyRuntimeStorage =
   __kodyGlobal[__kodyRuntimeStorageSymbol] ??
   (__kodyGlobal[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
 const runtime = __kodyRuntimeStorage.getStore() ?? {};
-export const codemode = runtime.codemode;
+export const kody = runtime.kody;
 export const email = runtime.email ?? null;
 `.trim(),
 			'dist/subscription.js': `

@@ -55,7 +55,7 @@ test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async ()
 	clearRemoteConnectorSnapshotCacheForTests()
 	const { env, getSnapshotCalls } = buildEnv(async () => ({
 		connectorKind: 'roku',
-		connectorId: 'default',
+		connectorId: 'home',
 		connectedAt: '2026-03-25T00:00:00.000Z',
 		lastSeenAt: '2026-03-25T00:00:01.000Z',
 		tools: runtimeTools,
@@ -64,7 +64,7 @@ test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async ()
 		env,
 		userId: 'user-1',
 		kind: 'roku',
-		instanceId: 'default',
+		instanceId: 'home',
 	}
 
 	await getCachedRemoteConnectorSnapshot(request)
@@ -81,7 +81,7 @@ test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', 
 		connected
 			? {
 					connectorKind: 'roku',
-					connectorId: 'default',
+					connectorId: 'home',
 					connectedAt: '2026-03-25T00:00:00.000Z',
 					lastSeenAt: '2026-03-25T00:00:01.000Z',
 					tools: runtimeTools,
@@ -92,7 +92,7 @@ test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', 
 		env,
 		userId: 'user-1',
 		kind: 'roku',
-		instanceId: 'default',
+		instanceId: 'home',
 	}
 
 	await expect(getCachedRemoteConnectorSnapshot(request)).resolves.toBeNull()
@@ -108,7 +108,7 @@ test('a failed connector RPC evicts the cached snapshot', async () => {
 	const { env, getSnapshotCalls } = buildEnv(
 		async () => ({
 			connectorKind: 'roku',
-			connectorId: 'default',
+			connectorId: 'home',
 			connectedAt: '2026-03-25T00:00:00.000Z',
 			lastSeenAt: '2026-03-25T00:00:01.000Z',
 			tools: runtimeTools,
@@ -121,7 +121,7 @@ test('a failed connector RPC evicts the cached snapshot', async () => {
 		env,
 		userId: 'user-1',
 		kind: 'roku',
-		instanceId: 'default',
+		instanceId: 'home',
 	}
 	const client = createRemoteConnectorMcpClient(request)
 
@@ -142,7 +142,7 @@ test('getCachedRemoteConnectorSnapshot does not share entries across users', asy
 	clearRemoteConnectorSnapshotCacheForTests()
 	const { env, getSnapshotCalls } = buildEnv(async () => ({
 		connectorKind: 'roku',
-		connectorId: 'default',
+		connectorId: 'home',
 		connectedAt: '2026-03-25T00:00:00.000Z',
 		lastSeenAt: '2026-03-25T00:00:01.000Z',
 		tools: runtimeTools,
@@ -150,7 +150,7 @@ test('getCachedRemoteConnectorSnapshot does not share entries across users', asy
 	const connector = {
 		env,
 		kind: 'roku',
-		instanceId: 'default',
+		instanceId: 'home',
 	}
 
 	await getCachedRemoteConnectorSnapshot({

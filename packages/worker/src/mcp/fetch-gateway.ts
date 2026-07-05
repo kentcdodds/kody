@@ -29,10 +29,7 @@ type FetchGatewayProps = {
 }
 export type { FetchGatewayProps }
 
-export class CodemodeFetchGateway extends WorkerEntrypoint<
-	Env,
-	FetchGatewayProps
-> {
+export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
 			env: this.env,
@@ -275,7 +272,7 @@ export async function expandSecretPlaceholders(input: {
 }
 
 /**
- * Codemode / sandboxed fetch may emit path-only URLs (e.g. `/`, `/core/log`).
+ * Kody runtime / sandboxed fetch may emit path-only URLs (e.g. `/`, `/core/log`).
  * Workers `Request` requires an absolute URL string; resolve against the app origin.
  */
 function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {

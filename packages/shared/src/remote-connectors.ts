@@ -9,12 +9,21 @@ export type RemoteConnectorRef = {
 	instanceId: string
 }
 
+export const remoteConnectorNamePattern =
+	/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
+
 export function normalizeRemoteConnectorKind(kind: string): string {
 	return kind.trim().toLowerCase()
 }
 
 export function normalizeRemoteConnectorInstanceId(instanceId: string): string {
-	return instanceId.trim()
+	return instanceId.trim().toLowerCase()
+}
+
+export function isValidRemoteConnectorName(instanceId: string): boolean {
+	return remoteConnectorNamePattern.test(
+		normalizeRemoteConnectorInstanceId(instanceId),
+	)
 }
 
 export function userScopedConnectorIngressPath(input: {

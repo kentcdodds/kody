@@ -174,7 +174,7 @@ republishes the job module without opening a session.
 ## Example
 
 ```ts
-await codemode.repo_run_commands({
+await kody.repo_run_commands({
 	target: { kind: 'package', kody_id: 'my-package' },
 	commands: `git apply <<'PATCH'
 --- a/src/index.ts

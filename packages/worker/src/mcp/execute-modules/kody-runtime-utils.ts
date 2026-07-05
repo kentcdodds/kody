@@ -10,7 +10,7 @@ type SecretScope = 'session' | 'app' | 'user'
 
 export type CapabilityArgs = Record<string, unknown>
 
-export type CodemodeNamespace = Record<
+export type KodyNamespace = Record<
 	string,
 	(args: CapabilityArgs) => Promise<CapabilityResult>
 >
@@ -100,20 +100,20 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
  * `createAuthenticatedFetch` which performs this enforcement automatically.
  */
 export async function refreshAccessToken(
-	codemode: CodemodeNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 ): Promise<string> {
-	const integration = await readIntegrationConfig(codemode, providerName)
-	return refreshAccessTokenWithIntegration(codemode, providerName, integration)
+	const integration = await readIntegrationConfig(kody, providerName)
+	return refreshAccessTokenWithIntegration(kody, providerName, integration)
 }
 
 export async function createAuthenticatedFetch(
-	codemode: CodemodeNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 ): Promise<
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
-	const integration = await readIntegrationConfig(codemode, providerName)
+	const integration = await readIntegrationConfig(kody, providerName)
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
 		const resolvedUrl = resolveRequestUrl(input, integration)
@@ -132,7 +132,7 @@ export async function createAuthenticatedFetch(
 		} catch (error) {
 			if (!isMissingAccessTokenSecretError(error, integration)) throw error
 			const refreshedAccessToken = await refreshAccessTokenWithIntegration(
-				codemode,
+				kody,
 				providerName,
 				integration,
 			)
@@ -144,7 +144,7 @@ export async function createAuthenticatedFetch(
 
 		await response.body?.cancel()
 		const refreshedAccessToken = await refreshAccessTokenWithIntegration(
-			codemode,
+			kody,
 			providerName,
 			integration,
 		)
@@ -196,14 +196,12 @@ export async function oauthClientCredentials(
 }
 
 async function readIntegrationConfig(
-	codemode: CodemodeNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 ) {
-	const integrationGet = codemode.integration_get
+	const integrationGet = kody.integration_get
 	if (typeof integrationGet !== 'function') {
-		throw new Error(
-			'codemode.integration_get is not available in this sandbox.',
-		)
+		throw new Error('kody.integration_get is not available in this sandbox.')
 	}
 	const result = (await integrationGet({
 		name: providerName,
@@ -216,12 +214,12 @@ async function readIntegrationConfig(
 }
 
 async function readClientId(
-	codemode: CodemodeNamespace,
+	kody: KodyNamespace,
 	integration: IntegrationConfig,
 ) {
-	const valueGet = codemode.value_get
+	const valueGet = kody.value_get
 	if (typeof valueGet !== 'function') {
-		throw new Error('codemode.value_get is not available in this sandbox.')
+		throw new Error('kody.value_get is not available in this sandbox.')
 	}
 	const value = (await valueGet({
 		name: integration.clientIdValueName,
@@ -235,15 +233,15 @@ async function readClientId(
 }
 
 async function persistSecret(
-	codemode: CodemodeNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 	secretName: string,
 	secretKind: 'access token' | 'refresh token',
 	value: string,
 ) {
-	const secretSet = codemode.secret_set
+	const secretSet = kody.secret_set
 	if (typeof secretSet !== 'function') {
-		throw new Error('codemode.secret_set is not available in this sandbox.')
+		throw new Error('kody.secret_set is not available in this sandbox.')
 	}
 	const normalizedSecretName = secretName.trim()
 	if (!normalizedSecretName) {
@@ -259,11 +257,11 @@ async function persistSecret(
 }
 
 async function refreshAccessTokenWithIntegration(
-	codemode: CodemodeNamespace,
+	kody: KodyNamespace,
 	providerName: string,
 	integration: IntegrationConfig,
 ) {
-	const clientId = await readClientId(codemode, integration)
+	const clientId = await readClientId(kody, integration)
 	const refreshTokenSecretName =
 		integration.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
@@ -320,7 +318,7 @@ async function refreshAccessTokenWithIntegration(
 		payload.refresh_token.length > 0
 	) {
 		await persistSecret(
-			codemode,
+			kody,
 			providerName,
 			refreshTokenSecretName,
 			'refresh token',
@@ -328,7 +326,7 @@ async function refreshAccessTokenWithIntegration(
 		)
 	}
 	await persistSecret(
-		codemode,
+		kody,
 		providerName,
 		integration.accessTokenSecretName,
 		'access token',
@@ -581,9 +579,9 @@ const secretHeaders = {
   },
 };
 const __kodyReadIntegrationConfig = async (providerName) => {
-  const integrationGet = codemode.integration_get;
+  const integrationGet = kody.integration_get;
   if (typeof integrationGet !== 'function') {
-    throw new Error('codemode.integration_get is not available in this sandbox.');
+    throw new Error('kody.integration_get is not available in this sandbox.');
   }
   const result = await integrationGet({ name: providerName });
   const integration = result?.integration ?? null;
@@ -593,9 +591,9 @@ const __kodyReadIntegrationConfig = async (providerName) => {
   return integration;
 };
 const __kodyReadClientId = async (integration) => {
-  const valueGet = codemode.value_get;
+  const valueGet = kody.value_get;
   if (typeof valueGet !== 'function') {
-    throw new Error('codemode.value_get is not available in this sandbox.');
+    throw new Error('kody.value_get is not available in this sandbox.');
   }
   const value = await valueGet({ name: integration.clientIdValueName });
   if (!value?.value) {
@@ -611,9 +609,9 @@ const __kodyPersistSecret = async (
   secretKind,
   value,
 ) => {
-  const secretSet = codemode.secret_set;
+  const secretSet = kody.secret_set;
   if (typeof secretSet !== 'function') {
-    throw new Error('codemode.secret_set is not available in this sandbox.');
+    throw new Error('kody.secret_set is not available in this sandbox.');
   }
   const normalizedSecretName = secretName.trim();
   if (!normalizedSecretName) {

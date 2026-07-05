@@ -293,13 +293,13 @@ window.params = window.__kodyAppParams;
 	return injectIntoHtmlDocument(code, bootstrapScript)
 }
 
-export function buildCodemodeCapabilityExecuteCode(
+export function buildKodyCapabilityExecuteCode(
 	name: string,
 	args: Record<string, unknown> = {},
 ) {
 	return [
 		'async () => {',
-		`  return await codemode[${JSON.stringify(name)}](${JSON.stringify(args)});`,
+		`  return await kody[${JSON.stringify(name)}](${JSON.stringify(args)});`,
 		'}',
 	].join('\n')
 }

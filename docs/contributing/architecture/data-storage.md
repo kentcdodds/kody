@@ -218,24 +218,27 @@ that two different users always resolve to two different object ids:
   packages and observed service instances, closes live sessions/services, clears
   alarms, and deletes DO storage.
 - `RemoteConnectorSession` —
-  `userScopedConnectorSessionKey(userId, kind, instanceId)`. Connectors must
-  connect through the username-scoped ingress URL
-  `/@{username}/connectors/{kind}/{instanceId}`. The DO carries the ingress user
-  id forward via headers + websocket attachment and verifies the shared secret
-  against that user's row only. The `MCP` Durable Object is addressed by MCP
-  session id rather than user id; ownership is enforced at the request boundary
-  by validating the authenticated user against the `McpCallerContext` on every
+  `userScopedConnectorSessionKey(userId, kind, instanceId)`, where `instanceId`
+  is the explicit user-chosen connector name (globally unique per user).
+  Connectors must connect through the username-scoped ingress URL
+  `/@{username}/connectors/{kind}/{connectorName}`. Renaming a connector changes
+  this DO id; the old live session snapshot can be orphaned, but reconnecting
+  rebuilds it from settings. The DO carries the ingress user id forward via
+  headers + websocket attachment and verifies the shared secret against that
+  user's row only. The `MCP` Durable Object is addressed by MCP session id
+  rather than user id; ownership is enforced at the request boundary by
+  validating the authenticated user against the `McpCallerContext` on every
   request.
 
 ## Per-user runtime context (no shared `globalThis`)
 
-Codemode `execute` calls and package-app worker entrypoints store the current
+Kody `execute` calls and package-app worker entrypoints store the current
 request's runtime in an `AsyncLocalStorage` shared between the wrapper and the
 `kody:runtime` virtual module via `Symbol.for('kody.runtimeStorage')`. Two
 concurrent calls in the same isolate observe their own runtime view through the
 ALS rather than racing on a shared mutable `globalThis` slot. See
 `packages/worker/src/package-runtime/module-graph.ts`,
-`packages/worker/src/mcp/run-codemode-registry.ts`, and
+`packages/worker/src/mcp/run-kody-registry.ts`, and
 `packages/worker/src/package-runtime/package-app.ts` for the wrapper
 implementations, and
 `packages/worker/src/package-runtime/runtime-isolation.node.test.ts` for the

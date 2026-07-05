@@ -185,7 +185,7 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 			'connector-a',
 			'user-aaa',
 			'home',
-			'default',
+			'home',
 			'encrypted-connector-secret',
 			'2026-07-05',
 			'2026-07-05'
@@ -246,7 +246,7 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		expect.objectContaining({
 			id: 'connector-a',
 			kind: 'home',
-			instance_id: 'default',
+			instance_id: 'home',
 		}),
 	)
 	expect(accountExport.d1.remote_connector_settings.rows[0]).not.toHaveProperty(

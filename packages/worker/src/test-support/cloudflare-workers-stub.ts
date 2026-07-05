@@ -35,7 +35,7 @@ export class WorkflowEntrypoint<TEnv = unknown, TPayload = unknown> {
 export class RpcTarget {}
 
 export const exports = {
-	CodemodeFetchGateway() {
+	KodyFetchGateway() {
 		return async (request: Request) => fetch(request)
 	},
 } satisfies Record<string, unknown>

@@ -9,11 +9,11 @@ when a token already exists inside trusted code.
 Use **search** first to discover saved secret references or integrations before
 switching to **execute**.
 
-During **execute**, **`await codemode.secret_list({})`** (or a narrowed
-**`scope`** such as **`app`**) returns **metadata only**: names, descriptions,
-allowed hosts, allowed capabilities — not plaintext values.
+During **execute**, **`await kody.secret_list({})`** (or a narrowed **`scope`**
+such as **`app`**) returns **metadata only**: names, descriptions, allowed
+hosts, allowed capabilities — not plaintext values.
 
-**`codemode.secret_set(...)`** persists a value that is already available inside
+**`kody.secret_set(...)`** persists a value that is already available inside
 execution (for example a refreshed OAuth token). It does not return secret
 values.
 
@@ -58,7 +58,7 @@ them.
 
 ## Signing JWTs with saved private keys
 
-Use **`codemode.secret_jwt_sign(...)`** when a workflow needs a JWT signed by a
+Use **`kody.secret_jwt_sign(...)`** when a workflow needs a JWT signed by a
 private key stored in a saved secret. The primitive returns
 **`{ jwt, algorithm }`**: use **`result.jwt`** as the compact JWT and
 **`result.algorithm`** for the signing algorithm. It never returns private key

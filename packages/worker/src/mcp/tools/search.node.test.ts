@@ -809,7 +809,7 @@ test('down remote connector statuses surface only disconnected connectors for si
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 		},
-		remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
+		remoteConnectors: [{ kind: 'lights', instanceId: 'home' }],
 	}
 	const disconnected = await loadDownRemoteConnectorStatuses({
 		env: {
@@ -831,7 +831,7 @@ test('down remote connector statuses surface only disconnected connectors for si
 	expect(disconnected).toEqual([
 		expect.objectContaining({
 			state: 'disconnected',
-			connectorId: 'default',
+			connectorId: 'home',
 			connected: false,
 			toolCount: 0,
 		}),
@@ -847,7 +847,7 @@ test('down remote connector statuses surface only disconnected connectors for si
 					return {
 						getSnapshot() {
 							return Promise.resolve({
-								connectorId: 'default',
+								connectorId: 'home',
 								connectedAt: '2026-03-25T00:00:00.000Z',
 								lastSeenAt: '2026-03-25T00:00:01.000Z',
 								tools: [{ name: 'roku_press_key' }],
@@ -864,7 +864,7 @@ test('down remote connector statuses surface only disconnected connectors for si
 	const anonymous = await loadDownRemoteConnectorStatuses({
 		env: {} as unknown as Env,
 		callerContext: {
-			remoteConnectors: [{ kind: 'lights', instanceId: 'default' }],
+			remoteConnectors: [{ kind: 'lights', instanceId: 'home' }],
 		},
 	})
 	expect(anonymous).toEqual([])

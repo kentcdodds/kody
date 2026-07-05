@@ -412,7 +412,7 @@ export function storageRunnerRpc(input: {
 	}
 }
 
-export function createStorageCodemodeTools(input: {
+export function createStorageKodyTools(input: {
 	env: Env
 	userId: string
 	storageId: string
@@ -503,19 +503,19 @@ export function createStorageHelperPrelude(input: {
 	return `
 const storage = {
   id: ${JSON.stringify(input.storageId)},
-  get: async (key) => (await codemode.storage_get({ key })).value,
-  list: async (options = {}) => await codemode.storage_list(options),
+  get: async (key) => (await kody.storage_get({ key })).value,
+  list: async (options = {}) => await kody.storage_list(options),
   sql: async (query, params = []) =>
-    await codemode.storage_sql({
+    await kody.storage_sql({
       query,
       params,
       writable: ${input.writable ? 'true' : 'false'},
     }),
   ${
 		input.writable
-			? `set: async (key, value) => await codemode.storage_set({ key, value }),
-  delete: async (key) => await codemode.storage_delete({ key }),
-  clear: async () => await codemode.storage_clear({}),`
+			? `set: async (key, value) => await kody.storage_set({ key, value }),
+  delete: async (key) => await kody.storage_delete({ key }),
+  clear: async () => await kody.storage_clear({}),`
 			: ''
 	}
 };

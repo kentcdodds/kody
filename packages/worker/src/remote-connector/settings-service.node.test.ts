@@ -217,7 +217,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 		env,
 		userId: 'user-1',
 		kind: ' Lights ',
-		instanceId: ' default ',
+		instanceId: ' home ',
 		enabled: true,
 		attached: true,
 		sharedSecret: 'lights-secret',
@@ -225,7 +225,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 
 	expect(saved).toMatchObject({
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 		enabled: true,
 		attached: true,
 		hasSharedSecret: true,
@@ -253,13 +253,13 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	])
 	await expect(
 		listAttachedRemoteConnectorRefs({ env, userId: 'user-1' }),
-	).resolves.toEqual([{ kind: 'lights', instanceId: 'default' }])
+	).resolves.toEqual([{ kind: 'lights', instanceId: 'home' }])
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-1',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'lights-secret',
 		}),
 	).resolves.toBe(true)
@@ -268,7 +268,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 			env,
 			userId: 'user-1',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'wrong-secret',
 		}),
 	).resolves.toBe(false)
@@ -278,7 +278,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 		userId: 'user-1',
 		id: saved.id,
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 		enabled: true,
 		attached: false,
 		sharedSecret: '',
@@ -292,7 +292,7 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 			env,
 			userId: 'user-1',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'lights-secret',
 		}),
 	).resolves.toBe(true)
@@ -311,7 +311,7 @@ test('renames an existing remote connector setting by id', async () => {
 		env,
 		userId: 'user-1',
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 		enabled: true,
 		attached: true,
 		sharedSecret: 'lights-secret',
@@ -374,13 +374,60 @@ test('disabled connector settings do not authenticate connector hello', async ()
 	).resolves.toBe(false)
 })
 
+test('connector names are explicit, formatted, and globally unique per user', async () => {
+	const env = createEnv()
+	await expect(
+		saveRemoteConnectorSetting({
+			env,
+			userId: 'user-1',
+			kind: 'lights',
+			instanceId: '',
+			enabled: true,
+			attached: true,
+			sharedSecret: 'secret',
+		}),
+	).rejects.toThrow('Connector name is required.')
+	await expect(
+		saveRemoteConnectorSetting({
+			env,
+			userId: 'user-1',
+			kind: 'lights',
+			instanceId: 'Living Room',
+			enabled: true,
+			attached: true,
+			sharedSecret: 'secret',
+		}),
+	).rejects.toThrow('Connector name must use lowercase letters')
+
+	await saveRemoteConnectorSetting({
+		env,
+		userId: 'user-1',
+		kind: 'lights',
+		instanceId: 'home',
+		enabled: true,
+		attached: true,
+		sharedSecret: 'lights-secret',
+	})
+	await expect(
+		saveRemoteConnectorSetting({
+			env,
+			userId: 'user-1',
+			kind: 'roku',
+			instanceId: 'home',
+			enabled: true,
+			attached: true,
+			sharedSecret: 'roku-secret',
+		}),
+	).rejects.toThrow('A remote connector with this name already exists.')
+})
+
 test('connector hello secrets are scoped to the user_id of the ingress', async () => {
 	const env = createEnv()
 	await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-aaa',
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 		enabled: true,
 		attached: true,
 		sharedSecret: 'aaa-secret',
@@ -389,7 +436,7 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 		env,
 		userId: 'user-bbb',
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 		enabled: true,
 		attached: true,
 		sharedSecret: 'bbb-secret',
@@ -402,7 +449,7 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 			env,
 			userId: 'user-aaa',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'aaa-secret',
 		}),
 	).resolves.toBe(true)
@@ -411,7 +458,7 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 			env,
 			userId: 'user-aaa',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'bbb-secret',
 		}),
 	).resolves.toBe(false)
@@ -420,7 +467,7 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 			env,
 			userId: 'user-bbb',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'bbb-secret',
 		}),
 	).resolves.toBe(true)
@@ -429,7 +476,7 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 			env,
 			userId: 'user-bbb',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 			sharedSecret: 'aaa-secret',
 		}),
 	).resolves.toBe(false)

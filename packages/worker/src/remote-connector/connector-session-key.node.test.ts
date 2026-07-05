@@ -9,15 +9,15 @@ test('connector session keys and ingress routes round-trip without segment colli
 	const userA = userScopedConnectorSessionKey({
 		userId: 'user-aaa',
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 	})
 	const userB = userScopedConnectorSessionKey({
 		userId: 'user-bbb',
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 	})
 	expect(userA).not.toBe(userB)
-	expect(userA).toBe('["user-aaa","lights","default"]')
+	expect(userA).toBe('["user-aaa","lights","home"]')
 
 	const collidingA = userScopedConnectorSessionKey({
 		userId: 'user-aaa',
@@ -48,12 +48,12 @@ test('connector session keys and ingress routes round-trip without segment colli
 
 	expect(
 		parseUserScopedConnectorRoutePath(
-			'/@user-aaa/connectors/lights/default/snapshot',
+			'/@user-aaa/connectors/lights/home/snapshot',
 		),
 	).toEqual({
 		username: 'user-aaa',
 		kind: 'lights',
-		instanceId: 'default',
+		instanceId: 'home',
 		rest: '/snapshot',
 	})
 	expect(
@@ -65,7 +65,7 @@ test('connector session keys and ingress routes round-trip without segment colli
 		rest: '',
 	})
 	expect(
-		parseUserScopedConnectorRoutePath('/connectors/lights/default'),
+		parseUserScopedConnectorRoutePath('/connectors/lights/home'),
 	).toBeNull()
 	expect(
 		parseUserScopedConnectorRoutePath('/@user-aaa/connectors/lights'),

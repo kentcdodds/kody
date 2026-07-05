@@ -31,16 +31,16 @@ test('public route hardening rejects unauthenticated connector access, unknown p
 	).run()
 
 	const unauthorizedConnectorRequests = [
-		createRequest('/@connector-user/connectors/lights/default/snapshot'),
-		createRequest('/@connector-user/connectors/lights/default/rpc/tools-list', {
+		createRequest('/@connector-user/connectors/lights/home/snapshot'),
+		createRequest('/@connector-user/connectors/lights/home/rpc/tools-list', {
 			method: 'POST',
 		}),
-		createRequest('/@connector-user/connectors/lights/default/rpc/tools-call', {
+		createRequest('/@connector-user/connectors/lights/home/rpc/tools-call', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: 'test', arguments: {} }),
 		}),
-		createRequest('/@connector-user/connectors/lights/default/rpc/jsonrpc', {
+		createRequest('/@connector-user/connectors/lights/home/rpc/jsonrpc', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -61,7 +61,7 @@ test('public route hardening rejects unauthenticated connector access, unknown p
 	}
 
 	const websocketRequest = createRequest(
-		'/@connector-user/connectors/lights/default',
+		'/@connector-user/connectors/lights/home',
 		{
 			headers: { Upgrade: 'websocket' },
 		},

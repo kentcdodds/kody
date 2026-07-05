@@ -445,7 +445,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		value_buckets: [{ id: 'vb-1', user_id: userAaa }],
 		value_entries: [{ bucket_id: 'vb-1', name: 'v', user_id: 'unused' }],
 		remote_connector_settings: [
-			{ id: 'rc-1', user_id: userAaa, kind: 'home', instance_id: 'default' },
+			{ id: 'rc-1', user_id: userAaa, kind: 'home', instance_id: 'home' },
 			{ id: 'rc-2', user_id: userBbb, kind: 'home', instance_id: 'other' },
 		],
 		saved_packages: [
@@ -717,7 +717,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(purgeRemoteConnectorMock).toHaveBeenCalledWith({
 		userId: userAaa,
 		kind: 'home',
-		instanceId: 'default',
+		instanceId: 'home',
 	})
 	expect(doFetchMock).toHaveBeenCalledTimes(3)
 

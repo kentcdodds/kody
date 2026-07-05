@@ -8,8 +8,8 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
-	createCodemodeRemoteProxy,
-	createCodemodeProviderProxySource,
+	createKodyRemoteProxy,
+	createKodyProviderProxySource,
 	createExecuteExecutor,
 	extractRawContent,
 	formatExecutionOutput,
@@ -77,7 +77,7 @@ function createExecutorTestEnv(loader: Env['LOADER']) {
 
 function createExecutorTestExports() {
 	return {
-		CodemodeFetchGateway: ({ props }: { props: unknown }) => ({ props }),
+		KodyFetchGateway: ({ props }: { props: unknown }) => ({ props }),
 	} as never
 }
 
@@ -89,39 +89,39 @@ function createGatewayProps(userId: string) {
 	}
 }
 
-test('codemode remote proxy dispatches and reports connector/capability errors clearly', async () => {
+test('kody remote proxy dispatches and reports connector/capability errors clearly', async () => {
 	const calls: Array<{ dispatchName: string; args: unknown }> = []
-	const remote = createCodemodeRemoteProxy({
+	const remote = createKodyRemoteProxy({
 		remoteConnectors: [
 			{
-				name: 'home/default',
+				name: 'home',
 				kind: 'home',
-				instanceId: 'default',
+				instanceId: 'home',
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 1,
-					message: 'The home connector "default" is connected.',
-					unavailableMessage: 'The home connector "default" is connected.',
+					message: 'The home connector "home" is connected.',
+					unavailableMessage: 'The home connector "home" is connected.',
 				},
 				capabilities: [
 					{
 						name: 'set_pin',
-						dispatchName: 'remote:home/default:set_pin',
+						dispatchName: 'remote:home:set_pin',
 					},
 				],
 			},
 			{
-				name: 'lights/default',
+				name: 'lights',
 				kind: 'lights',
-				instanceId: 'default',
+				instanceId: 'home',
 				status: {
 					state: 'disconnected',
 					connected: false,
 					toolCount: 0,
-					message: 'The lights connector "default" is not connected.',
+					message: 'The lights connector "lights" is not connected.',
 					unavailableMessage:
-						'The lights connector "default" is not connected. Kody cannot use this connector until it reconnects.',
+						'The lights connector "lights" is not connected. Kody cannot use this connector until it reconnects.',
 				},
 				capabilities: [],
 			},
@@ -132,76 +132,74 @@ test('codemode remote proxy dispatches and reports connector/capability errors c
 		},
 	}) as Record<string, Record<string, (args: unknown) => Promise<unknown>>>
 
-	await expect(
-		remote['home/default']?.set_pin({ pin: '1234' }),
-	).resolves.toEqual({ ok: true })
+	await expect(remote['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+		ok: true,
+	})
 	expect(calls).toEqual([
 		{
-			dispatchName: 'remote:home/default:set_pin',
+			dispatchName: 'remote:home:set_pin',
 			args: { pin: '1234' },
 		},
 	])
-	expect(() => remote['missing/default']).toThrow(
-		'Unknown remote connector "missing/default". Available remote connectors: "home/default", "lights/default".',
+	expect(() => remote['missing']).toThrow(
+		'Unknown remote connector "missing". Available remote connectors: "home", "lights".',
 	)
-	expect(() => remote['home/default']?.missing_tool).toThrow(
-		'Unknown remote capability "missing_tool" for connector "home/default". Available capabilities: "set_pin".',
+	expect(() => remote['home']?.missing_tool).toThrow(
+		'Unknown remote capability "missing_tool" for connector "home". Available capabilities: "set_pin".',
 	)
-	expect(() => remote['lights/default']?.set_pin).toThrow(
-		'The lights connector "default" is not connected. Kody cannot use this connector until it reconnects.',
+	expect(() => remote['lights']?.set_pin).toThrow(
+		'The lights connector "lights" is not connected. Kody cannot use this connector until it reconnects.',
 	)
 })
 
-test('generated codemode provider source wires remote proxy dispatch', async () => {
+test('generated kody provider source wires remote proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
-	const source = createCodemodeProviderProxySource({
-		providerName: 'codemode',
+	const source = createKodyProviderProxySource({
+		providerName: 'kody',
 		remoteConnectors: [
 			{
-				name: 'home/default',
+				name: 'home',
 				kind: 'home',
-				instanceId: 'default',
+				instanceId: 'home',
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 1,
-					message: 'The home connector "default" is connected.',
-					unavailableMessage: 'The home connector "default" is connected.',
+					message: 'The home connector "home" is connected.',
+					unavailableMessage: 'The home connector "home" is connected.',
 				},
 				capabilities: [
 					{
 						name: 'set_pin',
-						dispatchName: 'remote:home/default:set_pin',
+						dispatchName: 'remote:home:set_pin',
 					},
 				],
 			},
 		],
 	})
-	const codemode = new Function('__dispatchers', `${source}; return codemode;`)(
-		{
-			codemode: {
-				async call(name: string, argsJson: string) {
-					calls.push({ name, argsJson })
-					return JSON.stringify({ result: { ok: true } })
-				},
+	const kody = new Function('__dispatchers', `${source}; return kody;`)({
+		kody: {
+			async call(name: string, argsJson: string) {
+				calls.push({ name, argsJson })
+				return JSON.stringify({ result: { ok: true } })
 			},
 		},
-	) as {
+	}) as {
 		remote: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
 		[key: string]: unknown
 	}
 
-	await expect(
-		codemode.remote['home/default']?.set_pin({ pin: '1234' }),
-	).resolves.toEqual({ ok: true })
+	await expect(kody.remote['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+		ok: true,
+	})
 	expect(calls).toEqual([
 		{
-			name: 'remote:home/default:set_pin',
+			name: 'remote:home:set_pin',
 			argsJson: JSON.stringify({ pin: '1234' }),
 		},
 	])
-	expect(() => codemode['remote:home/default:set_pin']).toThrow(
-		'Remote connector capability "remote:home/default:set_pin" is not available as a flat codemode function.',
+	expect(() => kody['remote:home:set_pin']).toThrow(
+		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
 	)
 })
 
@@ -211,7 +209,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 	const exports = createExecutorTestExports()
 	const providers = [
 		{
-			name: 'codemode',
+			name: 'kody',
 			fns: {
 				search: async () => ({ ok: true }),
 			},
@@ -229,7 +227,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 		gatewayProps: createGatewayProps('user-1'),
 	}).execute('async () => "ok"', [
 		{
-			name: 'codemode',
+			name: 'kody',
 			fns: {
 				search: async () => ({ ok: 'different dispatcher same worker' }),
 			},
@@ -243,7 +241,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 
 	const scopedProviders = [
 		{
-			name: 'codemode',
+			name: 'kody',
 			fns: {},
 		},
 	]
@@ -405,7 +403,7 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 		},
 	}
 	const exports = createExecutorTestExports()
-	const providers = [{ name: 'codemode', fns: {} }]
+	const providers = [{ name: 'kody', fns: {} }]
 
 	// Successful sandbox run: one success event.
 	const successLoader = createFakeWorkerLoader()
@@ -539,16 +537,16 @@ test('createExecuteExecutor disables dispatchers after execution completes', asy
 		env: createExecutorTestEnv(fakeLoader.loader),
 		exports: createExecutorTestExports(),
 		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => await codemode.search({ q: "ok" })', [
+	}).execute('async () => await kody.search({ q: "ok" })', [
 		{
-			name: 'codemode',
+			name: 'kody',
 			fns: {
 				search: async () => ({ ok: true }),
 			},
 		},
 	])
 	const dispatchers = fakeLoader.evaluations[0]
-	const result = await dispatchers?.codemode?.call('search', '{}')
+	const result = await dispatchers?.kody?.call('search', '{}')
 
 	expect(JSON.parse(result ?? '{}')).toEqual({
 		error: 'Execution has already completed.',

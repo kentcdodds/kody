@@ -1,4 +1,5 @@
 import {
+	isValidRemoteConnectorName,
 	normalizeRemoteConnectorInstanceId,
 	normalizeRemoteConnectorKind,
 } from '@kody-internal/shared/remote-connectors.ts'
@@ -56,8 +57,9 @@ export function parseUserScopedConnectorRoutePath(
 		if (!decodedUsername || !decodedKind || !decodedInstanceId) return null
 		const username = decodedUsername.trim()
 		const kind = decodedKind.trim().toLowerCase()
-		const instanceId = decodedInstanceId.trim()
-		if (!username || !kind || !instanceId) return null
+		const instanceId = normalizeRemoteConnectorInstanceId(decodedInstanceId)
+		if (!username || !kind || !isValidRemoteConnectorName(instanceId))
+			return null
 		const rest = parts.length > 4 ? `/${parts.slice(4).join('/')}` : ''
 		return { username, kind, instanceId, rest }
 	}

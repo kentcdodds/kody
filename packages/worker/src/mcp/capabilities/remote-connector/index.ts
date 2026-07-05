@@ -9,7 +9,7 @@ import {
 } from '#worker/remote-connector/status.ts'
 import {
 	remoteConnectorCapabilityId,
-	remoteConnectorCodemodeName,
+	remoteConnectorKodyName,
 	remoteConnectorDomainId,
 	remoteConnectorToolName,
 } from '#worker/remote-connector/remote-domain-id.ts'
@@ -69,7 +69,7 @@ function createCapabilityFromTool(input: {
 		ref,
 		toolName: tool.name,
 	})
-	const connectorName = remoteConnectorCodemodeName(ref)
+	const connectorName = remoteConnectorKodyName(ref)
 	const cleanToolName = remoteConnectorToolName(tool.name)
 	const binding: RemoteToolCapabilityBinding = {
 		capabilityName,

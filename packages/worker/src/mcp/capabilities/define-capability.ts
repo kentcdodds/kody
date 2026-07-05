@@ -215,7 +215,7 @@ function normalizeJsonSchemaDefaultsOptional(schema: unknown): unknown {
 				propertySchema &&
 				typeof propertySchema === 'object' &&
 				!Array.isArray(propertySchema) &&
-				'default' in propertySchema
+				'home' in propertySchema
 			)
 		})
 

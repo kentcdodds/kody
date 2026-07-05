@@ -21,7 +21,7 @@ test('remote connector shared secrets are not read from environment variables', 
 		SECRET_STORE_KEY: 'x'.repeat(32),
 		REMOTE_CONNECTOR_SECRETS: {
 			'custom:alpha': 'alpha-secret',
-			'lights:default': 'lights-secret',
+			'lights:lights': 'lights-secret',
 		},
 	} as Env
 
@@ -47,7 +47,7 @@ test('remote connector shared secrets are not read from environment variables', 
 			env,
 			userId: 'user-aaa',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 		}),
 	).resolves.toBe(false)
 })

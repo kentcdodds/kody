@@ -85,7 +85,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional domain filter when you only need one capability domain. Accepts builtin domain ids such as "packages" and synthesized remote connector domain ids such as "remote:roku:default".',
+					'Optional domain filter when you only need one capability domain. Accepts builtin domain ids such as "packages" and synthesized remote connector domain ids such as "remote:roku".',
 				),
 			detail: z
 				.boolean()

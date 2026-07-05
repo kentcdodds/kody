@@ -37,7 +37,7 @@ export const executeCapability = defineDomainCapability(
 		name: 'execute',
 		description:
 			'Run one ephemeral ESM module string with a default export inside the Kody execute runtime. Use this inside package and execute runtimes when reusable code needs to call the same module execution surface as the public MCP execute tool.',
-		keywords: ['execute', 'codemode', 'module', 'sandbox', 'runtime'],
+		keywords: ['execute', 'kody', 'module', 'sandbox', 'runtime'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -104,7 +104,7 @@ export const executeCapability = defineDomainCapability(
 			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const { runModuleWithRegistry } =
-				await import('#mcp/run-codemode-registry.ts')
+				await import('#mcp/run-kody-registry.ts')
 			const result = await runModuleWithRegistry(
 				ctx.env,
 				callerContext,

@@ -37,13 +37,11 @@ export function remoteConnectorInstanceSlug(ref: RemoteConnectorRef): string {
 }
 
 export function remoteConnectorDomainId(ref: RemoteConnectorRef): string {
-	const k = ref.kind.trim().toLowerCase()
-	return `remote:${k}:${remoteConnectorInstanceSlug(ref)}`
+	return `remote:${remoteConnectorKodyName(ref)}`
 }
 
-export function remoteConnectorCodemodeName(ref: RemoteConnectorRef): string {
-	const k = ref.kind.trim().toLowerCase()
-	return `${k}/${remoteConnectorInstanceSlug(ref)}`
+export function remoteConnectorKodyName(ref: RemoteConnectorRef): string {
+	return remoteConnectorInstanceSlug(ref)
 }
 
 export function remoteConnectorToolName(toolName: string): string {
@@ -59,5 +57,5 @@ export function remoteConnectorCapabilityId(input: {
 	ref: RemoteConnectorRef
 	toolName: string
 }): string {
-	return `remote:${remoteConnectorCodemodeName(input.ref)}:${remoteConnectorToolName(input.toolName)}`
+	return `remote:${remoteConnectorKodyName(input.ref)}:${remoteConnectorToolName(input.toolName)}`
 }

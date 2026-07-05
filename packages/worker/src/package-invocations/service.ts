@@ -14,7 +14,7 @@ import {
 	type PackageInvokeInput,
 	type PackageInvokeNormalizedInput,
 	type PackageInvokeTools,
-} from '#mcp/run-codemode-registry.ts'
+} from '#mcp/run-kody-registry.ts'
 import {
 	type PackageRuntimeDebugContext,
 	type PackageRuntimeSurface,

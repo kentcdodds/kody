@@ -99,7 +99,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const restored = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				description: 'Local lighting automation.',
 				connectedAt: '2026-04-26T05:00:00.000Z',
@@ -113,7 +113,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	expect(restored.state.blockConcurrencyWhile).toHaveBeenCalledTimes(1)
 	const restoredSnapshot = await restored.session.getSnapshot()
 	expect(restoredSnapshot).toMatchObject({
-		connectorId: 'default',
+		connectorId: 'home',
 		description: 'Local lighting automation.',
 		tools: [{ name: 'bond_shade_set_position' }],
 	})
@@ -121,11 +121,11 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		restored.session.rpcExportUserSession({
 			userId: 'user-123',
 			kind: 'lights',
-			instanceId: 'default',
+			instanceId: 'home',
 		}),
 	).resolves.toEqual({
 		persisted: {
-			connectorId: 'default',
+			connectorId: 'home',
 			connectorKind: 'lights',
 			description: 'Local lighting automation.',
 			connectedAt: '2026-04-26T05:00:00.000Z',
@@ -138,7 +138,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const disconnected = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -151,7 +151,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const closed = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -173,7 +173,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		closed.persistedEntries.get('remote-connector-session-state'),
 	).toMatchObject({
 		persisted: {
-			connectorId: 'default',
+			connectorId: 'home',
 			connectedAt: null,
 		},
 		tools: [],
@@ -184,7 +184,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const staleClose = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -204,7 +204,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		staleClose.persistedEntries.get('remote-connector-session-state'),
 	).toMatchObject({
 		persisted: {
-			connectorId: 'default',
+			connectorId: 'home',
 			connectedAt: '2026-04-26T05:00:00.000Z',
 		},
 		tools: [{ name: 'bond_shade_set_position' }],
@@ -213,7 +213,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const heartbeat = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -233,7 +233,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	) as StoredRemoteConnectorSessionState
 	expect(heartbeatPersisted).toMatchObject({
 		persisted: {
-			connectorId: 'default',
+			connectorId: 'home',
 			connectedAt: '2026-04-26T05:00:00.000Z',
 		},
 		tools: [{ name: 'bond_shade_set_position' }],
@@ -245,7 +245,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const errored = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -269,7 +269,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		errored.persistedEntries.get('remote-connector-session-state'),
 	).toMatchObject({
 		persisted: {
-			connectorId: 'default',
+			connectorId: 'home',
 			connectedAt: null,
 		},
 		tools: [],
@@ -279,7 +279,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	const dedupe = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
-				connectorId: 'default',
+				connectorId: 'home',
 				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -297,7 +297,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		dedupe.persistedEntries.get('remote-connector-session-state'),
 	).toMatchObject({
 		persisted: {
-			connectorId: 'default',
+			connectorId: 'home',
 			connectedAt: null,
 		},
 		tools: [],

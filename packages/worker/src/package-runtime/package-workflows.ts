@@ -1058,7 +1058,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 	): Promise<JsonValue> {
 		const [{ runModuleWithRegistry }, { createMcpCallerContext }] =
 			await Promise.all([
-				import('#mcp/run-codemode-registry.ts'),
+				import('#mcp/run-kody-registry.ts'),
 				import('#mcp/context.ts'),
 			])
 		const remoteConnectors = await listAttachedRemoteConnectorRefs({

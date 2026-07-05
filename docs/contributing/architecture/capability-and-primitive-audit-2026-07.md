@@ -13,6 +13,9 @@ Reviewed:
 - Synthesized remote connector capabilities in
   `packages/worker/src/mcp/capabilities/remote-connector/index.ts` and
   `packages/worker/src/remote-connector/remote-domain-id.ts`.
+- Account export capability/domain code in
+  `packages/worker/src/mcp/capabilities/account/` and
+  `packages/worker/src/app/account-export.ts`.
 - D1 migrations through `packages/worker/migrations/0049-audit-events.sql`.
 - Durable Object, KV, Vectorize, entity-source, and package import code under
   `packages/worker/src/`.
@@ -30,8 +33,8 @@ Reviewed:
 - Secret policy allowlists persist capability names in
   `secret_entries.allowed_capabilities`
   (`packages/worker/migrations/0010-secret-allowed-capabilities.sql`).
-- Codemode exposes capabilities as `codemode.<capabilityName>()` in
-  `packages/worker/src/mcp/run-codemode-registry.ts`.
+- Kody runtime exposes capabilities as `kody.<capabilityName>()` in
+  `packages/worker/src/mcp/run-kody-registry.ts`.
 - `meta_list_capabilities` returns TypeScript call shapes from
   `packages/worker/src/mcp/capabilities/meta/meta-list-capabilities.ts`.
 
@@ -79,18 +82,29 @@ they are.
 
 This PR makes the breaking change now:
 
-- Remote capability entity ids are `remote:<kind>/<instance>:<tool>`.
-- Built-ins remain flat in codemode (`codemode.value_get(...)`).
-- Remote capabilities move to
-  `codemode.remote["<kind>/<instance>"].<tool>(input)` and disappear from flat
-  `codemode.<kind>_<instance>_<tool>` calls.
+- Remote capability entity ids are `remote:<name>:<tool>`.
+- Built-ins remain flat in kody (`kody.value_get(...)`).
+- Remote capabilities move to `kody.remote["<name>"].<tool>(input)` and
+  disappear from flat `kody.<kind>_<instance>_<tool>` calls.
+- Connector names are explicit user-chosen names, validated as lowercase
+  alphanumeric plus dashes, and globally unique per user. `kind` remains
+  connector protocol metadata, but does not key the runtime namespace. This
+  keeps the common single-connector case clean (`kody.remote["home"]`) and makes
+  Proxy error messages shorter.
 - First-class provenance metadata (`source: 'builtin' | 'remote-connector'`,
   connector name, and clean tool name) is surfaced in `meta_list_capabilities`,
   capability search rows, capability detail structured output, and MCP logs.
 
+Renaming an existing connector name changes the
+`userScopedConnectorSessionKey(userId, kind, instanceId)` Durable Object id.
+This can orphan the old live session snapshot, but connector sessions rebuild
+from settings and the remote connector reconnect handshake; no persisted user
+content is stored only in that session. Reconnect the connector after renaming.
+Reindex capability vectors if old remote capability ids were indexed.
+
 Follow up before open signup with connector-author guidance and possibly a
 connector lint/check for tool names and schemas. After open signup, do not
-change remote id or codemode namespace rules without a migration plan.
+change remote id or kody namespace rules without a migration plan.
 
 ### High: D1 JSON blobs are shadow schemas
 
@@ -109,6 +123,10 @@ change remote id or codemode namespace rules without a migration plan.
   `0010-secret-allowed-capabilities.sql`, and
   `0023-secret-allowed-packages.sql`.
 - Runtime debug JSON in `0037-package-runtime-debug.sql`.
+- Account export sections in `packages/worker/src/app/account-export.ts` mirror
+  the account-deletion inventory and read D1, Durable Object, KV, and Vectorize
+  surfaces through explicit section schemas in
+  `packages/worker/src/mcp/capabilities/account/account-export-shared.ts`.
 
 **Blast radius**
 
@@ -324,9 +342,11 @@ This PR documents the grammar and static/dynamic distinction in
 - Added capability source metadata and remote connector provenance to capability
   types, registry specs, `meta_list_capabilities`, search result structures, and
   MCP capability logs.
-- Changed remote connector capability ids to `remote:<kind>/<instance>:<tool>`
-  and moved execute/codemode calls to
-  `codemode.remote["<kind>/<instance>"].<tool>(input)`.
+- Changed remote connector capability ids to `remote:<name>:<tool>` and moved
+  execute/kody calls to `kody.remote["<name>"].<tool>(input)`.
+- Folded the new account export capability domain into the audit and primitive
+  map; `account_export_manifest` and `account_export_section` are read-only and
+  explicitly avoid secret values.
 - Fixed `meta_list_capabilities` domain filtering to accept all built-in and
   synthesized remote domains.
 - Added structured execute error details for `EntitlementLimitError`.

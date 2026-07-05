@@ -9,7 +9,7 @@ import {
 
 function executeUsageSnippet(usage: string) {
 	const calls: Array<{ toolName: string; args: unknown }> = []
-	const codemode = {
+	const kody = {
 		integration_get(args: unknown) {
 			calls.push({
 				toolName: 'integration_get',
@@ -23,7 +23,7 @@ function executeUsageSnippet(usage: string) {
 			})
 		},
 	}
-	new Script(usage).runInContext(createContext({ codemode }))
+	new Script(usage).runInContext(createContext({ kody }))
 	return calls
 }
 
@@ -50,7 +50,7 @@ async function executeCapabilityExample(executeExample: string) {
 			},
 		},
 	)
-	const codemode = new Proxy(
+	const kody = new Proxy(
 		{} as Record<string, (args: unknown) => Promise<unknown>>,
 		{
 			get(_target, prop: string) {
@@ -63,11 +63,11 @@ async function executeCapabilityExample(executeExample: string) {
 		},
 	)
 	const moduleCode = executeExample
-		.replace("import { codemode } from 'kody:runtime'\n\n", '')
+		.replace("import { kody } from 'kody:runtime'\n\n", '')
 		.replace('export default async function main', 'async function main')
 	const result = await new Script(
 		`(async () => { ${moduleCode}; return await main({ owner: "o", repo: "r", title: "t" }) })()`,
-	).runInNewContext({ codemode })
+	).runInNewContext({ kody })
 	return { calls, result }
 }
 
@@ -346,12 +346,12 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 
 	const remoteDetail = formatEntityDetailMarkdown({
 		type: 'capability',
-		id: 'remote:home/default:set_pin',
-		title: 'remote:home/default:set_pin',
+		id: 'remote:home:set_pin',
+		title: 'remote:home:set_pin',
 		description: 'Set the island router PIN.',
 		spec: {
-			name: 'remote:home/default:set_pin',
-			domain: 'remote:home:default',
+			name: 'remote:home:set_pin',
+			domain: 'remote:home',
 			description: 'Set the island router PIN.',
 			keywords: [],
 			readOnly: false,
@@ -360,9 +360,9 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			source: 'remote-connector',
 			remoteConnector: {
 				kind: 'home',
-				instanceId: 'default',
-				connectorId: 'default',
-				connectorName: 'home/default',
+				instanceId: 'home',
+				connectorId: 'home',
+				connectorName: 'home',
 				mcpToolName: 'island.router.api/set-pin',
 				toolName: 'set_pin',
 			},
@@ -380,17 +380,15 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 				'type RemoteHomeDefaultSetPinInput = {\n\tpin: string\n}',
 		},
 	})
-	expect(remoteDetail.markdown).toContain(
-		'codemode.remote["home/default"].set_pin(input)',
-	)
+	expect(remoteDetail.markdown).toContain('kody.remote["home"].set_pin(input)')
 	expect(remoteDetail.structured).toMatchObject({
 		source: 'remote-connector',
 		remoteConnector: {
-			connectorName: 'home/default',
+			connectorName: 'home',
 			toolName: 'set_pin',
 		},
 		executeExample: expect.stringContaining(
-			'codemode.remote["home/default"].set_pin(input)',
+			'kody.remote["home"].set_pin(input)',
 		),
 	})
 	const remoteExecution = await executeCapabilityExample(
@@ -398,7 +396,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	)
 	expect(remoteExecution.calls).toEqual([
 		{
-			name: 'remote:home/default:set_pin',
+			name: 'remote:home:set_pin',
 			args: { owner: 'o', repo: 'r', title: 't' },
 		},
 	])

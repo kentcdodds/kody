@@ -304,7 +304,7 @@ test.each([
 )
 
 test('fetch gateway resolves path-only URLs against baseUrl', async () => {
-	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
+	// Node's Request rejects path-only URLs; workerd allows them for kody outbound fetch.
 	const createPathOnlyRequest = (url: string) =>
 		({
 			url,
@@ -521,7 +521,7 @@ test('gateway fetch metering never derives a hostname from expanded secret place
 			allowedHosts: ['example.com'],
 			allowedCapabilities: [],
 		})
-	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
+	// Node's Request rejects path-only URLs; workerd allows them for kody outbound fetch.
 	const createPathOnlyRequest = (url: string) =>
 		({
 			url,

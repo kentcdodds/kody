@@ -121,9 +121,9 @@ export const exampleAdminCapability = defineDomainCapability(
 The registry filters role-gated capabilities from `search`,
 `meta_list_capabilities`, and MCP server domain instructions for callers who do
 not satisfy the requirement. This filtering is UX only; execute-time checks are
-the security boundary. The codemode wrapper and normalized capability handler
-also reject unauthorized calls, even if a test or internal caller accidentally
-passes an unfiltered registry.
+the security boundary. The kody wrapper and normalized capability handler also
+reject unauthorized calls, even if a test or internal caller accidentally passes
+an unfiltered registry.
 
 Role and permission checks use the authenticated MCP caller context for the
 current request. Do **not** cache role or permission decisions into Vectorize
@@ -431,11 +431,10 @@ add alias/deprecation machinery for the current Kent-only cleanup.
   cleanup.
 - Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
   the handler must validate the args explicitly before reading them.
-- Remote connector capability entity ids use `remote:<kind>/<instance>:<tool>`
-  (for example `remote:home/default:set_pin`). In execute/codemode code, remote
-  capabilities are not flat functions. Use
-  `codemode.remote["<kind>/<instance>"].<tool>(input)`, for example
-  `codemode.remote["home/default"].set_pin({ pin })`.
+- Remote connector capability entity ids use `remote:<name>:<tool>` (for example
+  `remote:home:set_pin`). In execute/kody code, remote capabilities are not flat
+  functions. Use `kody.remote["<name>"].<tool>(input)`, for example
+  `kody.remote["home"].set_pin({ pin })`.
 - Remote connector descriptions, keywords, schemas, and annotations cross a
   trust boundary from the connector into Kody search and execute. Keep them
   concise, non-secret, and stable; Kody records connector provenance on

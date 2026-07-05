@@ -43,7 +43,7 @@ vi.mock('./published-bundle-artifacts.ts', () => ({
 		mockModule.loadPublishedBundleArtifactByIdentity(...args),
 }))
 
-vi.mock('#mcp/run-codemode-registry.ts', () => ({
+vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runBundledModuleWithRegistry: (...args: Array<unknown>) =>
 		mockModule.runBundledModuleWithRegistry(...args),
 }))

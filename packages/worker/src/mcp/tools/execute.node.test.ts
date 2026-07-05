@@ -11,7 +11,7 @@ const mockModule = vi.hoisted(() => ({
 	})),
 }))
 
-vi.mock('#mcp/run-codemode-registry.ts', () => ({
+vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
 		mockModule.runModuleWithRegistry(...args),
 }))

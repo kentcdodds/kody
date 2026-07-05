@@ -21,5 +21,5 @@ export const capabilityDomainNames = {
 export type BuiltinCapabilityDomain =
 	(typeof capabilityDomainNames)[keyof typeof capabilityDomainNames]
 
-/** Built-in domain ids plus runtime remote-connector domains (e.g. `remote:lights:default`). */
+/** Built-in domain ids plus runtime remote-connector domains (e.g. `remote:lights`). */
 export type CapabilityDomain = string

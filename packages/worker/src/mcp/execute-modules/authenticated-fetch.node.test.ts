@@ -2,10 +2,10 @@ import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
 	type CapabilityArgs,
-	type CodemodeNamespace,
+	type KodyNamespace,
 	IntegrationHostNotAllowedError,
 	createAuthenticatedFetch,
-} from './codemode-utils.ts'
+} from './kody-runtime-utils.ts'
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
@@ -31,9 +31,9 @@ const spotifyIntegration = {
 	requiredHosts: ['api.spotify.com', 'cdn.spotify.com'],
 }
 
-function createCodemode() {
+function createKody() {
 	const secretSetCalls: Array<SecretSetCall> = []
-	const codemode = {
+	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
@@ -49,9 +49,9 @@ function createCodemode() {
 			secretSetCalls.push(call)
 			return { name: call.name, scope: call.scope }
 		},
-	} satisfies CodemodeNamespace
+	} satisfies KodyNamespace
 
-	return { codemode, secretSetCalls }
+	return { kody, secretSetCalls }
 }
 
 function createSpotifyHandlers(fetchCalls: Array<Request>) {
@@ -74,11 +74,11 @@ function createSpotifyHandlers(fetchCalls: Array<Request>) {
 }
 
 test('createAuthenticatedFetch enforces integration host allowlists and fails closed without configured hosts', async () => {
-	const { codemode } = createCodemode()
+	const { kody } = createKody()
 	const fetchCalls: Array<Request> = []
 
 	using _server = createMswNodeServer(createSpotifyHandlers(fetchCalls))
-	const authenticatedFetch = await createAuthenticatedFetch(codemode, 'spotify')
+	const authenticatedFetch = await createAuthenticatedFetch(kody, 'spotify')
 
 	const fetchCallsAfterSetup = fetchCalls.length
 
@@ -126,7 +126,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		requiredHosts: [] as Array<string>,
 		apiBaseUrl: null,
 	}
-	const emptyAllowlistCodemode = {
+	const emptyAllowlistKody = {
 		async integration_get() {
 			return { integration: emptyIntegration }
 		},
@@ -137,7 +137,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 			const call = args as { name: string; value: string; scope: string }
 			return { name: call.name, scope: call.scope }
 		},
-	} satisfies CodemodeNamespace
+	} satisfies KodyNamespace
 
 	const emptyAllowlistFetchCalls: Array<Request> = []
 	using _emptyAllowlistServer = createMswNodeServer([
@@ -150,7 +150,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		}),
 	])
 	const emptyAllowlistFetch = await createAuthenticatedFetch(
-		emptyAllowlistCodemode,
+		emptyAllowlistKody,
 		'spotify',
 	)
 	const fetchCallsBefore = emptyAllowlistFetchCalls.length

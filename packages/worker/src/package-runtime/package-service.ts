@@ -556,7 +556,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			{ loadPublishedBundleArtifactByIdentity },
 			{ createPackageEventTools, createPackageRuntimeInvokeTools },
 		] = await Promise.all([
-			import('#mcp/run-codemode-registry.ts'),
+			import('#mcp/run-kody-registry.ts'),
 			import('./module-graph.ts'),
 			import('./published-bundle-artifacts.ts'),
 			// Avoid a top-level package-service -> package-invocations cycle during

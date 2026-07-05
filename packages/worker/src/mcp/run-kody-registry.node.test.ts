@@ -5,12 +5,12 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
-	buildCodemodeFns,
+	buildKodyFns,
 	createWorkflowTools,
-	runCodemodeWithRegistry,
+	runKodyWithRegistry,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
-} from './run-codemode-registry.ts'
+} from './run-kody-registry.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
@@ -20,7 +20,7 @@ import {
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
-test('buildCodemodeFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
+test('buildKodyFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
 	const adminOnlyCapability = defineDomainCapability('admin', {
 		name: 'admin_user_list',
 		description: 'List admin user account metadata',
@@ -40,7 +40,7 @@ test('buildCodemodeFns rejects role-gated capabilities even when passed an unfil
 			capabilities: [adminOnlyCapability],
 		},
 	])
-	const tools = await buildCodemodeFns(
+	const tools = await buildKodyFns(
 		{} as Env,
 		createMcpCallerContext({
 			baseUrl: 'https://example.com',
@@ -537,7 +537,7 @@ function createRepoSessionRow(input: {
 	}
 }
 
-test('buildCodemodeFns updates and deletes jobs through production-shaped bindings', async () => {
+test('buildKodyFns updates and deletes jobs through production-shaped bindings', async () => {
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
@@ -653,9 +653,9 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 	)
 
 	try {
-		const codemode = await buildCodemodeFns(env, callerContext)
+		const kody = await buildKodyFns(env, callerContext)
 		await expect(
-			codemode.job_update({
+			kody.job_update({
 				id: job.id,
 				enabled: false,
 			}),
@@ -681,7 +681,7 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 			enabled: 0,
 		})
 
-		await expect(codemode.job_delete({ id: job.id })).resolves.toEqual({
+		await expect(kody.job_delete({ id: job.id })).resolves.toEqual({
 			job_id: job.id,
 			deleted: true,
 		})
@@ -713,7 +713,7 @@ test('buildCodemodeFns updates and deletes jobs through production-shaped bindin
 	}
 })
 
-test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inputs', async () => {
+test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs', async () => {
 	let toolArguments: Record<string, unknown> | null = null
 	const connectorEnv = {
 		REMOTE_CONNECTOR_SESSION: {
@@ -724,7 +724,7 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 				return {
 					async getSnapshot() {
 						return {
-							connectorId: 'default',
+							connectorId: 'lighting',
 							connectedAt: '2026-03-27T00:00:00.000Z',
 							lastSeenAt: '2026-03-27T00:00:01.000Z',
 							tools: [
@@ -764,35 +764,31 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 		},
 	} as unknown as Env
 
-	const resolvedCodemode = await buildCodemodeFns(
+	const resolvedKody = await buildKodyFns(
 		connectorEnv,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ kind: 'lighting', instanceId: 'default' }],
+			remoteConnectors: [{ kind: 'lighting', instanceId: 'lighting' }],
 		}),
 		{
 			resolveSecretValue: async (secret, capabilityName) =>
 				`${secret.name}-${capabilityName}-resolved`,
 		},
 	)
-	expect(
-		resolvedCodemode.lighting_default_lutron_set_credentials,
-	).toBeUndefined()
-	expect(
-		resolvedCodemode['remote:lighting/default:lutron_set_credentials'],
-	).toEqual(expect.any(Function))
-	await resolvedCodemode['remote:lighting/default:lutron_set_credentials']({
+	expect(resolvedKody.lighting_default_lutron_set_credentials).toBeUndefined()
+	expect(resolvedKody['remote:lighting:lutron_set_credentials']).toEqual(
+		expect.any(Function),
+	)
+	await resolvedKody['remote:lighting:lutron_set_credentials']({
 		processorId: 'lutron-192-168-0-41',
 		username: '{{secret:lutronUsername|scope=user}}',
 		password: '{{secret:lutronPassword|scope=user}}',
 	})
 	expect(toolArguments).toEqual({
 		processorId: 'lutron-192-168-0-41',
-		username:
-			'lutronUsername-remote:lighting/default:lutron_set_credentials-resolved',
-		password:
-			'lutronPassword-remote:lighting/default:lutron_set_credentials-resolved',
+		username: 'lutronUsername-remote:lighting:lutron_set_credentials-resolved',
+		password: 'lutronPassword-remote:lighting:lutron_set_credentials-resolved',
 	})
 
 	const resolveSecretSpy = vi
@@ -804,21 +800,21 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 			allowedHosts: [],
 			allowedCapabilities: ['some_other_capability'],
 		})
-	const deniedCodemode = await buildCodemodeFns(
+	const deniedKody = await buildKodyFns(
 		connectorEnv,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ kind: 'lighting', instanceId: 'default' }],
+			remoteConnectors: [{ kind: 'lighting', instanceId: 'lighting' }],
 		}),
 	)
 	try {
 		await expect(
-			deniedCodemode['remote:lighting/default:lutron_set_credentials']({
+			deniedKody['remote:lighting:lutron_set_credentials']({
 				username: '{{secret:lutronUsername|scope=user}}',
 			}),
 		).rejects.toThrow(
-			/not allowed for capability "remote:lighting\/default:lutron_set_credentials"/,
+			/not allowed for capability "remote:lighting:lutron_set_credentials"/,
 		)
 		expect(resolveSecretSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -924,7 +920,7 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
 
 	try {
-		const trackedCodemode = await buildCodemodeFns(
+		const trackedKody = await buildKodyFns(
 			{} as Env,
 			createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
@@ -936,7 +932,7 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 				},
 			},
 		)
-		const result = await trackedCodemode.secret_set({
+		const result = await trackedKody.secret_set({
 			name: 'spotifyAccessToken',
 			value: 'fresh-access-token',
 		})
@@ -947,7 +943,7 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 	}
 })
 
-test('buildCodemodeFns rejects storage codemode tools that collide with capabilities', async () => {
+test('buildKodyFns rejects storage kody tools that collide with capabilities', async () => {
 	const env = {
 		STORAGE_RUNNER: {
 			idFromName(name: string) {
@@ -1033,22 +1029,20 @@ test('buildCodemodeFns rejects storage codemode tools that collide with capabili
 
 	try {
 		await expect(
-			buildCodemodeFns(env, callerContext, {
+			buildKodyFns(env, callerContext, {
 				storageTools: {
 					userId: 'user-123',
 					storageId: 'exec:test-storage',
 					writable: false,
 				},
 			}),
-		).rejects.toThrow(
-			'Codemode helper "storage_get" collides with a capability.',
-		)
+		).rejects.toThrow('Kody helper "storage_get" collides with a capability.')
 	} finally {
 		getRegistrySpy.mockRestore()
 	}
 })
 
-test('runCodemodeWithRegistry redacts secret keys and survives cyclic results', async () => {
+test('runKodyWithRegistry redacts secret keys and survives cyclic results', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1184,10 +1178,10 @@ test('runCodemodeWithRegistry redacts secret keys and survives cyclic results', 
 		const result = await runModuleWithRegistry(
 			env,
 			callerContext,
-			`import { codemode } from 'kody:runtime'
+			`import { kody } from 'kody:runtime'
 
 export default async function run() {
-	await codemode.secret_set({
+	await kody.secret_set({
 		name: 'spotifyAccessToken',
 		value: 'fresh-access-token',
 	})
@@ -1218,7 +1212,7 @@ export default async function run() {
 	}
 })
 
-test('runCodemodeWithRegistry routes module and snippet inputs through the expected execution path', async () => {
+test('runKodyWithRegistry routes module and snippet inputs through the expected execution path', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1252,16 +1246,16 @@ test('runCodemodeWithRegistry routes module and snippet inputs through the expec
 		} as never)
 
 	try {
-		const moduleCode = `import { codemode } from 'kody:runtime'
+		const moduleCode = `import { kody } from 'kody:runtime'
 
 export default async function run() {
-	return await codemode.meta_list_capabilities({})
+	return await kody.meta_list_capabilities({})
 }`
 		const fencedModuleCode = `\`\`\`ts
-import { codemode } from 'kody:runtime'
+import { kody } from 'kody:runtime'
 
 export default async function run() {
-	return await codemode.meta_list_capabilities({})
+	return await kody.meta_list_capabilities({})
 }
 \`\`\``
 		const typescriptModuleCode = `import type { ExecuteResult } from '@cloudflare/codemode'
@@ -1271,7 +1265,7 @@ type ModuleOutput = ExecuteResult | null
 export default async function run(): Promise<ModuleOutput> {
 	return null
 }`
-		const moduleResult = await runCodemodeWithRegistry(
+		const moduleResult = await runKodyWithRegistry(
 			env,
 			callerContext,
 			moduleCode,
@@ -1287,7 +1281,7 @@ export default async function run(): Promise<ModuleOutput> {
 			}),
 		)
 
-		const fencedModuleResult = await runCodemodeWithRegistry(
+		const fencedModuleResult = await runKodyWithRegistry(
 			env,
 			callerContext,
 			fencedModuleCode,
@@ -1297,17 +1291,17 @@ export default async function run(): Promise<ModuleOutput> {
 			2,
 			expect.objectContaining({
 				sourceFiles: {
-					'entry.ts': `import { codemode } from 'kody:runtime'
+					'entry.ts': `import { kody } from 'kody:runtime'
 
 export default async function run() {
-	return await codemode.meta_list_capabilities({})
+	return await kody.meta_list_capabilities({})
 }
 `,
 				},
 			}),
 		)
 
-		const typescriptModuleResult = await runCodemodeWithRegistry(
+		const typescriptModuleResult = await runKodyWithRegistry(
 			env,
 			callerContext,
 			typescriptModuleCode,
@@ -1322,7 +1316,7 @@ export default async function run() {
 			}),
 		)
 
-		const snippetResult = await runCodemodeWithRegistry(
+		const snippetResult = await runKodyWithRegistry(
 			env,
 			callerContext,
 			'return "ok"',
@@ -1335,7 +1329,7 @@ export default async function run() {
 	}
 })
 
-test('runCodemodeWithRegistry forwards package context for module syntax', async () => {
+test('runKodyWithRegistry forwards package context for module syntax', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1403,7 +1397,7 @@ test('runCodemodeWithRegistry forwards package context for module syntax', async
 export default async function run() {
 	return packageContext?.packageId ?? null
 }`
-		const result = await runCodemodeWithRegistry(
+		const result = await runKodyWithRegistry(
 			env,
 			callerContext,
 			code,

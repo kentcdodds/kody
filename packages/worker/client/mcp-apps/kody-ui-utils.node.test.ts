@@ -8,7 +8,7 @@ import {
 
 const {
 	absolutizeHtmlAttributeUrls,
-	buildCodemodeCapabilityExecuteCode,
+	buildKodyCapabilityExecuteCode,
 	buildGeneratedUiRuntimeHeadInjection,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
@@ -191,15 +191,15 @@ test('readSavedPackageAppSourceFromHostToolResult handles success and host tool 
 	})
 })
 
-test('buildCodemodeCapabilityExecuteCode runs the intended capability with the original args', async () => {
-	const code = buildCodemodeCapabilityExecuteCode('value_set', {
+test('buildKodyCapabilityExecuteCode runs the intended capability with the original args', async () => {
+	const code = buildKodyCapabilityExecuteCode('value_set', {
 		name: 'workspaceSlug',
 		value: 'kody',
 		scope: 'app',
 	})
 	const calls: Array<{ capability: string; args: unknown }> = []
 	const context = createContext({
-		codemode: {
+		kody: {
 			async value_set(args: unknown) {
 				calls.push({
 					capability: 'value_set',

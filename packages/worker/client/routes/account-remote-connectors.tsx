@@ -429,7 +429,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			return
 		}
 		if (!nextEditorState.instanceId.trim()) {
-			message = 'Connector instance ID is required.'
+			message = 'Connector name is required.'
 			handle.update()
 			return
 		}
@@ -741,8 +741,9 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 							<div mix={css({ display: 'grid', gap: spacing.xs })}>
 								<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
 								<p mix={css(descriptionCss)}>
-									Connector refs are generic kind and instance ID pairs. The
-									shared secret is loaded into the password field for editing.
+									Connector names are explicit, user-chosen, and unique across
+									your account. The shared secret is loaded into the password
+									field for editing.
 								</p>
 							</div>
 
@@ -768,12 +769,12 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								/>
 							</label>
 							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Instance ID</span>
+								<span mix={css(fieldLabelCss)}>Connector name</span>
 								<input
 									name="instanceId"
 									type="text"
 									value={editorState.instanceId}
-									placeholder="living-room"
+									placeholder="home"
 									disabled={isMutating}
 									required
 									mix={[
@@ -819,7 +820,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									</div>
 								) : (
 									<p mix={css(descriptionCss)}>
-										Enter a kind and instance ID to build the connector
+										Enter a kind and connector name to build the connector
 										WebSocket URL.
 									</p>
 								)}

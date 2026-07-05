@@ -54,7 +54,7 @@ vi.mock('#worker/repo/checks.ts', () => ({
 		repoMockModule.typecheckPackageEntrypointsFromSourceFiles(...args),
 }))
 
-vi.mock('#mcp/run-codemode-registry.ts', () => ({
+vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runBundledModuleWithRegistry: (...args: Array<unknown>) =>
 		repoMockModule.runBundledModuleWithRegistry(...args),
 }))
@@ -661,7 +661,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
-			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+			remoteConnectors: [{ kind: 'home', instanceId: 'home' }],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -687,7 +687,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			remoteConnectors: [{ kind: 'home', instanceId: 'default' }],
+			remoteConnectors: [{ kind: 'home', instanceId: 'home' }],
 		}),
 		expect.anything(),
 		expect.anything(),

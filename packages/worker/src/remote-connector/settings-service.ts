@@ -1,4 +1,5 @@
 import {
+	isValidRemoteConnectorName,
 	normalizeRemoteConnectorInstanceId,
 	normalizeRemoteConnectorKind,
 	type RemoteConnectorRef,
@@ -100,7 +101,22 @@ export async function saveRemoteConnectorSetting(
 		throw new Error('Connector kind is required.')
 	}
 	if (!instanceId) {
-		throw new Error('Connector instance ID is required.')
+		throw new Error('Connector name is required.')
+	}
+	if (!isValidRemoteConnectorName(instanceId)) {
+		throw new Error(
+			'Connector name must use lowercase letters, numbers, and dashes; start and end with a letter or number; and be at most 64 characters.',
+		)
+	}
+
+	const nameConflict = (
+		await listRemoteConnectorSettingRows({
+			db: input.env.APP_DB,
+			userId: input.userId,
+		})
+	).find((row) => row.instance_id === instanceId && row.id !== input.id)
+	if (nameConflict) {
+		throw new Error('A remote connector with this name already exists.')
 	}
 
 	const existing = input.id
@@ -128,7 +144,7 @@ export async function saveRemoteConnectorSetting(
 		})
 		if (refConflict && refConflict.id !== existing?.id) {
 			throw new Error(
-				'A remote connector with this kind and instance ID exists.',
+				'A remote connector with this kind and name already exists.',
 			)
 		}
 	}

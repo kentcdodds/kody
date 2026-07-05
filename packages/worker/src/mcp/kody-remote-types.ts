@@ -1,11 +1,11 @@
 import { type ResolvedProvider } from '@cloudflare/codemode'
 
-export type CodemodeRemoteCapabilityMetadata = {
+export type KodyRemoteCapabilityMetadata = {
 	name: string
 	dispatchName: string
 }
 
-export type CodemodeRemoteConnectorMetadata = {
+export type KodyRemoteConnectorMetadata = {
 	name: string
 	kind: string
 	instanceId: string
@@ -16,9 +16,9 @@ export type CodemodeRemoteConnectorMetadata = {
 		message: string
 		unavailableMessage: string
 	}
-	capabilities: Array<CodemodeRemoteCapabilityMetadata>
+	capabilities: Array<KodyRemoteCapabilityMetadata>
 }
 
 export type KodyResolvedProvider = ResolvedProvider & {
-	kodyRemoteConnectors?: Array<CodemodeRemoteConnectorMetadata>
+	kodyRemoteConnectors?: Array<KodyRemoteConnectorMetadata>
 }

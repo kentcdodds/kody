@@ -163,7 +163,7 @@ change to these decisions here so future agents do not relitigate them.
 - **`refreshAccessToken` materializes plaintext OAuth tokens** inside user code
   for integration calls. Prefer `createAuthenticatedFetch`, which enforces the
   integration host allowlist. This is documented at the call site
-  (`packages/worker/src/mcp/execute-modules/codemode-utils.ts`).
+  (`packages/worker/src/mcp/execute-modules/kody-runtime-utils.ts`).
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.

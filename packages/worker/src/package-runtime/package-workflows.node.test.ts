@@ -27,7 +27,7 @@ vi.mock('#worker/remote-connector/settings-service.ts', () => ({
 		remoteConnectorMocks.listAttachedRemoteConnectorRefs(...args),
 }))
 
-vi.mock('#mcp/run-codemode-registry.ts', () => ({
+vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
 		invocationMocks.runModuleWithRegistry(...args),
 }))
@@ -351,7 +351,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 })
 
 test('DynamicCallableWorkflowBase restores attached remote connectors for inline code and package exports', async () => {
-	const remoteConnectors = [{ kind: 'home', instanceId: 'default' }]
+	const remoteConnectors = [{ kind: 'home', instanceId: 'home' }]
 	const stepDo = vi.fn(
 		async (_name: string, _config: unknown, callback: () => unknown) =>
 			await callback(),
@@ -484,7 +484,7 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 			ok: false,
 			error: {
 				message:
-					'Shade workflow event failed: Tool "codemode.remote[\\"home/default\\"].bond_shade_set_position" not found',
+					'Shade workflow event failed: Tool "kody.remote[\\"home\\"].bond_shade_set_position" not found',
 			},
 		},
 	})
@@ -503,14 +503,12 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 			},
 			{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 		),
-	).rejects.toThrow(
-		'codemode.remote[\\"home/default\\"].bond_shade_set_position',
-	)
+	).rejects.toThrow('kody.remote[\\"home\\"].bond_shade_set_position')
 	expect(db.workflowRuns.get(created.id)).toMatchObject({
 		status: 'errored',
 		completed_at: expect.any(String),
 		last_error: expect.stringContaining(
-			'codemode.remote[\\"home/default\\"].bond_shade_set_position',
+			'kody.remote[\\"home\\"].bond_shade_set_position',
 		),
 	})
 })

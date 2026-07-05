@@ -305,7 +305,7 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 		[
 			'src/job.ts',
 			`export default async (params) => {
-  await codemode.value_get({ name: 'projectId' })
+  await kody.value_get({ name: 'projectId' })
   await storage.get('count')
   return params
 }
@@ -470,7 +470,7 @@ test('runRepoChecks validates every persisted package artifact target before pub
 		[
 			'src/job.ts',
 			`export default async (params) => {
-  const result = await codemode.value_get({ name: 'projectId' })
+  const result = await kody.value_get({ name: 'projectId' })
   await storage.get('count')
   return { params, result }
 }
@@ -528,7 +528,7 @@ test('runRepoChecks validates every persisted package artifact target before pub
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('declare const codemode'),
+		expect.stringContaining('declare const kody'),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',

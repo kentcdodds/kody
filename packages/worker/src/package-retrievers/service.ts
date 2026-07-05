@@ -1,5 +1,5 @@
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'

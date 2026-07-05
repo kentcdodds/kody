@@ -26,9 +26,9 @@ import {
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import {
-	type CodemodeRemoteConnectorMetadata,
+	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
-} from '#mcp/codemode-remote-types.ts'
+} from '#mcp/kody-remote-types.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -37,7 +37,7 @@ const maxSupportedExecutorTimeoutMs = 2_147_483_647
 const dynamicWorkerCompatibilityDate = '2025-06-01'
 const dynamicWorkerCompatibilityFlags = ['nodejs_compat'] as const
 const dynamicWorkerMainModule = 'executor.js'
-const dynamicWorkerIdPrefix = 'codemode-'
+const dynamicWorkerIdPrefix = 'kody-'
 const dynamicWorkerCacheKeyVersion = 2
 const reservedProviderNames = new Set(['__dispatchers', '__logs'])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
@@ -52,7 +52,7 @@ const javascriptReservedWords = new Set([
 	'const',
 	'continue',
 	'debugger',
-	'default',
+	'home',
 	'delete',
 	'do',
 	'else',
@@ -119,8 +119,8 @@ type DynamicWorkerEntrypoint = {
 	}>
 }
 
-export function createCodemodeRemoteProxy(input: {
-	remoteConnectors: Array<CodemodeRemoteConnectorMetadata>
+export function createKodyRemoteProxy(input: {
+	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	callTool: (dispatchName: string, args: unknown) => Promise<unknown>
 }) {
 	const connectors = Object.fromEntries(
@@ -198,9 +198,9 @@ export function createExecuteExecutor(input: {
 	timeoutMs?: number | null
 }) {
 	const loopbackExports = input.exports ?? workerExports
-	if (!loopbackExports?.CodemodeFetchGateway) {
+	if (!loopbackExports?.KodyFetchGateway) {
 		throw new Error(
-			'CodemodeFetchGateway export is required for execute-time fetch.',
+			'KodyFetchGateway export is required for execute-time fetch.',
 		)
 	}
 	const timeout =
@@ -210,7 +210,7 @@ export function createExecuteExecutor(input: {
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
-		globalOutbound: loopbackExports.CodemodeFetchGateway({
+		globalOutbound: loopbackExports.KodyFetchGateway({
 			props: input.gatewayProps,
 		}),
 		modules: input.modules,
@@ -358,7 +358,7 @@ function createExecutorModule(input: {
 		'      error: (...a) => { __logs.push("[error] " + a.map(String).join(" ")); },',
 		'    };',
 		...sandboxGlobalLines,
-		// Keep this aligned with upstream codemode's sandbox dispatcher shape:
+		// Keep this aligned with upstream kody's sandbox dispatcher shape:
 		// the dynamic worker source only names provider namespaces, while the
 		// actual per-invocation tool implementations arrive through RPC dispatchers.
 		...input.providers.map((provider) => createProviderProxySource(provider)),
@@ -385,8 +385,8 @@ function createExecutorModule(input: {
 
 function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as KodyResolvedProvider
-	if (provider.name === 'codemode' && kodyProvider.kodyRemoteConnectors) {
-		return createCodemodeProviderProxySource({
+	if (provider.name === 'kody' && kodyProvider.kodyRemoteConnectors) {
+		return createKodyProviderProxySource({
 			providerName: provider.name,
 			remoteConnectors: kodyProvider.kodyRemoteConnectors,
 		})
@@ -396,13 +396,13 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
 }
 
-export function createCodemodeProviderProxySource(input: {
+export function createKodyProviderProxySource(input: {
 	providerName: string
-	remoteConnectors: Array<CodemodeRemoteConnectorMetadata>
+	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 }) {
 	const metadataJson = JSON.stringify(input.remoteConnectors)
-	return `    const __kodyCreateCodemodeRemoteProxy = ${createCodemodeRemoteProxy.toString()};
-    const __kodyRemote = __kodyCreateCodemodeRemoteProxy({
+	return `    const __kodyCreateRemoteProxy = ${createKodyRemoteProxy.toString()};
+    const __kodyRemote = __kodyCreateRemoteProxy({
       remoteConnectors: ${metadataJson},
       callTool: async (dispatchName, args) => {
         const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
@@ -417,7 +417,7 @@ export function createCodemodeProviderProxySource(input: {
         if (toolName === 'remote') return __kodyRemote;
         const normalizedToolName = String(toolName);
         if (normalizedToolName.startsWith('remote:')) {
-          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat codemode function. Use codemode.remote[connectorName].capabilityName(input) instead.\`);
+          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat kody function. Use kody.remote[connectorName].capabilityName(input) instead.\`);
         }
         return async (args) => {
           const resJson = await __dispatchers.${input.providerName}.call(normalizedToolName, JSON.stringify(args ?? {}));

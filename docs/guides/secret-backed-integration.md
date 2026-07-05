@@ -39,8 +39,8 @@ smoke-test path is unclear.
      **values**, not secrets.
 2. Check whether the needed secrets already exist.
    - Use `search` first for saved secret references.
-   - Use `codemode.secret_list({})` inside `execute` only when you need the
-     current runtime metadata.
+   - Use `kody.secret_list({})` inside `execute` only when you need the current
+     runtime metadata.
 3. If any secret is missing, stop and send the user to `/account/secrets/new`.
    - Ask for each missing secret by name.
    - Include the provider dashboard URL and short creation steps when helpful.

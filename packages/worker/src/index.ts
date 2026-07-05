@@ -42,7 +42,7 @@ import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
-import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
+import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
 	parseUserScopedConnectorRoutePath,
 	userScopedConnectorSessionKey,
@@ -57,7 +57,7 @@ import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 
 export {
 	RepoSession,
-	CodemodeFetchGateway,
+	KodyFetchGateway,
 	RemoteConnectorSession,
 	MCP,
 	JobManager,

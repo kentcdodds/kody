@@ -149,9 +149,9 @@ primitives:
     group: assistant
     name: Capability registry
     summary:
-      Builtin capability domains (admin, apps, coding, community, email,
-      integrations, jobs, meta, packages, repo, secrets, services, storage,
-      values) merged with synthesized remote-connector domains behind
+      Builtin capability domains (account, admin, apps, coding, community,
+      email, integrations, jobs, meta, packages, repo, secrets, services,
+      storage, values) merged with synthesized remote-connector domains behind
       search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
@@ -258,6 +258,20 @@ primitives:
       (meta_memory_verify before upsert or delete).
     code:
       - packages/worker/src/mcp/capabilities/meta/
+
+  - id: account-export
+    group: assistant
+    name: Account data export
+    summary: >-
+      User-facing export inventory for portability: account route plus account
+      MCP domain capabilities that read D1 rows, KV pointers, vectors, and
+      Durable Object export snapshots without exporting secret values.
+    code:
+      - packages/worker/src/app/account-export.ts
+      - packages/worker/src/app/handlers/account-export.ts
+      - packages/worker/src/mcp/capabilities/account/
+    docs:
+      - docs/contributing/architecture/data-storage.md
 
   - id: email
     group: assistant
