@@ -384,14 +384,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		)
 	}
 
-	function normalizeRouterHref(href: string) {
-		if (typeof window === 'undefined') return href
-		const destination = new URL(href, window.location.href)
-		return `${destination.pathname}${destination.search}${destination.hash}`
-	}
-
 	function syncRouterLocation(nextPath: string) {
-		lastLoadedHref = normalizeRouterHref(nextPath)
+		// Do not pre-set `lastLoadedHref` to the destination: `navigate` is
+		// async (preload-then-commit), so until it commits the current href is
+		// unchanged and a pre-set would make interim renders look like a
+		// location change and fire a spurious fallback fetch for the old URL.
+		// The commit render consumes the navigation's preloaded data (or the
+		// stale marker) and updates `lastLoadedHref` itself.
 		navigate(nextPath)
 	}
 

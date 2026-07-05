@@ -833,8 +833,12 @@ export function AccountSecretsRoute(handle: Handle) {
 				nextUrl.searchParams.delete('capability')
 				nextUrl.searchParams.delete('package_id')
 				nextUrl.searchParams.delete('package')
+				// `navigate` is async (preload-then-commit); the commit render
+				// consumes its preloaded data and updates `lastLoadedDataKey`.
+				// Pre-setting it to the destination here would make interim
+				// renders (current URL unchanged) look like a location change
+				// and fire a spurious refetch for the pre-approval URL.
 				navigate(`${nextUrl.pathname}${nextUrl.search}`)
-				lastLoadedDataKey = getDataRefreshKey(nextUrl.toString())
 			}
 		} catch (error) {
 			submittingApprovalAction = null
