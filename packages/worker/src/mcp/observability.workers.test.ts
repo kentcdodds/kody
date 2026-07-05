@@ -158,6 +158,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 	expect(parseFailureEvent).toMatchObject({
 		tool: 'capability',
 		capabilityName: 'package_save',
+		capabilitySource: 'builtin',
 		outcome: 'failure',
 		failurePhase: 'parse_input',
 	})

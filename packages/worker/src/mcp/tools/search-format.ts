@@ -111,6 +111,8 @@ export type SlimSearchMatch =
 			title: string
 			description: string
 			usage: string
+			source?: CapabilitySpec['source']
+			remoteConnector?: CapabilitySpec['remoteConnector']
 	  }
 	| {
 			type: 'package'
@@ -214,6 +216,8 @@ export type SearchEntityDetailStructured =
 			readOnly: boolean
 			idempotent: boolean
 			destructive: boolean
+			source: CapabilitySpec['source']
+			remoteConnector?: CapabilitySpec['remoteConnector']
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 	  }
@@ -374,6 +378,8 @@ export type SearchMatch =
 			type: 'capability'
 			name: string
 			description: string
+			source?: CapabilitySpec['source']
+			remoteConnector?: CapabilitySpec['remoteConnector']
 	  }
 	| {
 			type: 'package'
@@ -648,6 +654,10 @@ export function toSlimStructuredMatches(input: {
 						? match.description
 						: '',
 				usage: buildCapabilityUsage(match.name),
+				...(match.source ? { source: match.source } : {}),
+				...(match.remoteConnector
+					? { remoteConnector: match.remoteConnector }
+					: {}),
 			}
 		}
 		if (match.type === 'package') {
@@ -792,6 +802,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			`- Entity: \`${buildEntityRef(detail.id, 'capability')}\``,
 			`- Domain: \`${detail.spec.domain}\``,
+			`- Source: \`${detail.spec.source}\``,
 			`- Required input fields: ${formatList(detail.spec.requiredInputFields)}`,
 			`- Read-only: ${detail.spec.readOnly ? 'yes' : 'no'}`,
 			`- Idempotent: ${detail.spec.idempotent ? 'yes' : 'no'}`,
@@ -831,6 +842,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				readOnly: detail.spec.readOnly,
 				idempotent: detail.spec.idempotent,
 				destructive: detail.spec.destructive,
+				source: detail.spec.source,
+				...(detail.spec.remoteConnector
+					? { remoteConnector: detail.spec.remoteConnector }
+					: {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,
 				...(detail.spec.outputTypeDefinition
 					? { outputTypeDefinition: detail.spec.outputTypeDefinition }

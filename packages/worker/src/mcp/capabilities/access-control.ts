@@ -110,10 +110,15 @@ export function filterCapabilityRegistryForCaller(
 		),
 	) as BuiltCapabilityRegistry['capabilityDomainDescriptionsByName']
 	const capabilityMap = Object.fromEntries(
-		Object.entries(registry.capabilityMap).filter(([name]) =>
-			allowedNames.has(name),
+		Object.entries(registry.capabilityMap).filter(([, capability]) =>
+			allowedNames.has(capability.name),
 		),
 	) as BuiltCapabilityRegistry['capabilityMap']
+	const capabilityAliases = Object.fromEntries(
+		Object.entries(registry.capabilityAliases).filter(([, alias]) =>
+			allowedNames.has(alias.targetName),
+		),
+	) as BuiltCapabilityRegistry['capabilityAliases']
 	const capabilitySpecs = Object.fromEntries(
 		Object.entries(registry.capabilitySpecs).filter(([name]) =>
 			allowedNames.has(name),
@@ -135,6 +140,7 @@ export function filterCapabilityRegistryForCaller(
 		capabilityDomains,
 		capabilityDomainDescriptionsByName,
 		capabilityMap,
+		capabilityAliases,
 		capabilitySpecs,
 		capabilityToolDescriptors,
 		capabilityHandlers,

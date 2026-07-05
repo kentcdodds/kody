@@ -11,6 +11,23 @@ const capabilitySummarySchema = z.object({
 	readOnly: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
+	source: z.enum(['builtin', 'remote-connector']),
+	remoteConnector: z
+		.object({
+			kind: z.string(),
+			instanceId: z.string(),
+			connectorId: z.string(),
+			mcpToolName: z.string(),
+		})
+		.optional(),
+	aliases: z.array(
+		z.object({
+			name: z.string(),
+			deprecated: z.boolean(),
+			hiddenFromSearch: z.boolean(),
+			description: z.string().optional(),
+		}),
+	),
 	requiredInputFields: z.array(z.string()),
 })
 
@@ -70,18 +87,11 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema: z.object({
 			domain: z
-				.enum([
-					capabilityDomainNames.admin,
-					capabilityDomainNames.apps,
-					capabilityDomainNames.community,
-					capabilityDomainNames.coding,
-					capabilityDomainNames.jobs,
-					capabilityDomainNames.math,
-					capabilityDomainNames.meta,
-				])
+				.string()
+				.min(1)
 				.optional()
 				.describe(
-					'Optional domain filter when you only need one capability domain.',
+					'Optional domain filter when you only need one capability domain. Accepts builtin domain ids such as "packages" and synthesized remote connector domain ids such as "remote:roku:default".',
 				),
 			detail: z
 				.boolean()
@@ -95,6 +105,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 			args: { domain?: string; detail?: boolean },
 			ctx: CapabilityContext,
 		) {
+			// Avoid a module cycle: registry -> builtin domains -> meta domain -> this file.
 			const { getCapabilityRegistryForContext } =
 				await import('#mcp/capabilities/registry.ts')
 			const registry = await getCapabilityRegistryForContext({
@@ -112,6 +123,11 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								readOnly: spec.readOnly,
 								idempotent: spec.idempotent,
 								destructive: spec.destructive,
+								source: spec.source,
+								...(spec.remoteConnector
+									? { remoteConnector: spec.remoteConnector }
+									: {}),
+								aliases: spec.aliases,
 								requiredInputFields: spec.requiredInputFields,
 								inputTypeDefinition: spec.inputTypeDefinition,
 								...(spec.outputTypeDefinition
@@ -128,6 +144,11 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								readOnly: spec.readOnly,
 								idempotent: spec.idempotent,
 								destructive: spec.destructive,
+								source: spec.source,
+								...(spec.remoteConnector
+									? { remoteConnector: spec.remoteConnector }
+									: {}),
+								aliases: spec.aliases,
 								requiredInputFields: spec.requiredInputFields,
 							},
 				)

@@ -1142,6 +1142,10 @@ function capabilityMatchToCandidate(
 			type: 'capability',
 			name: spec.name,
 			description: spec.description,
+			source: spec.source,
+			...(spec.remoteConnector
+				? { remoteConnector: spec.remoteConnector }
+				: {}),
 		},
 		type: 'capability',
 		id: spec.name,

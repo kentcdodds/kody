@@ -400,6 +400,43 @@ Use filename suffixes to choose the Vitest project:
 ## Naming
 
 - Use snake_case capability names.
-- Keep names action-oriented and specific.
-- Add a domain prefix only when it prevents ambiguity.
+- Prefer `<domain>_<noun>_<verb>` or `<domain>_<verb>` names for new
+  capabilities. Keep the domain prefix unless the capability is one of the
+  intentionally tiny public/meta primitives (`search`, `execute`) where the
+  short name is already part of the contract.
+- Keep names action-oriented, specific, and boring. Avoid temporary project
+  names, implementation details, brand names, or current product UI labels
+  unless those terms are the stable user-facing concept forever.
+- Use singular nouns for single-entity operations (`package_get`) and plural
+  nouns only when the object being manipulated is itself plural.
+- Do not reorder existing names to satisfy the convention. Capability names are
+  persisted in user data, including secret `allowed_capabilities`, saved job and
+  package code that calls `codemode.<capability>()`, memories, and user MCP
+  instructions.
 - Avoid introducing new public MCP tool names for individual capabilities.
+
+## Compatibility and versioning policy
+
+Capability names, input field names, output field names, domain ids, and
+remote-connector synthesized names are compatibility contracts once real users
+can reference them. Treat every change as if it might affect saved user code.
+
+- Inputs are additive-only. Add optional fields first; never make an existing
+  optional field required for an existing capability name.
+- Outputs are additive-only. Never remove or rename an output field, even if the
+  field looks awkward or inconsistently cased.
+- Capability renames must use aliases. Add the new capability name, register the
+  old name as a deprecated alias, keep the alias hidden from search, and leave
+  it executable for a full deprecation window before considering any removal.
+- Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
+  the handler must validate the args explicitly before reading them.
+- Remote connector tool names become synthesized capability names through
+  `remoteConnectorCapabilityPrefix(ref) + "_" + tool.name`. Connector authors
+  should avoid repeating the connector kind or instance in tool names; for
+  example prefer `press_key` over `roku_press_key` when the connector kind is
+  already `roku`.
+- Remote connector descriptions, keywords, schemas, and annotations cross a
+  trust boundary from the connector into Kody search and execute. Keep them
+  concise, non-secret, and stable; Kody records connector provenance on
+  synthesized capability metadata so hosts and logs can distinguish built-ins
+  from connector-provided actions.
