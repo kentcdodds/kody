@@ -182,4 +182,34 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 			(capability) => capability.domain === 'packages',
 		),
 	).toBe(true)
+
+	const remoteOnly = await metaListCapabilitiesCapability.handler(
+		{
+			domain: 'remote:roku:default',
+		},
+		{
+			env: buildRemoteConnectorEnv(),
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: {
+					userId: 'user-1',
+					email: 'user-1@example.com',
+					displayName: 'user-1',
+				},
+				remoteConnectors: [{ kind: 'roku', instanceId: 'default' }],
+			}),
+		},
+	)
+
+	expect(remoteOnly.total).toBeGreaterThan(0)
+	expect(
+		remoteOnly.capabilities.every(
+			(capability) => capability.domain === 'remote:roku:default',
+		),
+	).toBe(true)
+	expect(
+		remoteOnly.capabilities.some(
+			(capability) => capability.name === 'roku_default_roku_press_key',
+		),
+	).toBe(true)
 })

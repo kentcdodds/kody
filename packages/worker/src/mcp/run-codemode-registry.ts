@@ -352,8 +352,8 @@ export async function buildCodemodeFns(
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
 	const capabilityCodemodeTools = Object.fromEntries(
-		Object.values(capabilityMap).map((capability) => [
-			capability.name,
+		Object.entries(capabilityMap).map(([capabilityName, capability]) => [
+			capabilityName,
 			async (args: unknown) => {
 				assertCallerCanAccessCapability(callerContext, capability)
 				const resolveSecretValue =
@@ -361,13 +361,13 @@ export async function buildCodemodeFns(
 					createCapabilityInputSecretResolver(
 						env,
 						callerContext,
-						capability.name,
+						capabilityName,
 					)
 				const resolvedArgs = await resolveCapabilityInputSecrets({
 					schema: capability.inputSchema,
 					value: (args ?? {}) as Record<string, unknown>,
 					resolveSecretValue: (secret) =>
-						resolveSecretValue(secret, capability.name),
+						resolveSecretValue(secret, capabilityName),
 				})
 				collectSecretInputValues({
 					schema: capability.inputSchema,

@@ -546,6 +546,19 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			resource: 'saved_packages',
 		},
 	})
+	expect(
+		getExecutionErrorDetails(new Error(entitlementError.message)),
+	).toMatchObject({
+		kind: 'entitlement_limit_exceeded',
+		details: {
+			code: 'entitlement_limit_exceeded',
+			resource: 'saved_packages',
+			plan: 'personal',
+			limit: 3,
+			current: 3,
+			upgradeHint: 'Remove an old package or upgrade your plan.',
+		},
+	})
 
 	const errors = [
 		capabilityError,
