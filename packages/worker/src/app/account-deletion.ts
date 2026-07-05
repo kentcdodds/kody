@@ -89,6 +89,7 @@ const userScopedTables: ReadonlyArray<UserScopedDeleteTarget> = [
 	{ kind: 'user_id', table: 'workflow_runs' },
 	{ kind: 'user_id', table: 'package_runtime_logs' },
 	{ kind: 'user_id', table: 'package_runtime_runs' },
+	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'mcp_memory_suppression' },
 	{ kind: 'user_id', table: 'mcp_memories' },
 	{ kind: 'user_id', table: 'mcp_user_server_instructions' },
