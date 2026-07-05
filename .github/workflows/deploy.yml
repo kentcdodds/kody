@@ -268,8 +268,38 @@ jobs:
           fi
           base="${DEPLOY_URL%/}"
           echo "POST ${base}/__maintenance/reindex-capabilities"
-          curl --fail --silent --show-error --location --max-time 120 \
+          response_body="$(mktemp)"
+          http_status="000"
+          set +e
+          http_status="$(curl --silent --show-error --location --max-time 120 \
+            --output "$response_body" \
+            --write-out "%{http_code}" \
             -X POST \
             -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
             -H "Accept: application/json" \
-            "${base}/__maintenance/reindex-capabilities"
+            "${base}/__maintenance/reindex-capabilities")"
+          curl_exit=$?
+          set -e
+
+          if [ -z "$http_status" ]; then
+            http_status="000"
+          fi
+
+          if [ "$curl_exit" -ne 0 ] || [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "::warning title=Capability reindex failed::POST ${base}/__maintenance/reindex-capabilities returned HTTP ${http_status} (curl exit ${curl_exit}). This post-deploy refresh is best-effort; deployment healthcheck has already passed."
+            if [ -s "$response_body" ]; then
+              echo "Capability reindex response body:"
+              stop_marker="capability-reindex-response-$(date +%s%N)"
+              echo "::stop-commands::$stop_marker"
+              node -e "process.stdout.write(require('node:fs').readFileSync(process.argv[1], 'utf8'))" "$response_body"
+              echo
+              echo "::$stop_marker::"
+            fi
+            exit 0
+          fi
+
+          echo "Capability reindex completed (HTTP ${http_status})."
+          if [ -s "$response_body" ]; then
+            node -e "process.stdout.write(require('node:fs').readFileSync(process.argv[1], 'utf8'))" "$response_body"
+            echo
+          fi
