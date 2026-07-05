@@ -218,6 +218,11 @@ against `<deploy-url>/health` and fail the job if it does not return
 `{ ok: true, commitSha }` with `commitSha` matching the commit SHA deployed by
 that workflow.
 
+Production deploys also call the guarded capability-vector reindex endpoint when
+`CAPABILITY_REINDEX_SECRET` is configured. That refresh is best-effort: failures
+emit a workflow warning with the response body but do not fail an otherwise
+healthy deploy.
+
 Preview deploys also run `node tools/seed-test-data.ts` after deploy to create
 or verify the shared test account credentials listed above.
 

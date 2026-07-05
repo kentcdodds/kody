@@ -189,10 +189,11 @@ How to get/set each value:
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to
     `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` to
-    refresh built-in capability, memory, job, and saved-package embeddings. Run
-    the same POST manually after changing the embedding model, pooling, or
-    Vectorize index dimensions so existing rows are rebuilt with compatible
-    vectors.
+    refresh built-in capability, memory, job, and saved-package embeddings. The
+    post-deploy refresh is best-effort and warns instead of failing an otherwise
+    healthy deploy. Run the same POST manually after changing the embedding
+    model, pooling, or Vectorize index dimensions so existing rows are rebuilt
+    with compatible vectors.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
