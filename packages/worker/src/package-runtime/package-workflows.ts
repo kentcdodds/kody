@@ -1037,9 +1037,10 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 	}) {
 		if (!input.payload.userId) return
 		// Emitted inside a step so a replayed run() returns the cached result
-		// instead of recording the event again.
+		// instead of recording the event again. The outcome is part of the step
+		// name so cached results from one path can never shadow the other.
 		await input.typedStep.do(
-			'record workflow usage',
+			`record workflow usage (${input.outcome})`,
 			workflowStepDoConfig,
 			async () => {
 				await recordUsage(this.env, {
