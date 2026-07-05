@@ -152,7 +152,9 @@ type PrefetchableLink = {
 	destination: URL
 }
 
-function getPrefetchableLink(target: EventTarget | null): PrefetchableLink | null {
+function getPrefetchableLink(
+	target: EventTarget | null,
+): PrefetchableLink | null {
 	if (!(target instanceof Element)) return null
 	const anchor = target.closest('a')
 	if (!anchor || typeof window === 'undefined') return null
