@@ -51,6 +51,7 @@ import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 type AdditionalCodemodeTools = Record<
@@ -1002,7 +1003,29 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 					createPackageEventRuntimeBridgeProvider(options.packageEventTools),
 				)
 			}
-			const result = await executor.execute(wrapped, providers)
+			const startedAtMs = Date.now()
+			let outcome: 'success' | 'error' = 'success'
+			let result: ExecuteResult
+			try {
+				result = await executor.execute(wrapped, providers)
+				if (result.error) {
+					outcome = 'error'
+				}
+			} catch (error) {
+				outcome = 'error'
+				throw error
+			} finally {
+				const userId = callerContext.user?.userId
+				if (options?.packageContext && userId) {
+					await recordUsage(env, {
+						userId,
+						eventType: 'package_export',
+						entityId: options.packageContext.packageId,
+						durationMs: Date.now() - startedAtMs,
+						outcome,
+					})
+				}
+			}
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
 				await finishPackageRuntimeRunBestEffort({

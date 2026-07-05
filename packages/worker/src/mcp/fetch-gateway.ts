@@ -20,6 +20,7 @@ import {
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 
 type FetchGatewayProps = {
 	baseUrl: string
@@ -33,13 +34,81 @@ export class CodemodeFetchGateway extends WorkerEntrypoint<
 	FetchGatewayProps
 > {
 	async fetch(request: Request) {
-		const transformed = await expandSecretPlaceholders({
-			request,
-			props: this.ctx.props,
+		return executeGatewayFetch({
 			env: this.env,
+			props: this.ctx.props,
+			request,
+			waitUntil: (promise) => this.ctx.waitUntil(promise),
 		})
-		return fetch(transformed)
 	}
+}
+
+export async function executeGatewayFetch(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'> & UsageEnv
+	props: FetchGatewayProps
+	request: Request
+	globalFetch?: typeof fetch
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<Response> {
+	const globalFetch = input.globalFetch ?? fetch
+	const entityId = readRequestHostname(input.request.url)
+	const startedAtMs = Date.now()
+	let outcome: 'success' | 'error' = 'success'
+	let response: Response | undefined
+	let meteredEntityId = entityId
+
+	try {
+		const transformed = await expandSecretPlaceholders({
+			request: input.request,
+			props: input.props,
+			env: input.env,
+		})
+		meteredEntityId = readRequestHostname(transformed.url)
+		response = await globalFetch(transformed)
+		return response
+	} catch (error) {
+		outcome = 'error'
+		throw error
+	} finally {
+		if (input.props.userId) {
+			const usageEvent = {
+				userId: input.props.userId,
+				eventType: 'outbound_fetch' as const,
+				entityId: meteredEntityId,
+				durationMs: Date.now() - startedAtMs,
+				outcome,
+				...(response ? readResponseContentLengthBytes(response) : {}),
+			}
+			const usagePromise = recordUsage(input.env, usageEvent)
+			if (outcome === 'success' && response && input.waitUntil) {
+				input.waitUntil(usagePromise)
+			} else {
+				await usagePromise
+			}
+		}
+	}
+}
+
+function readRequestHostname(url: string) {
+	try {
+		return new URL(url).hostname
+	} catch {
+		return ''
+	}
+}
+
+function readResponseContentLengthBytes(
+	response: Response,
+): { bytes: number } | Record<string, never> {
+	const raw = response.headers.get('content-length')
+	if (raw == null) {
+		return {}
+	}
+	const bytes = Number(raw)
+	if (!Number.isFinite(bytes) || bytes < 0) {
+		return {}
+	}
+	return { bytes }
 }
 
 export async function expandSecretPlaceholders(input: {

@@ -52,6 +52,7 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-codemode-execution.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
@@ -1207,8 +1208,12 @@ export async function executeJobOnce(input: {
 }): Promise<JobExecutionOutcome> {
 	const started = new Date()
 	let execution: JobExecutionResult
+	let outcome: 'success' | 'error' = 'success'
+	let finished = started
+	let durationMs = 0
 	try {
 		if (!input.callerContext) {
+			outcome = 'error'
 			execution = {
 				ok: false,
 				error:
@@ -1231,6 +1236,9 @@ export async function executeJobOnce(input: {
 				callerContext: runtimeCallerContext,
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 			})
+			if (result.error) {
+				outcome = 'error'
+			}
 			execution = result.error
 				? {
 						ok: false,
@@ -1247,18 +1255,31 @@ export async function executeJobOnce(input: {
 					}
 		}
 	} catch (error) {
+		outcome = 'error'
 		execution = {
 			ok: false,
 			error: formatJobError(error),
 			logs: [],
 		}
+	} finally {
+		finished = new Date()
+		durationMs = Math.max(0, finished.valueOf() - started.valueOf())
+		const userId = input.job.userId
+		if (userId) {
+			await recordUsage(input.env, {
+				userId,
+				eventType: 'job_run',
+				entityId: input.job.id,
+				durationMs,
+				outcome,
+			})
+		}
 	}
-	const finished = new Date()
 	return {
 		execution,
 		startedAt: started.toISOString(),
 		finishedAt: finished.toISOString(),
-		durationMs: Math.max(0, finished.valueOf() - started.valueOf()),
+		durationMs,
 	}
 }
 

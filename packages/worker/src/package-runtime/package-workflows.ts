@@ -13,6 +13,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 
 export type PackageWorkflowParams = Record<string, unknown>
 
@@ -944,6 +945,9 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		if (runAt.getTime() > Date.now()) {
 			await step.sleepUntil('wait until dynamic workflow runAt', runAt)
 		}
+		// Metered duration starts after the scheduled runAt sleep so a workflow
+		// queued days ahead does not record days of "runtime".
+		const startedAtMs = Date.now()
 		const typedStep = step as unknown as {
 			do(
 				name: string,
@@ -984,6 +988,15 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				status: 'complete',
 				completedAt: new Date().toISOString(),
 			})
+			if (payload.userId) {
+				await recordUsage(this.env, {
+					userId: payload.userId,
+					eventType: 'workflow_run',
+					entityId: event.instanceId,
+					durationMs: Date.now() - startedAtMs,
+					outcome: 'success',
+				})
+			}
 			return result
 		} catch (error) {
 			await updateWorkflowRunStatus({
@@ -994,6 +1007,15 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				lastError: error instanceof Error ? error.message : String(error),
 				completedAt: new Date().toISOString(),
 			})
+			if (payload.userId) {
+				await recordUsage(this.env, {
+					userId: payload.userId,
+					eventType: 'workflow_run',
+					entityId: event.instanceId,
+					durationMs: Date.now() - startedAtMs,
+					outcome: 'error',
+				})
+			}
 			throw error
 		}
 	}

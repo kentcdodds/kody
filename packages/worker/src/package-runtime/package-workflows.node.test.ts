@@ -811,3 +811,125 @@ test('listWorkflowRunsForUser returns recent workflow statuses', async () => {
 		}),
 	])
 })
+
+test('DynamicCallableWorkflowBase records workflow_run usage on terminal transitions', async () => {
+	const usageModule = await import('#worker/usage/record-usage.ts')
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			code: 'export default async function main(p){ return { ok: true, p }; }',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'usage-metering-success',
+			params: { greeting: 'hello' },
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.runModuleWithRegistry.mockReset()
+	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true, p: { greeting: 'hello' } },
+		logs: [],
+	})
+	const workflow = new DynamicCallableWorkflowBase({} as ExecutionContext, env)
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-05-03T12:35:00.000Z'))
+		await expect(
+			workflow.run(
+				{
+					payload: queued.params as never,
+					timestamp: new Date(),
+					instanceId: created.id,
+				},
+				{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+			),
+		).resolves.toEqual({ ok: true, p: { greeting: 'hello' } })
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
+			userId: 'user-1',
+			eventType: 'workflow_run',
+			entityId: created.id,
+			durationMs: expect.any(Number),
+			outcome: 'success',
+		})
+		expect(
+			recordUsageSpy.mock.calls[0]?.[1]?.durationMs,
+		).toBeGreaterThanOrEqual(0)
+	} finally {
+		vi.useRealTimers()
+	}
+
+	recordUsageSpy.mockClear()
+	const failedBinding = createStatefulWorkflowBinding()
+	const failedDb = createWorkflowRunsDatabase()
+	const failedEnv = {
+		APP_DB: failedDb,
+		DYNAMIC_CALLABLE_WORKFLOWS: failedBinding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const failedCreated = await createDynamicCallableWorkflow({
+		env: failedEnv,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			code: 'export default async function main(){ throw new Error("workflow failed"); }',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'usage-metering-failure',
+		},
+	})
+	const failedQueued = failedBinding.instances.get(failedCreated.id)
+	if (!failedQueued?.params)
+		throw new Error('Expected queued workflow payload.')
+	invocationMocks.runModuleWithRegistry.mockReset()
+	invocationMocks.runModuleWithRegistry.mockRejectedValueOnce(
+		new Error('workflow failed'),
+	)
+	const failedWorkflow = new DynamicCallableWorkflowBase(
+		{} as ExecutionContext,
+		failedEnv,
+	)
+	await expect(
+		failedWorkflow.run(
+			{
+				payload: failedQueued.params as never,
+				timestamp: new Date(),
+				instanceId: failedCreated.id,
+			},
+			{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+		),
+	).rejects.toThrow('workflow failed')
+	expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+	expect(recordUsageSpy).toHaveBeenCalledWith(failedEnv, {
+		userId: 'user-1',
+		eventType: 'workflow_run',
+		entityId: failedCreated.id,
+		durationMs: expect.any(Number),
+		outcome: 'error',
+	})
+	expect(recordUsageSpy.mock.calls[0]?.[1]?.durationMs).toBeGreaterThanOrEqual(
+		0,
+	)
+	expect(failedDb.workflowRuns.get(failedCreated.id)).toMatchObject({
+		status: 'errored',
+		last_error: 'workflow failed',
+	})
+
+	recordUsageSpy.mockRestore()
+})

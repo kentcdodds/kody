@@ -3862,3 +3862,220 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		executeSpy.mockRestore()
 	}
 })
+
+test('executeJobOnce records job_run usage for success and failure without changing execution outcomes', async () => {
+	const usageModule = await import('#worker/usage/record-usage.ts')
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		LOADER: {} as WorkerLoader,
+		REPO_SESSION: {} as DurableObjectNamespace,
+		STORAGE_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					getValue: async () => ({ key: 'count', value: 2 }),
+					setValue: async () => ({ ok: true, key: 'count' }),
+					deleteValue: async () => ({ ok: true, key: 'count', deleted: true }),
+					clearStorage: async () => ({ ok: true }),
+					listValues: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					exportStorage: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					sqlQuery: async () => ({
+						columns: ['value'],
+						rows: [{ value: 2 }],
+						rowCount: 1,
+						rowsRead: 1,
+						rowsWritten: 0,
+					}),
+				}
+			},
+		},
+	} as unknown as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Usage-metered job',
+			code: 'export default async () => ({ ok: true, metered: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Usage-metered job',
+				description: 'Runs once at 2026-04-17T15:00:00.000Z',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, metered: true })',
+		},
+	})
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		.mockResolvedValueOnce({
+			result: {
+				ok: true,
+				metered: true,
+			},
+			logs: ['metered job executed'],
+		})
+		.mockResolvedValueOnce({
+			error: 'metered job failed',
+			result: null,
+			logs: ['metered job error'],
+		})
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: `job-runtime-${jobView.id}`,
+			source_id: jobView.sourceId,
+			source_root: '/',
+			base_commit: 'published-commit-1',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'published-commit-1',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Usage-metered job',
+							description: 'Runs once at 2026-04-17T15:00:00.000Z',
+							sourceRoot: '/',
+							entrypoint: 'src/job.ts',
+						})
+					: 'export default async () => ({ ok: true, metered: true })',
+		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'kody.json',
+					name: 'kody.json',
+					type: 'file' as const,
+					size: 1,
+				},
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
+		})),
+		discardSession: vi.fn(),
+	}
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const row = await (
+		await import('./repo.ts')
+	).getJobRowById(db, callerContext.user.userId, jobView.id)
+	if (!row) {
+		throw new Error('Expected created job row.')
+	}
+
+	try {
+		const successOutcome = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+		expect(successOutcome.execution).toEqual({
+			ok: true,
+			result: {
+				ok: true,
+				metered: true,
+			},
+			logs: ['metered job executed'],
+		})
+		expect(successOutcome.durationMs).toEqual(expect.any(Number))
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
+			userId: row.record.userId,
+			eventType: 'job_run',
+			entityId: jobView.id,
+			durationMs: successOutcome.durationMs,
+			outcome: 'success',
+		})
+		expect(successOutcome.durationMs).toBeGreaterThanOrEqual(0)
+
+		recordUsageSpy.mockClear()
+		const failureOutcome = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+		expect(failureOutcome.execution).toEqual({
+			ok: false,
+			error: 'metered job failed',
+			logs: ['metered job error'],
+		})
+		expect(failureOutcome.durationMs).toEqual(expect.any(Number))
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
+			userId: row.record.userId,
+			eventType: 'job_run',
+			entityId: jobView.id,
+			durationMs: failureOutcome.durationMs,
+			outcome: 'error',
+		})
+		expect(failureOutcome.durationMs).toBeGreaterThanOrEqual(0)
+	} finally {
+		recordUsageSpy.mockRestore()
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})

@@ -9,6 +9,11 @@ import {
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	recordUsage,
+	type UsageEvent,
+	type UsageOutcome,
+} from '#worker/usage/record-usage.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 
 const serviceStateStorageKey = 'package-service-state'
@@ -136,6 +141,30 @@ export function buildPackageServiceStorageId(
 	serviceName: string,
 ) {
 	return `service:${encodeURIComponent(packageId)}:${encodeURIComponent(serviceName)}`
+}
+
+export function resolveServiceRuntimeUsageOutcome(
+	nextStatus: PackageServiceState['status'],
+): UsageOutcome {
+	return nextStatus === 'error' ? 'error' : 'success'
+}
+
+export function buildServiceRuntimeUsageEvent(input: {
+	binding: PackageServiceBindingState
+	startedAt: string | null
+	finishedAtMs: number
+	nextStatus: PackageServiceState['status']
+}): UsageEvent | null {
+	if (!input.binding.userId || !input.startedAt) return null
+	const startedAtMs = Date.parse(input.startedAt)
+	if (Number.isNaN(startedAtMs)) return null
+	return {
+		userId: input.binding.userId,
+		eventType: 'service_runtime',
+		entityId: `${input.binding.packageId}:${input.binding.serviceName}`,
+		durationMs: Math.max(0, input.finishedAtMs - startedAtMs),
+		outcome: resolveServiceRuntimeUsageOutcome(input.nextStatus),
+	}
 }
 
 async function loadSavedPackageService(input: {
@@ -368,6 +397,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		lastError?: string | null
 	}) {
 		if (this.stateSnapshot.currentRunId !== input.runId) return
+		const binding = this.stateSnapshot.binding
+		const startedAt = this.stateSnapshot.lastStartedAt
+		const finishedAtMs = Date.now()
 		const stopRequested = this.stateSnapshot.stopRequested
 		this.stateSnapshot.status = input.nextStatus
 		this.stateSnapshot.currentRunId = null
@@ -378,7 +410,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if ('lastError' in input) {
 			this.stateSnapshot.lastError = input.lastError ?? null
 		}
-		this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
+		this.stateSnapshot.lastRunFinishedAt = new Date(finishedAtMs).toISOString()
 		this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 		await this.persistState()
 		if (stopRequested) {
@@ -393,6 +425,18 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				runAt: buildPackageServiceRetryTime(),
 				source: 'auto-start',
 			})
+		}
+		const usageEvent =
+			binding === null
+				? null
+				: buildServiceRuntimeUsageEvent({
+						binding,
+						startedAt,
+						finishedAtMs,
+						nextStatus: input.nextStatus,
+					})
+		if (usageEvent) {
+			this.ctx.waitUntil(recordUsage(this.env, usageEvent))
 		}
 	}
 

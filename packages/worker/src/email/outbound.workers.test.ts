@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { getEmailDomain } from './address.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import {
@@ -13,6 +14,20 @@ import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
+
+async function listEmailSendRollups(db: D1Database, userId: string) {
+	const { results } = await db
+		.prepare(
+			`SELECT user_id, metric, month, event_count, error_count,
+				total_duration_ms, total_cpu_ms, total_bytes
+			FROM usage_rollups
+			WHERE user_id = ?1 AND metric = 'email_send'
+			ORDER BY month`,
+		)
+		.bind(userId)
+		.all()
+	return results
+}
 
 function restFallbackMustNotRunHandler() {
 	return http.post(cloudflareEmailApi, () => {
@@ -161,9 +176,14 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const userId = `email-outbound-fallback-user-${crypto.randomUUID()}`
+	const isolatedUserId = `email-outbound-isolated-user-${crypto.randomUUID()}`
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	const fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+	const month = new Date().toISOString().slice(0, 7)
+	const originalBodyBytes = new TextEncoder().encode('Original body').byteLength
+	const replyBodyBytes = new TextEncoder().encode('Body').byteLength
 
 	using _server = createMswNodeServer(
 		[
@@ -254,4 +274,19 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			References: '<root@example.com>',
 		},
 	})
+	expect(await listEmailSendRollups(env.APP_DB, userId)).toEqual([
+		{
+			user_id: userId,
+			metric: 'email_send',
+			month,
+			event_count: 2,
+			error_count: 1,
+			total_duration_ms: expect.any(Number),
+			total_cpu_ms: 0,
+			total_bytes: originalBodyBytes + replyBodyBytes,
+		},
+	])
+	expect(
+		(await listEmailSendRollups(env.APP_DB, isolatedUserId))[0],
+	).toBeUndefined()
 })
