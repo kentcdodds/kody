@@ -25,6 +25,10 @@ import {
 	parseEntitlementLimitMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
+import {
+	type CodemodeRemoteConnectorMetadata,
+	type KodyResolvedProvider,
+} from '#mcp/codemode-remote-types.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -113,23 +117,6 @@ type DynamicWorkerEntrypoint = {
 		error?: string
 		logs?: Array<string>
 	}>
-}
-
-type CodemodeRemoteConnectorMetadata = {
-	name: string
-	status: {
-		connected: boolean
-		toolCount: number
-		unavailableMessage: string
-	}
-	capabilities: Array<{
-		name: string
-		dispatchName: string
-	}>
-}
-
-type KodyResolvedProvider = ResolvedProvider & {
-	kodyRemoteConnectors?: Array<CodemodeRemoteConnectorMetadata>
 }
 
 export function createCodemodeRemoteProxy(input: {
@@ -409,7 +396,7 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
 }
 
-function createCodemodeProviderProxySource(input: {
+export function createCodemodeProviderProxySource(input: {
 	providerName: string
 	remoteConnectors: Array<CodemodeRemoteConnectorMetadata>
 }) {

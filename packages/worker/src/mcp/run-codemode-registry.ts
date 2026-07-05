@@ -32,6 +32,10 @@ import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
+import {
+	type CodemodeRemoteConnectorMetadata,
+	type KodyResolvedProvider,
+} from '#mcp/codemode-remote-types.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 import {
 	hasTopLevelModuleSyntax,
@@ -66,29 +70,6 @@ type AdditionalCodemodeTools = Record<
 	string,
 	(args: unknown) => Promise<unknown>
 >
-
-export type CodemodeRemoteCapabilityMetadata = {
-	name: string
-	dispatchName: string
-}
-
-export type CodemodeRemoteConnectorMetadata = {
-	name: string
-	kind: string
-	instanceId: string
-	status: {
-		state: string
-		connected: boolean
-		toolCount: number
-		message: string
-		unavailableMessage: string
-	}
-	capabilities: Array<CodemodeRemoteCapabilityMetadata>
-}
-
-type KodyResolvedProvider = ResolvedProvider & {
-	kodyRemoteConnectors?: Array<CodemodeRemoteConnectorMetadata>
-}
 
 type StorageToolOptions = {
 	userId: string

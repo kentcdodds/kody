@@ -9,6 +9,7 @@ import {
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	createCodemodeRemoteProxy,
+	createCodemodeProviderProxySource,
 	createExecuteExecutor,
 	extractRawContent,
 	formatExecutionOutput,
@@ -148,6 +149,59 @@ test('codemode remote proxy dispatches and reports connector/capability errors c
 	)
 	expect(() => remote['lights/default']?.set_pin).toThrow(
 		'The lights connector "default" is not connected. Kody cannot use this connector until it reconnects.',
+	)
+})
+
+test('generated codemode provider source wires remote proxy dispatch', async () => {
+	const calls: Array<{ name: string; argsJson: string }> = []
+	const source = createCodemodeProviderProxySource({
+		providerName: 'codemode',
+		remoteConnectors: [
+			{
+				name: 'home/default',
+				kind: 'home',
+				instanceId: 'default',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 1,
+					message: 'The home connector "default" is connected.',
+					unavailableMessage: 'The home connector "default" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'set_pin',
+						dispatchName: 'remote:home/default:set_pin',
+					},
+				],
+			},
+		],
+	})
+	const codemode = new Function('__dispatchers', `${source}; return codemode;`)(
+		{
+			codemode: {
+				async call(name: string, argsJson: string) {
+					calls.push({ name, argsJson })
+					return JSON.stringify({ result: { ok: true } })
+				},
+			},
+		},
+	) as {
+		remote: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+		[key: string]: unknown
+	}
+
+	await expect(
+		codemode.remote['home/default']?.set_pin({ pin: '1234' }),
+	).resolves.toEqual({ ok: true })
+	expect(calls).toEqual([
+		{
+			name: 'remote:home/default:set_pin',
+			argsJson: JSON.stringify({ pin: '1234' }),
+		},
+	])
+	expect(() => codemode['remote:home/default:set_pin']).toThrow(
+		'Remote connector capability "remote:home/default:set_pin" is not available as a flat codemode function.',
 	)
 })
 
