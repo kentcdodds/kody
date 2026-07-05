@@ -365,6 +365,12 @@ function rowDedupeKey(row: Record<string, unknown>) {
 	return JSON.stringify(row)
 }
 
+function sortRowsByDedupeKey(rows: Array<Record<string, unknown>>) {
+	return rows.sort((left, right) =>
+		rowDedupeKey(left).localeCompare(rowDedupeKey(right)),
+	)
+}
+
 async function selectRows<T extends Record<string, unknown>>(
 	env: Env,
 	sql: string,
@@ -374,6 +380,56 @@ async function selectRows<T extends Record<string, unknown>>(
 		.bind(...params)
 		.all<T>()
 	return result.results ?? []
+}
+
+function createD1ExportCollector(input: {
+	env: AccountExportEnv
+	warnings: Array<string>
+}) {
+	const tables = new Map<string, AccountExportD1Table>()
+	function getTable(table: string) {
+		const existing = tables.get(table)
+		if (existing) return existing
+		const created: AccountExportD1Table = {
+			table,
+			rows: [],
+			redactedColumns: [],
+			warnings: [],
+		}
+		tables.set(table, created)
+		return created
+	}
+	async function collectQuery(
+		table: string,
+		sql: string,
+		params: Array<unknown>,
+	) {
+		const section = getTable(table)
+		try {
+			const rows = await selectRows(input.env, sql, params)
+			const seen = new Set(section.rows.map(rowDedupeKey))
+			const redacted = new Set(section.redactedColumns)
+			for (const rawRow of rows) {
+				const sanitized = sanitizeRow(table, rawRow)
+				for (const column of sanitized.redactedColumns) redacted.add(column)
+				const key = rowDedupeKey(sanitized.row)
+				if (seen.has(key)) continue
+				seen.add(key)
+				section.rows.push(sanitized.row)
+			}
+			section.rows = sortRowsByDedupeKey(section.rows)
+			section.redactedColumns = Array.from(redacted).sort()
+		} catch (error) {
+			const warning = `D1 export failed for ${table}: ${getErrorMessage(error)}`
+			section.warnings.push(warning)
+			input.warnings.push(warning)
+		}
+	}
+	return {
+		collectQuery,
+		getTable,
+		tables,
+	}
 }
 
 async function listUserStorageIds(env: Env, userId: string) {
@@ -667,46 +723,9 @@ async function collectD1Tables(input: {
 	mcpUserId: string
 	warnings: Array<string>
 }) {
-	const tables = new Map<string, AccountExportD1Table>()
-	function getTable(table: string) {
-		const existing = tables.get(table)
-		if (existing) return existing
-		const created: AccountExportD1Table = {
-			table,
-			rows: [],
-			redactedColumns: [],
-			warnings: [],
-		}
-		tables.set(table, created)
-		return created
-	}
-	async function collectQuery(
-		table: string,
-		sql: string,
-		params: Array<unknown>,
-	) {
-		const section = getTable(table)
-		try {
-			const rows = await selectRows(input.env, sql, params)
-			const seen = new Set(section.rows.map(rowDedupeKey))
-			const redacted = new Set(section.redactedColumns)
-			for (const rawRow of rows) {
-				const sanitized = sanitizeRow(table, rawRow)
-				for (const column of sanitized.redactedColumns) redacted.add(column)
-				const key = rowDedupeKey(sanitized.row)
-				if (seen.has(key)) continue
-				seen.add(key)
-				section.rows.push(sanitized.row)
-			}
-			section.redactedColumns = Array.from(redacted).sort()
-		} catch (error) {
-			const warning = `D1 export failed for ${table}: ${getErrorMessage(error)}`
-			section.warnings.push(warning)
-			input.warnings.push(warning)
-		}
-	}
+	const collector = createD1ExportCollector(input)
 
-	await collectQuery('users', `SELECT * FROM users WHERE id = ?`, [
+	await collector.collectQuery('users', `SELECT * FROM users WHERE id = ?`, [
 		input.dbUserId,
 	])
 	for (const target of accountUserDataTargets) {
@@ -715,13 +734,70 @@ async function collectD1Tables(input: {
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
 		})
-		await collectQuery(getTargetTableName(target), query.sql, query.params)
+		await collector.collectQuery(
+			getTargetTableName(target),
+			query.sql,
+			query.params,
+		)
 	}
 	return Object.fromEntries(
-		Array.from(tables.entries()).sort(([left], [right]) =>
+		Array.from(collector.tables.entries()).sort(([left], [right]) =>
 			left.localeCompare(right),
 		),
 	)
+}
+
+async function collectD1Table(input: {
+	env: AccountExportEnv
+	dbUserId: number
+	mcpUserId: string
+	table: string
+	warnings: Array<string>
+}) {
+	const collector = createD1ExportCollector(input)
+	if (input.table === 'users') {
+		await collector.collectQuery('users', `SELECT * FROM users WHERE id = ?`, [
+			input.dbUserId,
+		])
+		return collector.getTable('users')
+	}
+	const targets = accountUserDataTargets.filter(
+		(target) => getTargetTableName(target) === input.table,
+	)
+	if (targets.length === 0) return null
+	for (const target of targets) {
+		const query = buildSelectForTarget({
+			target,
+			mcpUserId: input.mcpUserId,
+			dbUserId: input.dbUserId,
+		})
+		await collector.collectQuery(input.table, query.sql, query.params)
+	}
+	return collector.getTable(input.table)
+}
+
+function paginateRowsByDedupeKey(input: {
+	rows: ReadonlyArray<Record<string, unknown>>
+	pageSize: number | undefined
+	startAfter: string | undefined
+}) {
+	const pageSize = normalizePageSize(input.pageSize)
+	const sortedRows = sortRowsByDedupeKey([...input.rows])
+	const cursor = input.startAfter
+	const startIndex = cursor
+		? sortedRows.findIndex((row) => rowDedupeKey(row) > cursor)
+		: 0
+	const safeStart = startIndex < 0 ? sortedRows.length : startIndex
+	const page = sortedRows.slice(safeStart, safeStart + pageSize)
+	const nextRow = page.at(-1)
+	const nextIndex = safeStart + page.length
+	const truncated = nextIndex < sortedRows.length
+	return {
+		items: page,
+		truncated,
+		nextStartAfter: truncated && nextRow ? rowDedupeKey(nextRow) : null,
+		pageSize,
+	}
 }
 
 async function listOAuthGrants(input: {
@@ -1167,50 +1243,66 @@ export async function readAccountExportSection(input: {
 			warnings,
 		}
 	}
-	const [d1, inventory, oauthGrants] = await Promise.all([
-		collectD1Tables({
-			env: input.env,
-			dbUserId: input.dbUserId,
-			mcpUserId: input.mcpUserId,
-			warnings,
-		}),
-		collectInventory({
-			env: input.env,
-			userId: input.mcpUserId,
-			warnings,
-		}),
-		listOAuthGrants({
-			env: input.env,
-			userId: input.mcpUserId,
-			warnings,
-		}),
-	])
 	let items: Array<unknown>
 	switch (input.section) {
 		case 'd1_table': {
 			if (!input.table) {
 				throw new Error('table is required when section is d1_table.')
 			}
-			const table = d1[input.table]
+			const table = await collectD1Table({
+				env: input.env,
+				dbUserId: input.dbUserId,
+				mcpUserId: input.mcpUserId,
+				table: input.table,
+				warnings,
+			})
 			if (!table) {
 				throw new Error(`Table "${input.table}" is not part of account export.`)
 			}
-			items = table.rows
-			break
+			const page = paginateRowsByDedupeKey({
+				rows: table.rows,
+				pageSize: input.pageSize,
+				startAfter: input.startAfter,
+			})
+			return {
+				section: input.section,
+				...page,
+				warnings,
+			}
 		}
 		case 'oauth_grants': {
+			const oauthGrants = await listOAuthGrants({
+				env: input.env,
+				userId: input.mcpUserId,
+				warnings,
+			})
 			items = [...oauthGrants]
 			break
 		}
 		case 'artifact_repos': {
+			const inventory = await collectInventory({
+				env: input.env,
+				userId: input.mcpUserId,
+				warnings,
+			})
 			items = inventory.artifactRepos
 			break
 		}
 		case 'kv_keys': {
+			const inventory = await collectInventory({
+				env: input.env,
+				userId: input.mcpUserId,
+				warnings,
+			})
 			items = inventory.bundleKvKeys
 			break
 		}
 		case 'durable_object_summaries': {
+			const inventory = await collectInventory({
+				env: input.env,
+				userId: input.mcpUserId,
+				warnings,
+			})
 			items = [
 				{ kind: 'storage_runner', ids: inventory.storageIds },
 				{ kind: 'remote_connector_session', refs: inventory.remoteConnectors },

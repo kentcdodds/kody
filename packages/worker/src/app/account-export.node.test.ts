@@ -314,5 +314,16 @@ test('createAccountExport records partial-failure warnings and section paginatio
 	})
 	expect(page.items).toHaveLength(1)
 	expect(page.truncated).toBe(true)
-	expect(page.nextStartAfter).toBe('1')
+	expect(page.nextStartAfter).toBe('value-bucket-a:first')
+	const nextPage = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'd1_table',
+		table: 'value_entries',
+		pageSize: 1,
+		startAfter: page.nextStartAfter ?? undefined,
+	})
+	expect(nextPage.items).toEqual([expect.objectContaining({ name: 'second' })])
+	expect(nextPage.truncated).toBe(false)
 })
