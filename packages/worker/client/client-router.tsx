@@ -177,6 +177,14 @@ function getPrefetchableLink(
 }
 
 function runIntentPrefetch(destination: URL) {
+	// Re-check at fire time (the hover timer may outlive the hover): never
+	// speculatively refetch the page the user is already on.
+	if (
+		getPathWithSearchAndHashFromUrl(destination) ===
+		getCurrentPathWithSearchAndHash()
+	) {
+		return
+	}
 	const loader = matchRouteLoader(destination)
 	if (!loader) return
 	prefetchRouteOnIntent(
@@ -362,6 +370,7 @@ function commitImmediateNavigation(
 	nextPath: string,
 	options?: Pick<NavigationRunOptions, 'suppressStart'>,
 ) {
+	cancelHoverIntent()
 	// A pending loader navigation must not commit after this immediate one
 	// and clobber the URL we are about to push.
 	navigationAbortController?.abort()
@@ -377,6 +386,10 @@ async function runNavigationWithLoader(
 	destination: URL,
 	options?: NavigationRunOptions,
 ) {
+	// A hover-intent timer set right before the click (e.g. on mousedown)
+	// must not fire after we navigate and prefetch the page we are already
+	// heading to.
+	cancelHoverIntent()
 	navigationAbortController?.abort()
 	const abortController = new AbortController()
 	navigationAbortController = abortController
@@ -467,7 +480,8 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 
 	// The POST is about to mutate server state, so any speculative loader data
 	// fetched before the mutation must never be adopted by the follow-up
-	// navigation.
+	// navigation — including a hover timer that has not fired yet.
+	cancelHoverIntent()
 	abortIntentPrefetch()
 
 	// Participate in the latest-wins navigation chain: a newer navigation
