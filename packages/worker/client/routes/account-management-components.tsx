@@ -12,6 +12,7 @@ import {
 	cardTitleCss,
 	descriptionCss,
 	fieldLabelCss,
+	layoutMaxWidths,
 } from '#client/styles/style-primitives.ts'
 
 type AccountManagementSlot = any
@@ -27,7 +28,7 @@ export function AccountManagementShell(
 	return () => (
 		<section
 			mix={css({
-				maxWidth: handle.props.maxWidth ?? '96rem',
+				maxWidth: handle.props.maxWidth ?? layoutMaxWidths.wide,
 				margin: '0 auto',
 				display: 'grid',
 				gap: spacing.xl,

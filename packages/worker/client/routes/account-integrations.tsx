@@ -10,6 +10,11 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+import {
+	AccountManagementHeader,
+	AccountManagementMessage,
+	AccountManagementShell,
+} from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -21,12 +26,8 @@ import {
 	detailValueCss,
 	getPrimaryButtonCss,
 	insetCardCss,
-	pageDescriptionCss,
-	pageHeaderCss,
-	pageTitleCss,
 	primaryLinkCss,
 	sectionTitleCss,
-	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
 
 type IntegrationFlow = 'pkce' | 'confidential'
@@ -204,22 +205,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		}
 
 		return (
-			<section
-				mix={css({
-					...stackedPageCss,
-					maxWidth: '76rem',
-					margin: '0 auto',
-				})}
-			>
-				<header mix={css(pageHeaderCss)}>
-					<h1 mix={css(pageTitleCss)}>
-						{email ? `${email} integrations` : 'Integrations'}
-					</h1>
-					<p mix={css(pageDescriptionCss)}>
-						Review saved OAuth integrations and reconnect providers when tokens
-						need to be refreshed.
-					</p>
-				</header>
+			<AccountManagementShell>
+				<AccountManagementHeader
+					title={email ? `${email} integrations` : 'Integrations'}
+					description="Review saved OAuth integrations and reconnect providers when tokens need to be refreshed."
+				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -227,15 +217,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<p
-						role="alert"
-						mix={css({
-							color: status === 'error' ? colors.error : colors.text,
-							margin: 0,
-						})}
+					<AccountManagementMessage
+						tone={status === 'error' ? 'error' : 'info'}
 					>
 						{message}
-					</p>
+					</AccountManagementMessage>
 				) : null}
 
 				{status === 'ready' && integrations.length === 0 ? (
@@ -368,7 +354,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						Back to account
 					</a>
 				</p>
-			</section>
+			</AccountManagementShell>
 		)
 	}
 }

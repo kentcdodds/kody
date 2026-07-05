@@ -13,6 +13,7 @@ import {
 	fieldLabelCss,
 	getPrimaryButtonCss,
 	inputCss,
+	layoutMaxWidths,
 	pageDescriptionCss,
 	pageHeaderCss,
 	pageTitleCss,
@@ -107,7 +108,7 @@ export function CommunityRoute(handle: Handle) {
 
 const pageCss = {
 	...stackedPageCss,
-	maxWidth: '72rem',
+	maxWidth: layoutMaxWidths.extended,
 	margin: '0 auto',
 	width: '100%',
 }

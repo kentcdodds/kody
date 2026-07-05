@@ -965,7 +965,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			: ''
 
 		return (
-			<AccountManagementShell maxWidth="76rem">
+			<AccountManagementShell>
 				<AccountManagementHeader
 					title={
 						email
