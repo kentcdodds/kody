@@ -11,6 +11,7 @@ export function buildAccountProfilePayload(
 	return {
 		ok: true,
 		email: user.email,
+		emailVerified: user.emailVerified,
 		username: user.username,
 		displayName: user.displayName,
 	}

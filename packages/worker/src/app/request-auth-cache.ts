@@ -23,6 +23,7 @@ import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 type ResolvedAuthUser = {
 	userId: number
 	email: string
+	emailVerified: boolean
 	username: string
 	displayName: string
 	roles: Array<RoleName>
@@ -100,6 +101,7 @@ async function resolveRequestAuth(
 		user: {
 			userId,
 			email: userRecord.email,
+			emailVerified: Boolean(userRecord.email_verified_at),
 			username: userRecord.username,
 			displayName,
 			roles,

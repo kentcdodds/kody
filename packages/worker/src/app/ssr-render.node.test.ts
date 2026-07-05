@@ -240,6 +240,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountProps.loaderData?.accountProfile).toEqual({
 		ok: true,
 		email: 'user@example.com',
+		emailVerified: false,
 		username: 'account-user',
 		displayName: 'account-user',
 	})

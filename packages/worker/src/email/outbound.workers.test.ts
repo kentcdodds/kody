@@ -14,6 +14,31 @@ import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
 
+async function ensureAccountVerificationTestSchema() {
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			username TEXT NOT NULL UNIQUE,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			email_verified_at TEXT,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+	).run()
+}
+
+async function seedVerifiedAccount(email: string) {
+	await ensureAccountVerificationTestSchema()
+	const username = `user-${crypto.randomUUID()}`
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, email_verified_at)
+		 VALUES (?, ?, ?, ?)`,
+	)
+		.bind(username, email, 'test-password-hash', new Date().toISOString())
+		.run()
+}
+
 function restFallbackMustNotRunHandler() {
 	return http.post(cloudflareEmailApi, () => {
 		throw new Error('REST fallback should not be called')
@@ -22,7 +47,9 @@ function restFallbackMustNotRunHandler() {
 
 test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureAccountVerificationTestSchema()
 	const userId = `email-outbound-user-${crypto.randomUUID()}`
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	const sent: Array<EmailMessage> = []
 	const sendEnv = {
@@ -41,10 +68,12 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 		domain: getEmailDomain(from),
 		status: 'verified',
 	})
+	await seedVerifiedAccount(accountEmail)
 
 	const result = await sendOutboundEmail({
 		env: sendEnv,
 		userId,
+		accountEmail,
 		from,
 		to: 'recipient@example.com',
 		subject: 'Hello from Kody',
@@ -82,10 +111,12 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 
 test('sendOutboundEmail skips REST fallback when the binding succeeds or validation fails first', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureAccountVerificationTestSchema()
 	const mswOptions = { onUnhandledRequest: 'bypass' as const }
 
 	{
 		const userId = `email-outbound-null-id-user-${crypto.randomUUID()}`
+		const accountEmail = `account-${crypto.randomUUID()}@example.com`
 		const from = `sender-${crypto.randomUUID()}@example.com`
 		let bindingSendCount = 0
 
@@ -100,6 +131,7 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 			domain: getEmailDomain(from),
 			status: 'verified',
 		})
+		await seedVerifiedAccount(accountEmail)
 		const result = await sendOutboundEmail({
 			env: {
 				...env,
@@ -111,6 +143,7 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 				},
 			},
 			userId,
+			accountEmail,
 			from,
 			to: 'recipient@example.com',
 			subject: 'No provider id',
@@ -126,6 +159,7 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 
 	{
 		const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
+		const accountEmail = `account-${crypto.randomUUID()}@example.com`
 		const from = `sender-${crypto.randomUUID()}@example.com`
 
 		using _server = createMswNodeServer(
@@ -139,6 +173,7 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 			domain: getEmailDomain(from),
 			status: 'verified',
 		})
+		await seedVerifiedAccount(accountEmail)
 
 		await expect(
 			sendOutboundEmail({
@@ -150,6 +185,7 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 					CLOUDFLARE_API_TOKEN: 'token-123',
 				},
 				userId,
+				accountEmail,
 				from,
 				to: 'recipient@example.com',
 				subject: 'Missing body',
@@ -159,9 +195,55 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 	}
 })
 
+test('sendOutboundEmail blocks unverified accounts', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureAccountVerificationTestSchema()
+	const userId = `email-outbound-unverified-user-${crypto.randomUUID()}`
+	const accountEmail = `unverified-${crypto.randomUUID()}@example.com`
+	const from = `sender-${crypto.randomUUID()}@example.com`
+	let bindingSendCount = 0
+
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash)
+		 VALUES (?, ?, ?)`,
+	)
+		.bind(`user-${crypto.randomUUID()}`, accountEmail, 'test-password-hash')
+		.run()
+	await upsertEmailSenderIdentity({
+		db: env.APP_DB,
+		userId,
+		email: from,
+		domain: getEmailDomain(from),
+		status: 'verified',
+	})
+
+	await expect(
+		sendOutboundEmail({
+			env: {
+				...env,
+				EMAIL: {
+					async send() {
+						bindingSendCount += 1
+						return { messageId: 'provider-message-123' }
+					},
+				},
+			},
+			userId,
+			accountEmail,
+			from,
+			to: 'recipient@example.com',
+			subject: 'Blocked',
+			text: 'Body',
+		}),
+	).rejects.toThrow('Account email must be verified before sending email.')
+	expect(bindingSendCount).toBe(0)
+})
+
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureAccountVerificationTestSchema()
 	const userId = `email-outbound-fallback-user-${crypto.randomUUID()}`
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
 	const from = `sender-${crypto.randomUUID()}@example.com`
 	const fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = []
 
@@ -190,6 +272,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		domain: getEmailDomain(from),
 		status: 'verified',
 	})
+	await seedVerifiedAccount(accountEmail)
 	const original = await sendOutboundEmail({
 		env: {
 			...env,
@@ -200,6 +283,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			},
 		},
 		userId,
+		accountEmail,
 		from,
 		to: 'recipient@example.com',
 		subject: 'Hello from Kody',
@@ -215,6 +299,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 			CLOUDFLARE_API_TOKEN: 'token-123',
 		},
 		userId,
+		accountEmail,
 		from,
 		to: 'recipient@example.com',
 		subject: 'Re: Hello from Kody',

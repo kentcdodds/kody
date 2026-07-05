@@ -110,6 +110,8 @@ export function LoginRoute(handle: Handle) {
 		const mode = getCurrentAuthMode(handle)
 		const username =
 			mode === 'signup' ? String(formData.get('username') ?? '').trim() : ''
+		const inviteCode =
+			mode === 'signup' ? String(formData.get('inviteCode') ?? '').trim() : ''
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
 
 		if (!email || !password) {
@@ -133,7 +135,7 @@ export function LoginRoute(handle: Handle) {
 					password,
 					mode,
 					rememberMe,
-					...(mode === 'signup' ? { username } : {}),
+					...(mode === 'signup' ? { username, inviteCode } : {}),
 				}),
 			})
 			const payload = await response.json().catch(() => null)
@@ -223,6 +225,18 @@ export function LoginRoute(handle: Handle) {
 							mix={css(inputCss)}
 						/>
 					</label>
+					{isSignup ? (
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Invite code</span>
+							<input
+								type="text"
+								name="inviteCode"
+								autoComplete="one-time-code"
+								placeholder="Required for production launch cohorts"
+								mix={css(inputCss)}
+							/>
+						</label>
+					) : null}
 					{!isSignup ? (
 						<label
 							mix={css({

@@ -282,6 +282,12 @@ export function AdminUsersRoute(handle: Handle) {
 								Community reports
 							</a>
 							<a
+								href="/admin/invites"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								Invites
+							</a>
+							<a
 								href="/admin/roles"
 								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
 							>

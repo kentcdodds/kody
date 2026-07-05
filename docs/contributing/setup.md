@@ -42,11 +42,13 @@ Quick notes for getting a local kody environment running.
   Cloudflare Artifacts control plane during normal local development. The mock
   covers only the REST control plane; repo-session git clone/pull/push flows
   need a real Git-capable Artifacts remote and are not fully simulated by the
-  local mock. Password reset email sends as `kody@<APP_BASE_URL hostname>` and
-  requires `APP_BASE_URL` to be set. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the
-  local Cloudflare mock entirely. The main worker streams logs live; the client
-  bundle and background mock workers buffer logs and only print them if that
-  child process exits with an error.
+  local mock. Password reset and email-verification messages send through the
+  same Cloudflare Email API helper; password reset uses
+  `kody@<APP_BASE_URL hostname>` when `APP_BASE_URL` is set, and verification
+  can fall back to the request origin for local/E2E signup flows. Set
+  `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The main
+  worker streams logs live; the client bundle and background mock workers buffer
+  logs and only print them if that child process exits with an error.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses

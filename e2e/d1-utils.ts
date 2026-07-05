@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { hashVerificationToken } from '../packages/worker/src/app/email-verification.ts'
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
@@ -64,11 +65,12 @@ function buildSeedUserSql(input: {
 	passwordHash: string
 }) {
 	return `
-INSERT INTO users (username, email, password_hash)
-VALUES (${quoteSql(input.username)}, ${quoteSql(input.email)}, ${quoteSql(input.passwordHash)})
+INSERT INTO users (username, email, password_hash, email_verified_at)
+VALUES (${quoteSql(input.username)}, ${quoteSql(input.email)}, ${quoteSql(input.passwordHash)}, CURRENT_TIMESTAMP)
 ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,
+  email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
   updated_at = CURRENT_TIMESTAMP;
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
@@ -97,6 +99,23 @@ INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
 WHERE u.email = ${quoteSql(email)} AND r.name = ${quoteSql(role)};`.trim()
+	executeE2eD1Command(sql)
+}
+
+export async function setEmailVerificationTokenInE2eDatabase(input: {
+	email: string
+	token: string
+	expiresAt?: number
+}) {
+	const tokenHash = await hashVerificationToken(input.token)
+	const expiresAt = input.expiresAt ?? Date.now() + 60 * 60 * 1000
+	const sql = `
+DELETE FROM email_verifications
+WHERE user_id IN (SELECT id FROM users WHERE email = ${quoteSql(input.email)});
+INSERT INTO email_verifications (user_id, token_hash, expires_at)
+SELECT id, ${quoteSql(tokenHash)}, ${expiresAt}
+FROM users
+WHERE email = ${quoteSql(input.email)};`.trim()
 	executeE2eD1Command(sql)
 }
 
