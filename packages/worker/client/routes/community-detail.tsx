@@ -8,6 +8,7 @@ import {
 } from '#client/client-router.tsx'
 import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -268,18 +269,26 @@ export function CommunityDetailRoute(handle: Handle) {
 			)
 		}
 
-		applyRouteShellData(currentHref, listingId)
+		const appliedShellData = applyRouteShellData(currentHref, listingId)
+		// A same-path refresh whose loader failed leaves no preload and the
+		// listing id unchanged; the stale marker forces the fallback refetch.
+		const needsStaleRefresh =
+			consumeStaleNavigationData(currentHref) && !appliedShellData
 		if (
-			shellLoadedForListingId !== listingId &&
-			shellRequestedForListingId !== listingId &&
+			(needsStaleRefresh ||
+				(shellLoadedForListingId !== listingId &&
+					shellRequestedForListingId !== listingId)) &&
 			typeof document !== 'undefined'
 		) {
 			// Show the loading state immediately so the previous listing's
 			// shell (fork prompt, README, login state) never renders under the
-			// new listing's header while the refetch is in flight. Tracking the
-			// requested listing separately keeps re-renders from enqueueing
+			// new listing's header while the refetch is in flight. Same-listing
+			// stale refreshes keep the current shell visible instead. Tracking
+			// the requested listing separately keeps re-renders from enqueueing
 			// duplicate fetches while one is already in flight.
-			shellStatus = 'loading'
+			if (shellLoadedForListingId !== listingId) {
+				shellStatus = 'loading'
+			}
 			shellRequestedForListingId = listingId
 			handle.queueTask(loadDetailShell)
 		}
