@@ -8,6 +8,7 @@ import {
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
+import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	isSecretAuthRequiredMessage,
@@ -90,6 +91,7 @@ type DynamicWorkerExecutorInput = {
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
 	appCommitSha?: string | null
+	usageEnv: UsageEnv
 }
 
 type DynamicWorkerExecutorOptions = {
@@ -134,6 +136,7 @@ export function createExecuteExecutor(input: {
 		modules: input.modules,
 		gatewayProps: input.gatewayProps,
 		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
+		usageEnv: input.env,
 	})
 }
 
@@ -175,12 +178,15 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			})
 			const executionState = { active: true }
 			const dispatchers = createToolDispatchers(providers, executionState)
+			const startedAtMs = Date.now()
+			let outcome: 'success' | 'error' = 'success'
 			try {
 				const entrypoint = input.loader
 					.get(workerId, () => workerOptions)
 					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
 				const response = await entrypoint.evaluate(dispatchers)
 				if (response.error) {
+					outcome = 'error'
 					return {
 						result: undefined,
 						error: response.error,
@@ -191,8 +197,19 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					result: response.result,
 					logs: response.logs,
 				}
+			} catch (error) {
+				outcome = 'error'
+				throw error
 			} finally {
 				executionState.active = false
+				if (input.gatewayProps.userId) {
+					await recordUsage(input.usageEnv, {
+						userId: input.gatewayProps.userId,
+						eventType: 'execute',
+						durationMs: Date.now() - startedAtMs,
+						outcome,
+					})
+				}
 			}
 		},
 	}

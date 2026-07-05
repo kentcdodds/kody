@@ -361,6 +361,19 @@ primitives:
     docs:
       - docs/contributing/adding-capabilities.md
 
+  - id: usage-metering
+    group: storage
+    name: Usage metering
+    summary:
+      Per-user usage events recorded at runtime chokepoints via recordUsage();
+      raw events go to the USAGE_EVENTS Analytics Engine dataset and per-user,
+      per-metric, per-month counters accumulate in the D1 usage_rollups table.
+    code:
+      - packages/worker/src/usage/record-usage.ts
+      - packages/worker/migrations/0047-usage-rollups.sql
+    docs:
+      - docs/contributing/architecture/usage-metering.md
+
 invariants:
   - id: per-user-isolation
     summary:

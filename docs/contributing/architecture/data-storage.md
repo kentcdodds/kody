@@ -141,6 +141,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `JOB_MANAGER` (Durable Objects)
 - `STORAGE_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)
+- `USAGE_EVENTS` (Analytics Engine dataset, production/preview only; see
+  [Usage metering](./usage-metering.md))
 
 ## Repo-backed source and Artifacts
 
