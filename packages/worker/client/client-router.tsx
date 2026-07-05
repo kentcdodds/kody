@@ -52,6 +52,7 @@ export const routerEvents = new EventTarget()
 let routerInitialized = false
 let registeredRouteLoaders: Record<string, RouteLoader> = {}
 let navigationAbortController: AbortController | null = null
+let activeNavigationPath: string | null = null
 
 function notify() {
 	routerEvents.dispatchEvent(new Event('navigate'))
@@ -177,14 +178,12 @@ function getPrefetchableLink(
 }
 
 function runIntentPrefetch(destination: URL) {
-	// Re-check at fire time (the hover timer may outlive the hover): never
-	// speculatively refetch the page the user is already on.
-	if (
-		getPathWithSearchAndHashFromUrl(destination) ===
-		getCurrentPathWithSearchAndHash()
-	) {
-		return
-	}
+	const destinationPath = getPathWithSearchAndHashFromUrl(destination)
+	// Never speculatively refetch the page the user is already on, or the one
+	// a navigation is already loading (clicking a link focuses it, and that
+	// focusin lands after the navigation consumed the prefetch slot).
+	if (destinationPath === getCurrentPathWithSearchAndHash()) return
+	if (destinationPath === activeNavigationPath) return
 	const loader = matchRouteLoader(destination)
 	if (!loader) return
 	prefetchRouteOnIntent(
@@ -401,6 +400,7 @@ async function runNavigationWithLoader(
 
 	const nextPath = getPathWithSearchAndHashFromUrl(destination)
 	const loader = matchRouteLoader(destination)
+	activeNavigationPath = nextPath
 
 	try {
 		let loadedData: Partial<AppLoaderData> | undefined
@@ -452,6 +452,11 @@ async function runNavigationWithLoader(
 			commitNavigation(nextPath)
 		}
 		dispatchNavigationEnd()
+	} finally {
+		// A superseding navigation owns the marker now; only clear our own.
+		if (navigationAbortController === abortController) {
+			activeNavigationPath = null
+		}
 	}
 }
 
