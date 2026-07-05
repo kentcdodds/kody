@@ -590,6 +590,11 @@ async function purgeJobManager(input: {
 			env: input.env,
 			userId: input.userId,
 		})
+		if (!result.purged) {
+			input.warnings.push(
+				'JOB_MANAGER binding was unavailable; the user scheduler Durable Object was not purged.',
+			)
+		}
 		return result.purged ? 1 : 0
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)

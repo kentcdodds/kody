@@ -727,6 +727,9 @@ test('deleteUserAccount handles OAuth grant revocation and warning-only edge cas
 	})
 	expect(revokeGrant).toHaveBeenCalledTimes(2)
 	expect(revokeResult.revokedOAuthGrants).toBe(2)
+	expect(revokeResult.warnings).toContain(
+		'JOB_MANAGER binding was unavailable; the user scheduler Durable Object was not purged.',
+	)
 
 	const { db: oauthFailureDb, rows: oauthFailureRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],
