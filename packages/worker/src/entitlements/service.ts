@@ -248,6 +248,81 @@ export async function assertWithinEntitlement(
 	}
 }
 
+/**
+ * Atomically consume one unit of a daily rate-style entitlement (check and
+ * increment in a single conditional D1 upsert), throwing
+ * EntitlementLimitError when the consumption would exceed the plan limit.
+ * This avoids the check-then-increment race that separate
+ * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
+ * have under concurrent requests, and evaluates the UTC day key once.
+ *
+ * Users without a plan (or without a resolvable limit) consume without a
+ * cap: the counter still accumulates so limits bind the moment a plan is
+ * assigned.
+ */
+export async function consumeDailyEntitlement(input: {
+	db: D1Database
+	userId: string
+	email: string | null | undefined
+	resource: EntitlementResource
+	now?: Date
+}): Promise<void> {
+	const now = input.now ?? new Date()
+	const plan = await getUserPlan(input.db, {
+		userId: input.userId,
+		email: input.email,
+	})
+	const limit = plan ? resolvePlanLimit(plan, input.resource) : null
+	if (limit == null) {
+		await incrementDailyEntitlementCounter({
+			db: input.db,
+			userId: input.userId,
+			resource: input.resource,
+			now,
+		})
+		return
+	}
+	const throwLimitError = async () => {
+		throw new EntitlementLimitError({
+			resource: input.resource,
+			plan,
+			limit,
+			current: await readDailyEntitlementCounter({
+				db: input.db,
+				userId: input.userId,
+				resource: input.resource,
+				now,
+			}),
+			upgradeHint: buildEntitlementUpgradeHint(input.resource),
+		})
+	}
+	// The fresh-row INSERT branch is unconditional, so a limit below one
+	// unit can never be satisfied and must be rejected up front.
+	if (limit < 1) {
+		await throwLimitError()
+	}
+	const result = await input.db
+		.prepare(
+			`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
+			VALUES (?, ?, ?, 1, ?)
+			ON CONFLICT(user_id, resource, day) DO UPDATE SET
+				count = entitlement_daily_counters.count + 1,
+				updated_at = excluded.updated_at
+			WHERE entitlement_daily_counters.count + 1 <= ?`,
+		)
+		.bind(
+			input.userId,
+			input.resource,
+			utcDayKey(now),
+			now.toISOString(),
+			limit,
+		)
+		.run()
+	if ((result.meta.changes ?? 0) === 0) {
+		await throwLimitError()
+	}
+}
+
 export const defaultWorkflowConcurrencyBackstop = 100
 
 /**

@@ -87,10 +87,13 @@ Rules:
   `service.ts`. They do not depend on any metering or rollup tables.
 - **Rate-style limits** (email sends per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
-  UTC day keys. Call `incrementDailyEntitlementCounter` on every attempt (for
-  every user, plan or not) so counters reflect real usage the moment a plan is
-  assigned; counting attempts rather than successes keeps the limit
-  abuse-resistant.
+  UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
+  plan limit and increments the counter in one conditional D1 upsert (no
+  check-then-increment race), and still increments (uncapped) for users without
+  a plan so counters reflect real usage the moment a plan is assigned. Counting
+  attempts rather than successes keeps the limit abuse-resistant.
+  `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
+  backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
   (not allowed) vs `null` (allowed) so the numeric contract stays uniform.
 - `maxStorageBytes` is defined in the limits config but not yet enforced; it has
@@ -99,6 +102,17 @@ Rules:
 
 Because the plan check happens before any counting, enforcement adds zero
 counting overhead for NULL-plan users.
+
+### Concurrency
+
+Row-count limits are check-then-insert: the count query and the later insert are
+separate statements, so a burst of concurrent creates can overshoot a limit by a
+few rows before the next check sees the new count. That is an accepted trade-off
+— these limits are order-of-magnitude denial-of-wallet caps, not billing-grade
+accounting, and folding every insert into a conditional statement would couple
+the entitlements module to each resource's write path. The rate-style path does
+not share this window: `consumeDailyEntitlement` checks and increments in a
+single conditional upsert.
 
 ## How to add an enforcement point
 
@@ -151,7 +165,7 @@ The exemplar is job scheduling: `createJob` in
 | `package_services`            | `service_start` capability path                                                  |
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                       |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                |
-| `email_sends_per_day`         | `sendOutboundEmail` in `packages/worker/src/email/outbound.ts`                   |
+| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`)                           |
 | `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts` |
 | `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)     |
 | `storage_bytes`               | not yet enforced                                                                 |

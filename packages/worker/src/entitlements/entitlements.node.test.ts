@@ -8,6 +8,7 @@ import {
 import { parsePlanName, planLimits, resolvePlanLimit } from './plans.ts'
 import {
 	assertWithinEntitlement,
+	consumeDailyEntitlement,
 	defaultWorkflowConcurrencyBackstop,
 	getUserPlan,
 	getWorkflowConcurrencyBackstop,
@@ -89,6 +90,8 @@ function createEntitlementsTestDb(
 						},
 						async run() {
 							if (query.includes('INSERT INTO entitlement_daily_counters')) {
+								const isConditionalConsume = query.includes('count + 1 <= ?')
+								const amount = isConditionalConsume ? 1 : Number(params[3])
 								const existing = counters.find(
 									(counter) =>
 										counter.user_id === params[0] &&
@@ -96,13 +99,19 @@ function createEntitlementsTestDb(
 										counter.day === params[2],
 								)
 								if (existing) {
-									existing.count += Number(params[3])
+									if (
+										isConditionalConsume &&
+										existing.count + 1 > Number(params[4])
+									) {
+										return { meta: { changes: 0 } }
+									}
+									existing.count += amount
 								} else {
 									counters.push({
 										user_id: String(params[0]),
 										resource: String(params[1]),
 										day: String(params[2]),
-										count: Number(params[3]),
+										count: amount,
 									})
 								}
 								return { meta: { changes: 1 } }
@@ -318,6 +327,84 @@ test('daily counters accumulate and enforce email sends per day', async () => {
 		resource: 'email_sends_per_day',
 		now: new Date('2026-07-06T00:00:01.000Z'),
 	})
+})
+
+test('consumeDailyEntitlement atomically checks and increments the daily counter', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	const { db, counters } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'personal' }],
+	})
+	const limit = planLimits.personal.maxEmailSendsPerDay
+	if (limit === null) throw new Error('Expected a numeric email send limit.')
+
+	for (let index = 0; index < limit; index += 1) {
+		await consumeDailyEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_sends_per_day',
+			now,
+		})
+	}
+	expect(counters).toEqual([
+		{
+			user_id: userId,
+			resource: 'email_sends_per_day',
+			day: '2026-07-05',
+			count: limit,
+		},
+	])
+
+	const error = await consumeDailyEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'email_sends_per_day',
+		now,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(error instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'email_sends_per_day',
+		plan: 'personal',
+		limit,
+		current: limit,
+	})
+	// A denied consumption must not advance the counter.
+	expect(counters[0]?.count).toBe(limit)
+
+	// A new UTC day consumes from a fresh row.
+	await consumeDailyEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'email_sends_per_day',
+		now: new Date('2026-07-06T00:00:01.000Z'),
+	})
+	expect(counters).toHaveLength(2)
+})
+
+test('consumeDailyEntitlement counts attempts without capping plan-less users', async () => {
+	const { db, counters } = createEntitlementsTestDb()
+	const limit = planLimits.personal.maxEmailSendsPerDay
+	if (limit === null) throw new Error('Expected a numeric email send limit.')
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	for (let index = 0; index < limit + 1; index += 1) {
+		await consumeDailyEntitlement({
+			db,
+			userId: 'user-1',
+			email: null,
+			resource: 'email_sends_per_day',
+			now,
+		})
+	}
+	expect(counters[0]?.count).toBe(limit + 1)
 })
 
 test('requested units and getCurrent overrides are honored', async () => {

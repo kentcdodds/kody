@@ -1,8 +1,5 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import {
-	assertWithinEntitlement,
-	incrementDailyEntitlementCounter,
-} from '#worker/entitlements/service.ts'
+import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import { normalizeEmailAddress } from './address.ts'
 import {
 	createEmailThread,
@@ -199,15 +196,12 @@ export async function sendOutboundEmail(
 	const html = input.html?.trim() || null
 	if (!text && !html) throw new Error('Email text or HTML body is required.')
 
-	await assertWithinEntitlement({
+	// Atomic check-and-increment: the counter tracks attempts for every user
+	// (plan or not) and denies the send when a plan's daily limit is reached.
+	await consumeDailyEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.userEmail,
-		resource: 'email_sends_per_day',
-	})
-	await incrementDailyEntitlementCounter({
-		db: input.env.APP_DB,
-		userId: input.userId,
 		resource: 'email_sends_per_day',
 	})
 
