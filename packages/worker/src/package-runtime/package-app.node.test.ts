@@ -84,7 +84,7 @@ test('package app capabilities proxy supports remote namespace calls', async () 
 		},
 	])
 	expect(() => capabilities['remote:home:set_pin']).toThrow(
-		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
+		'Remote connector capability "remote:home:set_pin" is not available as a flat capabilities function.',
 	)
 })
 

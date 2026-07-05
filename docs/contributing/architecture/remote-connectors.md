@@ -110,7 +110,7 @@ Source: `packages/shared/src/chat.ts`,
 
 - The Worker uses distinct **domain ids** (for example `remote:<name>`) and
   remote capability **entity ids** of the form `remote:<name>:<tool>`.
-- In execute/kody code, remote connector tools are visibly separate from
+- In execute/runtime code, remote connector tools are visibly separate from
   built-ins: use `capabilities.remote["<name>"].<tool>(input)`. Built-ins remain
   flat (`capabilities.value_get(...)`), but remote tools are never exposed as
   flat `capabilities.<kind>_<instance>_<tool>` functions.

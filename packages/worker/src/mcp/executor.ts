@@ -52,7 +52,7 @@ const javascriptReservedWords = new Set([
 	'const',
 	'continue',
 	'debugger',
-	'home',
+	'default',
 	'delete',
 	'do',
 	'else',
@@ -385,7 +385,7 @@ function createExecutorModule(input: {
 
 function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as CapabilitiesResolvedProvider
-	if (provider.name === 'kody' && kodyProvider.kodyRemoteConnectors) {
+	if (provider.name === 'capabilities' && kodyProvider.kodyRemoteConnectors) {
 		return createCapabilitiesProviderProxySource({
 			providerName: provider.name,
 			remoteConnectors: kodyProvider.kodyRemoteConnectors,
@@ -417,7 +417,7 @@ export function createCapabilitiesProviderProxySource(input: {
         if (toolName === 'remote') return __kodyRemote;
         const normalizedToolName = String(toolName);
         if (normalizedToolName.startsWith('remote:')) {
-          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat kody function. Use capabilities.remote[connectorName].capabilityName(input) instead.\`);
+          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat capabilities function. Use capabilities.remote[connectorName].capabilityName(input) instead.\`);
         }
         return async (args) => {
           const resJson = await __dispatchers.${input.providerName}.call(normalizedToolName, JSON.stringify(args ?? {}));

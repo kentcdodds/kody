@@ -123,7 +123,7 @@ function createCapabilitiesProxy(runtimeBridge) {
 			if (property === 'remote') return remote;
 			if (property.startsWith('remote:')) {
 				throw new Error(
-					\`Remote connector capability "\${property}" is not available as a flat kody function. Use capabilities.remote[connectorName].capabilityName(input) instead.\`,
+					\`Remote connector capability "\${property}" is not available as a flat capabilities function. Use capabilities.remote[connectorName].capabilityName(input) instead.\`,
 				);
 			}
 			return async (args = {}) =>

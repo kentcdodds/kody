@@ -432,8 +432,8 @@ add alias/deprecation machinery for the current Kent-only cleanup.
 - Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
   the handler must validate the args explicitly before reading them.
 - Remote connector capability entity ids use `remote:<name>:<tool>` (for example
-  `remote:home:set_pin`). In execute/kody code, remote capabilities are not flat
-  functions. Use `capabilities.remote["<name>"].<tool>(input)`, for example
+  `remote:home:set_pin`). In execute/runtime code, remote capabilities are not
+  flat functions. Use `capabilities.remote["<name>"].<tool>(input)`, for example
   `capabilities.remote["home"].set_pin({ pin })`.
 - Remote connector descriptions, keywords, schemas, and annotations cross a
   trust boundary from the connector into Kody search and execute. Keep them

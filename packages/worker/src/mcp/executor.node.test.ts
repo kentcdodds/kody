@@ -152,7 +152,7 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 	)
 })
 
-test('generated kody provider source wires remote proxy dispatch', async () => {
+test('generated capabilities provider source wires remote proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
 	const source = createCapabilitiesProviderProxySource({
 		providerName: 'capabilities',
@@ -204,7 +204,7 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 		},
 	])
 	expect(() => capabilities['remote:home:set_pin']).toThrow(
-		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
+		'Remote connector capability "remote:home:set_pin" is not available as a flat capabilities function.',
 	)
 })
 

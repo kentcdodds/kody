@@ -83,7 +83,8 @@ they are.
 This PR makes the breaking change now:
 
 - Remote capability entity ids are `remote:<name>:<tool>`.
-- Built-ins remain flat in kody (`capabilities.value_get(...)`).
+- Built-ins remain flat on the capabilities object
+  (`capabilities.value_get(...)`).
 - Remote capabilities move to `capabilities.remote["<name>"].<tool>(input)` and
   disappear from flat `capabilities.<kind>_<instance>_<tool>` calls.
 - Connector names are explicit user-chosen names, validated as lowercase
@@ -104,7 +105,7 @@ Reindex capability vectors if old remote capability ids were indexed.
 
 Follow up before open signup with connector-author guidance and possibly a
 connector lint/check for tool names and schemas. After open signup, do not
-change remote id or kody namespace rules without a migration plan.
+change remote id or capabilities namespace rules without a migration plan.
 
 ### High: D1 JSON blobs are shadow schemas
 
@@ -343,7 +344,7 @@ This PR documents the grammar and static/dynamic distinction in
   types, registry specs, `meta_list_capabilities`, search result structures, and
   MCP capability logs.
 - Changed remote connector capability ids to `remote:<name>:<tool>` and moved
-  execute/kody calls to `capabilities.remote["<name>"].<tool>(input)`.
+  execute/runtime calls to `capabilities.remote["<name>"].<tool>(input)`.
 - Folded the new account export capability domain into the audit and primitive
   map; `account_export_manifest` and `account_export_section` are read-only and
   explicitly avoid secret values.
