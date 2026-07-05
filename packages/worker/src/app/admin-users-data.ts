@@ -73,6 +73,48 @@ export async function loadAdminUsersData(
 	}
 }
 
+export async function loadAdminUserByIdOrEmail(
+	db: D1Database,
+	input: { id?: number; email?: string },
+): Promise<AdminUserListItem | null> {
+	const email = input.email?.trim() ?? ''
+	const userRow = input.id
+		? await db
+				.prepare(
+					`SELECT id, username, email, created_at, updated_at
+					 FROM users
+					 WHERE id = ?`,
+				)
+				.bind(input.id)
+				.first<{
+					id: number
+					username: string
+					email: string
+					created_at: string
+					updated_at: string
+				}>()
+		: email
+			? await db
+					.prepare(
+						`SELECT id, username, email, created_at, updated_at
+						 FROM users
+						 WHERE email = ? COLLATE NOCASE`,
+					)
+					.bind(email)
+					.first<{
+						id: number
+						username: string
+						email: string
+						created_at: string
+						updated_at: string
+					}>()
+			: null
+	if (!userRow) return null
+
+	const rolesByUserId = await loadRolesByUserIds(db, [userRow.id])
+	return toAdminUserListItem(userRow, rolesByUserId.get(userRow.id) ?? [])
+}
+
 export async function loadRolesByUserIds(
 	db: D1Database,
 	userIds: Array<number>,

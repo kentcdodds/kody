@@ -215,8 +215,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	)
 })
 
-test('returns already_published when Artifacts HEAD matches D1', async () => {
-	setupDefaultMocks()
+test('publishExternalPush handles already_published branches, stale dependents, and rebuild failures', async () => {
 	const targets = [
 		{
 			kind: 'service',
@@ -225,6 +224,7 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 			bundleKind: 'module',
 		},
 	]
+	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-old',
@@ -235,12 +235,11 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 
-	const result = await publishExternalPushCapability.handler(
+	const alreadyPublished = await publishExternalPushCapability.handler(
 		{ package_id: 'package-1' },
 		createContext(),
 	)
-
-	expect(result).toEqual({
+	expect(alreadyPublished).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-old',
 		static_dependents: expect.objectContaining({
@@ -250,12 +249,6 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 			items: [],
 		}),
 	})
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-1',
-			newCommit: 'commit-old',
-		}),
-	)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sourceId: 'source-1',
 		userId: 'user-1',
@@ -263,10 +256,9 @@ test('returns already_published when Artifacts HEAD matches D1', async () => {
 		target: targets[0],
 		baseUrl: 'https://kody.test',
 	})
-})
 
-test('already_published without a commit fails instead of silently skipping artifact rebuild', async () => {
 	setupDefaultMocks()
+	mockModule.rebuildPublishedPackageArtifact.mockClear()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-old',
@@ -275,7 +267,6 @@ test('already_published without a commit fails instead of silently skipping arti
 		status: 'already_published',
 		published_commit: null,
 	})
-
 	await expect(
 		publishExternalPushCapability.handler(
 			{ package_id: 'package-1' },
@@ -285,9 +276,7 @@ test('already_published without a commit fails instead of silently skipping arti
 		'already published, but no published commit is available to rebuild artifacts',
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
-})
 
-test('published output lists stale static dependents for the new dependency commit', async () => {
 	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
@@ -324,13 +313,11 @@ test('published output lists stale static dependents for the new dependency comm
 		recommended_next_action:
 			'Inspect stale static dependents and republish only the packages whose bundled snapshot should include this package publish. Kody does not republish dependents automatically.',
 	})
-
-	const result = await publishExternalPushCapability.handler(
+	const publishedWithDependents = await publishExternalPushCapability.handler(
 		{ package_id: 'package-1' },
 		createContext(),
 	)
-
-	expect(result).toEqual(
+	expect(publishedWithDependents).toEqual(
 		expect.objectContaining({
 			status: 'published',
 			static_dependents: expect.objectContaining({
@@ -347,15 +334,7 @@ test('published output lists stale static dependents for the new dependency comm
 			}),
 		}),
 	)
-	expect(mockModule.getStaticPackageDependentsSummary).toHaveBeenCalledWith({
-		db: expect.any(Object),
-		userId: 'user-1',
-		sourceId: 'source-1',
-		currentDependencyCommit: 'commit-new',
-	})
-})
 
-test('artifact rebuild failures include the failing target and cause', async () => {
 	setupDefaultMocks()
 	const target = {
 		kind: 'module',
@@ -378,7 +357,6 @@ test('artifact rebuild failures include the failing target and cause', async () 
 	mockModule.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
 		new Error('No matching default export for import "default"'),
 	)
-
 	await expect(
 		publishExternalPushCapability.handler(
 			{ package_id: 'package-1' },

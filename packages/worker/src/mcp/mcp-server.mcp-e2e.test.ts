@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
+	assignRoleInMcpTestDatabase,
 	createMcpClient,
 	createTestDatabase,
 	startDevServer,
@@ -56,4 +57,61 @@ test('authenticated MCP smoke returns same-origin inline UI sessions', async () 
 	expect(executeEndpoint).toBeTruthy()
 	const executeUrl = new URL(String(executeEndpoint), server.origin)
 	expect(executeUrl.origin).toBe(server.origin)
+})
+
+test('authenticated MCP search shows admin capabilities only to admin users', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	const regularUser = {
+		email: 'jane@example.com',
+		username: 'jane',
+		password: 'ilikecode',
+	}
+	await using regularClient = await createMcpClient(server.origin, regularUser)
+
+	const regularSearch = await regularClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'admin users roles audit',
+			limit: 10,
+		},
+	})
+	const regularMatches =
+		(
+			(regularSearch as CallToolResult).structuredContent as {
+				result?: { matches?: Array<{ id?: string }> }
+			}
+		)?.result?.matches ?? []
+	expect(regularMatches.some((match) => match.id === 'admin_user_list')).toBe(
+		false,
+	)
+
+	await using bootstrapClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+	void bootstrapClient
+	await assignRoleInMcpTestDatabase({
+		persistDir: database.persistDir,
+		email: database.user.email,
+		role: 'admin',
+	})
+	await using adminClient = await createMcpClient(server.origin, database.user)
+
+	const adminSearch = await adminClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'admin users roles audit',
+			limit: 10,
+		},
+	})
+	const adminMatches =
+		(
+			(adminSearch as CallToolResult).structuredContent as {
+				result?: { matches?: Array<{ id?: string }> }
+			}
+		)?.result?.matches ?? []
+	expect(adminMatches.some((match) => match.id === 'admin_user_list')).toBe(
+		true,
+	)
 })

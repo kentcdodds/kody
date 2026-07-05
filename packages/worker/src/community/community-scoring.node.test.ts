@@ -92,7 +92,7 @@ function mockListings(listings: Array<CommunityListingRecord>) {
 	)
 }
 
-test('computeCommunityBayesianScore ranks listings and pulls sparse ratings toward the prior', () => {
+test('community scoring and search rank listings and filter by query', async () => {
 	const unrated = computeCommunityBayesianScore({
 		averageStars: null,
 		ratingCount: 0,
@@ -111,12 +111,9 @@ test('computeCommunityBayesianScore ranks listings and pulls sparse ratings towa
 	expect(highlyRated).toBeGreaterThan(lightlyRated)
 	expect(lightlyRated).toBeGreaterThan(unrated)
 	expect(lightlyRated).toBeCloseTo((3.25 * 5 + 5) / 6, 5)
-})
 
-test('isCommunityListingSearchMatch keeps lexical hits and drops unrelated cosine noise', () => {
 	const githubDocument = buildCommunityListingSearchDocument(githubListing())
 	const mealDocument = buildCommunityListingSearchDocument(mealListing())
-
 	expect(
 		isCommunityListingSearchMatch({
 			query: 'github',
@@ -135,9 +132,7 @@ test('isCommunityListingSearchMatch keeps lexical hits and drops unrelated cosin
 			document: githubDocument,
 		}),
 	).toBe(false)
-})
 
-test('searchCommunityListings filters, ranks, and sorts community listings', async () => {
 	mockListings([mealListing(), githubListing()])
 
 	const githubResults = await searchCommunityListings({

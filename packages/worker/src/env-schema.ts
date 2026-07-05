@@ -37,6 +37,13 @@ const optionalAnalyticsEngineDatasetSchema = createSchema<
 	return { value: value as AnalyticsEngineDataset }
 })
 
+const optionalAiSchema = createSchema<unknown, Ai | undefined>(
+	(value, _context) => {
+		if (value === undefined) return { value: undefined }
+		return { value: value as Ai }
+	},
+)
+
 const optionalNonEmptyStringSchema = createSchema<unknown, string | undefined>(
 	(value, context) => {
 		if (value === undefined) return { value: undefined }
@@ -175,6 +182,8 @@ export const EnvSchema = object({
 	CLOUDFLARE_API_TOKEN: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
 	ARTIFACTS_NAMESPACE: optionalNonEmptyStringSchema,
+	AI: optionalAiSchema,
+	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
 })

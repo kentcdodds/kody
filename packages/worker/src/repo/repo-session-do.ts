@@ -1076,6 +1076,30 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
+	async purgeSession(input: { sessionId: string; userId: string }) {
+		const sessionRow = await getRepoSessionById(
+			this.env.APP_DB,
+			input.sessionId,
+		)
+		if (sessionRow && sessionRow.user_id !== input.userId) {
+			throw new Error(
+				`Repo session "${input.sessionId}" was not found for this user.`,
+			)
+		}
+		await this.clearCachedSessionState(input.sessionId)
+		await this.resetWorkspace().catch(() => {
+			// deleteAll below clears the SQLite-backed workspace state even if the
+			// higher-level workspace adapter cannot remove a path cleanly.
+		})
+		this.inMemorySessionState.delete(input.sessionId)
+		this.initializedSessionId = null
+		await this.ctx.storage.deleteAll()
+		return {
+			ok: true as const,
+			sessionId: input.sessionId,
+		}
+	}
+
 	async cleanupSessionBranch(input: {
 		sessionId: string
 		userId: string

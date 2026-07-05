@@ -8,7 +8,7 @@ import {
 	tryConsumePreloadedLoaderData,
 } from './navigation-data.ts'
 
-test('tryConsumePreloadedLoaderData returns data once for matching href', () => {
+test('preloaded navigation data is consumed once for matching hrefs and replaced on update', () => {
 	clearPreloadedNavigationData()
 	setPreloadedNavigationData('/account', {
 		accountProfile: {
@@ -28,9 +28,7 @@ test('tryConsumePreloadedLoaderData returns data once for matching href', () => 
 	expect(
 		tryConsumePreloadedLoaderData('accountProfile', '/account'),
 	).toBeUndefined()
-})
 
-test('tryConsumePreloadedLoaderData ignores mismatched href', () => {
 	clearPreloadedNavigationData()
 	setPreloadedNavigationData('/account', {
 		accountProfile: {
@@ -40,7 +38,6 @@ test('tryConsumePreloadedLoaderData ignores mismatched href', () => {
 			displayName: 'Kody',
 		},
 	})
-
 	expect(
 		tryConsumePreloadedLoaderData('accountProfile', '/account/secrets'),
 	).toBeUndefined()
@@ -50,9 +47,7 @@ test('tryConsumePreloadedLoaderData ignores mismatched href', () => {
 		username: 'kody',
 		displayName: 'Kody',
 	})
-})
 
-test('tryConsumePreloadedLoaderData normalizes href before matching', () => {
 	clearPreloadedNavigationData()
 	setPreloadedNavigationData('https://kody.local/account?q=1#top', {
 		accountProfile: {
@@ -62,7 +57,6 @@ test('tryConsumePreloadedLoaderData normalizes href before matching', () => {
 			displayName: 'Kody',
 		},
 	})
-
 	expect(
 		tryConsumePreloadedLoaderData('accountProfile', '/account?q=1#top'),
 	).toEqual({
@@ -71,9 +65,7 @@ test('tryConsumePreloadedLoaderData normalizes href before matching', () => {
 		username: 'kody',
 		displayName: 'Kody',
 	})
-})
 
-test('setPreloadedNavigationData replaces the previous slot', () => {
 	clearPreloadedNavigationData()
 	setPreloadedNavigationData('/account', {
 		accountProfile: {
@@ -91,16 +83,13 @@ test('setPreloadedNavigationData replaces the previous slot', () => {
 			displayName: 'Second',
 		},
 	})
-
 	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual({
 		ok: true,
 		email: 'second@example.com',
 		username: 'second',
 		displayName: 'Second',
 	})
-})
 
-test('tryConsumePreloadedLoaderData leaves unrelated keys until consumed', () => {
 	clearPreloadedNavigationData()
 	const payload: Partial<AppLoaderData> = {
 		accountProfile: {
@@ -119,7 +108,6 @@ test('tryConsumePreloadedLoaderData leaves unrelated keys until consumed', () =>
 		},
 	}
 	setPreloadedNavigationData('/account', payload)
-
 	expect(
 		tryConsumePreloadedLoaderData('accountProfile', '/account'),
 	).toBeTruthy()
@@ -129,25 +117,19 @@ test('tryConsumePreloadedLoaderData leaves unrelated keys until consumed', () =>
 	).toBeUndefined()
 })
 
-test('consumeStaleNavigationData is one-shot for the marked href', () => {
+test('stale navigation markers are one-shot and normalize hrefs before matching', () => {
 	clearPreloadedNavigationData()
 	markNavigationDataStale('/account')
 
 	expect(consumeStaleNavigationData('/account')).toBe(true)
 	expect(consumeStaleNavigationData('/account')).toBe(false)
-})
 
-test('consumeStaleNavigationData clears the marker on href mismatch', () => {
 	clearPreloadedNavigationData()
 	markNavigationDataStale('/account')
-
 	expect(consumeStaleNavigationData('/account/secrets')).toBe(false)
 	expect(consumeStaleNavigationData('/account')).toBe(false)
-})
 
-test('consumeStaleNavigationData normalizes hrefs before matching', () => {
 	clearPreloadedNavigationData()
 	markNavigationDataStale('https://kody.local/account?q=1')
-
 	expect(consumeStaleNavigationData('/account?q=1')).toBe(true)
 })

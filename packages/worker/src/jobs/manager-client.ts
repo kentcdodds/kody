@@ -27,6 +27,10 @@ export type JobManagerDebugState = {
 }
 
 type JobManagerRpc = {
+	purgeUser: (payload: { userId: string }) => Promise<{
+		ok: true
+		userId: string
+	}>
 	syncAlarm: (payload: {
 		userId: string
 		source?: 'alarm' | 'rpc' | 'run_now'
@@ -54,6 +58,26 @@ export function jobManagerRpc(env: Env, userId: string): JobManagerRpc | null {
 		return null
 	}
 	return namespace.get(namespace.idFromName(userId)) as unknown as JobManagerRpc
+}
+
+export async function purgeJobManagerForUser(input: {
+	env: Env
+	userId: string
+}) {
+	const rpc = jobManagerRpc(input.env, input.userId)
+	if (!rpc) {
+		return {
+			ok: true as const,
+			userId: input.userId,
+			purged: false,
+		}
+	}
+	await rpc.purgeUser({ userId: input.userId })
+	return {
+		ok: true as const,
+		userId: input.userId,
+		purged: true,
+	}
 }
 
 export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {

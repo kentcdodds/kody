@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
 import {
 	clearRemoteConnectorSnapshotCacheForTests,
@@ -51,11 +51,8 @@ function buildEnv(
 	}
 }
 
-beforeEach(() => {
-	clearRemoteConnectorSnapshotCacheForTests()
-})
-
 test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async () => {
+	clearRemoteConnectorSnapshotCacheForTests()
 	const { env, getSnapshotCalls } = buildEnv(async () => ({
 		connectorKind: 'roku',
 		connectorId: 'default',
@@ -78,6 +75,7 @@ test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async ()
 })
 
 test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', async () => {
+	clearRemoteConnectorSnapshotCacheForTests()
 	let connected = false
 	const { env, getSnapshotCalls } = buildEnv(async () =>
 		connected
@@ -106,6 +104,7 @@ test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', 
 })
 
 test('a failed connector RPC evicts the cached snapshot', async () => {
+	clearRemoteConnectorSnapshotCacheForTests()
 	const { env, getSnapshotCalls } = buildEnv(
 		async () => ({
 			connectorKind: 'roku',
@@ -140,6 +139,7 @@ test('a failed connector RPC evicts the cached snapshot', async () => {
 })
 
 test('getCachedRemoteConnectorSnapshot does not share entries across users', async () => {
+	clearRemoteConnectorSnapshotCacheForTests()
 	const { env, getSnapshotCalls } = buildEnv(async () => ({
 		connectorKind: 'roku',
 		connectorId: 'default',

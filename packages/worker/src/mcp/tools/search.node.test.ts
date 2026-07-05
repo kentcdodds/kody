@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
+import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
@@ -11,6 +14,55 @@ import {
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
 } from './search.ts'
+
+function buildRoleGatedSearchRegistry() {
+	const publicCapability = defineDomainCapability('meta', {
+		name: 'public_docs_search',
+		description: 'Search public docs',
+		keywords: ['public', 'docs', 'search'],
+		readOnly: true,
+		idempotent: true,
+		inputSchema: {
+			type: 'object',
+			properties: {},
+		},
+		handler: async () => null,
+	})
+	const adminCapability = defineDomainCapability('admin', {
+		name: 'admin_user_list',
+		description: 'List admin user account metadata and roles',
+		keywords: ['admin', 'users', 'roles', 'accounts'],
+		readOnly: true,
+		idempotent: true,
+		requiredRole: 'admin',
+		inputSchema: {
+			type: 'object',
+			properties: {},
+		},
+		handler: async () => null,
+	})
+	return buildCapabilityRegistry([
+		{
+			name: 'admin',
+			description: 'Admin capabilities',
+			capabilities: [adminCapability],
+		},
+		{
+			name: 'meta',
+			description: 'Meta capabilities',
+			capabilities: [publicCapability],
+		},
+	])
+}
+
+const emptyOptionalSearchRows = {
+	packageRows: [],
+	userSecretRows: [],
+	userValueRows: [],
+} satisfies Pick<
+	OptionalSearchRowsResult,
+	'packageRows' | 'userSecretRows' | 'userValueRows'
+>
 
 function createPackageExportProjection(
 	subpath: string,
@@ -194,6 +246,113 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 			}),
 		]),
 	)
+})
+
+test('searchUnified hides admin capabilities from non-admins in offline search', async () => {
+	const registry = buildRoleGatedSearchRegistry()
+	const regularRegistry = filterCapabilityRegistryForCaller(
+		registry,
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'user',
+				roles: ['user'],
+			},
+		}),
+	)
+	const adminRegistry = filterCapabilityRegistryForCaller(
+		registry,
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'admin-1',
+				email: 'admin@example.com',
+				displayName: 'admin',
+				roles: ['admin'],
+			},
+		}),
+	)
+
+	const regularResult = await searchUnified({
+		env: { SENTRY_ENVIRONMENT: 'test' } as Env,
+		query: 'admin users roles',
+		limit: 5,
+		registry: regularRegistry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+	const adminResult = await searchUnified({
+		env: { SENTRY_ENVIRONMENT: 'test' } as Env,
+		query: 'admin users roles',
+		limit: 5,
+		registry: adminRegistry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+
+	expect(
+		regularResult.matches.some(
+			(match) =>
+				match.type === 'capability' && match.name === 'admin_user_list',
+		),
+	).toBe(false)
+	expect(
+		adminResult.matches.some(
+			(match) =>
+				match.type === 'capability' && match.name === 'admin_user_list',
+		),
+	).toBe(true)
+})
+
+test('searchUnified hides admin capabilities from non-admins in Vectorize-backed search', async () => {
+	const registry = buildRoleGatedSearchRegistry()
+	const regularRegistry = filterCapabilityRegistryForCaller(
+		registry,
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'user',
+				roles: ['user'],
+			},
+		}),
+	)
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return {
+					matches: [
+						{ id: 'admin_user_list', score: 0.99 },
+						{ id: 'public_docs_search', score: 0.5 },
+					],
+				}
+			},
+		},
+	} as unknown as Env
+
+	const result = await searchUnified({
+		env,
+		query: 'admin users roles',
+		limit: 5,
+		registry: regularRegistry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+
+	expect(result.offline).toBe(false)
+	expect(
+		result.matches.some(
+			(match) =>
+				match.type === 'capability' && match.name === 'admin_user_list',
+		),
+	).toBe(false)
+	expect(
+		result.matches.some(
+			(match) =>
+				match.type === 'capability' && match.name === 'public_docs_search',
+		),
+	).toBe(true)
 })
 
 test('searchUnified ranks package retriever results alongside capabilities', async () => {

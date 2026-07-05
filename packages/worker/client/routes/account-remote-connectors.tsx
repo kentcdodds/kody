@@ -12,6 +12,11 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
+	AccountManagementHeader,
+	AccountManagementMessage,
+	AccountManagementShell,
+} from '#client/routes/account-management-components.tsx'
+import {
 	colors,
 	mq,
 	radius,
@@ -611,47 +616,20 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		const connectorUrl = getEditorConnectorUrl()
 
 		return (
-			<section
-				mix={css({
-					maxWidth: '76rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.xl,
-				})}
-			>
-				<header
-					mix={css({
-						display: 'flex',
-						justifyContent: 'space-between',
-						alignItems: 'flex-start',
-						gap: spacing.md,
-						flexWrap: 'wrap',
-					})}
-				>
-					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<h1
-							mix={css({
-								fontSize: typography.fontSize.xl,
-								fontWeight: typography.fontWeight.semibold,
-								color: colors.text,
-								margin: 0,
-							})}
+			<AccountManagementShell>
+				<AccountManagementHeader
+					title={email ? `${email} remote connectors` : 'Remote connectors'}
+					description="Attach connector refs to normal Kody sessions and manage the shared secrets used by connector hello authentication."
+					actions={
+						<button
+							type="button"
+							disabled={isMutating}
+							mix={[on('click', startNewConnector), css(primaryButtonCss)]}
 						>
-							{email ? `${email} remote connectors` : 'Remote connectors'}
-						</h1>
-						<p mix={css({ color: colors.textMuted, margin: 0 })}>
-							Attach connector refs to normal Kody sessions and manage the
-							shared secrets used by connector hello authentication.
-						</p>
-					</div>
-					<button
-						type="button"
-						disabled={isMutating}
-						mix={[on('click', startNewConnector), css(primaryButtonCss)]}
-					>
-						New connector
-					</button>
-				</header>
+							New connector
+						</button>
+					}
+				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -659,15 +637,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<p
-						role="alert"
-						mix={css({
-							color: status === 'error' ? colors.error : colors.text,
-							margin: 0,
-						})}
+					<AccountManagementMessage
+						tone={status === 'error' ? 'error' : 'info'}
 					>
 						{message}
-					</p>
+					</AccountManagementMessage>
 				) : null}
 
 				{status === 'ready' ? (
@@ -1078,7 +1052,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 						</form>
 					</section>
 				) : null}
-			</section>
+			</AccountManagementShell>
 		)
 	}
 }

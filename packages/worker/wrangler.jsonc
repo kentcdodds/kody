@@ -173,6 +173,9 @@
 					"dataset": "kody_usage_events",
 				},
 			],
+			"ai": {
+				"binding": "AI",
+			},
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"ARTIFACTS_NAMESPACE": "production",
@@ -272,6 +275,9 @@
 					"dataset": "kody_usage_events_preview",
 				},
 			],
+			"ai": {
+				"binding": "AI",
+			},
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",

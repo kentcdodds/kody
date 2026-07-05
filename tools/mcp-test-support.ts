@@ -44,6 +44,10 @@ type ConnectedTestClient = {
 	listTools(): ReturnType<Client['listTools']>
 }
 
+function quoteSql(value: string) {
+	return `'${value.replace(/'/g, "''")}'`
+}
+
 export async function createTestDatabase() {
 	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
@@ -167,6 +171,51 @@ export async function startDevServer(persistDir: string) {
 
 	throw new Error(
 		'Failed to start MCP test dev servers after multiple retries.',
+	)
+}
+
+export async function assignRoleInMcpTestDatabase(input: {
+	persistDir: string
+	email: string
+	role: string
+}) {
+	const sql = `
+INSERT OR IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.email = ${quoteSql(input.email)} AND r.name = ${quoteSql(input.role)};`.trim()
+	const proc = spawnProcess({
+		cmd: [
+			nodeBin,
+			'--env-file=packages/worker/.env',
+			'./wrangler-env.ts',
+			'd1',
+			'execute',
+			'APP_DB',
+			'--local',
+			'--persist-to',
+			input.persistDir,
+			'--command',
+			sql,
+		],
+		cwd: projectRoot,
+		env: {
+			...process.env,
+			CLOUDFLARE_ENV: 'test',
+		},
+	})
+	const getStdout = captureOutput(proc.stdout)
+	const getStderr = captureOutput(proc.stderr)
+	const exitCode = await proc.exited
+	if (exitCode === 0) return
+	throw new Error(
+		[
+			`Failed to assign MCP test role (exit ${String(exitCode)}).`,
+			getStdout(),
+			getStderr(),
+		]
+			.filter(Boolean)
+			.join('\n\n'),
 	)
 }
 

@@ -2,6 +2,7 @@ import {
 	buildCapabilityRegistry,
 	type BuiltCapabilityRegistry,
 } from './build-capability-registry.ts'
+import { filterCapabilityRegistryForCaller } from './access-control.ts'
 import { builtinDomains } from './builtin-domains.ts'
 import { synthesizeRemoteToolDomain } from './remote-connector/index.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
@@ -90,6 +91,13 @@ async function buildCapabilityRegistryForConnectors(input: {
 	return buildCapabilityRegistry([...builtinDomains, ...synthesizedDomains])
 }
 
+function filterRegistryForContext(input: {
+	registry: BuiltCapabilityRegistry
+	callerContext: McpCallerContext
+}) {
+	return filterCapabilityRegistryForCaller(input.registry, input.callerContext)
+}
+
 export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -97,7 +105,10 @@ export async function getCapabilityRegistryForContext(input: {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
 	const userId = input.callerContext.user?.userId ?? null
 	if (refs.length === 0 || !userId) {
-		return staticRegistry
+		return filterRegistryForContext({
+			registry: staticRegistry,
+			callerContext: input.callerContext,
+		})
 	}
 	const snapshots = await Promise.all(
 		refs.map((ref) =>
@@ -114,7 +125,7 @@ export async function getCapabilityRegistryForContext(input: {
 		refs,
 		snapshots,
 	})
-	return capabilityRegistryCache.getOrCreate({
+	const registry = await capabilityRegistryCache.getOrCreate({
 		cacheKey,
 		create: () =>
 			buildCapabilityRegistryForConnectors({
@@ -123,6 +134,10 @@ export async function getCapabilityRegistryForContext(input: {
 				refs,
 				snapshots,
 			}),
+	})
+	return filterRegistryForContext({
+		registry,
+		callerContext: input.callerContext,
 	})
 }
 

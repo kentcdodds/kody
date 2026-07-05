@@ -87,18 +87,28 @@ Worker bindings (see `packages/worker/wrangler.jsonc`):
 - **`CAPABILITY_VECTOR_INDEX`** — Cloudflare Vectorize index for semantic
   retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create
   indexes with **`--dimensions=384 --metric=cosine`** to match
-  `@cf/baai/bge-small-en-v1.5` (see
+  `@cf/baai/bge-small-en-v1.5` with `cls` pooling (see
   `packages/worker/src/mcp/capabilities/capability-search.ts`). The **`test`**
   Wrangler environment omits this binding so `npm run test` and e2e use the
   deterministic offline fusion path (`offline: true` in search results).
+- **`AI`** — Workers AI binding used by production and preview capability,
+  memory, job, and saved-package embedding calls. Local dev and tests do not
+  require it because `WRANGLER_IS_LOCAL_DEV`, `SENTRY_ENVIRONMENT=test`, or a
+  missing non-production binding keeps search on the deterministic offline path.
 
 Optional Worker secret:
 
+- **`AI_GATEWAY_ID`** — Cloudflare AI Gateway id. When set, embedding calls use
+  the Workers AI binding `gateway` option so production and preview inference is
+  logged/routed through AI Gateway. When unset, the Worker calls Workers AI
+  directly.
 - **`CAPABILITY_REINDEX_SECRET`** — Bearer token for
   `POST /__maintenance/reindex-capabilities` (production deploy workflow calls
-  it after healthcheck when the GitHub secret is set). Use capability reindex
-  when built-in capability metadata and Vectorize disagree. Local dev uses
-  offline search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+  it after healthcheck when the GitHub secret is set). Use this endpoint after
+  changing the embedding model, pooling, or Vectorize index dimensions; it
+  rebuilds built-in capability, memory, job, and saved-package vectors with
+  per-user `userId` metadata on user-owned rows. Local dev uses offline search
+  while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 
 ## Cloudflare API (Worker + Email)
 

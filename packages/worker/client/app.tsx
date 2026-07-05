@@ -16,6 +16,7 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
+import { layoutMaxWidths } from './styles/style-primitives.ts'
 import { type AppLoaderData } from '#app/loader-data.ts'
 import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
@@ -127,15 +128,13 @@ export function App(handle: Handle<AppProps>) {
 		cursor: 'pointer',
 	}
 
+	const compactNavCss = {
+		gap: spacing.sm,
+		marginBottom: spacing.lg,
+	}
+
 	return () => {
 		currentPathname = readRouterPathname(handle)
-		const isWideLayout =
-			currentPathname.startsWith('/account/integrations') ||
-			currentPathname.startsWith('/account/package-invocation-tokens') ||
-			currentPathname.startsWith('/account/remote-connectors') ||
-			currentPathname.startsWith('/account/secrets') ||
-			currentPathname.startsWith('/admin') ||
-			currentPathname.startsWith('/community')
 		const sessionEmail = session?.email ?? ''
 		const sessionDisplayName = getSessionDisplayName(session)
 		const isSessionReady = sessionStatus === 'ready'
@@ -154,50 +153,33 @@ export function App(handle: Handle<AppProps>) {
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
 				<NavigationProgress />
 				<ScrollRestoration />
-				<main
+				<div
 					mix={css({
-						maxWidth: isWideLayout ? 'none' : '52rem',
 						width: '100%',
-						margin: isWideLayout ? 0 : '0 auto',
-						padding: isWideLayout
-							? `${spacing.lg} ${spacing.xl} ${spacing.sm}`
-							: spacing['2xl'],
-						minHeight: isWideLayout ? '100vh' : undefined,
+						minHeight: '100vh',
+						padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
 						fontFamily: typography.fontFamily,
 						boxSizing: 'border-box',
-						[mq.tablet]: isWideLayout
-							? {
-									padding: `${spacing.sm} ${spacing.sm} 0`,
-								}
-							: {
-									padding: spacing.xl,
-								},
-						[mq.mobile]: isWideLayout
-							? {
-									padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-								}
-							: {
-									padding: spacing.md,
-								},
+						[mq.tablet]: {
+							padding: `${spacing.sm} ${spacing.sm} 0`,
+						},
+						[mq.mobile]: {
+							padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+						},
 					})}
 				>
 					<nav
 						mix={css({
+							maxWidth: layoutMaxWidths.wide,
+							width: '100%',
+							margin: `0 auto ${spacing.xl}`,
+							boxSizing: 'border-box',
 							display: 'flex',
 							alignItems: 'center',
 							gap: spacing.md,
 							flexWrap: 'wrap',
-							marginBottom: isWideLayout ? spacing.lg : spacing.xl,
-							[mq.tablet]: isWideLayout
-								? {
-										gap: spacing.sm,
-										marginBottom: spacing.sm,
-									}
-								: {},
-							[mq.mobile]: {
-								gap: spacing.sm,
-								marginBottom: isWideLayout ? spacing.md : spacing.lg,
-							},
+							[mq.tablet]: compactNavCss,
+							[mq.mobile]: compactNavCss,
 						})}
 					>
 						<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
@@ -259,29 +241,31 @@ export function App(handle: Handle<AppProps>) {
 							</>
 						) : null}
 					</nav>
-					<Router
-						routes={clientRoutes}
-						loaderData={handle.props.loaderData}
-						notFound={handle.props.notFound}
-						fallback={
-							<section>
-								<h2
-									mix={css({
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										marginBottom: spacing.sm,
-										color: colors.text,
-									})}
-								>
-									Not Found
-								</h2>
-								<p mix={css({ color: colors.textMuted })}>
-									We could not find that page.
-								</p>
-							</section>
-						}
-					/>
-				</main>
+					<main mix={css({ width: '100%', boxSizing: 'border-box' })}>
+						<Router
+							routes={clientRoutes}
+							loaderData={handle.props.loaderData}
+							notFound={handle.props.notFound}
+							fallback={
+								<section>
+									<h2
+										mix={css({
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+											marginBottom: spacing.sm,
+											color: colors.text,
+										})}
+									>
+										Not Found
+									</h2>
+									<p mix={css({ color: colors.textMuted })}>
+										We could not find that page.
+									</p>
+								</section>
+							}
+						/>
+					</main>
+				</div>
 			</AppLoaderDataProvider>
 		)
 	}

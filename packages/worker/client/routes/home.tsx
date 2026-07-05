@@ -7,6 +7,7 @@ import {
 	typography,
 	mq,
 } from '#client/styles/tokens.ts'
+import { layoutMaxWidths } from '#client/styles/style-primitives.ts'
 
 export function HomeRoute(_handle: Handle) {
 	return () => (
@@ -35,7 +36,7 @@ export function HomeRoute(_handle: Handle) {
 					border: `1px solid ${colors.border}`,
 					background: `linear-gradient(135deg, ${colors.primarySoftStrong}, ${colors.primarySoftest})`,
 					boxShadow: shadows.md,
-					maxWidth: '48rem',
+					maxWidth: layoutMaxWidths.narrow,
 					width: '100%',
 					[mq.mobile]: {
 						padding: spacing.lg,
@@ -96,7 +97,7 @@ export function HomeRoute(_handle: Handle) {
 					display: 'grid',
 					gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
 					gap: spacing.lg,
-					maxWidth: '64rem',
+					maxWidth: layoutMaxWidths.content,
 					width: '100%',
 					[mq.mobile]: {
 						gridTemplateColumns: '1fr',
