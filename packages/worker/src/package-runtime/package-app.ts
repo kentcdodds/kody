@@ -98,9 +98,34 @@ function buildFacetClassExportName(rawFacetName) {
 }
 
 function createCodemodeProxy(runtimeBridge) {
+	const remote = new Proxy({}, {
+		get(_target, connectorName) {
+			if (typeof connectorName !== 'string' || connectorName === 'then') {
+				return undefined;
+			}
+			return new Proxy({}, {
+				get(_connectorTarget, capabilityName) {
+					if (typeof capabilityName !== 'string' || capabilityName === 'then') {
+						return undefined;
+					}
+					return async (args = {}) =>
+						await runtimeBridge.callCapability({
+							name: \`remote:\${connectorName}:\${capabilityName}\`,
+							args,
+						});
+				},
+			});
+		},
+	});
 	return new Proxy({}, {
 		get(_target, property) {
-			if (typeof property !== 'string') return undefined;
+			if (typeof property !== 'string' || property === 'then') return undefined;
+			if (property === 'remote') return remote;
+			if (property.startsWith('remote:')) {
+				throw new Error(
+					\`Remote connector capability "\${property}" is not available as a flat codemode function. Use codemode.remote[connectorName].capabilityName(input) instead.\`,
+				);
+			}
 			return async (args = {}) =>
 				await runtimeBridge.callCapability({
 					name: property,
