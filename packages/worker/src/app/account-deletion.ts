@@ -170,6 +170,7 @@ const userScopedTables: ReadonlyArray<UserScopedDeleteTarget> = [
 	// password_resets.user_id is an INTEGER FK to users.id (predates the
 	// stable mcp string user id), so it must be cleared with the database
 	// integer id rather than the mcp user id.
+	{ kind: 'db_user_id', table: 'email_verifications' },
 	{ kind: 'db_user_id', table: 'password_resets' },
 	{ kind: 'db_user_id', table: 'user_roles' },
 ]
