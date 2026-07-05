@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { z } from 'zod'
+import { filterCapabilityRegistryForCaller } from './access-control.ts'
 import { buildCapabilityRegistry } from './build-capability-registry.ts'
 import { defineDomain } from './define-domain.ts'
 import { defineDomainCapability } from './define-domain-capability.ts'
@@ -115,12 +116,20 @@ test('capability registry routes hidden deprecated aliases without adding search
 		outputSchema: z.object({ ok: z.boolean() }),
 		handler: async () => ({ ok: true }),
 	})
+	const adminCapability = defineDomainCapability(capabilityDomainNames.meta, {
+		name: 'admin_only',
+		description: 'Admin-only capability.',
+		requiredRole: 'admin',
+		inputSchema: z.object({}),
+		outputSchema: z.object({ ok: z.boolean() }),
+		handler: async () => ({ ok: true }),
+	})
 
 	const registry = buildCapabilityRegistry([
 		defineDomain({
 			name: capabilityDomainNames.meta,
 			description: 'meta',
-			capabilities: [aliasedCapability],
+			capabilities: [aliasedCapability, adminCapability],
 		}),
 	])
 
@@ -147,6 +156,22 @@ test('capability registry routes hidden deprecated aliases without adding search
 			},
 		],
 	})
+
+	const filtered = filterCapabilityRegistryForCaller(registry, {
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			roles: ['user'],
+		},
+	})
+	expect(filtered.capabilityMap.old_name).toBe(filtered.capabilityMap.new_name)
+	expect(filtered.capabilityMap.admin_only).toBeUndefined()
+	expect(filtered.capabilityHandlers.old_name).toBe(
+		filtered.capabilityHandlers.new_name,
+	)
+	expect(filtered.capabilityHandlers.admin_only).toBeUndefined()
 
 	await expect(
 		registry.capabilityHandlers.old_name({}, {
