@@ -36,6 +36,7 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -926,6 +927,12 @@ export async function createJob(input: {
 	body: JobCreateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
+	await assertWithinEntitlement({
+		db: input.env.APP_DB,
+		userId: callerContext.user.userId,
+		email: callerContext.user.email,
+		resource: 'scheduled_jobs',
+	})
 	const schedule = normalizeJobSchedule(input.body.schedule)
 	const timezone = normalizeJobTimezone(input.body.timezone)
 	const now = new Date().toISOString()

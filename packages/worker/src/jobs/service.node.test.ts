@@ -1,5 +1,8 @@
 import { expect, test, vi, afterEach } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
@@ -278,7 +281,9 @@ vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 	})),
 }))
 
-function createDatabase() {
+function createDatabase(
+	initialRows: { users?: Array<Record<string, unknown>> } = {},
+) {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
 		['secret_buckets', []],
 		['secret_entries', []],
@@ -288,6 +293,7 @@ function createDatabase() {
 		['published_bundle_artifacts', []],
 		['archived_job_artifacts', []],
 		['jobs', []],
+		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
 	])
 
 	const clone = <T>(value: T): T => structuredClone(value)
@@ -342,6 +348,20 @@ function createDatabase() {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T = Record<string, unknown>>() {
+							if (query.includes('SELECT plan FROM users')) {
+								return selectOne(
+									'users',
+									(row) => row['email'] === params[0],
+								) as T | null
+							}
+							if (query.includes('SELECT COUNT(*) AS count FROM jobs')) {
+								return {
+									count: selectAll(
+										'jobs',
+										(row) => row['user_id'] === params[0],
+									).length,
+								} as T
+							}
 							if (query.includes('FROM secret_buckets')) {
 								return selectOne(
 									'secret_buckets',
@@ -1174,6 +1194,92 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		env,
 		userId: callerContext.user.userId,
 	})
+})
+
+function createPlanUserCallerContext(input: { userId: string; email: string }) {
+	return createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: input.userId,
+			email: input.email,
+			displayName: 'Plan User',
+		},
+		storageContext: {
+			sessionId: null,
+			appId: 'app-123',
+		},
+	}) as PersistedJobCallerContext
+}
+
+function buildEntitlementTestJobBody(index: number): JobCreateInput {
+	return {
+		name: `Quota job ${index}`,
+		code: 'export default async () => ({ ok: true })',
+		schedule: {
+			type: 'interval',
+			every: '15m',
+		},
+	}
+}
+
+test('createJob enforces the scheduled jobs entitlement for plan users', async () => {
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createDatabase({ users: [{ email, plan: 'personal' }] }),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createPlanUserCallerContext({ userId, email })
+	const limit = planLimits.personal.maxScheduledJobs
+	if (limit === null) throw new Error('Expected a numeric personal job limit.')
+
+	for (let index = 0; index < limit; index += 1) {
+		await createJob({
+			env,
+			callerContext,
+			body: buildEntitlementTestJobBody(index),
+		})
+	}
+
+	const error = await createJob({
+		env,
+		callerContext,
+		body: buildEntitlementTestJobBody(limit),
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected an EntitlementLimitError from createJob.')
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'scheduled_jobs',
+		plan: 'personal',
+		limit,
+		current: limit,
+	})
+	expect(error.message).toContain(`at most ${limit} scheduled jobs`)
+})
+
+test('createJob stays unlimited for users without a plan', async () => {
+	const email = 'legacy@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createDatabase({ users: [{ email, plan: null }] }),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createPlanUserCallerContext({ userId, email })
+	const limit = planLimits.personal.maxScheduledJobs
+	if (limit === null) throw new Error('Expected a numeric personal job limit.')
+
+	for (let index = 0; index < limit + 1; index += 1) {
+		await createJob({
+			env,
+			callerContext,
+			body: buildEntitlementTestJobBody(index),
+		})
+	}
 })
 
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {

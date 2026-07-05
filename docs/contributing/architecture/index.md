@@ -17,6 +17,9 @@ to become.
   MCP auth.
 - [Authorization](./authorization.md): role-based access control (RBAC), admin
   routes, and the `any`-access exception to per-user isolation.
+- [Entitlements](./entitlements.md): per-user plans (`users.plan`), per-plan
+  resource limits, and the shared `assertWithinEntitlement` enforcement helper
+  (NULL plan = legacy/unlimited).
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects.
 - [Primitives map](./primitives.yaml): machine-readable map of system primitives

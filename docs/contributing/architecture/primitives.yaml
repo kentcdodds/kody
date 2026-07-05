@@ -115,6 +115,18 @@ primitives:
     docs:
       - docs/contributing/architecture/authorization.md
 
+  - id: entitlements
+    group: auth
+    name: Plans & entitlements
+    summary:
+      Per-user plan column (users.plan) with per-plan resource limits and the
+      shared assertWithinEntitlement guard; NULL plan means legacy/unlimited and
+      disables enforcement entirely.
+    code:
+      - packages/worker/src/entitlements/
+    docs:
+      - docs/contributing/architecture/entitlements.md
+
   # --- User-facing assistant primitives -----------------------------------
   - id: capability-registry
     group: assistant

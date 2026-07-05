@@ -206,6 +206,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		email_attachments: [{ id: 'ea-1', message_id: 'em-1' }],
 		email_delivery_events: [{ id: 'ed-1', user_id: userAaa }],
 		email_sender_identities: [{ id: 'ei-1', user_id: userAaa }],
+		entitlement_daily_counters: [
+			{ user_id: userAaa, resource: 'email_sends_per_day', day: '2026-07-05' },
+			{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
+		],
 	})
 
 	const deletedKvKeys: Array<string> = []
@@ -260,6 +264,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.chat_threads).toEqual([])
 	expect(rows.email_attachments).toEqual([])
 	expect(rows.email_messages).toEqual([])
+	expect(rows.entitlement_daily_counters).toEqual([
+		{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
+	])
 	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
 	expect(result.deletedRowCounts.password_resets).toBe(2)
 	expect(result.deletedRowCounts.user_roles).toBe(1)
