@@ -16,6 +16,26 @@ import { type JobManagerDebugState } from './manager-client.ts'
 const userIdStorageKey = 'user-id'
 
 export class JobManagerBase extends DurableObject<Env> {
+	async purgeUser(input: { userId: string }) {
+		const userId = input.userId.trim()
+		if (!userId) {
+			throw new Error('Job manager requires a non-empty userId.')
+		}
+		await this.ctx.storage.deleteAlarm().catch(() => {
+			// Best effort: deleteAll below still removes persisted scheduler state.
+		})
+		await this.ctx.storage.deleteAll()
+		logJobSchedulerEvent({
+			event: 'purge_user',
+			userId,
+			reason: 'account_deletion',
+		})
+		return {
+			ok: true as const,
+			userId,
+		}
+	}
+
 	async syncAlarm(input: {
 		userId: string
 		source?: 'alarm' | 'rpc' | 'run_now'

@@ -235,6 +235,30 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 	}
 
+	async rpcPurgeUserSession(input: {
+		userId: string
+		kind: string
+		instanceId: string
+	}) {
+		const sessionKey = userScopedConnectorSessionKey(input)
+		if (!sessionKey) {
+			throw new Error('Remote connector session key was invalid.')
+		}
+		this.rejectPendingRequests('Remote connector session purged')
+		for (const socket of this.ctx.getWebSockets(connectorTag)) {
+			try {
+				socket.close(1000, 'account-deleted')
+			} catch {
+				// Ignore sockets that are already closing.
+			}
+		}
+		this.clearConnectionState()
+		await this.ctx.storage.deleteAll()
+		return {
+			ok: true as const,
+		}
+	}
+
 	private async restoreState() {
 		const stored =
 			await this.ctx.storage.get<RemoteConnectorSessionState>(stateStorageKey)
