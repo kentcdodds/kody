@@ -173,7 +173,11 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 			reindexSavedPackageVectors(env, {
 				baseUrl: 'https://kody.example.com',
 			}),
-		).resolves.toEqual({ upserted: 1, failed: 1 })
+		).resolves.toEqual({
+			upserted: 1,
+			failed: 1,
+			error: '1 saved package vector(s) failed to reindex',
+		})
 
 		expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [
 			'tasks manifest embed',

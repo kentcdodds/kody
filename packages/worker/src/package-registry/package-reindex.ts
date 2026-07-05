@@ -13,7 +13,7 @@ const upsertBatchSize = 16
 export async function reindexSavedPackageVectors(
 	env: Env,
 	input: { baseUrl: string },
-): Promise<{ upserted: number; failed?: number }> {
+): Promise<{ upserted: number; failed?: number; error?: string }> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index) {
 		throw new Error('CAPABILITY_VECTOR_INDEX binding is not configured')
@@ -74,5 +74,11 @@ export async function reindexSavedPackageVectors(
 		upserted += loaded.length
 	}
 
-	return failed > 0 ? { upserted, failed } : { upserted }
+	return failed > 0
+		? {
+				upserted,
+				failed,
+				error: `${failed} saved package vector(s) failed to reindex`,
+			}
+		: { upserted }
 }

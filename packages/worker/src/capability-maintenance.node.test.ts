@@ -98,7 +98,11 @@ test('capability reindex maintenance route attempts every vector kind before rep
 	mockModule.reindexCapabilityVectors.mockResolvedValue({ upserted: 3 })
 	mockModule.reindexMemoryVectors.mockRejectedValue(new Error('memory failed'))
 	mockModule.reindexJobVectors.mockResolvedValue({ upserted: 1 })
-	mockModule.reindexSavedPackageVectors.mockResolvedValue({ upserted: 4 })
+	mockModule.reindexSavedPackageVectors.mockResolvedValue({
+		upserted: 4,
+		failed: 1,
+		error: '1 saved package vector(s) failed to reindex',
+	})
 	const env = {
 		CAPABILITY_REINDEX_SECRET: 'secret',
 	} as Env
@@ -114,9 +118,13 @@ test('capability reindex maintenance route attempts every vector kind before rep
 		capabilities: { upserted: 3 },
 		memories: { upserted: 0, error: 'memory failed' },
 		jobs: { upserted: 1 },
-		packages: { upserted: 4 },
+		packages: {
+			upserted: 4,
+			failed: 1,
+			error: '1 saved package vector(s) failed to reindex',
+		},
 		error:
-			'Capability search vector reindex failed for memories: memories: memory failed',
+			'Capability search vector reindex failed for memories, packages: memories: memory failed; packages: 1 saved package vector(s) failed to reindex',
 	})
 	expect(mockModule.reindexCapabilityVectors).toHaveBeenCalledTimes(1)
 	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledTimes(1)
