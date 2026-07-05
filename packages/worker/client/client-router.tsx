@@ -16,6 +16,13 @@ import {
 	readRouterUrl,
 	readSsrRouterUrl,
 } from './router-location.tsx'
+import {
+	createScrollRestorationHistoryState,
+	ensureCurrentScrollRestorationKey,
+	type RouterHistoryAction,
+	type RouterNavigateOptions,
+	type RouterNavigationEventDetail,
+} from './router-scroll-state.ts'
 
 export { type RouteLoader } from './route-loader.ts'
 
@@ -33,6 +40,7 @@ type FormSubmitDetails = {
 	method: FormMethod
 	enctype: string
 	formData: FormData
+	preventScrollReset: boolean
 }
 
 type NavigationRunOptions = {
@@ -40,7 +48,8 @@ type NavigationRunOptions = {
 	skipPushState?: boolean
 	/** Form POST already dispatched `navigationstart`; loader owns `navigationend`. */
 	suppressStart?: boolean
-}
+	historyAction?: RouterHistoryAction
+} & RouterNavigateOptions
 
 const clientRouteOrigin = 'https://kody.local'
 const routeMatchers = new WeakMap<
@@ -74,8 +83,24 @@ function dispatchNavigationStart() {
 	routerEvents.dispatchEvent(new Event('navigationstart'))
 }
 
-function dispatchNavigationEnd() {
-	routerEvents.dispatchEvent(new Event('navigationend'))
+function createNavigationEventDetail(
+	location: string,
+	options?: NavigationRunOptions,
+): RouterNavigationEventDetail {
+	return {
+		location,
+		historyAction:
+			options?.historyAction ?? (options?.skipPushState ? 'replace' : 'push'),
+		preventScrollReset: options?.preventScrollReset ?? false,
+	}
+}
+
+function dispatchNavigationEnd(detail: RouterNavigationEventDetail) {
+	routerEvents.dispatchEvent(
+		new CustomEvent<RouterNavigationEventDetail>('navigationend', {
+			detail,
+		}),
+	)
 }
 
 function createRouteMatcher(routes: Record<string, JSX.Element>) {
@@ -157,7 +182,9 @@ function handleDocumentClick(event: MouseEvent) {
 
 	event.preventDefault()
 	const destination = new URL(anchor.href, window.location.href)
-	navigate(`${destination.pathname}${destination.search}${destination.hash}`)
+	navigate(`${destination.pathname}${destination.search}${destination.hash}`, {
+		preventScrollReset: anchor.hasAttribute('data-prevent-scroll-reset'),
+	})
 }
 
 type PrefetchableLink = {
@@ -336,6 +363,9 @@ function resolveFormSubmitDetails(
 		method,
 		enctype,
 		formData: createSubmitFormData(form, submitter),
+		preventScrollReset:
+			form.hasAttribute('data-prevent-scroll-reset') ||
+			submitter?.hasAttribute('data-prevent-scroll-reset') === true,
 	}
 }
 
@@ -377,13 +407,17 @@ function getCurrentPathWithSearchAndHash() {
 }
 
 function commitNavigation(nextPath: string) {
-	window.history.pushState({}, '', nextPath)
+	window.history.pushState(
+		createScrollRestorationHistoryState(window.history.state),
+		'',
+		nextPath,
+	)
 	notify()
 }
 
 function commitImmediateNavigation(
 	nextPath: string,
-	options?: Pick<NavigationRunOptions, 'suppressStart'>,
+	options?: NavigationRunOptions,
 ) {
 	cancelHoverIntent()
 	// A pending loader navigation must not commit after this immediate one
@@ -394,7 +428,7 @@ function commitImmediateNavigation(
 		dispatchNavigationStart()
 	}
 	commitNavigation(nextPath)
-	dispatchNavigationEnd()
+	dispatchNavigationEnd(createNavigationEventDetail(nextPath, options))
 }
 
 async function runNavigationWithLoader(
@@ -415,6 +449,7 @@ async function runNavigationWithLoader(
 	}
 
 	const nextPath = getPathWithSearchAndHashFromUrl(destination)
+	const navigationEndDetail = createNavigationEventDetail(nextPath, options)
 	const loader = matchRouteLoader(destination)
 	activeNavigationPath = nextPath
 
@@ -441,7 +476,10 @@ async function runNavigationWithLoader(
 				if (options?.skipPushState) {
 					notify()
 				}
-				dispatchNavigationEnd()
+				dispatchNavigationEnd({
+					...navigationEndDetail,
+					preventScrollReset: true,
+				})
 				window.location.assign(result.to)
 				return
 			}
@@ -462,7 +500,7 @@ async function runNavigationWithLoader(
 		} else {
 			commitNavigation(nextPath)
 		}
-		dispatchNavigationEnd()
+		dispatchNavigationEnd(navigationEndDetail)
 	} catch {
 		if (signal.aborted) return
 		// The loader failed, so no preloaded data exists for the committed
@@ -475,7 +513,7 @@ async function runNavigationWithLoader(
 		} else {
 			commitNavigation(nextPath)
 		}
-		dispatchNavigationEnd()
+		dispatchNavigationEnd(navigationEndDetail)
 	} finally {
 		// A superseding navigation owns the marker now; only clear our own.
 		if (navigationAbortController === abortController) {
@@ -486,13 +524,15 @@ async function runNavigationWithLoader(
 
 async function navigateWithRefreshForSamePath(
 	destination: URL,
-	options?: Pick<NavigationRunOptions, 'suppressStart'>,
+	options?: Pick<NavigationRunOptions, 'suppressStart' | 'preventScrollReset'>,
 ) {
 	if (
 		getPathWithSearchAndHashFromUrl(destination) ===
 		getCurrentPathWithSearchAndHash()
 	) {
 		await runNavigationWithLoader(new URL(window.location.href), {
+			historyAction: 'replace',
+			preventScrollReset: true,
 			skipPushState: true,
 			suppressStart: options?.suppressStart,
 		})
@@ -503,7 +543,9 @@ async function navigateWithRefreshForSamePath(
 
 async function submitFormThroughRouter(details: FormSubmitDetails) {
 	if (details.method === 'get') {
-		navigate(buildGetDestination(details.action, details.formData).toString())
+		navigate(buildGetDestination(details.action, details.formData).toString(), {
+			preventScrollReset: details.preventScrollReset,
+		})
 		return
 	}
 
@@ -554,7 +596,10 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		if (response.redirected) {
 			await navigateWithRefreshForSamePath(
 				new URL(response.url, window.location.href),
-				{ suppressStart: true },
+				{
+					preventScrollReset: details.preventScrollReset,
+					suppressStart: true,
+				},
 			)
 			return
 		}
@@ -562,6 +607,7 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		const location = response.headers.get('Location')
 		if (location) {
 			await navigateWithRefreshForSamePath(new URL(location, details.action), {
+				preventScrollReset: details.preventScrollReset,
 				suppressStart: true,
 			})
 			return
@@ -573,7 +619,12 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 	} catch (error: unknown) {
 		console.error('Router form submit failed', error)
 		if (signal.aborted) return
-		dispatchNavigationEnd()
+		dispatchNavigationEnd(
+			createNavigationEventDetail(getCurrentPathWithSearchAndHash(), {
+				historyAction: 'replace',
+				preventScrollReset: true,
+			}),
+		)
 	}
 }
 
@@ -604,10 +655,15 @@ function handlePopState() {
 		navigationAbortController = null
 		dispatchNavigationStart()
 		notify()
-		dispatchNavigationEnd()
+		dispatchNavigationEnd(
+			createNavigationEventDetail(getCurrentPathWithSearchAndHash(), {
+				historyAction: 'pop',
+			}),
+		)
 		return
 	}
 	void runNavigationWithLoader(new URL(window.location.href), {
+		historyAction: 'pop',
 		skipPushState: true,
 	})
 }
@@ -616,6 +672,7 @@ function ensureRouter() {
 	if (typeof document === 'undefined') return
 	if (routerInitialized) return
 	routerInitialized = true
+	ensureCurrentScrollRestorationKey()
 	lastNotifiedDocumentPath = getCurrentDocumentPath()
 	window.addEventListener('popstate', handlePopState)
 	document.addEventListener('click', handleDocumentClick)
@@ -651,10 +708,7 @@ export function getPathname(handle?: Pick<Handle, 'context'>) {
 	return window.location.pathname
 }
 
-async function navigateInternal(
-	to: string,
-	options?: Pick<NavigationRunOptions, 'suppressStart'>,
-) {
+async function navigateInternal(to: string, options?: NavigationRunOptions) {
 	const destination = new URL(to, window.location.href)
 	if (destination.origin !== window.location.origin) {
 		window.location.assign(destination.toString())
@@ -678,9 +732,9 @@ async function navigateInternal(
 	await runNavigationWithLoader(destination, options)
 }
 
-export function navigate(to: string): void {
+export function navigate(to: string, options?: RouterNavigateOptions): void {
 	if (typeof window === 'undefined') return
-	void navigateInternal(to).catch(() => {
+	void navigateInternal(to, options).catch(() => {
 		// Fire-and-forget: existing callers must not observe rejections.
 	})
 }

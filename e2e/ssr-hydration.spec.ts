@@ -16,6 +16,14 @@ const betaListing = {
 	tags: ['beta', 'ssr'],
 }
 
+const longReadme = `# Scroll restoration fixture
+
+## Intent
+
+${Array.from({ length: 24 }, (_, index) => {
+	return `This README paragraph ${index + 1} makes the detail route scrollable.`
+}).join('\n\n')}`
+
 test('SSR community HTML hydrates SPA navigation and client search', async ({
 	page,
 	request,
@@ -24,10 +32,12 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	await seedCommunityListingInE2eDatabase({
 		...alphaListing,
 		ownerEmail: primaryTestUser.email,
+		readmeContent: longReadme,
 	})
 	await seedCommunityListingInE2eDatabase({
 		...betaListing,
 		ownerEmail: primaryTestUser.email,
+		readmeContent: longReadme,
 	})
 
 	const htmlResponse = await request.get('/community')
@@ -48,24 +58,60 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	await page.goto('/community')
 	await expect(page.getByText(alphaListing.description)).toBeVisible()
 	await expect(page.getByText(betaListing.description)).toBeVisible()
+	await page.setViewportSize({ width: 900, height: 320 })
 
 	await page.evaluate(() => {
 		;(window as Window & { __e2eMarker?: boolean }).__e2eMarker = true
 	})
+
+	await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+	const communityScrollY = await page.evaluate(() => window.scrollY)
+	expect(communityScrollY).toBeGreaterThan(0)
 
 	await page.getByRole('link', { name: alphaListing.name }).click()
 	await expect(page).toHaveURL(
 		new RegExp(`/community/${alphaListing.listingId}$`),
 	)
 	await expect(page.getByText(alphaListing.description)).toBeVisible()
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
 	expect(
 		await page.evaluate(
 			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,
 		),
 	).toBe(true)
 
+	await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+	const detailScrollY = await page.evaluate(() => window.scrollY)
+	expect(detailScrollY).toBeGreaterThan(0)
+	await page.goBack()
+	await expect(page).toHaveURL(/\/community$/)
+	await expect
+		.poll(() =>
+			page.evaluate(
+				(expected) => Math.abs(window.scrollY - expected) <= 2,
+				communityScrollY,
+			),
+		)
+		.toBe(true)
+
+	await page
+		.getByRole('link', { name: betaListing.name })
+		.evaluate((link) => link.setAttribute('data-prevent-scroll-reset', ''))
+	await page.evaluate(() => window.scrollTo(0, 80))
+	const preservedScrollY = await page.evaluate(() => window.scrollY)
+	expect(preservedScrollY).toBeGreaterThan(0)
+	await page.getByRole('link', { name: betaListing.name }).click()
+	await expect(page).toHaveURL(
+		new RegExp(`/community/${betaListing.listingId}$`),
+	)
+	await expect(page.getByText(betaListing.description)).toBeVisible()
+	await expect
+		.poll(() => page.evaluate(() => window.scrollY))
+		.toBeGreaterThan(0)
+
 	await page.getByRole('link', { name: 'Community', exact: true }).click()
 	await expect(page).toHaveURL(/\/community$/)
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
 	expect(
 		await page.evaluate(
 			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,

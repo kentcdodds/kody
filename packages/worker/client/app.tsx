@@ -8,6 +8,7 @@ import {
 import { AppLoaderDataProvider } from './loader-data-context.tsx'
 import { NavigationProgress } from './navigation-progress.tsx'
 import { readRouterPathname, readRouterSearch } from './router-location.tsx'
+import { ScrollRestoration } from './scroll-restoration.tsx'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -152,6 +153,7 @@ export function App(handle: Handle<AppProps>) {
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
 				<NavigationProgress />
+				<ScrollRestoration />
 				<main
 					mix={css({
 						maxWidth: isWideLayout ? 'none' : '52rem',

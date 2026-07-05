@@ -135,6 +135,13 @@ A thin top-of-viewport **navigation progress bar** listens for `navigationstart`
 / `navigationend` on `routerEvents` and appears only when a navigation is still
 pending after a short delay.
 
+The app shell also mounts **scroll restoration** for SPA navigations. The router
+saves each history entry's window scroll position, restores it on back/forward,
+scrolls to hash targets when present, and otherwise scrolls new navigations to
+the top after the destination route commits. Preserve the current scroll for a
+specific intercepted link or form with `data-prevent-scroll-reset`, or for
+programmatic navigation with `navigate(to, { preventScrollReset: true })`.
+
 Full page navigations occur for:
 
 - Explicit browser reloads/new tab loads

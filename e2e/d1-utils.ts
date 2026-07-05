@@ -108,12 +108,14 @@ export async function seedCommunityListingInE2eDatabase(input: {
 	tags?: Array<string>
 	kodyId?: string
 	packageId?: string
+	readmeContent?: string | null
 	sourceId?: string
 }) {
 	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
 	const tagsJson = JSON.stringify(input.tags ?? [])
 	const kodyId = input.kodyId ?? input.listingId
 	const packageId = input.packageId ?? `pkg-${input.listingId}`
+	const readmeContent = input.readmeContent ?? null
 	const sourceId = input.sourceId ?? `src-${input.listingId}`
 	const sql = `
 INSERT INTO community_listings (
@@ -125,6 +127,7 @@ INSERT INTO community_listings (
 	name,
 	description,
 	tags_json,
+	readme_content,
 	license,
 	pinned_commit,
 	status
@@ -137,6 +140,7 @@ INSERT INTO community_listings (
 	${quoteSql(input.name)},
 	${quoteSql(input.description)},
 	${quoteSql(tagsJson)},
+	${readmeContent === null ? 'NULL' : quoteSql(readmeContent)},
 	'MIT',
 	'abc1234567890abcdef1234567890abcdef12345678',
 	'active'
@@ -146,6 +150,7 @@ ON CONFLICT(id) DO UPDATE SET
 	name = excluded.name,
 	description = excluded.description,
 	tags_json = excluded.tags_json,
+	readme_content = excluded.readme_content,
 	status = excluded.status,
 	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
