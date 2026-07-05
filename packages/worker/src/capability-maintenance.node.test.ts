@@ -123,6 +123,20 @@ test('capability reindex maintenance route attempts every vector kind before rep
 			failed: 1,
 			error: '1 saved package vector(s) failed to reindex',
 		},
+		failure: {
+			phase: 'reindex-capability-vectors',
+			failedPhases: [
+				{
+					phase: 'memories',
+					cause: 'memory failed',
+				},
+				{
+					phase: 'packages',
+					cause: '1 saved package vector(s) failed to reindex',
+					failed: 1,
+				},
+			],
+		},
 		error:
 			'Capability search vector reindex failed for memories, packages: memories: memory failed; packages: 1 saved package vector(s) failed to reindex',
 	})

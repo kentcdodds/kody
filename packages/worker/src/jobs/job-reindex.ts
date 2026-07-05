@@ -1,17 +1,18 @@
 import {
-	embedTextsForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#mcp/capabilities/capability-search.ts'
+import {
+	reindexVectorCandidates,
+	type VectorReindexResult,
+} from '#mcp/capabilities/reindex-batches.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { listJobs } from './service.ts'
 
-const upsertBatchSize = 16
-
 export async function reindexJobVectors(
 	env: Env,
-): Promise<{ upserted: number }> {
+): Promise<VectorReindexResult> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index) {
 		throw new Error('CAPABILITY_VECTOR_INDEX binding is not configured')
@@ -38,27 +39,19 @@ export async function reindexJobVectors(
 	).flat()
 	if (jobs.length === 0) return { upserted: 0 }
 
-	let upserted = 0
-	for (let offset = 0; offset < jobs.length; offset += upsertBatchSize) {
-		const batch = jobs.slice(offset, offset + upsertBatchSize)
-		const texts = batch.map(({ job }) =>
-			buildJobEmbedText({
+	return reindexVectorCandidates({
+		env,
+		index,
+		kind: 'job',
+		candidates: jobs.map(({ userId, job }) => ({
+			id: jobVectorId(job.id),
+			text: buildJobEmbedText({
 				name: job.name,
 				scheduleSummary: job.scheduleSummary,
 				sourceId: job.sourceId,
 				publishedCommit: job.publishedCommit,
 			}),
-		)
-		const vectors = await embedTextsForVectorize(env, texts)
-		await index.upsert(
-			batch.map(({ userId, job }, index_) => ({
-				id: jobVectorId(job.id),
-				values: vectors[index_]!,
-				metadata: { kind: 'job', userId },
-			})),
-		)
-		upserted += batch.length
-	}
-
-	return { upserted }
+			metadata: { kind: 'job', userId },
+		})),
+	})
 }

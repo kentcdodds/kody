@@ -1,6 +1,8 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
+	CAPABILITY_EMBEDDING_BATCH_SIZE,
 	CAPABILITY_EMBEDDING_DIMENSIONS,
+	CAPABILITY_EMBEDDING_MAX_INPUT_CHARS,
 	CAPABILITY_EMBEDDING_MODEL,
 	deterministicEmbedding,
 	embedTextsForVectorize,
@@ -115,6 +117,85 @@ test('embedding wrapper batches texts through Workers AI and AI Gateway', async 
 			{ gateway: { id: 'gateway-123' } },
 		],
 	])
+})
+
+test('embedding wrapper falls back to direct Workers AI when AI Gateway fails', async () => {
+	const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	const calls: Array<Array<unknown>> = []
+	const rows = [embeddingRow(1), embeddingRow(2)]
+	const env = aiEnv(
+		async (...args) => {
+			calls.push(args)
+			if (args[2]) throw new Error('gateway not found')
+			return { data: rows, shape: [2, CAPABILITY_EMBEDDING_DIMENSIONS] }
+		},
+		{ AI_GATEWAY_ID: 'stale-gateway' },
+	)
+
+	try {
+		await expect(
+			embedTextsForVectorize(env, ['alpha', 'beta']),
+		).resolves.toEqual(rows)
+		expect(calls).toEqual([
+			[
+				CAPABILITY_EMBEDDING_MODEL,
+				{ text: ['alpha', 'beta'], pooling: 'cls' },
+				{ gateway: { id: 'stale-gateway' } },
+			],
+			[
+				CAPABILITY_EMBEDDING_MODEL,
+				{ text: ['alpha', 'beta'], pooling: 'cls' },
+				undefined,
+			],
+		])
+		expect(consoleWarn).toHaveBeenCalledWith(
+			expect.stringContaining('retrying direct Workers AI'),
+		)
+	} finally {
+		consoleWarn.mockRestore()
+	}
+})
+
+test('embedding wrapper chunks large batches and truncates long inputs', async () => {
+	const calls: Array<Array<unknown>> = []
+	const inputCount = CAPABILITY_EMBEDDING_BATCH_SIZE + 1
+	const env = aiEnv(async (...args) => {
+		calls.push(args)
+		const payload = args[1] as { text: Array<string> }
+		return {
+			data: payload.text.map((_, index) =>
+				embeddingRow(calls.length * 10 + index),
+			),
+			shape: [payload.text.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+		}
+	})
+
+	await expect(
+		embedTextsForVectorize(env, [
+			'x'.repeat(CAPABILITY_EMBEDDING_MAX_INPUT_CHARS + 500),
+			...Array.from({ length: inputCount - 1 }, (_, index) => `text-${index}`),
+		]),
+	).resolves.toHaveLength(inputCount)
+
+	expect(calls).toHaveLength(2)
+	expect(
+		calls.map((args) => (args[1] as { text: Array<string> }).text.length),
+	).toEqual([CAPABILITY_EMBEDDING_BATCH_SIZE, 1])
+	expect(
+		(calls[0]![1] as { text: Array<string> }).text.every(
+			(text) => text.length <= CAPABILITY_EMBEDDING_MAX_INPUT_CHARS,
+		),
+	).toBe(true)
+})
+
+test('embedding wrapper reports direct Workers AI failures', async () => {
+	const env = aiEnv(async () => {
+		throw new Error('workers ai unavailable')
+	})
+
+	await expect(embedTextsForVectorize(env, ['alpha'])).rejects.toThrow(
+		/workers ai unavailable/,
+	)
 })
 
 test('embedding wrapper falls back deterministically outside production when AI is unavailable', async () => {
