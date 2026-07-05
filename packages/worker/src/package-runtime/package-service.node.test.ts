@@ -64,7 +64,6 @@ const {
 	PackageServiceInstance,
 	buildPackageServiceStorageId,
 	buildServiceRuntimeUsageEvent,
-	resolveServiceRuntimeUsageOutcome,
 } = await import('./package-service.ts')
 
 const serviceBinding = {
@@ -268,7 +267,7 @@ test('package service run finalization records service_runtime usage for success
 				binding: serviceBinding,
 				startedAt: '2026-07-05T12:00:00.000Z',
 				finishedAtMs: Date.parse('2026-07-05T12:00:03.000Z'),
-				nextStatus: 'stopped',
+				failed: false,
 			}),
 		).toEqual({
 			userId: 'user-123',
@@ -277,10 +276,123 @@ test('package service run finalization records service_runtime usage for success
 			durationMs: 3_000,
 			outcome: 'success',
 		})
-		expect(resolveServiceRuntimeUsageOutcome('stopped')).toBe('success')
-		expect(resolveServiceRuntimeUsageOutcome('error')).toBe('error')
+		// A run that threw while a stop was requested still counts as an error
+		// even though its terminal service status is 'stopped'.
+		expect(
+			buildServiceRuntimeUsageEvent({
+				binding: serviceBinding,
+				startedAt: '2026-07-05T12:00:00.000Z',
+				finishedAtMs: Date.parse('2026-07-05T12:00:03.000Z'),
+				failed: true,
+			}),
+		).toMatchObject({ outcome: 'error' })
+
+		// Crash while stop was requested: terminal status is 'stopped' but the
+		// metered outcome must be 'error'.
+		resetMocks()
+		setupSavedPackage('bounded')
+		const stoppingEnv = { APP_DB: {} } as Env
+		const stopping = await createPackageServiceInstance(stoppingEnv)
+		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+			await stopping.instance.fetch(
+				new Request('https://package-service.invalid/service/stop', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ binding: serviceBinding }),
+				}),
+			)
+			vi.setSystemTime(new Date('2026-07-05T12:02:04.000Z'))
+			throw new Error('crashed while stopping')
+		})
+		vi.setSystemTime(new Date('2026-07-05T12:02:00.000Z'))
+		const stoppingStart = await stopping.instance.fetch(
+			new Request('https://package-service.invalid/service/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ binding: serviceBinding }),
+			}),
+		)
+		expect(stoppingStart.status).toBe(200)
+		await flushWaitUntilTasks(stopping.waitUntilTasks)
+		const stoppingUsageCalls = recordUsageSpy.mock.calls.filter(
+			([, event]) => event.eventType === 'service_runtime',
+		)
+		expect(stoppingUsageCalls).toHaveLength(1)
+		expect(stoppingUsageCalls[0]?.[1]).toMatchObject({
+			userId: 'user-123',
+			entityId: 'package-1:realtime-supervisor',
+			durationMs: 4_000,
+			outcome: 'error',
+		})
 	} finally {
 		recordUsageSpy.mockRestore()
 		vi.useRealTimers()
+	}
+})
+
+test('durable object restore meters an eviction-orphaned in-flight run without a duration', async () => {
+	resetMocks()
+	const restoreUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const restoreEnv = { APP_DB: {} } as Env
+	const restored = createPackageServiceState()
+	restored.persistedEntries.set('package-service-state', {
+		binding: serviceBinding,
+		autoStart: false,
+		mode: 'persistent',
+		timeoutMs: null,
+		stopRequested: false,
+		currentRunId: 'run-evicted',
+		nextAlarmAt: null,
+		nextAlarmSource: null,
+		lastStartedAt: '2026-07-05T11:00:00.000Z',
+		lastStoppedAt: null,
+		status: 'running',
+		lastError: null,
+		lastResult: null,
+		lastRunFinishedAt: null,
+	})
+
+	try {
+		const instance = new PackageServiceInstance(restored.state, restoreEnv)
+		await waitForRestoreState(restored.state)
+		await flushWaitUntilTasks(restored.waitUntilTasks)
+
+		expect(restoreUsageSpy).toHaveBeenCalledTimes(1)
+		expect(restoreUsageSpy).toHaveBeenCalledWith(restoreEnv, {
+			userId: 'user-123',
+			eventType: 'service_runtime',
+			entityId: 'package-1:realtime-supervisor',
+			outcome: 'success',
+		})
+		expect(restoreUsageSpy.mock.calls[0]?.[1]?.durationMs).toBeUndefined()
+		expect(instance).toBeTruthy()
+
+		// An idle restore (no in-flight run) records nothing.
+		restoreUsageSpy.mockClear()
+		const idle = createPackageServiceState()
+		idle.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: false,
+			mode: 'bounded',
+			timeoutMs: null,
+			stopRequested: false,
+			currentRunId: null,
+			nextAlarmAt: null,
+			nextAlarmSource: null,
+			lastStartedAt: '2026-07-05T11:00:00.000Z',
+			lastStoppedAt: '2026-07-05T11:05:00.000Z',
+			status: 'stopped',
+			lastError: null,
+			lastResult: null,
+			lastRunFinishedAt: '2026-07-05T11:05:00.000Z',
+		})
+		new PackageServiceInstance(idle.state, restoreEnv)
+		await waitForRestoreState(idle.state)
+		await flushWaitUntilTasks(idle.waitUntilTasks)
+		expect(restoreUsageSpy).not.toHaveBeenCalled()
+	} finally {
+		restoreUsageSpy.mockRestore()
 	}
 })
