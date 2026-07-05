@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
@@ -271,9 +272,17 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		// Consume on every render so same-path preload-then-commit refreshes
 		// (unchanged search) still apply fresh loader data.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		// A same-path refresh whose loader failed leaves no preload and no
+		// search change; the stale marker forces the fallback refetch.
+		const needsStaleRefresh =
+			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		if (appliedRouteData) {
 			lastSearch = currentSearch
-		} else if (status === 'idle' || currentSearch !== lastSearch) {
+		} else if (
+			status === 'idle' ||
+			currentSearch !== lastSearch ||
+			needsStaleRefresh
+		) {
 			lastSearch = currentSearch
 			resetCompleted = false
 			const queryError = readQueryError()

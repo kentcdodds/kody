@@ -6,7 +6,10 @@ import {
 	prefetchRouteOnIntent,
 	takePrefetchedRouteResult,
 } from './intent-prefetch.ts'
-import { setPreloadedNavigationData } from './navigation-data.ts'
+import {
+	markNavigationDataStale,
+	setPreloadedNavigationData,
+} from './navigation-data.ts'
 import { isRouteLoaderRedirect, type RouteLoader } from './route-loader.ts'
 import {
 	readRouterPathname,
@@ -449,6 +452,11 @@ async function runNavigationWithLoader(
 		dispatchNavigationEnd()
 	} catch {
 		if (signal.aborted) return
+		// The loader failed, so no preloaded data exists for the committed
+		// destination. Same-path refreshes (form POST redirects back to the
+		// current URL) have no href change to trigger a route's fallback
+		// refetch, so mark the destination stale for routes to consume.
+		markNavigationDataStale(nextPath)
 		if (options?.skipPushState) {
 			notify()
 		} else {

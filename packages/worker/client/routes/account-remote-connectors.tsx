@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type AccountStatus,
 	readJson,
@@ -586,11 +587,17 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		// A same-path refresh whose loader failed leaves no preload and no
+		// href change; the stale marker forces the fallback refetch.
+		const needsStaleRefresh =
+			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const isRefreshingForLocationChange =
 			status !== 'loading' && currentHref !== lastLoadedHref
 		if (
 			!appliedRouteData &&
-			(status === 'loading' || isRefreshingForLocationChange) &&
+			(status === 'loading' ||
+				isRefreshingForLocationChange ||
+				needsStaleRefresh) &&
 			typeof document !== 'undefined'
 		) {
 			handle.queueTask(loadRemoteConnectors)

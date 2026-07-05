@@ -112,10 +112,12 @@ return a `RouteLoaderRedirect` (via `routeLoaderRedirect`) to abort the SPA
 navigation with a full-document redirect (for example, `401` → login). The
 router performs the redirect, never the loader itself, so speculative loader
 runs stay side-effect free. Loader errors still commit the navigation so the
-destination route can fall back to its own fetch. Hash-only changes commit
-immediately without a loader. Back/forward (`popstate`) and same-path refreshes
-after form POST also run loaders before notifying, keeping the previous UI
-visible until data is ready.
+destination route can fall back to its own fetch; the router marks the
+destination stale (`markNavigationDataStale`) so same-path refreshes — where no
+href change would otherwise trigger a refetch — still reload. Hash-only changes
+commit immediately without a loader. Back/forward (`popstate`) and same-path
+refreshes after form POST also run loaders before notifying, keeping the
+previous UI visible until data is ready.
 
 ### Intent prefetch
 

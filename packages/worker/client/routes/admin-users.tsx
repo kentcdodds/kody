@@ -3,6 +3,7 @@ import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -251,8 +252,14 @@ export function AdminUsersRoute(handle: Handle) {
 		const isMutating = actionState !== 'idle'
 
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		// A same-path refresh whose loader failed leaves no preload and no
+		// href change; the stale marker forces the fallback refetch.
+		const needsStaleRefresh =
+			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad =
-			(status === 'loading' || currentHref !== lastLoadedHref) &&
+			(status === 'loading' ||
+				currentHref !== lastLoadedHref ||
+				needsStaleRefresh) &&
 			currentHref !== lastFailedHref &&
 			loadingForHref !== currentHref
 		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {

@@ -36,7 +36,33 @@ export function tryConsumePreloadedLoaderData<K extends keyof AppLoaderData>(
 	return value
 }
 
+let staleNavigationHref: string | null = null
+
+/**
+ * Records that a navigation to `href` committed without preloaded data
+ * because its route loader failed. Routes whose href-based freshness checks
+ * cannot detect same-path refreshes (form POST redirects back to the current
+ * URL) consume this marker to force a fallback refetch instead of silently
+ * rendering stale, pre-mutation data.
+ */
+export function markNavigationDataStale(href: string): void {
+	staleNavigationHref = normalizeNavigationHref(href)
+}
+
+/**
+ * One-shot: returns whether `href` was marked stale, clearing the marker
+ * either way. A mismatched href means the user navigated somewhere else,
+ * where href-change freshness checks already force a refetch.
+ */
+export function consumeStaleNavigationData(href: string): boolean {
+	if (staleNavigationHref === null) return false
+	const isStale = staleNavigationHref === normalizeNavigationHref(href)
+	staleNavigationHref = null
+	return isStale
+}
+
 /** Test helper — clears the single-slot preloaded navigation store. */
 export function clearPreloadedNavigationData() {
 	preloadedSlot = null
+	staleNavigationHref = null
 }

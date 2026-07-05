@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import { type AppLoaderData } from '#app/loader-data.ts'
 import {
 	clearPreloadedNavigationData,
+	consumeStaleNavigationData,
+	markNavigationDataStale,
 	setPreloadedNavigationData,
 	tryConsumePreloadedLoaderData,
 } from './navigation-data.ts'
@@ -125,4 +127,27 @@ test('tryConsumePreloadedLoaderData leaves unrelated keys until consumed', () =>
 	expect(
 		tryConsumePreloadedLoaderData('adminUsers', '/account'),
 	).toBeUndefined()
+})
+
+test('consumeStaleNavigationData is one-shot for the marked href', () => {
+	clearPreloadedNavigationData()
+	markNavigationDataStale('/account')
+
+	expect(consumeStaleNavigationData('/account')).toBe(true)
+	expect(consumeStaleNavigationData('/account')).toBe(false)
+})
+
+test('consumeStaleNavigationData clears the marker on href mismatch', () => {
+	clearPreloadedNavigationData()
+	markNavigationDataStale('/account')
+
+	expect(consumeStaleNavigationData('/account/secrets')).toBe(false)
+	expect(consumeStaleNavigationData('/account')).toBe(false)
+})
+
+test('consumeStaleNavigationData normalizes hrefs before matching', () => {
+	clearPreloadedNavigationData()
+	markNavigationDataStale('https://kody.local/account?q=1')
+
+	expect(consumeStaleNavigationData('/account?q=1')).toBe(true)
 })

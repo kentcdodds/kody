@@ -11,6 +11,7 @@ import {
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -1104,6 +1105,10 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		const currentDataKey = getDataRefreshKey(currentHref)
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		// A same-path refresh whose loader failed leaves no preload and no
+		// data-key change; the stale marker forces the fallback refetch.
+		const needsStaleRefresh =
+			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const isRefreshingForLocationChange =
 			status !== 'loading' &&
 			currentDataKey !== lastLoadedDataKey &&
@@ -1111,7 +1116,9 @@ export function AccountSecretsRoute(handle: Handle) {
 		const isLoadingCurrentLocation = loadingDataKey === currentDataKey
 		if (
 			!appliedRouteData &&
-			(status === 'loading' || isRefreshingForLocationChange) &&
+			(status === 'loading' ||
+				isRefreshingForLocationChange ||
+				needsStaleRefresh) &&
 			!isLoadingCurrentLocation &&
 			typeof document !== 'undefined'
 		) {
