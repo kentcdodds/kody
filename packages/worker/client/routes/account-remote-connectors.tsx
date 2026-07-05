@@ -13,6 +13,7 @@ import {
 } from '#client/route-loader.ts'
 import {
 	AccountManagementHeader,
+	AccountManagementMessage,
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
 import {
@@ -636,15 +637,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<p
-						role="alert"
-						mix={css({
-							color: status === 'error' ? colors.error : colors.text,
-							margin: 0,
-						})}
+					<AccountManagementMessage
+						tone={status === 'error' ? 'error' : 'info'}
 					>
 						{message}
-					</p>
+					</AccountManagementMessage>
 				) : null}
 
 				{status === 'ready' ? (

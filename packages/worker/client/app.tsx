@@ -128,6 +128,11 @@ export function App(handle: Handle<AppProps>) {
 		cursor: 'pointer',
 	}
 
+	const compactNavCss = {
+		gap: spacing.sm,
+		marginBottom: spacing.lg,
+	}
+
 	return () => {
 		currentPathname = readRouterPathname(handle)
 		const sessionEmail = session?.email ?? ''
@@ -173,14 +178,8 @@ export function App(handle: Handle<AppProps>) {
 							alignItems: 'center',
 							gap: spacing.md,
 							flexWrap: 'wrap',
-							[mq.tablet]: {
-								gap: spacing.sm,
-								marginBottom: spacing.lg,
-							},
-							[mq.mobile]: {
-								gap: spacing.sm,
-								marginBottom: spacing.lg,
-							},
+							[mq.tablet]: compactNavCss,
+							[mq.mobile]: compactNavCss,
 						})}
 					>
 						<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
