@@ -9,6 +9,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
 - [Setup](./setup.md), [code style](./code-style.md),
   [testing](./testing-principles.md)
+- [Cursor Cloud Agent notes](./cloud-agents.md)
 - [Remix skills](./remix.md), [frames](./frames.md)
 - [Packages and manifests](./packages-and-manifests.md)
 - [Community packages](./community-packages.md)
