@@ -34,7 +34,7 @@ function decodeJwtPart(value: string) {
 	) as Record<string, unknown>
 }
 
-test('jwt_sign resolves keys, enforces secret approval, and never leaks key material', async () => {
+test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks key material', async () => {
 	const { privateKey, publicKey } = createKeyPair()
 	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
 	const callerContext = createMcpCallerContext({
@@ -44,8 +44,8 @@ test('jwt_sign resolves keys, enforces secret approval, and never leaks key mate
 	const env = {} as Env
 	const approvalMessage = createCapabilitySecretAccessDeniedMessage(
 		'serviceAccountKey',
-		'jwt_sign',
-		'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=jwt_sign',
+		'secret_jwt_sign',
+		'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=secret_jwt_sign',
 	)
 
 	try {
@@ -54,13 +54,13 @@ test('jwt_sign resolves keys, enforces secret approval, and never leaks key mate
 			value: privateKey,
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: ['jwt_sign'],
+			allowedCapabilities: ['secret_jwt_sign'],
 			allowedPackages: [],
 		})
 
 		const signed = await jwtSignCapability.handler(
 			{
-				privateKeySecretName: 'serviceAccountKey',
+				private_key_secret_name: 'serviceAccountKey',
 				algorithm: 'RS256',
 				header: { kid: 'key-1' },
 				claims: {
@@ -107,13 +107,13 @@ test('jwt_sign resolves keys, enforces secret approval, and never leaks key mate
 			}),
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: ['jwt_sign'],
+			allowedCapabilities: ['secret_jwt_sign'],
 			allowedPackages: [],
 		})
 		const jsonSigned = await jwtSignCapability.handler(
 			{
-				privateKeySecretName: 'serviceAccountJson',
-				privateKeyJsonField: 'private_key',
+				private_key_secret_name: 'serviceAccountJson',
+				private_key_json_field: 'private_key',
 				algorithm: 'RS256',
 				claims: { iss: 'service@example.com' },
 			},
@@ -132,7 +132,7 @@ test('jwt_sign resolves keys, enforces secret approval, and never leaks key mate
 		await expect(
 			jwtSignCapability.handler(
 				{
-					privateKeySecretName: 'serviceAccountKey',
+					private_key_secret_name: 'serviceAccountKey',
 					algorithm: 'RS256',
 					claims: { iss: 'service@example.com' },
 				},
@@ -151,7 +151,7 @@ test('jwt_sign resolves keys, enforces secret approval, and never leaks key mate
 		await expect(
 			jwtSignCapability.handler(
 				{
-					privateKeySecretName: 'serviceAccountKey',
+					private_key_secret_name: 'serviceAccountKey',
 					algorithm: 'RS256',
 					claims: { iss: 'service@example.com' },
 				},
@@ -170,7 +170,7 @@ test('jwt_sign resolves keys, enforces secret approval, and never leaks key mate
 		await expect(
 			jwtSignCapability.handler(
 				{
-					privateKeySecretName: 'missingKey',
+					private_key_secret_name: 'missingKey',
 					algorithm: 'RS256',
 					claims: { iss: 'service@example.com' },
 				},

@@ -484,7 +484,7 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 			ok: false,
 			error: {
 				message:
-					'Shade workflow event failed: Tool "home_default_bond_shade_set_position" not found',
+					'Shade workflow event failed: Tool "codemode.remote[\\"home/default\\"].bond_shade_set_position" not found',
 			},
 		},
 	})
@@ -503,11 +503,15 @@ test('DynamicCallableWorkflowBase marks package export error responses as workfl
 			},
 			{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 		),
-	).rejects.toThrow('home_default_bond_shade_set_position')
+	).rejects.toThrow(
+		'codemode.remote[\\"home/default\\"].bond_shade_set_position',
+	)
 	expect(db.workflowRuns.get(created.id)).toMatchObject({
 		status: 'errored',
 		completed_at: expect.any(String),
-		last_error: expect.stringContaining('home_default_bond_shade_set_position'),
+		last_error: expect.stringContaining(
+			'codemode.remote[\\"home/default\\"].bond_shade_set_position',
+		),
 	})
 })
 

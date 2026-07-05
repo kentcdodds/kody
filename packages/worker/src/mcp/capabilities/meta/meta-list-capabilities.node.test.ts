@@ -113,13 +113,14 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 		),
 	).toBe(true)
 	const pressKeyCapability = remoteResult.capabilities.find(
-		(capability) => capability.name === 'roku_default_roku_press_key',
+		(capability) => capability.name === 'remote:roku/default:roku_press_key',
 	)
 	const listAppsCapability = remoteResult.capabilities.find(
-		(capability) => capability.name === 'roku_default_roku_list_apps',
+		(capability) => capability.name === 'remote:roku/default:roku_list_apps',
 	)
 	const activeAppCapability = remoteResult.capabilities.find(
-		(capability) => capability.name === 'roku_default_roku_get_active_app',
+		(capability) =>
+			capability.name === 'remote:roku/default:roku_get_active_app',
 	)
 	expect(pressKeyCapability).toMatchObject({
 		domain: 'remote:roku:default',
@@ -128,9 +129,10 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 			kind: 'roku',
 			instanceId: 'default',
 			connectorId: 'default',
+			connectorName: 'roku/default',
 			mcpToolName: 'roku_press_key',
+			toolName: 'roku_press_key',
 		},
-		aliases: [],
 		requiredInputFields: ['deviceId', 'key'],
 		inputTypeDefinition: expect.any(String),
 	})
@@ -209,7 +211,7 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 	).toBe(true)
 	expect(
 		remoteOnly.capabilities.some(
-			(capability) => capability.name === 'roku_default_roku_press_key',
+			(capability) => capability.name === 'remote:roku/default:roku_press_key',
 		),
 	).toBe(true)
 })

@@ -287,6 +287,14 @@ function buildRecommendedNextStep(
 		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'capability') {
+		if (topMatch.source === 'remote-connector' && topMatch.remoteConnector) {
+			const connectorName = topMatch.remoteConnector.connectorName
+			const toolName = topMatch.remoteConnector.toolName
+			const accessor = /^[A-Za-z_$][\w$]*$/.test(toolName)
+				? `codemode.remote[${JSON.stringify(connectorName)}].${toolName}`
+				: `codemode.remote[${JSON.stringify(connectorName)}][${JSON.stringify(toolName)}]`
+			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
+		}
 		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`codemode.${topMatch.name}(args)\`.`
 	}
 	return undefined
@@ -1387,7 +1395,7 @@ exact \`execute\` module snippet plus TypeScript call-shape definitions by
 default.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
-For package creation or material updates, load \`kody_official_guide\` with
+For package creation or material updates, load \`coding_guide_get\` with
 \`guide: "package_authoring"\` and maintain a root README.md Intent section.
 Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
 Secrets: results expose metadata; use \`codemode.secret_list\` during execute,
@@ -1397,7 +1405,7 @@ Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Integrati
 use \`codemode.integration_get\` / \`codemode.integration_list\`.
 
 Integration-backed packages, package apps, and workflows: search for the provider
-and \`kody_official_guide\`, inspect exact \`integration\` or \`secret\` entities,
+and \`coding_guide_get\`, inspect exact \`integration\` or \`secret\` entities,
 load \`guide: "integration_bootstrap"\`, and continue only after a cheap
 authenticated \`execute\` smoke test succeeds. If setup is missing, use the guide
 that matches the auth path: \`oauth\`, \`connect_secret\`, or
@@ -1411,7 +1419,7 @@ Example arguments:
 - \`{ "query": "saved github automation package", "limit": 10 }\`
 - \`{ "query": "preferred org value or saved integration", "limit": 10 }\`
 - \`{ "query": "package with worker app ui", "limit": 10 }\`
-- \`{ "entity": "kody_official_guide:capability" }\`
+- \`{ "entity": "coding_guide_get:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:integration" }\`
 - To open a saved package app: \`open_generated_ui({ "kody_id": "<kody-id>" })\`

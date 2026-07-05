@@ -45,7 +45,6 @@ test('offline capability search ranks lexical matches and returns structured det
 			idempotent: true,
 			destructive: false,
 			source: 'builtin',
-			aliases: [],
 			inputFields: ['guide'],
 			requiredInputFields: ['guide'],
 			outputFields: ['title', 'body'],

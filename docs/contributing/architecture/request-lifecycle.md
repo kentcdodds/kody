@@ -76,7 +76,7 @@ there is no separate context-specific Workflow class.
   queues a saved-package export invocation. Package runtime contexts resolve
   `packageId` from `packageContext`; ad hoc contexts must pass it explicitly.
 - The hub verifies saved-package ownership before queuing export-backed
-  workflows and records recent workflow rows for `workflow_list`.
+  workflows and records recent workflow rows for `workflow_run_list`.
 
 ## App server flow
 

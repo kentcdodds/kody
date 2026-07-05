@@ -106,8 +106,16 @@ Source: `packages/shared/src/chat.ts`,
 ## Capability naming (search / execute)
 
 - The Worker uses distinct **domain ids** (for example
-  `remote:<kind>:<instance>`) and **prefixed capability names** so nothing
-  collides in `search` / `execute`.
+  `remote:<kind>:<instance>`) and remote capability **entity ids** of the form
+  `remote:<kind>/<instance>:<tool>`.
+- In execute/codemode code, remote connector tools are visibly separate from
+  built-ins: use `codemode.remote["<kind>/<instance>"].<tool>(input)`. Built-ins
+  remain flat (`codemode.value_get(...)`), but remote tools are never exposed as
+  flat `codemode.<kind>_<instance>_<tool>` functions.
+- Search capability detail returns the exact remote call snippet. If a connector
+  is missing, disconnected, or exposes a different tool list, the
+  `codemode.remote` Proxy throws an error listing available connectors or
+  capabilities.
 
 ## Connector checklist
 

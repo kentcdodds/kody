@@ -19,17 +19,17 @@ import {
 const jwtClaimsSchema = z.record(z.string(), z.unknown())
 
 const jwtSignInputSchema = z.object({
-	privateKeySecretName: z
+	private_key_secret_name: z
 		.string()
 		.min(1)
 		.describe('Name of the saved secret containing a PEM key or JSON object.'),
-	privateKeySecretScope: z
+	private_key_secret_scope: z
 		.enum(secretScopeValues)
 		.optional()
 		.describe(
 			'Optional secret scope. When omitted, Kody checks accessible scopes in precedence order.',
 		),
-	privateKeyJsonField: z
+	private_key_json_field: z
 		.string()
 		.min(1)
 		.optional()
@@ -49,7 +49,7 @@ const jwtSignInputSchema = z.object({
 export const jwtSignCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
-		name: 'jwt_sign',
+		name: 'secret_jwt_sign',
 		description:
 			'Sign a JWT with a private key stored in a saved secret without revealing the private key. This generic primitive only signs caller-provided header and claims; package or execute code should perform any OAuth token exchange separately.',
 		keywords: [
@@ -78,25 +78,27 @@ export const jwtSignCapability = defineDomainCapability(
 			const resolved = await resolveSecret({
 				env: ctx.env,
 				userId: user.userId,
-				name: args.privateKeySecretName,
-				scope: args.privateKeySecretScope,
+				name: args.private_key_secret_name,
+				scope: args.private_key_secret_scope,
 				storageContext,
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
-				throw new Error(createMissingSecretMessage(args.privateKeySecretName))
+				throw new Error(
+					createMissingSecretMessage(args.private_key_secret_name),
+				)
 			}
-			if (!resolved.allowedCapabilities.includes('jwt_sign')) {
+			if (!resolved.allowedCapabilities.includes('secret_jwt_sign')) {
 				const approvalUrl = buildSecretCapabilityApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
-					name: args.privateKeySecretName,
-					scope: resolved.scope ?? args.privateKeySecretScope ?? 'user',
-					capabilityName: 'jwt_sign',
+					name: args.private_key_secret_name,
+					scope: resolved.scope ?? args.private_key_secret_scope ?? 'user',
+					capabilityName: 'secret_jwt_sign',
 					storageContext,
 				})
 				throw new Error(
 					createCapabilitySecretAccessDeniedMessage(
-						args.privateKeySecretName,
-						'jwt_sign',
+						args.private_key_secret_name,
+						'secret_jwt_sign',
 						approvalUrl,
 					),
 				)
@@ -104,7 +106,7 @@ export const jwtSignCapability = defineDomainCapability(
 
 			const privateKeyPem = extractPrivateKeyPem({
 				secretValue: resolved.value,
-				jsonField: args.privateKeyJsonField,
+				jsonField: args.private_key_json_field,
 			})
 
 			return {

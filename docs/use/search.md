@@ -37,7 +37,7 @@ ready-to-run **execute** snippet plus `inputTypeDefinition` /
 
 Examples:
 
-- `kody_official_guide:capability`
+- `coding_guide_get:capability`
 - `user:preferred_org:value`
 - `github:integration`
 - `my-package:package`
@@ -57,16 +57,18 @@ Capability detail shows the exact runtime pattern for **execute**:
 import { codemode } from 'kody:runtime'
 
 export default async function main(input = {}) {
-	return await codemode.kody_official_guide(input)
+	return await codemode.coding_guide_get(input)
 }
 ```
 
-Use the capability id returned by **search** as the `codemode` method name, and
-pass an object matching the displayed input type. Valid JavaScript identifier
-ids use dot notation such as `codemode.kody_official_guide(input)`. If a
-capability id is not a valid JavaScript identifier, use bracket notation such as
-`codemode["capability-id"](input)`. Capability detail emits the exact form to
-copy. Use `{}` when the capability has no required fields.
+Use the call shape emitted by capability detail and pass an object matching the
+displayed input type. Built-in capabilities stay flat on `codemode`: valid
+JavaScript identifier ids use dot notation such as
+`codemode.coding_guide_get(input)`, and non-identifier built-in ids use bracket
+notation such as `codemode["capability-id"](input)`. Remote connector
+capabilities are namespaced by connector:
+`codemode.remote["kind/instance"].capability_name(input)`. Use `{}` when the
+capability has no required fields.
 
 ## When results look thin
 

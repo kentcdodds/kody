@@ -8,8 +8,10 @@ import {
 	getRemoteConnectorStatus,
 } from '#worker/remote-connector/status.ts'
 import {
-	remoteConnectorCapabilityPrefix,
+	remoteConnectorCapabilityId,
+	remoteConnectorCodemodeName,
 	remoteConnectorDomainId,
+	remoteConnectorToolName,
 } from '#worker/remote-connector/remote-domain-id.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
@@ -24,14 +26,6 @@ type RemoteToolCapabilityBinding = {
 export type SynthesizedRemoteConnectorDomain = {
 	domain: DomainSpec
 	bindings: Record<string, RemoteToolCapabilityBinding>
-}
-
-function createCapabilityNameFromPrefix(prefix: string, toolName: string) {
-	const safeTool = toolName
-		.replaceAll(/[^\w]+/g, '_')
-		.replaceAll(/_+/g, '_')
-		.replace(/^_|_$/g, '')
-	return `${prefix}_${safeTool}`
 }
 
 function buildKeywords(
@@ -68,21 +62,15 @@ function createCapabilityFromTool(input: {
 	tool: RemoteConnectorSnapshot['tools'][number]
 	ref: RemoteConnectorRef
 	domainId: CapabilityDomain
-	capabilityPrefix: string
 	domainKeywordRoots: ReadonlyArray<string>
 }): { capability: Capability; binding: RemoteToolCapabilityBinding } {
-	const {
-		snapshot,
-		tool,
+	const { snapshot, tool, ref, domainId, domainKeywordRoots } = input
+	const capabilityName = remoteConnectorCapabilityId({
 		ref,
-		domainId,
-		capabilityPrefix,
-		domainKeywordRoots,
-	} = input
-	const capabilityName = createCapabilityNameFromPrefix(
-		capabilityPrefix,
-		tool.name,
-	)
+		toolName: tool.name,
+	})
+	const connectorName = remoteConnectorCodemodeName(ref)
+	const cleanToolName = remoteConnectorToolName(tool.name)
 	const binding: RemoteToolCapabilityBinding = {
 		capabilityName,
 		kind: (snapshot.connectorKind ?? ref.kind).trim().toLowerCase(),
@@ -118,7 +106,9 @@ function createCapabilityFromTool(input: {
 			kind: binding.kind,
 			instanceId: binding.instanceId,
 			connectorId: snapshot.connectorId,
+			connectorName,
 			mcpToolName: binding.mcpToolName,
+			toolName: cleanToolName,
 		},
 		inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
 		...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
@@ -191,7 +181,6 @@ export async function synthesizeRemoteToolDomain(input: {
 	if (!snapshot || snapshot.tools.length === 0) return null
 
 	const domainId = remoteConnectorDomainId(ref)
-	const capabilityPrefix = remoteConnectorCapabilityPrefix(ref)
 	const k = ref.kind.trim().toLowerCase()
 	const domainIdForCapabilities: CapabilityDomain = domainId
 
@@ -215,7 +204,6 @@ export async function synthesizeRemoteToolDomain(input: {
 			tool,
 			ref,
 			domainId: domainIdForCapabilities,
-			capabilityPrefix,
 			domainKeywordRoots,
 		})
 		capabilities.push(capability)

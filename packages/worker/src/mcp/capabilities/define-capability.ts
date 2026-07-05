@@ -32,7 +32,6 @@ export function defineCapability<
 	const outputSchema = definition.outputSchema
 		? toJsonSchema(definition.outputSchema)
 		: undefined
-	const aliases = normalizeCapabilityAliases(definition.aliases)
 	const source = definition.source ?? 'builtin'
 
 	return {
@@ -49,7 +48,6 @@ export function defineCapability<
 		...(definition.requiredPermission
 			? { requiredPermission: definition.requiredPermission }
 			: {}),
-		aliases,
 		source,
 		...(definition.remoteConnector
 			? { remoteConnector: definition.remoteConnector }
@@ -161,15 +159,6 @@ function mergeKeywords(
 	tags: Array<string> | undefined,
 ) {
 	return Array.from(new Set([...(keywords ?? []), ...(tags ?? [])]))
-}
-
-function normalizeCapabilityAliases(aliases: CapabilityDefinition['aliases']) {
-	return (aliases ?? []).map((alias) => ({
-		name: alias.name,
-		deprecated: alias.deprecated ?? true,
-		hiddenFromSearch: alias.hiddenFromSearch ?? true,
-		...(alias.description ? { description: alias.description } : {}),
-	}))
 }
 
 function createSchemaParser(schema: CapabilitySchemaDefinition) {

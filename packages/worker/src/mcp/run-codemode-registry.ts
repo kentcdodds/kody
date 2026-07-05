@@ -7,6 +7,7 @@ import {
 } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
 import {
 	getAdditionalPropertiesSchema,
@@ -30,6 +31,7 @@ import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { type Capability } from '#mcp/capabilities/types.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 import {
 	hasTopLevelModuleSyntax,
@@ -54,11 +56,39 @@ import {
 } from '#worker/storage-runner.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import {
+	formatRemoteConnectorUnavailableMessage,
+	getRemoteConnectorStatus,
+} from '#worker/remote-connector/status.ts'
+import { remoteConnectorCodemodeName } from '#worker/remote-connector/remote-domain-id.ts'
 
 type AdditionalCodemodeTools = Record<
 	string,
 	(args: unknown) => Promise<unknown>
 >
+
+export type CodemodeRemoteCapabilityMetadata = {
+	name: string
+	dispatchName: string
+}
+
+export type CodemodeRemoteConnectorMetadata = {
+	name: string
+	kind: string
+	instanceId: string
+	status: {
+		state: string
+		connected: boolean
+		toolCount: number
+		message: string
+		unavailableMessage: string
+	}
+	capabilities: Array<CodemodeRemoteCapabilityMetadata>
+}
+
+type KodyResolvedProvider = ResolvedProvider & {
+	kodyRemoteConnectors?: Array<CodemodeRemoteConnectorMetadata>
+}
 
 type StorageToolOptions = {
 	userId: string
@@ -338,6 +368,31 @@ export async function buildCodemodeFns(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ) {
+	return (await buildCodemodeToolContext(env, callerContext, options)).tools
+}
+
+async function buildCodemodeToolContext(
+	env: Env,
+	callerContext: McpCallerContext,
+	options?: {
+		resolveSecretValue?: (
+			secret: ReferencedSecret,
+			capabilityName: string,
+		) => Promise<string>
+		trackSecretInputValue?: (value: string) => void
+		additionalTools?: AdditionalCodemodeTools
+		storageTools?: StorageToolOptions
+		serviceTools?: ServiceToolOptions
+		packageSecretTools?: PackageSecretToolOptions
+		emailTools?: EmailToolOptions
+		workflowTools?: PackageWorkflowTools
+		skipCapabilityRegistry?: boolean
+		capabilityRegistry?: BuiltCapabilityRegistry
+	},
+): Promise<{
+	tools: AdditionalCodemodeTools
+	remoteConnectors: Array<CodemodeRemoteConnectorMetadata>
+}> {
 	const capabilityMap = options?.skipCapabilityRegistry
 		? {}
 		: options?.capabilityRegistry
@@ -348,6 +403,11 @@ export async function buildCodemodeFns(
 						callerContext,
 					})
 				).capabilityMap
+	const remoteConnectors = await buildCodemodeRemoteConnectorMetadata({
+		env,
+		callerContext,
+		capabilityMap,
+	})
 	const additionalTools = options?.additionalTools ?? {}
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
@@ -488,13 +548,16 @@ export async function buildCodemodeFns(
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, workflowCodemodeTools)
 	return {
-		...capabilityCodemodeTools,
-		...storageCodemodeTools,
-		...serviceCodemodeTools,
-		...packageSecretCodemodeTools,
-		...emailCodemodeTools,
-		...workflowCodemodeTools,
-		...additionalTools,
+		tools: {
+			...capabilityCodemodeTools,
+			...storageCodemodeTools,
+			...serviceCodemodeTools,
+			...packageSecretCodemodeTools,
+			...emailCodemodeTools,
+			...workflowCodemodeTools,
+			...additionalTools,
+		},
+		remoteConnectors,
 	}
 }
 
@@ -507,6 +570,85 @@ function assertNoCapabilityCollisions(
 			throw new Error(`Codemode helper "${name}" collides with a capability.`)
 		}
 	}
+}
+
+async function buildCodemodeRemoteConnectorMetadata(input: {
+	env: Env
+	callerContext: McpCallerContext
+	capabilityMap: Record<string, Capability>
+}): Promise<Array<CodemodeRemoteConnectorMetadata>> {
+	const refs = normalizeRemoteConnectorRefs(input.callerContext)
+	const userId = input.callerContext.user?.userId ?? null
+	const connectors = new Map<string, CodemodeRemoteConnectorMetadata>()
+
+	for (const ref of refs) {
+		const name = remoteConnectorCodemodeName(ref)
+		const status = userId
+			? await getRemoteConnectorStatus({
+					env: input.env,
+					userId,
+					ref,
+				})
+			: {
+					state: 'unavailable' as const,
+					connectorKind: ref.kind.trim().toLowerCase(),
+					connectorId: ref.instanceId,
+					connected: false,
+					connectedAt: null,
+					lastSeenAt: null,
+					toolCount: 0,
+					message: `Remote connector "${name}" requires an authenticated user.`,
+					error: null,
+				}
+		connectors.set(name, {
+			name,
+			kind: ref.kind.trim().toLowerCase(),
+			instanceId: ref.instanceId,
+			status: {
+				state: status.state,
+				connected: status.connected,
+				toolCount: status.toolCount,
+				message: status.message,
+				unavailableMessage: formatRemoteConnectorUnavailableMessage(status),
+			},
+			capabilities: [],
+		})
+	}
+
+	for (const capability of Object.values(input.capabilityMap)) {
+		if (capability.source !== 'remote-connector') continue
+		const remote = capability.remoteConnector
+		if (!remote) continue
+		const existing =
+			connectors.get(remote.connectorName) ??
+			({
+				name: remote.connectorName,
+				kind: remote.kind,
+				instanceId: remote.instanceId,
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 0,
+					message: `The ${remote.kind} connector "${remote.instanceId}" is connected.`,
+					unavailableMessage: `The ${remote.kind} connector "${remote.instanceId}" is connected.`,
+				},
+				capabilities: [],
+			} satisfies CodemodeRemoteConnectorMetadata)
+		existing.capabilities.push({
+			name: remote.toolName,
+			dispatchName: capability.name,
+		})
+		existing.capabilities.sort((a, b) => a.name.localeCompare(b.name, 'en'))
+		existing.status.toolCount = Math.max(
+			existing.status.toolCount,
+			existing.capabilities.length,
+		)
+		connectors.set(remote.connectorName, existing)
+	}
+
+	return [...connectors.values()].sort((a, b) =>
+		a.name.localeCompare(b.name, 'en'),
+	)
 }
 
 export async function buildCodemodeProvider(
@@ -524,7 +666,11 @@ export async function buildCodemodeProvider(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ResolvedProvider> {
-	const tools = await buildCodemodeFns(env, callerContext, options)
+	const { tools, remoteConnectors } = await buildCodemodeToolContext(
+		env,
+		callerContext,
+		options,
+	)
 	const provider: ToolProvider = {
 		name: 'codemode',
 		tools: Object.fromEntries(
@@ -536,7 +682,9 @@ export async function buildCodemodeProvider(
 			]),
 		),
 	}
-	return resolveProvider(provider)
+	return Object.assign(resolveProvider(provider), {
+		kodyRemoteConnectors: remoteConnectors,
+	}) satisfies KodyResolvedProvider
 }
 
 function createPackageInvokeRuntimeBridgeProvider(

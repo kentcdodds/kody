@@ -24,7 +24,7 @@ integration, value, or secret reference, then run work through **execute**.
   existing scheduled job by id.
 - **Bootstrap integration-backed work before building.** When a package, package
   app, or workflow depends on OAuth, a saved secret, or a third-party API, use
-  `search` and the `kody_official_guide` `integration_bootstrap` guide first.
+  `search` and the `coding_guide_get` `integration_bootstrap` guide first.
   Confirm the integration or secret exists, run a cheap authenticated smoke test
   in `execute`, then build the downstream artifact.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull

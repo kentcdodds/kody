@@ -24,26 +24,9 @@ export type CapabilityRemoteConnectorMetadata = {
 	kind: string
 	instanceId: string
 	connectorId: string
+	connectorName: string
 	mcpToolName: string
-}
-
-export type CapabilityAlias = {
-	name: string
-	deprecated: boolean
-	hiddenFromSearch: boolean
-	description?: string
-}
-
-export type CapabilityAliasDefinition = {
-	name: string
-	deprecated?: boolean
-	hiddenFromSearch?: boolean
-	description?: string
-}
-
-export type CapabilityAliasSpec = CapabilityAlias & {
-	targetName: string
-	domain: CapabilityDomain
+	toolName: string
 }
 
 export type InferCapabilitySchema<TSchema> =
@@ -66,7 +49,6 @@ export type CapabilityDefinition<
 	destructive?: boolean
 	requiredRole?: RoleName
 	requiredPermission?: PermissionString
-	aliases?: Array<CapabilityAliasDefinition>
 	source?: CapabilitySource
 	remoteConnector?: CapabilityRemoteConnectorMetadata
 	inputSchema: TInputSchema
@@ -92,7 +74,6 @@ export type Capability = {
 	destructive: boolean
 	requiredRole?: RoleName
 	requiredPermission?: PermissionString
-	aliases: Array<CapabilityAlias>
 	source: CapabilitySource
 	remoteConnector?: CapabilityRemoteConnectorMetadata
 	inputSchema: CapabilityJsonSchema
@@ -115,7 +96,6 @@ export type CapabilitySpec = {
 	destructive: boolean
 	requiredRole?: RoleName
 	requiredPermission?: PermissionString
-	aliases: Array<CapabilityAlias>
 	source: CapabilitySource
 	remoteConnector?: CapabilityRemoteConnectorMetadata
 	inputFields: Array<string>

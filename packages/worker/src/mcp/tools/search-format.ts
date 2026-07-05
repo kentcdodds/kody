@@ -441,22 +441,39 @@ function buildEntityRef(id: string, type: SearchEntityType) {
 	return `${id}:${type}`
 }
 
-function buildCapabilityUsage(name: string) {
-	return `execute with ${buildCodemodeCapabilityAccessor(name)}(args)`
+function buildCapabilityUsage(spec: {
+	name: string
+	source?: CapabilitySpec['source']
+	remoteConnector?: CapabilitySpec['remoteConnector']
+}) {
+	return `execute with ${buildCodemodeCapabilityAccessor(spec)}(args)`
 }
 
-function buildCodemodeCapabilityAccessor(name: string) {
+function buildCodemodeCapabilityAccessor(spec: {
+	name: string
+	source?: CapabilitySpec['source']
+	remoteConnector?: CapabilitySpec['remoteConnector']
+}) {
+	if (spec.source === 'remote-connector' && spec.remoteConnector) {
+		const connectorAccessor = `codemode.remote[${JSON.stringify(spec.remoteConnector.connectorName)}]`
+		const toolName = spec.remoteConnector.toolName
+		if (/^[A-Za-z_$][\w$]*$/.test(toolName)) {
+			return `${connectorAccessor}.${toolName}`
+		}
+		return `${connectorAccessor}[${JSON.stringify(toolName)}]`
+	}
+	const { name } = spec
 	if (/^[A-Za-z_$][\w$]*$/.test(name)) {
 		return `codemode.${name}`
 	}
 	return `codemode[${JSON.stringify(name)}]`
 }
 
-function buildCapabilityExecuteExample(name: string) {
+function buildCapabilityExecuteExample(spec: CapabilitySpec) {
 	return `import { codemode } from 'kody:runtime'
 
 export default async function main(input = {}) {
-\treturn await ${buildCodemodeCapabilityAccessor(name)}(input)
+\treturn await ${buildCodemodeCapabilityAccessor(spec)}(input)
 }`
 }
 
@@ -653,7 +670,7 @@ export function toSlimStructuredMatches(input: {
 					'description' in match && typeof match.description === 'string'
 						? match.description
 						: '',
-				usage: buildCapabilityUsage(match.name),
+				usage: buildCapabilityUsage(match),
 				...(match.source ? { source: match.source } : {}),
 				...(match.remoteConnector
 					? { remoteConnector: match.remoteConnector }
@@ -813,7 +830,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'Built-in capabilities returned by `search` are available inside `execute` as methods on the imported `codemode` object.',
 			'',
 			'```ts',
-			buildCapabilityExecuteExample(detail.spec.name),
+			buildCapabilityExecuteExample(detail.spec),
 			'```',
 			'',
 			'Pass concrete arguments that satisfy the input type below; use `{}` when there are no required fields.',
@@ -836,8 +853,8 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				entityRef: buildEntityRef(detail.id, 'capability'),
 				title: detail.title,
 				description: detail.description,
-				usage: buildCapabilityUsage(detail.spec.name),
-				executeExample: buildCapabilityExecuteExample(detail.spec.name),
+				usage: buildCapabilityUsage(detail.spec),
+				executeExample: buildCapabilityExecuteExample(detail.spec),
 				requiredInputFields: detail.spec.requiredInputFields,
 				readOnly: detail.spec.readOnly,
 				idempotent: detail.spec.idempotent,

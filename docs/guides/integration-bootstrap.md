@@ -36,10 +36,10 @@ If those conditions are not met, stop and fix the integration first.
 ## Bootstrap sequence
 
 1. Decide which auth path the integration needs.
-   - Standard OAuth: load `kody_official_guide` with `guide: "oauth"`.
-   - API key or PAT: load `kody_official_guide` with `guide: "connect_secret"`.
+   - Standard OAuth: load `coding_guide_get` with `guide: "oauth"`.
+   - API key or PAT: load `coding_guide_get` with `guide: "connect_secret"`.
    - Non-OAuth secret-backed API: after `connect_secret`, load
-     `kody_official_guide` with `guide: "secret_backed_integration"` for the
+     `coding_guide_get` with `guide: "secret_backed_integration"` for the
      default "research auth, collect secret, smoke-test, then build" recipe.
    - OAuth inside a package app: load `guide: "oauth"` first, then use
      `guide: "generated_ui_oauth"` only when you deliberately need the package
@@ -87,7 +87,7 @@ If those conditions are not met, stop and fix the integration first.
      state, secret names, allowed hosts, and provider contract are already clear
      enough.
    - For the default package-app structure after bootstrap, load
-     `kody_official_guide` with `guide: "integration_backed_app"`.
+     `coding_guide_get` with `guide: "integration_backed_app"`.
 6. If the smoke test fails, keep working on integration setup. Do not treat the
    downstream artifact as ready.
 

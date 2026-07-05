@@ -43,21 +43,20 @@ field breaks saved code that destructures results.
 
 **Recommendation: fix now**
 
-Implemented a low-conflict alias mechanism in
-`build-capability-registry.ts`/`types.ts`: future deprecated aliases can route
-through `capabilityMap` and `capabilityHandlers` while staying out of
-`capabilitySpecs` and search. No aliases were added in this PR because no
-existing identifier should be renamed without product review.
+Kent is currently the only user, so this PR intentionally does **not** add
+alias/deprecation machinery. Bad identifiers should be fixed directly now, and
+Kent can manually update saved packages, jobs, memories, and secret allowlists
+from the PR migration punch list.
 
-Also documented the compatibility policy in
+This PR documents the later compatibility policy in
 `docs/contributing/adding-capabilities.md`: additive-only inputs, never-remove
-outputs, alias-based renames, and no convention-only reordering.
+outputs, and an explicit compatibility plan before open signup.
 
 ### Critical: remote connector capability names are dynamic and unvalidated
 
 **Evidence**
 
-- Names are synthesized as
+- Names were synthesized as a flat
   `remoteConnectorCapabilityPrefix(ref) + "_" + sanitizedToolName` in
   `packages/worker/src/mcp/capabilities/remote-connector/index.ts`.
 - Domain ids are `remote:{kind}:{instanceSlug}` in
@@ -65,7 +64,7 @@ outputs, alias-based renames, and no convention-only reordering.
 - Connector `inputSchema`, `outputSchema`, descriptions, keywords, and
   annotations pass through from connector snapshots in
   `remote-connector/index.ts`.
-- `meta_list_capabilities.node.test.ts` shows double-prefix names such as
+- The old shape produced double-prefix names such as
   `roku_default_roku_press_key`.
 
 **Blast radius**
@@ -76,16 +75,22 @@ descriptions and keywords enter search text verbatim. Connector-provided
 annotations may cause hosts to treat side-effecting remote actions as safer than
 they are.
 
-**Recommendation: fix before open signup**
+**Recommendation: fix now**
 
-This PR adds first-class provenance metadata:
-`source: 'builtin' | 'remote-connector'`, plus connector metadata on synthesized
-capabilities. It is surfaced in `meta_list_capabilities`, capability search
-rows, capability detail structured output, and MCP execution logs.
+This PR makes the breaking change now:
+
+- Remote capability entity ids are `remote:<kind>/<instance>:<tool>`.
+- Built-ins remain flat in codemode (`codemode.value_get(...)`).
+- Remote capabilities move to
+  `codemode.remote["<kind>/<instance>"].<tool>(input)` and disappear from flat
+  `codemode.<kind>_<instance>_<tool>` calls.
+- First-class provenance metadata (`source: 'builtin' | 'remote-connector'`,
+  connector name, and clean tool name) is surfaced in `meta_list_capabilities`,
+  capability search rows, capability detail structured output, and MCP logs.
 
 Follow up before open signup with connector-author guidance and possibly a
-connector lint/check that warns when tool names repeat the connector kind or
-instance id. Do not change existing remote slug/key rules without migration.
+connector lint/check for tool names and schemas. After open signup, do not
+change remote id or codemode namespace rules without a migration plan.
 
 ### High: D1 JSON blobs are shadow schemas
 
@@ -174,10 +179,16 @@ debug logs, workflow projections, package invocations, and old KV artifacts.
 
 **Evidence**
 
-- Built-in names include short meta names (`search`, `execute`), domain-prefixed
-  names (`package_get`, `repo_write_file`), noun-order outliers
-  (`package_subscription_list`), cross-domain names (`workflow_list` in jobs),
-  and a brand name (`kody_official_guide`).
+- Built-in names include intentionally short meta names (`search`, `execute`)
+  plus domain-prefixed names (`package_get`, `repo_write_file`).
+- This PR directly renamed the obvious outliers: `package_subscription_list` ->
+  `package_subscriptions_list`, `workflow_list` -> `workflow_run_list`,
+  `jwt_sign` -> `secret_jwt_sign`, and `kody_official_guide` ->
+  `coding_guide_get`.
+- This PR also changes `secret_jwt_sign` inputs from camelCase to snake_case:
+  `privateKeySecretName` -> `private_key_secret_name`, `privateKeySecretScope`
+  -> `private_key_secret_scope`, and `privateKeyJsonField` ->
+  `private_key_json_field`.
 - `capabilityDomainNames.math` exists in
   `packages/worker/src/mcp/capabilities/domain-metadata.ts` but no math domain
   is registered in `builtin-domains.ts`.
@@ -190,10 +201,10 @@ debug logs, workflow projections, package invocations, and old KV artifacts.
 The blast radius is high if names or fields are renamed, but medium if treated
 as compatibility debt and documented.
 
-**Recommendation: acceptable for existing ids; fix now for future additions**
+**Recommendation: fix now**
 
-This PR documents the naming convention for new capabilities and explicitly says
-not to rename existing deviations just to normalize them.
+This PR fixes the obvious bad names directly while Kent is the only user. The
+remaining naming policy is documented for future additions.
 
 Follow up: decide whether to keep or remove the dead `math` domain constant
 before external docs mention it.
@@ -313,9 +324,9 @@ This PR documents the grammar and static/dynamic distinction in
 - Added capability source metadata and remote connector provenance to capability
   types, registry specs, `meta_list_capabilities`, search result structures, and
   MCP capability logs.
-- Added a hidden deprecated alias mechanism in the registry for future
-  capability renames. No current capability names were changed and no aliases
-  were registered.
+- Changed remote connector capability ids to `remote:<kind>/<instance>:<tool>`
+  and moved execute/codemode calls to
+  `codemode.remote["<kind>/<instance>"].<tool>(input)`.
 - Fixed `meta_list_capabilities` domain filtering to accept all built-in and
   synthesized remote domains.
 - Added structured execute error details for `EntitlementLimitError`.
@@ -330,10 +341,11 @@ This PR documents the grammar and static/dynamic distinction in
 
 Do not bundle these into mechanical cleanups:
 
-1. Decide whether any built-in capability name is unacceptable forever, then use
-   the alias mechanism for a deliberate rename before open signup.
-2. Define a deprecation window for capability aliases and where deprecated
-   aliases should appear in admin/operator tooling.
+1. Decide whether any remaining built-in capability name is unacceptable forever
+   and rename it directly before open signup while Kent is still the only user.
+2. Define the post-cleanup compatibility policy to adopt before real users exist
+   (deprecation windows, migration notes, and whether any future alias/shim
+   machinery is warranted).
 3. Add connector-author compatibility checks for remote tool names, schemas,
    annotations, and duplicate prefixes.
 4. Decide whether remote connector raw JSON Schemas should be validated by Kody,

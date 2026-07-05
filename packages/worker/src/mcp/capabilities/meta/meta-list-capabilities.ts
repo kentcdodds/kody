@@ -17,17 +17,11 @@ const capabilitySummarySchema = z.object({
 			kind: z.string(),
 			instanceId: z.string(),
 			connectorId: z.string(),
+			connectorName: z.string(),
 			mcpToolName: z.string(),
+			toolName: z.string(),
 		})
 		.optional(),
-	aliases: z.array(
-		z.object({
-			name: z.string(),
-			deprecated: z.boolean(),
-			hiddenFromSearch: z.boolean(),
-			description: z.string().optional(),
-		}),
-	),
 	requiredInputFields: z.array(z.string()),
 })
 
@@ -127,7 +121,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								...(spec.remoteConnector
 									? { remoteConnector: spec.remoteConnector }
 									: {}),
-								aliases: spec.aliases,
 								requiredInputFields: spec.requiredInputFields,
 								inputTypeDefinition: spec.inputTypeDefinition,
 								...(spec.outputTypeDefinition
@@ -148,7 +141,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								...(spec.remoteConnector
 									? { remoteConnector: spec.remoteConnector }
 									: {}),
-								aliases: spec.aliases,
 								requiredInputFields: spec.requiredInputFields,
 							},
 				)

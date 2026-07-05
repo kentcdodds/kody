@@ -59,45 +59,6 @@ test('buildCodemodeFns rejects role-gated capabilities even when passed an unfil
 	)
 })
 
-test('buildCodemodeFns exposes deprecated capability aliases as callable tools', async () => {
-	const aliasedCapability = defineDomainCapability('meta', {
-		name: 'new_name',
-		description: 'New name.',
-		aliases: [{ name: 'old_name' }],
-		inputSchema: {
-			type: 'object',
-			properties: {
-				value: { type: 'string' },
-			},
-			required: ['value'],
-		},
-		handler: async (args) => ({
-			value: args.value,
-		}),
-	})
-	const registry = buildCapabilityRegistry([
-		{
-			name: 'meta',
-			description: 'Meta capabilities',
-			capabilities: [aliasedCapability],
-		},
-	])
-	const tools = await buildCodemodeFns(
-		{} as Env,
-		createMcpCallerContext({
-			baseUrl: 'https://example.com',
-		}),
-		{ capabilityRegistry: registry },
-	)
-
-	await expect(tools.new_name({ value: 'primary' })).resolves.toEqual({
-		value: 'primary',
-	})
-	await expect(tools.old_name({ value: 'alias' })).resolves.toEqual({
-		value: 'alias',
-	})
-})
-
 test('package workflow tools create instances from package context and honor caller overrides in runModuleWithRegistry', async () => {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const workflowTools = createWorkflowTools({
@@ -815,15 +776,23 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 				`${secret.name}-${capabilityName}-resolved`,
 		},
 	)
-	await resolvedCodemode.lighting_default_lutron_set_credentials({
+	expect(
+		resolvedCodemode.lighting_default_lutron_set_credentials,
+	).toBeUndefined()
+	expect(
+		resolvedCodemode['remote:lighting/default:lutron_set_credentials'],
+	).toEqual(expect.any(Function))
+	await resolvedCodemode['remote:lighting/default:lutron_set_credentials']({
 		processorId: 'lutron-192-168-0-41',
 		username: '{{secret:lutronUsername|scope=user}}',
 		password: '{{secret:lutronPassword|scope=user}}',
 	})
 	expect(toolArguments).toEqual({
 		processorId: 'lutron-192-168-0-41',
-		username: 'lutronUsername-lighting_default_lutron_set_credentials-resolved',
-		password: 'lutronPassword-lighting_default_lutron_set_credentials-resolved',
+		username:
+			'lutronUsername-remote:lighting/default:lutron_set_credentials-resolved',
+		password:
+			'lutronPassword-remote:lighting/default:lutron_set_credentials-resolved',
 	})
 
 	const resolveSecretSpy = vi
@@ -845,11 +814,11 @@ test('buildCodemodeFns resolves, denies, and tracks secret-marked capability inp
 	)
 	try {
 		await expect(
-			deniedCodemode.lighting_default_lutron_set_credentials({
+			deniedCodemode['remote:lighting/default:lutron_set_credentials']({
 				username: '{{secret:lutronUsername|scope=user}}',
 			}),
 		).rejects.toThrow(
-			/not allowed for capability "lighting_default_lutron_set_credentials"/,
+			/not allowed for capability "remote:lighting\/default:lutron_set_credentials"/,
 		)
 		expect(resolveSecretSpy).toHaveBeenCalledWith(
 			expect.objectContaining({

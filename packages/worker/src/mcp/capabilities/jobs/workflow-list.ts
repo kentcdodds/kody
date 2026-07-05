@@ -36,7 +36,7 @@ const workflowRunSchema = z.object({
 export const workflowListCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
-		name: 'workflow_list',
+		name: 'workflow_run_list',
 		description:
 			'List recent Cloudflare Workflow runs created through kody:runtime workflows.create, including source, status, and completion/error metadata.',
 		keywords: [

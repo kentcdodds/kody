@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import { z } from 'zod'
-import { filterCapabilityRegistryForCaller } from './access-control.ts'
 import { buildCapabilityRegistry } from './build-capability-registry.ts'
 import { defineDomain } from './define-domain.ts'
 import { defineDomainCapability } from './define-domain-capability.ts'
@@ -102,83 +101,27 @@ test('capability domain registration rejects mismatched and duplicate invariants
 	).toThrow(/Duplicate capability .* in domain/)
 })
 
-test('capability registry routes hidden deprecated aliases without adding search specs', async () => {
-	const aliasedCapability = defineDomainCapability(capabilityDomainNames.meta, {
-		name: 'new_name',
-		description: 'New capability.',
-		aliases: [
-			{
-				name: 'old_name',
-				description: 'Use new_name instead.',
-			},
-		],
+test('capability registry exposes primary names and source metadata', () => {
+	const primaryCapability = defineDomainCapability(capabilityDomainNames.meta, {
+		name: 'primary_name',
+		description: 'Primary capability.',
 		inputSchema: z.object({}),
 		outputSchema: z.object({ ok: z.boolean() }),
 		handler: async () => ({ ok: true }),
 	})
-	const adminCapability = defineDomainCapability(capabilityDomainNames.meta, {
-		name: 'admin_only',
-		description: 'Admin-only capability.',
-		requiredRole: 'admin',
-		inputSchema: z.object({}),
-		outputSchema: z.object({ ok: z.boolean() }),
-		handler: async () => ({ ok: true }),
-	})
-
 	const registry = buildCapabilityRegistry([
 		defineDomain({
 			name: capabilityDomainNames.meta,
 			description: 'meta',
-			capabilities: [aliasedCapability, adminCapability],
+			capabilities: [primaryCapability],
 		}),
 	])
 
-	expect(registry.capabilityMap.old_name).toBe(registry.capabilityMap.new_name)
-	expect(registry.capabilityHandlers.old_name).toBe(
-		registry.capabilityHandlers.new_name,
+	expect(registry.capabilityMap.primary_name).toBe(primaryCapability)
+	expect(registry.capabilityHandlers.primary_name).toBe(
+		primaryCapability.handler,
 	)
-	expect(registry.capabilitySpecs.old_name).toBeUndefined()
-	expect(registry.capabilityAliases.old_name).toMatchObject({
-		name: 'old_name',
-		targetName: 'new_name',
-		domain: 'meta',
-		deprecated: true,
-		hiddenFromSearch: true,
-		description: 'Use new_name instead.',
-	})
-	expect(registry.capabilitySpecs.new_name).toMatchObject({
+	expect(registry.capabilitySpecs.primary_name).toMatchObject({
 		source: 'builtin',
-		aliases: [
-			{
-				name: 'old_name',
-				deprecated: true,
-				hiddenFromSearch: true,
-			},
-		],
 	})
-
-	const filtered = filterCapabilityRegistryForCaller(registry, {
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			roles: ['user'],
-		},
-	})
-	expect(filtered.capabilityMap.old_name).toBe(filtered.capabilityMap.new_name)
-	expect(filtered.capabilityMap.admin_only).toBeUndefined()
-	expect(filtered.capabilityHandlers.old_name).toBe(
-		filtered.capabilityHandlers.new_name,
-	)
-	expect(filtered.capabilityHandlers.admin_only).toBeUndefined()
-
-	await expect(
-		registry.capabilityHandlers.old_name({}, {
-			env: {} as Env,
-			callerContext: {
-				baseUrl: 'https://example.com',
-			},
-		} as CapabilityContext),
-	).resolves.toEqual({ ok: true })
 })

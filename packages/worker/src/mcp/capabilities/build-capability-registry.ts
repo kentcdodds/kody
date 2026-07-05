@@ -3,7 +3,6 @@ import { defineDomain } from './define-domain.ts'
 import { type CapabilityDomain } from './domain-metadata.ts'
 import {
 	type Capability,
-	type CapabilityAliasSpec,
 	type CapabilityDomainMetadata,
 	type CapabilitySpec,
 	type DomainSpec,
@@ -14,7 +13,6 @@ export type BuiltCapabilityRegistry = {
 	capabilityDomains: ReadonlyArray<CapabilityDomainMetadata>
 	capabilityDomainDescriptionsByName: Record<CapabilityDomain, string>
 	capabilityMap: Record<string, Capability>
-	capabilityAliases: Record<string, CapabilityAliasSpec>
 	capabilitySpecs: Record<string, CapabilitySpec>
 	capabilityToolDescriptors: JsonSchemaToolDescriptors
 	capabilityHandlers: Record<string, Capability['handler']>
@@ -45,8 +43,7 @@ export function buildCapabilityRegistry(
 	) as Record<CapabilityDomain, string>
 
 	const capabilityList = normalized.flatMap((domain) => domain.capabilities)
-	const { capabilityMap, capabilityAliases } =
-		createCapabilityMap(capabilityList)
+	const capabilityMap = createCapabilityMap(capabilityList)
 	const capabilitySpecs = createCapabilitySpecs(capabilityList)
 	const capabilityToolDescriptors =
 		createCapabilityToolDescriptors(capabilityList)
@@ -62,7 +59,6 @@ export function buildCapabilityRegistry(
 		capabilityDomains,
 		capabilityDomainDescriptionsByName,
 		capabilityMap,
-		capabilityAliases,
 		capabilitySpecs,
 		capabilityToolDescriptors,
 		capabilityHandlers,
@@ -70,18 +66,9 @@ export function buildCapabilityRegistry(
 }
 
 function createCapabilityMap(capabilities: Array<Capability>) {
-	const primaryEntries = capabilities.map(
+	const entries = capabilities.map(
 		(capability) => [capability.name, capability] as const,
 	)
-	const aliasEntries = capabilities.flatMap((capability) =>
-		(capability.aliases ?? []).map(
-			(alias) => [alias.name, capability, alias] as const,
-		),
-	)
-	const entries = [
-		...primaryEntries,
-		...aliasEntries.map(([name, capability]) => [name, capability] as const),
-	]
 	const seenNames = new Set<string>()
 	const duplicateNames = new Set<string>()
 	for (const [name] of entries) {
@@ -93,23 +80,10 @@ function createCapabilityMap(capabilities: Array<Capability>) {
 	}
 	if (duplicateNames.size > 0) {
 		throw new Error(
-			`Duplicate capability names or aliases: ${[...duplicateNames].join(', ')}`,
+			`Duplicate capability names: ${[...duplicateNames].join(', ')}`,
 		)
 	}
-	const capabilityAliases = Object.fromEntries(
-		aliasEntries.map(([name, capability, alias]) => [
-			name,
-			{
-				...alias,
-				targetName: capability.name,
-				domain: capability.domain,
-			},
-		]),
-	) as Record<string, CapabilityAliasSpec>
-	return {
-		capabilityMap: Object.fromEntries(entries) as Record<string, Capability>,
-		capabilityAliases,
-	}
+	return Object.fromEntries(entries) as Record<string, Capability>
 }
 
 function createCapabilitySpecs(capabilities: Array<Capability>) {
@@ -131,7 +105,6 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 					...(capability.requiredPermission
 						? { requiredPermission: capability.requiredPermission }
 						: {}),
-					aliases: capability.aliases ?? [],
 					source: capability.source ?? 'builtin',
 					...(capability.remoteConnector
 						? { remoteConnector: capability.remoteConnector }

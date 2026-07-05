@@ -36,7 +36,7 @@ Use when a saved package app or inline MCP App workflow should be shown inside
 the host.
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
 If the package app depends on a third-party integration, load
-\`kody_official_guide\` (\`guide: "integration_bootstrap"\`) before building or
+\`coding_guide_get\` (\`guide: "integration_bootstrap"\`) before building or
 saving the downstream package.
 Credential collection and rotation use \`/connect/oauth\` for OAuth integrations and \`/account/secrets/new\` for API keys, PATs, and other user-provided secrets. Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.
 

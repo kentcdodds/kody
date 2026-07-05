@@ -18,7 +18,7 @@ const packageSubscriptionSchema = z.object({
 export const listPackageSubscriptionsCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_subscription_list',
+		name: 'package_subscriptions_list',
 		description:
 			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email.message.received subscribers before debugging dispatch or building fan-out.',
 		keywords: [

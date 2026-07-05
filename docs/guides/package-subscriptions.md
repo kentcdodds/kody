@@ -43,7 +43,7 @@ package-owned secrets, and `kody:runtime`.
 ## Discovery
 
 Use `search` for package subscription work, then call the built-in
-`package_subscription_list` capability to inspect the signed-in user's declared
+`package_subscriptions_list` capability to inspect the signed-in user's declared
 subscriptions:
 
 ```json

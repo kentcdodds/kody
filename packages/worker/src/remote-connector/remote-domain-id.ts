@@ -1,26 +1,38 @@
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 
-export function remoteConnectorDomainId(ref: RemoteConnectorRef): string {
-	const k = ref.kind.trim().toLowerCase()
-	const id =
+export function remoteConnectorInstanceSlug(ref: RemoteConnectorRef): string {
+	return (
 		ref.instanceId
 			.trim()
 			.replaceAll(/[^\w-]+/g, '_')
 			.replaceAll(/_+/g, '_')
 			.replace(/^_|_$/g, '') || 'instance'
-	return `remote:${k}:${id}`
+	)
 }
 
-export function remoteConnectorCapabilityPrefix(
-	ref: RemoteConnectorRef,
-): string {
+export function remoteConnectorDomainId(ref: RemoteConnectorRef): string {
 	const k = ref.kind.trim().toLowerCase()
-	const rawId = ref.instanceId.trim()
-	const slug =
-		rawId
+	return `remote:${k}:${remoteConnectorInstanceSlug(ref)}`
+}
+
+export function remoteConnectorCodemodeName(ref: RemoteConnectorRef): string {
+	const k = ref.kind.trim().toLowerCase()
+	return `${k}/${remoteConnectorInstanceSlug(ref)}`
+}
+
+export function remoteConnectorToolName(toolName: string): string {
+	return (
+		toolName
+			.trim()
 			.replaceAll(/[^\w]+/g, '_')
 			.replaceAll(/_+/g, '_')
-			.replace(/^_|_$/g, '') || 'instance'
+			.replace(/^_|_$/g, '') || 'tool'
+	)
+}
 
-	return `${k}_${slug}`
+export function remoteConnectorCapabilityId(input: {
+	ref: RemoteConnectorRef
+	toolName: string
+}): string {
+	return `remote:${remoteConnectorCodemodeName(input.ref)}:${remoteConnectorToolName(input.toolName)}`
 }

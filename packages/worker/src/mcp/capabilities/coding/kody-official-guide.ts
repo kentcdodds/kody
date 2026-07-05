@@ -74,7 +74,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-subscriptions.md',
 		title: 'Package subscription guide',
 		summary:
-			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscription_list and follow metadata-first email.message.received payload guidance.',
+			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email.message.received payload guidance.',
 	},
 } as const
 
@@ -148,7 +148,7 @@ const guideFieldSchema = z
 			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
 			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
-			'`package_subscriptions`: package-owned event subscriptions, package_subscription_list discovery, and email.message.received metadata-first handler payloads.',
+			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, and email.message.received metadata-first handler payloads.',
 		].join(' '),
 	)
 
@@ -204,7 +204,7 @@ const allKeywords = [
 		'service package',
 		'package subscription',
 		'package subscriptions',
-		'package_subscription_list',
+		'package_subscriptions_list',
 		'package.json#kody.subscriptions',
 		'email.message.received',
 		'email message received',
@@ -228,7 +228,7 @@ const allKeywords = [
 export const kodyOfficialGuideCapability = defineDomainCapability(
 	capabilityDomainNames.coding,
 	{
-		name: 'kody_official_guide',
+		name: 'coding_guide_get',
 		description: buildCapabilityDescription(),
 		keywords: [...allKeywords],
 		readOnly: true,

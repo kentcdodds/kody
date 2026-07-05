@@ -42,7 +42,7 @@ those dedupe fields are repeated. Kody enforces a per-user concurrent workflow
 limit (default: 100); if the cap is reached, `workflows.create` returns a clear
 quota error.
 
-Use `workflow_list` to inspect recent workflow runs and statuses.
+Use `workflow_run_list` to inspect recent workflow runs and statuses.
 
 ## Package export example
 

@@ -245,7 +245,7 @@ publish. At runtime, event dispatch invokes the handler through the package
 execution path with package context, package-owned storage, package secrets, and
 the host-owned `kody:runtime` module.
 
-The built-in `package_subscription_list` capability is the generic discovery
+The built-in `package_subscriptions_list` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
 manifests and returns package id, `kody.id`, package name, topic, handler,
 description, and filters, optionally narrowed by exact topic.

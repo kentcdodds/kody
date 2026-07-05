@@ -98,7 +98,7 @@ type EmailMessageReceivedEvent = {
 
 The event does not include parsed bodies or attachment bytes. Fetch those only
 when the handler needs them with `email_message_get`, `email_attachment_get`, or
-the package runtime `email` helper. Use `package_subscription_list` with
+the package runtime `email` helper. Use `package_subscriptions_list` with
 `topic: "email.message.received"` to discover which saved packages subscribe for
 the signed-in user.
 

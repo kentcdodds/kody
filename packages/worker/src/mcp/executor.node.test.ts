@@ -8,6 +8,7 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
+	createCodemodeRemoteProxy,
 	createExecuteExecutor,
 	extractRawContent,
 	formatExecutionOutput,
@@ -86,6 +87,69 @@ function createGatewayProps(userId: string) {
 		storageContext: null,
 	}
 }
+
+test('codemode remote proxy dispatches and reports connector/capability errors clearly', async () => {
+	const calls: Array<{ dispatchName: string; args: unknown }> = []
+	const remote = createCodemodeRemoteProxy({
+		remoteConnectors: [
+			{
+				name: 'home/default',
+				kind: 'home',
+				instanceId: 'default',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 1,
+					message: 'The home connector "default" is connected.',
+					unavailableMessage: 'The home connector "default" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'set_pin',
+						dispatchName: 'remote:home/default:set_pin',
+					},
+				],
+			},
+			{
+				name: 'lights/default',
+				kind: 'lights',
+				instanceId: 'default',
+				status: {
+					state: 'disconnected',
+					connected: false,
+					toolCount: 0,
+					message: 'The lights connector "default" is not connected.',
+					unavailableMessage:
+						'The lights connector "default" is not connected. Kody cannot use this connector until it reconnects.',
+				},
+				capabilities: [],
+			},
+		],
+		async callTool(dispatchName, args) {
+			calls.push({ dispatchName, args })
+			return { ok: true }
+		},
+	}) as Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+
+	await expect(
+		remote['home/default']?.set_pin({ pin: '1234' }),
+	).resolves.toEqual({ ok: true })
+	expect(calls).toEqual([
+		{
+			dispatchName: 'remote:home/default:set_pin',
+			args: { pin: '1234' },
+		},
+	])
+	expect(() => remote['missing/default']).toThrow(
+		'Unknown remote connector "missing/default". Available remote connectors: "home/default", "lights/default".',
+	)
+	expect(() => remote['home/default']?.missing_tool).toThrow(
+		'Unknown remote capability "missing_tool" for connector "home/default". Available capabilities: "set_pin".',
+	)
+	expect(() => remote['lights/default']?.set_pin).toThrow(
+		'The lights connector "default" is not connected. Kody cannot use this connector until it reconnects.',
+	)
+})
 
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
 	const fakeLoader = createFakeWorkerLoader()

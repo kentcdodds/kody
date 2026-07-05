@@ -14,7 +14,7 @@ const ctx = {
 	},
 }
 
-test('kody_official_guide fetches markdown and surfaces fetch failures', async () => {
+test('coding_guide_get fetches markdown and surfaces fetch failures', async () => {
 	const url = buildKodyOfficialGuideUrlForTest('package_subscriptions')
 	{
 		using _server = createMswNodeServer([

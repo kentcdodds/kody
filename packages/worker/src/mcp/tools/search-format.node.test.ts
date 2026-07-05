@@ -29,10 +29,32 @@ function executeUsageSnippet(usage: string) {
 
 async function executeCapabilityExample(executeExample: string) {
 	const calls: Array<{ name: string; args: unknown }> = []
+	const remote = new Proxy(
+		{} as Record<string, Record<string, (args: unknown) => Promise<unknown>>>,
+		{
+			get(_target, connectorName: string) {
+				return new Proxy(
+					{} as Record<string, (args: unknown) => Promise<unknown>>,
+					{
+						get(_connectorTarget, capabilityName: string) {
+							return async (args: unknown) => {
+								calls.push({
+									name: `remote:${connectorName}:${capabilityName}`,
+									args,
+								})
+								return { ok: true }
+							}
+						},
+					},
+				)
+			},
+		},
+	)
 	const codemode = new Proxy(
 		{} as Record<string, (args: unknown) => Promise<unknown>>,
 		{
 			get(_target, prop: string) {
+				if (prop === 'remote') return remote
 				return async (args: unknown) => {
 					calls.push({ name: prop, args })
 					return { ok: true }
@@ -210,7 +232,6 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			idempotent: false,
 			destructive: false,
 			source: 'builtin',
-			aliases: [],
 			inputFields: ['owner', 'repo', 'title'],
 			requiredInputFields: ['owner', 'repo', 'title'],
 			outputFields: ['issueUrl'],
@@ -300,7 +321,6 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			idempotent: true,
 			destructive: false,
 			source: 'builtin',
-			aliases: [],
 			inputFields: [],
 			requiredInputFields: [],
 			outputFields: [],
@@ -320,6 +340,65 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	expect(bracketExecution.calls).toEqual([
 		{
 			name: 'foo-bar',
+			args: { owner: 'o', repo: 'r', title: 't' },
+		},
+	])
+
+	const remoteDetail = formatEntityDetailMarkdown({
+		type: 'capability',
+		id: 'remote:home/default:set_pin',
+		title: 'remote:home/default:set_pin',
+		description: 'Set the island router PIN.',
+		spec: {
+			name: 'remote:home/default:set_pin',
+			domain: 'remote:home:default',
+			description: 'Set the island router PIN.',
+			keywords: [],
+			readOnly: false,
+			idempotent: true,
+			destructive: false,
+			source: 'remote-connector',
+			remoteConnector: {
+				kind: 'home',
+				instanceId: 'default',
+				connectorId: 'default',
+				connectorName: 'home/default',
+				mcpToolName: 'island.router.api/set-pin',
+				toolName: 'set_pin',
+			},
+			inputFields: ['pin'],
+			requiredInputFields: ['pin'],
+			outputFields: ['ok'],
+			inputSchema: {
+				type: 'object',
+				properties: {
+					pin: { type: 'string' },
+				},
+				required: ['pin'],
+			},
+			inputTypeDefinition:
+				'type RemoteHomeDefaultSetPinInput = {\n\tpin: string\n}',
+		},
+	})
+	expect(remoteDetail.markdown).toContain(
+		'codemode.remote["home/default"].set_pin(input)',
+	)
+	expect(remoteDetail.structured).toMatchObject({
+		source: 'remote-connector',
+		remoteConnector: {
+			connectorName: 'home/default',
+			toolName: 'set_pin',
+		},
+		executeExample: expect.stringContaining(
+			'codemode.remote["home/default"].set_pin(input)',
+		),
+	})
+	const remoteExecution = await executeCapabilityExample(
+		remoteDetail.structured.executeExample,
+	)
+	expect(remoteExecution.calls).toEqual([
+		{
+			name: 'remote:home/default:set_pin',
 			args: { owner: 'o', repo: 'r', title: 't' },
 		},
 	])

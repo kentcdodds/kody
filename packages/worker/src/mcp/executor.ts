@@ -115,6 +115,94 @@ type DynamicWorkerEntrypoint = {
 	}>
 }
 
+type CodemodeRemoteConnectorMetadata = {
+	name: string
+	status: {
+		connected: boolean
+		toolCount: number
+		unavailableMessage: string
+	}
+	capabilities: Array<{
+		name: string
+		dispatchName: string
+	}>
+}
+
+type KodyResolvedProvider = ResolvedProvider & {
+	kodyRemoteConnectors?: Array<CodemodeRemoteConnectorMetadata>
+}
+
+export function createCodemodeRemoteProxy(input: {
+	remoteConnectors: Array<CodemodeRemoteConnectorMetadata>
+	callTool: (dispatchName: string, args: unknown) => Promise<unknown>
+}) {
+	const connectors = Object.fromEntries(
+		input.remoteConnectors.map((connector) => [
+			connector.name,
+			{
+				...connector,
+				capabilitiesByName: Object.fromEntries(
+					connector.capabilities.map((capability) => [
+						capability.name,
+						capability,
+					]),
+				),
+			},
+		]),
+	)
+	const formatNames = (names: Array<string>) =>
+		names.length > 0
+			? names.map((name) => JSON.stringify(name)).join(', ')
+			: 'none'
+
+	return new Proxy(
+		{},
+		{
+			get(_target, connectorName) {
+				if (typeof connectorName === 'symbol' || connectorName === 'then') {
+					return undefined
+				}
+				const normalizedConnectorName = String(connectorName)
+				const connector = connectors[normalizedConnectorName]
+				if (!connector) {
+					throw new Error(
+						`Unknown remote connector "${normalizedConnectorName}". Available remote connectors: ${formatNames(Object.keys(connectors))}.`,
+					)
+				}
+				return new Proxy(
+					{},
+					{
+						get(_connectorTarget, capabilityName) {
+							if (
+								typeof capabilityName === 'symbol' ||
+								capabilityName === 'then'
+							) {
+								return undefined
+							}
+							const normalizedCapabilityName = String(capabilityName)
+							if (
+								!connector.status.connected ||
+								connector.status.toolCount === 0
+							) {
+								throw new Error(connector.status.unavailableMessage)
+							}
+							const capability =
+								connector.capabilitiesByName[normalizedCapabilityName]
+							if (!capability) {
+								throw new Error(
+									`Unknown remote capability "${normalizedCapabilityName}" for connector "${normalizedConnectorName}". Available capabilities: ${formatNames(connector.capabilities.map((entry) => entry.name))}.`,
+								)
+							}
+							return async (args: unknown) =>
+								await input.callTool(capability.dispatchName, args)
+						},
+					},
+				)
+			},
+		},
+	)
+}
+
 export function createExecuteExecutor(input: {
 	env: Env
 	exports?: WorkerLoopbackExports
@@ -286,11 +374,7 @@ function createExecutorModule(input: {
 		// Keep this aligned with upstream codemode's sandbox dispatcher shape:
 		// the dynamic worker source only names provider namespaces, while the
 		// actual per-invocation tool implementations arrive through RPC dispatchers.
-		...input.providers.map((provider) =>
-			provider.positionalArgs
-				? `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
-				: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`,
-		),
+		...input.providers.map((provider) => createProviderProxySource(provider)),
 		'',
 		'    let __timeoutId;',
 		'    try {',
@@ -310,6 +394,52 @@ function createExecutorModule(input: {
 		'  }',
 		'}',
 	].join('\n')
+}
+
+function createProviderProxySource(provider: ResolvedProvider) {
+	const kodyProvider = provider as KodyResolvedProvider
+	if (provider.name === 'codemode' && kodyProvider.kodyRemoteConnectors) {
+		return createCodemodeProviderProxySource({
+			providerName: provider.name,
+			remoteConnectors: kodyProvider.kodyRemoteConnectors,
+		})
+	}
+	return provider.positionalArgs
+		? `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
+		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
+}
+
+function createCodemodeProviderProxySource(input: {
+	providerName: string
+	remoteConnectors: Array<CodemodeRemoteConnectorMetadata>
+}) {
+	const metadataJson = JSON.stringify(input.remoteConnectors)
+	return `    const __kodyCreateCodemodeRemoteProxy = ${createCodemodeRemoteProxy.toString()};
+    const __kodyRemote = __kodyCreateCodemodeRemoteProxy({
+      remoteConnectors: ${metadataJson},
+      callTool: async (dispatchName, args) => {
+        const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
+        const data = JSON.parse(resJson);
+        if (data.error) throw new Error(data.error);
+        return data.result;
+      },
+    });
+    const ${input.providerName} = new Proxy({}, {
+      get: (_, toolName) => {
+        if (typeof toolName === 'symbol' || toolName === 'then') return undefined;
+        if (toolName === 'remote') return __kodyRemote;
+        const normalizedToolName = String(toolName);
+        if (normalizedToolName.startsWith('remote:')) {
+          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat codemode function. Use codemode.remote[connectorName].capabilityName(input) instead.\`);
+        }
+        return async (args) => {
+          const resJson = await __dispatchers.${input.providerName}.call(normalizedToolName, JSON.stringify(args ?? {}));
+          const data = JSON.parse(resJson);
+          if (data.error) throw new Error(data.error);
+          return data.result;
+        };
+      }
+    });`
 }
 
 function createToolDispatchers(

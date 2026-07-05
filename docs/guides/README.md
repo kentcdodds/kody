@@ -1,7 +1,7 @@
 # Guides
 
 Official markdown guides for agent and contributor workflows. At runtime, the
-**`kody_official_guide`** builtin capability loads these files from the `main`
+**`coding_guide_get`** builtin capability loads these files from the `main`
 branch via `raw.githubusercontent.com` (see capability description in code for
 available `guide` ids).
 
