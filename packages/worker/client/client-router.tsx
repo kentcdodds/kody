@@ -56,8 +56,17 @@ let routerInitialized = false
 let registeredRouteLoaders: Record<string, RouteLoader> = {}
 let navigationAbortController: AbortController | null = null
 let activeNavigationPath: string | null = null
+// The pathname+search (no hash) the app last rendered. Popstate compares
+// against this to detect hash-only history moves, since `window.location`
+// has already changed by the time the event fires.
+let lastNotifiedDocumentPath: string | null = null
+
+function getCurrentDocumentPath() {
+	return `${window.location.pathname}${window.location.search}`
+}
 
 function notify() {
+	lastNotifiedDocumentPath = getCurrentDocumentPath()
 	routerEvents.dispatchEvent(new Event('navigate'))
 }
 
@@ -584,6 +593,20 @@ function handleDocumentSubmit(event: Event) {
 }
 
 function handlePopState() {
+	// Hash-only history moves have no data to load — mirror forward hash-only
+	// navigations (`commitImmediateNavigation`) and sync the UI immediately
+	// instead of running the loader.
+	if (getCurrentDocumentPath() === lastNotifiedDocumentPath) {
+		cancelHoverIntent()
+		// A pending loader navigation must not commit after this immediate
+		// one and clobber the URL the browser already restored.
+		navigationAbortController?.abort()
+		navigationAbortController = null
+		dispatchNavigationStart()
+		notify()
+		dispatchNavigationEnd()
+		return
+	}
 	void runNavigationWithLoader(new URL(window.location.href), {
 		skipPushState: true,
 	})
@@ -593,6 +616,7 @@ function ensureRouter() {
 	if (typeof document === 'undefined') return
 	if (routerInitialized) return
 	routerInitialized = true
+	lastNotifiedDocumentPath = getCurrentDocumentPath()
 	window.addEventListener('popstate', handlePopState)
 	document.addEventListener('click', handleDocumentClick)
 	document.addEventListener('submit', handleDocumentSubmit)
