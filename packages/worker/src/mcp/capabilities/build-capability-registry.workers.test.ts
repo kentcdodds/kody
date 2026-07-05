@@ -100,3 +100,60 @@ test('capability domain registration rejects mismatched and duplicate invariants
 		}),
 	).toThrow(/Duplicate capability .* in domain/)
 })
+
+test('capability registry routes hidden deprecated aliases without adding search specs', async () => {
+	const aliasedCapability = defineDomainCapability(capabilityDomainNames.meta, {
+		name: 'new_name',
+		description: 'New capability.',
+		aliases: [
+			{
+				name: 'old_name',
+				description: 'Use new_name instead.',
+			},
+		],
+		inputSchema: z.object({}),
+		outputSchema: z.object({ ok: z.boolean() }),
+		handler: async () => ({ ok: true }),
+	})
+
+	const registry = buildCapabilityRegistry([
+		defineDomain({
+			name: capabilityDomainNames.meta,
+			description: 'meta',
+			capabilities: [aliasedCapability],
+		}),
+	])
+
+	expect(registry.capabilityMap.old_name).toBe(registry.capabilityMap.new_name)
+	expect(registry.capabilityHandlers.old_name).toBe(
+		registry.capabilityHandlers.new_name,
+	)
+	expect(registry.capabilitySpecs.old_name).toBeUndefined()
+	expect(registry.capabilityAliases.old_name).toMatchObject({
+		name: 'old_name',
+		targetName: 'new_name',
+		domain: 'meta',
+		deprecated: true,
+		hiddenFromSearch: true,
+		description: 'Use new_name instead.',
+	})
+	expect(registry.capabilitySpecs.new_name).toMatchObject({
+		source: 'builtin',
+		aliases: [
+			{
+				name: 'old_name',
+				deprecated: true,
+				hiddenFromSearch: true,
+			},
+		],
+	})
+
+	await expect(
+		registry.capabilityHandlers.old_name({}, {
+			env: {} as Env,
+			callerContext: {
+				baseUrl: 'https://example.com',
+			},
+		} as CapabilityContext),
+	).resolves.toEqual({ ok: true })
+})

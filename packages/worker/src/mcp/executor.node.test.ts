@@ -6,6 +6,7 @@ import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
+import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	createExecuteExecutor,
 	extractRawContent,
@@ -520,6 +521,29 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		],
 		suggestedAction: {
 			type: 'approve_secret_host',
+		},
+	})
+
+	const entitlementError = new EntitlementLimitError({
+		resource: 'saved_packages',
+		plan: 'personal',
+		limit: 3,
+		current: 3,
+		upgradeHint: 'Remove an old package or upgrade your plan.',
+	})
+	expect(getExecutionErrorDetails(entitlementError)).toMatchObject({
+		kind: 'entitlement_limit_exceeded',
+		details: {
+			code: 'entitlement_limit_exceeded',
+			resource: 'saved_packages',
+			plan: 'personal',
+			limit: 3,
+			current: 3,
+			upgradeHint: 'Remove an old package or upgrade your plan.',
+		},
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: 'saved_packages',
 		},
 	})
 

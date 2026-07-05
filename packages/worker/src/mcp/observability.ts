@@ -11,6 +11,7 @@ export type McpObservabilityPayload = {
 	toolName?: string
 	capabilityName?: string
 	domain?: string
+	capabilitySource?: string
 	outcome: 'success' | 'failure'
 	durationMs: number
 	baseUrl: string
@@ -68,6 +69,9 @@ function reportMcpFailureToSentry(
 				scope.setTag('mcp.capability', payload.capabilityName)
 			}
 			if (payload.domain) scope.setTag('mcp.domain', payload.domain)
+			if (payload.capabilitySource) {
+				scope.setTag('mcp.capability_source', payload.capabilitySource)
+			}
 			if (payload.failurePhase) {
 				scope.setTag('mcp.failure_phase', payload.failurePhase)
 			}

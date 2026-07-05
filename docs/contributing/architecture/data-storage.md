@@ -307,3 +307,138 @@ Production note:
   (`ensureEntitySource(..., requirePersistence: true)`) fail closed when
   persistence bindings are unavailable so callers do not write orphaned
   `source_id` references into D1.
+
+## Frozen storage contract inventory
+
+This section records identifiers and serialized shapes that should be treated as
+permanent unless a planned migration explicitly says otherwise. They are cheap
+to document now and expensive to discover after user data depends on them.
+
+### D1 JSON shadow schemas
+
+The following columns store JSON whose schema is defined in TypeScript rather
+than in D1 constraints. Changes must be backward compatible on read and additive
+on write unless a migration backfills existing rows.
+
+- `jobs.params_json`, `jobs.schedule_json`, `jobs.caller_context_json`,
+  `jobs.run_history_json`, and `jobs.repo_check_policy_json`
+  (`packages/worker/migrations/0018-jobs.sql`,
+  `0025-jobs-repo-check-policy.sql`, `packages/worker/src/jobs/repo.ts`).
+  `run_history_json` is capped in code; the other fields rely on parser and
+  normalizer compatibility.
+- `saved_packages.tags_json` and `community_listings.tags_json`
+  (`0027-saved-packages.sql`, `0045-community-listings.sql`) are `string[]`
+  projections.
+- `published_bundle_artifacts.dependencies_json`
+  (`0028-published-bundle-artifacts-and-archived-jobs.sql`) stores package
+  dependency pointers queried with SQLite JSON functions in
+  `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
+- `package_invocations.package_ids_json`,
+  `package_invocations.package_kody_ids_json`,
+  `package_invocations.export_names_json`, `package_invocations.sources_json`,
+  and `package_invocations.response_json` (`0029-package-invocations.sql`) store
+  invocation routing and cached response projections.
+- `email_messages.*_addresses_json`, `email_messages.references_json`,
+  `email_messages.headers_json`, and `email_delivery_events.detail_json`
+  (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`) store parsed
+  email metadata; `detail_json` is currently write-mostly audit detail.
+- `mcp_memories.tags_json` and `mcp_memories.source_uris_json`
+  (`0016-mcp-memories.sql`, `0018-mcp-memory-source-uris.sql`) back memory
+  search and provenance.
+- `secret_entries.allowed_hosts`, `secret_entries.allowed_capabilities`, and
+  `secret_entries.allowed_packages` are JSON string lists used as security
+  policy inputs (`0009-secret-allowed-hosts.sql`,
+  `0010-secret-allowed-capabilities.sql`, `0023-secret-allowed-packages.sql`).
+  Tightening parse-error behavior requires explicit compatibility review.
+- `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
+  (`0037-package-runtime-debug.sql`) store bounded debug metadata and log
+  fields.
+
+### Durable Object id contracts
+
+`idFromName` inputs are Durable Object identity. Changing any of these strings
+or tuple layouts creates new objects and strands existing object storage.
+
+- `JobManager`: `idFromName(userId)`.
+- `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
+- `RepoSession`: `idFromName(repo_sessions.id)`; the key is not user-prefixed,
+  so every RPC must keep validating the D1 row's `user_id`.
+- `PackageRealtimeSession`: `idFromName(JSON.stringify([userId, packageId]))`.
+- `PackageServiceInstance`:
+  `idFromName(JSON.stringify([userId, packageId, serviceName]))`.
+- `RemoteConnectorSession`:
+  `idFromName(JSON.stringify([userId, normalizedKind, normalizedInstanceId]))`.
+- `MCP`: session-keyed by the MCP SDK rather than by user id; OAuth caller
+  context is the request-time ownership boundary.
+
+Storage ids are also stable strings: execute storage uses `exec:{uuid}`, job
+storage uses `job:{jobId}`, and package services use
+`service:{encodeURIComponent(packageId)}:{encodeURIComponent(serviceName)}`.
+
+### KV key contracts
+
+`OAUTH_KV` is provider-owned by `@cloudflare/workers-oauth-provider`; do not put
+app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
+
+- `source-snapshot:v1:{sourceId}:{publishedCommit}`.
+- `source-manifest-snapshot:v1:{sourceId}:{publishedCommit}`.
+- `bundle-artifact:v1:{sourceId}:{commit}:{kind}:{artifactName|_}:{entryPoint}`.
+- `community-snapshot:v1:{listingId}`.
+- `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
+- `package-retriever-index:v1:{userId}:{scope}` for the legacy combined
+  retriever index blob.
+- `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
+  for per-entry retriever index rows.
+
+Account deletion derives these keys from D1 rows and package ids before deleting
+D1 projections. New KV prefixes must add corresponding account-deletion coverage
+or a deliberate retention note.
+
+### Vectorize metadata contracts
+
+Vector ids and metadata are conventional and require reindexing when changed:
+
+- Memories: `memory_{memoryId}` with metadata
+  `{ kind: 'memory', userId, status, category? }`.
+- Jobs: `job_{jobId}` with metadata `{ kind: 'job', userId }`.
+- Saved packages: `package_{packageId}` with metadata
+  `{ kind: 'package', userId }`.
+- Builtin capabilities: id is the capability name with metadata
+  `{ kind: 'builtin', domain }`.
+
+Every user-owned Vectorize query must filter by `userId`; capability vectors are
+global built-in metadata and are rebuilt through the maintenance reindex path.
+
+### `entity_sources` and package import contracts
+
+`entity_sources` is the durable repo pointer table:
+`(user_id, entity_kind, entity_id) -> source_id`. Child tables store
+`source_id = entity_sources.id`; KV snapshots use that same source id plus the
+published commit. `entity_kind` currently accepts `job` and `package`.
+`manifest_path`, `source_root`, `published_commit`, `indexed_commit`, and
+`last_external_check_at` are part of the repo-source synchronization contract.
+
+Saved package imports in user code use `kody:@scope/name/export` specifiers:
+
+1. `packages/worker/src/package-runtime/package-import-resolution.ts` parses the
+   `kody:@` prefix, the `@scope/name` package name, and an optional export
+   subpath (default `.`).
+2. Resolution is scoped to the caller's `userId`; community package scopes do
+   not grant cross-user imports.
+3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
+   resolves them through `package.json#exports`.
+4. Static imports are pinned into bundle dependencies at publish time. Literal
+   dynamic `import("kody:@...")` calls resolve at runtime to the caller's
+   current published package export.
+
+Do not change this grammar or static/dynamic distinction without a user-code
+migration plan.
+
+### Growth and retention watch list
+
+These tables can grow without a built-in retention policy beyond account
+deletion or narrow cleanup paths: `audit_events`, `email_messages` and related
+email tables, `package_runtime_runs`, `package_runtime_logs`, `workflow_runs`,
+`package_invocations`, and old published bundle/KV artifacts. `usage_rollups` is
+bounded by `(user_id, metric, month)`, while raw Analytics Engine usage events
+follow platform retention.

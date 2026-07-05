@@ -34,7 +34,7 @@ primitives:
     name: Browser app (Remix 3)
     summary:
       Server-first Remix 3 UI and app routes (home, auth, account, session,
-      health) served by the Worker.
+      admin, community, privacy, health) served by the Worker.
     code:
       - packages/worker/src/app/
     docs:
@@ -69,10 +69,12 @@ primitives:
     name: Scheduled handler
     summary:
       Worker cron entry point (Artifacts push reconcile every five minutes,
-      daily stale-token cleanup, maintenance tasks).
+      daily stale-token cleanup around 03:00 UTC, and abandoned repo-session
+      branch cleanup).
     code:
+      - packages/worker/src/index.ts
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
-      - packages/worker/src/maintenance-handler.ts
+      - packages/worker/src/repo/repo-session-cleanup.ts
     docs:
       - docs/contributing/architecture/data-storage.md
 
@@ -87,8 +89,11 @@ primitives:
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
+      - packages/worker/src/app/handlers/verify-email.ts
+      - packages/worker/src/app/handlers/admin-invites.ts
       - packages/worker/src/app/invites.ts
       - packages/worker/src/app/email-verification.ts
+      - packages/worker/migrations/0046-invites-email-verification.sql
     docs:
       - docs/contributing/architecture/authentication.md
 
@@ -108,12 +113,18 @@ primitives:
     group: auth
     name: Role-based access control
     summary:
-      Typed action:entity:access permissions, user/admin roles, server and MCP
-      guards, and metadata-only admin routes for account administration.
+      Typed action:entity:access permissions, user/admin roles, server guards
+      for /admin/* metadata routes, and the admin MCP domain for account
+      metadata plus sanitized audit logs. Never exposes user content.
     code:
       - packages/worker/src/app/permissions.ts
       - packages/worker/src/app/permissions-db.ts
       - packages/worker/src/app/permissions-server.ts
+      - packages/worker/src/app/handlers/admin-users.ts
+      - packages/worker/src/app/handlers/admin-roles.ts
+      - packages/worker/src/app/handlers/admin-invites.ts
+      - packages/worker/src/app/handlers/admin-community-reports.ts
+      - packages/worker/src/mcp/capabilities/admin/
       - packages/worker/src/mcp/capabilities/meta/require-permission.ts
     docs:
       - docs/contributing/architecture/authorization.md
@@ -123,10 +134,13 @@ primitives:
     name: Plans & entitlements
     summary:
       Per-user plan column (users.plan) with per-plan resource limits and the
-      shared assertWithinEntitlement guard; NULL plan means legacy/unlimited and
-      disables enforcement entirely.
+      shared assertWithinEntitlement guard; row-count limits query source
+      tables, rate limits use entitlement_daily_counters, and NULL plan means
+      legacy/unlimited with enforcement disabled.
     code:
       - packages/worker/src/entitlements/
+      - packages/worker/migrations/0046-invites-email-verification.sql
+      - packages/worker/migrations/0048-user-plans-and-entitlement-counters.sql
     docs:
       - docs/contributing/architecture/entitlements.md
 
@@ -135,9 +149,10 @@ primitives:
     group: assistant
     name: Capability registry
     summary:
-      Builtin capability domains (apps, coding, community, email, integrations,
-      jobs, meta, packages, repo, secrets, services, storage, values) merged
-      with synthesized remote-connector domains behind search/execute.
+      Builtin capability domains (admin, apps, coding, community, email,
+      integrations, jobs, meta, packages, repo, secrets, services, storage,
+      values) merged with synthesized remote-connector domains behind
+      search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
     docs:
@@ -160,8 +175,8 @@ primitives:
     name: Community package listings
     summary:
       Public pinned snapshots of published saved packages on the same
-      deployment; inert forks, ratings, reports, and admin moderation via the
-      community MCP domain and /community routes.
+      deployment; inert forks, ratings, user reports, admin moderation at
+      /admin/community-reports, and /community routes.
     code:
       - packages/worker/src/community/
       - packages/worker/src/mcp/capabilities/community/
@@ -259,9 +274,12 @@ primitives:
     name: Remote connectors
     summary:
       Outbound-WebSocket MCP-style tool servers (per user, kind, and instance)
-      surfaced as synthesized capability domains.
+      with D1-backed settings, account UI at /account/remote-connectors, and
+      synthesized capability domains for attached MCP/chat refs.
     code:
       - packages/worker/src/remote-connector/
+      - packages/worker/src/app/handlers/account-remote-connectors.ts
+      - packages/worker/migrations/0034-remote-connector-settings.sql
     docs:
       - docs/contributing/architecture/remote-connectors.md
 
@@ -335,8 +353,10 @@ primitives:
     group: storage
     name: D1 app database
     summary:
-      APP_DB relational metadata and projections (users, jobs, entity_sources,
-      saved_packages); never canonical package source.
+      APP_DB relational metadata and projections (users, RBAC, invites, email
+      verification, jobs, entity_sources, saved_packages, community, email,
+      secrets/values, remote connector settings, usage_rollups, and
+      entitlement_daily_counters); never canonical package source.
     code:
       - packages/worker/migrations/
       - packages/worker/src/db.ts
@@ -358,8 +378,9 @@ primitives:
     group: storage
     name: Bundle artifacts KV
     summary:
-      Published source snapshots and bundle artifacts keyed by source_id plus
-      published commit.
+      Published source snapshots, manifest snapshots, package retriever caches,
+      community snapshots, and bundle artifacts keyed by source_id plus
+      published commit or user-scoped cache keys.
     code:
       - packages/worker/src/package-runtime/published-bundle-artifacts.ts
     docs:
@@ -382,7 +403,9 @@ primitives:
     summary:
       Per-user usage events recorded at runtime chokepoints via recordUsage();
       raw events go to the USAGE_EVENTS Analytics Engine dataset and per-user,
-      per-metric, per-month counters accumulate in the D1 usage_rollups table.
+      per-metric, per-month counters accumulate in D1 usage_rollups.
+      Observability only; entitlements use separate source-table counts and
+      daily counters.
     code:
       - packages/worker/src/usage/record-usage.ts
       - packages/worker/migrations/0047-usage-rollups.sql

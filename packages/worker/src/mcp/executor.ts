@@ -20,6 +20,10 @@ import {
 	parsePackageAccessRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
 } from '#mcp/secrets/errors.ts'
+import {
+	isEntitlementLimitError,
+	type EntitlementLimitErrorDetails,
+} from '#worker/entitlements/errors.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -595,11 +599,34 @@ export type ExecutionErrorDetails =
 				type: 'sign_in'
 			}
 	  }
+	| {
+			kind: 'entitlement_limit_exceeded'
+			message: string
+			nextStep: string
+			details: EntitlementLimitErrorDetails
+			suggestedAction: {
+				type: 'review_plan_limit'
+				resource: EntitlementLimitErrorDetails['resource']
+			}
+	  }
 
 export function getExecutionErrorDetails(
 	error: unknown,
 ): ExecutionErrorDetails | null {
 	const message = stringifyExecutionError(error)
+
+	if (isEntitlementLimitError(error)) {
+		return {
+			kind: 'entitlement_limit_exceeded',
+			message,
+			nextStep: error.details.upgradeHint,
+			details: error.details,
+			suggestedAction: {
+				type: 'review_plan_limit',
+				resource: error.details.resource,
+			},
+		}
+	}
 
 	const hostApprovalDetails = parseHostApprovalRequiredMessage(message)
 	if (hostApprovalDetails) {

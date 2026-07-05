@@ -123,6 +123,14 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 	)
 	expect(pressKeyCapability).toMatchObject({
 		domain: 'remote:roku:default',
+		source: 'remote-connector',
+		remoteConnector: {
+			kind: 'roku',
+			instanceId: 'default',
+			connectorId: 'default',
+			mcpToolName: 'roku_press_key',
+		},
+		aliases: [],
 		requiredInputFields: ['deviceId', 'key'],
 		inputTypeDefinition: expect.any(String),
 	})
@@ -153,6 +161,25 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 	expect(
 		metaOnly.capabilities.some(
 			(capability) => capability.name === 'meta_list_capabilities',
+		),
+	).toBe(true)
+
+	const packagesOnly = await metaListCapabilitiesCapability.handler(
+		{
+			domain: 'packages',
+		},
+		{
+			env: {} as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+			}),
+		},
+	)
+
+	expect(packagesOnly.total).toBeGreaterThan(0)
+	expect(
+		packagesOnly.capabilities.every(
+			(capability) => capability.domain === 'packages',
 		),
 	).toBe(true)
 })

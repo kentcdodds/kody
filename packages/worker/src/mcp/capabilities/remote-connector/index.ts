@@ -113,6 +113,13 @@ function createCapabilityFromTool(input: {
 				'destructiveHint'
 			],
 		),
+		source: 'remote-connector',
+		remoteConnector: {
+			kind: binding.kind,
+			instanceId: binding.instanceId,
+			connectorId: snapshot.connectorId,
+			mcpToolName: binding.mcpToolName,
+		},
 		inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
 		...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
 		async handler(args, ctx) {
