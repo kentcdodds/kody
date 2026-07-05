@@ -176,7 +176,14 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 		).resolves.toEqual({
 			upserted: 1,
 			failed: 1,
-			error: '1 saved package vector(s) failed to reindex',
+			failures: [
+				{
+					id: 'package_pkg-bad',
+					phase: 'load',
+					error: 'manifest missing',
+				},
+			],
+			warning: '1 saved package vector(s) failed to reindex',
 		})
 
 		expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [

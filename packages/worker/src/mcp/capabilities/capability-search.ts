@@ -1,4 +1,5 @@
 import { type CapabilitySpec } from './types.ts'
+import { getErrorMessage } from './error-message.ts'
 
 type CapabilityVectorizeEnv = {
 	AI?: Ai
@@ -20,8 +21,15 @@ export function getCapabilityVectorIndex(env: Env): VectorizeIndex | undefined {
 /** Must match Vectorize index dimensions for production indexes. */
 export const CAPABILITY_EMBEDDING_DIMENSIONS = 384
 export const CAPABILITY_EMBEDDING_MODEL = '@cf/baai/bge-small-en-v1.5'
+export const CAPABILITY_EMBEDDING_BATCH_SIZE = 8
+export const CAPABILITY_EMBEDDING_MAX_INPUT_CHARS = 2_000
 
 export const CAPABILITY_SEARCH_RRF_K = 60
+
+function truncateEmbeddingInput(text: string) {
+	if (text.length <= CAPABILITY_EMBEDDING_MAX_INPUT_CHARS) return text
+	return text.slice(0, CAPABILITY_EMBEDDING_MAX_INPUT_CHARS)
+}
 
 function fnv1a32(input: string): number {
 	let hash = 2_166_136_261
@@ -206,26 +214,40 @@ export async function embedTextsForVectorize(
 	texts: ReadonlyArray<string>,
 ): Promise<Array<Array<number>>> {
 	if (texts.length === 0) return []
+	const truncatedTexts = texts.map((text) => truncateEmbeddingInput(text))
 
 	const runtime = env as unknown as CapabilityVectorizeEnv
 	if (!runtime.AI) {
 		if (runtime.SENTRY_ENVIRONMENT !== 'production') {
-			return texts.map((text) => deterministicEmbedding(text))
+			return truncatedTexts.map((text) => deterministicEmbedding(text))
 		}
 		throw new Error(
 			'AI binding is required for capability embeddings in production.',
 		)
 	}
+	const aiRuntime = runtime as CapabilityVectorizeEnv & { AI: Ai }
 
-	const options =
-		runtime.AI_GATEWAY_ID && runtime.AI_GATEWAY_ID.trim().length > 0
-			? {
-					gateway: {
-						id: runtime.AI_GATEWAY_ID.trim(),
-					},
-				}
-			: undefined
-	const response = (await runtime.AI.run(
+	const rows: Array<Array<number>> = []
+	for (
+		let offset = 0;
+		offset < truncatedTexts.length;
+		offset += CAPABILITY_EMBEDDING_BATCH_SIZE
+	) {
+		const batch = truncatedTexts.slice(
+			offset,
+			offset + CAPABILITY_EMBEDDING_BATCH_SIZE,
+		)
+		rows.push(...(await embedTextBatchForVectorize(aiRuntime, batch)))
+	}
+	return rows
+}
+
+async function runWorkersAiEmbeddingRequest(
+	runtime: CapabilityVectorizeEnv & { AI: Ai },
+	texts: ReadonlyArray<string>,
+	options?: { gateway: { id: string } },
+) {
+	return (await runtime.AI.run(
 		CAPABILITY_EMBEDDING_MODEL,
 		{
 			text: [...texts],
@@ -233,7 +255,40 @@ export async function embedTextsForVectorize(
 		},
 		options,
 	)) as WorkersAiEmbeddingResponse
+}
 
+async function embedTextBatchForVectorize(
+	runtime: CapabilityVectorizeEnv & { AI: Ai },
+	texts: ReadonlyArray<string>,
+) {
+	const gatewayId = runtime.AI_GATEWAY_ID?.trim()
+	if (gatewayId) {
+		try {
+			const response = await runWorkersAiEmbeddingRequest(runtime, texts, {
+				gateway: { id: gatewayId },
+			})
+			return parseWorkersAiEmbeddingResponse(response, texts.length)
+		} catch (error) {
+			console.warn(
+				JSON.stringify({
+					message:
+						'Workers AI Gateway embedding request failed; retrying direct Workers AI',
+					gatewayId,
+					error: getErrorMessage(error),
+				}),
+			)
+			try {
+				const response = await runWorkersAiEmbeddingRequest(runtime, texts)
+				return parseWorkersAiEmbeddingResponse(response, texts.length)
+			} catch (directError) {
+				throw new Error(
+					`Workers AI embedding request failed after AI Gateway fallback. Gateway error: ${getErrorMessage(error)}. Direct error: ${getErrorMessage(directError)}`,
+				)
+			}
+		}
+	}
+
+	const response = await runWorkersAiEmbeddingRequest(runtime, texts)
 	return parseWorkersAiEmbeddingResponse(response, texts.length)
 }
 

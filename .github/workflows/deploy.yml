@@ -268,8 +268,16 @@ jobs:
           fi
           base="${DEPLOY_URL%/}"
           echo "POST ${base}/__maintenance/reindex-capabilities"
-          curl --fail --silent --show-error --location --max-time 120 \
+          status="$(curl --silent --show-error --location --max-time 120 \
             -X POST \
             -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
             -H "Accept: application/json" \
-            "${base}/__maintenance/reindex-capabilities"
+            --output reindex-response.json \
+            --write-out "%{http_code}" \
+            "${base}/__maintenance/reindex-capabilities")"
+          cat reindex-response.json
+          echo
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "Capability reindex failed with HTTP ${status}." >&2
+            exit 1
+          fi

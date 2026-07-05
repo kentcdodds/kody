@@ -13,10 +13,23 @@ type ReindexStepResult = {
 	upserted: number
 	error?: string
 	failed?: number
+	warning?: string
+	failures?: Array<{
+		id: string
+		phase: string
+		error: string
+	}>
+}
+
+type ReindexFailureSummary = {
+	phase: string
+	cause: string
+	failed?: number
+	failures?: ReindexStepResult['failures']
 }
 
 async function runReindexStep(
-	run: () => Promise<{ upserted: number }>,
+	run: () => Promise<ReindexStepResult>,
 ): Promise<ReindexStepResult> {
 	try {
 		return await run()
@@ -65,13 +78,27 @@ export async function handleCapabilityReindexRequest(
 					typeof entry[1].error === 'string',
 			)
 			if (failed.length > 0) {
+				const failedPhases: Array<ReindexFailureSummary> = failed.map(
+					([phase, step]) => ({
+						phase,
+						cause: step.error,
+						...(typeof step.failed === 'number' ? { failed: step.failed } : {}),
+						...(step.failures ? { failures: step.failures } : {}),
+					}),
+				)
 				throw new MaintenanceFailureError(
 					`Capability search vector reindex failed for ${failed
 						.map(([kind]) => kind)
 						.join(', ')}: ${failed
 						.map(([kind, step]) => `${kind}: ${step.error}`)
 						.join('; ')}`,
-					result,
+					{
+						...result,
+						failure: {
+							phase: 'reindex-capability-vectors',
+							failedPhases,
+						},
+					},
 				)
 			}
 			return result
