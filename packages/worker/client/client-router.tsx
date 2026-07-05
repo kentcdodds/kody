@@ -402,13 +402,16 @@ async function runNavigationWithLoader(
 	const loader = matchRouteLoader(destination)
 	activeNavigationPath = nextPath
 
+	// Adopt an intent prefetch when one is pending or fresh for this
+	// destination; otherwise run the loader now. Tying the prefetch to this
+	// navigation's signal keeps latest-wins abort semantics. Taken
+	// unconditionally (even for loaderless destinations) so a prefetch for a
+	// link the user did not follow never outlives this navigation.
+	const prefetched = takePrefetchedRouteResult(nextPath, signal)
+
 	try {
 		let loadedData: Partial<AppLoaderData> | undefined
 		if (loader) {
-			// Adopt an intent prefetch when one is pending or fresh for this
-			// destination; otherwise run the loader now. Tying the prefetch to
-			// this navigation's signal keeps latest-wins abort semantics.
-			const prefetched = takePrefetchedRouteResult(nextPath, signal)
 			const result = prefetched
 				? await prefetched
 				: await loader(destination, signal)

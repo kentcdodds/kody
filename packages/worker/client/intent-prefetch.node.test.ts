@@ -45,12 +45,16 @@ test('takePrefetchedRouteResult returns the in-flight promise once', async () =>
 	await expect(taken).resolves.toEqual({ accountProfile: { ok: true } })
 })
 
-test('takePrefetchedRouteResult ignores mismatched hrefs', () => {
+test('navigating elsewhere aborts and clears the prefetch slot', () => {
 	const deferred = createDeferredLoader()
 	prefetchRouteOnIntent('/account', deferred.loader, accountUrl)
 
+	// A navigation to a different destination consumes nothing but must
+	// invalidate the speculative result so a later navigation to /account
+	// cannot adopt data prefetched before the user went elsewhere.
 	expect(takePrefetchedRouteResult('/account/secrets')).toBeNull()
-	expect(takePrefetchedRouteResult('/account')).not.toBeNull()
+	expect(deferred.calls[0]?.signal.aborted).toBe(true)
+	expect(takePrefetchedRouteResult('/account')).toBeNull()
 })
 
 test('repeat intent for the same href reuses the in-flight run', () => {
@@ -74,8 +78,10 @@ test('intent for a different href aborts the previous prefetch', () => {
 	)
 
 	expect(first.calls[0]?.signal.aborted).toBe(true)
-	expect(takePrefetchedRouteResult('/account')).toBeNull()
+	// Consume the fresh prefetch first; taking a mismatched href clears the
+	// slot, so the stale href is checked after.
 	expect(takePrefetchedRouteResult('/account/secrets')).not.toBeNull()
+	expect(takePrefetchedRouteResult('/account')).toBeNull()
 })
 
 test('failed prefetches are not adopted so navigations retry the loader', async () => {

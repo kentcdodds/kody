@@ -79,15 +79,21 @@ export function prefetchRouteOnIntent(
  * Consumes the prefetched loader result for `href`. Returns the in-flight or
  * fresh settled promise, or `null` when there is no usable prefetch (wrong
  * href, expired, or failed — failures let the navigation retry the loader).
- * Consumption is one-shot. When `signal` aborts (a superseding navigation),
- * an still-running prefetch request is aborted with it.
+ * Consumption is one-shot. A mismatched href also aborts and clears the slot:
+ * the user navigated somewhere other than the prefetched link, so the
+ * speculative result must not survive to be adopted by a later navigation.
+ * When `signal` aborts (a superseding navigation), a still-running prefetch
+ * request is aborted with it.
  */
 export function takePrefetchedRouteResult(
 	href: string,
 	signal?: AbortSignal,
 ): Promise<RouteLoaderResult> | null {
 	if (!slot) return null
-	if (slot.href !== normalizePrefetchHref(href)) return null
+	if (slot.href !== normalizePrefetchHref(href)) {
+		abortIntentPrefetch()
+		return null
+	}
 
 	const current = slot
 	slot = null
