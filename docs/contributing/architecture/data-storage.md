@@ -18,12 +18,13 @@ both the "happy" path and a cross-user denial path.
 Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
 and is intentionally inventory driven. The operation first enumerates user-owned
 identifiers while D1 rows still exist, then best-effort deletes out-of-band
-stores, then deletes D1 rows, revokes OAuth grants, and finally deletes the
-`users` row. Each step records counts and warnings so the HTTP response states
-what was removed and what needs operator attention. Re-running the operation is
-safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
-and already-cleared Durable Objects are treated as successful no-ops or
-warning-only failures.
+stores, then deletes or clears D1 rows, revokes OAuth grants, and finally
+deletes the `users` row. Each step records deleted counts, updated counts for
+cleared references, and warnings so the HTTP response states what was removed
+and what needs operator attention. Re-running the operation is safe: missing
+rows, missing KV keys, missing vectors, deleted Artifacts repos, and
+already-cleared Durable Objects are treated as successful no-ops or warning-only
+failures.
 
 Deletion must cover these user-owned surfaces:
 

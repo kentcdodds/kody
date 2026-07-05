@@ -146,7 +146,6 @@ function createTestDb(initial: RowMap): {
 									)
 									const sourceId =
 										savedPackage?.['source_id'] ?? row['source_id']
-									if (sourceId == null) continue
 									const key = `${String(row['package_id'])}:${String(row['name'])}`
 									if (seen.has(key)) continue
 									seen.add(key)
@@ -208,6 +207,25 @@ function createTestDb(initial: RowMap): {
 						},
 						async run() {
 							const userId = params[0] as string | number
+							const nullColumnMatch = lower.match(
+								/^update (\w+) set (.+) where (\w+) = \?$/,
+							)
+							if (nullColumnMatch) {
+								const table = nullColumnMatch[1] as string
+								const assignments = nullColumnMatch[2]!
+									.split(', ')
+									.map((part) => part.replace(' = null', ''))
+								const matchColumn = nullColumnMatch[3] as string
+								let changed = 0
+								for (const row of rows[table] ?? []) {
+									if (row[matchColumn] !== userId) continue
+									for (const column of assignments) {
+										row[column] = null
+									}
+									changed += 1
+								}
+								return { meta: { changes: changed } }
+							}
 							const userColumnsMatch = lower.match(
 								/^delete from (\w+) where ((?:\w+ = \?)(?: or \w+ = \?)*)$/,
 							)
@@ -377,6 +395,16 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				surface: 'app_fetch',
 				name: null,
 				storage_id: 'exec:run-2',
+			},
+			{
+				id: 'run-orphan-service',
+				user_id: userAaa,
+				package_id: 'pkg-orphan',
+				package_kody_id: 'legacy',
+				source_id: null,
+				surface: 'service',
+				name: 'legacy-sync',
+				storage_id: null,
 			},
 			{
 				id: 'run-3',
@@ -633,7 +661,17 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.community_ratings).toEqual([
 		{ id: 'rating-3', listing_id: 'listing-2', user_id: userBbb },
 	])
-	expect(rows.community_reports).toEqual([])
+	expect(rows.community_reports).toEqual([
+		{
+			id: 'report-3',
+			listing_id: 'listing-2',
+			listing_owner_user_id: userBbb,
+			reporter_user_id: userBbb,
+			resolved_by_user_id: null,
+			resolved_at: null,
+			resolution_note: null,
+		},
+	])
 	expect(rows.community_bans).toEqual([])
 	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
 	expect(result.deletedRowCounts.password_resets).toBe(2)
@@ -646,7 +684,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'job_job-2',
 		'package_pkg-1',
 	])
-	expect(clearStorageMock).toHaveBeenCalledTimes(5)
+	expect(clearStorageMock).toHaveBeenCalledTimes(6)
 	expect(purgeJobManagerMock).toHaveBeenCalledTimes(1)
 	expect(purgeRepoSessionMock).toHaveBeenCalledWith({
 		sessionId: 'rs-1',
@@ -657,7 +695,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		kind: 'home',
 		instanceId: 'default',
 	})
-	expect(doFetchMock).toHaveBeenCalledTimes(2)
+	expect(doFetchMock).toHaveBeenCalledTimes(3)
 
 	// Bundle KV keys for the deleted user were removed; the other user's keys
 	// remain in storage.
@@ -679,20 +717,22 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.jobs).toBe(2)
 	expect(result.deletedRowCounts.users).toBe(1)
 	expect(result.deletedRowCounts.email_attachments).toBe(1)
-	expect(result.deletedRowCounts.package_runtime_runs).toBe(2)
+	expect(result.deletedRowCounts.package_runtime_runs).toBe(3)
 	expect(result.deletedRowCounts.package_runtime_logs).toBe(1)
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
 	expect(result.deletedRowCounts.community_ratings).toBe(2)
+	expect(result.deletedRowCounts.community_reports).toBe(2)
+	expect(result.updatedRowCounts.community_reports).toBe(1)
 	expect(result.deletedKvKeys).toBe(11)
 	expect(result.deletedVectors).toBe(4)
 	expect(result.clearedDurableObjects).toMatchObject({
-		storageRunners: 5,
+		storageRunners: 6,
 		jobManagers: 1,
 		repoSessions: 1,
 		remoteConnectorSessions: 1,
 		packageRealtimeSessions: 1,
-		packageServiceInstances: 1,
+		packageServiceInstances: 2,
 	})
 	expect(result.warnings.length).toBeGreaterThan(0)
 })

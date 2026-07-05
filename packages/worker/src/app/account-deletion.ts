@@ -41,6 +41,7 @@ type AccountDeletionEnv = Env & {
 
 export type AccountDeletionResult = {
 	deletedRowCounts: Record<string, number>
+	updatedRowCounts: Record<string, number>
 	deletedKvKeys: number
 	deletedArtifactRepos: number
 	revokedOAuthGrants: number
@@ -53,6 +54,12 @@ type UserScopedDeleteTarget =
 	| { kind: 'user_id'; table: string }
 	| { kind: 'db_user_id'; table: string }
 	| { kind: 'user_columns'; table: string; columns: ReadonlyArray<string> }
+	| {
+			kind: 'null_user_column'
+			table: string
+			matchColumn: string
+			nullColumns: ReadonlyArray<string>
+	  }
 	| { kind: 'bucket_parent'; table: string; parentTable: string }
 	| { kind: 'attachment_parent'; table: string }
 	| { kind: 'community_listing_child'; table: string; listingColumn: string }
@@ -128,11 +135,13 @@ const userScopedTables: ReadonlyArray<UserScopedDeleteTarget> = [
 	{
 		kind: 'user_columns',
 		table: 'community_reports',
-		columns: [
-			'listing_owner_user_id',
-			'reporter_user_id',
-			'resolved_by_user_id',
-		],
+		columns: ['listing_owner_user_id', 'reporter_user_id'],
+	},
+	{
+		kind: 'null_user_column',
+		table: 'community_reports',
+		matchColumn: 'resolved_by_user_id',
+		nullColumns: ['resolved_by_user_id', 'resolved_at', 'resolution_note'],
 	},
 	{
 		kind: 'user_columns',
@@ -169,6 +178,10 @@ export function getAccountDeletionD1UserColumnCoverage() {
 				for (const column of target.columns) {
 					covered.add(`${target.table}.${column}`)
 				}
+				break
+			}
+			case 'null_user_column': {
+				covered.add(`${target.table}.${target.matchColumn}`)
 				break
 			}
 			case 'bucket_parent':
@@ -387,14 +400,12 @@ async function listUserPackageServices(env: Env, userId: string) {
 			source_id: string | null
 			name: string
 		}>()
-	return (rows.results ?? [])
-		.filter((row) => row.source_id != null)
-		.map((row) => ({
-			packageId: row.package_id,
-			kodyId: row.kody_id,
-			sourceId: row.source_id ?? '',
-			serviceName: row.name,
-		}))
+	return (rows.results ?? []).map((row) => ({
+		packageId: row.package_id,
+		kodyId: row.kody_id,
+		sourceId: row.source_id ?? '',
+		serviceName: row.name,
+	}))
 }
 
 async function listUserCommunityListingIds(env: Env, userId: string) {
@@ -828,10 +839,19 @@ async function deleteUserScopedRows(input: {
 	mcpUserId: string
 	dbUserId: number
 	warnings: Array<string>
-}): Promise<Record<string, number>> {
-	const counts: Record<string, number> = {}
-	function recordCount(tableName: string, changes: number | undefined) {
-		counts[tableName] = (counts[tableName] ?? 0) + (changes ?? 0)
+}): Promise<{
+	deletedRowCounts: Record<string, number>
+	updatedRowCounts: Record<string, number>
+}> {
+	const deletedRowCounts: Record<string, number> = {}
+	const updatedRowCounts: Record<string, number> = {}
+	function recordDeleted(tableName: string, changes: number | undefined) {
+		deletedRowCounts[tableName] =
+			(deletedRowCounts[tableName] ?? 0) + (changes ?? 0)
+	}
+	function recordUpdated(tableName: string, changes: number | undefined) {
+		updatedRowCounts[tableName] =
+			(updatedRowCounts[tableName] ?? 0) + (changes ?? 0)
 	}
 	for (const target of userScopedTables) {
 		try {
@@ -856,6 +876,14 @@ async function deleteUserScopedRows(input: {
 						.map((column) => `${column} = ?`)
 						.join(' OR ')}`
 					params = target.columns.map(() => input.mcpUserId)
+					tableName = target.table
+					break
+				}
+				case 'null_user_column': {
+					sql = `UPDATE ${target.table}
+						SET ${target.nullColumns.map((column) => `${column} = NULL`).join(', ')}
+						WHERE ${target.matchColumn} = ?`
+					params = [input.mcpUserId]
 					tableName = target.table
 					break
 				}
@@ -899,7 +927,11 @@ async function deleteUserScopedRows(input: {
 			const result = await input.env.APP_DB.prepare(sql)
 				.bind(...params)
 				.run()
-			recordCount(tableName, result.meta.changes)
+			if (target.kind === 'null_user_column') {
+				recordUpdated(tableName, result.meta.changes)
+			} else {
+				recordDeleted(tableName, result.meta.changes)
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			const targetLabel =
@@ -907,10 +939,14 @@ async function deleteUserScopedRows(input: {
 					? 'mcp_memory_conversation_suppressions'
 					: target.table
 			input.warnings.push(`Failed to delete from ${targetLabel}: ${message}`)
-			recordCount(targetLabel, 0)
+			if (target.kind === 'null_user_column') {
+				recordUpdated(targetLabel, 0)
+			} else {
+				recordDeleted(targetLabel, 0)
+			}
 		}
 	}
-	return counts
+	return { deletedRowCounts, updatedRowCounts }
 }
 
 async function deleteUserRow(input: {
@@ -955,6 +991,7 @@ export async function deleteUserAccount(input: {
 	const warnings: Array<string> = []
 	const result: AccountDeletionResult = {
 		deletedRowCounts: {},
+		updatedRowCounts: {},
 		deletedKvKeys: 0,
 		deletedArtifactRepos: 0,
 		revokedOAuthGrants: 0,
@@ -1056,12 +1093,14 @@ export async function deleteUserAccount(input: {
 		)
 	}
 
-	result.deletedRowCounts = await deleteUserScopedRows({
+	const d1Cleanup = await deleteUserScopedRows({
 		env: input.env,
 		mcpUserId: input.mcpUserId,
 		dbUserId: input.dbUserId,
 		warnings,
 	})
+	result.deletedRowCounts = d1Cleanup.deletedRowCounts
+	result.updatedRowCounts = d1Cleanup.updatedRowCounts
 
 	const helpers = input.env.OAUTH_PROVIDER
 	if (helpers) {
