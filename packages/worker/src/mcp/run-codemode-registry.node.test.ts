@@ -59,6 +59,45 @@ test('buildCodemodeFns rejects role-gated capabilities even when passed an unfil
 	)
 })
 
+test('buildCodemodeFns exposes deprecated capability aliases as callable tools', async () => {
+	const aliasedCapability = defineDomainCapability('meta', {
+		name: 'new_name',
+		description: 'New name.',
+		aliases: [{ name: 'old_name' }],
+		inputSchema: {
+			type: 'object',
+			properties: {
+				value: { type: 'string' },
+			},
+			required: ['value'],
+		},
+		handler: async (args) => ({
+			value: args.value,
+		}),
+	})
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'meta',
+			description: 'Meta capabilities',
+			capabilities: [aliasedCapability],
+		},
+	])
+	const tools = await buildCodemodeFns(
+		{} as Env,
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+		}),
+		{ capabilityRegistry: registry },
+	)
+
+	await expect(tools.new_name({ value: 'primary' })).resolves.toEqual({
+		value: 'primary',
+	})
+	await expect(tools.old_name({ value: 'alias' })).resolves.toEqual({
+		value: 'alias',
+	})
+})
+
 test('package workflow tools create instances from package context and honor caller overrides in runModuleWithRegistry', async () => {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const workflowTools = createWorkflowTools({

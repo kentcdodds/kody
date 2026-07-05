@@ -82,13 +82,19 @@ function createCapabilityMap(capabilities: Array<Capability>) {
 		...primaryEntries,
 		...aliasEntries.map(([name, capability]) => [name, capability] as const),
 	]
-	const duplicates = entries.filter(
-		([name], index) =>
-			entries.findIndex(([entryName]) => entryName === name) !== index,
-	)
-	if (duplicates.length > 0) {
-		const names = duplicates.map(([name]) => name).join(', ')
-		throw new Error(`Duplicate capability names or aliases: ${names}`)
+	const seenNames = new Set<string>()
+	const duplicateNames = new Set<string>()
+	for (const [name] of entries) {
+		if (seenNames.has(name)) {
+			duplicateNames.add(name)
+		} else {
+			seenNames.add(name)
+		}
+	}
+	if (duplicateNames.size > 0) {
+		throw new Error(
+			`Duplicate capability names or aliases: ${[...duplicateNames].join(', ')}`,
+		)
 	}
 	const capabilityAliases = Object.fromEntries(
 		aliasEntries.map(([name, capability, alias]) => [

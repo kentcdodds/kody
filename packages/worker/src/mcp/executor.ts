@@ -22,6 +22,7 @@ import {
 } from '#mcp/secrets/errors.ts'
 import {
 	isEntitlementLimitError,
+	parseEntitlementLimitMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 
@@ -616,16 +617,12 @@ export function getExecutionErrorDetails(
 	const message = stringifyExecutionError(error)
 
 	if (isEntitlementLimitError(error)) {
-		return {
-			kind: 'entitlement_limit_exceeded',
-			message,
-			nextStep: error.details.upgradeHint,
-			details: error.details,
-			suggestedAction: {
-				type: 'review_plan_limit',
-				resource: error.details.resource,
-			},
-		}
+		return toEntitlementExecutionErrorDetails(message, error.details)
+	}
+
+	const entitlementDetails = parseEntitlementLimitMessage(message)
+	if (entitlementDetails) {
+		return toEntitlementExecutionErrorDetails(message, entitlementDetails)
 	}
 
 	const hostApprovalDetails = parseHostApprovalRequiredMessage(message)
@@ -749,6 +746,22 @@ export function getExecutionErrorDetails(
 	}
 
 	return null
+}
+
+function toEntitlementExecutionErrorDetails(
+	message: string,
+	details: EntitlementLimitErrorDetails,
+): ExecutionErrorDetails {
+	return {
+		kind: 'entitlement_limit_exceeded',
+		message,
+		nextStep: details.upgradeHint,
+		details,
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: details.resource,
+		},
+	}
 }
 
 export function formatExecutionOutput(result: ExecuteResult) {

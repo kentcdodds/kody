@@ -1,5 +1,6 @@
 import {
 	entitlementResourceLabels,
+	parsePlanName,
 	type EntitlementResource,
 	type PlanName,
 } from './plans.ts'
@@ -36,6 +37,37 @@ export function buildEntitlementLimitMessage(
 	return `Plan limit reached: ${planText} allows at most ${details.limit} ${label} and you currently have ${details.current}. ${details.upgradeHint}`
 }
 
+export function parseEntitlementLimitMessage(
+	message: string,
+): EntitlementLimitErrorDetails | null {
+	for (const [resource, label] of Object.entries(
+		entitlementResourceLabels,
+	) as Array<[EntitlementResource, string]>) {
+		const match = new RegExp(
+			`^Plan limit reached: (?:your "([^"]+)" plan|this deployment) allows at most (\\d+) ${escapeRegex(label)} and you currently have (\\d+)\\. (.+)$`,
+		).exec(message)
+		if (!match) continue
+
+		const plan = match[1] ? parsePlanName(match[1]) : null
+		if (match[1] && !plan) return null
+		const limit = Number(match[2])
+		const current = Number(match[3])
+		if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(current)) {
+			return null
+		}
+
+		return {
+			code: entitlementLimitErrorCode,
+			resource,
+			plan,
+			limit,
+			current,
+			upgradeHint: match[4] ?? '',
+		}
+	}
+	return null
+}
+
 export class EntitlementLimitError extends Error {
 	readonly details: EntitlementLimitErrorDetails
 
@@ -62,4 +94,8 @@ export function isEntitlementLimitError(
 			'code' in error.details &&
 			error.details.code === entitlementLimitErrorCode)
 	)
+}
+
+function escapeRegex(value: string) {
+	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
 }
