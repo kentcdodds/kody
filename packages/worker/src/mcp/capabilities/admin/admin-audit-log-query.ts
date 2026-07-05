@@ -1,0 +1,98 @@
+import { z } from 'zod'
+import {
+	auditEventCategories,
+	auditEventResults,
+	queryAuditLog,
+} from '#app/audit-log.ts'
+import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
+import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	adminCapabilityAccess,
+	auditAdminCapabilityInvocation,
+} from './admin-shared.ts'
+
+const inputSchema = z.object({
+	action: z
+		.string()
+		.min(1)
+		.optional()
+		.describe('Exact audit action to match, such as admin_user_list.'),
+	category: z
+		.enum(auditEventCategories)
+		.optional()
+		.describe('Audit event category filter.'),
+	result: z
+		.enum(auditEventResults)
+		.optional()
+		.describe('Audit event result filter.'),
+	user: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Actor email address to filter by. Kody hashes it before querying; raw emails are not stored in audit rows.',
+		),
+	emailHash: z
+		.string()
+		.min(1)
+		.optional()
+		.describe('Previously returned actor email hash to filter by.'),
+	startTime: z
+		.string()
+		.datetime()
+		.optional()
+		.describe('Inclusive ISO timestamp lower bound.'),
+	endTime: z
+		.string()
+		.datetime()
+		.optional()
+		.describe('Inclusive ISO timestamp upper bound.'),
+	page: z.number().int().min(1).optional().describe('One-indexed result page.'),
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(100)
+		.optional()
+		.describe('Events per page. Defaults to 50 and maxes at 100.'),
+})
+
+const auditLogEntrySchema = z.object({
+	id: z.number().int().positive(),
+	category: z.enum(auditEventCategories),
+	action: z.string(),
+	result: z.enum(auditEventResults),
+	email_hash: z.string().nullable(),
+	ip_hash: z.string().nullable(),
+	client_id: z.string().nullable(),
+	path: z.string().nullable(),
+	reason: z.string().nullable(),
+	timestamp: z.string(),
+})
+
+const outputSchema = z.object({
+	total: z.number().int().nonnegative(),
+	page: z.number().int().positive(),
+	limit: z.number().int().positive(),
+	events: z.array(auditLogEntrySchema),
+})
+
+export const adminAuditLogQueryCapability = defineDomainCapability(
+	capabilityDomainNames.admin,
+	{
+		...adminCapabilityAccess,
+		name: 'admin_audit_log_query',
+		description:
+			'Query sanitized account-administration audit metadata by action, actor, result, category, or time range. Admin-only; never returns user content.',
+		keywords: ['admin', 'audit', 'log', 'events', 'account metadata'],
+		inputSchema,
+		outputSchema,
+		async handler(args, ctx) {
+			return auditAdminCapabilityInvocation(
+				ctx,
+				'admin_audit_log_query',
+				async () => queryAuditLog(ctx.env.APP_DB, args),
+			)
+		},
+	},
+)

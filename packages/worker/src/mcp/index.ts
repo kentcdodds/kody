@@ -15,6 +15,7 @@ import {
 import { registerTools } from './register-tools.ts'
 import { createKodyMcpServer } from './sentry-mcp-server.ts'
 import { getMcpUserServerInstructions } from './user-server-instructions-repo.ts'
+import { getCapabilityRegistryForContext } from './capabilities/registry.ts'
 import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
 import { remoteConnectorDomainId } from '#worker/remote-connector/remote-domain-id.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
@@ -65,7 +66,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	async init() {
 		const caller = this.getCallerContext()
 		const userId = caller.user?.userId ?? null
-		const [overlay, remoteConnectors] = await Promise.all([
+		const [overlay, remoteConnectors, registry] = await Promise.all([
 			userId !== null
 				? getMcpUserServerInstructions(this.env.APP_DB, userId)
 				: Promise.resolve(null),
@@ -73,10 +74,15 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				env: this.env,
 				caller,
 			}),
+			getCapabilityRegistryForContext({
+				env: this.env,
+				callerContext: caller,
+			}),
 		])
 		this.server = createKodyMcpServer({
 			instructions: buildMcpServerInstructions({
 				userOverlay: overlay,
+				domains: registry.capabilityDomains,
 				remoteConnectors,
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),

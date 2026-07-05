@@ -28,6 +28,7 @@ import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 import {
@@ -352,6 +353,7 @@ export async function buildCodemodeFns(
 		Object.values(capabilityMap).map((capability) => [
 			capability.name,
 			async (args: unknown) => {
+				assertCallerCanAccessCapability(callerContext, capability)
 				const resolveSecretValue =
 					options?.resolveSecretValue ??
 					createCapabilityInputSecretResolver(

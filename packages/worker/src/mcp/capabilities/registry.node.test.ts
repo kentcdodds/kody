@@ -154,6 +154,7 @@ test('getCapabilityRegistryForContext bypasses connector caches when no connecto
 			userId: 'user-1',
 			email: 'user-1@example.com',
 			displayName: 'user-1',
+			roles: ['admin'],
 		},
 	})
 
@@ -164,4 +165,44 @@ test('getCapabilityRegistryForContext bypasses connector caches when no connecto
 
 	expect(get).not.toHaveBeenCalled()
 	expect(registry.capabilityMap).toBe(capabilityMap)
+})
+
+test('getCapabilityRegistryForContext filters admin capabilities by current caller roles', async () => {
+	const env = {} as Env
+	const adminContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-1',
+			email: 'admin@example.com',
+			displayName: 'admin',
+			roles: ['admin'],
+		},
+	})
+	const regularContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-1',
+			email: 'admin@example.com',
+			displayName: 'admin',
+			roles: ['user'],
+		},
+	})
+
+	const adminRegistry = await getCapabilityRegistryForContext({
+		env,
+		callerContext: adminContext,
+	})
+	const regularRegistry = await getCapabilityRegistryForContext({
+		env,
+		callerContext: regularContext,
+	})
+
+	expect(adminRegistry.capabilityMap.admin_user_list).toBeTruthy()
+	expect(
+		adminRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
+	).toBe(true)
+	expect(regularRegistry.capabilityMap.admin_user_list).toBeUndefined()
+	expect(
+		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
+	).toBe(false)
 })

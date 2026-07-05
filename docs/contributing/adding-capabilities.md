@@ -79,6 +79,9 @@ Optional fields:
 - `tags`: short labels that improve search precision
 - `keywords`: extra synonyms or task words that may not belong in the name
 - `readOnly`, `idempotent`, `destructive`: search hints for capability behavior
+- `requiredRole`: RBAC role required to see or execute the capability
+- `requiredPermission`: RBAC permission string required to see or execute the
+  capability
 
 `defineDomainCapability` delegates to `defineCapability()`, which:
 
@@ -90,6 +93,62 @@ Keep `description` concise. Prefer putting field-level examples, constraints,
 and shape details in the schemas rather than repeating them in the top-level
 capability description. Reserve the description for high-level purpose and
 behavior that the schemas do not express well.
+
+### Role-gated capabilities
+
+Capabilities are public to the authenticated caller by default. When a
+capability should be visible only to a privileged account, add `requiredRole`
+and/or `requiredPermission` to the capability definition:
+
+```ts
+export const exampleAdminCapability = defineDomainCapability(
+	capabilityDomainNames.admin,
+	{
+		name: 'admin_example_read',
+		description: 'Read admin-only account metadata.',
+		requiredRole: 'admin',
+		readOnly: true,
+		idempotent: true,
+		inputSchema: z.object({}),
+		async handler(args, ctx) {
+			// ...
+		},
+	},
+)
+```
+
+The registry filters role-gated capabilities from `search`,
+`meta_list_capabilities`, and MCP server domain instructions for callers who do
+not satisfy the requirement. This filtering is UX only; execute-time checks are
+the security boundary. The codemode wrapper and normalized capability handler
+also reject unauthorized calls, even if a test or internal caller accidentally
+passes an unfiltered registry.
+
+Role and permission checks use the authenticated MCP caller context for the
+current request. Do **not** cache role or permission decisions into Vectorize
+metadata, OAuth grants, package state, or session-scoped data; role revocation
+must take effect on the next request.
+
+### Admin domain
+
+The `admin` domain is for MCP-accessible account administration. Capabilities in
+this domain must set `requiredRole: 'admin'` and must preserve the RBAC privacy
+boundary from [Authorization](./architecture/authorization.md): admin access is
+limited to user/role account metadata and sanitized audit metadata. Never return
+or join against user content tables such as packages, secrets, values, memories,
+jobs, email, chat threads, storage buckets, OAuth grants, or remote connectors.
+
+Current admin capabilities are read-only:
+
+- `admin_user_list`
+- `admin_user_get`
+- `admin_audit_log_query`
+
+When the invite-signup branch lands, expose its invite and admin
+create-user-by-email service functions by adding new `admin/*` capability files
+that call those service-layer functions directly, set `requiredRole: 'admin'`,
+and audit-log the invocation. Do not duplicate the invite/user-creation SQL in
+capability handlers.
 
 Use raw JSON Schema only when you need an escape hatch that Zod does not model
 cleanly. The registry and Code Mode layer consume normalized JSON Schema after
