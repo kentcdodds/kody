@@ -106,13 +106,22 @@ export function AdminRolesRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		lastLoadedHref = href
+		lastFailedHref = null
 		return true
 	}
 
 	const secondaryButtonCss = getSecondaryButtonCss()
 
+	let lastSeenHref = ''
+
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		// The failure latch only guards retry loops for the location that
+		// failed; leaving it (or coming back) must allow a fresh attempt.
+		if (currentHref !== lastSeenHref) {
+			lastSeenHref = currentHref
+			lastFailedHref = null
+		}
 
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsLoad =

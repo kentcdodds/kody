@@ -237,15 +237,24 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		lastLoadedHref = href
+		lastFailedHref = null
 		return true
 	}
 
 	const secondaryButtonCss = getSecondaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
 
+	let lastSeenHref = ''
+
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const isMutating = actionState !== 'idle'
+		// The failure latch only guards retry loops for the location that
+		// failed; leaving it (or coming back) must allow a fresh attempt.
+		if (currentHref !== lastSeenHref) {
+			lastSeenHref = currentHref
+			lastFailedHref = null
+		}
 
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsLoad =

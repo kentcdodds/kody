@@ -232,11 +232,20 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 		status = 'ready'
 		message = null
+		lastFailedHref = null
 		return true
 	}
 
+	let lastSeenHref = ''
+
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		// The failure latch only guards retry loops for the location that
+		// failed; leaving it (or coming back) must allow a fresh attempt.
+		if (currentHref !== lastSeenHref) {
+			lastSeenHref = currentHref
+			lastFailedHref = null
+		}
 		const totalPages = Math.max(1, Math.ceil(total / pageSize))
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
