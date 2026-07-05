@@ -208,7 +208,7 @@ function createTestDb(initial: RowMap): {
 						async run() {
 							const userId = params[0] as string | number
 							const nullColumnMatch = lower.match(
-								/^update (\w+) set (.+) where (\w+) = \?$/,
+								/^update (\w+) set ((?:\w+ = null)(?:, \w+ = null)*) where (\w+) = \?$/,
 							)
 							if (nullColumnMatch) {
 								const table = nullColumnMatch[1] as string
@@ -222,6 +222,21 @@ function createTestDb(initial: RowMap): {
 									for (const column of assignments) {
 										row[column] = null
 									}
+									changed += 1
+								}
+								return { meta: { changes: changed } }
+							}
+							const replaceColumnMatch = lower.match(
+								/^update (\w+) set (\w+) = \? where (\w+) = \?$/,
+							)
+							if (replaceColumnMatch) {
+								const table = replaceColumnMatch[1] as string
+								const setColumn = replaceColumnMatch[2] as string
+								const matchColumn = replaceColumnMatch[3] as string
+								let changed = 0
+								for (const row of rows[table] ?? []) {
+									if (row[matchColumn] !== params[1]) continue
+									row[setColumn] = params[0]
 									changed += 1
 								}
 								return { meta: { changes: changed } }
@@ -672,7 +687,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			resolution_note: null,
 		},
 	])
-	expect(rows.community_bans).toEqual([])
+	expect(rows.community_bans).toEqual([
+		{ user_id: userBbb, banned_by_user_id: 'deleted-user' },
+	])
 	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
 	expect(result.deletedRowCounts.password_resets).toBe(2)
 	expect(result.deletedRowCounts.user_roles).toBe(1)
@@ -724,6 +741,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.community_ratings).toBe(2)
 	expect(result.deletedRowCounts.community_reports).toBe(2)
 	expect(result.updatedRowCounts.community_reports).toBe(1)
+	expect(result.deletedRowCounts.community_bans).toBe(1)
+	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedKvKeys).toBe(11)
 	expect(result.deletedVectors).toBe(4)
 	expect(result.clearedDurableObjects).toMatchObject({

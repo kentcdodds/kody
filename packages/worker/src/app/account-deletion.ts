@@ -60,6 +60,13 @@ type UserScopedDeleteTarget =
 			matchColumn: string
 			nullColumns: ReadonlyArray<string>
 	  }
+	| {
+			kind: 'replace_user_column'
+			table: string
+			matchColumn: string
+			setColumn: string
+			value: string
+	  }
 	| { kind: 'bucket_parent'; table: string; parentTable: string }
 	| { kind: 'attachment_parent'; table: string }
 	| { kind: 'community_listing_child'; table: string; listingColumn: string }
@@ -146,7 +153,14 @@ const userScopedTables: ReadonlyArray<UserScopedDeleteTarget> = [
 	{
 		kind: 'user_columns',
 		table: 'community_bans',
-		columns: ['user_id', 'banned_by_user_id'],
+		columns: ['user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'community_bans',
+		matchColumn: 'banned_by_user_id',
+		setColumn: 'banned_by_user_id',
+		value: 'deleted-user',
 	},
 	{
 		kind: 'user_columns',
@@ -181,6 +195,10 @@ export function getAccountDeletionD1UserColumnCoverage() {
 				break
 			}
 			case 'null_user_column': {
+				covered.add(`${target.table}.${target.matchColumn}`)
+				break
+			}
+			case 'replace_user_column': {
 				covered.add(`${target.table}.${target.matchColumn}`)
 				break
 			}
@@ -887,6 +905,14 @@ async function deleteUserScopedRows(input: {
 					tableName = target.table
 					break
 				}
+				case 'replace_user_column': {
+					sql = `UPDATE ${target.table}
+						SET ${target.setColumn} = ?
+						WHERE ${target.matchColumn} = ?`
+					params = [target.value, input.mcpUserId]
+					tableName = target.table
+					break
+				}
 				case 'bucket_parent': {
 					sql = `DELETE FROM ${target.table} WHERE bucket_id IN (
 						SELECT id FROM ${target.parentTable} WHERE user_id = ?
@@ -927,7 +953,10 @@ async function deleteUserScopedRows(input: {
 			const result = await input.env.APP_DB.prepare(sql)
 				.bind(...params)
 				.run()
-			if (target.kind === 'null_user_column') {
+			if (
+				target.kind === 'null_user_column' ||
+				target.kind === 'replace_user_column'
+			) {
 				recordUpdated(tableName, result.meta.changes)
 			} else {
 				recordDeleted(tableName, result.meta.changes)
@@ -939,7 +968,10 @@ async function deleteUserScopedRows(input: {
 					? 'mcp_memory_conversation_suppressions'
 					: target.table
 			input.warnings.push(`Failed to delete from ${targetLabel}: ${message}`)
-			if (target.kind === 'null_user_column') {
+			if (
+				target.kind === 'null_user_column' ||
+				target.kind === 'replace_user_column'
+			) {
 				recordUpdated(targetLabel, 0)
 			} else {
 				recordDeleted(targetLabel, 0)
