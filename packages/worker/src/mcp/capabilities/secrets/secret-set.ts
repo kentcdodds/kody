@@ -48,6 +48,7 @@ export const secretSetCapability = defineDomainCapability(
 			const saved = await saveSecret({
 				env: ctx.env,
 				userId: user.userId,
+				userEmail: user.email,
 				scope: parsed.scope,
 				name: parsed.name,
 				value: parsed.value,

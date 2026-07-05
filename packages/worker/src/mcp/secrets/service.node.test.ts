@@ -1,4 +1,7 @@
 import { expect, test } from 'vitest'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { listSecrets, resolveSecret, saveSecret } from './service.ts'
 
 type SecretBucketRow = {
@@ -22,9 +25,14 @@ type SecretEntryRow = {
 	updated_at: string
 }
 
-function createSecretTestDb() {
+function createSecretTestDb(
+	initialRows: { users?: Array<{ email: string; plan: string | null }> } = {},
+) {
 	const buckets = new Map<string, SecretBucketRow>()
 	const entries = new Map<string, SecretEntryRow>()
+	const users = new Map(
+		(initialRows.users ?? []).map((row) => [row.email.toLowerCase(), row.plan]),
+	)
 
 	function getBucketKey(userId: string, scope: string, bindingKey: string) {
 		return `${userId}:${scope}:${bindingKey}`
@@ -41,6 +49,36 @@ function createSecretTestDb() {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
+							if (
+								normalizedQuery.includes(
+									'select plan from users where email = ?',
+								)
+							) {
+								const [email] = params as Array<string>
+								const plan = users.get(String(email).toLowerCase())
+								if (plan === undefined) return null
+								return { plan } as T
+							}
+							if (
+								normalizedQuery.includes('from secret_entries se') &&
+								normalizedQuery.includes('join secret_buckets sb')
+							) {
+								const [userId, now] = params as Array<string>
+								let count = 0
+								for (const entry of entries.values()) {
+									const bucket = Array.from(buckets.values()).find(
+										(candidate) => candidate.id === entry.bucket_id,
+									)
+									if (
+										bucket &&
+										bucket.user_id === userId &&
+										(bucket.expires_at == null || bucket.expires_at > now)
+									) {
+										count += 1
+									}
+								}
+								return { count } as T
+							}
 							if (
 								normalizedQuery.startsWith(
 									'select id, user_id, scope, binding_key',
@@ -324,4 +362,116 @@ test('resolveSecret ignores a corrupted lower-precedence entry when a higher sco
 	expect(resolved.found).toBe(true)
 	expect(resolved.value).toBe('session-value')
 	expect(resolved.scope).toBe('session')
+})
+
+function buildEntitlementTestSecretEnv(input: {
+	email: string
+	plan: string | null
+}) {
+	const testDb = createSecretTestDb({
+		users: [{ email: input.email, plan: input.plan }],
+	})
+	return {
+		testDb,
+		env: {
+			APP_DB: testDb.db,
+			COOKIE_SECRET: 'test-cookie-secret',
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		},
+	}
+}
+
+test('saveSecret enforces the secrets entitlement for plan users', async () => {
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'personal' })
+	const limit = planLimits.personal.maxSecrets
+	if (limit === null)
+		throw new Error('Expected a numeric personal secret limit.')
+
+	for (let index = 0; index < limit; index += 1) {
+		await saveSecret({
+			env,
+			userId,
+			userEmail: email,
+			scope: 'user',
+			name: `quota-secret-${index}`,
+			value: `secret-value-${index}`,
+		})
+	}
+
+	const error = await saveSecret({
+		env,
+		userId,
+		userEmail: email,
+		scope: 'user',
+		name: `quota-secret-${limit}`,
+		value: 'one-too-many',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected an EntitlementLimitError from saveSecret.')
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'secrets',
+		plan: 'personal',
+		limit,
+		current: limit,
+	})
+	expect(error.message).toContain(`at most ${limit} secrets`)
+})
+
+test('saveSecret allows updating an existing secret at the plan limit', async () => {
+	const email = 'planned-update@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'personal' })
+	const limit = planLimits.personal.maxSecrets
+	if (limit === null)
+		throw new Error('Expected a numeric personal secret limit.')
+
+	for (let index = 0; index < limit; index += 1) {
+		await saveSecret({
+			env,
+			userId,
+			userEmail: email,
+			scope: 'user',
+			name: `quota-secret-${index}`,
+			value: `secret-value-${index}`,
+		})
+	}
+
+	const updated = await saveSecret({
+		env,
+		userId,
+		userEmail: email,
+		scope: 'user',
+		name: 'quota-secret-0',
+		value: 'rotated-value',
+		description: 'rotated',
+	})
+	expect(updated.name).toBe('quota-secret-0')
+	expect(updated.description).toBe('rotated')
+})
+
+test('saveSecret stays unlimited for users without a plan', async () => {
+	const email = 'legacy@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const { env } = buildEntitlementTestSecretEnv({ email, plan: null })
+	const limit = planLimits.personal.maxSecrets
+	if (limit === null)
+		throw new Error('Expected a numeric personal secret limit.')
+
+	for (let index = 0; index < limit + 1; index += 1) {
+		await saveSecret({
+			env,
+			userId,
+			userEmail: email,
+			scope: 'user',
+			name: `legacy-secret-${index}`,
+			value: `secret-value-${index}`,
+		})
+	}
 })

@@ -1,4 +1,7 @@
 import { expect, test, vi } from 'vitest'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	DynamicCallableWorkflowBase,
 	createDynamicCallableWorkflow,
@@ -98,6 +101,7 @@ function createStatefulWorkflowBinding() {
 function createWorkflowRunsDatabase(options?: {
 	activeCount?: number
 	savedPackage?: Record<string, unknown> | null
+	users?: Array<{ email: string; plan: string | null }>
 }) {
 	const workflowRuns = new Map<string, Record<string, unknown>>()
 	const savedPackage = options?.savedPackage ?? {
@@ -121,6 +125,13 @@ function createWorkflowRunsDatabase(options?: {
 						async first() {
 							if (query.includes('COUNT(*) AS count')) {
 								return { count: options?.activeCount ?? 0 }
+							}
+							if (query.includes('SELECT plan FROM users WHERE email = ?')) {
+								const email = String(params[0] ?? '')
+								const user = (options?.users ?? []).find(
+									(row) => row.email === email,
+								)
+								return user ? { plan: user.plan } : null
 							}
 							if (query.includes('FROM saved_packages')) {
 								if (!savedPackage) return null
@@ -750,8 +761,9 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 })
 
 test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {
-	await expect(
-		createDynamicCallableWorkflow({
+	let error: unknown
+	try {
+		await createDynamicCallableWorkflow({
 			env: {
 				APP_DB: createWorkflowRunsDatabase({ activeCount: 100 }),
 				DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
@@ -762,8 +774,86 @@ test('createDynamicCallableWorkflow enforces the per-user concurrent workflow li
 				runAt: '2026-05-03T12:34:56.000Z',
 				idempotencyKey: 'inline-key',
 			},
-		}),
-	).rejects.toThrow('per-user concurrent workflow limit (100)')
+		})
+	} catch (caught) {
+		error = caught
+	}
+	expect(isEntitlementLimitError(error)).toBe(true)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error(
+			'Expected an EntitlementLimitError from createDynamicCallableWorkflow.',
+		)
+	}
+	expect(error.message).toContain(
+		'this deployment allows at most 100 concurrent workflows',
+	)
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'concurrent_workflows',
+		plan: null,
+		limit: 100,
+	})
+})
+
+test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', async () => {
+	const email = 'plan-user@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.personal.maxConcurrentWorkflows
+	if (limit == null) throw new Error('Expected personal plan workflow limit.')
+	const binding = createStatefulWorkflowBinding()
+	const body = {
+		code: 'export default async function main() { return { ok: true } }',
+		runAt: '2026-05-03T12:34:56.000Z',
+		idempotencyKey: 'plan-limit-key',
+	}
+	let denied: unknown
+	try {
+		await createDynamicCallableWorkflow({
+			env: {
+				APP_DB: createWorkflowRunsDatabase({
+					activeCount: limit,
+					users: [{ email, plan: 'personal' }],
+				}),
+				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			} as Env,
+			userId,
+			userEmail: email,
+			body,
+		})
+	} catch (caught) {
+		denied = caught
+	}
+	expect(isEntitlementLimitError(denied)).toBe(true)
+	if (!isEntitlementLimitError(denied)) {
+		throw new Error(
+			'Expected an EntitlementLimitError from createDynamicCallableWorkflow.',
+		)
+	}
+	expect(denied.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'concurrent_workflows',
+		plan: 'personal',
+		limit,
+		current: limit,
+	})
+	expect(denied.message).toContain(`at most ${limit} concurrent workflows`)
+
+	const allowed = await createDynamicCallableWorkflow({
+		env: {
+			APP_DB: createWorkflowRunsDatabase({
+				activeCount: limit - 1,
+				users: [{ email, plan: 'personal' }],
+			}),
+			DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
+		} as Env,
+		userId,
+		userEmail: email,
+		body: {
+			...body,
+			idempotencyKey: 'plan-limit-allowed-key',
+		},
+	})
+	expect(allowed.ok).toBe(true)
 })
 
 test('listWorkflowRunsForUser returns recent workflow statuses', async () => {

@@ -41,6 +41,7 @@ export const emailSendCapability = defineDomainCapability(
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,
+				userEmail: user.email,
 				from: args.from,
 				to: args.to,
 				subject: args.subject,

@@ -1,4 +1,9 @@
+import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+
 export async function ensureEmailTestSchema(db: D1Database) {
+	// Outbound sends increment the entitlement daily counter, so any suite
+	// exercising email sends needs the entitlement tables too.
+	await ensureEntitlementTestSchema(db)
 	const statements = [
 		`DROP TABLE IF EXISTS email_sender_policies;`,
 		`DROP TABLE IF EXISTS email_delivery_events;`,

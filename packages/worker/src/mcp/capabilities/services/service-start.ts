@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requirePackageServiceContext } from './shared.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import {
+	requirePackageServiceContext,
+	resolveDeclaredPackageService,
+} from './shared.ts'
 
 const inputSchema = z.object({
 	service_name: z.string().trim().min(1),
@@ -39,6 +43,30 @@ export const serviceStartCapability = defineDomainCapability(
 				throw new Error(
 					`Package service "${args.service_name}" was not found for this package.`,
 				)
+			}
+			const currentStatus = await serviceContext.service.status()
+			if (currentStatus.status !== 'running') {
+				const declaredService = await resolveDeclaredPackageService({
+					env: ctx.env,
+					callerContext: ctx.callerContext,
+					savedPackage: serviceContext.savedPackage,
+					userId: serviceContext.user.userId,
+					serviceName: args.service_name,
+				})
+				if (declaredService?.mode === 'persistent') {
+					await assertWithinEntitlement({
+						db: ctx.env.APP_DB,
+						userId: serviceContext.user.userId,
+						email: serviceContext.user.email,
+						resource: 'persistent_package_services',
+					})
+				}
+				await assertWithinEntitlement({
+					db: ctx.env.APP_DB,
+					userId: serviceContext.user.userId,
+					email: serviceContext.user.email,
+					resource: 'package_services',
+				})
 			}
 			return await serviceContext.service.start()
 		},

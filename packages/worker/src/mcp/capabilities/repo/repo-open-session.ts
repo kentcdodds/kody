@@ -1,6 +1,7 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { getActiveRepoSessionByConversation } from '#worker/repo/repo-sessions.ts'
 import {
 	repoOpenSessionOutputSchema,
@@ -62,6 +63,13 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				`repo-session-${Date.now().toString(36)}-${Math.random()
 					.toString(36)
 					.slice(2, 10)}`
+
+			await assertWithinEntitlement({
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				email: user.email,
+				resource: 'repo_sessions',
+			})
 
 			const session = await repoSessionRpc(ctx.env, sessionId).openSession({
 				sessionId,

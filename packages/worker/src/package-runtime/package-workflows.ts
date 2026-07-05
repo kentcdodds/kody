@@ -13,6 +13,15 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	assertWithinEntitlement,
+	getWorkflowConcurrencyBackstop,
+} from '#worker/entitlements/service.ts'
+import {
+	activeWorkflowStatusValues,
+	terminalWorkflowStatusValues,
+	type WorkflowRunStatus,
+} from './workflow-statuses.ts'
 
 export type PackageWorkflowParams = Record<string, unknown>
 
@@ -48,17 +57,6 @@ export type PackageWorkflowCreateResult = {
 	plan_date: string | null
 	status?: string
 }
-
-type WorkflowRunStatus =
-	| 'queued'
-	| 'running'
-	| 'paused'
-	| 'waiting'
-	| 'waitingForPause'
-	| 'unknown'
-	| 'complete'
-	| 'errored'
-	| 'terminated'
 
 export type DynamicCallableWorkflowPayload =
 	| {
@@ -134,21 +132,7 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 
 const packageWorkflowTokenId = 'internal:package-workflows'
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
-const defaultConcurrentWorkflowLimit = 100
 const workflowStatusRefreshTtlMs = 30_000
-const activeWorkflowStatusValues = [
-	'queued',
-	'running',
-	'paused',
-	'waiting',
-	'waitingForPause',
-	'unknown',
-] as const satisfies ReadonlyArray<WorkflowRunStatus>
-const terminalWorkflowStatusValues = [
-	'complete',
-	'errored',
-	'terminated',
-] as const satisfies ReadonlyArray<WorkflowRunStatus>
 const knownWorkflowStatusValues = [
 	...activeWorkflowStatusValues,
 	...terminalWorkflowStatusValues,
@@ -543,15 +527,6 @@ async function createDynamicCallableWorkflowInstanceId(
 	return await createInlineWorkflowInstanceId(payload)
 }
 
-function getConcurrentWorkflowLimit(env: Env) {
-	const raw = env.WORKFLOW_CONCURRENT_LIMIT
-	if (typeof raw !== 'string') return defaultConcurrentWorkflowLimit
-	const parsed = Number.parseInt(raw, 10)
-	return Number.isFinite(parsed) && parsed > 0
-		? parsed
-		: defaultConcurrentWorkflowLimit
-}
-
 function mapWorkflowRunRow(
 	row: Record<string, unknown>,
 ): WorkflowRunInspection {
@@ -584,23 +559,6 @@ function mapWorkflowRunRow(
 			typeof row['completed_at'] === 'string' ? row['completed_at'] : null,
 		lastError: typeof row['last_error'] === 'string' ? row['last_error'] : null,
 	}
-}
-
-async function countActiveWorkflowRuns(input: {
-	db: D1Database
-	userId: string
-}) {
-	const placeholders = activeWorkflowStatusValues.map(() => '?').join(', ')
-	const result = await input.db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			FROM workflow_runs
-			WHERE user_id = ?
-				AND status IN (${placeholders})`,
-		)
-		.bind(input.userId, ...activeWorkflowStatusValues)
-		.first<{ count: number }>()
-	return Number(result?.count ?? 0)
 }
 
 async function recordWorkflowRun(input: {
@@ -760,6 +718,7 @@ async function resolveWorkflowPayload(input: {
 export async function createDynamicCallableWorkflow(input: {
 	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS'>
 	userId: string
+	userEmail?: string | null
 	packageContext?: {
 		packageId: string
 		kodyId: string
@@ -803,16 +762,13 @@ export async function createDynamicCallableWorkflow(input: {
 		return createWorkflowCreateResult({ summary: existing, payload })
 	}
 	if (input.env.APP_DB) {
-		const activeCount = await countActiveWorkflowRuns({
+		await assertWithinEntitlement({
 			db: input.env.APP_DB,
 			userId: payload.userId,
+			email: input.userEmail,
+			resource: 'concurrent_workflows',
+			fallbackLimit: getWorkflowConcurrencyBackstop(input.env as Env),
 		})
-		const limit = getConcurrentWorkflowLimit(input.env as Env)
-		if (activeCount >= limit) {
-			throw new Error(
-				`workflows.create would exceed the per-user concurrent workflow limit (${limit}). Wait for existing workflows to finish or cancel them before creating more.`,
-			)
-		}
 	}
 	let instance: WorkflowInstance
 	try {

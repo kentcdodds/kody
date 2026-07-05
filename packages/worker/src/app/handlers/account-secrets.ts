@@ -317,6 +317,7 @@ async function handleConnectOauthAction(input: {
 	const accessSaved = await saveSecret({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
+		userEmail: input.user.mcpUser.email,
 		name: accessTokenSecretName,
 		value: accessToken,
 		scope: 'user',
@@ -329,6 +330,7 @@ async function handleConnectOauthAction(input: {
 		await saveSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
+			userEmail: input.user.mcpUser.email,
 			name: refreshTokenSecretName,
 			value: refreshToken,
 			scope: 'user',
@@ -805,6 +807,7 @@ async function handleSaveAction(input: {
 		await saveSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
+			userEmail: input.user.mcpUser.email,
 			name,
 			value,
 			scope,

@@ -33,6 +33,7 @@ import {
 } from '#worker/package-retrievers/manifest-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -85,6 +86,7 @@ export async function refreshSavedPackageProjection(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	userEmail?: string | null
 	packageId: string
 	sourceId: string
 	rebuildArtifacts?: boolean
@@ -126,6 +128,12 @@ export async function refreshSavedPackageProjection(input: {
 			hasApp: row.has_app === 1,
 		})
 	} else {
+		await assertWithinEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: input.userEmail,
+			resource: 'saved_packages',
+		})
 		await insertSavedPackage(input.env.APP_DB, row)
 	}
 	await upsertSavedPackageVector(input.env, {

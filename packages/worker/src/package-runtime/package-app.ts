@@ -999,6 +999,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return await createDynamicCallableWorkflow({
 			env: this.env,
 			userId: this.ctx.props.userId,
+			userEmail: this.ctx.props.email,
 			packageContext: {
 				packageId: this.ctx.props.packageId,
 				kodyId: this.ctx.props.kodyId,

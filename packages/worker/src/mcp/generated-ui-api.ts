@@ -271,6 +271,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 				const saved = await saveSecret({
 					env,
 					userId: context.user.userId,
+					userEmail: context.user.email,
 					scope: body.data.scope ?? 'session',
 					name: body.data.name,
 					value: body.data.value,

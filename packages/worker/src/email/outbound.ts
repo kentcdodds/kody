@@ -1,4 +1,8 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import {
+	assertWithinEntitlement,
+	incrementDailyEntitlementCounter,
+} from '#worker/entitlements/service.ts'
 import { normalizeEmailAddress } from './address.ts'
 import {
 	createEmailThread,
@@ -23,6 +27,8 @@ type SendEmailEnv = Pick<
 export type EmailSendInput = {
 	env: SendEmailEnv
 	userId: string
+	/** Acting user's account email for plan lookup (not the message from/to). */
+	userEmail?: string | null
 	from: string
 	to: string | Array<string>
 	subject: string
@@ -192,6 +198,18 @@ export async function sendOutboundEmail(
 	const text = input.text?.trim() || null
 	const html = input.html?.trim() || null
 	if (!text && !html) throw new Error('Email text or HTML body is required.')
+
+	await assertWithinEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		resource: 'email_sends_per_day',
+	})
+	await incrementDailyEntitlementCounter({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		resource: 'email_sends_per_day',
+	})
 
 	const existingThreadId = original?.threadId ?? input.threadId ?? null
 	const thread = existingThreadId

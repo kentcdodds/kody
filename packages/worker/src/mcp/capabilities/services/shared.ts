@@ -48,6 +48,36 @@ function resolvePackageId(
 	)
 }
 
+export async function resolveDeclaredPackageService(input: {
+	env: Env
+	callerContext: McpCallerContext
+	savedPackage: {
+		id: string
+		sourceId: string
+		kodyId?: string
+	}
+	userId: string
+	serviceName: string
+}) {
+	const listed = await listSavedPackageServices({
+		env: input.env,
+		userId: input.userId,
+		baseUrl: input.callerContext.baseUrl,
+		packageId: input.savedPackage.id,
+		savedPackage: input.savedPackage,
+	})
+	const service = listed.services.find(
+		(entry) => entry.name === input.serviceName,
+	)
+	if (!service) {
+		return null
+	}
+	return {
+		name: service.name,
+		mode: service.mode ?? ('bounded' as const),
+	}
+}
+
 export async function requirePackageServiceContext(input: {
 	env: Env
 	callerContext: McpCallerContext

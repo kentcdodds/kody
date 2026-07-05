@@ -80,6 +80,7 @@ export async function finalizePublishedEntitySource(
 				env: input.env,
 				baseUrl: input.baseUrl ?? input.source.source_root,
 				userId: input.source.user_id,
+				// No account email in this publish path; plan lookup fails open per entitlements.md.
 				packageId: input.source.entity_id,
 				sourceId: input.source.id,
 				rebuildArtifacts: input.rebuildPackageArtifacts ?? true,

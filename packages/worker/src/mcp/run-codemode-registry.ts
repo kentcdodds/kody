@@ -201,6 +201,7 @@ export function createWorkflowTools(input: {
 			return await createDynamicCallableWorkflow({
 				env: input.env,
 				userId,
+				userEmail: input.callerContext.user?.email,
 				packageContext,
 				body,
 			})

@@ -1,4 +1,7 @@
 import { expect, test, vi } from 'vitest'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 function mockPackageServiceNamespace(): DurableObjectNamespace {
 	return {
@@ -611,4 +614,142 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
 	expect(mockModule.deleteSavedPackageVector).not.toHaveBeenCalled()
 	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
+})
+
+function createEntitlementsDatabase(input: {
+	users?: Array<{ email: string; plan: string | null }>
+	savedPackageCount?: number
+	userId: string
+}) {
+	const users = input.users ?? []
+	const savedPackageCount = input.savedPackageCount ?? 0
+
+	return {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async first<T>() {
+							if (query.includes('SELECT plan FROM users')) {
+								const user = users.find((row) => row.email === params[0])
+								return (user ? { plan: user.plan } : null) as T | null
+							}
+							if (
+								query.includes('SELECT COUNT(*) AS count FROM saved_packages')
+							) {
+								return { count: savedPackageCount } as T
+							}
+							throw new Error(`Unsupported first query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+}
+
+test('refreshSavedPackageProjection enforces the saved packages entitlement on insert', async () => {
+	setupDefaultMocks()
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.personal.maxSavedPackages
+	if (limit === null)
+		throw new Error('Expected a numeric personal package limit.')
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'personal' }],
+			savedPackageCount: limit,
+			userId,
+		}),
+		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
+	} as Env
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@kentcdodds/shade-automation',
+			kody: {
+				id: 'shade-automation',
+				description: 'Shade automation package',
+			},
+		},
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+
+	const error = await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId,
+		userEmail: email,
+		packageId: 'package-new',
+		sourceId: 'source-new',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+
+	if (!isEntitlementLimitError(error)) {
+		throw new Error(
+			'Expected an EntitlementLimitError from refreshSavedPackageProjection.',
+		)
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'saved_packages',
+		plan: 'personal',
+		limit,
+		current: limit,
+	})
+	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
+})
+
+test('refreshSavedPackageProjection does not gate the update branch at the limit', async () => {
+	setupDefaultMocks()
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.personal.maxSavedPackages
+	if (limit === null)
+		throw new Error('Expected a numeric personal package limit.')
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'personal' }],
+			savedPackageCount: limit,
+			userId,
+		}),
+		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
+	} as Env
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@kentcdodds/shade-automation',
+			kody: {
+				id: 'shade-automation',
+				description: 'Shade automation package',
+			},
+		},
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId,
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Shade automation package',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+
+	await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId,
+		userEmail: email,
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.updateSavedPackage).toHaveBeenCalled()
+	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
 })

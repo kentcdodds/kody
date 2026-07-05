@@ -25,6 +25,7 @@ import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { packageFileSchema, packageSummarySchema } from './shared.ts'
 
 const inputSchema = z
@@ -121,6 +122,12 @@ export const savePackageCapability = defineDomainCapability(
 							}).kody.id,
 						})
 			if (!existing) {
+				await assertWithinEntitlement({
+					db: ctx.env.APP_DB,
+					userId: user.userId,
+					email: user.email,
+					resource: 'saved_packages',
+				})
 				packageJsonContent = injectDefaultPrivateField(packageJsonContent)
 				files = { ...files, 'package.json': packageJsonContent }
 			}

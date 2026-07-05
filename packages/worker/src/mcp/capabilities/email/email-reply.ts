@@ -50,6 +50,7 @@ export const emailReplyCapability = defineDomainCapability(
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,
+				userEmail: user.email,
 				from: args.from,
 				to: fromAddress,
 				subject: original.subject?.toLowerCase().startsWith('re:')

@@ -32,6 +32,7 @@ import {
 	upsertSecretBucket,
 	upsertSecretEntry,
 } from './repo.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
 
 type SecretOwnerContext = {
@@ -46,6 +47,7 @@ type SaveSecretInput = SecretOwnerContext & {
 	value: string
 	description?: string | null
 	sessionExpiresAt?: string | null
+	userEmail?: string | null
 }
 
 type ListSecretsInput = SecretOwnerContext & {
@@ -107,6 +109,14 @@ export async function saveSecret(
 		bucketId: bucket.id,
 		name,
 	})
+	if (existingEntry == null) {
+		await assertWithinEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: input.userEmail,
+			resource: 'secrets',
+		})
+	}
 	const now = new Date().toISOString()
 	await upsertSecretEntry({
 		db: input.env.APP_DB,
