@@ -1,6 +1,10 @@
 import { test as base } from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
-import { assignRoleInE2eDatabase, seedUserInE2eDatabase } from './d1-utils.ts'
+import {
+	assignRoleInE2eDatabase,
+	clearAuthRateLimitsInE2eDatabase,
+	seedUserInE2eDatabase,
+} from './d1-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 
 export * from '@playwright/test'
@@ -42,6 +46,7 @@ export const test = base.extend<{
 				return { email, username: primaryTestUser.username, password }
 			}
 
+			clearAuthRateLimitsInE2eDatabase()
 			const response = await page.request.post('/auth', {
 				data: { email, username, password, mode: 'signup' },
 				headers: { 'Content-Type': 'application/json' },
@@ -98,6 +103,7 @@ export const test = base.extend<{
 			const password = options?.password ?? primaryTestUser.password
 			const preferredMode = options?.mode
 
+			clearAuthRateLimitsInE2eDatabase()
 			let response: Awaited<ReturnType<typeof page.request.post>>
 			if (preferredMode === 'login') {
 				response = await page.request.post('/auth', {

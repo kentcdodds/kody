@@ -40,9 +40,35 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 const { createPasswordResetRequestHandler } =
 	await import('./password-reset.ts')
 
+function createPasswordResetD1Mock() {
+	return {
+		prepare(query: string) {
+			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			return {
+				bind() {
+					return {
+						async run() {
+							if (
+								normalizedQuery.startsWith('delete from password_resets') ||
+								normalizedQuery.startsWith('insert into password_resets')
+							) {
+								return { meta: { changes: 1, last_row_id: 1 } }
+							}
+							return { meta: { changes: 0, last_row_id: 0 } }
+						},
+					}
+				},
+			}
+		},
+		async exec() {
+			return
+		},
+	} as unknown as D1Database
+}
+
 function createEnv(overrides: Partial<Env> = {}) {
 	return {
-		APP_DB: {} as D1Database,
+		APP_DB: createPasswordResetD1Mock(),
 		CLOUDFLARE_ACCOUNT_ID: 'account-id',
 		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
 		CLOUDFLARE_API_TOKEN: 'api-token',

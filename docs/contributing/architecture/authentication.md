@@ -42,29 +42,78 @@ request so cookie signing and verification are available to handlers.
 
 `POST /auth` is implemented by `packages/worker/src/app/handlers/auth.ts`.
 
-- Accepts JSON body with `email`, `password`, `mode` (`login` or `signup`), and
-  optional `rememberMe` for logins
+- Accepts JSON body with `email`, `password`, `mode` (`login` or `signup`), an
+  optional `inviteCode` for signups, and optional `rememberMe` for logins
 - Uses D1 (`users` table) for user lookups and inserts
 - Hashes passwords with `@kody-internal/shared/password-hash.ts`
 - Returns signed session cookie via `Set-Cookie` on success
 - Emits structured audit events through `packages/worker/src/app/audit-log.ts`
 
-### Signup posture
+### Signup posture and invites
 
-Signup is **blocked in production** and only enabled in non-production runtimes
-(local dev, preview, and e2e test). The gate lives in
-`packages/worker/src/app/deployment-env.ts` (`isNonProductionRuntime`), which
-the auth handler consults before honoring `mode: 'signup'`. Production wrangler
-env sets `SENTRY_ENVIRONMENT: 'production'`; `npm run dev` sets
+Production signup is invite-gated. The auth handler uses
+`packages/worker/src/app/deployment-env.ts` (`isNonProductionRuntime`) to decide
+whether an invite is required. Production wrangler env sets
+`SENTRY_ENVIRONMENT: 'production'`; `npm run dev` sets
 `WRANGLER_IS_LOCAL_DEV=true`; preview/test set `SENTRY_ENVIRONMENT` to
-`'preview'` / `'test'`. The predicate fails closed: if it cannot positively
-confirm a non-production runtime, signup is denied with `403`.
+`'preview'` / `'test'`. The predicate fails closed: if the runtime cannot be
+positively identified as non-production, signup requires a valid invite code.
 
-There is no application-level allowlist, invite flow, or privileged "primary
-user" for the non-production environments where signup is enabled. Operators who
-want to open signup on their own deployment should relax
-`isNonProductionRuntime` deliberately and put the worker behind their own
-network-layer access control.
+The `invites` table stores operator-created invite codes:
+
+- `code` is the primary key shown to the invited user
+- `created_by` references the admin account that created it (nullable so account
+  deletion does not strand invites)
+- `note`, `max_uses`, `use_count`, `expires_at`, `revoked_at`, and `created_at`
+  describe current invite state
+
+Production signup atomically consumes an invite with a single conditional
+`UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent
+requests cannot over-use a code. Local dev, preview, and test runtimes remain
+open when no invite is supplied, but they still consume and validate an invite
+when a code is provided so E2E coverage can exercise the same path.
+
+Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
+guard, not an owner-scoped content bypass. Invite creation, use, and revocation
+emit audit events.
+
+The same admin page can create a user directly by email for manually invited
+people. That flow calls `adminCreateUserWithPasswordSetup` in
+`packages/worker/src/app/admin-user-creation.ts` instead of going through the
+web route logic directly, so future admin MCP capabilities can reuse the same
+service. It:
+
+- requires a unique email and either a unique explicit username or an
+  auto-generated unique username derived from the email
+- stores a sentinel `password_hash` that never verifies as a usable password
+- marks `users.email_verified_at` immediately because the admin knows the
+  recipient
+- creates a `password_resets` token with a 7-day expiry and returns the
+  `/reset-password?token=...` setup link to the admin UI
+- never sends email automatically; the operator copies the displayed setup link
+  into a manual email
+
+There is no privileged "primary user" at runtime. The first admin is still
+bootstrapped through SQL; after that, admin role assignment and invite
+management happen through admin routes.
+
+### Email verification
+
+New signups create an `email_verifications` token row, send a verification link
+through `packages/worker/src/app/email/cloudflare-email.ts`, and store
+`users.email_verified_at` only after `GET /verify-email?token=...` succeeds.
+Verification tokens expire after 24 hours and only token hashes are stored.
+
+Existing accounts are marked verified by the migration that introduces
+`email_verified_at` so shipped users are not silently blocked by the new gate.
+Seeded/test fixture accounts are also created verified. New accounts created via
+normal signup start unverified, can still sign in, and see the unverified state
+on `/account`.
+
+At minimum, unverified accounts are blocked from sending outbound email. The MCP
+email send/reply capabilities pass the authenticated account email into
+`packages/worker/src/email/outbound.ts`, which checks `users.email_verified_at`
+before sending through a verified sender identity.
 
 ### Password policy
 
@@ -124,8 +173,9 @@ Password reset handlers are in
   password
 - reset tokens expire after 1 hour
 - when configured, email delivery is done via Cloudflare Email API
-- when `CLOUDFLARE_EMAIL_FROM` is unset, the handler logs a diagnostic without
-  the email body or token URL to prevent token leakage in logs
+- when required Cloudflare Email API credentials are unset, the helper logs a
+  redacted diagnostic without the email body or token URL to prevent token
+  leakage in logs
 
 ## Account secret reveal
 
@@ -185,6 +235,12 @@ routed from `packages/worker/src/index.ts`.
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `packages/worker/src/app/auth-session.ts` for cookie format/signing
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
+- `packages/worker/src/app/invites.ts` and
+  `packages/worker/src/app/handlers/admin-invites.ts` for invite management
+- `packages/worker/src/app/admin-user-creation.ts` for admin-created account
+  setup links
+- `packages/worker/src/app/email-verification.ts` and
+  `packages/worker/src/app/handlers/verify-email.ts` for verification tokens
 - `packages/worker/src/app/handlers/account-secrets.ts` for owner-scoped secret
   reveal
 - `packages/worker/src/app/deployment-env.ts` for the production/non-production

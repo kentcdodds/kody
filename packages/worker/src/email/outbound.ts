@@ -1,4 +1,5 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
 import {
@@ -25,6 +26,7 @@ type SendEmailEnv = Pick<
 export type EmailSendInput = {
 	env: SendEmailEnv
 	userId: string
+	accountEmail: string
 	from: string
 	to: string | Array<string>
 	subject: string
@@ -174,6 +176,14 @@ function outboundEmailContentBytes(
 export async function sendOutboundEmail(
 	input: EmailSendInput,
 ): Promise<EmailSendResult> {
+	const accountEmailVerified = await isAccountEmailVerified({
+		db: input.env.APP_DB,
+		email: input.accountEmail,
+		stableUserId: input.userId,
+	})
+	if (!accountEmailVerified) {
+		throw new Error('Account email must be verified before sending email.')
+	}
 	const from = normalizeEmailAddress(input.from)
 	if (!from) throw new Error('A valid from email address is required.')
 	const senderIdentity = await getVerifiedSenderIdentity({

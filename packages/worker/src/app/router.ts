@@ -9,6 +9,10 @@ import {
 	createAdminCommunityReportsHandler,
 } from '#app/handlers/admin-community-reports.ts'
 import {
+	createAdminInvitesApiHandler,
+	createAdminInvitesHandler,
+} from '#app/handlers/admin-invites.ts'
+import {
 	createAdminRolesApiHandler,
 	createAdminRolesHandler,
 } from '#app/handlers/admin-roles.ts'
@@ -48,6 +52,7 @@ import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
+import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
 import { logout } from '#app/handlers/logout.ts'
 import {
 	createPasswordResetConfirmHandler,
@@ -82,6 +87,7 @@ export function createAppRouter(appEnv: AppEnv) {
 			login: createLoginHandler(env),
 			privacy: createPrivacyHandler(env),
 			resetPassword: createResetPasswordHandler(env),
+			verifyEmail: createVerifyEmailHandler(env),
 			signup: createSignupHandler(env),
 			account: createAccountHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
@@ -117,6 +123,9 @@ export function createAppRouter(appEnv: AppEnv) {
 			adminUsers: createAdminUsersHandler(env),
 			adminUsersApi: createAdminUsersApiHandler(env),
 			adminUsersApiPost: createAdminUsersApiHandler(env),
+			adminInvites: createAdminInvitesHandler(env),
+			adminInvitesApi: createAdminInvitesApiHandler(env),
+			adminInvitesApiPost: createAdminInvitesApiHandler(env),
 			adminRoles: createAdminRolesHandler(env),
 			adminRolesApi: createAdminRolesApiHandler(env),
 			adminCommunityReports: createAdminCommunityReportsHandler(env),

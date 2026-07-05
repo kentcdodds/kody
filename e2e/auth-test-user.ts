@@ -1,4 +1,5 @@
 import { type APIRequestContext } from '@playwright/test'
+import { seedUserInE2eDatabase } from './d1-utils.ts'
 
 export const primaryTestUser = {
 	email: 'kody@example.com',
@@ -6,23 +7,6 @@ export const primaryTestUser = {
 	password: 'ilikecode',
 }
 
-export async function ensurePrimaryUserExists(request: APIRequestContext) {
-	let response = await request.post('/auth', {
-		data: { ...primaryTestUser, mode: 'signup' },
-		headers: { 'Content-Type': 'application/json' },
-	})
-
-	if (response.ok()) {
-		return
-	}
-
-	if (response.status() === 429) {
-		throw new Error(
-			'Failed to seed primary user because /auth is rate-limited.',
-		)
-	}
-
-	if (response.status() !== 409) {
-		throw new Error(`Failed to seed primary user (${response.status()}).`)
-	}
+export async function ensurePrimaryUserExists(_request: APIRequestContext) {
+	await seedUserInE2eDatabase(primaryTestUser)
 }

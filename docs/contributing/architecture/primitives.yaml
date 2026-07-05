@@ -81,11 +81,14 @@ primitives:
     group: auth
     name: Browser sessions
     summary:
-      Signed kody_session cookie auth for browser users; signup gated to
-      non-production runtimes.
+      Signed kody_session cookie auth for browser users; production signup
+      invite-gated, non-production signup open, and account email verification
+      surfaced in session state.
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
+      - packages/worker/src/app/invites.ts
+      - packages/worker/src/app/email-verification.ts
     docs:
       - docs/contributing/architecture/authentication.md
 

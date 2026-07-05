@@ -30,6 +30,7 @@ import {
 type AccountProfilePayload = {
 	ok: true
 	email: string
+	emailVerified: boolean
 	username: string
 	displayName: string
 }
@@ -61,6 +62,7 @@ export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveStatus: 'idle' | 'saving' = 'idle'
 	let email = ''
+	let emailVerified = false
 	let username = ''
 	let draftUsername = ''
 	let message: string | null = null
@@ -87,6 +89,7 @@ export function AccountRoute(handle: Handle) {
 				throw new Error('Unable to load your account.')
 			}
 			email = payload.email
+			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
 			status = 'ready'
@@ -145,6 +148,7 @@ export function AccountRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to save username.')
 			}
 			email = payload.email
+			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
 			message = 'Username saved.'
@@ -165,6 +169,7 @@ export function AccountRoute(handle: Handle) {
 		const routeData = tryConsumeRouteLoaderData(handle, 'accountProfile', href)
 		if (!routeData) return false
 		email = routeData.email
+		emailVerified = routeData.emailVerified
 		username = routeData.username
 		draftUsername = routeData.username
 		status = 'ready'
@@ -239,6 +244,22 @@ export function AccountRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
+						{!emailVerified ? (
+							<section
+								aria-label="Email verification status"
+								mix={css({
+									...cardCss,
+									borderColor: colors.primary,
+									backgroundColor: colors.primarySoftest,
+								})}
+							>
+								<h2 mix={css(cardTitleCss)}>Verify your email</h2>
+								<p mix={css(descriptionCss)}>
+									Check your inbox for the verification link. Outbound email
+									sending stays disabled until this account email is verified.
+								</p>
+							</section>
+						) : null}
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Profile</h2>
 							<p mix={css(descriptionCss)}>
@@ -265,7 +286,7 @@ export function AccountRoute(handle: Handle) {
 									/>
 								</label>
 								<p mix={css({ color: colors.textMuted, margin: 0 })}>
-									Email: {email}
+									Email: {email} ({emailVerified ? 'verified' : 'unverified'})
 								</p>
 								<div>
 									<button

@@ -138,6 +138,7 @@ test('session handler only renews remembered sessions after the renewal window',
 			ok: true,
 			session: {
 				email: rememberedSession.email,
+				emailVerified: false,
 				username: 'session-user',
 				roles: [],
 				permissions: [],

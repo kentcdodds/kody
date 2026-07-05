@@ -81,6 +81,7 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
+			accountEmail: 'user@example.com',
 			from: 'kody@heykody.dev',
 			to: 'sender@example.com',
 			subject: 'Re: Hello',
