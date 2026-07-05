@@ -93,6 +93,90 @@ export type AdminInvitesLoaderData = {
 	invites: Array<AdminInviteListItem>
 }
 
+export type AdminUsageMetric =
+	| 'execute'
+	| 'package_export'
+	| 'job_run'
+	| 'workflow_run'
+	| 'service_runtime'
+	| 'outbound_fetch'
+	| 'email_send'
+
+export type AdminUsageEntitlementResource =
+	| 'saved_packages'
+	| 'scheduled_jobs'
+	| 'package_services'
+	| 'persistent_package_services'
+	| 'repo_sessions'
+	| 'email_sends_per_day'
+	| 'secrets'
+	| 'concurrent_workflows'
+	| 'storage_bytes'
+
+export type AdminUsagePlanName = 'partner' | 'personal' | 'pro'
+
+export type AdminUsageRollup = {
+	metric: AdminUsageMetric
+	eventCount: number
+	errorCount: number
+	totalDurationMs: number
+	totalCpuMs: number
+	totalBytes: number
+}
+
+export type AdminUsageDailyCounter = {
+	resource: AdminUsageEntitlementResource
+	label: string
+	count: number
+}
+
+export type AdminUsageResourceCount = {
+	resource: AdminUsageEntitlementResource
+	label: string
+	current: number
+}
+
+export type AdminUsageEntitlementConsumption = {
+	resource: AdminUsageEntitlementResource
+	label: string
+	current: number | null
+	limit: number | null
+	percentOfLimit: number | null
+	overEightyPercent: boolean
+}
+
+export type AdminUsageMonthRollup = {
+	month: string
+	usage: Array<AdminUsageRollup>
+}
+
+export type AdminUsageUserSummary = {
+	id: number
+	username: string
+	email: string
+	plan: AdminUsagePlanName | null
+	currentMonthUsage: Array<AdminUsageRollup>
+	todayCounters: Array<AdminUsageDailyCounter>
+	resourceCounts: Array<AdminUsageResourceCount>
+}
+
+export type AdminUsageSelectedUser = AdminUsageUserSummary & {
+	monthUsage: Array<AdminUsageMonthRollup>
+	entitlementConsumption: Array<AdminUsageEntitlementConsumption>
+	warnings: Array<AdminUsageEntitlementConsumption>
+}
+
+export type AdminUsageLoaderData = {
+	ok: true
+	users: Array<AdminUsageUserSummary>
+	selectedUser: AdminUsageSelectedUser | null
+	page: number
+	pageSize: number
+	total: number
+	currentMonth: string
+	today: string
+}
+
 export type AdminCreatedUserSetup = {
 	userId: number
 	email: string
@@ -259,6 +343,7 @@ export type AppLoaderData = {
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
+	adminUsage?: AdminUsageLoaderData
 	accountProfile?: AccountProfileLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData

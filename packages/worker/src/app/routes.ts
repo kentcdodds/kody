@@ -40,6 +40,8 @@ export const routes = route({
 	adminCommunityReports: '/admin/community-reports',
 	adminCommunityReportsApi: '/admin/community-reports.json',
 	adminCommunityReportsApiPost: post('/admin/community-reports.json'),
+	adminUsage: '/admin/usage',
+	adminUsageApi: '/admin/usage.json',
 	community: '/community',
 	communityApi: '/community.json',
 	communityDetail: '/community/:listingId',

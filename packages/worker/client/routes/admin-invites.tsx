@@ -258,6 +258,12 @@ export function AdminInvitesRoute(handle: Handle) {
 							>
 								Roles
 							</a>
+							<a
+								href="/admin/usage"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								Usage
+							</a>
 						</>
 					}
 				/>

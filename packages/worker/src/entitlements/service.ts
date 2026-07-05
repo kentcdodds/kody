@@ -139,7 +139,7 @@ export async function countRunningPackageServices(input: {
 	)
 }
 
-async function countEntitlementUsage(input: {
+export async function readEntitlementResourceUsage(input: {
 	db: D1Database
 	userId: string
 	resource: EntitlementResource
@@ -160,19 +160,11 @@ async function countEntitlementUsage(input: {
 				[userId],
 			)
 		case 'package_services': {
-			const windowStart = new Date(
-				now.valueOf() - runningServiceCountWindowMs,
-			).toISOString()
-			return await countRows(
+			return await countRunningPackageServices({
 				db,
-				`SELECT COUNT(DISTINCT package_id || '/' || COALESCE(name, '')) AS count
-				FROM package_runtime_runs
-				WHERE user_id = ?
-					AND surface = 'service'
-					AND status = 'running'
-					AND started_at >= ?`,
-				[userId, windowStart],
-			)
+				userId,
+				now,
+			})
 		}
 		case 'persistent_package_services':
 			// Boolean allowance: the limit is 0 (not allowed) or null
@@ -270,7 +262,7 @@ export async function assertWithinEntitlement(
 	const requested = input.requested ?? 1
 	const current = input.getCurrent
 		? await input.getCurrent()
-		: await countEntitlementUsage({
+		: await readEntitlementResourceUsage({
 				db: input.db,
 				userId: input.userId,
 				resource: input.resource,

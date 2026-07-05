@@ -16,6 +16,10 @@ import {
 	createAdminRolesApiHandler,
 	createAdminRolesHandler,
 } from '#app/handlers/admin-roles.ts'
+import {
+	createAdminUsageApiHandler,
+	createAdminUsageHandler,
+} from '#app/handlers/admin-usage.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import {
@@ -131,6 +135,8 @@ export function createAppRouter(appEnv: AppEnv) {
 			adminCommunityReports: createAdminCommunityReportsHandler(env),
 			adminCommunityReportsApi: createAdminCommunityReportsApiHandler(env),
 			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(env),
+			adminUsage: createAdminUsageHandler(env),
+			adminUsageApi: createAdminUsageApiHandler(env),
 			community: createCommunityHandler(env),
 			communityApi: createCommunityApiHandler(env),
 			communityDetail: createCommunityDetailHandler(env),

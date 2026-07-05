@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
+import { adminUsageOverviewCapability } from './admin-usage-overview.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
@@ -9,6 +10,7 @@ type UserRow = {
 	id: number
 	username: string
 	email: string
+	plan?: string | null
 	created_at: string
 	updated_at: string
 	password_hash?: string
@@ -95,6 +97,21 @@ function createAdminCapabilityTestDb(input: {
 		return rows.slice(offset, offset + limit)
 	}
 
+	function countForQuery(normalizedQuery: string) {
+		const tableNames = [
+			'saved_packages',
+			'jobs',
+			'repo_sessions',
+			'package_runtime_runs',
+			'secret_entries',
+			'workflow_runs',
+		] as const
+		for (const table of tableNames) {
+			if (normalizedQuery.includes(`from ${table}`)) return 0
+		}
+		return null
+	}
+
 	const db = {
 		prepare(query: string) {
 			const normalizedQuery = normalizeQuery(query)
@@ -109,6 +126,14 @@ function createAdminCapabilityTestDb(input: {
 						)
 					) {
 						return (users.find((user) => user.id === params[0]) ??
+							null) as T | null
+					}
+					if (
+						normalizedQuery.includes(
+							'select id, username, email, plan from users where id = ?',
+						)
+					) {
+						return (users.find((user) => user.id === Number(params[0])) ??
 							null) as T | null
 					}
 					if (
@@ -143,6 +168,11 @@ function createAdminCapabilityTestDb(input: {
 							}).length,
 						} as T
 					}
+					if (normalizedQuery.includes('from entitlement_daily_counters')) {
+						return null
+					}
+					const count = countForQuery(normalizedQuery)
+					if (count !== null) return { count } as T
 					return null
 				},
 				async all<T>() {
@@ -157,6 +187,25 @@ function createAdminCapabilityTestDb(input: {
 							results: users
 								.sort((left, right) => left.id - right.id)
 								.slice(offset, offset + pageSize) as Array<T>,
+						}
+					}
+					if (
+						normalizedQuery.includes(
+							'select id, username, email, plan from users order by id asc limit ? offset ?',
+						)
+					) {
+						const pageSize = Number(params[0])
+						const offset = Number(params[1])
+						return {
+							results: users
+								.sort((left, right) => left.id - right.id)
+								.slice(offset, offset + pageSize)
+								.map((user) => ({
+									id: user.id,
+									username: user.username,
+									email: user.email,
+									plan: user.plan ?? null,
+								})) as Array<T>,
 						}
 					}
 					if (normalizedQuery.includes('where ur.user_id in')) {
@@ -176,6 +225,9 @@ function createAdminCapabilityTestDb(input: {
 								paginated: true,
 							}) as Array<T>,
 						}
+					}
+					if (normalizedQuery.includes('from usage_rollups')) {
+						return { results: [] as Array<T> }
 					}
 					return { results: [] as Array<T> }
 				},
@@ -349,6 +401,34 @@ test('admin capabilities list and get account metadata and query sanitized audit
 		roles: ['user'],
 	})
 
+	const usage = await adminUsageOverviewCapability.handler(
+		{ pageSize: 10 },
+		ctx,
+	)
+	expect(usage).toMatchObject({
+		total: 2,
+		page: 1,
+		pageSize: 10,
+		users: [
+			expect.objectContaining({
+				id: 1,
+				email: 'admin@example.com',
+				currentMonthUsage: expect.arrayContaining([
+					expect.objectContaining({ metric: 'execute', eventCount: 0 }),
+				]),
+			}),
+			expect.objectContaining({
+				id: 2,
+				email: 'jane@example.com',
+			}),
+		],
+		selectedUser: expect.objectContaining({
+			id: 1,
+			entitlementConsumption: expect.any(Array),
+			monthUsage: expect.any(Array),
+		}),
+	})
+
 	const audit = await adminAuditLogQueryCapability.handler(
 		{ action: 'admin_user_get', limit: 10 },
 		ctx,
@@ -367,6 +447,7 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	expect(auditEvents.map((event) => event.action)).toEqual([
 		'admin_user_list',
 		'admin_user_get',
+		'admin_usage_overview',
 		'admin_audit_log_query',
 	])
 })
@@ -447,5 +528,24 @@ test('admin capabilities reject non-admin direct handler calls', async () => {
 		),
 	).rejects.toThrow(
 		'MCP user lacks required role "admin" for capability "admin_user_list".',
+	)
+	await expect(
+		adminUsageOverviewCapability.handler(
+			{},
+			{
+				env: { APP_DB: db } as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+						displayName: 'user',
+						roles: ['user'],
+					},
+				}),
+			},
+		),
+	).rejects.toThrow(
+		'MCP user lacks required role "admin" for capability "admin_usage_overview".',
 	)
 })

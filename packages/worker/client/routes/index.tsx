@@ -22,6 +22,7 @@ import {
 } from './admin-community-reports.tsx'
 import { AdminInvitesRoute, adminInvitesRouteLoader } from './admin-invites.tsx'
 import { AdminRolesRoute, adminRolesRouteLoader } from './admin-roles.tsx'
+import { AdminUsageRoute, adminUsageRouteLoader } from './admin-usage.tsx'
 import { AdminUsersRoute, adminUsersRouteLoader } from './admin-users.tsx'
 import {
 	CommunityDetailRoute,
@@ -62,6 +63,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/admin/invites': adminInvitesRouteLoader,
 	'/admin/roles': adminRolesRouteLoader,
 	'/admin/community-reports': adminCommunityReportsRouteLoader,
+	'/admin/usage': adminUsageRouteLoader,
 	'/community': communityRouteLoader,
 	'/community/:listingId': communityDetailRouteLoader,
 	'/oauth/authorize': oauthAuthorizeRouteLoader,
@@ -91,6 +93,7 @@ export const clientRoutes = {
 	'/admin/invites': <AdminInvitesRoute />,
 	'/admin/roles': <AdminRolesRoute />,
 	'/admin/community-reports': <AdminCommunityReportsRoute />,
+	'/admin/usage': <AdminUsageRoute />,
 	'/community': <CommunityRoute />,
 	'/community/:listingId': <CommunityDetailRoute />,
 	'/login': <LoginRoute />,
