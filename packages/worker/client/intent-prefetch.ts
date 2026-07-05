@@ -4,15 +4,22 @@ const routerHrefOrigin = 'https://kody.local'
 
 /**
  * How long a settled prefetch stays consumable. Covers the usual
- * hover-then-click gap while keeping the staleness window small: navigations
- * that consume a prefetch skip the loader entirely, so older data would be
- * shown as-is.
+ * hover-read-then-click gap while keeping the staleness window bounded:
+ * navigations that consume a prefetch skip the loader entirely, so older
+ * data would be shown as-is. Form POSTs abort pending prefetches, so
+ * mutations never serve pre-mutation data regardless of this window.
  */
-export const maxPrefetchAgeMs = 10_000
+export const maxPrefetchAgeMs = 30_000
 
 function normalizePrefetchHref(href: string) {
 	const url = new URL(href, routerHrefOrigin)
 	return `${url.pathname}${url.search}${url.hash}`
+}
+
+// Monotonic clock: freshness math must not break when the wall clock is
+// adjusted (NTP sync, suspend/resume).
+function monotonicNow() {
+	return performance.now()
 }
 
 type PrefetchSlot = {
@@ -41,7 +48,7 @@ export function prefetchRouteOnIntent(
 	if (slot && slot.href === normalized && !slot.failed) {
 		if (
 			slot.settledAt === null ||
-			Date.now() - slot.settledAt <= maxPrefetchAgeMs
+			monotonicNow() - slot.settledAt <= maxPrefetchAgeMs
 		) {
 			return
 		}
@@ -59,10 +66,10 @@ export function prefetchRouteOnIntent(
 	slot = nextSlot
 	nextSlot.promise.then(
 		() => {
-			nextSlot.settledAt = Date.now()
+			nextSlot.settledAt = monotonicNow()
 		},
 		() => {
-			nextSlot.settledAt = Date.now()
+			nextSlot.settledAt = monotonicNow()
 			nextSlot.failed = true
 		},
 	)
@@ -87,7 +94,7 @@ export function takePrefetchedRouteResult(
 	if (current.failed) return null
 	if (
 		current.settledAt !== null &&
-		Date.now() - current.settledAt > maxPrefetchAgeMs
+		monotonicNow() - current.settledAt > maxPrefetchAgeMs
 	) {
 		return null
 	}

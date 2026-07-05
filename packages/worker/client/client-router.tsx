@@ -147,7 +147,12 @@ function handleDocumentClick(event: MouseEvent) {
 	navigate(`${destination.pathname}${destination.search}${destination.hash}`)
 }
 
-function getPrefetchDestination(target: EventTarget | null): URL | null {
+type PrefetchableLink = {
+	anchor: HTMLAnchorElement
+	destination: URL
+}
+
+function getPrefetchableLink(target: EventTarget | null): PrefetchableLink | null {
 	if (!(target instanceof Element)) return null
 	const anchor = target.closest('a')
 	if (!anchor || typeof window === 'undefined') return null
@@ -166,7 +171,35 @@ function getPrefetchDestination(target: EventTarget | null): URL | null {
 	) {
 		return null
 	}
-	return destination
+	return { anchor, destination }
+}
+
+function runIntentPrefetch(destination: URL) {
+	const loader = matchRouteLoader(destination)
+	if (!loader) return
+	prefetchRouteOnIntent(
+		getPathWithSearchAndHashFromUrl(destination),
+		loader,
+		destination,
+	)
+}
+
+/**
+ * Hovers shorter than this are treated as the mouse passing through, not
+ * intent to navigate, so sweeping across a nav list does not fire a
+ * speculative request per link crossed.
+ */
+const hoverIntentDelayMs = 100
+
+let hoverIntentAnchor: HTMLAnchorElement | null = null
+let hoverIntentTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelHoverIntent() {
+	if (hoverIntentTimer !== null) {
+		clearTimeout(hoverIntentTimer)
+		hoverIntentTimer = null
+	}
+	hoverIntentAnchor = null
 }
 
 /**
@@ -175,16 +208,44 @@ function getPrefetchDestination(target: EventTarget | null): URL | null {
  * loader so the data is already in flight — or already here — when the click
  * lands. Opt out per link with `data-prefetch="none"`.
  */
-function handleIntentPrefetch(event: Event) {
-	const destination = getPrefetchDestination(event.target)
-	if (!destination) return
-	const loader = matchRouteLoader(destination)
-	if (!loader) return
-	prefetchRouteOnIntent(
-		getPathWithSearchAndHashFromUrl(destination),
-		loader,
-		destination,
-	)
+function handleIntentHoverStart(event: MouseEvent) {
+	const link = getPrefetchableLink(event.target)
+	if (!link) return
+	if (hoverIntentAnchor === link.anchor) return
+
+	cancelHoverIntent()
+	hoverIntentAnchor = link.anchor
+	hoverIntentTimer = setTimeout(() => {
+		hoverIntentTimer = null
+		hoverIntentAnchor = null
+		runIntentPrefetch(link.destination)
+	}, hoverIntentDelayMs)
+}
+
+function handleIntentHoverEnd(event: MouseEvent) {
+	if (!hoverIntentAnchor) return
+	if (
+		!(event.target instanceof Node) ||
+		!hoverIntentAnchor.contains(event.target)
+	) {
+		return
+	}
+	// mouseout between an anchor's children stays "hovering"; only cancel
+	// when the pointer actually leaves the anchor.
+	if (
+		event.relatedTarget instanceof Node &&
+		hoverIntentAnchor.contains(event.relatedTarget)
+	) {
+		return
+	}
+	cancelHoverIntent()
+}
+
+/** Focus and touch are deliberate; prefetch immediately without the delay. */
+function handleImmediateIntent(event: Event) {
+	const link = getPrefetchableLink(event.target)
+	if (!link) return
+	runIntentPrefetch(link.destination)
 }
 
 function getFormSubmitter(event: SubmitEvent) {
@@ -499,9 +560,10 @@ function ensureRouter() {
 	window.addEventListener('popstate', handlePopState)
 	document.addEventListener('click', handleDocumentClick)
 	document.addEventListener('submit', handleDocumentSubmit)
-	document.addEventListener('mouseover', handleIntentPrefetch)
-	document.addEventListener('focusin', handleIntentPrefetch)
-	document.addEventListener('touchstart', handleIntentPrefetch, {
+	document.addEventListener('mouseover', handleIntentHoverStart)
+	document.addEventListener('mouseout', handleIntentHoverEnd)
+	document.addEventListener('focusin', handleImmediateIntent)
+	document.addEventListener('touchstart', handleImmediateIntent, {
 		passive: true,
 	})
 }
