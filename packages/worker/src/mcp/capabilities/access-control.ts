@@ -130,9 +130,12 @@ export function filterCapabilityRegistryForCaller(
 		),
 	) as BuiltCapabilityRegistry['capabilityToolDescriptors']
 	const capabilityHandlers = Object.fromEntries(
-		Object.entries(registry.capabilityHandlers).filter(([name]) =>
-			allowedNames.has(name),
-		),
+		Object.entries(registry.capabilityHandlers).filter(([name]) => {
+			const capability = registry.capabilityMap[name]
+			return capability
+				? allowedNames.has(capability.name)
+				: allowedNames.has(name)
+		}),
 	) as BuiltCapabilityRegistry['capabilityHandlers']
 
 	return {
