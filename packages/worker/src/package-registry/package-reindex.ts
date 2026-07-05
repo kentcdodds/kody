@@ -3,37 +3,15 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#mcp/capabilities/capability-search.ts'
-import {
-	buildPackageSearchDocument,
-	type PackageSearchProjection,
-} from './manifest.ts'
+import { buildSavedPackageEmbedText } from './embed.ts'
 import { listAllSavedPackages, savedPackageVectorId } from './repo.ts'
-import { type SavedPackageRecord } from './types.ts'
+import { loadPackageManifestBySourceId } from './source.ts'
 
 const upsertBatchSize = 16
 
-function buildSavedPackageRecordEmbedText(record: SavedPackageRecord): string {
-	const projection = {
-		name: record.name,
-		kodyId: record.kodyId,
-		description: record.description,
-		tags: record.tags,
-		searchText: record.searchText,
-		hasApp: record.hasApp,
-		appEntry: null,
-		exports: [],
-		jobs: [],
-		services: [],
-		subscriptions: [],
-		emits: [],
-		retrievers: [],
-	} satisfies PackageSearchProjection
-
-	return buildPackageSearchDocument(projection).slice(0, 8_000)
-}
-
 export async function reindexSavedPackageVectors(
 	env: Env,
+	input: { baseUrl: string },
 ): Promise<{ upserted: number }> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index) {
@@ -51,9 +29,19 @@ export async function reindexSavedPackageVectors(
 	let upserted = 0
 	for (let offset = 0; offset < rows.length; offset += upsertBatchSize) {
 		const batch = rows.slice(offset, offset + upsertBatchSize)
+		const manifests = await Promise.all(
+			batch.map((row) =>
+				loadPackageManifestBySourceId({
+					env,
+					baseUrl: input.baseUrl,
+					userId: row.userId,
+					sourceId: row.sourceId,
+				}),
+			),
+		)
 		const vectors = await embedTextsForVectorize(
 			env,
-			batch.map((row) => buildSavedPackageRecordEmbedText(row)),
+			manifests.map(({ manifest }) => buildSavedPackageEmbedText(manifest)),
 		)
 		await index.upsert(
 			batch.map((row, index_) => ({

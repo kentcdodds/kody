@@ -38,7 +38,25 @@ vi.mock('./package-registry/package-reindex.ts', () => ({
 const { handleCapabilityReindexRequest } =
 	await import('./capability-maintenance.ts')
 
+function resetMocks() {
+	mockModule.reindexCapabilityVectors.mockReset()
+	mockModule.reindexMemoryVectors.mockReset()
+	mockModule.reindexJobVectors.mockReset()
+	mockModule.reindexSavedPackageVectors.mockReset()
+}
+
+function createReindexRequest() {
+	return new Request(
+		'https://kody.example.com/__maintenance/reindex-capabilities',
+		{
+			method: 'POST',
+			headers: { Authorization: 'Bearer secret' },
+		},
+	)
+}
+
 test('capability reindex maintenance route rebuilds every vector kind', async () => {
+	resetMocks()
 	mockModule.reindexCapabilityVectors.mockResolvedValue({ upserted: 3 })
 	mockModule.reindexMemoryVectors.mockResolvedValue({ upserted: 2 })
 	mockModule.reindexJobVectors.mockResolvedValue({ upserted: 1 })
@@ -46,15 +64,11 @@ test('capability reindex maintenance route rebuilds every vector kind', async ()
 	const env = {
 		CAPABILITY_REINDEX_SECRET: 'secret',
 	} as Env
-	const request = new Request(
-		'http://localhost/__maintenance/reindex-capabilities',
-		{
-			method: 'POST',
-			headers: { Authorization: 'Bearer secret' },
-		},
-	)
 
-	const response = await handleCapabilityReindexRequest(request, env)
+	const response = await handleCapabilityReindexRequest(
+		createReindexRequest(),
+		env,
+	)
 
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toEqual({
@@ -74,5 +88,34 @@ test('capability reindex maintenance route rebuilds every vector kind', async ()
 	)
 	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledWith(env)
 	expect(mockModule.reindexJobVectors).toHaveBeenCalledWith(env)
-	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledWith(env)
+	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledWith(env, {
+		baseUrl: 'https://kody.example.com',
+	})
+})
+
+test('capability reindex maintenance route attempts every vector kind before reporting failures', async () => {
+	resetMocks()
+	mockModule.reindexCapabilityVectors.mockResolvedValue({ upserted: 3 })
+	mockModule.reindexMemoryVectors.mockRejectedValue(new Error('memory failed'))
+	mockModule.reindexJobVectors.mockResolvedValue({ upserted: 1 })
+	mockModule.reindexSavedPackageVectors.mockResolvedValue({ upserted: 4 })
+	const env = {
+		CAPABILITY_REINDEX_SECRET: 'secret',
+	} as Env
+
+	const response = await handleCapabilityReindexRequest(
+		createReindexRequest(),
+		env,
+	)
+
+	expect(response.status).toBe(500)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error:
+			'Capability search vector reindex failed for memories: memories: memory failed',
+	})
+	expect(mockModule.reindexCapabilityVectors).toHaveBeenCalledTimes(1)
+	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledTimes(1)
+	expect(mockModule.reindexJobVectors).toHaveBeenCalledTimes(1)
+	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledTimes(1)
 })
