@@ -203,3 +203,56 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 		consoleError.mockRestore()
 	}
 })
+
+test('saved package reindex reports all manifest load misses as a warning', async () => {
+	resetMocks()
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	const upsert = vi.fn()
+	const env = {
+		APP_DB: {},
+	} as Env
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.listAllSavedPackages.mockResolvedValue([
+		{
+			id: 'pkg-stale',
+			userId: 'user-1',
+			name: '@user/stale',
+			kodyId: 'stale',
+			description: 'Stale package',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-stale',
+			hasApp: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+	])
+	mockModule.loadPackageManifestBySourceId.mockRejectedValue(
+		new Error('snapshot missing'),
+	)
+
+	try {
+		await expect(
+			reindexSavedPackageVectors(env, {
+				baseUrl: 'https://kody.example.com',
+			}),
+		).resolves.toEqual({
+			upserted: 0,
+			failed: 1,
+			failures: [
+				{
+					id: 'package_pkg-stale',
+					phase: 'load',
+					error: 'snapshot missing',
+				},
+			],
+			warning: '1 saved package vector(s) failed to reindex',
+		})
+
+		expect(mockModule.embedTextsForVectorize).not.toHaveBeenCalled()
+		expect(upsert).not.toHaveBeenCalled()
+	} finally {
+		consoleError.mockRestore()
+	}
+})

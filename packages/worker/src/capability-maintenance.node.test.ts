@@ -145,3 +145,44 @@ test('capability reindex maintenance route attempts every vector kind before rep
 	expect(mockModule.reindexJobVectors).toHaveBeenCalledTimes(1)
 	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledTimes(1)
 })
+
+test('capability reindex maintenance route succeeds when a phase only warns', async () => {
+	resetMocks()
+	mockModule.reindexCapabilityVectors.mockResolvedValue({ upserted: 3 })
+	mockModule.reindexMemoryVectors.mockResolvedValue({ upserted: 2 })
+	mockModule.reindexJobVectors.mockResolvedValue({
+		upserted: 59,
+		failed: 1,
+		warning: '1 job vector(s) failed to reindex',
+	})
+	mockModule.reindexSavedPackageVectors.mockResolvedValue({
+		upserted: 0,
+		failed: 1,
+		warning: '1 saved package vector(s) failed to reindex',
+	})
+	const env = {
+		CAPABILITY_REINDEX_SECRET: 'secret',
+	} as Env
+
+	const response = await handleCapabilityReindexRequest(
+		createReindexRequest(),
+		env,
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		capabilities: { upserted: 3 },
+		memories: { upserted: 2 },
+		jobs: {
+			upserted: 59,
+			failed: 1,
+			warning: '1 job vector(s) failed to reindex',
+		},
+		packages: {
+			upserted: 0,
+			failed: 1,
+			warning: '1 saved package vector(s) failed to reindex',
+		},
+	})
+})

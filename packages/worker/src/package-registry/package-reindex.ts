@@ -88,6 +88,6 @@ export async function reindexSavedPackageVectors(
 		upserted: result.upserted,
 		failed: totalFailed,
 		failures: allFailures,
-		...(result.upserted === 0 ? { error: summary } : { warning: summary }),
+		...(result.error ? { error: summary } : { warning: summary }),
 	}
 }
