@@ -498,6 +498,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	}
 
 	function selectConnector(connector: RemoteConnectorListItem) {
+		if (saveState !== 'idle') return
 		editorState = createEditorStateFromConnector(connector)
 		deleteConfirm = false
 		showSharedSecret = false
@@ -625,10 +626,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												<AccountManagementListItemButton
 													active={editorState.id === connector.id}
 													disabled={isMutating}
-													onClick={() => {
-														if (isMutating) return
-														selectConnector(connector)
-													}}
+													onClick={() => selectConnector(connector)}
 												>
 													<strong>{connectorLabel(connector)}</strong>
 													<span
