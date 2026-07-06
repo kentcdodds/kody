@@ -407,6 +407,81 @@ test('consumeDailyEntitlement counts attempts without capping plan-less users', 
 	expect(counters[0]?.count).toBe(limit + 1)
 })
 
+test('consumeDailyEntitlement applies fallbackLimit for plan-less users', async () => {
+	const { db, counters } = createEntitlementsTestDb()
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	const fallbackLimit = 3
+	for (let index = 0; index < fallbackLimit; index += 1) {
+		await consumeDailyEntitlement({
+			db,
+			userId: 'user-1',
+			email: null,
+			resource: 'email_sends_per_day',
+			fallbackLimit,
+			now,
+		})
+	}
+	expect(counters[0]?.count).toBe(fallbackLimit)
+
+	const error = await consumeDailyEntitlement({
+		db,
+		userId: 'user-1',
+		email: null,
+		resource: 'email_sends_per_day',
+		fallbackLimit,
+		now,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(error instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(error.details).toMatchObject({
+		resource: 'email_sends_per_day',
+		plan: null,
+		limit: fallbackLimit,
+		current: fallbackLimit,
+	})
+	expect(error.message).toContain(
+		`this deployment allows at most ${fallbackLimit}`,
+	)
+	// A denied consumption must not advance the counter.
+	expect(counters[0]?.count).toBe(fallbackLimit)
+})
+
+test('consumeDailyEntitlement prefers the plan limit over fallbackLimit', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { db, counters } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'personal' }],
+	})
+	const limit = planLimits.personal.maxEmailSendsPerDay
+	if (limit === null) throw new Error('Expected a numeric email send limit.')
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	// A fallback below the plan limit must not bind for plan users.
+	for (let index = 0; index < limit; index += 1) {
+		await consumeDailyEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_sends_per_day',
+			fallbackLimit: 1,
+			now,
+		})
+	}
+	expect(counters[0]?.count).toBe(limit)
+	await expect(
+		consumeDailyEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_sends_per_day',
+			fallbackLimit: 1,
+			now,
+		}),
+	).rejects.toThrow(`at most ${limit} email sends per day`)
+})
+
 test('requested units and getCurrent overrides are honored', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({

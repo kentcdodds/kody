@@ -24,6 +24,10 @@ stored plan values are also treated as NULL so plan renames can never lock users
 out. Enforcement activates only when a known plan name is set — existing
 accounts keep working unchanged.
 
+Exception: abuse-sensitive surfaces can pass a `fallbackLimit` to bind plan-less
+users to a global backstop. Outbound email does this — every send consumes
+against `defaultEmailSendDailyBackstop` when the user has no plan.
+
 ## Plan lookup
 
 The MCP `userId` is the SHA-256 hash of the normalized account email
@@ -88,10 +92,11 @@ Rules:
 - **Rate-style limits** (email sends per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
-  plan limit and increments the counter in one conditional D1 upsert (no
-  check-then-increment race), and still increments (uncapped) for users without
-  a plan so counters reflect real usage the moment a plan is assigned. Counting
-  attempts rather than successes keeps the limit abuse-resistant.
+  plan limit (or the caller's `fallbackLimit` for plan-less users) and
+  increments the counter in one conditional D1 upsert (no check-then-increment
+  race). Without a plan and without a `fallbackLimit` it still increments
+  (uncapped) so counters reflect real usage the moment a plan is assigned.
+  Counting attempts rather than successes keeps the limit abuse-resistant.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
@@ -140,11 +145,13 @@ The exemplar is job scheduling: `createJob` in
    })
    ```
 
-   Use `fallbackLimit` only to preserve a pre-existing global backstop for
-   plan-less users (the workflow concurrency limit absorbed the
-   `WORKFLOW_CONCURRENT_LIMIT` env var this way via
-   `getWorkflowConcurrencyBackstop`). Use `getCurrent` only when the built-in D1
-   counter cannot express the resource.
+   Use `fallbackLimit` only for global backstops that must bind plan-less users
+   (the workflow concurrency limit absorbed the `WORKFLOW_CONCURRENT_LIMIT` env
+   var this way via `getWorkflowConcurrencyBackstop`, and email sends cap
+   plan-less users at `defaultEmailSendDailyBackstop`).
+   `consumeDailyEntitlement` accepts the same `fallbackLimit` for daily rate
+   resources. Use `getCurrent` only when the built-in D1 counter cannot express
+   the resource.
 
 4. If the resource is a new one, register it in `plans.ts`
    (`entitlementResources`, `PlanLimits`, `planLimits`,
@@ -158,17 +165,17 @@ The exemplar is job scheduling: `createJob` in
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                  |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                       |
-| `package_services`            | `service_start` capability path                                                  |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                       |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                |
-| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`)                           |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts` |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)     |
-| `storage_bytes`               | not yet enforced                                                                 |
+| Resource                      | Enforcement point                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                       |
+| `saved_packages`              | new-package branch of `package_save` and projection insert                            |
+| `package_services`            | `service_start` capability path                                                       |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                            |
+| `repo_sessions`               | `repo_open_session` before creating a new session                                     |
+| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, global backstop for NULL plan) |
+| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`      |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)          |
+| `storage_bytes`               | not yet enforced                                                                      |
 
 ## Related tables and coordination
 

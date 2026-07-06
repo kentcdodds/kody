@@ -277,8 +277,9 @@ primitives:
     group: assistant
     name: Email
     summary:
-      Inbox aliases, inbound message storage, and verified outbound send backed
-      by Cloudflare email primitives.
+      Automatic per-user inbox at {username}@<platform domain>, inbound message
+      storage, and platform-addressed outbound send backed by Cloudflare email
+      primitives.
     code:
       - packages/worker/src/email/
       - packages/worker/src/mcp/capabilities/email/

@@ -52,7 +52,9 @@ export async function createTestDatabase() {
 	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
 		email: primaryUserEmail,
-		username: 'kody',
+		// 'kody' itself is a reserved username (system email sender), so the
+		// signup-based E2E fixture uses a non-reserved variant.
+		username: 'kody-tester',
 		password: testUserPassword,
 	} satisfies TestUser
 

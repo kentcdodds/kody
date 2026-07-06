@@ -113,7 +113,8 @@ on `/account`.
 At minimum, unverified accounts are blocked from sending outbound email. The MCP
 email send/reply capabilities pass the authenticated account email into
 `packages/worker/src/email/outbound.ts`, which checks `users.email_verified_at`
-before sending through a verified sender identity.
+before sending from the platform-assigned `{username}@<platform domain>` sender
+address.
 
 ### Password policy
 

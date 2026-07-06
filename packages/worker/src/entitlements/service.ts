@@ -287,15 +287,21 @@ export async function assertWithinEntitlement(
  * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
  * have under concurrent requests, and evaluates the UTC day key once.
  *
- * Users without a plan (or without a resolvable limit) consume without a
- * cap: the counter still accumulates so limits bind the moment a plan is
- * assigned.
+ * Users without a plan consume against `fallbackLimit` when the caller
+ * provides one (global abuse backstops), and without a cap otherwise; the
+ * counter still accumulates so limits bind the moment a plan is assigned.
  */
 export async function consumeDailyEntitlement(input: {
 	db: D1Database
 	userId: string
 	email: string | null | undefined
 	resource: EntitlementResource
+	/**
+	 * Limit that applies when the user has no plan. Used for global daily
+	 * backstops (for example the email send backstop). Default: no limit
+	 * for plan-less users.
+	 */
+	fallbackLimit?: number | null
 	now?: Date
 }): Promise<void> {
 	const now = input.now ?? new Date()
@@ -303,7 +309,9 @@ export async function consumeDailyEntitlement(input: {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = plan ? resolvePlanLimit(plan, input.resource) : null
+	const limit = plan
+		? resolvePlanLimit(plan, input.resource)
+		: (input.fallbackLimit ?? null)
 	if (limit == null) {
 		await incrementDailyEntitlementCounter({
 			db: input.db,
@@ -353,6 +361,14 @@ export async function consumeDailyEntitlement(input: {
 		await throwLimitError()
 	}
 }
+
+/**
+ * Global per-user daily outbound email backstop for users without a plan.
+ * Plan-less users are not unlimited for email: outbound sending is an
+ * abuse-sensitive surface, so every send consumes against this cap unless a
+ * plan supplies its own limit.
+ */
+export const defaultEmailSendDailyBackstop = 100
 
 export const defaultWorkflowConcurrencyBackstop = 100
 

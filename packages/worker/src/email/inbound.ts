@@ -1,15 +1,12 @@
-import {
-	findReplyTokenHash,
-	normalizeEmailAddress,
-	normalizeSubject,
-} from './address.ts'
+import { isReservedUsername } from '#app/reserved-usernames.ts'
+import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { normalizeEmailAddress, normalizeSubject } from './address.ts'
+import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { parseForwardableEmailMessage } from './parser.ts'
+import { getPlatformEmailDomain } from './platform-address.ts'
 import {
 	createEmailThread,
 	findEmailThreadForInboundMessage,
-	getEmailInboxById,
-	getEmailInboxAddressByAddress,
-	getEmailInboxAddressByReplyTokenHash,
 	insertEmailDeliveryEvent,
 	insertEmailMessageWithAttachments,
 	touchEmailThread,
@@ -27,42 +24,50 @@ export async function handleInboundEmail(
 		return
 	}
 
-	const explicitReplyTokenHash = await findReplyTokenHash({
-		headers: message.headers,
-		recipients: [recipient],
-	})
-	const inboxAddress =
-		(await getEmailInboxAddressByAddress({
-			db: env.APP_DB,
-			address: recipient,
-		})) ??
-		(explicitReplyTokenHash
-			? await getEmailInboxAddressByReplyTokenHash({
-					db: env.APP_DB,
-					replyTokenHash: explicitReplyTokenHash,
-				})
-			: null)
-	const inbox = inboxAddress
-		? await getEmailInboxById({
-				db: env.APP_DB,
-				id: inboxAddress.inboxId,
-			})
-		: null
-
-	if (!inboxAddress) {
-		message.setReject('Unknown Kody email alias.')
+	const platformDomain = getPlatformEmailDomain(env)
+	if (!platformDomain) {
+		message.setReject('Email routing is not configured.')
 		return
 	}
-	if (!inbox) {
+
+	const atIndex = recipient.lastIndexOf('@')
+	const localPart = recipient.slice(0, atIndex)
+	const recipientDomain = recipient.slice(atIndex + 1)
+	if (recipientDomain !== platformDomain) {
+		message.setReject('Unknown Kody email address.')
+		return
+	}
+	if (isReservedUsername(localPart)) {
+		message.setReject('This address is reserved for system mail.')
+		return
+	}
+
+	const account = await findPublicUserIdentityByUsername({
+		db: env.APP_DB,
+		username: localPart,
+	})
+	if (!account) {
+		message.setReject('Unknown Kody email address.')
+		return
+	}
+
+	const userId = account.mcpUserId
+	const provisioned = await ensureDefaultEmailInbox({
+		db: env.APP_DB,
+		userId,
+		username: account.username,
+		domain: platformDomain,
+	})
+	if (!provisioned) {
 		message.setReject('Email inbox is unavailable.')
 		return
 	}
+	const { inbox } = provisioned
 	if (!inbox.enabled) {
 		message.setReject('Email inbox is disabled.')
 		return
 	}
 
-	const userId = inboxAddress.userId
 	let parsed: Awaited<ReturnType<typeof parseForwardableEmailMessage>>
 	try {
 		parsed = await parseForwardableEmailMessage(message)
@@ -98,7 +103,7 @@ export async function handleInboundEmail(
 		(await createEmailThread({
 			db: env.APP_DB,
 			userId,
-			inboxId: inbox?.id ?? null,
+			inboxId: inbox.id,
 			subjectNormalized,
 			rootMessageIdHeader: parsed.messageId,
 			lastMessageAt: now,
@@ -108,7 +113,7 @@ export async function handleInboundEmail(
 		message: {
 			direction: 'inbound',
 			userId,
-			inboxId: inbox?.id ?? null,
+			inboxId: inbox.id,
 			threadId: thread.id,
 			senderIdentityId: null,
 			fromAddress: parsed.headerFrom,
@@ -152,7 +157,7 @@ export async function handleInboundEmail(
 		db: env.APP_DB,
 		messageId: stored.id,
 		userId,
-		inboxId: inbox?.id ?? null,
+		inboxId: inbox.id,
 		eventType: 'received',
 		provider: 'cloudflare-email-routing',
 		detail: {

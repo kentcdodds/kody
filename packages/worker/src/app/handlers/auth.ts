@@ -12,9 +12,13 @@ import {
 } from '#app/invites.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
+import { getReservedUsernameError } from '#app/reserved-usernames.ts'
 import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
+import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -113,7 +117,9 @@ export function createAuthHandler(appEnv: AppEnv) {
 				)
 			}
 			if (normalizedMode === 'signup') {
-				const usernameError = getUsernameValidationError(normalizedUsername)
+				const usernameError =
+					getUsernameValidationError(normalizedUsername) ??
+					getReservedUsernameError(normalizedUsername)
 				if (usernameError) {
 					void logAuditEvent({
 						category: 'auth',
@@ -352,6 +358,26 @@ export function createAuthHandler(appEnv: AppEnv) {
 						{ error: 'Unable to create account.' },
 						{ status: 500 },
 					)
+				}
+
+				// Best-effort: the automatic {username}@<platform domain> inbox is
+				// also provisioned on first inbound mail, so a failure here must
+				// not fail the signup.
+				const platformEmailDomain = getPlatformEmailDomain(appEnv)
+				if (platformEmailDomain) {
+					try {
+						await ensureDefaultEmailInbox({
+							db: appEnv.APP_DB,
+							userId: await createStableUserIdFromEmail(normalizedEmail),
+							username: normalizedUsername,
+							domain: platformEmailDomain,
+						})
+					} catch (error) {
+						console.warn(
+							'Failed to provision default email inbox at signup:',
+							error,
+						)
+					}
 				}
 
 				const cookie = await createAuthCookie(

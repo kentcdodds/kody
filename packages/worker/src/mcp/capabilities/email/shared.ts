@@ -14,7 +14,6 @@ export const emailInboxSchema = z.object({
 		z.object({
 			id: z.string(),
 			address: z.string(),
-			reply_token_hash: z.string().nullable(),
 			enabled: z.boolean(),
 			created_at: z.string(),
 		}),
@@ -25,19 +24,6 @@ export const emailInboxSchema = z.object({
 
 export const emailInboxListSchema = z.object({
 	inboxes: z.array(emailInboxSchema),
-})
-
-export const emailInboxCreateOutputSchema = emailInboxSchema.extend({
-	addresses: z.array(
-		z.object({
-			id: z.string(),
-			address: z.string(),
-			reply_token_hash: z.string().nullable(),
-			reply_token: z.string(),
-			enabled: z.boolean(),
-			created_at: z.string(),
-		}),
-	),
 })
 
 export const emailMessageSummarySchema = z.object({

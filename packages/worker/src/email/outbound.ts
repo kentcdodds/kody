@@ -1,13 +1,17 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
-import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import { normalizeEmail } from '#app/normalize-email.ts'
+import {
+	consumeDailyEntitlement,
+	defaultEmailSendDailyBackstop,
+} from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
+import { resolveUserOutboundFromAddress } from './platform-address.ts'
 import {
 	createEmailThread,
 	getEmailMessageById,
 	getEmailMessageByMessageIdHeader,
-	getVerifiedSenderIdentity,
 	insertEmailMessage,
 	insertEmailDeliveryEvent,
 	updateEmailMessageDelivery,
@@ -19,6 +23,7 @@ type SendEmailEnv = Pick<
 	| 'APP_DB'
 	| 'EMAIL'
 	| 'USAGE_EVENTS'
+	| 'APP_BASE_URL'
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
@@ -29,11 +34,19 @@ export type EmailSendInput = {
 	userId: string
 	/**
 	 * Acting user's account email (not the message from/to). Used for the
-	 * verified-account gate and for entitlement plan lookup.
+	 * verified-account gate, the platform sender address lookup, and for
+	 * entitlement plan lookup.
 	 */
 	accountEmail: string
-	from: string
-	to: string | Array<string>
+	/**
+	 * Who this send may address. `self` (email_send) only allows the acting
+	 * user's own account email — a notify-self surface, never an outreach
+	 * channel. `reply` (email_reply) allows the recipient taken from a
+	 * stored inbound message.
+	 */
+	recipientPolicy: 'self' | 'reply'
+	/** Defaults to the acting user's account email under the self policy. */
+	to?: string | Array<string> | null
 	subject: string
 	text?: string | null
 	html?: string | null
@@ -51,15 +64,38 @@ export type EmailSendResult = {
 	error: string | null
 }
 
-function normalizeRecipientList(to: string | Array<string>) {
-	const values = Array.isArray(to) ? to : [to]
-	const normalized = values
-		.map(normalizeEmailAddress)
-		.filter((value): value is string => typeof value === 'string')
+function resolveRecipientList(input: {
+	to: string | Array<string> | null | undefined
+	accountEmail: string
+	recipientPolicy: 'self' | 'reply'
+}) {
+	const accountEmail = normalizeEmail(input.accountEmail)
+	if (input.recipientPolicy === 'self' && !accountEmail) {
+		throw new Error('A signed-in account email is required to send email.')
+	}
+	const values =
+		input.to == null ? [] : Array.isArray(input.to) ? input.to : [input.to]
+	const normalized = Array.from(
+		new Set(
+			values
+				.map(normalizeEmailAddress)
+				.filter((value): value is string => typeof value === 'string'),
+		),
+	)
+	if (input.recipientPolicy === 'self') {
+		if (normalized.length === 0) return [accountEmail]
+		const disallowed = normalized.filter((value) => value !== accountEmail)
+		if (disallowed.length > 0) {
+			throw new Error(
+				`email_send only delivers to your own account email (${accountEmail}). Use email_reply to answer stored inbound messages.`,
+			)
+		}
+		return [accountEmail]
+	}
 	if (normalized.length === 0) {
 		throw new Error('At least one recipient email address is required.')
 	}
-	return Array.from(new Set(normalized))
+	return normalized
 }
 
 function buildStoredHeaders(input: {
@@ -189,16 +225,14 @@ export async function sendOutboundEmail(
 	if (!accountEmailVerified) {
 		throw new Error('Account email must be verified before sending email.')
 	}
-	const from = normalizeEmailAddress(input.from)
-	if (!from) throw new Error('A valid from email address is required.')
-	const senderIdentity = await getVerifiedSenderIdentity({
+	// The from address is always platform-assigned: {username}@<platform
+	// domain>. There is no self-service sender verification.
+	const from = await resolveUserOutboundFromAddress({
 		db: input.env.APP_DB,
+		env: input.env,
+		accountEmail: input.accountEmail,
 		userId: input.userId,
-		email: from,
 	})
-	if (!senderIdentity || senderIdentity.status !== 'verified') {
-		throw new Error(`Sender identity is not verified: ${from}`)
-	}
 	const original = input.inReplyToHeader
 		? await getEmailMessageByMessageIdHeader({
 				db: input.env.APP_DB,
@@ -214,7 +248,11 @@ export async function sendOutboundEmail(
 		}
 	}
 
-	const to = normalizeRecipientList(input.to)
+	const to = resolveRecipientList({
+		to: input.to,
+		accountEmail: input.accountEmail,
+		recipientPolicy: input.recipientPolicy,
+	})
 	const subject = input.subject.trim()
 	if (!subject) throw new Error('Email subject is required.')
 	const text = input.text?.trim() || null
@@ -222,12 +260,15 @@ export async function sendOutboundEmail(
 	if (!text && !html) throw new Error('Email text or HTML body is required.')
 
 	// Atomic check-and-increment: the counter tracks attempts for every user
-	// (plan or not) and denies the send when a plan's daily limit is reached.
+	// and denies the send when a plan's daily limit is reached. Users
+	// without a plan are capped by the global daily backstop instead of
+	// sending unlimited mail.
 	await consumeDailyEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.accountEmail,
 		resource: 'email_sends_per_day',
+		fallbackLimit: defaultEmailSendDailyBackstop,
 	})
 
 	const existingThreadId = original?.threadId ?? input.threadId ?? null
@@ -256,7 +297,7 @@ export async function sendOutboundEmail(
 			userId: input.userId,
 			inboxId: original?.inboxId ?? input.inboxId ?? null,
 			threadId,
-			senderIdentityId: senderIdentity.id,
+			senderIdentityId: null,
 			fromAddress: from,
 			envelopeFrom: from,
 			toAddresses: to,

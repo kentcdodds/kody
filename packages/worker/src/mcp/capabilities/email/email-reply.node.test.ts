@@ -51,8 +51,8 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 			direction: 'outbound',
 			inboxId: 'inbox-1',
 			threadId: 'thread-1',
-			fromAddress: 'kody@heykody.dev',
-			envelopeFrom: 'kody@heykody.dev',
+			fromAddress: 'user@heykody.dev',
+			envelopeFrom: 'user@heykody.dev',
 			toAddresses: ['sender@example.com'],
 			subject: 'Re: Hello',
 			messageIdHeader: '<outbound@heykody.dev>',
@@ -70,7 +70,6 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 		emailReplyCapability.handler(
 			{
 				message_id: 'inbound-1',
-				from: 'kody@heykody.dev',
 				text: 'Reply body',
 			},
 			createContext(),
@@ -78,16 +77,21 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 	).rejects.toThrow(
 		'Email reply delivery failed: Invalid email address: Invalid input',
 	)
+	// The recipient comes from the stored message and the recipient policy is
+	// always 'reply'; there is no caller-supplied from address.
 	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
 			accountEmail: 'user@example.com',
-			from: 'kody@heykody.dev',
+			recipientPolicy: 'reply',
 			to: 'sender@example.com',
 			subject: 'Re: Hello',
 			inReplyToHeader: '<inbound@example.com>',
 			threadId: 'thread-1',
 			inboxId: 'inbox-1',
 		}),
+	)
+	expect(mocks.sendOutboundEmail).not.toHaveBeenCalledWith(
+		expect.objectContaining({ from: expect.anything() }),
 	)
 })

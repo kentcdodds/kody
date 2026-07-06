@@ -15,7 +15,7 @@ export const emailReplyCapability = defineDomainCapability(
 	{
 		name: 'email_reply',
 		description:
-			'Reply to a stored inbound email using a verified sender identity, preserving thread headers.',
+			'Reply to a stored inbound email from your platform-assigned {username}@<platform domain> address, preserving thread headers. The recipient always comes from the stored message.',
 		keywords: ['email', 'reply', 'thread', 'message'],
 		readOnly: false,
 		idempotent: false,
@@ -23,7 +23,6 @@ export const emailReplyCapability = defineDomainCapability(
 		inputSchema: z
 			.object({
 				message_id: z.string().min(1),
-				from: z.string().email(),
 				text: z.string().min(1).optional(),
 				html: z.string().min(1).optional(),
 			})
@@ -51,7 +50,7 @@ export const emailReplyCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				accountEmail: user.email,
-				from: args.from,
+				recipientPolicy: 'reply',
 				to: fromAddress,
 				subject: original.subject?.toLowerCase().startsWith('re:')
 					? original.subject
