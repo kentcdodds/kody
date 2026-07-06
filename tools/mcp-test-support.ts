@@ -174,6 +174,50 @@ export async function startDevServer(persistDir: string) {
 	)
 }
 
+export async function markEmailVerifiedInMcpTestDatabase(input: {
+	persistDir: string
+	email: string
+}) {
+	const sql = `
+UPDATE users
+SET email_verified_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE email = ${quoteSql(input.email)};`.trim()
+	const proc = spawnProcess({
+		cmd: [
+			nodeBin,
+			'--env-file=packages/worker/.env',
+			'./wrangler-env.ts',
+			'd1',
+			'execute',
+			'APP_DB',
+			'--local',
+			'--persist-to',
+			input.persistDir,
+			'--command',
+			sql,
+		],
+		cwd: projectRoot,
+		env: {
+			...process.env,
+			CLOUDFLARE_ENV: 'test',
+		},
+	})
+	const getStdout = captureOutput(proc.stdout)
+	const getStderr = captureOutput(proc.stderr)
+	const exitCode = await proc.exited
+	if (exitCode === 0) return
+	throw new Error(
+		[
+			`Failed to mark MCP test user email verified (exit ${String(exitCode)}).`,
+			getStdout(),
+			getStderr(),
+		]
+			.filter(Boolean)
+			.join('\n\n'),
+	)
+}
+
 export async function assignRoleInMcpTestDatabase(input: {
 	persistDir: string
 	email: string
@@ -255,9 +299,19 @@ async function loginToApp(origin: string, user: TestUser) {
 export async function createMcpClient(
 	origin: string,
 	user: TestUser,
-	extraHeaders?: Record<string, string>,
+	options: {
+		// `/mcp` rejects unverified accounts, so the test user's email is
+		// marked verified in the local D1 database before connecting.
+		persistDir: string
+		extraHeaders?: Record<string, string>
+	},
 ) {
+	const extraHeaders = options.extraHeaders
 	const cookieHeader = await loginToApp(origin, user)
+	await markEmailVerifiedInMcpTestDatabase({
+		persistDir: options.persistDir,
+		email: user.email,
+	})
 	const clientRegistration = await registerOAuthClient(origin)
 	const code = await authorizeOAuthClient(
 		origin,

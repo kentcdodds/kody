@@ -34,7 +34,9 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 test('authenticated MCP smoke returns same-origin inline UI sessions', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
+	await using mcpClient = await createMcpClient(server.origin, database.user, {
+		persistDir: database.persistDir,
+	})
 
 	const inlineUiResult = await mcpClient.client.callTool({
 		name: 'open_generated_ui',
@@ -67,7 +69,11 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 		username: 'jane',
 		password: 'ilikecode',
 	}
-	await using regularClient = await createMcpClient(server.origin, regularUser)
+	await using regularClient = await createMcpClient(
+		server.origin,
+		regularUser,
+		{ persistDir: database.persistDir },
+	)
 
 	const regularSearch = await regularClient.client.callTool({
 		name: 'search',
@@ -89,6 +95,7 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 	await using bootstrapClient = await createMcpClient(
 		server.origin,
 		database.user,
+		{ persistDir: database.persistDir },
 	)
 	void bootstrapClient
 	await assignRoleInMcpTestDatabase({
@@ -96,7 +103,11 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 		email: database.user.email,
 		role: 'admin',
 	})
-	await using adminClient = await createMcpClient(server.origin, database.user)
+	await using adminClient = await createMcpClient(
+		server.origin,
+		database.user,
+		{ persistDir: database.persistDir },
+	)
 
 	const adminSearch = await adminClient.client.callTool({
 		name: 'search',
