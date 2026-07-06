@@ -200,6 +200,16 @@ export async function createEmailInbox(input: {
 	return mapInboxRow(row)
 }
 
+export async function deleteEmailInboxAddressById(input: {
+	db: D1Database
+	addressId: string
+}) {
+	await input.db
+		.prepare(`DELETE FROM email_inbox_addresses WHERE id = ?`)
+		.bind(input.addressId)
+		.run()
+}
+
 export async function createEmailInboxAddress(input: {
 	db: D1Database
 	inboxId: string
@@ -367,7 +377,12 @@ async function getSenderIdentityByEmail(input: {
  * Ensure the platform-assigned sender identity row
  * (`{username}@<platform domain>`, status `verified`) exists for the user.
  * This is the only way sender identities are created: they are provisioned
- * by the platform, never self-registered or "verified" by users.
+ * by the platform, never self-registered or "verified" by users. Any
+ * non-verified stored status is overwritten: identity status carries no
+ * authorization meaning under the platform-assigned model (outbound is
+ * gated by the verified-account check and the reserved-username block, not
+ * by identity rows), so a legacy 'pending'/'disabled' row is just stale
+ * bookkeeping to repair.
  */
 export async function ensurePlatformSenderIdentity(input: {
 	db: D1Database

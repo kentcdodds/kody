@@ -323,6 +323,88 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 	expect(rejectedMessages).toEqual([])
 })
 
+test('inbound email reclaims a platform address left behind by a username change', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `recycled-${crypto.randomUUID().slice(0, 8)}`
+	const address = `${username}@${platformDomain}`
+	const firstEmail = `first-owner-${crypto.randomUUID()}@example.com`
+	const firstUserId = await createStableUserIdFromEmail(firstEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: firstEmail,
+		username,
+	})
+
+	const primer = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: First owner mail',
+			'',
+			'Body.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(primer, createInboundEnv())
+	expect(primer.rejectedReason).toBeNull()
+
+	// The first owner renames; a new user registers the freed username.
+	await env.APP_DB.prepare(`UPDATE users SET username = ? WHERE email = ?`)
+		.bind(`renamed-${crypto.randomUUID().slice(0, 8)}`, firstEmail)
+		.run()
+	const secondEmail = `second-owner-${crypto.randomUUID()}@example.com`
+	const secondUserId = await createStableUserIdFromEmail(secondEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: secondEmail,
+		username,
+	})
+
+	const message = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: Second owner mail',
+			'',
+			'Body.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(message, createInboundEnv())
+	expect(message.rejectedReason).toBeNull()
+
+	// The stale address row was reclaimed for the current username owner...
+	const addresses = await listEmailInboxAddressesForUser({
+		db: env.APP_DB,
+		userId: secondUserId,
+	})
+	expect(addresses.map((row) => row.address)).toEqual([address])
+	expect(
+		await listEmailInboxAddressesForUser({
+			db: env.APP_DB,
+			userId: firstUserId,
+		}),
+	).toEqual([])
+	// ...and the new mail routed to them while the old owner keeps their
+	// previously stored messages.
+	const secondMessages = await listEmailMessages({
+		db: env.APP_DB,
+		userId: secondUserId,
+		limit: 10,
+	})
+	expect(secondMessages.map((row) => row.subject)).toEqual([
+		'Second owner mail',
+	])
+	const firstMessages = await listEmailMessages({
+		db: env.APP_DB,
+		userId: firstUserId,
+		limit: 10,
+	})
+	expect(firstMessages.map((row) => row.subject)).toEqual(['First owner mail'])
+})
+
 test('inbound email handler rejects mail for unverified accounts', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `unverified-${crypto.randomUUID().slice(0, 8)}`

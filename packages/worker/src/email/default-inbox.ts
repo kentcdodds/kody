@@ -1,6 +1,7 @@
 import {
 	createEmailInbox,
 	createEmailInboxAddress,
+	deleteEmailInboxAddressById,
 	ensurePlatformSenderIdentity,
 	getEmailInboxAddressByAddress,
 	getEmailInboxById,
@@ -48,10 +49,21 @@ export async function ensureDefaultEmailInbox(input: {
 			address,
 		})
 		if (!existingAddress) return null
-		// A row held by another user (legacy alias) or a disabled row makes
-		// the address unavailable; the unique constraint would reject a
-		// re-insert either way, so surface that as a clean unavailable state.
-		if (existingAddress.userId !== input.userId || !existingAddress.enabled) {
+		// Usernames are unique, so the platform address canonically belongs
+		// to whoever holds the username now. A row owned by a different user
+		// is stale (left behind by a username change); reclaim it so the
+		// current owner can receive. The old owner keeps their inbox and
+		// stored messages — only the routable address row moves.
+		if (existingAddress.userId !== input.userId) {
+			await deleteEmailInboxAddressById({
+				db: input.db,
+				addressId: existingAddress.id,
+			})
+			return null
+		}
+		// The user's own disabled row was deliberately turned off; keep the
+		// address unavailable instead of silently re-enabling it.
+		if (!existingAddress.enabled) {
 			return { conflict: true as const }
 		}
 		const inbox = await getEmailInboxById({
