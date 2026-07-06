@@ -40,18 +40,14 @@ export const emailReplyCapability = defineDomainCapability(
 			})
 			if (!original)
 				throw new Error(`Email message not found: ${args.message_id}`)
-			const fromAddress =
-				stringArray(original.replyToAddresses)[0] ??
-				original.fromAddress ??
-				original.envelopeFrom
-			if (!fromAddress)
-				throw new Error('Original message has no reply address.')
+			// The recipient is derived from the stored message inside
+			// sendOutboundEmail; this capability never chooses it.
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,
 				accountEmail: user.email,
 				recipientPolicy: 'reply',
-				to: fromAddress,
+				replyToMessageId: original.id,
 				subject: original.subject?.toLowerCase().startsWith('re:')
 					? original.subject
 					: `Re: ${original.subject ?? '(no subject)'}`,

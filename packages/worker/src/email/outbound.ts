@@ -7,7 +7,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
-import { resolveUserOutboundFromAddress } from './platform-address.ts'
+import { resolveUserPlatformSender } from './platform-address.ts'
 import {
 	createEmailThread,
 	getEmailMessageById,
@@ -33,20 +33,12 @@ export type EmailSendInput = {
 	env: SendEmailEnv
 	userId: string
 	/**
-	 * Acting user's account email (not the message from/to). Used for the
-	 * verified-account gate, the platform sender address lookup, and for
-	 * entitlement plan lookup.
+	 * Acting user's account email (not the message from/to) when the caller
+	 * context has one. Package runtime contexts may pass an empty string;
+	 * the account is then resolved from the stable userId so the
+	 * verified-account gate and entitlement plan lookup still bind.
 	 */
 	accountEmail: string
-	/**
-	 * Who this send may address. `self` (email_send) only allows the acting
-	 * user's own account email — a notify-self surface, never an outreach
-	 * channel. `reply` (email_reply) allows the recipient taken from a
-	 * stored inbound message.
-	 */
-	recipientPolicy: 'self' | 'reply'
-	/** Defaults to the acting user's account email under the self policy. */
-	to?: string | Array<string> | null
 	subject: string
 	text?: string | null
 	html?: string | null
@@ -55,7 +47,25 @@ export type EmailSendInput = {
 	references?: Array<string>
 	threadId?: string | null
 	inboxId?: string | null
-}
+} & (
+	| {
+			/**
+			 * Notify-self policy (email_send): only the acting user's own
+			 * account email may be addressed — never an outreach channel.
+			 */
+			recipientPolicy: 'self'
+			/** Defaults to the acting user's account email. */
+			to?: string | Array<string> | null
+	  }
+	| {
+			/**
+			 * Reply policy (email_reply): the recipient is derived from the
+			 * stored inbound message; callers never supply it.
+			 */
+			recipientPolicy: 'reply'
+			replyToMessageId: string
+	  }
+)
 
 export type EmailSendResult = {
 	message: EmailMessageRecord
@@ -64,38 +74,41 @@ export type EmailSendResult = {
 	error: string | null
 }
 
-function resolveRecipientList(input: {
+function resolveSelfRecipients(input: {
 	to: string | Array<string> | null | undefined
 	accountEmail: string
-	recipientPolicy: 'self' | 'reply'
 }) {
 	const accountEmail = normalizeEmail(input.accountEmail)
-	if (input.recipientPolicy === 'self' && !accountEmail) {
-		throw new Error('A signed-in account email is required to send email.')
-	}
 	const values =
 		input.to == null ? [] : Array.isArray(input.to) ? input.to : [input.to]
-	const normalized = Array.from(
-		new Set(
-			values
-				.map(normalizeEmailAddress)
-				.filter((value): value is string => typeof value === 'string'),
-		),
-	)
-	if (input.recipientPolicy === 'self') {
-		if (normalized.length === 0) return [accountEmail]
-		const disallowed = normalized.filter((value) => value !== accountEmail)
-		if (disallowed.length > 0) {
-			throw new Error(
-				`email_send only delivers to your own account email (${accountEmail}). Use email_reply to answer stored inbound messages.`,
-			)
+	const normalized = values.map((value) => {
+		const address = normalizeEmailAddress(value)
+		if (!address) {
+			throw new Error(`Invalid recipient email address: ${value}`)
 		}
-		return [accountEmail]
+		return address
+	})
+	const disallowed = normalized.filter((value) => value !== accountEmail)
+	if (disallowed.length > 0) {
+		throw new Error(
+			`email_send only delivers to your own account email (${accountEmail}). Use email_reply to answer stored inbound messages.`,
+		)
 	}
-	if (normalized.length === 0) {
-		throw new Error('At least one recipient email address is required.')
+	return [accountEmail]
+}
+
+function deriveReplyRecipient(original: EmailMessageRecord) {
+	const candidates = [
+		...original.replyToAddresses,
+		original.fromAddress,
+		original.envelopeFrom,
+	]
+	for (const candidate of candidates) {
+		if (typeof candidate !== 'string') continue
+		const address = normalizeEmailAddress(candidate)
+		if (address) return address
 	}
-	return normalized
+	throw new Error('Original message has no reply address.')
 }
 
 function buildStoredHeaders(input: {
@@ -217,42 +230,61 @@ function outboundEmailContentBytes(
 export async function sendOutboundEmail(
 	input: EmailSendInput,
 ): Promise<EmailSendResult> {
-	const accountEmailVerified = await isAccountEmailVerified({
-		db: input.env.APP_DB,
-		email: input.accountEmail,
-		stableUserId: input.userId,
-	})
-	if (!accountEmailVerified) {
-		throw new Error('Account email must be verified before sending email.')
-	}
 	// The from address is always platform-assigned: {username}@<platform
-	// domain>. There is no self-service sender verification.
-	const from = await resolveUserOutboundFromAddress({
+	// domain>. There is no self-service sender verification. The resolved
+	// account email (recovered from the stable userId when the caller
+	// context carried none, e.g. package subscription handlers) backs the
+	// verified-account gate and the entitlement plan lookup so plan limits
+	// can never be bypassed by an empty context email.
+	const sender = await resolveUserPlatformSender({
 		db: input.env.APP_DB,
 		env: input.env,
 		accountEmail: input.accountEmail,
 		userId: input.userId,
 	})
-	const original = input.inReplyToHeader
-		? await getEmailMessageByMessageIdHeader({
+	const from = sender.from
+	const accountEmailVerified = await isAccountEmailVerified({
+		db: input.env.APP_DB,
+		email: sender.accountEmail,
+		stableUserId: input.userId,
+	})
+	if (!accountEmailVerified) {
+		throw new Error('Account email must be verified before sending email.')
+	}
+
+	let original: EmailMessageRecord | null = null
+	let to: Array<string>
+	if (input.recipientPolicy === 'reply') {
+		// The recipient is derived from the stored inbound message — callers
+		// can never turn a reply into outreach.
+		const replyOriginal = await getEmailMessageById({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			messageId: input.replyToMessageId,
+		})
+		if (!replyOriginal || replyOriginal.direction !== 'inbound') {
+			throw new Error('Replying requires a stored inbound message.')
+		}
+		original = replyOriginal
+		to = [deriveReplyRecipient(replyOriginal)]
+	} else {
+		if (input.inReplyToHeader) {
+			original = await getEmailMessageByMessageIdHeader({
 				db: input.env.APP_DB,
 				userId: input.userId,
 				messageIdHeader: input.inReplyToHeader,
 			})
-		: null
-	if (input.inReplyToHeader) {
-		if (!original) {
-			throw new Error(
-				`Cannot reply because original message ${input.inReplyToHeader} was not found.`,
-			)
+			if (!original) {
+				throw new Error(
+					`Cannot reply because original message ${input.inReplyToHeader} was not found.`,
+				)
+			}
 		}
+		to = resolveSelfRecipients({
+			to: input.to,
+			accountEmail: sender.accountEmail,
+		})
 	}
-
-	const to = resolveRecipientList({
-		to: input.to,
-		accountEmail: input.accountEmail,
-		recipientPolicy: input.recipientPolicy,
-	})
 	const subject = input.subject.trim()
 	if (!subject) throw new Error('Email subject is required.')
 	const text = input.text?.trim() || null
@@ -266,7 +298,7 @@ export async function sendOutboundEmail(
 	await consumeDailyEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		email: input.accountEmail,
+		email: sender.accountEmail,
 		resource: 'email_sends_per_day',
 		fallbackLimit: defaultEmailSendDailyBackstop,
 	})

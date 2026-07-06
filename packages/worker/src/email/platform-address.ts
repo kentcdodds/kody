@@ -28,18 +28,19 @@ export function buildPlatformEmailAddress(input: {
 	return `${input.username.trim().toLowerCase()}@${input.domain}`
 }
 
-async function findAccountUsername(input: {
+async function findUserAccount(input: {
 	db: D1Database
 	accountEmail: string | null | undefined
 	userId: string
-}): Promise<string | null> {
+}): Promise<{ email: string; username: string | null } | null> {
 	const email = normalizeEmail(input.accountEmail ?? '')
 	if (email) {
 		const row = await input.db
 			.prepare(`SELECT username FROM users WHERE email = ?`)
 			.bind(email)
 			.first<{ username: string | null }>()
-		return row?.username?.trim().toLowerCase() || null
+		if (!row) return null
+		return { email, username: row.username?.trim().toLowerCase() || null }
 	}
 	// Package runtime contexts (for example email subscription handlers) act
 	// with the stable hashed userId but no account email; resolve the account
@@ -51,39 +52,60 @@ async function findAccountUsername(input: {
 		.all<{ email: string; username: string | null }>()
 	for (const row of rows.results ?? []) {
 		if ((await createStableUserIdFromEmail(row.email)) === userId) {
-			return row.username?.trim().toLowerCase() || null
+			return {
+				email: normalizeEmail(row.email),
+				username: row.username?.trim().toLowerCase() || null,
+			}
 		}
 	}
 	return null
 }
 
+export type ResolvedPlatformSender = {
+	/** Platform-assigned from address: {username}@<platform domain>. */
+	from: string
+	/**
+	 * The account email backing the acting userId, resolved even when the
+	 * caller context carried none, so plan/entitlement lookups always bind.
+	 */
+	accountEmail: string
+	username: string
+}
+
 /**
- * Resolve the platform-assigned outbound sender address
- * (`{username}@<platform domain>`) for the acting user. The from address is
- * never caller-supplied: it always derives from the account's username, and
- * reserved/system local parts (including `kody@`, the transactional system
- * sender) can never send user mail.
+ * Resolve the platform-assigned outbound sender (`{username}@<platform
+ * domain>`) and the backing account email for the acting user. The from
+ * address is never caller-supplied: it always derives from the account's
+ * username, and reserved/system local parts (including `kody@`, the
+ * transactional system sender) can never send user mail.
  */
-export async function resolveUserOutboundFromAddress(input: {
+export async function resolveUserPlatformSender(input: {
 	db: D1Database
 	env: { APP_BASE_URL?: string | null }
 	accountEmail: string | null | undefined
 	userId: string
-}): Promise<string> {
+}): Promise<ResolvedPlatformSender> {
 	const domain = getPlatformEmailDomain(input.env)
 	if (!domain) {
 		throw new Error(
 			'Outbound email is unavailable because no platform email domain is configured.',
 		)
 	}
-	const username = await findAccountUsername(input)
-	if (!username) {
+	const account = await findUserAccount(input)
+	if (!account) {
+		throw new Error('A signed-in account email is required to send email.')
+	}
+	if (!account.username) {
 		throw new Error('No account username found for outbound email.')
 	}
-	if (isReservedUsername(username)) {
+	if (isReservedUsername(account.username)) {
 		throw new Error(
 			'Reserved usernames cannot send email; they are limited to system mail.',
 		)
 	}
-	return buildPlatformEmailAddress({ username, domain })
+	return {
+		from: buildPlatformEmailAddress({ username: account.username, domain }),
+		accountEmail: account.email,
+		username: account.username,
+	}
 }

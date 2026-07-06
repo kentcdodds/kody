@@ -1,3 +1,5 @@
+import { getUsernameValidationError } from '#app/username.ts'
+
 /**
  * Usernames that can never be claimed by users. Because every user gets an
  * automatic email inbox at `{username}@<platform domain>`, a reserved
@@ -81,4 +83,16 @@ export function getReservedUsernameError(username: string) {
 	return isReservedUsername(username)
 		? 'This username is reserved and cannot be registered.'
 		: null
+}
+
+/**
+ * The one validation every username-acquisition path (signup, profile
+ * update, admin user creation) must run: syntactic rules plus the reserved
+ * denylist. Lookups of already-stored usernames keep using the syntactic
+ * `getUsernameValidationError` only.
+ */
+export function getUsernameRegistrationError(username: string) {
+	return (
+		getUsernameValidationError(username) ?? getReservedUsernameError(username)
+	)
 }

@@ -12,9 +12,9 @@ import {
 } from '#app/invites.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
-import { getReservedUsernameError } from '#app/reserved-usernames.ts'
+import { getUsernameRegistrationError } from '#app/reserved-usernames.ts'
 import { type routes } from '#app/routes.ts'
-import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+import { normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
@@ -117,9 +117,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 				)
 			}
 			if (normalizedMode === 'signup') {
-				const usernameError =
-					getUsernameValidationError(normalizedUsername) ??
-					getReservedUsernameError(normalizedUsername)
+				const usernameError = getUsernameRegistrationError(normalizedUsername)
 				if (usernameError) {
 					void logAuditEvent({
 						category: 'auth',

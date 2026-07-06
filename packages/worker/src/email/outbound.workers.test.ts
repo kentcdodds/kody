@@ -3,7 +3,11 @@ import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import { getEmailMessageById, listEmailMessages } from './repo.ts'
+import {
+	getEmailMessageById,
+	insertEmailMessage,
+	listEmailMessages,
+} from './repo.ts'
 import { sendOutboundEmail } from './outbound.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -175,6 +179,19 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	).rejects.toThrow(
 		`email_send only delivers to your own account email (${accountEmail})`,
 	)
+	// Malformed explicit recipients are rejected instead of silently dropped
+	// (a dropped value would fall back to the account email).
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail,
+			recipientPolicy: 'self',
+			to: 'not-an-email',
+			subject: 'Blocked',
+			text: 'Body',
+		}),
+	).rejects.toThrow('Invalid recipient email address: not-an-email')
 	// Providing the own account email explicitly is allowed.
 	const allowed = await sendOutboundEmail({
 		env: createBindingSendEnv(),
@@ -374,6 +391,20 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		subject: 'Hello from Kody',
 		text: 'Original body',
 	})
+	const inbound = await insertEmailMessage({
+		db: env.APP_DB,
+		message: {
+			direction: 'inbound',
+			userId,
+			fromAddress: 'recipient@example.com',
+			envelopeFrom: 'recipient@example.com',
+			toAddresses: [accountEmail],
+			subject: 'Hello from Kody',
+			messageIdHeader: '<inbound-root@example.com>',
+			processingStatus: 'stored',
+			receivedAt: new Date().toISOString(),
+		},
+	})
 
 	const result = await sendOutboundEmail({
 		env: {
@@ -387,22 +418,25 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		userId,
 		accountEmail,
 		recipientPolicy: 'reply',
-		to: 'recipient@example.com',
+		replyToMessageId: inbound.id,
 		subject: 'Re: Hello from Kody',
 		text: 'Body',
 		replyTo: 'reply@example.com',
-		inReplyToHeader: original.message.messageIdHeader,
+		inReplyToHeader: inbound.messageIdHeader,
 		references: ['<root@example.com>'],
 	})
 
 	expect(result.status).toBe('failed')
 	expect(result.error).toBe('provider down')
+	// The recipient is always derived from the stored inbound message.
+	expect(result.message.toAddresses).toEqual(['recipient@example.com'])
 	expect(fetchCalls).toHaveLength(1)
 	expect(fetchCalls[0]?.body).toMatchObject({
 		html: 'Body',
+		to: 'recipient@example.com',
 		replyTo: 'reply@example.com',
 		headers: {
-			'In-Reply-To': original.message.messageIdHeader,
+			'In-Reply-To': inbound.messageIdHeader,
 			References: '<root@example.com>',
 		},
 	})
@@ -421,10 +455,25 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		headers: {
 			'Message-ID': result.message.messageIdHeader,
 			'X-Kody-Email-Message-Id': result.message.messageIdHeader,
-			'In-Reply-To': original.message.messageIdHeader,
+			'In-Reply-To': inbound.messageIdHeader,
 			References: '<root@example.com>',
 		},
 	})
+
+	// Replying to an outbound (self) message is rejected: the reply policy
+	// only binds to stored inbound mail.
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail,
+			recipientPolicy: 'reply',
+			replyToMessageId: original.message.id,
+			subject: 'Re: Hello from Kody',
+			text: 'Body',
+		}),
+	).rejects.toThrow('Replying requires a stored inbound message.')
+
 	expect(await listEmailSendRollups(env.APP_DB, userId)).toEqual([
 		{
 			user_id: userId,
@@ -481,6 +530,50 @@ test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit
 		current: limit,
 	})
 	expect(error.message).toContain(`at most ${limit} email sends per day`)
+})
+
+test('sendOutboundEmail binds plan limits even when the caller context has no account email', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const email = `contextless-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.personal.maxEmailSendsPerDay
+	if (limit === null)
+		throw new Error('Expected a numeric personal email limit.')
+	await seedVerifiedAccount({ email, plan: 'personal' })
+	await env.APP_DB.prepare(
+		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
+			VALUES (?, ?, ?, ?, ?)`,
+	)
+		.bind(
+			userId,
+			'email_sends_per_day',
+			utcDayKey(),
+			limit,
+			new Date().toISOString(),
+		)
+		.run()
+
+	// Package subscription contexts pass an empty account email; the plan
+	// limit must still apply (no fallback-limit bypass).
+	const error = await sendOutboundEmail({
+		env: createBindingSendEnv(),
+		userId,
+		accountEmail: '',
+		recipientPolicy: 'self',
+		subject: 'Entitlement test',
+		text: 'Body',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
+	}
+	expect(error.details).toMatchObject({
+		resource: 'email_sends_per_day',
+		plan: 'personal',
+		limit,
+	})
 })
 
 test('sendOutboundEmail increments the daily counter when under the plan limit', async () => {

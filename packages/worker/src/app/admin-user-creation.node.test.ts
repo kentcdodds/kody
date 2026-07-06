@@ -188,3 +188,30 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	)
 	expect(userRoles.has(`${created.userId}:user`)).toBe(true)
 })
+
+test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and skips reserved generated ones', async () => {
+	const explicit = createAdminUserCreationTestDb()
+	await expect(
+		adminCreateUserWithPasswordSetup({
+			db: explicit.db,
+			email: 'person@example.com',
+			username: 'postmaster',
+			setupLinkOrigin: 'https://kody.example/admin/invites',
+		}),
+	).rejects.toMatchObject({
+		code: 'invalid_username',
+		message: 'This username is reserved and cannot be registered.',
+	})
+	expect(explicit.users.size).toBe(0)
+
+	// A generated username derived from a reserved email local part must fall
+	// through to a non-reserved suffixed candidate.
+	const generated = createAdminUserCreationTestDb()
+	const created = await adminCreateUserWithPasswordSetup({
+		db: generated.db,
+		email: 'support@example.com',
+		username: null,
+		setupLinkOrigin: 'https://kody.example/admin/invites',
+	})
+	expect(created.username).toBe('support-2')
+})
