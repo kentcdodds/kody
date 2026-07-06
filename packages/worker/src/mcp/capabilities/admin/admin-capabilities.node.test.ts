@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
+import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
+import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
 import { adminUsageOverviewCapability } from './admin-usage-overview.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
@@ -41,6 +43,32 @@ type PasswordResetRow = {
 	expires_at: number
 }
 
+type SystemEmailMessageRow = {
+	id: string
+	user_id: string
+	inbox_id: string | null
+	from_address: string | null
+	envelope_from: string | null
+	to_addresses_json?: string
+	cc_addresses_json?: string
+	reply_to_addresses_json?: string
+	headers_json?: string
+	text_body?: string | null
+	html_body?: string | null
+	raw_mime?: string | null
+	subject: string | null
+	processing_status: string
+	raw_size: number
+	received_at: string | null
+	created_at: string
+}
+
+type EmailInboxAddressRow = {
+	inbox_id: string
+	user_id: string
+	local_part: string
+}
+
 function normalizeQuery(query: string) {
 	return query.replace(/\s+/g, ' ').trim().toLowerCase()
 }
@@ -48,12 +76,20 @@ function normalizeQuery(query: string) {
 function createAdminCapabilityTestDb(input: {
 	users: Array<UserRow>
 	userRoles: Array<UserRoleRow>
+	systemEmailMessages?: Array<SystemEmailMessageRow>
+	emailInboxAddresses?: Array<EmailInboxAddressRow>
 }) {
 	let nextUserId = Math.max(0, ...input.users.map((user) => user.id)) + 1
 	const users = input.users.map((user) => ({ ...user }))
 	const userRoles = input.userRoles.map((row) => ({ ...row }))
 	const auditEvents: Array<AuditEventRow> = []
 	const passwordResets: Array<PasswordResetRow> = []
+	const systemEmailMessages = (input.systemEmailMessages ?? []).map((row) => ({
+		...row,
+	}))
+	const emailInboxAddresses = (input.emailInboxAddresses ?? []).map((row) => ({
+		...row,
+	}))
 
 	function selectAuditEvents(
 		normalizedQuery: string,
@@ -122,7 +158,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, created_at, updated_at from users where id = ?',
+							'select id, username, email, email_verified_at, created_at, updated_at from users where id = ?',
 						)
 					) {
 						return (users.find((user) => user.id === params[0]) ??
@@ -138,7 +174,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, created_at, updated_at from users where email = ? collate nocase',
+							'select id, username, email, email_verified_at, created_at, updated_at from users where email = ? collate nocase',
 						)
 					) {
 						const email = String(params[0]).toLowerCase()
@@ -168,6 +204,42 @@ function createAdminCapabilityTestDb(input: {
 							}).length,
 						} as T
 					}
+					if (
+						normalizedQuery.includes(
+							'select count(*) as total from email_messages',
+						)
+					) {
+						return {
+							total: systemEmailMessages.filter(
+								(row) => row.user_id === params[0] && row.id,
+							).length,
+						} as T
+					}
+					if (
+						normalizedQuery.includes('from email_messages as message') &&
+						normalizedQuery.includes('message.id = ?')
+					) {
+						const message = systemEmailMessages.find(
+							(row) => row.user_id === params[0] && row.id === params[1],
+						)
+						if (!message) return null
+						const address = emailInboxAddresses.find(
+							(row) =>
+								row.user_id === message.user_id &&
+								row.inbox_id === message.inbox_id,
+						)
+						return {
+							...message,
+							inbox_local_part: address?.local_part ?? '',
+							to_addresses_json: message.to_addresses_json ?? '[]',
+							cc_addresses_json: message.cc_addresses_json ?? '[]',
+							reply_to_addresses_json: message.reply_to_addresses_json ?? '[]',
+							headers_json: message.headers_json ?? '{}',
+							text_body: message.text_body ?? null,
+							html_body: message.html_body ?? null,
+							raw_mime: message.raw_mime ?? null,
+						} as T
+					}
 					if (normalizedQuery.includes('from entitlement_daily_counters')) {
 						return null
 					}
@@ -178,7 +250,7 @@ function createAdminCapabilityTestDb(input: {
 				async all<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, created_at, updated_at from users order by id asc limit ? offset ?',
+							'select id, username, email, email_verified_at, created_at, updated_at from users order by id asc limit ? offset ?',
 						)
 					) {
 						const pageSize = Number(params[0])
@@ -225,6 +297,37 @@ function createAdminCapabilityTestDb(input: {
 								paginated: true,
 							}) as Array<T>,
 						}
+					}
+					if (
+						normalizedQuery.includes('from email_messages as message') &&
+						normalizedQuery.includes("message.direction = 'inbound'")
+					) {
+						const pageSize = Number(params[1])
+						const offset = Number(params[2])
+						return {
+							results: systemEmailMessages
+								.filter((row) => row.user_id === params[0])
+								.sort(
+									(left, right) =>
+										right.created_at.localeCompare(left.created_at) ||
+										right.id.localeCompare(left.id),
+								)
+								.slice(offset, offset + pageSize)
+								.map((message) => {
+									const address = emailInboxAddresses.find(
+										(row) =>
+											row.user_id === message.user_id &&
+											row.inbox_id === message.inbox_id,
+									)
+									return {
+										...message,
+										inbox_local_part: address?.local_part ?? '',
+									}
+								}) as Array<T>,
+						}
+					}
+					if (normalizedQuery.includes('from email_attachments')) {
+						return { results: [] as Array<T> }
 					}
 					if (normalizedQuery.includes('from usage_rollups')) {
 						return { results: [] as Array<T> }
@@ -352,6 +455,7 @@ test('admin capabilities list and get account metadata and query sanitized audit
 				id: 1,
 				username: 'admin',
 				email: 'admin@example.com',
+				email_verified_at: '2026-01-01T00:00:00.000Z',
 				created_at: '2026-01-01 00:00:00',
 				updated_at: '2026-01-02 00:00:00',
 			},
@@ -359,6 +463,7 @@ test('admin capabilities list and get account metadata and query sanitized audit
 				id: 2,
 				username: 'jane',
 				email: 'jane@example.com',
+				email_verified_at: null,
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},
@@ -380,11 +485,15 @@ test('admin capabilities list and get account metadata and query sanitized audit
 			expect.objectContaining({
 				id: 1,
 				email: 'admin@example.com',
+				email_verified: true,
+				email_verified_at: '2026-01-01T00:00:00.000Z',
 				roles: ['admin', 'user'],
 			}),
 			expect.objectContaining({
 				id: 2,
 				email: 'jane@example.com',
+				email_verified: false,
+				email_verified_at: null,
 				roles: ['user'],
 			}),
 		],
@@ -428,6 +537,95 @@ test('admin capabilities list and get account metadata and query sanitized audit
 		'admin_usage_overview',
 		'admin_audit_log_query',
 	])
+})
+
+test('admin system email capabilities read only system-owned mail and audit reads', async () => {
+	const { db, auditEvents } = createAdminCapabilityTestDb({
+		users: [
+			{
+				id: 1,
+				username: 'admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 1, role_name: 'admin' }],
+		emailInboxAddresses: [
+			{
+				inbox_id: 'system-inbox-1',
+				user_id: 'system:email',
+				local_part: 'abuse',
+			},
+		],
+		systemEmailMessages: [
+			{
+				id: 'system-message-1',
+				user_id: 'system:email',
+				inbox_id: 'system-inbox-1',
+				from_address: 'sender@example.net',
+				envelope_from: 'bounce@example.net',
+				to_addresses_json: '["abuse@example.com"]',
+				cc_addresses_json: '[]',
+				reply_to_addresses_json: '["sender@example.net"]',
+				headers_json: '{"from":["Sender <sender@example.net>"]}',
+				text_body: 'System body.',
+				html_body: null,
+				raw_mime: 'Subject: Abuse\r\n\r\nSystem body.',
+				subject: 'Abuse report',
+				processing_status: 'stored',
+				raw_size: 32,
+				received_at: '2026-01-03T00:00:00.000Z',
+				created_at: '2026-01-03T00:00:00.000Z',
+			},
+			{
+				id: 'user-message-1',
+				user_id: 'user-123',
+				inbox_id: 'user-inbox-1',
+				from_address: 'private@example.net',
+				envelope_from: 'private@example.net',
+				subject: 'Private user mail',
+				processing_status: 'stored',
+				raw_size: 12,
+				received_at: '2026-01-04T00:00:00.000Z',
+				created_at: '2026-01-04T00:00:00.000Z',
+			},
+		],
+	})
+	const ctx = createAdminCapabilityContext(db)
+
+	const list = await adminSystemEmailListCapability.handler(
+		{ pageSize: 10 },
+		ctx,
+	)
+	expect(list.messages).toEqual([
+		expect.objectContaining({
+			id: 'system-message-1',
+			inbox_local_part: 'abuse',
+			subject: 'Abuse report',
+		}),
+	])
+
+	const get = await adminSystemEmailGetCapability.handler(
+		{ id: 'system-message-1' },
+		ctx,
+	)
+	expect(get.message).toMatchObject({
+		id: 'system-message-1',
+		text_body: 'System body.',
+		raw_mime: 'Subject: Abuse\r\n\r\nSystem body.',
+	})
+	expect(
+		await adminSystemEmailGetCapability.handler({ id: 'user-message-1' }, ctx),
+	).toEqual({ message: null })
+	expect(auditEvents.map((event) => event.action)).toEqual([
+		'admin_system_email_list',
+		'admin_system_email_get',
+		'admin_system_email_get',
+	])
+	expect(auditEvents[1]).toMatchObject({
+		reason: 'target_message_id=system-message-1',
+	})
 })
 
 test('admin_user_create records audit metadata and assigns the default role', async () => {
@@ -487,5 +685,24 @@ test('admin capabilities reject non-admin direct handler calls', async () => {
 		),
 	).rejects.toThrow(
 		'MCP user lacks required role "admin" for capability "admin_user_list".',
+	)
+	await expect(
+		adminSystemEmailListCapability.handler(
+			{},
+			{
+				env: { APP_DB: db } as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+						displayName: 'user',
+						roles: ['user'],
+					},
+				}),
+			},
+		),
+	).rejects.toThrow(
+		'MCP user lacks required role "admin" for capability "admin_system_email_list".',
 	)
 })

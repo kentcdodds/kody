@@ -228,6 +228,12 @@ export function AdminUsageRoute(handle: Handle) {
 								Users
 							</a>
 							<a
+								href="/admin/system-email"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								System email
+							</a>
+							<a
 								href="/admin/invites"
 								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
 							>

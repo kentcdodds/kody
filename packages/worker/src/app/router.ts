@@ -20,6 +20,10 @@ import {
 	createAdminUsageApiHandler,
 	createAdminUsageHandler,
 } from '#app/handlers/admin-usage.ts'
+import {
+	createAdminSystemEmailApiHandler,
+	createAdminSystemEmailHandler,
+} from '#app/handlers/admin-system-email.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
@@ -141,6 +145,8 @@ export function createAppRouter(appEnv: AppEnv) {
 			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(env),
 			adminUsage: createAdminUsageHandler(env),
 			adminUsageApi: createAdminUsageApiHandler(env),
+			adminSystemEmail: createAdminSystemEmailHandler(env),
+			adminSystemEmailApi: createAdminSystemEmailApiHandler(env),
 			community: createCommunityHandler(env),
 			communityApi: createCommunityApiHandler(env),
 			communityDetail: createCommunityDetailHandler(env),

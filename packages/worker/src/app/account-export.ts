@@ -1,5 +1,6 @@
 import {
 	accountUserDataTargets,
+	accountUserDataExcludedOwnerIds,
 	type UserScopedDataTarget,
 	getAccountD1UserColumnCoverage,
 } from '#app/account-data-targets.ts'
@@ -134,6 +135,10 @@ export type AccountExportManifest = {
 		vectorize: string
 	}
 	excludedDurableObjects: Array<{
+		name: string
+		reason: string
+	}>
+	excludedD1Surfaces: Array<{
 		name: string
 		reason: string
 	}>
@@ -1082,6 +1087,10 @@ function buildManifest(input: {
 					'Ephemeral live websocket/session state. Durable app storage is exported through StorageRunner buckets.',
 			},
 		],
+		excludedD1Surfaces: accountUserDataExcludedOwnerIds.map((exclusion) => ({
+			name: exclusion.surface,
+			reason: exclusion.reason,
+		})),
 	} satisfies AccountExportManifest
 }
 

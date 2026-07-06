@@ -138,6 +138,8 @@ export async function startDevServer(persistDir: string) {
 				`CLOUDFLARE_API_TOKEN:${mockCloudflareToken}`,
 				'--var',
 				'CLOUDFLARE_ACCOUNT_ID:cf_account_mock_123',
+				'--var',
+				`APP_BASE_URL:${origin}`,
 			],
 			cwd: projectRoot,
 			env: {

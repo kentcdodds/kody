@@ -13,6 +13,16 @@ different durable objects and different rows. Any new persistence layer added to
 the project must follow the same convention; user-scoped tests should exercise
 both the "happy" path and a cross-user denial path.
 
+The deliberate storage exception is **operator-owned system email** for reserved
+platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
+`admin`). Those messages reuse the email tables but are stored under the
+reserved owner id `system:email`, which is not a login account and must not be
+conflated with the `kody@example.com` fixture or Kent's personal account.
+Account deletion and export treat `system:email` rows as platform/operator
+content, not user data; the exclusion is listed in
+`accountUserDataExcludedOwnerIds` with a reason and is covered by guardrail
+tests.
+
 ## Account deletion inventory
 
 Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
@@ -25,6 +35,11 @@ and what needs operator attention. Re-running the operation is safe: missing
 rows, missing KV keys, missing vectors, deleted Artifacts repos, and
 already-cleared Durable Objects are treated as successful no-ops or warning-only
 failures.
+
+System email rows owned by `system:email` are intentionally excluded from
+account deletion. They are operator-owned inbound mail for reserved platform
+addresses, not portable user content, and are bounded by fixed system caps plus
+the scheduled system-email retention prune.
 
 Deletion must cover these user-owned surfaces:
 
@@ -64,6 +79,11 @@ migrations to SQLite and fails if a `user_id` / `*_user_id` column is not
 covered by the export list. The hard invariant is the same as every storage
 path: callers pass the authenticated user's stable MCP `userId`, and every query
 or Durable Object lookup is scoped to that id.
+
+System email rows owned by `system:email` are intentionally absent from account
+exports for the same reason they are absent from deletion: they belong to the
+operator inbox surface, not to the exporting user. The export manifest lists
+this under `excludedD1Surfaces` so the omission is explicit.
 
 Exports are versioned JSON documents:
 
@@ -425,6 +445,10 @@ on write unless a migration backfills existing rows.
   `email_messages.headers_json`, and `email_delivery_events.detail_json`
   (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`) store parsed
   email metadata; `detail_json` is write-mostly audit detail.
+- `system_email_daily_counters` (`0051-system-email-daily-counters.sql`) stores
+  fixed per-local daily receive counters for operator-owned system inboxes.
+  These counters are not user entitlements and are pruned by the system-email
+  retention job.
 - `mcp_memories.tags_json` and `mcp_memories.source_uris_json`
   (`0016-mcp-memories.sql`, `0018-mcp-memory-source-uris.sql`) back memory
   search and provenance.
@@ -520,8 +544,12 @@ migration plan.
 ### Growth and retention watch list
 
 These tables can grow without a built-in retention policy beyond account
-deletion or narrow cleanup paths: `audit_events`, `email_messages` and related
-email tables, `package_runtime_runs`, `package_runtime_logs`, `workflow_runs`,
-`package_invocations`, and old published bundle/KV artifacts. `usage_rollups` is
-bounded by `(user_id, metric, month)`, while raw Analytics Engine usage events
-follow platform retention.
+deletion or narrow cleanup paths: `audit_events`, user-owned `email_messages`
+and related email tables, `package_runtime_runs`, `package_runtime_logs`,
+`workflow_runs`, `package_invocations`, and old published bundle/KV artifacts.
+System email rows under `system:email` are the email exception: cron prunes
+messages and delivery events older than 90 days, deletes stale
+`system_email_daily_counters`, and caps stored system messages at 5000. User
+email retention is still account-deletion scoped. `usage_rollups` is bounded by
+`(user_id, metric, month)`, while raw Analytics Engine usage events follow
+platform retention.

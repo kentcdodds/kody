@@ -5,6 +5,8 @@ export const adminUserListItemFieldNames = [
 	'id',
 	'username',
 	'email',
+	'email_verified',
+	'email_verified_at',
 	'created_at',
 	'updated_at',
 	'roles',
@@ -17,6 +19,8 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	id: number
 	username: string
 	email: string
+	email_verified: boolean
+	email_verified_at: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -42,7 +46,7 @@ export async function loadAdminUsersData(
 			total: number
 		}>(),
 		env.APP_DB.prepare(
-			`SELECT id, username, email, created_at, updated_at
+			`SELECT id, username, email, email_verified_at, created_at, updated_at
 			 FROM users
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
@@ -52,6 +56,7 @@ export async function loadAdminUsersData(
 				id: number
 				username: string
 				email: string
+				email_verified_at: string | null
 				created_at: string
 				updated_at: string
 			}>(),
@@ -81,7 +86,7 @@ export async function loadAdminUserByIdOrEmail(
 	const userRow = input.id
 		? await db
 				.prepare(
-					`SELECT id, username, email, created_at, updated_at
+					`SELECT id, username, email, email_verified_at, created_at, updated_at
 					 FROM users
 					 WHERE id = ?`,
 				)
@@ -90,13 +95,14 @@ export async function loadAdminUserByIdOrEmail(
 					id: number
 					username: string
 					email: string
+					email_verified_at: string | null
 					created_at: string
 					updated_at: string
 				}>()
 		: email
 			? await db
 					.prepare(
-						`SELECT id, username, email, created_at, updated_at
+						`SELECT id, username, email, email_verified_at, created_at, updated_at
 						 FROM users
 						 WHERE email = ? COLLATE NOCASE`,
 					)
@@ -105,6 +111,7 @@ export async function loadAdminUserByIdOrEmail(
 						id: number
 						username: string
 						email: string
+						email_verified_at: string | null
 						created_at: string
 						updated_at: string
 					}>()
@@ -151,6 +158,7 @@ function toAdminUserListItem(
 		id: number
 		username: string
 		email: string
+		email_verified_at: string | null
 		created_at: string
 		updated_at: string
 	},
@@ -160,6 +168,8 @@ function toAdminUserListItem(
 		id: row.id,
 		username: row.username,
 		email: row.email,
+		email_verified: Boolean(row.email_verified_at),
+		email_verified_at: row.email_verified_at,
 		created_at: row.created_at,
 		updated_at: row.updated_at,
 		roles,

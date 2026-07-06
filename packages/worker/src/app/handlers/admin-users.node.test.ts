@@ -21,6 +21,7 @@ type UserRow = {
 	id: number
 	username: string
 	email: string
+	email_verified_at?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -206,6 +207,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 				id: 1,
 				username: 'admin-user',
 				email: 'admin@example.com',
+				email_verified_at: '2026-01-01T00:00:00.000Z',
 				created_at: '2026-01-01 00:00:00',
 				updated_at: '2026-01-02 00:00:00',
 			},
@@ -213,6 +215,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 				id: 2,
 				username: 'member',
 				email: 'member@example.com',
+				email_verified_at: null,
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},
@@ -242,6 +245,18 @@ test('admin users list payload exposes only account metadata fields', async () =
 			[...adminUserListItemFieldNames].sort(),
 		)
 	}
+	expect(payload.users).toEqual([
+		expect.objectContaining({
+			email: 'admin@example.com',
+			email_verified: true,
+			email_verified_at: '2026-01-01T00:00:00.000Z',
+		}),
+		expect.objectContaining({
+			email: 'member@example.com',
+			email_verified: false,
+			email_verified_at: null,
+		}),
+	])
 })
 
 test('assign role action updates user roles and logs audit event', async () => {

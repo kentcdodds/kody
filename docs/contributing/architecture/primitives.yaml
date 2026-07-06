@@ -277,8 +277,9 @@ primitives:
     group: assistant
     name: Email
     summary:
-      Automatic per-user inbox at {username}@<platform domain>, inbound message
-      storage, and platform-addressed outbound send backed by Cloudflare email
+      Automatic per-user inbox at {username}@<platform domain>, operator-owned
+      system inboxes for configured reserved locals, inbound message storage,
+      and platform-addressed outbound send backed by Cloudflare email
       primitives.
     code:
       - packages/worker/src/email/
@@ -433,8 +434,10 @@ invariants:
       Every read/write path is scoped by userId, every user-owned Durable Object
       id is user-namespaced, and every search/vector path filters by userId.
       Cross-user data sharing is a bug. RBAC provides a narrow exception for
-      account administration only (permissions with access=any on user/role
-      entities, behind explicit guards) — never for user content.
+      account administration (permissions with access=any on user/role entities,
+      behind explicit guards), and system email uses the reserved system:email
+      owner id for operator-owned reserved-address mail — never for user
+      content.
     docs:
       - docs/contributing/project-intent.md
       - docs/contributing/architecture/data-storage.md

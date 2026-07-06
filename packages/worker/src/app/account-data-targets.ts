@@ -20,11 +20,23 @@ export type UserScopedDataTarget =
 	| { kind: 'community_listing_child'; table: string; listingColumn: string }
 	| { kind: 'mcp_memory_suppression' }
 
+export const accountUserDataExcludedOwnerIds = [
+	{
+		ownerId: 'system:email',
+		surface: 'system_email_inboxes',
+		reason:
+			'Operator-owned inbound mail for reserved platform locals is stored under the reserved system:email owner id. It is not a user account, must not be attributed to any user, and is excluded from per-user account deletion/export while system retention pruning bounds growth.',
+	},
+] as const
+
 /**
  * Tables that are scoped by `user_id` (directly or transitively) and should
  * be included in per-user account operations. The list is intentionally
  * explicit so adding a new user-scoped table requires a deliberate update here
  * and a corresponding deletion/export guardrail test update.
+ * Rows owned by accountUserDataExcludedOwnerIds are operator/platform data,
+ * not user data; tests assert those owner ids stay deliberately excluded from
+ * user account operations.
  *
  * Order matters for deletion: child tables come before parent tables so the
  * cascade is self-contained even on engines / configs where foreign-key

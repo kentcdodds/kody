@@ -108,6 +108,37 @@ test('account export D1 coverage includes every live user-owned schema column', 
 	expect(stale, 'account export references stale D1 columns').toEqual([])
 })
 
+test('account export documents and excludes operator-owned system email rows', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (id, username, email, password_hash, created_at, updated_at, email_verified_at)
+		VALUES (1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05', '2026-07-05');
+
+		INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status, created_at, updated_at
+		) VALUES
+			('user-message', 'inbound', 'user-aaa', 'sender@example.net', 'User mail', 'stored', '2026-07-05', '2026-07-05'),
+			('system-message', 'inbound', 'system:email', 'sender@example.net', 'System mail', 'stored', '2026-07-05', '2026-07-05');
+	`)
+
+	const accountExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+
+	expect(accountExport.d1.email_messages.rows).toEqual([
+		expect.objectContaining({ id: 'user-message', user_id: 'user-aaa' }),
+	])
+	expect(accountExport.manifest.excludedD1Surfaces).toEqual([
+		expect.objectContaining({
+			name: 'system_email_inboxes',
+			reason: expect.stringContaining('Operator-owned inbound mail'),
+		}),
+	])
+})
+
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`

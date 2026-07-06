@@ -282,6 +282,12 @@ export function AdminUsersRoute(handle: Handle) {
 								Usage
 							</a>
 							<a
+								href="/admin/system-email"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								System email
+							</a>
+							<a
 								href="/admin/community-reports"
 								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
 							>
@@ -428,6 +434,12 @@ export function AdminUsersRoute(handle: Handle) {
 									columns={3}
 									items={[
 										{ label: 'Email', value: selectedUser.email },
+										{
+											label: 'Email verified',
+											value: selectedUser.email_verified
+												? (selectedUser.email_verified_at ?? 'Verified')
+												: 'No',
+										},
 										{ label: 'User id', value: String(selectedUser.id) },
 										{
 											label: 'Roles',

@@ -32,6 +32,8 @@ export type AdminUserListItem = {
 	id: number
 	username: string
 	email: string
+	email_verified: boolean
+	email_verified_at: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -178,6 +180,56 @@ export type AdminUsageLoaderData = {
 	total: number
 	currentMonth: string
 	today: string
+}
+
+export type AdminSystemEmailListItem = {
+	id: string
+	inbox_local_part: string
+	from_address: string | null
+	envelope_from: string | null
+	subject: string | null
+	processing_status: string
+	raw_size: number
+	received_at: string | null
+	created_at: string
+}
+
+export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
+	to_addresses: Array<string>
+	cc_addresses: Array<string>
+	reply_to_addresses: Array<string>
+	headers: Record<string, Array<string>>
+	text_body: string | null
+	html_body: string | null
+	raw_mime: string | null
+	attachments: Array<{
+		id: string
+		filename: string | null
+		content_type: string | null
+		content_id: string | null
+		disposition: string | null
+		size: number
+		storage_kind: string
+		created_at: string
+	}>
+}
+
+export type AdminSystemEmailLoaderData = {
+	ok: true
+	ownerId: string
+	systemLocals: Array<string>
+	limits: {
+		maxMessageBytes: number
+		maxReceivesPerDay: number
+		maxStoredMessages: number
+		retentionDays: number
+		pruneBatchSize: number
+	}
+	messages: Array<AdminSystemEmailListItem>
+	selectedMessage: AdminSystemEmailDetail | null
+	page: number
+	pageSize: number
+	total: number
 }
 
 export type AdminCreatedUserSetup = {
@@ -346,6 +398,7 @@ export type AppLoaderData = {
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
 	adminUsage?: AdminUsageLoaderData
+	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData

@@ -43,9 +43,10 @@ shared state between users.
 Optimize for:
 
 - Per-user isolation as a first-class invariant, enforced at the storage,
-  durable-object, vectorize, and runtime layers. RBAC provides a narrow,
-  explicitly-guarded exception for account administration (`access = 'any'`,
-  limited to `user` and `role` entities — never user content). See
+  durable-object, vectorize, and runtime layers. Two narrow, documented
+  exceptions exist: RBAC account administration (`access = 'any'`, limited to
+  `user` and `role` entities — never user content) and operator-owned system
+  email for reserved platform addresses stored under `system:email`. See
   [Authorization](./architecture/authorization.md).
 - Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
@@ -81,10 +82,10 @@ When working in this repo, do not assume:
 - This project is trying to become a generic starter kit for others.
 - This is a single-user system. Per-user isolation is an invariant, not a future
   direction; treat any code path that reads or writes data without a `userId`
-  (or that shares a Durable Object id across users) as a bug. The RBAC
-  account-administration exception (`:any` on `user`/`role` only, behind
-  explicit guards) is the sole intentional cross-user boundary — see
-  [Authorization](./architecture/authorization.md).
+  (or that shares a Durable Object id across users) as a bug. The intentional
+  cross-user boundaries are RBAC account administration (`:any` on `user`/`role`
+  only, behind explicit guards) and operator-owned system email for reserved
+  platform addresses — see [Authorization](./architecture/authorization.md).
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes

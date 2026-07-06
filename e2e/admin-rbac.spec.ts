@@ -109,7 +109,16 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	)
 	expect(memberRecord).toBeTruthy()
 	expect(Object.keys(memberRecord).sort()).toEqual(
-		['created_at', 'email', 'id', 'roles', 'updated_at', 'username'].sort(),
+		[
+			'created_at',
+			'email',
+			'email_verified',
+			'email_verified_at',
+			'id',
+			'roles',
+			'updated_at',
+			'username',
+		].sort(),
 	)
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')

@@ -264,6 +264,12 @@ export function AdminInvitesRoute(handle: Handle) {
 							>
 								Usage
 							</a>
+							<a
+								href="/admin/system-email"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								System email
+							</a>
 						</>
 					}
 				/>

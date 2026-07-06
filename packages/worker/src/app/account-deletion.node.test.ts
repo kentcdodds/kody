@@ -5,6 +5,7 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
+import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -374,6 +375,57 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 		'user-owned D1 columns missing from account deletion',
 	).toEqual([])
 	expect(stale, 'account deletion references stale D1 columns').toEqual([])
+})
+
+test('account deletion documents and preserves operator-owned system email rows', async () => {
+	const systemEmailExclusion = accountUserDataExcludedOwnerIds.find(
+		(exclusion) => exclusion.ownerId === 'system:email',
+	)
+	expect(systemEmailExclusion?.reason).toContain('Operator-owned inbound mail')
+	expect(systemEmailExclusion?.reason).toContain(
+		'not be attributed to any user',
+	)
+
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'user@example.com' }],
+		email_messages: [
+			{ id: 'user-message', user_id: 'user-aaa' },
+			{ id: 'system-message', user_id: 'system:email' },
+		],
+		email_delivery_events: [
+			{ id: 'user-event', user_id: 'user-aaa' },
+			{ id: 'system-event', user_id: 'system:email' },
+		],
+		email_inboxes: [
+			{ id: 'user-inbox', user_id: 'user-aaa' },
+			{ id: 'system-inbox', user_id: 'system:email' },
+		],
+		email_inbox_addresses: [
+			{ id: 'user-address', user_id: 'user-aaa' },
+			{ id: 'system-address', user_id: 'system:email' },
+		],
+	})
+
+	await deleteUserAccount({
+		env: { APP_DB: db } as unknown as Parameters<
+			typeof deleteUserAccount
+		>[0]['env'],
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	expect(rows.email_messages).toEqual([
+		{ id: 'system-message', user_id: 'system:email' },
+	])
+	expect(rows.email_delivery_events).toEqual([
+		{ id: 'system-event', user_id: 'system:email' },
+	])
+	expect(rows.email_inboxes).toEqual([
+		{ id: 'system-inbox', user_id: 'system:email' },
+	])
+	expect(rows.email_inbox_addresses).toEqual([
+		{ id: 'system-address', user_id: 'system:email' },
+	])
 })
 
 test('deleteUserAccount cascades user-scoped rows for the requested user', async () => {

@@ -161,6 +161,12 @@ export function AdminRolesRoute(handle: Handle) {
 								Usage
 							</a>
 							<a
+								href="/admin/system-email"
+								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
+							>
+								System email
+							</a>
+							<a
 								href="/admin/community-reports"
 								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
 							>

@@ -23,6 +23,13 @@ export const adminUserMetadataSchema = z.object({
 	id: z.number().int().positive(),
 	username: z.string(),
 	email: z.string(),
+	email_verified: z
+		.boolean()
+		.describe('True when email_verified_at is non-null.'),
+	email_verified_at: z
+		.string()
+		.nullable()
+		.describe('Raw users.email_verified_at timestamp, or null if unverified.'),
 	created_at: z.string(),
 	updated_at: z.string(),
 	roles: z.array(roleNameSchema),

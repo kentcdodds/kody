@@ -13,10 +13,13 @@ replies from the matching platform-assigned sender address.
   that username. The default inbox is provisioned automatically at signup (or on
   the first inbound message), so there is nothing to create or configure.
 - Mail to unknown usernames is rejected.
-- Reserved local parts (`kody`, `postmaster`, `abuse`, and other role or system
-  names) never route to a user inbox and can never be registered as usernames.
-  `kody@<platform domain>` is the system transactional sender (verification and
-  password-reset mail) only.
+- Reserved local parts never route to a user inbox and can never be registered
+  as usernames. A configured subset is operator-owned system mail: `kody`,
+  `support`, `abuse`, `postmaster`, `security`, and `admin` at the platform
+  domain route to Kody's system inbox. Other reserved locals still reject.
+- `kody@<platform domain>` is also the system transactional sender for
+  verification and password-reset mail. Inbound replies to that address are
+  operator-owned system mail, not a user's inbox.
 - User outbound mail always sends from `{username}@<platform domain>`. The from
   address is platform-assigned: a verified sender identity for it is provisioned
   automatically alongside the default inbox. There is no self-service sender
@@ -75,7 +78,9 @@ Inbound storage is quota-gated per user:
   whole is disabled.
 - Any email routed to a verified user's platform address is stored, subject to
   the quotas above.
-- Unknown usernames and reserved local parts are rejected before storage.
+- Unknown usernames and reserved local parts outside the configured system
+  address subset are rejected before storage. Configured system addresses are
+  stored in the operator-owned system inbox and are visible only to admins.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
 - Outbound sending requires a verified account email, sends only from the
@@ -84,6 +89,10 @@ Inbound storage is quota-gated per user:
   recipients, and only recipients taken from stored inbound mail.
 - Outbound sends consume a per-day entitlement. Users without a plan are capped
   by a global daily backstop instead of sending unlimited mail.
+- System inbox mail is not gated by a user plan or account-verification state.
+  It has fixed platform caps and retention: messages are pruned after 90 days
+  and the stored system inbox is capped so arbitrary sender traffic cannot grow
+  without bound.
 - Stored inbound mail is the source of truth. If a user wants email automation,
   they can publish a package that subscribes to the stored inbound email topic
   `email.message.received` using normal package subscriptions. This is package

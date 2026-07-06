@@ -55,6 +55,7 @@ import {
 } from '#app/handlers/package-app.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
+import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 
 export {
@@ -534,19 +535,25 @@ const workerHandler = {
 	) {
 		const baseUrl = env.APP_BASE_URL ?? 'https://kody.local'
 		const scheduledAt = new Date(controller.scheduledTime)
-		const [pushesResult, cleanupResult] = await Promise.allSettled([
-			reconcileArtifactsPushes({
-				env,
-				baseUrl,
-				now: scheduledAt,
-			}),
-			cleanupRepoSessionBranches({
-				env,
-				now: scheduledAt,
-			}),
-		])
+		const [pushesResult, cleanupResult, systemEmailResult] =
+			await Promise.allSettled([
+				reconcileArtifactsPushes({
+					env,
+					baseUrl,
+					now: scheduledAt,
+				}),
+				cleanupRepoSessionBranches({
+					env,
+					now: scheduledAt,
+				}),
+				pruneSystemEmailRetention({
+					db: env.APP_DB,
+					now: scheduledAt,
+				}),
+			])
 		if (pushesResult.status === 'rejected') throw pushesResult.reason
 		if (cleanupResult.status === 'rejected') throw cleanupResult.reason
+		if (systemEmailResult.status === 'rejected') throw systemEmailResult.reason
 	},
 } satisfies ExportedHandler<Env>
 

@@ -27,6 +27,120 @@ import {
 	touchEmailThread,
 } from './repo.ts'
 import { dispatchInboundEmailSubscriptionEvents } from './package-subscriptions.ts'
+import {
+	consumeSystemEmailDailyReceive,
+	countStoredSystemEmailMessages,
+	ensureSystemEmailInbox,
+	isSystemEmailLocal,
+	systemEmailLimits,
+	systemEmailOwnerId,
+	type SystemEmailLocal,
+} from './system-email.ts'
+
+type ParsedInboundEmail = Awaited<
+	ReturnType<typeof parseForwardableEmailMessage>
+>
+
+async function parseAndStoreInboundEmail(input: {
+	db: D1Database
+	message: ForwardableEmailMessage
+	recipient: string
+	userId: string
+	inboxId: string
+	maxMessageBytes: number
+	onParseRejected: (reason: string) => Promise<void>
+}) {
+	let parsed: ParsedInboundEmail
+	try {
+		parsed = await parseForwardableEmailMessage(input.message, {
+			maxRawSize: input.maxMessageBytes,
+		})
+	} catch (error) {
+		const reason =
+			error instanceof Error ? error.message : 'Failed to parse inbound email.'
+		input.message.setReject(reason)
+		await input.onParseRejected(reason)
+		return null
+	}
+	const now = new Date().toISOString()
+	const subjectNormalized = normalizeSubject(parsed.subject)
+	const existingThread = await findEmailThreadForInboundMessage({
+		db: input.db,
+		userId: input.userId,
+		inboxId: input.inboxId,
+		references: parsed.references,
+		inReplyToHeader: parsed.inReplyTo,
+	})
+	const thread =
+		existingThread ??
+		(await createEmailThread({
+			db: input.db,
+			userId: input.userId,
+			inboxId: input.inboxId,
+			subjectNormalized,
+			rootMessageIdHeader: parsed.messageId,
+			lastMessageAt: now,
+		}))
+	const stored = await insertEmailMessageWithAttachments({
+		db: input.db,
+		message: {
+			direction: 'inbound',
+			userId: input.userId,
+			inboxId: input.inboxId,
+			threadId: thread.id,
+			senderIdentityId: null,
+			fromAddress: parsed.headerFrom,
+			envelopeFrom: parsed.envelopeFrom,
+			toAddresses: parsed.to.map((entry) => entry.address),
+			ccAddresses: parsed.cc.map((entry) => entry.address),
+			bccAddresses: parsed.bcc.map((entry) => entry.address),
+			replyToAddresses: parsed.replyTo.map((entry) => entry.address),
+			subject: parsed.subject,
+			messageIdHeader: parsed.messageId,
+			inReplyToHeader: parsed.inReplyTo,
+			references: parsed.references,
+			headers: parsed.headers,
+			authResults: parsed.authResults,
+			textBody: parsed.textBody,
+			htmlBody: parsed.htmlBody,
+			rawMime: parsed.rawMime,
+			rawSize: parsed.rawSize,
+			processingStatus: 'stored',
+			providerMessageId: null,
+			error: null,
+			receivedAt: now,
+			sentAt: null,
+		},
+		attachments: parsed.attachments.map((attachment) => ({
+			filename: attachment.filename,
+			contentType: attachment.contentType,
+			contentId: attachment.contentId,
+			disposition: attachment.disposition,
+			size: attachment.size,
+			storageKind: 'raw-mime',
+			storageKey: null,
+		})),
+	})
+	await touchEmailThread({
+		db: input.db,
+		threadId: thread.id,
+		lastMessageAt: now,
+	})
+	await insertEmailDeliveryEvent({
+		db: input.db,
+		messageId: stored.id,
+		userId: input.userId,
+		inboxId: input.inboxId,
+		eventType: 'received',
+		provider: 'cloudflare-email-routing',
+		detail: {
+			recipient: input.recipient,
+			envelope_from: parsed.envelopeFrom,
+			from_address: parsed.headerFrom,
+		},
+	})
+	return stored
+}
 
 export async function handleInboundEmail(
 	message: ForwardableEmailMessage,
@@ -53,6 +167,16 @@ export async function handleInboundEmail(
 	const recipientDomain = recipient.slice(atIndex + 1)
 	if (recipientDomain !== platformDomain) {
 		message.setReject('Unknown Kody email address.')
+		return
+	}
+	if (isSystemEmailLocal(localPart)) {
+		await handleSystemInboundEmail({
+			message,
+			env,
+			recipient,
+			localPart,
+			platformDomain,
+		})
 		return
 	}
 	if (isReservedUsername(localPart)) {
@@ -200,111 +324,34 @@ export async function handleInboundEmail(
 		return
 	}
 
-	let parsed: Awaited<ReturnType<typeof parseForwardableEmailMessage>>
-	try {
-		parsed = await parseForwardableEmailMessage(message, {
-			maxRawSize: maxMessageBytes ?? maxInlineRawMimeBytes,
-		})
-	} catch (error) {
-		const reason =
-			error instanceof Error ? error.message : 'Failed to parse inbound email.'
-		// Parse failures keep one event per attempt: unlike quota/size
-		// rejections they are bounded by the daily receive quota (the
-		// counter was already consumed above), and the per-attempt detail
-		// is useful for the owner to debug a misbehaving sender.
-		message.setReject(reason)
-		await insertEmailDeliveryEvent({
-			db: env.APP_DB,
-			userId,
-			inboxId: inbox.id,
-			eventType: 'rejected',
-			provider: 'cloudflare-email-routing',
-			detail: {
-				recipient,
-				reason,
-				phase: 'parse',
-			},
-		}).catch(() => undefined)
-		await recordReceiveUsage({ outcome: 'error' })
-		return
-	}
-	const now = new Date().toISOString()
-	const subjectNormalized = normalizeSubject(parsed.subject)
-	const existingThread = await findEmailThreadForInboundMessage({
+	const stored = await parseAndStoreInboundEmail({
 		db: env.APP_DB,
+		message,
+		recipient,
 		userId,
 		inboxId: inbox.id,
-		references: parsed.references,
-		inReplyToHeader: parsed.inReplyTo,
-	})
-	const thread =
-		existingThread ??
-		(await createEmailThread({
-			db: env.APP_DB,
-			userId,
-			inboxId: inbox.id,
-			subjectNormalized,
-			rootMessageIdHeader: parsed.messageId,
-			lastMessageAt: now,
-		}))
-	const stored = await insertEmailMessageWithAttachments({
-		db: env.APP_DB,
-		message: {
-			direction: 'inbound',
-			userId,
-			inboxId: inbox.id,
-			threadId: thread.id,
-			senderIdentityId: null,
-			fromAddress: parsed.headerFrom,
-			envelopeFrom: parsed.envelopeFrom,
-			toAddresses: parsed.to.map((entry) => entry.address),
-			ccAddresses: parsed.cc.map((entry) => entry.address),
-			bccAddresses: parsed.bcc.map((entry) => entry.address),
-			replyToAddresses: parsed.replyTo.map((entry) => entry.address),
-			subject: parsed.subject,
-			messageIdHeader: parsed.messageId,
-			inReplyToHeader: parsed.inReplyTo,
-			references: parsed.references,
-			headers: parsed.headers,
-			authResults: parsed.authResults,
-			textBody: parsed.textBody,
-			htmlBody: parsed.htmlBody,
-			rawMime: parsed.rawMime,
-			rawSize: parsed.rawSize,
-			processingStatus: 'stored',
-			providerMessageId: null,
-			error: null,
-			receivedAt: now,
-			sentAt: null,
-		},
-		attachments: parsed.attachments.map((attachment) => ({
-			filename: attachment.filename,
-			contentType: attachment.contentType,
-			contentId: attachment.contentId,
-			disposition: attachment.disposition,
-			size: attachment.size,
-			storageKind: 'raw-mime',
-			storageKey: null,
-		})),
-	})
-	await touchEmailThread({
-		db: env.APP_DB,
-		threadId: thread.id,
-		lastMessageAt: now,
-	})
-	await insertEmailDeliveryEvent({
-		db: env.APP_DB,
-		messageId: stored.id,
-		userId,
-		inboxId: inbox.id,
-		eventType: 'received',
-		provider: 'cloudflare-email-routing',
-		detail: {
-			recipient,
-			envelope_from: parsed.envelopeFrom,
-			from_address: parsed.headerFrom,
+		maxMessageBytes: maxMessageBytes ?? maxInlineRawMimeBytes,
+		async onParseRejected(reason) {
+			// Parse failures keep one event per attempt: unlike quota/size
+			// rejections they are bounded by the daily receive quota (the
+			// counter was already consumed above), and the per-attempt detail
+			// is useful for the owner to debug a misbehaving sender.
+			await insertEmailDeliveryEvent({
+				db: env.APP_DB,
+				userId,
+				inboxId: inbox.id,
+				eventType: 'rejected',
+				provider: 'cloudflare-email-routing',
+				detail: {
+					recipient,
+					reason,
+					phase: 'parse',
+				},
+			}).catch(() => undefined)
+			await recordReceiveUsage({ outcome: 'error' })
 		},
 	})
+	if (!stored) return
 	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
 	const dispatchPromise = dispatchInboundEmailSubscriptionEvents({
 		env,
@@ -318,4 +365,115 @@ export async function handleInboundEmail(
 			console.error('Inbound email package subscription dispatch failed', error)
 		})
 	}
+}
+
+async function handleSystemInboundEmail(input: {
+	message: ForwardableEmailMessage
+	env: Pick<
+		Env,
+		'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'USAGE_EVENTS'
+	>
+	recipient: string
+	localPart: SystemEmailLocal
+	platformDomain: string
+}) {
+	const provisioned = await ensureSystemEmailInbox({
+		db: input.env.APP_DB,
+		localPart: input.localPart,
+		domain: input.platformDomain,
+	})
+	if (!provisioned) {
+		input.message.setReject('Email inbox is unavailable.')
+		return
+	}
+	const { inbox } = provisioned
+	const receiveStartedAtMs = Date.now()
+	const recordReceiveUsage = async (recordInput: {
+		entityId?: string | null
+		outcome: 'success' | 'error'
+	}) => {
+		await recordUsage(input.env, {
+			userId: systemEmailOwnerId,
+			eventType: 'email_received',
+			entityId: recordInput.entityId ?? null,
+			bytes: input.message.rawSize,
+			durationMs: Date.now() - receiveStartedAtMs,
+			outcome: recordInput.outcome,
+		})
+	}
+
+	if (input.message.rawSize > systemEmailLimits.maxMessageBytes) {
+		input.message.setReject('Recipient mailbox is over quota.')
+		await recordBoundedEmailRejectionEvent({
+			db: input.env.APP_DB,
+			userId: systemEmailOwnerId,
+			inboxId: inbox.id,
+			recipient: input.recipient,
+			reason: `Message size ${input.message.rawSize} exceeds system inbox cap ${systemEmailLimits.maxMessageBytes}.`,
+			phase: 'size',
+		}).catch(() => undefined)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+
+	const receivesToday = await consumeSystemEmailDailyReceive({
+		db: input.env.APP_DB,
+		localPart: input.localPart,
+	})
+	if (receivesToday === null) {
+		input.message.setReject('Recipient mailbox is over quota.')
+		await recordBoundedEmailRejectionEvent({
+			db: input.env.APP_DB,
+			userId: systemEmailOwnerId,
+			inboxId: inbox.id,
+			recipient: input.recipient,
+			reason: `System inbox daily receive cap ${systemEmailLimits.maxReceivesPerDay} reached for ${input.localPart}.`,
+			phase: 'system-limit',
+		}).catch(() => undefined)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+
+	const storedMessages = await countStoredSystemEmailMessages({
+		db: input.env.APP_DB,
+	})
+	if (storedMessages >= systemEmailLimits.maxStoredMessages) {
+		input.message.setReject('Recipient mailbox is over quota.')
+		await recordBoundedEmailRejectionEvent({
+			db: input.env.APP_DB,
+			userId: systemEmailOwnerId,
+			inboxId: inbox.id,
+			recipient: input.recipient,
+			reason: `System inbox stored-message cap ${systemEmailLimits.maxStoredMessages} reached.`,
+			phase: 'system-limit',
+		}).catch(() => undefined)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+
+	const stored = await parseAndStoreInboundEmail({
+		db: input.env.APP_DB,
+		message: input.message,
+		recipient: input.recipient,
+		userId: systemEmailOwnerId,
+		inboxId: inbox.id,
+		maxMessageBytes: systemEmailLimits.maxMessageBytes,
+		async onParseRejected(reason) {
+			await insertEmailDeliveryEvent({
+				db: input.env.APP_DB,
+				userId: systemEmailOwnerId,
+				inboxId: inbox.id,
+				eventType: 'rejected',
+				provider: 'cloudflare-email-routing',
+				detail: {
+					recipient: input.recipient,
+					reason,
+					phase: 'parse',
+				},
+			}).catch(() => undefined)
+			await recordReceiveUsage({ outcome: 'error' })
+		},
+	})
+	if (!stored) return
+	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
 }

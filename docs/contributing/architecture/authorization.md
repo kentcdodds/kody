@@ -3,7 +3,9 @@
 Kody is multi-user with strict per-user isolation as the default. Role-based
 access control (RBAC) adds a **narrow, explicitly-guarded exception** for
 deployment operators: permissions with `access = 'any'` allow specific
-account-administration endpoints to cross user boundaries. See
+account-administration endpoints to cross user boundaries. Operator-owned system
+email for reserved platform addresses is the other deliberate exception: it is
+stored under the reserved `system:email` owner id, not any human account. See
 [Project intent](../project-intent.md) and the `per-user-isolation` invariant in
 [Primitives map](./primitives.yaml).
 
@@ -145,6 +147,8 @@ the same way).
 | `GET /admin/roles.json`                       | `requireUserWithPermission('read:role:any')`       |
 | `GET /admin/invites`                          | `requireUserWithRole('admin')`                     |
 | `GET/POST /admin/invites.json`                | `requireUserWithRole('admin')`                     |
+| `GET /admin/system-email`                     | `requireUserWithRole('admin')`                     |
+| `GET /admin/system-email.json`                | `requireUserWithRole('admin')`                     |
 
 Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
 `packages/worker/src/app/handlers/admin-roles.ts`,
@@ -234,17 +238,24 @@ The admin role is an **account-administration** role, not a data-access role.
 `created_at`, `updated_at`, and role assignments.
 
 **Admins cannot see** user content (secrets, values, memories, packages, jobs,
-email, chat threads, durable storage, remote connectors, OAuth grants, and so
-on). None of it appears in admin endpoints, pages, or payloads.
+user inbox email, chat threads, durable storage, remote connectors, OAuth
+grants, and so on). None of it appears in admin endpoints, pages, or payloads.
+
+**Admins can see** operator-owned system mail for reserved platform addresses
+(`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
+is stored under `system:email` as platform content, not under Kent's or any
+other user's account. Admin reads through MCP (`admin_system_email_list`,
+`admin_system_email_get`) and the `/admin/system-email` UI are audit logged.
 
 This boundary is enforced structurally:
 
-1. **The permission vocabulary cannot express content access.**
+1. **The permission vocabulary cannot express user content access.**
    `permissionEntities` contains only `user` and `role`, so a guard like
    `requireUserWithPermission(..., 'read:secret:any')` is a compile error.
-2. **Admin queries touch identity tables only.** `/admin/*.json` handlers select
-   explicit column lists from `users`, `user_roles`, and `roles`. They never
-   join content tables.
+2. **Admin account queries touch identity tables only.** `/admin/users*.json`
+   and role handlers select explicit column lists from `users`, `user_roles`,
+   and `roles`. They never join user content tables. `/admin/system-email*.json`
+   is separate and filters email rows by `user_id = 'system:email'`.
 3. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
    (`id`, `username`, `email`, `created_at`, `updated_at`, `roles`). The unit

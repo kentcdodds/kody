@@ -203,15 +203,10 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 		to: `missing-${crypto.randomUUID().slice(0, 8)}@${platformDomain}`,
 		reason: 'Unknown Kody email address.',
 	})
-	// kody@ is the system transactional sender, never a user inbox. The
-	// reserved check runs before any username lookup, so even a legacy user
-	// row holding a reserved username can never receive here.
+	// Reserved locals that are not configured system inboxes still reject before
+	// any username lookup.
 	await expectRejected({
-		to: `kody@${platformDomain}`,
-		reason: 'This address is reserved for system mail.',
-	})
-	await expectRejected({
-		to: `postmaster@${platformDomain}`,
+		to: `help@${platformDomain}`,
 		reason: 'This address is reserved for system mail.',
 	})
 	// Mail for other domains is never a Kody user inbox.
