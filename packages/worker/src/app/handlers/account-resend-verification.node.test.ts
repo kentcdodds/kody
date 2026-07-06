@@ -59,11 +59,14 @@ function createResendTestDb(options: { emailVerifiedAt?: string | null } = {}) {
 				return result.results[0] ?? null
 			},
 			async run() {
-				if (normalized.includes('delete from "email_verifications"')) {
+				if (/delete from "?email_verifications"?/.test(normalized)) {
 					state.verificationDeletes += 1
 				}
-				if (normalized.includes('insert into "email_verifications"')) {
+				if (/insert into "?email_verifications"?/.test(normalized)) {
 					state.verificationInserts += 1
+				}
+				if (normalized.includes('delete from _rate_limits')) {
+					state.rateLimitAttempts = Math.max(0, state.rateLimitAttempts - 1)
 				}
 				return { meta: { changes: 1, last_row_id: 1 } }
 			},
@@ -232,4 +235,10 @@ test('resend verification surfaces send failures without pretending success', as
 		ok: false,
 		error: 'Unable to send the verification email. Please try again later.',
 	})
+	// The failed send refunds the consumed rate-limit slot.
+	expect(testDb.state.rateLimitAttempts).toBe(0)
+	// The freshly inserted token is discarded again on send failure, so no
+	// net-new token remains and prior tokens stay untouched.
+	expect(testDb.state.verificationInserts).toBe(1)
+	expect(testDb.state.verificationDeletes).toBe(1)
 })

@@ -65,14 +65,23 @@ export async function createEmailVerification(input: {
 	const tokenHash = await hashVerificationToken(token)
 	const expiresAt = Date.now() + verificationTokenExpiryMs
 
-	await db.deleteMany(emailVerificationsTable, {
-		where: { user_id: input.userId },
-	})
+	// Insert the replacement token before sending so the link works the
+	// moment the email lands, but keep prior tokens valid until the send
+	// succeeds — a failed resend must not invalidate a link the user
+	// already received.
 	await db.create(emailVerificationsTable, {
 		user_id: input.userId,
 		token_hash: tokenHash,
 		expires_at: expiresAt,
 	})
+	async function discardNewToken() {
+		await input.appEnv.APP_DB.prepare(
+			`DELETE FROM email_verifications WHERE token_hash = ?`,
+		)
+			.bind(tokenHash)
+			.run()
+			.catch(() => undefined)
+	}
 
 	const emailConfig = getVerificationEmailConfig({
 		appEnv: input.appEnv,
@@ -82,32 +91,48 @@ export async function createEmailVerification(input: {
 	verificationUrl.searchParams.set('token', token)
 	const email = buildVerificationEmail(verificationUrl.toString())
 
-	const sendResult = await sendCloudflareEmail(
-		{
-			accountId: input.appEnv.CLOUDFLARE_ACCOUNT_ID,
-			apiBaseUrl: input.appEnv.CLOUDFLARE_API_BASE_URL,
-			apiToken: input.appEnv.CLOUDFLARE_API_TOKEN,
-		},
-		{
-			to: input.email,
-			from: emailConfig.fromEmail,
-			subject: email.subject,
-			html: email.html,
-			text: email.text,
-		},
-	)
+	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	try {
+		sendResult = await sendCloudflareEmail(
+			{
+				accountId: input.appEnv.CLOUDFLARE_ACCOUNT_ID,
+				apiBaseUrl: input.appEnv.CLOUDFLARE_API_BASE_URL,
+				apiToken: input.appEnv.CLOUDFLARE_API_TOKEN,
+			},
+			{
+				to: input.email,
+				from: emailConfig.fromEmail,
+				subject: email.subject,
+				html: email.html,
+				text: email.text,
+			},
+		)
+	} catch (error) {
+		await discardNewToken()
+		throw error
+	}
 	if (!sendResult.ok) {
 		// Local dev, preview, and test runtimes may have no email sender
 		// configured; those accounts are verified through seeded tokens
 		// instead. Anywhere else an unsent verification email would strand
 		// the account with no way to verify, so fail hard and let callers
 		// roll back.
-		if (sendResult.skipped && isNonProductionRuntime(input.appEnv)) {
-			console.warn('email-verification-send-skipped', input.userId)
-			return
+		if (!(sendResult.skipped && isNonProductionRuntime(input.appEnv))) {
+			await discardNewToken()
+			throw new Error(
+				sendResult.error ?? 'Verification email could not be sent.',
+			)
 		}
-		throw new Error(sendResult.error ?? 'Verification email could not be sent.')
+		console.warn('email-verification-send-skipped', input.userId)
 	}
+
+	// The new token is delivered (or the send was deliberately skipped in a
+	// non-production runtime); retire older outstanding tokens now.
+	await input.appEnv.APP_DB.prepare(
+		`DELETE FROM email_verifications WHERE user_id = ? AND token_hash != ?`,
+	)
+		.bind(input.userId, tokenHash)
+		.run()
 }
 
 export type VerifyEmailResult =

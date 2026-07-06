@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
-import { checkRateLimit } from '#app/rate-limit.ts'
+import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#app/routes.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
@@ -30,9 +30,10 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 				)
 			}
 
+			const rateLimitKey = `verification-resend:user:${user.userId}`
 			const rateLimit = await checkRateLimit(
 				appEnv.APP_DB,
-				`verification-resend:user:${user.userId}`,
+				rateLimitKey,
 				resendVerificationRateLimitConfig,
 			)
 			if (!rateLimit.allowed) {
@@ -64,6 +65,11 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 				})
 			} catch (error) {
 				console.error('Failed to resend verification email:', error)
+				// A failed send should not eat into the user's resend
+				// allowance; refund the slot so they can retry promptly.
+				await releaseRateLimit(appEnv.APP_DB, rateLimitKey).catch(
+					() => undefined,
+				)
 				void logAuditEvent({
 					category: 'auth',
 					action: 'email_verification_resend',

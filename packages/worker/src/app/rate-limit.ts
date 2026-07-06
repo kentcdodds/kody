@@ -70,6 +70,24 @@ export async function checkRateLimit(
 	return { allowed: true, retryAfterSeconds: null }
 }
 
+/**
+ * Refund the most recent slot consumed for `key`. Use when the
+ * rate-limited operation itself failed, so transient downstream errors
+ * do not eat into the caller's allowance.
+ */
+export async function releaseRateLimit(db: D1Database, key: string) {
+	await ensureRateLimitTable(db)
+	await db
+		.prepare(
+			`DELETE FROM _rate_limits
+			 WHERE id = (
+				SELECT id FROM _rate_limits WHERE key = ? ORDER BY id DESC LIMIT 1
+			 )`,
+		)
+		.bind(key)
+		.run()
+}
+
 export const authRateLimitConfig: RateLimitConfig = {
 	maxRequests: 10,
 	windowSeconds: 60,
