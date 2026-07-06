@@ -1016,6 +1016,82 @@ export async function getEmailAttachmentById(input: {
 	}
 }
 
+/**
+ * How many quota/size rejections per inbox per UTC day get their own
+ * delivery-event row before collapsing into the daily aggregate row.
+ */
+export const maxDetailedEmailRejectionEventsPerDay = 5
+
+/**
+ * Record an entitlement/size rejection without unbounded row growth. Every
+ * rejection upserts one aggregate 'rejected' event per inbox per UTC day
+ * (deterministic id, counter in detail_json), and only the first
+ * `maxDetailedEmailRejectionEventsPerDay` attempts of the day also store an
+ * individual detailed event. Over-quota traffic is attacker-controlled and
+ * unmetered by the daily receive counter (which is already exhausted), so
+ * without this cap a flood of rejected mail would grow D1 one row per
+ * attempt — the denial-of-wallet shape the quotas exist to prevent.
+ */
+export async function recordBoundedEmailRejectionEvent(input: {
+	db: D1Database
+	userId: string
+	inboxId: string
+	recipient: string
+	reason: string
+	phase: 'entitlement' | 'size'
+	now?: Date
+}) {
+	const now = input.now ?? new Date()
+	const nowIsoString = now.toISOString()
+	const day = nowIsoString.slice(0, 'YYYY-MM-DD'.length)
+	const aggregateDetail = JSON.stringify({
+		aggregate: true,
+		day,
+		count: 1,
+		last_reason: input.reason,
+		last_phase: input.phase,
+		last_at: nowIsoString,
+	})
+	const row = await input.db
+		.prepare(
+			`INSERT INTO email_delivery_events (
+				id, user_id, inbox_id, event_type, provider, detail_json, created_at
+			) VALUES (?, ?, ?, 'rejected', 'cloudflare-email-routing', ?, ?)
+			ON CONFLICT(id) DO UPDATE SET detail_json = json_set(
+				email_delivery_events.detail_json,
+				'$.count', COALESCE(json_extract(email_delivery_events.detail_json, '$.count'), 0) + 1,
+				'$.last_reason', json_extract(excluded.detail_json, '$.last_reason'),
+				'$.last_phase', json_extract(excluded.detail_json, '$.last_phase'),
+				'$.last_at', json_extract(excluded.detail_json, '$.last_at')
+			)
+			RETURNING json_extract(detail_json, '$.count') AS count`,
+		)
+		.bind(
+			`email-rejections:${input.inboxId}:${day}`,
+			input.userId,
+			input.inboxId,
+			aggregateDetail,
+			nowIsoString,
+		)
+		.first<{ count: number }>()
+	const rejectionsToday = Number(row?.count ?? 1)
+	if (rejectionsToday <= maxDetailedEmailRejectionEventsPerDay) {
+		await insertEmailDeliveryEvent({
+			db: input.db,
+			userId: input.userId,
+			inboxId: input.inboxId,
+			eventType: 'rejected',
+			provider: 'cloudflare-email-routing',
+			detail: {
+				recipient: input.recipient,
+				reason: input.reason,
+				phase: input.phase,
+			},
+		})
+	}
+	return rejectionsToday
+}
+
 export async function insertEmailDeliveryEvent(input: {
 	db: D1Database
 	messageId?: string | null

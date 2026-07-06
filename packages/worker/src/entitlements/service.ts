@@ -258,6 +258,12 @@ export async function readEntitlementResourceUsage(input: {
 			throw new Error(
 				'storage_bytes has no built-in counter; pass getCurrent to assertWithinEntitlement.',
 			)
+		case 'email_message_bytes':
+			// Per-message limit, not an accumulating counter: enforcement
+			// passes the candidate message size via getCurrent.
+			throw new Error(
+				'email_message_bytes has no built-in counter; pass getCurrent to assertWithinEntitlement.',
+			)
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)

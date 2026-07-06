@@ -20,6 +20,7 @@ import {
 	createEmailInbox,
 	createEmailInboxAddress,
 	listEmailMessages,
+	maxDetailedEmailRejectionEventsPerDay,
 } from './repo.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -114,18 +115,22 @@ async function bulkInsertStoredMessages(userId: string, count: number) {
 		.run()
 }
 
-async function listRejectedDeliveryEvents(userId: string) {
+async function readRejectionEvents(userId: string) {
 	const { results } = await env.APP_DB.prepare(
-		`SELECT event_type, detail_json FROM email_delivery_events
+		`SELECT id, detail_json FROM email_delivery_events
 			WHERE user_id = ? AND event_type = 'rejected'
-			ORDER BY created_at ASC`,
+			ORDER BY created_at ASC, id ASC`,
 	)
 		.bind(userId)
-		.all<{ event_type: string; detail_json: string }>()
-	return (results ?? []).map((row) => ({
-		eventType: row.event_type,
+		.all<{ id: string; detail_json: string }>()
+	const rows = (results ?? []).map((row) => ({
+		id: row.id,
 		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
 	}))
+	return {
+		detailed: rows.filter((row) => row.detail['aggregate'] !== true),
+		aggregate: rows.find((row) => row.detail['aggregate'] === true) ?? null,
+	}
 }
 
 async function readEmailReceivedRollup(userId: string) {
@@ -156,16 +161,17 @@ test('inbound email rejects plan users at the daily receive limit', async () => 
 		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
 	).toEqual([])
 	expect(await readDailyReceiveCounter(userId)).toBe(limit)
-	const rejections = await listRejectedDeliveryEvents(userId)
-	expect(rejections).toHaveLength(1)
+	const rejections = await readRejectionEvents(userId)
+	expect(rejections.detailed).toHaveLength(1)
 	// The plan-specific wording proves the stable-id reverse lookup resolved
 	// the account (the fallback message says "this deployment" instead).
-	expect(rejections[0]?.detail).toMatchObject({
+	expect(rejections.detailed[0]?.detail).toMatchObject({
 		phase: 'entitlement',
 		reason: expect.stringContaining(
 			`your "personal" plan allows at most ${limit} email receives per day`,
 		),
 	})
+	expect(rejections.aggregate?.detail).toMatchObject({ count: 1 })
 	expect(await readEmailReceivedRollup(userId)).toMatchObject({
 		event_count: 1,
 		error_count: 1,
@@ -192,8 +198,8 @@ test('inbound email rejects plan users at the stored message cap and still count
 	).toHaveLength(cap)
 	// The receive attempt is counted even when the storage cap rejects it.
 	expect(await readDailyReceiveCounter(userId)).toBe(1)
-	const rejections = await listRejectedDeliveryEvents(userId)
-	expect(rejections[0]?.detail).toMatchObject({
+	const rejections = await readRejectionEvents(userId)
+	expect(rejections.detailed[0]?.detail).toMatchObject({
 		phase: 'entitlement',
 		reason: expect.stringContaining(
 			`your "personal" plan allows at most ${cap} stored email messages`,
@@ -215,11 +221,83 @@ test('inbound email applies the NULL-plan fallback receive limit', async () => {
 	await handleInboundEmail(message, env)
 
 	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
-	const rejections = await listRejectedDeliveryEvents(userId)
-	expect(rejections[0]?.detail).toMatchObject({
+	const rejections = await readRejectionEvents(userId)
+	expect(rejections.detailed[0]?.detail).toMatchObject({
 		reason: expect.stringContaining(
 			`this deployment allows at most ${fallbackLimit} email receives per day`,
 		),
+	})
+})
+
+test('inbound email rejects oversize messages without consuming the daily receive quota', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const email = `oversize-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	const maxBytes = planLimits.personal.maxEmailMessageBytes
+	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
+	await seedAccountWithPlan({ email, plan: 'personal' })
+	const { address } = await seedInboxWithAddress(userId)
+
+	const message = buildInboundMessage(address)
+	const oversizeBytes = maxBytes + 1
+	Object.defineProperty(message, 'rawSize', { value: oversizeBytes })
+	await handleInboundEmail(message, env)
+
+	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
+	expect(
+		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
+	).toEqual([])
+	// Oversize mail is rejected before the daily counter is consumed.
+	expect(await readDailyReceiveCounter(userId)).toBe(0)
+	const rejections = await readRejectionEvents(userId)
+	expect(rejections.detailed[0]?.detail).toMatchObject({
+		phase: 'size',
+		reason: expect.stringContaining(
+			`your "personal" plan allows at most ${maxBytes} bytes per email message`,
+		),
+	})
+	// The usage event records the rejected size in bytes.
+	expect(await readEmailReceivedRollup(userId)).toMatchObject({
+		event_count: 1,
+		error_count: 1,
+		total_bytes: oversizeBytes,
+	})
+})
+
+test('inbound email stores at most five detailed rejection events per inbox per day', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const email = `rejection-bound-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.personal.maxEmailReceivesPerDay
+	if (limit === null) throw new Error('Expected a numeric personal limit.')
+	await seedAccountWithPlan({ email, plan: 'personal' })
+	const { address } = await seedInboxWithAddress(userId)
+	await setDailyReceiveCounter(userId, limit)
+
+	const attempts = maxDetailedEmailRejectionEventsPerDay + 3
+	for (let index = 0; index < attempts; index += 1) {
+		const message = buildInboundMessage(address)
+		await handleInboundEmail(message, env)
+		expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
+	}
+
+	const rejections = await readRejectionEvents(userId)
+	// Detailed rows are capped; the aggregate row counts every attempt.
+	expect(rejections.detailed).toHaveLength(
+		maxDetailedEmailRejectionEventsPerDay,
+	)
+	expect(rejections.aggregate?.detail).toMatchObject({
+		aggregate: true,
+		count: attempts,
+		last_phase: 'entitlement',
+		last_reason: expect.stringContaining('email receives per day'),
+	})
+	// Every attempt is still metered even after detailed events stop.
+	expect(await readEmailReceivedRollup(userId)).toMatchObject({
+		event_count: attempts,
+		error_count: attempts,
 	})
 })
 

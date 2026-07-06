@@ -134,7 +134,12 @@ Relational app data lives in D1.
 
 The schema is defined by migrations in `packages/worker/migrations/`:
 
-- `users`: login identity and password hash
+- `users`: login identity and password hash. There is no persisted mapping from
+  the stable MCP `userId` (SHA-256 of the normalized email) back to the row;
+  contextless paths (inbound email) reverse-resolve it by scanning and hashing
+  (`findUserAccountByStableUserId`). A persisted, indexed `stable_user_id`
+  column with an app-level backfill is required before onboarding external users
+  / design partners.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history

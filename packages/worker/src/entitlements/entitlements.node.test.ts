@@ -470,12 +470,55 @@ test('resolveEmailResourceLimit prefers plan limits and falls back for plan-less
 	expect(resolveEmailResourceLimit(null, 'stored_email_messages')).toBe(
 		nullPlanEmailFallbackLimits.stored_email_messages,
 	)
+	expect(resolveEmailResourceLimit(null, 'email_message_bytes')).toBe(
+		nullPlanEmailFallbackLimits.email_message_bytes,
+	)
 	expect(resolvePlanLimit('partner', 'email_receives_per_day')).toBe(
 		planLimits.partner.maxEmailReceivesPerDay,
 	)
 	expect(resolvePlanLimit('partner', 'stored_email_messages')).toBe(
 		planLimits.partner.maxStoredEmailMessages,
 	)
+	expect(resolvePlanLimit('pro', 'email_message_bytes')).toBe(
+		planLimits.pro.maxEmailMessageBytes,
+	)
+})
+
+test('email_message_bytes enforces the per-message size via getCurrent', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'personal' }],
+	})
+	const maxBytes = planLimits.personal.maxEmailMessageBytes
+	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_message_bytes',
+			requested: 0,
+			getCurrent: async () => maxBytes + 1,
+		}),
+	).rejects.toThrow(`at most ${maxBytes} bytes per email message`)
+	// A message exactly at the cap passes.
+	await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'email_message_bytes',
+		requested: 0,
+		getCurrent: async () => maxBytes,
+	})
+	// The per-message resource has no accumulating counter.
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_message_bytes',
+		}),
+	).rejects.toThrow('pass getCurrent')
 })
 
 test('requested units and getCurrent overrides are honored', async () => {

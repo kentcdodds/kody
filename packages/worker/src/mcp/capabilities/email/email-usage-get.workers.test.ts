@@ -104,6 +104,7 @@ test('email_usage_get returns plan limits and current counts for plan users', as
 			count: 5,
 			limit: planLimits.personal.maxEmailReceivesPerDay,
 		},
+		max_message_bytes: planLimits.personal.maxEmailMessageBytes,
 	})
 })
 
@@ -131,5 +132,6 @@ test('email_usage_get reports fallback limits for users without a plan', async (
 			count: 0,
 			limit: nullPlanEmailFallbackLimits.email_receives_per_day,
 		},
+		max_message_bytes: nullPlanEmailFallbackLimits.email_message_bytes,
 	})
 })

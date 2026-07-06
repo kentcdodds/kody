@@ -219,25 +219,47 @@ test('inbound email handler rejects unknown aliases and malformed messages witho
 		localPart: getEmailLocalPart(address),
 		domain: getEmailDomain(address),
 	})
-	const malformedMessage = createForwardableEmailMessage({
+	// Oversize mail now trips the pre-parse email_message_bytes gate (the
+	// NULL-plan fallback is 512 KiB) with the generic over-quota reason.
+	const oversizeMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
 		raw: 'Subject: Too large\r\n\r\nBody',
 	})
-	Object.defineProperty(malformedMessage, 'rawSize', {
+	Object.defineProperty(oversizeMessage, 'rawSize', {
 		value: 600 * 1024,
 	})
 
-	await handleInboundEmail(malformedMessage, env)
+	await handleInboundEmail(oversizeMessage, env)
 
-	expect(malformedMessage.rejectedReason).toMatch(/too large/)
-	const malformedMessages = await listEmailMessages({
+	expect(oversizeMessage.rejectedReason).toBe(
+		'Recipient mailbox is over quota.',
+	)
+
+	// A raw stream that fails mid-read exercises the parse-failure path.
+	const unreadableMessage = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: 'Subject: Unreadable\r\n\r\nBody',
+	})
+	Object.defineProperty(unreadableMessage, 'raw', {
+		value: new ReadableStream({
+			pull() {
+				throw new Error('raw stream read failed')
+			},
+		}),
+	})
+
+	await handleInboundEmail(unreadableMessage, env)
+
+	expect(unreadableMessage.rejectedReason).toMatch(/raw stream read failed/)
+	const rejectedMessages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
 		inboxId: inbox.id,
 		limit: 10,
 	})
-	expect(malformedMessages).toEqual([])
+	expect(rejectedMessages).toEqual([])
 })
 
 test('inbound email handler rejects mail for unverified accounts', async () => {

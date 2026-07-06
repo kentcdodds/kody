@@ -38,6 +38,8 @@ export const emailUsageGetCapability = defineDomainCapability(
 			stored_messages: usageEntrySchema,
 			sends_today: usageEntrySchema,
 			receives_today: usageEntrySchema,
+			/** Maximum raw MIME bytes per stored message. null = unlimited. */
+			max_message_bytes: z.number().int().nonnegative().nullable(),
 		}),
 		async handler(_args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -84,6 +86,10 @@ export const emailUsageGetCapability = defineDomainCapability(
 					count: receivesToday,
 					limit: resolveEmailResourceLimit(plan, 'email_receives_per_day'),
 				},
+				max_message_bytes: resolveEmailResourceLimit(
+					plan,
+					'email_message_bytes',
+				),
 			}
 		},
 	},

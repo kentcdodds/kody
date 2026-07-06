@@ -35,6 +35,13 @@ export type PlanLimits = {
 	maxEmailReceivesPerDay: number | null
 	/** Maximum stored email messages (rows in email_messages). */
 	maxStoredEmailMessages: number | null
+	/**
+	 * Maximum raw MIME bytes for a single stored email message. Hard
+	 * platform bound: raw MIME is stored inline in the email_messages row
+	 * next to the extracted bodies (worst case ~2x raw), and D1 caps rows
+	 * at 2 MB — so keep this well under ~1 MB regardless of plan.
+	 */
+	maxEmailMessageBytes: number | null
 	/** Maximum stored secret entries across non-expired buckets. */
 	maxSecrets: number | null
 	/** Maximum durable storage bytes. Defined but not yet enforced. */
@@ -58,6 +65,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxEmailSendsPerDay: 20,
 		maxEmailReceivesPerDay: 200,
 		maxStoredEmailMessages: 2000,
+		maxEmailMessageBytes: 512 * 1024,
 		maxSecrets: 20,
 		maxStorageBytes: 256 * 1024 * 1024,
 		maxConcurrentWorkflows: 10,
@@ -71,6 +79,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1000,
 		maxStoredEmailMessages: 10_000,
+		maxEmailMessageBytes: 768 * 1024,
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
@@ -84,6 +93,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2000,
 		maxStoredEmailMessages: 25_000,
+		maxEmailMessageBytes: 768 * 1024,
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
@@ -99,6 +109,7 @@ export const entitlementResources = [
 	'email_sends_per_day',
 	'email_receives_per_day',
 	'stored_email_messages',
+	'email_message_bytes',
 	'secrets',
 	'storage_bytes',
 	'concurrent_workflows',
@@ -116,6 +127,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	email_sends_per_day: 'email sends per day',
 	email_receives_per_day: 'email receives per day',
 	stored_email_messages: 'stored email messages',
+	email_message_bytes: 'bytes per email message',
 	secrets: 'secrets',
 	storage_bytes: 'storage bytes',
 	concurrent_workflows: 'concurrent workflows',
@@ -132,6 +144,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 export const nullPlanEmailFallbackLimits = {
 	email_receives_per_day: 200,
 	stored_email_messages: 2000,
+	email_message_bytes: 512 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
 
 export type EmailFallbackResource = keyof typeof nullPlanEmailFallbackLimits
@@ -182,6 +195,8 @@ export function resolvePlanLimit(
 			return limits.maxEmailReceivesPerDay
 		case 'stored_email_messages':
 			return limits.maxStoredEmailMessages
+		case 'email_message_bytes':
+			return limits.maxEmailMessageBytes
 		case 'secrets':
 			return limits.maxSecrets
 		case 'storage_bytes':

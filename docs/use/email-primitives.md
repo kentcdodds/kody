@@ -29,12 +29,20 @@ Use the MCP `email` domain:
 
 Inbound storage is quota-gated per user:
 
-- A daily receive limit (`email_receives_per_day`) and a stored-message cap
-  (`stored_email_messages`) apply at storage time. Mail over quota is rejected
-  at the routing layer with a generic "over quota" response to the sender, and
-  the detailed reason is recorded as a `rejected` delivery event.
+- A per-message raw-size cap (`email_message_bytes`), a daily receive limit
+  (`email_receives_per_day`), and a stored-message cap (`stored_email_messages`)
+  apply at storage time. Mail over any of these is rejected at the routing layer
+  with a generic "over quota" response to the sender, and the detailed reason is
+  recorded as a `rejected` delivery event. Oversize mail is rejected before it
+  consumes any daily receive quota.
 - Plan users get their plan's limits; users without a plan get conservative
   deployment fallbacks (they are not unlimited for inbound mail).
+- Quota and size rejections store at most five detailed `rejected` delivery
+  events per inbox per UTC day; further rejections increment a single daily
+  aggregate event (with a total count and the last reason) so rejected floods
+  cannot grow storage. Parse-failure rejections keep one event per attempt —
+  they are already bounded by the daily receive quota and the detail helps debug
+  a misbehaving sender.
 - Outbound sending stays limited by `email_sends_per_day` for plan users.
 - Check where you stand with `email_usage_get`.
 
