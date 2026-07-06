@@ -4,7 +4,7 @@ import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { getUsernameValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#app/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageManifestBySourceId,
@@ -31,7 +31,7 @@ function parsePackageAppPath(pathname: string) {
 	} catch {
 		return null
 	}
-	if (getUsernameValidationError(username)) return null
+	if (getUsernameFormatValidationError(username)) return null
 	return {
 		username,
 		kodyId,

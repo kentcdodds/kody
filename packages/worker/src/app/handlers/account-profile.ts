@@ -6,9 +6,8 @@ import {
 } from '#app/account-profile-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
-import { getUsernameRegistrationError } from '#app/reserved-usernames.ts'
 import { type routes } from '#app/routes.ts'
-import { normalizeUsername } from '#app/username.ts'
+import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -42,7 +41,7 @@ export function createAccountProfileApiHandler(env: Env) {
 			const username = normalizeUsername(
 				(body as Record<string, unknown>).username,
 			)
-			const usernameError = getUsernameRegistrationError(username)
+			const usernameError = getUsernameValidationError(username)
 			if (usernameError) {
 				return jsonResponse({ ok: false, error: usernameError }, 400)
 			}

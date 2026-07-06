@@ -34,12 +34,47 @@ Use the MCP `email` domain:
   from the stored message.
 - `email_attachment_get` returns stored attachment bytes by attachment id.
 - `email_message_list` lists stored inbound and outbound messages.
+- `email_message_search` searches stored messages by case-insensitive substring
+  match against the subject, header `From`, and envelope sender. It accepts the
+  same `inbox_id` / `direction` / `processing_status` filters and limit caps as
+  `email_message_list`.
 - `email_message_get` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
+- `email_usage_get` returns the signed-in user's email usage and limits: stored
+  message count, today's send and receive counts, the applicable caps, and the
+  plan name.
+
+## Quotas
+
+Inbound storage is quota-gated per user:
+
+- A per-message raw-size cap (`email_message_bytes`), a daily receive limit
+  (`email_receives_per_day`), and a stored-message cap (`stored_email_messages`)
+  apply at storage time. Mail over any of these is rejected at the routing layer
+  with a generic "over quota" response to the sender, and the detailed reason is
+  recorded as a `rejected` delivery event. Oversize mail is rejected before it
+  consumes any daily receive quota, and mail to unverified accounts (which can
+  never receive) is rejected without consuming any quota at all.
+- Plan users get their plan's limits; users without a plan get conservative
+  deployment fallbacks (they are not unlimited for inbound mail).
+- Quota, size, and unverified-account rejections store at most five detailed
+  `rejected` delivery events per inbox per UTC day; further rejections increment
+  a single daily aggregate event (with a total count and the last reason) so
+  rejected floods cannot grow storage. Parse-failure rejections keep one event
+  per attempt — they are already bounded by the daily receive quota and the
+  detail helps debug a misbehaving sender.
+- Outbound sending stays limited by `email_sends_per_day` for plan users.
+- Check where you stand with `email_usage_get`.
 
 ## Safety model
 
-- Any email routed to a user's platform address is stored.
+- Every email capability requires a **verified account email**. Until the
+  account email is verified (via the link sent at signup, or a resend from the
+  `/account` page), email capabilities are rejected, inbound mail routed to the
+  account's platform address is rejected before storage, and MCP access as a
+  whole is disabled.
+- Any email routed to a verified user's platform address is stored, subject to
+  the quotas above.
 - Unknown usernames and reserved local parts are rejected before storage.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
@@ -144,4 +179,5 @@ Message-ID: <hello@example.com>
 Hello from local email routing.'
 ```
 
-Then inspect the message with `email_message_list` and `email_message_get`.
+Then inspect the message with `email_message_list`, `email_message_search`, and
+`email_message_get`.

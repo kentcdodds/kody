@@ -32,7 +32,7 @@ Reviewed:
   `packages/worker/src/mcp/capabilities/build-capability-registry.ts`.
 - Secret policy allowlists persist capability names in
   `secret_entries.allowed_capabilities`
-  (`packages/worker/migrations/0010-secret-allowed-kody.sql`).
+  (`packages/worker/migrations/0010-secret-allowed-capabilities.sql`).
 - Kody runtime exposes capabilities as `kody.<capabilityName>()` in
   `packages/worker/src/mcp/run-kody-registry.ts`.
 - `meta_list_capabilities` returns TypeScript call shapes from
@@ -120,7 +120,8 @@ change remote id or capabilities namespace rules without a migration plan.
 - Email JSON metadata in `0030-email-primitives.sql` and
   `0031-unified-email-receipt.sql`.
 - Secret policy arrays in `0009-secret-allowed-hosts.sql`,
-  `0010-secret-allowed-kody.sql`, and `0023-secret-allowed-packages.sql`.
+  `0010-secret-allowed-capabilities.sql`, and
+  `0023-secret-allowed-packages.sql`.
 - Runtime debug JSON in `0037-package-runtime-debug.sql`.
 - Account export sections in `packages/worker/src/app/account-export.ts` mirror
   the account-deletion inventory and read D1, Durable Object, KV, and Vectorize

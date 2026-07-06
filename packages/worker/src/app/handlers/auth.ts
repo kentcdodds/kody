@@ -12,9 +12,8 @@ import {
 } from '#app/invites.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
-import { getUsernameRegistrationError } from '#app/reserved-usernames.ts'
 import { type routes } from '#app/routes.ts'
-import { normalizeUsername } from '#app/username.ts'
+import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
@@ -117,7 +116,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 				)
 			}
 			if (normalizedMode === 'signup') {
-				const usernameError = getUsernameRegistrationError(normalizedUsername)
+				const usernameError = getUsernameValidationError(normalizedUsername)
 				if (usernameError) {
 					void logAuditEvent({
 						category: 'auth',
@@ -353,7 +352,10 @@ export function createAuthHandler(appEnv: AppEnv) {
 						reason: 'email_verification_setup_failed',
 					})
 					return Response.json(
-						{ error: 'Unable to create account.' },
+						{
+							error:
+								'Unable to send the verification email. Please try signing up again.',
+						},
 						{ status: 500 },
 					)
 				}

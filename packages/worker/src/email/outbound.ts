@@ -1,10 +1,8 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
-import {
-	consumeDailyEntitlement,
-	defaultEmailSendDailyBackstop,
-} from '#worker/entitlements/service.ts'
+import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
+import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
@@ -310,7 +308,7 @@ export async function sendOutboundEmail(
 		userId: input.userId,
 		email: sender.accountEmail,
 		resource: 'email_sends_per_day',
-		fallbackLimit: defaultEmailSendDailyBackstop,
+		fallbackLimit: nullPlanEmailFallbackLimits.email_sends_per_day,
 	})
 
 	const existingThreadId = original?.threadId ?? input.threadId ?? null

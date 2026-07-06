@@ -33,6 +33,75 @@ export async function getUserPlan(
 	return parsePlanName(row?.plan)
 }
 
+/**
+ * Per-isolate cache of stable user id → account email. The mapping is a
+ * content hash (sha256 of the normalized email), so a positive entry can
+ * never go stale; only cache hits are trusted and deleted entries fall
+ * back to a fresh scan.
+ */
+const stableUserIdEmailCache = new Map<string, string>()
+
+export type StableUserAccount = {
+	email: string
+	plan: PlanName | null
+	/** Whether users.email_verified_at is set. Read fresh, never cached. */
+	emailVerified: boolean
+}
+
+/**
+ * Reverse-resolve a stable MCP userId (SHA-256 of the normalized account
+ * email) back to the account email, plan, and verified-email state. There
+ * is no stored mapping, so the cold path scans the users table and hashes
+ * each email until one matches — the same pattern `isAccountEmailVerified`
+ * uses — and positive matches are cached per isolate so hot paths pay one
+ * point read. Plan and verified state are always read fresh; only the
+ * id→email mapping (a content hash that can never go stale) is cached.
+ * Only call this on paths that genuinely have no caller context email
+ * (for example inbound email routing); interactive surfaces already carry
+ * the email.
+ */
+export async function findUserAccountByStableUserId(
+	db: D1Database,
+	stableUserId: string,
+): Promise<StableUserAccount | null> {
+	const trimmed = stableUserId.trim()
+	if (!trimmed) return null
+	const cachedEmail = stableUserIdEmailCache.get(trimmed)
+	if (cachedEmail) {
+		const row = await db
+			.prepare(`SELECT plan, email_verified_at FROM users WHERE email = ?`)
+			.bind(cachedEmail)
+			.first<{ plan: string | null; email_verified_at: string | null }>()
+		if (row) {
+			return {
+				email: cachedEmail,
+				plan: parsePlanName(row.plan),
+				emailVerified: Boolean(row.email_verified_at),
+			}
+		}
+		// The account is gone (deleted); drop the entry and rescan.
+		stableUserIdEmailCache.delete(trimmed)
+	}
+	const rows = await db
+		.prepare(`SELECT email, plan, email_verified_at FROM users`)
+		.all<{
+			email: string
+			plan: string | null
+			email_verified_at: string | null
+		}>()
+	for (const row of rows.results ?? []) {
+		if ((await createStableUserIdFromEmail(row.email)) === trimmed) {
+			stableUserIdEmailCache.set(trimmed, row.email)
+			return {
+				email: row.email,
+				plan: parsePlanName(row.plan),
+				emailVerified: Boolean(row.email_verified_at),
+			}
+		}
+	}
+	return null
+}
+
 export function utcDayKey(date: Date = new Date()) {
 	return date.toISOString().slice(0, 'YYYY-MM-DD'.length)
 }
@@ -178,12 +247,19 @@ export async function readEntitlementResourceUsage(input: {
 				[userId],
 			)
 		case 'email_sends_per_day':
+		case 'email_receives_per_day':
 			return await readDailyEntitlementCounter({
 				db,
 				userId,
 				resource,
 				now,
 			})
+		case 'stored_email_messages':
+			return await countRows(
+				db,
+				`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`,
+				[userId],
+			)
 		case 'secrets':
 			return await countRows(
 				db,
@@ -205,6 +281,12 @@ export async function readEntitlementResourceUsage(input: {
 		case 'storage_bytes':
 			throw new Error(
 				'storage_bytes has no built-in counter; pass getCurrent to assertWithinEntitlement.',
+			)
+		case 'email_message_bytes':
+			// Per-message limit, not an accumulating counter: enforcement
+			// passes the candidate message size via getCurrent.
+			throw new Error(
+				'email_message_bytes has no built-in counter; pass getCurrent to assertWithinEntitlement.',
 			)
 		default: {
 			const exhaustive: never = resource
@@ -287,9 +369,10 @@ export async function assertWithinEntitlement(
  * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
  * have under concurrent requests, and evaluates the UTC day key once.
  *
- * Users without a plan consume against `fallbackLimit` when the caller
- * provides one (global abuse backstops), and without a cap otherwise; the
- * counter still accumulates so limits bind the moment a plan is assigned.
+ * Users without a plan (or without a resolvable limit) consume without a
+ * cap: the counter still accumulates so limits bind the moment a plan is
+ * assigned. Pass `fallbackLimit` to cap plan-less users with a
+ * deployment-level backstop (for example inbound email receives).
  */
 export async function consumeDailyEntitlement(input: {
 	db: D1Database
@@ -297,9 +380,8 @@ export async function consumeDailyEntitlement(input: {
 	email: string | null | undefined
 	resource: EntitlementResource
 	/**
-	 * Limit that applies when the user has no plan. Used for global daily
-	 * backstops (for example the email send backstop). Default: no limit
-	 * for plan-less users.
+	 * Limit that applies when the user has no plan. Default: no limit for
+	 * plan-less users (the counter still accumulates).
 	 */
 	fallbackLimit?: number | null
 	now?: Date
@@ -361,14 +443,6 @@ export async function consumeDailyEntitlement(input: {
 		await throwLimitError()
 	}
 }
-
-/**
- * Global per-user daily outbound email backstop for users without a plan.
- * Plan-less users are not unlimited for email: outbound sending is an
- * abuse-sensitive surface, so every send consumes against this cap unless a
- * plan supplies its own limit.
- */
-export const defaultEmailSendDailyBackstop = 100
 
 export const defaultWorkflowConcurrencyBackstop = 100
 

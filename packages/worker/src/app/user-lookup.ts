@@ -1,4 +1,4 @@
-import { getUsernameValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#app/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 export type PublicUserIdentity = {
@@ -13,7 +13,7 @@ export async function findPublicUserIdentityByUsername(input: {
 	username: string
 }): Promise<PublicUserIdentity | null> {
 	const username = input.username.trim()
-	if (getUsernameValidationError(username)) return null
+	if (getUsernameFormatValidationError(username)) return null
 
 	const userRecord = await input.db
 		.prepare(
@@ -39,7 +39,7 @@ export async function resolvePublicUsername(input: {
 	email?: string | null
 }): Promise<string | null> {
 	const username = input.username?.trim()
-	if (username && !getUsernameValidationError(username)) return username
+	if (username && !getUsernameFormatValidationError(username)) return username
 
 	const email = input.email?.trim().toLowerCase()
 	if (!email) return null
@@ -54,7 +54,7 @@ export async function resolvePublicUsername(input: {
 		.first<{ username: string | null }>()
 
 	const resolvedUsername = userRecord?.username?.trim()
-	return resolvedUsername && !getUsernameValidationError(resolvedUsername)
+	return resolvedUsername && !getUsernameFormatValidationError(resolvedUsername)
 		? resolvedUsername
 		: null
 }

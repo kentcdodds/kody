@@ -12,6 +12,7 @@ import {
 	createKodyProviderProxySource,
 	createExecuteExecutor,
 	createExecutorModuleSource,
+	createToolDispatchers,
 	extractRawContent,
 	formatExecutionOutput,
 	formatLimitedExecutionOutput,
@@ -108,7 +109,7 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 				capabilities: [
 					{
 						name: 'set_pin',
-						dispatchName: 'remote:home:set_pin',
+						dispatchName: 'remotehomeset_pin',
 					},
 				],
 			},
@@ -137,7 +138,7 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 	})
 	expect(calls).toEqual([
 		{
-			dispatchName: 'remote:home:set_pin',
+			dispatchName: 'remotehomeset_pin',
 			args: { pin: '1234' },
 		},
 	])
@@ -199,7 +200,7 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 				capabilities: [
 					{
 						name: 'set_pin',
-						dispatchName: 'remote:home:set_pin',
+						dispatchName: 'remotehomeset_pin',
 					},
 				],
 			},
@@ -222,7 +223,7 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 	})
 	expect(calls).toEqual([
 		{
-			name: 'remote:home:set_pin',
+			name: 'remotehomeset_pin',
 			argsJson: JSON.stringify({ pin: '1234' }),
 		},
 	])
@@ -579,6 +580,25 @@ test('createExecuteExecutor disables dispatchers after execution completes', asy
 	expect(JSON.parse(result ?? '{}')).toEqual({
 		error: 'Execution has already completed.',
 	})
+})
+
+test('createToolDispatchers rejects duplicate sanitized tool names', () => {
+	expect(() =>
+		createToolDispatchers(
+			[
+				{
+					name: 'kody',
+					fns: {
+						'remote:home:set_pin': async () => ({ ok: true }),
+						remotehomeset_pin: async () => ({ ok: false }),
+					},
+				},
+			],
+			{ active: true },
+		),
+	).toThrow(
+		'Provider "kody" has tool names "remote:home:set_pin" and "remotehomeset_pin" that both sanitize to "remotehomeset_pin".',
+	)
 })
 
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {

@@ -11,6 +11,7 @@ import {
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
 import { oauthScopes } from './oauth-handlers.ts'
+import { createStableUserIdFromEmail } from './user-id.ts'
 
 function expectAuthenticateHeader(
 	header: string,
@@ -50,15 +51,55 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	}
 }
 
-function createEnv(helpers: OAuthHelpers, overrides: Partial<Env> = {}) {
+type MockDbOptions = {
+	// Row returned for the `email_verified_at` lookup keyed by account email.
+	emailVerifiedAt?: string | null
+	// Rows returned for the full `users` table scan (stable-user-id fallback).
+	userRows?: Array<{ email: string; email_verified_at: string | null }>
+	// Rows returned for remote connector settings queries.
+	connectorRows?: Array<Record<string, unknown>>
+}
+
+function createMockDb(options: MockDbOptions = {}) {
+	const statementFor = (query: string) => {
+		const statement = {
+			bind: () => statement,
+			async all() {
+				if (/from\s+"?users"?/i.test(query)) {
+					return {
+						results: options.userRows ?? [],
+						meta: { changes: 0 },
+					}
+				}
+				return {
+					results: options.connectorRows ?? [],
+					meta: { changes: 0 },
+				}
+			},
+			async first() {
+				if (query.includes('email_verified_at')) {
+					return options.emailVerifiedAt === undefined
+						? null
+						: { email_verified_at: options.emailVerifiedAt }
+				}
+				const result = await statement.all()
+				return result.results[0] ?? null
+			},
+		}
+		return statement
+	}
 	return {
-		APP_DB: {
-			prepare: () => ({
-				bind: () => ({
-					all: async () => ({ results: [], meta: { changes: 0 } }),
-				}),
-			}),
-		} as unknown as D1Database,
+		prepare: (query: string) => statementFor(query),
+	} as unknown as D1Database
+}
+
+function createEnv(
+	helpers: OAuthHelpers,
+	overrides: Partial<Env> = {},
+	dbOptions: MockDbOptions = {},
+) {
+	return {
+		APP_DB: createMockDb(dbOptions),
 		OAUTH_PROVIDER: helpers,
 		...overrides,
 	} as unknown as Env
@@ -139,12 +180,15 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		grant: {
 			clientId: 'client',
 			scope: oauthScopes,
-			props: { userId: 'user' },
+			props: { userId: 'user', email: 'user@example.com' },
 		},
 	}
 	const validToken: TokenSummary = {
 		...tokenWithoutAudience,
 		audience: `https://example.com${mcpResourcePath}`,
+	}
+	const verifiedDb: MockDbOptions = {
+		emailVerifiedAt: new Date(0).toISOString(),
 	}
 
 	const invalidResponse = await handleMcpRequest({
@@ -178,6 +222,8 @@ test('mcp request enforces token audience and forwards caller props', async () =
 			createHelpers({
 				unwrapToken: async () => validToken,
 			}),
+			{},
+			verifiedDb,
 		),
 		ctx: createContext(),
 		fetchMcp: (_request, _env, ctx) => {
@@ -193,34 +239,28 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		user: { userId: 'user' },
 	})
 
-	const appDbWithConnector = {
-		prepare: () => ({
-			bind: () => ({
-				all: async () => ({
-					results: [
-						{
-							id: 'connector-1',
-							user_id: 'user',
-							instance_id: 'home',
-							enabled: 1,
-							attached: 1,
-							encrypted_shared_secret: 'encrypted',
-							created_at: new Date(0).toISOString(),
-							updated_at: new Date(0).toISOString(),
-						},
-					],
-					meta: { changes: 0 },
-				}),
-			}),
-		}),
-	} as unknown as D1Database
 	const withConnectorResponse = await handleMcpRequest({
 		request,
 		env: createEnv(
 			createHelpers({
 				unwrapToken: async () => validToken,
 			}),
-			{ APP_DB: appDbWithConnector },
+			{},
+			{
+				...verifiedDb,
+				connectorRows: [
+					{
+						id: 'connector-1',
+						user_id: 'user',
+						instance_id: 'home',
+						enabled: 1,
+						attached: 1,
+						encrypted_shared_secret: 'encrypted',
+						created_at: new Date(0).toISOString(),
+						updated_at: new Date(0).toISOString(),
+					},
+				],
+			},
 		),
 		ctx: createContext(),
 		fetchMcp: (_request, _env, ctx) => {
@@ -254,4 +294,104 @@ test('mcp request enforces token audience and forwards caller props', async () =
 			},
 		}),
 	).rejects.toThrow('D1 unavailable')
+})
+
+test('mcp request rejects unverified and unidentifiable accounts fail-closed', async () => {
+	const request = new Request(`https://example.com${mcpResourcePath}`, {
+		headers: { Authorization: 'Bearer token' },
+	})
+	function createToken(props: Record<string, unknown>): TokenSummary {
+		return {
+			id: 'token',
+			grantId: 'grant',
+			userId: 'user',
+			createdAt: 0,
+			expiresAt: 999999,
+			audience: `https://example.com${mcpResourcePath}`,
+			grant: {
+				clientId: 'client',
+				scope: oauthScopes,
+				props,
+			},
+		}
+	}
+
+	let fetchMcpCalled = false
+	const fetchMcp = () => {
+		fetchMcpCalled = true
+		return new Response('ok')
+	}
+
+	// Account exists but email_verified_at is null.
+	const unverifiedResponse = await handleMcpRequest({
+		request,
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () =>
+					createToken({ userId: 'user', email: 'user@example.com' }),
+			}),
+			{},
+			{ emailVerifiedAt: null },
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(unverifiedResponse.status).toBe(403)
+	expect(await unverifiedResponse.json()).toMatchObject({
+		error: 'email_verification_required',
+		error_description: expect.stringContaining('/account'),
+	})
+
+	// No matching account row at all.
+	const unknownAccountResponse = await handleMcpRequest({
+		request,
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () =>
+					createToken({ userId: 'user', email: 'user@example.com' }),
+			}),
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(unknownAccountResponse.status).toBe(403)
+
+	// Grant props without an identifiable user.
+	const noUserResponse = await handleMcpRequest({
+		request,
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () => createToken({}),
+			}),
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(noUserResponse.status).toBe(403)
+	expect(fetchMcpCalled).toBe(false)
+
+	// Stable-user-id fallback verifies accounts when grant props lack email.
+	const fallbackEmail = 'fallback@example.com'
+	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
+	const fallbackResponse = await handleMcpRequest({
+		request,
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () => createToken({ userId: stableUserId }),
+			}),
+			{},
+			{
+				userRows: [
+					{
+						email: fallbackEmail,
+						email_verified_at: new Date(0).toISOString(),
+					},
+				],
+			},
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(fallbackResponse.status).toBe(200)
+	expect(fetchMcpCalled).toBe(true)
 })

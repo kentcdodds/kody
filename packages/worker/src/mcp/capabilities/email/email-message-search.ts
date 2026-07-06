@@ -1,24 +1,36 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { searchEmailMessages } from '#worker/email/repo.ts'
+import {
+	emailDirectionValues,
+	emailProcessingStatusValues,
+} from '#worker/email/types.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
-import { listEmailMessages } from '#worker/email/repo.ts'
 import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
-export const emailMessageListCapability = defineDomainCapability(
+export const emailMessageSearchCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_message_list',
+		name: 'email_message_search',
 		description:
-			'List stored inbound and outbound email messages owned by the signed-in user.',
-		keywords: ['email', 'message', 'inbox', 'list'],
+			'Search stored email messages owned by the signed-in user by case-insensitive substring match against subject, header From, and envelope sender.',
+		keywords: ['email', 'message', 'inbox', 'search', 'find', 'query'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
+			query: z
+				.string()
+				.trim()
+				.min(1)
+				.max(256)
+				.describe(
+					'Substring to match (case-insensitive) against subject, from address, and envelope sender.',
+				),
 			inbox_id: z.string().min(1).optional(),
-			direction: z.enum(['inbound', 'outbound']).optional(),
-			processing_status: z.enum(['stored', 'sent', 'failed']).optional(),
+			direction: z.enum(emailDirectionValues).optional(),
+			processing_status: z.enum(emailProcessingStatusValues).optional(),
 			limit: z.number().int().positive().max(100).default(25),
 		}),
 		outputSchema: z.object({
@@ -26,9 +38,10 @@ export const emailMessageListCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
-			const messages = await listEmailMessages({
+			const messages = await searchEmailMessages({
 				db: ctx.env.APP_DB,
 				userId: user.userId,
+				query: args.query,
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,
 				processingStatus: args.processing_status ?? null,

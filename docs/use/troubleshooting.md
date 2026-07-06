@@ -1,5 +1,12 @@
 # Troubleshooting
 
+## MCP requests fail with `email_verification_required`
+
+Kody requires a verified account email before any MCP access. Open the
+verification link sent to the account email at signup, or sign in to the app and
+use **Resend verification email** on the `/account` page, then reconnect the MCP
+client.
+
 ## Search returns no good matches
 
 - **Rephrase the query** using domain vocabulary from the search tool’s domain

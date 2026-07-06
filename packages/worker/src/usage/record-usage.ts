@@ -3,8 +3,8 @@
  *
  * One event schema covers every metered chokepoint (execute runs, package
  * export invocations, job runs, workflow runs, package service runtime,
- * realtime websocket sessions, gateway fetches, email sends). Events are
- * written to two sinks:
+ * realtime websocket sessions, gateway fetches, email sends and receives).
+ * Events are written to two sinks:
  *
  * - Workers Analytics Engine (`USAGE_EVENTS`) for high-cardinality analysis.
  * - The D1 `usage_rollups` table (per-user, per-metric, per-month counters)
@@ -25,6 +25,7 @@ export type UsageEventType =
 	| 'realtime_session'
 	| 'outbound_fetch'
 	| 'email_send'
+	| 'email_received'
 
 export type UsageOutcome = 'success' | 'error'
 

@@ -134,7 +134,12 @@ Relational app data lives in D1.
 
 The schema is defined by migrations in `packages/worker/migrations/`:
 
-- `users`: login identity and password hash
+- `users`: login identity and password hash. There is no persisted mapping from
+  the stable MCP `userId` (SHA-256 of the normalized email) back to the row;
+  contextless paths (inbound email) reverse-resolve it by scanning and hashing
+  (`findUserAccountByStableUserId`). A persisted, indexed `stable_user_id`
+  column with an app-level backfill is required before onboarding external users
+  / design partners.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history
@@ -426,7 +431,7 @@ on write unless a migration backfills existing rows.
 - `secret_entries.allowed_hosts`, `secret_entries.allowed_capabilities`, and
   `secret_entries.allowed_packages` are JSON string lists used as security
   policy inputs (`0009-secret-allowed-hosts.sql`,
-  `0010-secret-allowed-kody.sql`, `0023-secret-allowed-packages.sql`).
+  `0010-secret-allowed-capabilities.sql`, `0023-secret-allowed-packages.sql`).
   Tightening parse-error behavior requires explicit compatibility review.
 - `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
   (`0037-package-runtime-debug.sql`) store bounded debug metadata and log

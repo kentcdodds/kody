@@ -32,6 +32,7 @@ import {
 	createAccountPackageInvocationTokensHandler,
 } from '#app/handlers/account-package-invocation-tokens.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
+import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import {
 	createAccountRemoteConnectorsApiHandler,
 	createAccountRemoteConnectorsHandler,
@@ -111,6 +112,7 @@ export function createAppRouter(appEnv: AppEnv) {
 				createAccountPackageInvocationTokensApiHandler(env),
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
+			accountResendVerification: createAccountResendVerificationHandler(appEnv),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),
 			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(env),
 			accountRemoteConnectorsApiPost:

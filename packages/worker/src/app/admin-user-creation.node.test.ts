@@ -200,7 +200,7 @@ test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and s
 		}),
 	).rejects.toMatchObject({
 		code: 'invalid_username',
-		message: 'This username is reserved and cannot be registered.',
+		message: 'This username is reserved.',
 	})
 	expect(explicit.users.size).toBe(0)
 

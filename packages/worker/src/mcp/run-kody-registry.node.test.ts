@@ -6,11 +6,17 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	buildKodyFns,
+	buildKodyProvider,
 	createWorkflowTools,
 	runKodyWithRegistry,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
+import {
+	createKodyProviderProxySource,
+	createToolDispatchers,
+} from '#mcp/executor.ts'
+import { type KodyResolvedProvider } from '#mcp/kody-remote-types.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
@@ -941,6 +947,85 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 	} finally {
 		getRegistrySpy.mockRestore()
 	}
+})
+
+test('remote connector calls round-trip through sanitized ToolDispatcher names', async () => {
+	let toolArguments: Record<string, unknown> | null = null
+	const connectorEnv = {
+		REMOTE_CONNECTOR_SESSION: {
+			idFromName(name: string) {
+				return name
+			},
+			get() {
+				return {
+					async getSnapshot() {
+						return {
+							connectorId: 'lighting',
+							connectedAt: '2026-03-27T00:00:00.000Z',
+							lastSeenAt: '2026-03-27T00:00:01.000Z',
+							tools: [
+								{
+									name: 'lutron_set_credentials',
+									title: 'Set Lutron Credentials',
+									description: 'Store Lutron credentials.',
+									inputSchema: {
+										type: 'object',
+										properties: {
+											processorId: { type: 'string' },
+										},
+										required: ['processorId'],
+									},
+								},
+							],
+						}
+					},
+					async rpcCallTool(name: string, args: Record<string, unknown>) {
+						toolArguments = { name, ...args }
+						return {
+							structuredContent: {
+								ok: true,
+							},
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	const provider = (await buildKodyProvider(
+		connectorEnv,
+		createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: { userId: 'user-123' },
+			remoteConnectors: [{ instanceId: 'lighting' }],
+		}),
+	)) as KodyResolvedProvider
+	const remoteConnectors = provider.kodyRemoteConnectors ?? []
+	expect(remoteConnectors[0]?.capabilities).toEqual([
+		expect.objectContaining({
+			name: 'lutron_set_credentials',
+			dispatchName: 'remotelightinglutron_set_credentials',
+		}),
+	])
+	const dispatchers = createToolDispatchers([provider], { active: true })
+	const source = createKodyProviderProxySource({
+		providerName: provider.name,
+		remoteConnectors,
+	})
+	const kody = new Function('__dispatchers', `${source}; return kody;`)(
+		dispatchers,
+	) as {
+		remote: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+	}
+
+	await expect(
+		kody.remote['lighting']?.lutron_set_credentials({
+			processorId: 'lutron-192-168-0-41',
+		}),
+	).resolves.toEqual({ ok: true })
+	expect(toolArguments).toEqual({
+		name: 'lutron_set_credentials',
+		processorId: 'lutron-192-168-0-41',
+	})
 })
 
 test('buildKodyFns rejects storage kody tools that collide with capabilities', async () => {

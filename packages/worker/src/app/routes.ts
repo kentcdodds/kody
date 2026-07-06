@@ -28,6 +28,7 @@ export const routes = route({
 	accountSecretsApiPost: post('/account/secrets.json'),
 	accountProfileApi: '/account/profile.json',
 	accountProfileApiPost: post('/account/profile.json'),
+	accountResendVerification: post('/account/resend-verification.json'),
 	accountExport: '/account/export.json',
 	admin: '/admin',
 	adminUsers: '/admin/users',

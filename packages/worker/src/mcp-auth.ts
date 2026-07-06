@@ -3,6 +3,7 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
@@ -65,6 +66,18 @@ function createUnauthorizedResponse(origin: string) {
 	})
 }
 
+export function createEmailVerificationRequiredResponse(origin: string) {
+	return Response.json(
+		{
+			error: 'email_verification_required',
+			error_description:
+				'Your account email address is not verified, so MCP access is disabled. ' +
+				`Open the verification link sent to your email, or resend it from ${origin}/account.`,
+		},
+		{ status: 403 },
+	)
+}
+
 function audienceMatches(
 	audience: string | Array<string> | undefined,
 	origin: string,
@@ -114,13 +127,28 @@ export async function handleMcpRequest({
 	const context = ctx as OAuthExecutionContext
 	const grantProps = tokenSummary.grant.props ?? null
 	const mcpUser = await buildMcpUserContextFromGrantProps(env, grantProps)
-	const remoteConnectors =
-		mcpUser && typeof mcpUser.userId === 'string'
-			? await listAttachedRemoteConnectorRefs({
-					env,
-					userId: mcpUser.userId,
-				})
-			: null
+
+	// Fail-closed email verification gate: every MCP request must map to an
+	// account whose email is verified. Tokens without an identifiable user
+	// are rejected too, since verification cannot be established for them.
+	// A D1 failure inside `isAccountEmailVerified` propagates as an error
+	// instead of silently allowing access.
+	if (!mcpUser) {
+		return createEmailVerificationRequiredResponse(origin)
+	}
+	const emailVerified = await isAccountEmailVerified({
+		db: env.APP_DB,
+		email: mcpUser.email,
+		stableUserId: mcpUser.userId,
+	})
+	if (!emailVerified) {
+		return createEmailVerificationRequiredResponse(origin)
+	}
+
+	const remoteConnectors = await listAttachedRemoteConnectorRefs({
+		env,
+		userId: mcpUser.userId,
+	})
 	const props: OAuthContextProps = createMcpCallerContext({
 		baseUrl: origin,
 		user: mcpUser,

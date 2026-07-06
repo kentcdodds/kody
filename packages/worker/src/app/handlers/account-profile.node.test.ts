@@ -257,7 +257,7 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 	expect(reservedResponse.status).toBe(400)
 	expect(await reservedResponse.json()).toEqual({
 		ok: false,
-		error: 'This username is reserved and cannot be registered.',
+		error: 'This username is reserved.',
 	})
 
 	const duplicateResponse = await runHandler(

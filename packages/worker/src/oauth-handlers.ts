@@ -1,5 +1,6 @@
 import {
 	type AuthRequest,
+	type ClientInfo,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createCookie } from '@remix-run/cookie'
@@ -17,7 +18,7 @@ import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
-import { getUsernameValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#app/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 
 export const oauthPaths = {
@@ -27,9 +28,12 @@ export const oauthPaths = {
 	register: '/oauth/register',
 	callback: '/oauth/callback',
 	apiPrefix: '/api/',
+	discovery: '/.well-known/oauth-authorization-server',
 }
 
 export const oauthScopes: Array<string> = ['profile', 'email']
+const invalidOAuthClientRegistrationMessage =
+	'Invalid OAuth client registration.'
 
 type OAuthProps = {
 	userId: string
@@ -47,7 +51,8 @@ type OAuthContext = ExecutionContext & {
 }
 
 function getValidOAuthUsername(value: unknown) {
-	return typeof value === 'string' && !getUsernameValidationError(value.trim())
+	return typeof value === 'string' &&
+		!getUsernameFormatValidationError(value.trim())
 		? value.trim()
 		: null
 }
@@ -93,6 +98,19 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 		...init,
 		headers,
 	})
+}
+
+function standaloneAuthorizeErrorHtmlResponse(message: string, status: number) {
+	return new Response(
+		`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OAuth authorization failed</title></head><body><main style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><p style="font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:#57606a">Kody secure connection</p><h1>Authorize access</h1><p>${message}</p><p><a href="/">Back home</a></p></main></body></html>`,
+		{
+			status,
+			headers: {
+				'Cache-Control': 'no-store',
+				'Content-Type': 'text/html; charset=utf-8',
+			},
+		},
+	)
 }
 
 function getOAuthHelpers(env: Env) {
@@ -222,7 +240,11 @@ async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
 		return { authRequest, client }
 	} catch (error) {
 		const message =
-			error instanceof Error ? error.message : 'Unable to parse OAuth request.'
+			error instanceof TypeError
+				? invalidOAuthClientRegistrationMessage
+				: error instanceof Error
+					? error.message
+					: 'Unable to parse OAuth request.'
 		return { error: message }
 	}
 }
@@ -266,6 +288,14 @@ function redirectUriMatchesRegisteredUri(
 	})
 }
 
+function readRegisteredRedirectUris(client: ClientInfo) {
+	const redirectUris = (client as { redirectUris?: unknown }).redirectUris
+	return Array.isArray(redirectUris) &&
+		redirectUris.every((uri) => typeof uri === 'string')
+		? redirectUris
+		: null
+}
+
 async function requestHasRedirectUriMismatch(
 	helpers: OAuthHelpers,
 	request: Request,
@@ -274,9 +304,16 @@ async function requestHasRedirectUriMismatch(
 	const clientId = url.searchParams.get('client_id')?.trim()
 	const redirectUri = url.searchParams.get('redirect_uri')?.trim()
 	if (!clientId || !redirectUri) return false
-	const client = await helpers.lookupClient(clientId)
+	let client: ClientInfo | null
+	try {
+		client = await helpers.lookupClient(clientId)
+	} catch {
+		return false
+	}
 	if (!client) return false
-	return !redirectUriMatchesRegisteredUri(redirectUri, client.redirectUris)
+	const registeredUris = readRegisteredRedirectUris(client)
+	if (!registeredUris) return true
+	return !redirectUriMatchesRegisteredUri(redirectUri, registeredUris)
 }
 
 async function listUserGrantsForClient(
@@ -616,6 +653,37 @@ export async function handleAuthorizeInfo(
 			headers: createSetCookieHeaders([setCookie]),
 		},
 	)
+}
+
+export function handleAuthorizeRouteException(
+	request: Request,
+): Promise<Response> | Response {
+	const url = new URL(request.url)
+	if (url.pathname === oauthPaths.authorizeInfo) {
+		return jsonResponse(
+			{
+				ok: false,
+				error: 'Unable to load authorization details.',
+				allowClientReset: false,
+			},
+			{ status: 500 },
+		)
+	}
+
+	const message =
+		'OAuth authorization failed. Please start the connection again.'
+	if (wantsJson(request)) {
+		return jsonResponse(
+			{ ok: false, error: message, code: 'server_error' },
+			{ status: 500 },
+		)
+	}
+
+	if (request.method === 'POST') {
+		return createAuthorizeErrorRedirect(request, 'server_error', message)
+	}
+
+	return standaloneAuthorizeErrorHtmlResponse(message, 500)
 }
 
 export async function handleAuthorizeRequest(

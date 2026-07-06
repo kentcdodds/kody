@@ -5,8 +5,7 @@ import {
 	createPasswordResetToken,
 } from '#app/password-reset-tokens.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
-import { getUsernameRegistrationError } from '#app/reserved-usernames.ts'
-import { normalizeUsername } from '#app/username.ts'
+import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 
 const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'
 
@@ -60,7 +59,7 @@ async function userExistsByUsername(db: D1Database, username: string) {
 async function getAvailableGeneratedUsername(db: D1Database, email: string) {
 	const base = usernameFromEmail(email)
 	if (
-		!getUsernameRegistrationError(base) &&
+		!getUsernameValidationError(base) &&
 		!(await userExistsByUsername(db, base))
 	) {
 		return base
@@ -70,7 +69,7 @@ async function getAvailableGeneratedUsername(db: D1Database, email: string) {
 	for (let suffix = 2; suffix <= 100; suffix += 1) {
 		const candidate = `${prefix}-${suffix}`
 		if (
-			!getUsernameRegistrationError(candidate) &&
+			!getUsernameValidationError(candidate) &&
 			!(await userExistsByUsername(db, candidate))
 		) {
 			return candidate
@@ -95,7 +94,7 @@ async function resolveUsername(input: {
 		return getAvailableGeneratedUsername(input.db, input.email)
 	}
 
-	const usernameError = getUsernameRegistrationError(explicitUsername)
+	const usernameError = getUsernameValidationError(explicitUsername)
 	if (usernameError) {
 		throw new AdminCreateUserError('invalid_username', usernameError)
 	}

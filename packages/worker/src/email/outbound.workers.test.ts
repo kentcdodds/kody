@@ -11,9 +11,11 @@ import {
 import { sendOutboundEmail } from './outbound.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { planLimits } from '#worker/entitlements/plans.ts'
 import {
-	defaultEmailSendDailyBackstop,
+	nullPlanEmailFallbackLimits,
+	planLimits,
+} from '#worker/entitlements/plans.ts'
+import {
 	incrementDailyEntitlementCounter,
 	utcDayKey,
 } from '#worker/entitlements/service.ts'
@@ -612,7 +614,11 @@ test('sendOutboundEmail caps NULL-plan users at the global daily backstop', asyn
 	const email = `legacy-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
 	await seedVerifiedAccount({ email, plan: null })
-	for (let index = 0; index < defaultEmailSendDailyBackstop - 1; index += 1) {
+	for (
+		let index = 0;
+		index < nullPlanEmailFallbackLimits.email_sends_per_day - 1;
+		index += 1
+	) {
 		await incrementDailyEntitlementCounter({
 			db: env.APP_DB,
 			userId,
@@ -623,7 +629,7 @@ test('sendOutboundEmail caps NULL-plan users at the global daily backstop', asyn
 	const result = await sendSelfNotification({ userId, accountEmail: email })
 	expect(result.status).toBe('sent')
 	expect(await readDailyEmailSendCounter(userId)).toBe(
-		defaultEmailSendDailyBackstop,
+		nullPlanEmailFallbackLimits.email_sends_per_day,
 	)
 
 	// ...and the next one is denied: plan-less users are not unlimited.
@@ -641,10 +647,10 @@ test('sendOutboundEmail caps NULL-plan users at the global daily backstop', asyn
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
 		plan: null,
-		limit: defaultEmailSendDailyBackstop,
-		current: defaultEmailSendDailyBackstop,
+		limit: nullPlanEmailFallbackLimits.email_sends_per_day,
+		current: nullPlanEmailFallbackLimits.email_sends_per_day,
 	})
 	expect(await readDailyEmailSendCounter(userId)).toBe(
-		defaultEmailSendDailyBackstop,
+		nullPlanEmailFallbackLimits.email_sends_per_day,
 	)
 })

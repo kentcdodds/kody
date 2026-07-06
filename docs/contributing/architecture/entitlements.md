@@ -24,9 +24,14 @@ stored plan values are also treated as NULL so plan renames can never lock users
 out. Enforcement activates only when a known plan name is set — existing
 accounts keep working unchanged.
 
-Exception: abuse-sensitive surfaces can pass a `fallbackLimit` to bind plan-less
-users to a global backstop. Outbound email does this — every send consumes
-against `defaultEmailSendDailyBackstop` when the user has no plan.
+Exception: the email resources are abuse-sensitive and bind plan-less users to
+the `nullPlanEmailFallbackLimits` backstops from `plans.ts` instead of unlimited
+— outbound sends (`email_sends_per_day`) because sending is an outreach-abuse
+surface, and the inbound resources (`email_receives_per_day`,
+`stored_email_messages`, `email_message_bytes`) because inbound volume is
+attacker-controlled (anyone can send to a `{username}@<platform domain>`
+address). Use `resolveEmailResourceLimit` to read the effective limit for those
+resources.
 
 ## Plan lookup
 
@@ -49,6 +54,21 @@ available. Both auth surfaces provide it — app sessions expose
 (for example package-manifest job sync or workflow-spawned inline code) are
 documented fail-open gaps, acceptable because they are only reachable after a
 user action that is itself gated.
+
+One path cannot fail open: inbound email routing has no caller context but must
+enforce receive quotas. `findUserAccountByStableUserId` in `service.ts`
+reverse-resolves the stable user id to the account email (and plan) by scanning
+the users table and hashing each email — the same pattern
+`isAccountEmailVerified` uses. Positive matches are cached per isolate (the
+mapping is a content hash, so hits can never go stale) and re-verified with one
+point read. Only use it on contextless paths; interactive surfaces already carry
+the email.
+
+The cold-path scan is O(users) per isolate on an attacker-reachable path, which
+is acceptable for the current single-digit user count only. **A persisted
+`users.stable_user_id` column (indexed, with an app-level backfill — SQLite
+cannot compute SHA-256 in a migration) is required before onboarding external
+users / design partners**; the scan must not ship into multi-tenant use.
 
 ## The error shape
 
@@ -89,21 +109,28 @@ Rules:
   concurrent workflows, running package services) are counted **directly from
   their source D1 tables at the enforcement point** via built-in counters in
   `service.ts`. They do not depend on any metering or rollup tables.
-- **Rate-style limits** (email sends per day) use the
+- **Rate-style limits** (email sends and receives per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
-  plan limit (or the caller's `fallbackLimit` for plan-less users) and
-  increments the counter in one conditional D1 upsert (no check-then-increment
-  race). Without a plan and without a `fallbackLimit` it still increments
-  (uncapped) so counters reflect real usage the moment a plan is assigned.
-  Counting attempts rather than successes keeps the limit abuse-resistant.
+  plan limit and increments the counter in one conditional D1 upsert (no
+  check-then-increment race), and still increments (uncapped) for users without
+  a plan so counters reflect real usage the moment a plan is assigned — unless
+  the caller passes `fallbackLimit`, which caps plan-less users with a
+  deployment-level backstop (both email sends and receives do this). Counting
+  attempts rather than successes keeps the limit abuse-resistant.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
   (not allowed) vs `null` (allowed) so the numeric contract stays uniform.
-- `maxStorageBytes` is defined in the limits config but not yet enforced; it has
-  no built-in counter and requires `getCurrent` when it gains an enforcement
-  point.
+- **Per-unit size limits** (`email_message_bytes`) compare one candidate value
+  against the limit instead of an accumulating count: the enforcement point
+  passes the candidate size via `getCurrent` with `requested: 0`. There is no
+  built-in counter for these.
+- `maxStorageBytes` is defined in the limits config but **still not enforced**;
+  it has no built-in counter and requires `getCurrent` when it gains an
+  enforcement point. The per-message `email_message_bytes` cap bounds each
+  stored email's size but is deliberately **not** full storage-bytes accounting
+  — that remains a separate effort.
 
 Because the plan check happens before any counting, enforcement adds zero
 counting overhead for NULL-plan users.
@@ -147,8 +174,8 @@ The exemplar is job scheduling: `createJob` in
 
    Use `fallbackLimit` only for global backstops that must bind plan-less users
    (the workflow concurrency limit absorbed the `WORKFLOW_CONCURRENT_LIMIT` env
-   var this way via `getWorkflowConcurrencyBackstop`, and email sends cap
-   plan-less users at `defaultEmailSendDailyBackstop`).
+   var this way via `getWorkflowConcurrencyBackstop`, and the email resources
+   cap plan-less users via `nullPlanEmailFallbackLimits`).
    `consumeDailyEntitlement` accepts the same `fallbackLimit` for daily rate
    resources. Use `getCurrent` only when the built-in D1 counter cannot express
    the resource.
@@ -165,17 +192,20 @@ The exemplar is job scheduling: `createJob` in
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------- |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                       |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                            |
-| `package_services`            | `service_start` capability path                                                       |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                            |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                     |
-| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, global backstop for NULL plan) |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`      |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)          |
-| `storage_bytes`               | not yet enforced                                                                      |
+| Resource                      | Enforcement point                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                    |
+| `saved_packages`              | new-package branch of `package_save` and projection insert                         |
+| `package_services`            | `service_start` capability path                                                    |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                         |
+| `repo_sessions`               | `repo_open_session` before creating a new session                                  |
+| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan backstop)         |
+| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback)        |
+| `stored_email_messages`       | `handleInboundEmail` before storage (NULL-plan fallback)                           |
+| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size, NULL-plan fallback) |
+| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`   |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)       |
+| `storage_bytes`               | not yet enforced                                                                   |
 
 ## Related tables and coordination
 

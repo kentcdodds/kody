@@ -444,7 +444,7 @@ export function createKodyProviderProxySource(input: {
 	return source
 }
 
-function createToolDispatchers(
+export function createToolDispatchers(
 	providers: Array<ResolvedProvider>,
 	executionState: { active: boolean },
 ) {
@@ -454,8 +454,17 @@ function createToolDispatchers(
 			string,
 			(...args: Array<unknown>) => Promise<unknown>
 		> = {}
+		const rawNamesBySanitizedName = new Map<string, string>()
 		for (const [name, fn] of Object.entries(provider.fns)) {
-			sanitizedFns[sanitizeToolName(name)] = async (...args) => {
+			const sanitizedName = sanitizeToolName(name)
+			if (rawNamesBySanitizedName.has(sanitizedName)) {
+				const existingName = rawNamesBySanitizedName.get(sanitizedName) ?? ''
+				throw new Error(
+					`Provider "${provider.name}" has tool names "${existingName}" and "${name}" that both sanitize to "${sanitizedName}".`,
+				)
+			}
+			rawNamesBySanitizedName.set(sanitizedName, name)
+			sanitizedFns[sanitizedName] = async (...args) => {
 				if (!executionState.active) {
 					throw new Error('Execution has already completed.')
 				}

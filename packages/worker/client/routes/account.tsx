@@ -35,6 +35,8 @@ type AccountProfilePayload = {
 	displayName: string
 }
 
+const resendVerificationApiPath = '/account/resend-verification.json'
+
 function isAccountPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/account'
 }
@@ -61,6 +63,9 @@ export async function accountRouteLoader(
 export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveStatus: 'idle' | 'saving' = 'idle'
+	let resendStatus: 'idle' | 'sending' = 'idle'
+	let resendMessage: string | null = null
+	let resendTone: 'error' | 'info' = 'info'
 	let email = ''
 	let emailVerified = false
 	let username = ''
@@ -102,6 +107,47 @@ export function AccountRoute(handle: Handle) {
 			message =
 				error instanceof Error ? error.message : 'Unable to load your account.'
 			messageTone = 'error'
+			handle.update()
+		}
+	}
+
+	async function handleResendVerification() {
+		resendStatus = 'sending'
+		resendMessage = null
+		resendTone = 'info'
+		handle.update()
+
+		try {
+			const response = await fetch(resendVerificationApiPath, {
+				method: 'POST',
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<{
+				ok?: boolean
+				message?: string
+				error?: string
+			}>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(
+					payload?.error || 'Unable to send the verification email.',
+				)
+			}
+			resendMessage =
+				payload.message ?? 'Verification email sent. Check your inbox.'
+			resendTone = 'info'
+		} catch (error) {
+			resendMessage =
+				error instanceof Error
+					? error.message
+					: 'Unable to send the verification email.'
+			resendTone = 'error'
+		} finally {
+			resendStatus = 'idle'
 			handle.update()
 		}
 	}
@@ -255,9 +301,36 @@ export function AccountRoute(handle: Handle) {
 							>
 								<h2 mix={css(cardTitleCss)}>Verify your email</h2>
 								<p mix={css(descriptionCss)}>
-									Check your inbox for the verification link. Outbound email
-									sending stays disabled until this account email is verified.
+									Check your inbox for the verification link. MCP access and
+									email features stay disabled until this account email is
+									verified.
 								</p>
+								<div>
+									<button
+										type="button"
+										disabled={resendStatus === 'sending'}
+										mix={[
+											css(primaryButtonCss),
+											on('click', handleResendVerification),
+										]}
+									>
+										{resendStatus === 'sending'
+											? 'Sending...'
+											: 'Resend verification email'}
+									</button>
+								</div>
+								{resendMessage ? (
+									<p
+										role="status"
+										mix={css({
+											color:
+												resendTone === 'error' ? colors.error : colors.text,
+											margin: 0,
+										})}
+									>
+										{resendMessage}
+									</p>
+								) : null}
 							</section>
 						) : null}
 						<section mix={css(cardCss)}>

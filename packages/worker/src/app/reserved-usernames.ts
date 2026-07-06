@@ -1,67 +1,151 @@
-import { getUsernameValidationError } from '#app/username.ts'
-
 /**
- * Usernames that can never be claimed by users. Because every user gets an
- * automatic email inbox at `{username}@<platform domain>`, a reserved
- * username is also a reserved email local part: `kody@` is the system
- * transactional sender and the rest are role addresses (RFC 2142) or
- * infrastructure names that must never route to a user inbox or be usable
- * as a user outbound sender.
- *
- * This list only gates username acquisition (signup, profile updates, admin
- * user creation) and email routing. Validation of already-stored usernames
- * stays purely syntactic so legacy accounts keep working outside of email.
+ * Static denylist for usernames that must not be claimed by end users.
+ * Covers brand/product identity, support/trust surfaces, infrastructure and
+ * route-like names, and RFC 5321 mailbox locals commonly used for system mail.
  */
-export const reservedUsernames = new Set([
-	// System sender: kody@<domain> is transactional-only, never a user inbox.
+const reservedUsernameList = [
+	// Brand / product
 	'kody',
-	// Role and operational addresses (RFC 2142 and common conventions).
+	'kodybot',
+	'kody-bot',
+	'kodyassistant',
+	'kody-assistant',
+	'kodyapp',
+	'kody-app',
+	'kodyhq',
+	'kody-hq',
+	'kodyai',
+	'kody-ai',
+
+	// Support / trust / safety
+	'support',
+	'help',
+	'helpdesk',
+	'help-desk',
+	'trust',
+	'safety',
+	'security',
 	'abuse',
+	'report',
+	'feedback',
+	'contact',
+	'info',
+
+	// Staff / elevated roles
 	'admin',
 	'administrator',
-	'alert',
-	'alerts',
-	'billing',
-	'bounce',
-	'bounces',
-	'contact',
-	'daemon',
-	'email',
-	'ftp',
-	'help',
-	'hostmaster',
-	'imap',
-	'inbox',
-	'info',
-	'legal',
-	'mail',
-	'mailer-daemon',
-	'marketing',
-	'moderator',
-	'news',
-	'no-reply',
-	'noc',
-	'noreply',
-	'notification',
-	'notifications',
-	'official',
-	'owner',
-	'postmaster',
-	'privacy',
-	'reply',
 	'root',
-	'sales',
-	'security',
-	'smtp',
-	'staff',
-	'support',
 	'system',
+	'sysadmin',
+	'superuser',
+	'sudo',
+	'owner',
+	'staff',
 	'team',
-	'usenet',
-	'uucp',
-	'webmaster',
+	'moderator',
+	'mod',
+	'ops',
+	'devops',
+
+	// Infrastructure / web / routing
+	'api',
 	'www',
-])
+	'mail',
+	'email',
+	'smtp',
+	'imap',
+	'pop',
+	'pop3',
+	'dns',
+	'ftp',
+	'ssh',
+	'ssl',
+	'tls',
+	'cdn',
+	'static',
+	'assets',
+	'status',
+	'health',
+	'ping',
+	'monitor',
+	'metrics',
+	'logs',
+	'webhook',
+	'webhooks',
+	'callback',
+	'callbacks',
+	'oauth',
+	'auth',
+	'login',
+	'logout',
+	'signup',
+	'register',
+	'account',
+	'profile',
+	'settings',
+	'billing',
+	'payments',
+	'subscribe',
+	'unsubscribe',
+	'community',
+	'mcp',
+	'connect',
+	'connector',
+	'connectors',
+	'package',
+	'packages',
+	'session',
+	'sessions',
+	'verify',
+	'reset',
+	'password',
+	'privacy',
+	'terms',
+	'legal',
+	'dmca',
+	'copyright',
+	'trademark',
+
+	// Email mailbox locals (RFC 5321 / common system addresses)
+	'postmaster',
+	'hostmaster',
+	'webmaster',
+	'noreply',
+	'no-reply',
+	'donotreply',
+	'do-not-reply',
+	'bounce',
+	'mailer-daemon',
+	'mailerdaemon',
+	'mailer_daemon',
+
+	// Ambiguous / environment / placeholder
+	'null',
+	'undefined',
+	'anonymous',
+	'guest',
+	'public',
+	'private',
+	'internal',
+	'external',
+	'localhost',
+	'local',
+	'dev',
+	'staging',
+	'stage',
+	'prod',
+	'production',
+	'test',
+	'preview',
+	'demo',
+	'sandbox',
+	'example',
+	'sample',
+	'official',
+	'verified',
+] as const
+
+const reservedUsernames = new Set<string>(reservedUsernameList)
 
 /**
  * Local parts shaped like the legacy inbound reply-token aliases
@@ -70,29 +154,17 @@ export const reservedUsernames = new Set([
  */
 const reservedUsernamePrefixPattern = /^kody-r-/
 
-export function isReservedUsername(value: string) {
-	const username = value.trim().toLowerCase()
-	if (!username) return false
+export function isReservedUsername(username: string) {
+	const normalized = username.trim().toLowerCase()
 	return (
-		reservedUsernames.has(username) ||
-		reservedUsernamePrefixPattern.test(username)
+		reservedUsernames.has(normalized) ||
+		reservedUsernamePrefixPattern.test(normalized)
 	)
 }
 
 export function getReservedUsernameError(username: string) {
-	return isReservedUsername(username)
-		? 'This username is reserved and cannot be registered.'
-		: null
-}
-
-/**
- * The one validation every username-acquisition path (signup, profile
- * update, admin user creation) must run: syntactic rules plus the reserved
- * denylist. Lookups of already-stored usernames keep using the syntactic
- * `getUsernameValidationError` only.
- */
-export function getUsernameRegistrationError(username: string) {
-	return (
-		getUsernameValidationError(username) ?? getReservedUsernameError(username)
-	)
+	if (isReservedUsername(username)) {
+		return 'This username is reserved.'
+	}
+	return null
 }

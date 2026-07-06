@@ -1,17 +1,19 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import * as Sentry from '@sentry/cloudflare'
 import {
 	type AuthRequest,
 	type ClientInfo,
 	type CompleteAuthorizationOptions,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env, exports } from 'cloudflare:workers'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
-	handleOAuthCallback,
 	oauthScopes,
 } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -31,6 +33,24 @@ const baseClient: ClientInfo = {
 	tokenEndpointAuthMethod: 'client_secret_basic',
 }
 const cookieSecret = 'test-secret-0123456789abcdef0123456789'
+const claudeAuthorizeUrl =
+	'https://heykody.dev/oauth/authorize?response_type=code&client_id=ZlV_ZKY8Xe1Hnw2a&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback&code_challenge=sp23xso5O3jXO-73NoQqSxwu742uqSbPXw1VA8jRfNE&code_challenge_method=S256&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc&scope=profile+email&resource=https%3A%2F%2Fheykody.dev%2Fmcp'
+const claudeAuthRequest: AuthRequest = {
+	responseType: 'code',
+	clientId: 'ZlV_ZKY8Xe1Hnw2a',
+	redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+	scope: ['profile', 'email'],
+	state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+	codeChallenge: 'sp23xso5O3jXO-73NoQqSxwu742uqSbPXw1VA8jRfNE',
+	codeChallengeMethod: 'S256',
+	resource: 'https://heykody.dev/mcp',
+}
+const claudeClient: ClientInfo = {
+	clientId: claudeAuthRequest.clientId,
+	redirectUris: [claudeAuthRequest.redirectUri],
+	clientName: 'Claude',
+	tokenEndpointAuthMethod: 'none',
+}
 
 function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	return {
@@ -129,6 +149,58 @@ function createEnv(
 			'package-service-instance-test-id',
 		),
 	} as unknown as Env
+}
+
+async function workerFetch(
+	request: Request,
+	workerEnv: Env = env,
+): Promise<Response> {
+	const ctx = createExecutionContext()
+	const response = await exports.default.fetch(request, workerEnv, ctx)
+	await waitOnExecutionContext(ctx)
+	return response
+}
+
+async function createS256CodeChallenge(verifier: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(verifier),
+	)
+	return btoa(String.fromCharCode(...new Uint8Array(digest)))
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/, '')
+}
+
+async function createSha256Hex(value: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(value),
+	)
+	return Array.from(new Uint8Array(digest))
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
+}
+
+async function seedWorkerUser(email: string, password: string) {
+	const passwordHash = await createPasswordHash(password)
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			username TEXT NOT NULL UNIQUE,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+	).run()
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash)
+			VALUES (?, ?, ?)
+			ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash`,
+	)
+		.bind(`user-${crypto.randomUUID().slice(0, 8)}`, email, passwordHash)
+		.run()
 }
 
 function createFormRequest(
@@ -295,6 +367,276 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	)
 	const defaultScopeOptions = await capturedOptionsPromise
 	expect(defaultScopeOptions.scope).toEqual(oauthScopes)
+})
+
+test('Claude-shaped authorize requests render and approve without throwing', async () => {
+	const htmlResponse = await handleAuthorizeRequest(
+		new Request(claudeAuthorizeUrl),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => claudeAuthRequest,
+				lookupClient: async () => claudeClient,
+			}),
+		),
+	)
+
+	expect(htmlResponse.status).toBe(200)
+	expect(htmlResponse.headers.get('Content-Type')).toContain('text/html')
+	const html = await htmlResponse.text()
+	expect(html).toContain('Claude')
+	expect(html).toContain('"oauthAuthorize"')
+
+	let capturedOptions: CompleteAuthorizationOptions | null = null
+	const helpers = createHelpers({
+		parseAuthRequest: async () => claudeAuthRequest,
+		lookupClient: async () => claudeClient,
+		async completeAuthorization(options) {
+			capturedOptions = options
+			return {
+				redirectTo:
+					'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+			}
+		},
+	})
+	const postResponse = await handleAuthorizeRequest(
+		new Request(claudeAuthorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				email: 'user@example.com',
+				password: 'password123',
+			}),
+		}),
+		createEnv(helpers, await createDatabase('password123')),
+	)
+
+	expect(postResponse.status).toBe(200)
+	await expect(postResponse.json()).resolves.toEqual({
+		ok: true,
+		redirectTo:
+			'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+	})
+	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
+	expect(capturedOptions?.request.scope).toEqual(['profile', 'email'])
+})
+
+test('worker entrypoint handles Claude-shaped authorize GET requests', async () => {
+	await env.OAUTH_KV.put(
+		`client:${claudeClient.clientId}`,
+		JSON.stringify(claudeClient),
+	)
+
+	const response = await workerFetch(new Request(claudeAuthorizeUrl))
+
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Claude')
+	expect(html).toContain('"oauthAuthorize"')
+})
+
+test('worker entrypoint renders a recoverable error for missing Claude clients', async () => {
+	await env.OAUTH_KV.delete(`client:${claudeClient.clientId}`)
+
+	const response = await workerFetch(new Request(claudeAuthorizeUrl))
+
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Invalid client')
+	expect(html).toContain('"oauthAuthorize"')
+})
+
+test('worker entrypoint renders a recoverable error for malformed Claude clients', async () => {
+	await env.OAUTH_KV.put(
+		`client:${claudeClient.clientId}`,
+		JSON.stringify({
+			client_id: claudeClient.clientId,
+			redirect_uris: [claudeAuthRequest.redirectUri],
+			client_name: claudeClient.clientName,
+			token_endpoint_auth_method: 'none',
+		}),
+	)
+
+	const response = await workerFetch(new Request(claudeAuthorizeUrl))
+
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Invalid OAuth client registration.')
+	expect(html).toContain('"oauthAuthorize"')
+})
+
+test('worker entrypoint completes Claude-shaped dynamic registration and token exchange', async () => {
+	const email = `claude-oauth-${crypto.randomUUID()}@example.com`
+	const password = 'password123'
+	await seedWorkerUser(email, password)
+
+	const registerResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				redirect_uris: [claudeAuthRequest.redirectUri],
+				client_name: 'Claude',
+				token_endpoint_auth_method: 'none',
+				grant_types: ['authorization_code', 'refresh_token'],
+				response_types: ['code'],
+			}),
+		}),
+	)
+	expect(registerResponse.status).toBe(201)
+	const registeredClient = (await registerResponse.json()) as {
+		client_id: string
+	}
+	const verifier = 'claude-verifier-0123456789'
+	const authorizeUrl = new URL(claudeAuthorizeUrl)
+	authorizeUrl.searchParams.set('client_id', registeredClient.client_id)
+	authorizeUrl.searchParams.set(
+		'code_challenge',
+		await createS256CodeChallenge(verifier),
+	)
+
+	const authorizeResponse = await workerFetch(new Request(authorizeUrl))
+	expect(authorizeResponse.status).toBe(200)
+	expect(await authorizeResponse.text()).toContain('Claude')
+
+	const approvalResponse = await workerFetch(
+		new Request(authorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				email,
+				password,
+			}),
+		}),
+	)
+	expect(approvalResponse.status).toBe(200)
+	const approvalPayload = (await approvalResponse.json()) as {
+		redirectTo: string
+	}
+	const callbackUrl = new URL(approvalPayload.redirectTo)
+	const code = callbackUrl.searchParams.get('code')
+	expect(code).toBeTruthy()
+
+	const tokenResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				client_id: registeredClient.client_id,
+				code: code ?? '',
+				redirect_uri: claudeAuthRequest.redirectUri,
+				code_verifier: verifier,
+				resource: 'https://heykody.dev/mcp',
+			}),
+		}),
+	)
+	expect(tokenResponse.status).toBe(200)
+	await expect(tokenResponse.json()).resolves.toMatchObject({
+		token_type: 'bearer',
+		resource: 'https://heykody.dev/mcp',
+		scope: 'profile email',
+	})
+})
+
+test('worker entrypoint returns OAuth errors for provider-owned route exceptions', async () => {
+	const registerResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: 'null',
+		}),
+	)
+	expect(registerResponse.status).toBe(400)
+	await expect(registerResponse.json()).resolves.toEqual({
+		error: 'invalid_request',
+		error_description: 'Invalid OAuth client registration.',
+	})
+
+	const clientId = `malformed-token-client-${crypto.randomUUID()}`
+	const userId = `oauth-user-${crypto.randomUUID()}`
+	const grantId = `oauth-grant-${crypto.randomUUID()}`
+	const code = `${userId}:${grantId}:secret`
+	await env.OAUTH_KV.put(
+		`client:${clientId}`,
+		JSON.stringify({
+			clientId,
+			clientName: 'Claude',
+			tokenEndpointAuthMethod: 'none',
+		}),
+	)
+	await env.OAUTH_KV.put(
+		`grant:${userId}:${grantId}`,
+		JSON.stringify({
+			id: grantId,
+			clientId,
+			userId,
+			scope: ['profile', 'email'],
+			metadata: {},
+			encryptedProps: '',
+			createdAt: Math.floor(Date.now() / 1000),
+			authCodeId: await createSha256Hex(code),
+			resource: 'https://heykody.dev/mcp',
+			codeChallenge: 'verifier',
+			codeChallengeMethod: 'plain',
+		}),
+	)
+
+	const captureException = vi
+		.spyOn(Sentry, 'captureException')
+		.mockImplementation(() => undefined)
+	const tokenResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				client_id: clientId,
+				code,
+				redirect_uri: claudeAuthRequest.redirectUri,
+				code_verifier: 'verifier',
+				resource: 'https://heykody.dev/mcp',
+			}),
+		}),
+	)
+	expect(tokenResponse.status).toBe(401)
+	await expect(tokenResponse.json()).resolves.toEqual({
+		error: 'invalid_client',
+		error_description: 'Invalid OAuth client registration.',
+	})
+	expect(captureException).toHaveBeenCalledOnce()
+	captureException.mockRestore()
+})
+
+test('worker entrypoint renders OAuth errors for delegated authorize route exceptions', async () => {
+	const response = await workerFetch(
+		new Request(claudeAuthorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'multipart/form-data',
+			},
+			body: 'not a valid multipart body',
+		}),
+	)
+
+	expect(response.status).toBe(500)
+	expect(response.headers.get('Content-Type')).toContain('application/json')
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: 'OAuth authorization failed. Please start the connection again.',
+		code: 'server_error',
+	})
 })
 
 test('reset client deletes matching grants for redirect-uri, client-id, and authorize-info mismatches', async () => {

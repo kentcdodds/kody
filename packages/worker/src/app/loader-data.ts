@@ -101,6 +101,7 @@ export type AdminUsageMetric =
 	| 'service_runtime'
 	| 'outbound_fetch'
 	| 'email_send'
+	| 'email_received'
 
 export type AdminUsageEntitlementResource =
 	| 'saved_packages'
@@ -109,6 +110,8 @@ export type AdminUsageEntitlementResource =
 	| 'persistent_package_services'
 	| 'repo_sessions'
 	| 'email_sends_per_day'
+	| 'email_receives_per_day'
+	| 'stored_email_messages'
 	| 'secrets'
 	| 'concurrent_workflows'
 	| 'storage_bytes'

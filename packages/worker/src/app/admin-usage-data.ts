@@ -1,6 +1,8 @@
 import {
 	entitlementResourceLabels,
+	isEmailFallbackResource,
 	parsePlanName,
+	resolveEmailResourceLimit,
 	resolvePlanLimit,
 	type EntitlementResource,
 	type PlanName,
@@ -30,6 +32,7 @@ export const adminUsageMetrics = [
 	'service_runtime',
 	'outbound_fetch',
 	'email_send',
+	'email_received',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
 export const adminUsageLiveResourceCounts = [
@@ -47,12 +50,15 @@ const adminUsageEntitlementResources = [
 	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
+	'email_receives_per_day',
+	'stored_email_messages',
 	'secrets',
 	'concurrent_workflows',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 const adminUsageDailyCounterResources = [
 	'email_sends_per_day',
+	'email_receives_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 const defaultPageSize = 20
@@ -304,9 +310,13 @@ async function readEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
-			const limit = input.user.plan
-				? resolvePlanLimit(input.user.plan, resource)
-				: null
+			// Inbound email resources cap plan-less users with deployment
+			// fallbacks, so show the effective limit instead of unlimited.
+			const limit = isEmailFallbackResource(resource)
+				? resolveEmailResourceLimit(input.user.plan, resource)
+				: input.user.plan
+					? resolvePlanLimit(input.user.plan, resource)
+					: null
 			const percentOfLimit =
 				limit == null || limit === 0 ? null : current / limit
 			return {

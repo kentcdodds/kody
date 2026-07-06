@@ -38,6 +38,7 @@ const usageMetricLabels = {
 	service_runtime: 'Service runtime',
 	outbound_fetch: 'Fetches',
 	email_send: 'Email sends',
+	email_received: 'Email receives',
 } as const
 
 function isAdminUsagePath(href: string) {

@@ -11,6 +11,7 @@ import {
 	listEmailMessages,
 	listEmailAttachmentsForMessage,
 } from './repo.ts'
+import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -22,10 +23,11 @@ function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
 }
 
-async function seedVerifiedAccount(input: {
+async function seedAccount(input: {
 	db: D1Database
 	email: string
 	username: string
+	emailVerifiedAt?: string | null
 }) {
 	await input.db
 		.prepare(
@@ -40,41 +42,19 @@ async function seedVerifiedAccount(input: {
 			input.username,
 			input.email,
 			'test-password-hash',
-			new Date().toISOString(),
+			input.emailVerifiedAt === undefined
+				? new Date().toISOString()
+				: input.emailVerifiedAt,
 		)
 		.run()
 }
 
-function createForwardableEmailMessage(input: {
-	from: string
-	to: string
-	raw: string
-}): ForwardableEmailMessage & { rejectedReason: string | null } {
-	const encoded = new TextEncoder().encode(input.raw)
-	const headers = new Headers()
-	for (const line of input.raw.split(/\r?\n/)) {
-		if (!line.trim()) break
-		const separator = line.indexOf(':')
-		if (separator <= 0) continue
-		headers.append(line.slice(0, separator), line.slice(separator + 1).trim())
-	}
-	return {
-		from: input.from,
-		to: input.to,
-		headers,
-		raw: new Blob([encoded]).stream(),
-		rawSize: encoded.byteLength,
-		rejectedReason: null,
-		setReject(reason: string) {
-			this.rejectedReason = reason
-		},
-		async forward() {
-			return { messageId: 'unused-forward' }
-		},
-		async reply() {
-			return { messageId: 'unused-reply' }
-		},
-	}
+async function seedVerifiedAccount(input: {
+	db: D1Database
+	email: string
+	username: string
+}) {
+	await seedAccount(input)
 }
 
 test('inbound email routes {username}@platform-domain and auto-provisions the default inbox', async () => {
@@ -291,33 +271,117 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 	await handleInboundEmail(unroutable, { ...env, APP_BASE_URL: undefined })
 	expect(unroutable.rejectedReason).toBe('Email routing is not configured.')
 
-	// Malformed (oversize) mail for a valid user is rejected before storage.
+	// Oversize mail for a valid user trips the pre-parse
+	// email_message_bytes gate (the NULL-plan fallback is 512 KiB) with the
+	// generic over-quota reason, before anything is stored.
 	const username = `parse-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `parse-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
 	await seedVerifiedAccount({
 		db: env.APP_DB,
 		email: accountEmail,
 		username,
 	})
-	const malformedMessage = createForwardableEmailMessage({
+	const oversizeMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
-		to: `${username}@${platformDomain}`,
+		to: address,
 		raw: 'Subject: Too large\r\n\r\nBody',
 	})
-	Object.defineProperty(malformedMessage, 'rawSize', {
+	Object.defineProperty(oversizeMessage, 'rawSize', {
 		value: 600 * 1024,
 	})
 
-	await handleInboundEmail(malformedMessage, createInboundEnv())
+	await handleInboundEmail(oversizeMessage, createInboundEnv())
 
-	expect(malformedMessage.rejectedReason).toMatch(/too large/)
-	const malformedMessages = await listEmailMessages({
+	expect(oversizeMessage.rejectedReason).toBe(
+		'Recipient mailbox is over quota.',
+	)
+
+	// A raw stream that fails mid-read exercises the parse-failure path.
+	const unreadableMessage = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: 'Subject: Unreadable\r\n\r\nBody',
+	})
+	Object.defineProperty(unreadableMessage, 'raw', {
+		value: new ReadableStream({
+			pull() {
+				throw new Error('raw stream read failed')
+			},
+		}),
+	})
+
+	await handleInboundEmail(unreadableMessage, createInboundEnv())
+
+	expect(unreadableMessage.rejectedReason).toMatch(/raw stream read failed/)
+	const rejectedMessages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
 		limit: 10,
 	})
-	expect(malformedMessages).toEqual([])
+	expect(rejectedMessages).toEqual([])
+})
+
+test('inbound email handler rejects mail for unverified accounts', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `unverified-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `email-unverified-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+		emailVerifiedAt: null,
+	})
+
+	const message = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: Should be rejected',
+			'Message-ID: <rejected@example.net>',
+			'',
+			'Please help.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(message, createInboundEnv())
+
+	expect(message.rejectedReason).toBe('Account email is not verified.')
+	const messages = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		limit: 10,
+	})
+	expect(messages).toEqual([])
+	// Unverified-account rejections go through the bounded recorder: one
+	// detailed event plus the daily aggregate row.
+	const events = await env.APP_DB.prepare(
+		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.all<{ event_type: string; detail_json: string }>()
+	const details = (events.results ?? []).map((row) => ({
+		eventType: row.event_type,
+		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
+	}))
+	expect(details).toHaveLength(2)
+	expect(details.every((row) => row.eventType === 'rejected')).toBe(true)
+	expect(
+		details.find((row) => row.detail['aggregate'] !== true)?.detail,
+	).toMatchObject({
+		reason: 'Account email is not verified.',
+		phase: 'account-verification',
+	})
+	expect(
+		details.find((row) => row.detail['aggregate'] === true)?.detail,
+	).toMatchObject({
+		count: 1,
+		last_phase: 'account-verification',
+	})
 })
 
 test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {

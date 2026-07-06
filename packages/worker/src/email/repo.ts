@@ -722,6 +722,63 @@ export async function listEmailMessages(input: {
 	return (result.results ?? []).map(mapMessageRow)
 }
 
+/** Escape LIKE wildcards so user queries match literally. */
+function escapeLikePattern(value: string) {
+	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
+}
+
+/**
+ * Case-insensitive substring search over stored messages' subject, header
+ * From, and envelope sender. Same filters, ordering, and limit contract as
+ * `listEmailMessages`; always scoped to one user.
+ *
+ * The leading-wildcard LIKE is a per-user linear scan (bounded by the
+ * stored_email_messages entitlement cap). Revisit with FTS5 or a search
+ * index if mailboxes outgrow that.
+ */
+export async function searchEmailMessages(input: {
+	db: D1Database
+	userId: string
+	query: string
+	inboxId?: string | null
+	direction?: EmailDirection | null
+	processingStatus?: EmailProcessingStatus | null
+	limit: number
+}) {
+	const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_messages
+			WHERE user_id = ?
+				AND (? IS NULL OR inbox_id = ?)
+				AND (? IS NULL OR direction = ?)
+				AND (? IS NULL OR processing_status = ?)
+				AND (
+					LOWER(subject) LIKE ? ESCAPE '\\'
+					OR LOWER(from_address) LIKE ? ESCAPE '\\'
+					OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
+				)
+			ORDER BY created_at DESC, id DESC
+			LIMIT ?`,
+		)
+		.bind(
+			input.userId,
+			input.inboxId ?? null,
+			input.inboxId ?? null,
+			input.direction ?? null,
+			input.direction ?? null,
+			input.processingStatus ?? null,
+			input.processingStatus ?? null,
+			pattern,
+			pattern,
+			pattern,
+			input.limit,
+		)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map(mapMessageRow)
+}
+
 export async function deleteEmailMessageById(input: {
 	db: D1Database
 	messageId: string
@@ -870,6 +927,84 @@ export async function getEmailAttachmentById(input: {
 		content: matched.content,
 		contentBase64: bytesToBase64(bytes),
 	}
+}
+
+/**
+ * How many quota/size/verification rejections per inbox per UTC day get
+ * their own delivery-event row before collapsing into the daily aggregate
+ * row.
+ */
+export const maxDetailedEmailRejectionEventsPerDay = 5
+
+/**
+ * Record an entitlement/size/verification rejection without unbounded row
+ * growth. Every rejection upserts one aggregate 'rejected' event per inbox
+ * per UTC day (deterministic id, counter in detail_json), and only the
+ * first `maxDetailedEmailRejectionEventsPerDay` attempts of the day also
+ * store an individual detailed event. This traffic is attacker-controlled
+ * and not limited by the daily receive counter (over-quota mail has
+ * already exhausted it; unverified-account mail never consumes it), so
+ * without this cap a flood of rejected mail would grow D1 one row per
+ * attempt — the denial-of-wallet shape the quotas exist to prevent.
+ */
+export async function recordBoundedEmailRejectionEvent(input: {
+	db: D1Database
+	userId: string
+	inboxId: string
+	recipient: string
+	reason: string
+	phase: 'entitlement' | 'size' | 'account-verification'
+	now?: Date
+}) {
+	const now = input.now ?? new Date()
+	const nowIsoString = now.toISOString()
+	const day = nowIsoString.slice(0, 'YYYY-MM-DD'.length)
+	const aggregateDetail = JSON.stringify({
+		aggregate: true,
+		day,
+		count: 1,
+		last_reason: input.reason,
+		last_phase: input.phase,
+		last_at: nowIsoString,
+	})
+	const row = await input.db
+		.prepare(
+			`INSERT INTO email_delivery_events (
+				id, user_id, inbox_id, event_type, provider, detail_json, created_at
+			) VALUES (?, ?, ?, 'rejected', 'cloudflare-email-routing', ?, ?)
+			ON CONFLICT(id) DO UPDATE SET detail_json = json_set(
+				email_delivery_events.detail_json,
+				'$.count', COALESCE(json_extract(email_delivery_events.detail_json, '$.count'), 0) + 1,
+				'$.last_reason', json_extract(excluded.detail_json, '$.last_reason'),
+				'$.last_phase', json_extract(excluded.detail_json, '$.last_phase'),
+				'$.last_at', json_extract(excluded.detail_json, '$.last_at')
+			)
+			RETURNING json_extract(detail_json, '$.count') AS count`,
+		)
+		.bind(
+			`email-rejections:${input.inboxId}:${day}`,
+			input.userId,
+			input.inboxId,
+			aggregateDetail,
+			nowIsoString,
+		)
+		.first<{ count: number }>()
+	const rejectionsToday = Number(row?.count ?? 1)
+	if (rejectionsToday <= maxDetailedEmailRejectionEventsPerDay) {
+		await insertEmailDeliveryEvent({
+			db: input.db,
+			userId: input.userId,
+			inboxId: input.inboxId,
+			eventType: 'rejected',
+			provider: 'cloudflare-email-routing',
+			detail: {
+				recipient: input.recipient,
+				reason: input.reason,
+				phase: input.phase,
+			},
+		})
+	}
+	return rejectionsToday
 }
 
 export async function insertEmailDeliveryEvent(input: {
