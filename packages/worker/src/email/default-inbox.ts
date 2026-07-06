@@ -48,7 +48,10 @@ export async function ensureDefaultEmailInbox(input: {
 			address,
 		})
 		if (!existingAddress) return null
-		if (existingAddress.userId !== input.userId) {
+		// A row held by another user (legacy alias) or a disabled row makes
+		// the address unavailable; the unique constraint would reject a
+		// re-insert either way, so surface that as a clean unavailable state.
+		if (existingAddress.userId !== input.userId || !existingAddress.enabled) {
 			return { conflict: true as const }
 		}
 		const inbox = await getEmailInboxById({

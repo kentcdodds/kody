@@ -239,6 +239,43 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 		reason: 'Unknown Kody email address.',
 	})
 
+	// A disabled legacy row holding the platform address makes the inbox
+	// unavailable (clean reject) instead of crashing provisioning on the
+	// unique address constraint.
+	{
+		const username = `disabled-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `disabled-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
+		const heldAddress = `${username}@${platformDomain}`
+		const primer = createForwardableEmailMessage({
+			from: 'stranger@example.net',
+			to: heldAddress,
+			raw: [
+				'From: Stranger <stranger@example.net>',
+				`To: ${heldAddress}`,
+				'Subject: Provision first',
+				'',
+				'Body.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(primer, createInboundEnv())
+		expect(primer.rejectedReason).toBeNull()
+		await env.APP_DB.prepare(
+			`UPDATE email_inbox_addresses SET enabled = 0 WHERE address = ? AND user_id = ?`,
+		)
+			.bind(heldAddress, userId)
+			.run()
+		await expectRejected({
+			to: heldAddress,
+			reason: 'Email inbox is unavailable.',
+		})
+	}
+
 	// Without APP_BASE_URL there is no platform domain to route.
 	const unroutable = createForwardableEmailMessage({
 		from: 'stranger@example.net',

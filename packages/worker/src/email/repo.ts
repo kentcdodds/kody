@@ -273,6 +273,11 @@ export async function listEmailInboxAddressesForUser(input: {
 	return (result.results ?? []).map(mapInboxAddressRow)
 }
 
+/**
+ * Read the row holding a (globally unique) address regardless of its
+ * enabled state, so callers can distinguish "address free" from "address
+ * held but disabled" instead of tripping the unique constraint.
+ */
 export async function getEmailInboxAddressByAddress(input: {
 	db: D1Database
 	address: string
@@ -282,7 +287,6 @@ export async function getEmailInboxAddressByAddress(input: {
 			`SELECT *
 			FROM email_inbox_addresses
 			WHERE address = ?
-				AND enabled = 1
 			LIMIT 1`,
 		)
 		.bind(input.address)
