@@ -28,6 +28,7 @@ export const oauthPaths = {
 	register: '/oauth/register',
 	callback: '/oauth/callback',
 	apiPrefix: '/api/',
+	discovery: '/.well-known/oauth-authorization-server',
 }
 
 export const oauthScopes: Array<string> = ['profile', 'email']

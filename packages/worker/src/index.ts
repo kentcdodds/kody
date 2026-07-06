@@ -408,7 +408,7 @@ function isOAuthProviderOwnedPath(pathname: string) {
 	return (
 		pathname === oauthPaths.token ||
 		pathname === oauthPaths.register ||
-		pathname === '/.well-known/oauth-authorization-server' ||
+		pathname === oauthPaths.discovery ||
 		pathname === protectedResourceMetadataPath ||
 		pathname.startsWith(`${protectedResourceMetadataPath}/`) ||
 		pathname.startsWith(oauthPaths.apiPrefix)
@@ -417,6 +417,8 @@ function isOAuthProviderOwnedPath(pathname: string) {
 
 function isMalformedOAuthClientException(error: unknown, pathname: string) {
 	const message = error instanceof Error ? error.message : ''
+	// @cloudflare/workers-oauth-provider@0.4.0 throws this raw TypeError
+	// when a stored client is missing redirectUris during token validation.
 	return (
 		pathname === oauthPaths.token &&
 		message.includes("Cannot read properties of undefined (reading 'some')")
@@ -514,9 +516,7 @@ const workerHandler = {
 			return await oauthProvider.fetch(request, env, ctx)
 		} catch (error) {
 			if (!isOAuthProviderOwnedPath(url.pathname)) throw error
-			if (!isMalformedOAuthClientException(error, url.pathname)) {
-				Sentry.captureException(error)
-			}
+			Sentry.captureException(error)
 			return createOAuthProviderExceptionResponse(error, url.pathname)
 		}
 	},

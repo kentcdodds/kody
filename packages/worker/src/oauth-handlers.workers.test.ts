@@ -1,4 +1,5 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import * as Sentry from '@sentry/cloudflare'
 import {
 	type AuthRequest,
 	type ClientInfo,
@@ -591,6 +592,9 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 		}),
 	)
 
+	const captureException = vi
+		.spyOn(Sentry, 'captureException')
+		.mockImplementation(() => undefined)
 	const tokenResponse = await workerFetch(
 		new Request('https://heykody.dev/oauth/token', {
 			method: 'POST',
@@ -610,6 +614,8 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 		error: 'invalid_client',
 		error_description: 'Invalid OAuth client registration.',
 	})
+	expect(captureException).toHaveBeenCalledOnce()
+	captureException.mockRestore()
 })
 
 test('worker entrypoint renders OAuth errors for delegated authorize route exceptions', async () => {
