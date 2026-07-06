@@ -30,15 +30,7 @@ export async function resolveUserStableIdByEmail(input: {
 		.prepare(`SELECT email, stable_user_id FROM users WHERE email = ?`)
 		.bind(email)
 		.first<{ email: string; stable_user_id: string | null }>()
-		.catch(async () => {
-			const legacyRow = await input.db
-				.prepare(`SELECT email FROM users WHERE email = ?`)
-				.bind(email)
-				.first<{ email: string }>()
-			return legacyRow
-				? { ...legacyRow, stable_user_id: null as string | null }
-				: null
-		})
+		.catch(() => null)
 	return row
 		? await resolveUserStableId(row)
 		: await createStableUserIdFromEmail(email)

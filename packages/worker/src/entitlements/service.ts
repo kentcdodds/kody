@@ -30,22 +30,20 @@ export async function getUserPlan(
 ): Promise<PlanName | null> {
 	const email = input.email?.trim().toLowerCase()
 	if (!email || !input.userId) return null
-	const row = await db
-		.prepare(`SELECT email, plan FROM users WHERE email = ?`)
-		.bind(email)
-		.first<{
-			email: string
-			plan: string | null
-		}>()
-	if (!row) return null
-	if ((await createStableUserIdFromEmail(row.email)) !== input.userId) {
+	if ((await createStableUserIdFromEmail(email)) !== input.userId) {
+		if (!/^[a-f0-9]{64}$/i.test(input.userId)) return null
 		const storedMatch = await db
-			.prepare(`SELECT id FROM users WHERE email = ? AND stable_user_id = ?`)
+			.prepare(`SELECT plan FROM users WHERE email = ? AND stable_user_id = ?`)
 			.bind(email, input.userId)
-			.first<{ id: number }>()
+			.first<{ plan: string | null }>()
 			.catch(() => null)
-		if (!storedMatch) return null
+		return storedMatch ? parsePlanName(storedMatch.plan) : null
 	}
+	const row = await db
+		.prepare(`SELECT plan FROM users WHERE email = ?`)
+		.bind(email)
+		.first<{ plan: string | null }>()
+	if (!row) return null
 	return parsePlanName(row?.plan)
 }
 
