@@ -13,7 +13,10 @@ import {
 import { getEnv } from '#app/env.ts'
 import { type OAuthAuthorizeLoaderData } from '#app/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	createStableUserIdFromEmail,
+	resolveUserStableId,
+} from '#worker/user-id.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -462,7 +465,13 @@ async function handleResetClientRequest(
 	}
 
 	try {
-		const userId = await createStableUserIdFromEmail(sessionEmail)
+		const db = createDb(env.APP_DB)
+		const userRecord = await db.findOne(usersTable, {
+			where: { email: sessionEmail },
+		})
+		const userId = userRecord
+			? await resolveUserStableId(userRecord)
+			: await createStableUserIdFromEmail(sessionEmail)
 		const grants = await listUserGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
 			grants.map((grant) => helpers.revokeGrant(grant.id, userId)),
@@ -775,6 +784,7 @@ export async function handleAuthorizeRequest(
 
 	let approvedEmail = ''
 	let approvedUsername = ''
+	let approvedUserId = ''
 	if (hasFormCredentials) {
 		const db = createDb(env.APP_DB)
 		const userRecord = await db.findOne(usersTable, {
@@ -814,6 +824,7 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = normalizedEmail
 		approvedUsername = username
+		approvedUserId = await resolveUserStableId(userRecord)
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
 		const userRecord = await db.findOne(usersTable, {
@@ -846,11 +857,12 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = sessionEmail
 		approvedUsername = username
+		approvedUserId = await resolveUserStableId(userRecord)
 	}
 
 	const resolvedScopes = resolveScopes(authRequest.scope)
 	if (Array.isArray(resolvedScopes)) {
-		const userId = await createStableUserIdFromEmail(approvedEmail)
+		const userId = approvedUserId
 		const displayName = approvedUsername
 		const { redirectTo } = await helpers.completeAuthorization({
 			request: authRequest,

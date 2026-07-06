@@ -36,6 +36,7 @@ type AccountProfilePayload = {
 }
 
 const resendVerificationApiPath = '/account/resend-verification.json'
+const emailChangeApiPath = '/account/email-change.json'
 
 function isAccountPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/account'
@@ -64,14 +65,19 @@ export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveStatus: 'idle' | 'saving' = 'idle'
 	let resendStatus: 'idle' | 'sending' = 'idle'
+	let emailChangeStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
 	let email = ''
 	let emailVerified = false
 	let username = ''
 	let draftUsername = ''
+	let draftEmail = ''
+	let emailChangePassword = ''
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
+	let emailChangeMessage: string | null = null
+	let emailChangeTone: 'error' | 'info' = 'info'
 	let lastLoadedHref = ''
 
 	async function loadAccountProfile(signal: AbortSignal) {
@@ -97,6 +103,7 @@ export function AccountRoute(handle: Handle) {
 			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
+			draftEmail = payload.email
 			status = 'ready'
 			message = null
 			messageTone = 'info'
@@ -156,6 +163,86 @@ export function AccountRoute(handle: Handle) {
 		if (!(event.currentTarget instanceof HTMLInputElement)) return
 		draftUsername = event.currentTarget.value
 		handle.update()
+	}
+
+	function updateDraftEmail(event: InputEvent) {
+		if (!(event.currentTarget instanceof HTMLInputElement)) return
+		draftEmail = event.currentTarget.value
+		handle.update()
+	}
+
+	function updateEmailChangePassword(event: InputEvent) {
+		if (!(event.currentTarget instanceof HTMLInputElement)) return
+		emailChangePassword = event.currentTarget.value
+		handle.update()
+	}
+
+	async function handleEmailChangeSubmit(event: SubmitEvent) {
+		event.preventDefault()
+		const nextEmail = draftEmail.trim().toLowerCase()
+		if (!nextEmail || !emailChangePassword) {
+			emailChangeMessage = 'New email and current password are required.'
+			emailChangeTone = 'error'
+			handle.update()
+			return
+		}
+		if (nextEmail === email.trim().toLowerCase()) {
+			emailChangeMessage = 'Enter a different email address.'
+			emailChangeTone = 'error'
+			handle.update()
+			return
+		}
+
+		emailChangeStatus = 'sending'
+		emailChangeMessage = null
+		emailChangeTone = 'info'
+		handle.update()
+
+		try {
+			const response = await fetch(emailChangeApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					email: nextEmail,
+					password: emailChangePassword,
+				}),
+			})
+			if (response.status === 401) {
+				const payload = await readJson<{ error?: string }>(response)
+				if (payload?.error === 'Password is incorrect.') {
+					throw new Error(payload.error)
+				}
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<{
+				ok?: boolean
+				message?: string
+				error?: string
+			}>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(
+					payload?.error || 'Unable to send the email change verification.',
+				)
+			}
+			emailChangePassword = ''
+			emailChangeMessage =
+				payload.message ?? 'Verification email sent to your new address.'
+			emailChangeTone = 'info'
+		} catch (error) {
+			emailChangeMessage =
+				error instanceof Error
+					? error.message
+					: 'Unable to send the email change verification.'
+			emailChangeTone = 'error'
+		} finally {
+			emailChangeStatus = 'idle'
+			handle.update()
+		}
 	}
 
 	async function handleUsernameSubmit(event: SubmitEvent) {
@@ -218,6 +305,7 @@ export function AccountRoute(handle: Handle) {
 		emailVerified = routeData.emailVerified
 		username = routeData.username
 		draftUsername = routeData.username
+		draftEmail = routeData.email
 		status = 'ready'
 		message = null
 		messageTone = 'info'
@@ -244,7 +332,9 @@ export function AccountRoute(handle: Handle) {
 			handle.queueTask(loadAccountProfile)
 		}
 		const isSaving = saveStatus === 'saving'
+		const isSendingEmailChange = emailChangeStatus === 'sending'
 		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
+		const normalizedDraftEmail = draftEmail.trim().toLowerCase()
 
 		return (
 			<section
@@ -370,6 +460,88 @@ export function AccountRoute(handle: Handle) {
 										{isSaving ? 'Saving...' : 'Save username'}
 									</button>
 								</div>
+							</form>
+							<form
+								mix={[
+									css({
+										display: 'grid',
+										gap: spacing.md,
+										marginTop: spacing.lg,
+										paddingTop: spacing.lg,
+										borderTop: `1px solid ${colors.border}`,
+									}),
+									on('submit', handleEmailChangeSubmit),
+								]}
+							>
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<h3
+										mix={css({
+											fontSize: typography.fontSize.base,
+											fontWeight: typography.fontWeight.semibold,
+											color: colors.text,
+											margin: 0,
+										})}
+									>
+										Change email
+									</h3>
+									<p mix={css(descriptionCss)}>
+										Enter your current password. We will send a verification
+										link to the new address before changing your account email.
+									</p>
+								</div>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>New email</span>
+									<input
+										type="email"
+										name="email"
+										required
+										autoComplete="email"
+										value={draftEmail}
+										mix={[css(inputCss), on('input', updateDraftEmail)]}
+									/>
+								</label>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Current password</span>
+									<input
+										type="password"
+										name="password"
+										required
+										autoComplete="current-password"
+										value={emailChangePassword}
+										mix={[
+											css(inputCss),
+											on('input', updateEmailChangePassword),
+										]}
+									/>
+								</label>
+								<div>
+									<button
+										type="submit"
+										disabled={
+											isSendingEmailChange ||
+											normalizedDraftEmail === email.trim().toLowerCase()
+										}
+										mix={css(primaryButtonCss)}
+									>
+										{isSendingEmailChange
+											? 'Sending...'
+											: 'Send verification link'}
+									</button>
+								</div>
+								{emailChangeMessage ? (
+									<p
+										role="status"
+										mix={css({
+											color:
+												emailChangeTone === 'error'
+													? colors.error
+													: colors.text,
+											margin: 0,
+										})}
+									>
+										{emailChangeMessage}
+									</p>
+								) : null}
 							</form>
 						</section>
 						<section mix={css(cardCss)}>

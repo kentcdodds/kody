@@ -7,6 +7,7 @@ export const usersTable = table({
 		id: c.integer(),
 		username: c.text(),
 		email: c.text(),
+		stable_user_id: c.text(),
 		password_hash: c.text(),
 		email_verified_at: c.text(),
 		plan: c.text(),
@@ -33,6 +34,19 @@ export const emailVerificationsTable = table({
 	columns: {
 		id: c.integer(),
 		user_id: c.integer(),
+		token_hash: c.text(),
+		expires_at: c.integer(),
+		created_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
+export const pendingEmailChangesTable = table({
+	name: 'pending_email_changes',
+	columns: {
+		id: c.integer(),
+		user_id: c.integer(),
+		new_email: c.text(),
 		token_hash: c.text(),
 		expires_at: c.integer(),
 		created_at: c.text(),

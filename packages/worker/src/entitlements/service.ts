@@ -1,4 +1,7 @@
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	findUserRowByStableUserId,
+	resolveUserStableId,
+} from '#worker/user-id.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
@@ -11,9 +14,10 @@ import {
 /**
  * Resolve the plan for a user, or null when the user is legacy/unlimited.
  *
- * The MCP `userId` is the SHA-256 hash of the normalized account email, so
- * the lookup goes through the email while verifying that the email actually
- * hashes to the given userId. When the pair does not match (synthetic
+ * The MCP `userId` is the account's stored stable id, falling back to the
+ * legacy SHA-256 email hash when a stored id has not been materialized yet.
+ * The lookup goes through email while verifying that the account stable id
+ * matches the given userId. When the pair does not match (synthetic
  * runtime contexts, package-scoped caller contexts with an empty email, or
  * test fixtures), the lookup short-circuits to null without touching D1 —
  * which also means enforcement is skipped, matching the invariant that
@@ -25,19 +29,22 @@ export async function getUserPlan(
 ): Promise<PlanName | null> {
 	const email = input.email?.trim().toLowerCase()
 	if (!email || !input.userId) return null
-	if ((await createStableUserIdFromEmail(email)) !== input.userId) return null
 	const row = await db
-		.prepare(`SELECT plan FROM users WHERE email = ?`)
+		.prepare(`SELECT email, stable_user_id, plan FROM users WHERE email = ?`)
 		.bind(email)
-		.first<{ plan: string | null }>()
+		.first<{
+			email: string
+			stable_user_id: string | null
+			plan: string | null
+		}>()
+	if (!row || (await resolveUserStableId(row)) !== input.userId) return null
 	return parsePlanName(row?.plan)
 }
 
 /**
- * Per-isolate cache of stable user id → account email. The mapping is a
- * content hash (sha256 of the normalized email), so a positive entry can
- * never go stale; only cache hits are trusted and deleted entries fall
- * back to a fresh scan.
+ * Per-isolate cache of stable user id → account email. Cache hits are
+ * validated against the stored stable id and deleted entries fall back to a
+ * fresh scan.
  */
 const stableUserIdEmailCache = new Map<string, string>()
 
@@ -49,13 +56,9 @@ export type StableUserAccount = {
 }
 
 /**
- * Reverse-resolve a stable MCP userId (SHA-256 of the normalized account
- * email) back to the account email, plan, and verified-email state. There
- * is no stored mapping, so the cold path scans the users table and hashes
- * each email until one matches — the same pattern `isAccountEmailVerified`
- * uses — and positive matches are cached per isolate so hot paths pay one
- * point read. Plan and verified state are always read fresh; only the
- * id→email mapping (a content hash that can never go stale) is cached.
+ * Reverse-resolve a stable MCP userId back to the account email, plan, and
+ * verified-email state. Stored stable ids are queried directly; legacy rows
+ * without one still fall back to the normalized-email hash.
  * Only call this on paths that genuinely have no caller context email
  * (for example inbound email routing); interactive surfaces already carry
  * the email.
@@ -69,12 +72,21 @@ export async function findUserAccountByStableUserId(
 	const cachedEmail = stableUserIdEmailCache.get(trimmed)
 	if (cachedEmail) {
 		const row = await db
-			.prepare(`SELECT plan, email_verified_at FROM users WHERE email = ?`)
+			.prepare(
+				`SELECT email, stable_user_id, plan, email_verified_at
+				FROM users
+				WHERE email = ?`,
+			)
 			.bind(cachedEmail)
-			.first<{ plan: string | null; email_verified_at: string | null }>()
-		if (row) {
+			.first<{
+				email: string
+				stable_user_id: string | null
+				plan: string | null
+				email_verified_at: string | null
+			}>()
+		if (row && (await resolveUserStableId(row)) === trimmed) {
 			return {
-				email: cachedEmail,
+				email: row.email,
 				plan: parsePlanName(row.plan),
 				emailVerified: Boolean(row.email_verified_at),
 			}
@@ -82,24 +94,24 @@ export async function findUserAccountByStableUserId(
 		// The account is gone (deleted); drop the entry and rescan.
 		stableUserIdEmailCache.delete(trimmed)
 	}
-	const rows = await db
-		.prepare(`SELECT email, plan, email_verified_at FROM users`)
-		.all<{
-			email: string
-			plan: string | null
-			email_verified_at: string | null
-		}>()
-	for (const row of rows.results ?? []) {
-		if ((await createStableUserIdFromEmail(row.email)) === trimmed) {
-			stableUserIdEmailCache.set(trimmed, row.email)
-			return {
-				email: row.email,
-				plan: parsePlanName(row.plan),
-				emailVerified: Boolean(row.email_verified_at),
-			}
-		}
+	const row = await findUserRowByStableUserId<{
+		id: number
+		email: string
+		stable_user_id: string | null
+		plan: string | null
+		email_verified_at: string | null
+	}>({
+		db,
+		stableUserId: trimmed,
+		select: `SELECT id, email, stable_user_id, plan, email_verified_at FROM users`,
+	})
+	if (!row) return null
+	stableUserIdEmailCache.set(trimmed, row.email)
+	return {
+		email: row.email,
+		plan: parsePlanName(row.plan),
+		emailVerified: Boolean(row.email_verified_at),
 	}
-	return null
 }
 
 export function utcDayKey(date: Date = new Date()) {

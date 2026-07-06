@@ -224,11 +224,14 @@ export function createAuthHandler(appEnv: AppEnv) {
 
 				let record: { id: number } | null = null
 				try {
+					const stableUserId =
+						await createStableUserIdFromEmail(normalizedEmail)
 					const createdUser = await db.create(
 						usersTable,
 						{
 							username: normalizedUsername,
 							email: normalizedEmail,
+							stable_user_id: stableUserId,
 							password_hash: passwordHash,
 						},
 						{

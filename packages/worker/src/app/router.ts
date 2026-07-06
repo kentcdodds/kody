@@ -26,6 +26,7 @@ import {
 } from '#app/handlers/admin-system-email.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
+import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
 import {
 	createAccountIntegrationsApiHandler,
@@ -62,6 +63,7 @@ import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
+import { createVerifyEmailChangeHandler } from '#app/handlers/verify-email-change.ts'
 import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
 import { logout } from '#app/handlers/logout.ts'
 import {
@@ -98,6 +100,7 @@ export function createAppRouter(appEnv: AppEnv) {
 			privacy: createPrivacyHandler(env),
 			resetPassword: createResetPasswordHandler(env),
 			verifyEmail: createVerifyEmailHandler(env),
+			verifyEmailChange: createVerifyEmailChangeHandler(env),
 			signup: createSignupHandler(env),
 			account: createAccountHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
@@ -116,6 +119,7 @@ export function createAppRouter(appEnv: AppEnv) {
 				createAccountPackageInvocationTokensApiHandler(env),
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
+			accountEmailChange: createAccountEmailChangeHandler(appEnv),
 			accountResendVerification: createAccountResendVerificationHandler(appEnv),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),
 			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(env),

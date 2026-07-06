@@ -6,6 +6,7 @@ import {
 } from '#app/password-reset-tokens.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'
 
@@ -148,15 +149,22 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	})
 	const now = input.now ?? new Date()
 	const nowIso = now.toISOString()
+	const stableUserId = await createStableUserIdFromEmail(email)
 	let userId: number | null = null
 
 	try {
 		const result = await input.db
 			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at)
-				 VALUES (?, ?, ?, ?)`,
+				`INSERT INTO users (username, email, stable_user_id, password_hash, email_verified_at)
+				 VALUES (?, ?, ?, ?, ?)`,
 			)
-			.bind(username, email, adminCreatedNoUsablePasswordHash, nowIso)
+			.bind(
+				username,
+				email,
+				stableUserId,
+				adminCreatedNoUsablePasswordHash,
+				nowIso,
+			)
 			.run()
 		const lastRowId = result.meta.last_row_id
 		if (!Number.isSafeInteger(lastRowId) || lastRowId < 1) {

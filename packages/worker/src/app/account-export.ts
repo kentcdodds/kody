@@ -17,7 +17,7 @@ import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
 import { type RemoteConnectorSessionExport } from '#worker/remote-connector/types.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 const accountExportSchemaVersion = 1
 const defaultExportPageSize = 100
@@ -32,6 +32,7 @@ const redactedColumnsByTable: Readonly<Record<string, ReadonlyArray<string>>> =
 		email_verifications: ['token_hash'],
 		package_invocation_tokens: ['token_hash'],
 		password_resets: ['token_hash'],
+		pending_email_changes: ['token_hash'],
 		remote_connector_settings: ['encrypted_shared_secret'],
 		secret_entries: ['encrypted_value', 'lookup_hash'],
 		users: ['password_hash'],
@@ -1107,19 +1108,18 @@ export async function resolveAccountExportDbUserId(input: {
 	if (!email) {
 		throw new Error('Account export requires an authenticated user email.')
 	}
-	const stableUserId = await createStableUserIdFromEmail(email)
-	if (stableUserId !== input.mcpUserId) {
+	const row = await input.env.APP_DB.prepare(
+		`SELECT id, email, stable_user_id FROM users WHERE email = ?`,
+	)
+		.bind(email)
+		.first<{ id: number; email: string; stable_user_id: string | null }>()
+	if (!row) {
+		throw new Error('Authenticated account was not found.')
+	}
+	if ((await resolveUserStableId(row)) !== input.mcpUserId) {
 		throw new Error(
 			'Authenticated user identity did not match the account email.',
 		)
-	}
-	const row = await input.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE email = ?`,
-	)
-		.bind(email)
-		.first<{ id: number }>()
-	if (!row) {
-		throw new Error('Authenticated account was not found.')
 	}
 	return row.id
 }

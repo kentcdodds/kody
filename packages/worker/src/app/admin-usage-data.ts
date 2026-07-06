@@ -11,7 +11,7 @@ import {
 	readEntitlementResourceUsage,
 	utcDayKey,
 } from '#worker/entitlements/service.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AdminUsageDailyCounter,
 	type AdminUsageEntitlementConsumption,
@@ -69,6 +69,7 @@ type AdminUsageUserRow = {
 	id: number
 	username: string
 	email: string
+	stable_user_id: string | null
 	plan: string | null
 }
 
@@ -112,7 +113,7 @@ export async function loadAdminUsageData(
 			total: number
 		}>(),
 		env.APP_DB.prepare(
-			`SELECT id, username, email, plan
+			`SELECT id, username, email, stable_user_id, plan
 			 FROM users
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
@@ -174,7 +175,7 @@ async function addUsageIds(
 			username: row.username,
 			email: row.email,
 			plan: parsePlanName(row.plan),
-			usageUserId: await createStableUserIdFromEmail(row.email),
+			usageUserId: await resolveUserStableId(row),
 		})),
 	)
 }
@@ -192,7 +193,9 @@ async function loadSelectedUser(input: {
 	if (visibleUser) return visibleUser
 
 	const row = await input.db
-		.prepare(`SELECT id, username, email, plan FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT id, username, email, stable_user_id, plan FROM users WHERE id = ?`,
+		)
 		.bind(input.selectedUserId)
 		.first<AdminUsageUserRow>()
 	if (!row) return input.users[0] ?? null

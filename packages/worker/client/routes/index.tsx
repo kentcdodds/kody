@@ -107,6 +107,7 @@ export const clientRoutes = {
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
 	'/verify-email': <VerifyEmailRoute />,
+	'/verify-email-change': <VerifyEmailRoute />,
 	'/connect/oauth': <ConnectOauthRoute />,
 	'/oauth/authorize': <OAuthAuthorizeRoute />,
 	'/oauth/callback': <OAuthCallbackRoute />,

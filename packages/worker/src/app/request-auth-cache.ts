@@ -17,7 +17,7 @@ import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 import { getUsernameFormatValidationError } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 type ResolvedAuthUser = {
@@ -89,7 +89,7 @@ async function resolveRequestAuth(
 		console.error('Failed to load roles for authenticated user:', error)
 	}
 
-	const emailBasedUserId = await createStableUserIdFromEmail(userRecord.email)
+	const stableUserId = await resolveUserStableId(userRecord)
 	const displayName = getDisplayName({
 		email: userRecord.email,
 		username: userRecord.username,
@@ -107,13 +107,13 @@ async function resolveRequestAuth(
 			roles,
 			permissions,
 			mcpUser: {
-				userId: emailBasedUserId,
+				userId: stableUserId,
 				email: userRecord.email,
 				username: userRecord.username,
 				displayName,
 			},
 			artifactOwnerIds: Array.from(
-				new Set([session.id, emailBasedUserId].filter(Boolean)),
+				new Set([session.id, stableUserId].filter(Boolean)),
 			),
 		},
 	}

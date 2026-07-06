@@ -1,6 +1,9 @@
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { isReservedUsername } from '#app/reserved-usernames.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	findUserRowByStableUserId,
+	resolveUserStableId,
+} from '#worker/user-id.ts'
 
 /**
  * The label prepended to the app hostname to form the default user email
@@ -86,26 +89,42 @@ async function findUserAccount(input: {
 	// userId, so a mismatched pair can never yield another account's
 	// platform sender address.
 	const email = normalizeEmail(input.accountEmail ?? '')
-	if (email && (await createStableUserIdFromEmail(email)) === userId) {
+	if (email) {
 		const row = await input.db
-			.prepare(`SELECT username FROM users WHERE email = ?`)
+			.prepare(
+				`SELECT email, stable_user_id, username FROM users WHERE email = ?`,
+			)
 			.bind(email)
-			.first<{ username: string | null }>()
+			.first<{
+				email: string
+				stable_user_id: string | null
+				username: string | null
+			}>()
 		if (!row) return null
-		return { email, username: row.username?.trim().toLowerCase() || null }
+		if ((await resolveUserStableId(row)) === userId) {
+			return {
+				email: row.email,
+				username: row.username?.trim().toLowerCase() || null,
+			}
+		}
 	}
 	// Package runtime contexts (for example email subscription handlers) act
 	// with the stable hashed userId but no account email; resolve the account
 	// the same way isAccountEmailVerified does.
-	const rows = await input.db
-		.prepare(`SELECT email, username FROM users`)
-		.all<{ email: string; username: string | null }>()
-	for (const row of rows.results ?? []) {
-		if ((await createStableUserIdFromEmail(row.email)) === userId) {
-			return {
-				email: normalizeEmail(row.email),
-				username: row.username?.trim().toLowerCase() || null,
-			}
+	const row = await findUserRowByStableUserId<{
+		id: number
+		email: string
+		stable_user_id: string | null
+		username: string | null
+	}>({
+		db: input.db,
+		stableUserId: userId,
+		select: `SELECT id, email, stable_user_id, username FROM users`,
+	})
+	if (row) {
+		return {
+			email: normalizeEmail(row.email),
+			username: row.username?.trim().toLowerCase() || null,
 		}
 	}
 	return null

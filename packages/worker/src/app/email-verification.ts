@@ -2,7 +2,7 @@ import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { findUserRowByStableUserId } from '#worker/user-id.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
@@ -210,15 +210,17 @@ export async function isAccountEmailVerified(input: {
 
 	const stableUserId = input.stableUserId?.trim()
 	if (!stableUserId) return false
-	const rows = await input.db
-		.prepare(`SELECT email, email_verified_at FROM users`)
-		.all<{ email: string; email_verified_at: string | null }>()
-	for (const row of rows.results ?? []) {
-		if ((await createStableUserIdFromEmail(row.email)) === stableUserId) {
-			return Boolean(row.email_verified_at)
-		}
-	}
-	return false
+	const row = await findUserRowByStableUserId<{
+		id: number
+		email: string
+		stable_user_id: string | null
+		email_verified_at: string | null
+	}>({
+		db: input.db,
+		stableUserId,
+		select: `SELECT id, email, stable_user_id, email_verified_at FROM users`,
+	})
+	return Boolean(row?.email_verified_at)
 }
 
 export const emailVerificationRequiredMessage =

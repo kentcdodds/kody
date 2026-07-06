@@ -133,6 +133,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// stable mcp string user id), so it must be handled with the database
 	// integer id rather than the mcp user id.
 	{ kind: 'db_user_id', table: 'email_verifications' },
+	{ kind: 'db_user_id', table: 'pending_email_changes' },
 	{ kind: 'db_user_id', table: 'password_resets' },
 	{ kind: 'db_user_id', table: 'user_roles' },
 ]
