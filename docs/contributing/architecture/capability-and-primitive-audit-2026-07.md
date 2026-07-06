@@ -287,9 +287,10 @@ orphaned KV entries, missed account deletion cleanup, or stale search results.
 
 **Recommendation: acceptable with documentation**
 
-This PR documents the current formats in `data-storage.md`. Follow up with a
-Vectorize metadata reindex playbook and KV cleanup policy for old publish
-artifacts.
+This PR documents the current formats in `data-storage.md`, including the
+length-safe Vectorize id fallback for user-owned ids that would exceed
+Cloudflare's 64-byte limit. Follow up with a Vectorize metadata reindex playbook
+and KV cleanup policy for old publish artifacts.
 
 ### Medium: `primitives.yaml` lagged recent platform changes
 

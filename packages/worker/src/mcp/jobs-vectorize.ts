@@ -3,9 +3,10 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#mcp/capabilities/capability-search.ts'
+import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
 
 export function jobVectorId(jobId: string): string {
-	return `job_${jobId}`
+	return buildLengthSafeVectorId({ prefix: 'job', rawId: jobId })
 }
 
 export async function upsertJobVector(

@@ -503,13 +503,21 @@ or a deliberate retention note.
 
 ### Vectorize metadata contracts
 
-Vector ids and metadata are conventional and require reindexing when changed:
+Vector ids and metadata are conventional and require reindexing when changed.
+User-owned ids must also stay within Cloudflare Vectorize's 64-byte id limit:
+builders first emit the legacy passthrough form when it fits, then fall back to
+`{prefix}_sha256:{truncatedHexDigest}` for overlong raw ids. Length checks are
+UTF-8 byte checks, not JavaScript string-length checks, and the digest form is
+deterministic so upserts and deletes target the same vector.
 
 - Memories: `memory_{memoryId}` with metadata
-  `{ kind: 'memory', userId, status, category? }`.
-- Jobs: `job_{jobId}` with metadata `{ kind: 'job', userId }`.
-- Saved packages: `package_{packageId}` with metadata
-  `{ kind: 'package', userId }`.
+  `{ kind: 'memory', userId, status, category? }`. Memory ids are UUID-like, so
+  search parses only the passthrough `memory_` form back to the D1 id.
+- Jobs: `job_{jobId}` or `job_sha256:{digest}` with metadata
+  `{ kind: 'job', userId }`. Package-owned job ids
+  `package-job:{packageId}:{jobName}` often need the digest form.
+- Saved packages: `package_{packageId}` or `package_sha256:{digest}` with
+  metadata `{ kind: 'package', userId }`.
 - Builtin capabilities: id is the capability name with metadata
   `{ kind: 'builtin', domain }`.
 

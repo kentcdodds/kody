@@ -410,8 +410,9 @@ primitives:
       substitutes in local dev.
     code:
       - packages/worker/src/mcp/capabilities/capability-search.ts
+      - packages/worker/src/mcp/capabilities/vector-ids.ts
     docs:
-      - docs/contributing/adding-kody.md
+      - docs/contributing/architecture/data-storage.md
 
   - id: usage-metering
     group: storage

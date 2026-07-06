@@ -6,6 +6,7 @@ import {
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
 import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
+import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -431,6 +432,8 @@ test('account deletion documents and preserves operator-owned system email rows'
 test('deleteUserAccount cascades user-scoped rows for the requested user', async () => {
 	const userAaa = 'user-aaa'
 	const userBbb = 'user-bbb'
+	const packageJobId =
+		'package-job:b2fda105-005a-4e2b-9f22-1513b6752da2:event-runner'
 	const { db, rows } = createTestDb({
 		users: [
 			{ id: 1, email: 'a@example.com' },
@@ -439,6 +442,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		jobs: [
 			{ id: 'job-1', user_id: userAaa, storage_id: 'job:job-1' },
 			{ id: 'job-2', user_id: userAaa, storage_id: null },
+			{ id: packageJobId, user_id: userAaa, storage_id: null },
 			{ id: 'job-3', user_id: userBbb, storage_id: 'job:job-3' },
 		],
 		package_runtime_runs: [
@@ -757,6 +761,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'memory_mem-1',
 		'job_job-1',
 		'job_job-2',
+		jobVectorId(packageJobId),
 		'package_pkg-1',
 	])
 	expect(clearStorageMock).toHaveBeenCalledTimes(6)
@@ -789,7 +794,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	])
 
 	// Result accounting captures the per-table counts.
-	expect(result.deletedRowCounts.jobs).toBe(2)
+	expect(result.deletedRowCounts.jobs).toBe(3)
 	expect(result.deletedRowCounts.users).toBe(1)
 	expect(result.deletedRowCounts.email_attachments).toBe(1)
 	expect(result.deletedRowCounts.package_runtime_runs).toBe(3)

@@ -3,10 +3,11 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#mcp/capabilities/capability-search.ts'
+import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
 import { type MemoryStatus } from './types.ts'
 
 export function memoryVectorId(memoryId: string): string {
-	return `memory_${memoryId}`
+	return buildLengthSafeVectorId({ prefix: 'memory', rawId: memoryId })
 }
 
 export async function upsertMemoryVector(

@@ -1,7 +1,8 @@
+import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
 import { type SavedPackageRecord, type SavedPackageRow } from './types.ts'
 
 export function savedPackageVectorId(packageId: string) {
-	return `package_${packageId}`
+	return buildLengthSafeVectorId({ prefix: 'package', rawId: packageId })
 }
 
 function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {

@@ -9,6 +9,7 @@ import {
 	reciprocalRankFusion,
 	sortIdsByScore,
 } from '#mcp/capabilities/capability-search.ts'
+import { getRawIdFromPassthroughVectorId } from '#mcp/capabilities/vector-ids.ts'
 import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'
@@ -70,8 +71,11 @@ export async function searchMemories(input: {
 		const fromIndex: Array<string> = []
 		for (const match of vectorMatches.matches) {
 			if (typeof match.id !== 'string' || seen.has(match.id)) continue
-			if (!match.id.startsWith('memory_')) continue
-			const memoryId = match.id.slice('memory_'.length)
+			const memoryId = getRawIdFromPassthroughVectorId({
+				prefix: 'memory',
+				vectorId: match.id,
+			})
+			if (!memoryId) continue
 			if (!rowsById.has(memoryId)) continue
 			seen.add(match.id)
 			fromIndex.push(memoryId)
