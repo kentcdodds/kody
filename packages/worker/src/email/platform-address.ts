@@ -33,8 +33,14 @@ async function findUserAccount(input: {
 	accountEmail: string | null | undefined
 	userId: string
 }): Promise<{ email: string; username: string | null } | null> {
+	const userId = input.userId.trim()
+	if (!userId) return null
+	// The stable userId is the authoritative identity: a caller-supplied
+	// email is only trusted (as an indexed lookup) when it hashes to that
+	// userId, so a mismatched pair can never yield another account's
+	// platform sender address.
 	const email = normalizeEmail(input.accountEmail ?? '')
-	if (email) {
+	if (email && (await createStableUserIdFromEmail(email)) === userId) {
 		const row = await input.db
 			.prepare(`SELECT username FROM users WHERE email = ?`)
 			.bind(email)
@@ -45,8 +51,6 @@ async function findUserAccount(input: {
 	// Package runtime contexts (for example email subscription handlers) act
 	// with the stable hashed userId but no account email; resolve the account
 	// the same way isAccountEmailVerified does.
-	const userId = input.userId.trim()
-	if (!userId) return null
 	const rows = await input.db
 		.prepare(`SELECT email, username FROM users`)
 		.all<{ email: string; username: string | null }>()
