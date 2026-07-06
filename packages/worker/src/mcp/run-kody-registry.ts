@@ -1,6 +1,7 @@
 import {
 	normalizeCode,
 	resolveProvider,
+	sanitizeToolName,
 	type ExecuteResult,
 	type ResolvedProvider,
 	type ToolProvider,
@@ -611,7 +612,7 @@ async function buildKodyRemoteConnectorMetadata(input: {
 			} satisfies KodyRemoteConnectorMetadata)
 		existing.capabilities.push({
 			name: remote.toolName,
-			dispatchName: capability.name,
+			dispatchName: sanitizeToolName(capability.name),
 		})
 		existing.capabilities.sort((a, b) => a.name.localeCompare(b.name, 'en'))
 		existing.status.toolCount = Math.max(
