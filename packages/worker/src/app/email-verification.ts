@@ -1,3 +1,4 @@
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
@@ -81,23 +82,31 @@ export async function createEmailVerification(input: {
 	verificationUrl.searchParams.set('token', token)
 	const email = buildVerificationEmail(verificationUrl.toString())
 
-	try {
-		await sendCloudflareEmail(
-			{
-				accountId: input.appEnv.CLOUDFLARE_ACCOUNT_ID,
-				apiBaseUrl: input.appEnv.CLOUDFLARE_API_BASE_URL,
-				apiToken: input.appEnv.CLOUDFLARE_API_TOKEN,
-			},
-			{
-				to: input.email,
-				from: emailConfig.fromEmail,
-				subject: email.subject,
-				html: email.html,
-				text: email.text,
-			},
-		)
-	} catch (error) {
-		console.warn('email-verification-send-error', error)
+	const sendResult = await sendCloudflareEmail(
+		{
+			accountId: input.appEnv.CLOUDFLARE_ACCOUNT_ID,
+			apiBaseUrl: input.appEnv.CLOUDFLARE_API_BASE_URL,
+			apiToken: input.appEnv.CLOUDFLARE_API_TOKEN,
+		},
+		{
+			to: input.email,
+			from: emailConfig.fromEmail,
+			subject: email.subject,
+			html: email.html,
+			text: email.text,
+		},
+	)
+	if (!sendResult.ok) {
+		// Local dev, preview, and test runtimes may have no email sender
+		// configured; those accounts are verified through seeded tokens
+		// instead. Anywhere else an unsent verification email would strand
+		// the account with no way to verify, so fail hard and let callers
+		// roll back.
+		if (sendResult.skipped && isNonProductionRuntime(input.appEnv)) {
+			console.warn('email-verification-send-skipped', input.userId)
+			return
+		}
+		throw new Error(sendResult.error ?? 'Verification email could not be sent.')
 	}
 }
 
@@ -178,4 +187,17 @@ export async function isAccountEmailVerified(input: {
 		}
 	}
 	return false
+}
+
+export const emailVerificationRequiredMessage =
+	'Account email is not verified. Open the verification link sent to your account email, or resend it from the /account page.'
+
+export async function assertAccountEmailVerified(input: {
+	db: D1Database
+	email?: string | null
+	stableUserId?: string | null
+}) {
+	if (!(await isAccountEmailVerified(input))) {
+		throw new Error(emailVerificationRequiredMessage)
+	}
 }

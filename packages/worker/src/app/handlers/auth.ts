@@ -349,7 +349,10 @@ export function createAuthHandler(appEnv: AppEnv) {
 						reason: 'email_verification_setup_failed',
 					})
 					return Response.json(
-						{ error: 'Unable to create account.' },
+						{
+							error:
+								'Unable to send the verification email. Please try signing up again.',
+						},
 						{ status: 500 },
 					)
 				}

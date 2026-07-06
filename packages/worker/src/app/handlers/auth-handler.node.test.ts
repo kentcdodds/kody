@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from 'vitest'
+import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
@@ -24,7 +24,11 @@ function createAuthRequest(
 }
 
 function createAuthTestContext(
-	options: { signupEnabled?: boolean; failRoleAssignment?: boolean } = {},
+	options: {
+		signupEnabled?: boolean
+		failRoleAssignment?: boolean
+		emailConfigured?: boolean
+	} = {},
 ) {
 	const testDb = createTestDb({
 		failRoleAssignment: options.failRoleAssignment ?? false,
@@ -42,6 +46,13 @@ function createAuthTestContext(
 			: {
 					SENTRY_ENVIRONMENT: 'production' as const,
 				}),
+		...(options.emailConfigured
+			? {
+					CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',
+					CLOUDFLARE_API_TOKEN: 'cf-token-test',
+					CLOUDFLARE_API_BASE_URL: 'https://cloudflare-api.example.com',
+				}
+			: {}),
 	} as unknown as Parameters<typeof createAuthHandler>[0])
 
 	return {
@@ -294,9 +305,31 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
+afterEach(() => {
+	vi.unstubAllGlobals()
+})
+
+function stubCloudflareEmailFetch(
+	result: { ok: true } | { ok: false; message: string },
+) {
+	const fetchStub = vi.fn(async () =>
+		result.ok
+			? Response.json({ success: true, result: { message_id: 'msg-1' } })
+			: Response.json(
+					{ success: false, errors: [{ message: result.message }] },
+					{ status: 500 },
+				),
+	)
+	vi.stubGlobal('fetch', fetchStub)
+	return fetchStub
+}
+
 test('auth handler login and signup workflow', async () => {
-	const productionContext = createAuthTestContext()
+	// Production signups must actually deliver the verification email, so
+	// the production context gets a (stubbed) configured Cloudflare sender.
+	const productionContext = createAuthTestContext({ emailConfigured: true })
 	const signupContext = createAuthTestContext({ signupEnabled: true })
+	stubCloudflareEmailFetch({ ok: true })
 
 	const invalidJsonResponse = await productionContext.request('{')
 	expect(invalidJsonResponse.status).toBe(400)
@@ -473,4 +506,48 @@ test('signup fails when the default user role cannot be assigned', async () => {
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	// The created user row is rolled back so signup can be retried.
 	expect(context.testDb.users.has('roleless@example.com')).toBe(false)
+})
+
+test('signup rolls back when the verification email cannot be sent', async () => {
+	const context = createAuthTestContext({
+		signupEnabled: true,
+		emailConfigured: true,
+	})
+	stubCloudflareEmailFetch({ ok: false, message: 'delivery refused' })
+
+	const response = await context.request({
+		email: 'undeliverable@example.com',
+		username: 'undeliverable-user',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(response.status).toBe(500)
+	expect(await response.json()).toEqual({
+		error:
+			'Unable to send the verification email. Please try signing up again.',
+	})
+	expect(response.headers.get('Set-Cookie')).toBeNull()
+	// The created user row is rolled back so signup can be retried.
+	expect(context.testDb.users.has('undeliverable@example.com')).toBe(false)
+})
+
+test('production signup fails closed when no verification email sender is configured', async () => {
+	const context = createAuthTestContext()
+	context.testDb.addInvite('PROD-NO-EMAIL')
+
+	const response = await context.request({
+		email: 'no-sender@example.com',
+		username: 'no-sender-user',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'prod-no-email',
+	})
+	expect(response.status).toBe(500)
+	expect(await response.json()).toEqual({
+		error:
+			'Unable to send the verification email. Please try signing up again.',
+	})
+	expect(context.testDb.users.has('no-sender@example.com')).toBe(false)
+	// The consumed invite use is released so the invite can be retried.
+	expect(context.testDb.invites.get('PROD-NO-EMAIL')?.use_count).toBe(0)
 })
