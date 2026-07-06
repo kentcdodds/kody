@@ -120,36 +120,39 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 			.pathname
 
 		return (
-			<AccountManagementHeader
-				title={handle.props.title}
-				description={handle.props.description}
-				actions={
-					<>
-						{adminNavItems.map((item) => {
-							const isCurrent = item.paths.some((path) => path === currentPath)
-							return (
-								<a
-									key={item.href}
-									href={item.href}
-									aria-current={isCurrent ? 'page' : undefined}
-									mix={css({
-										...secondaryButtonCss,
-										textDecoration: 'none',
-										...(isCurrent
-											? {
-													borderColor: colors.primary,
-													backgroundColor: colors.primarySoftest,
-												}
-											: {}),
-									})}
-								>
-									{item.label}
-								</a>
-							)
-						})}
-					</>
-				}
-			/>
+			<>
+				<AccountManagementHeader
+					title={handle.props.title}
+					description={handle.props.description}
+				/>
+				<nav
+					aria-label="Admin sections"
+					mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+				>
+					{adminNavItems.map((item) => {
+						const isCurrent = item.paths.some((path) => path === currentPath)
+						return (
+							<a
+								key={item.href}
+								href={item.href}
+								aria-current={isCurrent ? 'page' : undefined}
+								mix={css({
+									...secondaryButtonCss,
+									textDecoration: 'none',
+									...(isCurrent
+										? {
+												borderColor: colors.primary,
+												backgroundColor: colors.primarySoftest,
+											}
+										: {}),
+								})}
+							>
+								{item.label}
+							</a>
+						)
+					})}
+				</nav>
+			</>
 		)
 	}
 }
