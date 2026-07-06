@@ -4,12 +4,11 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
-import { getSecondaryButtonCss } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
+	AdminPageHeader,
 } from './account-management-components.tsx'
 import { type AdminRolesLoaderData } from '#app/loader-data.ts'
 import {
@@ -111,8 +110,6 @@ export function AdminRolesRoute(handle: Handle) {
 		return true
 	}
 
-	const secondaryButtonCss = getSecondaryButtonCss()
-
 	let lastSeenHref = ''
 
 	return () => {
@@ -143,37 +140,10 @@ export function AdminRolesRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
+				<AdminPageHeader
 					title="Admin roles"
 					description="Read-only view of roles and the permissions attached to each."
-					actions={
-						<>
-							<a
-								href="/admin/users"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								View users
-							</a>
-							<a
-								href="/admin/usage"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Usage
-							</a>
-							<a
-								href="/admin/system-email"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								System email
-							</a>
-							<a
-								href="/admin/community-reports"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Community reports
-							</a>
-						</>
-					}
+					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>

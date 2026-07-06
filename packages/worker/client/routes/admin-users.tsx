@@ -15,7 +15,6 @@ import {
 	inputCss,
 } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementLayout,
 	AccountManagementList,
 	AccountManagementListItemButton,
@@ -23,6 +22,7 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 	AccountManagementSidebar,
+	AdminPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
 import { type RoleName } from '#app/permissions.ts'
@@ -270,43 +270,10 @@ export function AdminUsersRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
+				<AdminPageHeader
 					title="Admin users"
 					description="Review account metadata and manage role assignments. User content is never shown here."
-					actions={
-						<>
-							<a
-								href="/admin/usage"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Usage
-							</a>
-							<a
-								href="/admin/system-email"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								System email
-							</a>
-							<a
-								href="/admin/community-reports"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Community reports
-							</a>
-							<a
-								href="/admin/invites"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Invites
-							</a>
-							<a
-								href="/admin/roles"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								View roles
-							</a>
-						</>
-					}
+					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>

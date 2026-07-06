@@ -5,15 +5,12 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { cardCss } from '#client/styles/style-primitives.ts'
 import {
-	cardCss,
-	getSecondaryButtonCss,
-} from '#client/styles/style-primitives.ts'
-import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
+	AdminPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
 import {
@@ -167,7 +164,6 @@ export function AdminUsageRoute(handle: Handle) {
 		return true
 	}
 
-	const secondaryButtonCss = getSecondaryButtonCss()
 	const tableCss = {
 		width: '100%',
 		borderCollapse: 'collapse' as const,
@@ -216,37 +212,10 @@ export function AdminUsageRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell maxWidth="min(100%, 92rem)">
-				<AccountManagementHeader
+				<AdminPageHeader
 					title="Admin usage"
 					description="Read-only account metadata for usage, quota counters, and resource counts. User content is never shown."
-					actions={
-						<>
-							<a
-								href="/admin/users"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Users
-							</a>
-							<a
-								href="/admin/system-email"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								System email
-							</a>
-							<a
-								href="/admin/invites"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Invites
-							</a>
-							<a
-								href="/admin/roles"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Roles
-							</a>
-						</>
-					}
+					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>

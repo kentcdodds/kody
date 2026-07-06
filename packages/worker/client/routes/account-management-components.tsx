@@ -12,6 +12,7 @@ import {
 	cardTitleCss,
 	descriptionCss,
 	fieldLabelCss,
+	getSecondaryButtonCss,
 	layoutMaxWidths,
 } from '#client/styles/style-primitives.ts'
 
@@ -86,6 +87,71 @@ export function AccountManagementHeader(
 			) : null}
 		</header>
 	)
+}
+
+const adminNavItems = [
+	{ href: '/admin/users', label: 'Users', paths: ['/admin', '/admin/users'] },
+	{ href: '/admin/invites', label: 'Invites', paths: ['/admin/invites'] },
+	{ href: '/admin/roles', label: 'Roles', paths: ['/admin/roles'] },
+	{
+		href: '/admin/community-reports',
+		label: 'Community reports',
+		paths: ['/admin/community-reports'],
+	},
+	{ href: '/admin/usage', label: 'Usage', paths: ['/admin/usage'] },
+	{
+		href: '/admin/system-email',
+		label: 'System email',
+		paths: ['/admin/system-email'],
+	},
+] as const
+
+type AdminPageHeaderProps = {
+	title: string
+	description: string
+	currentHref: string
+}
+
+export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
+	const secondaryButtonCss = getSecondaryButtonCss()
+
+	return () => {
+		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
+			.pathname
+
+		return (
+			<AccountManagementHeader
+				title={handle.props.title}
+				description={handle.props.description}
+				actions={
+					<>
+						{adminNavItems.map((item) => {
+							const isCurrent = item.paths.some((path) => path === currentPath)
+							return (
+								<a
+									key={item.href}
+									href={item.href}
+									aria-current={isCurrent ? 'page' : undefined}
+									mix={css({
+										...secondaryButtonCss,
+										textDecoration: 'none',
+										...(isCurrent
+											? {
+													borderColor: colors.primary,
+													backgroundColor: colors.primarySoftest,
+												}
+											: {}),
+									})}
+								>
+									{item.label}
+								</a>
+							)
+						})}
+					</>
+				}
+			/>
+		)
+	}
 }
 
 type AccountManagementMessageProps = {

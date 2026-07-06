@@ -5,15 +5,12 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { cardCss } from '#client/styles/style-primitives.ts'
 import {
-	cardCss,
-	getSecondaryButtonCss,
-} from '#client/styles/style-primitives.ts'
-import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
+	AdminPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
@@ -135,7 +132,6 @@ export function AdminSystemEmailRoute(handle: Handle) {
 		return true
 	}
 
-	const secondaryButtonCss = getSecondaryButtonCss()
 	const tableCss = {
 		width: '100%',
 		borderCollapse: 'collapse' as const,
@@ -183,37 +179,10 @@ export function AdminSystemEmailRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell maxWidth="min(100%, 92rem)">
-				<AccountManagementHeader
+				<AdminPageHeader
 					title="Admin system email"
 					description="Operator-owned inboxes for reserved platform addresses. These messages are not user account data."
-					actions={
-						<>
-							<a
-								href="/admin/users"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Users
-							</a>
-							<a
-								href="/admin/usage"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Usage
-							</a>
-							<a
-								href="/admin/invites"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Invites
-							</a>
-							<a
-								href="/admin/roles"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Roles
-							</a>
-						</>
-					}
+					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>

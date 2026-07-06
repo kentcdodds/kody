@@ -16,9 +16,9 @@ import {
 	inputCss,
 } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
+	AdminPageHeader,
 } from './account-management-components.tsx'
 import { type AdminCommunityReportsLoaderData } from '#app/loader-data.ts'
 import {
@@ -276,37 +276,10 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
+				<AdminPageHeader
 					title="Community reports"
 					description="Review open reports and moderate community listings."
-					actions={
-						<>
-							<a
-								href="/admin/users"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								View users
-							</a>
-							<a
-								href="/admin/roles"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								View roles
-							</a>
-							<a
-								href="/admin/usage"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Usage
-							</a>
-							<a
-								href="/admin/system-email"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								System email
-							</a>
-						</>
-					}
+					currentHref={currentHref}
 				/>
 
 				<div mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}>

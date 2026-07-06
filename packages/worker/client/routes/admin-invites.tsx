@@ -15,10 +15,10 @@ import {
 	inputCss,
 } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
+	AdminPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
 import {
@@ -241,37 +241,10 @@ export function AdminInvitesRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
+				<AdminPageHeader
 					title="Admin invites"
 					description="Create and revoke launch-cohort invite codes for production signup."
-					actions={
-						<>
-							<a
-								href="/admin/users"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Users
-							</a>
-							<a
-								href="/admin/roles"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Roles
-							</a>
-							<a
-								href="/admin/usage"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								Usage
-							</a>
-							<a
-								href="/admin/system-email"
-								mix={css({ ...secondaryButtonCss, textDecoration: 'none' })}
-							>
-								System email
-							</a>
-						</>
-					}
+					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
