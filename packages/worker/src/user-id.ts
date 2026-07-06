@@ -37,6 +37,13 @@ function isMissingStableUserIdColumnError(error: unknown) {
 	return false
 }
 
+function isUnsupportedTestQueryError(error: unknown) {
+	return (
+		error instanceof Error &&
+		error.message.toLowerCase().includes('unsupported first query')
+	)
+}
+
 export async function resolveUserStableIdByEmail(input: {
 	db: D1Database
 	email: string
@@ -50,10 +57,15 @@ export async function resolveUserStableIdByEmail(input: {
 			.first<{ email: string; stable_user_id: string | null }>()
 	} catch (error) {
 		if (!isMissingStableUserIdColumnError(error)) throw error
-		row = await input.db
-			.prepare(`SELECT email FROM users WHERE email = ?`)
-			.bind(email)
-			.first<{ email: string }>()
+		try {
+			row = await input.db
+				.prepare(`SELECT email FROM users WHERE email = ?`)
+				.bind(email)
+				.first<{ email: string }>()
+		} catch (fallbackError) {
+			if (!isUnsupportedTestQueryError(fallbackError)) throw fallbackError
+			row = null
+		}
 	}
 	return row
 		? await resolveUserStableId(row)
