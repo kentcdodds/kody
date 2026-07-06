@@ -6,8 +6,7 @@ import { getRemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
 const connectorStatusSchema = z.object({
-	connector_kind: z.string(),
-	connector_instance_id: z.string(),
+	connector_id: z.string(),
 	status: z.enum(['connected', 'disconnected', 'unavailable', 'error']),
 	connected: z.boolean(),
 	connected_at: z.string().nullable(),
@@ -26,7 +25,7 @@ export const metaListRemoteConnectorStatusCapability = defineDomainCapability(
 	{
 		name: 'meta_list_remote_connector_status',
 		description:
-			'Report connection status for each remote connector attached to this session (kind + instance id). Use when search results miss remote capabilities or a remote capability fails.',
+			'Report connection status for each remote connector attached to this session. Use when search results miss remote capabilities or a remote capability fails.',
 		keywords: [
 			'remote',
 			'connector',
@@ -54,8 +53,7 @@ export const metaListRemoteConnectorStatusCapability = defineDomainCapability(
 						ref,
 					})
 					return {
-						connector_kind: s.connectorKind,
-						connector_instance_id: s.connectorId ?? ref.instanceId,
+						connector_id: s.connectorId ?? ref.instanceId,
 						status: s.state,
 						connected: s.connected,
 						connected_at: s.connectedAt,

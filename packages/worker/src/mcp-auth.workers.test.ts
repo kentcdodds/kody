@@ -201,7 +201,6 @@ test('mcp request enforces token audience and forwards caller props', async () =
 						{
 							id: 'connector-1',
 							user_id: 'user',
-							kind: 'lights',
 							instance_id: 'home',
 							enabled: 1,
 							attached: 1,
@@ -231,7 +230,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	})
 	expect(withConnectorResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
-		remoteConnectors: [{ kind: 'lights', instanceId: 'home' }],
+		remoteConnectors: [{ instanceId: 'home' }],
 	})
 
 	const appDbUnavailable = {

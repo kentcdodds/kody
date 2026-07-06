@@ -4,7 +4,6 @@ import { type RemoteConnectorSnapshot } from './types.ts'
 
 export type RemoteConnectorStatus = {
 	state: 'connected' | 'disconnected' | 'unavailable' | 'error'
-	connectorKind: string
 	connectorId: string | null
 	connected: boolean
 	connectedAt: string | null
@@ -14,22 +13,17 @@ export type RemoteConnectorStatus = {
 	error: string | null
 }
 
-function connectorLabel(kind: string, connectorId: string) {
-	const k = kind.trim().toLowerCase()
-	return `${k} connector "${connectorId}"`
+function connectorLabel(connectorId: string) {
+	return `connector "${connectorId}"`
 }
 
 function createConnectedStatus(
 	snapshot: RemoteConnectorSnapshot,
-	kind: string,
 ): RemoteConnectorStatus {
-	const resolvedKind =
-		(snapshot.connectorKind ?? kind).trim().toLowerCase() || 'unknown'
 	const toolCount = snapshot.tools.length
-	const label = connectorLabel(resolvedKind, snapshot.connectorId)
+	const label = connectorLabel(snapshot.connectorId)
 	return {
 		state: 'connected',
-		connectorKind: resolvedKind,
 		connectorId: snapshot.connectorId,
 		connected: true,
 		connectedAt: snapshot.connectedAt,
@@ -46,11 +40,9 @@ function createConnectedStatus(
 function createDisconnectedStatus(
 	ref: RemoteConnectorRef,
 ): RemoteConnectorStatus {
-	const k = ref.kind.trim().toLowerCase()
-	const label = connectorLabel(k, ref.instanceId)
+	const label = connectorLabel(ref.instanceId)
 	return {
 		state: 'disconnected',
-		connectorKind: k,
 		connectorId: ref.instanceId,
 		connected: false,
 		connectedAt: null,
@@ -66,11 +58,9 @@ function createErrorStatus(
 	error: unknown,
 ): RemoteConnectorStatus {
 	const message = error instanceof Error ? error.message : String(error)
-	const k = ref.kind.trim().toLowerCase()
-	const label = connectorLabel(k, ref.instanceId)
+	const label = connectorLabel(ref.instanceId)
 	return {
 		state: 'error',
-		connectorKind: k,
 		connectorId: ref.instanceId,
 		connected: false,
 		connectedAt: null,
@@ -116,14 +106,13 @@ export async function getRemoteConnectorStatus(input: {
 		const client = createRemoteConnectorMcpClient({
 			env: input.env,
 			userId: input.userId,
-			kind: input.ref.kind,
 			instanceId: input.ref.instanceId,
 		})
 		const snapshot = await client.getSnapshot()
 		if (!snapshot) {
 			return createDisconnectedStatus(input.ref)
 		}
-		return createConnectedStatus(snapshot, input.ref.kind)
+		return createConnectedStatus(snapshot)
 	} catch (error) {
 		return createErrorStatus(input.ref, error)
 	}

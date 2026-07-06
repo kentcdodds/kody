@@ -7,7 +7,7 @@ import {
 } from './remote-domain-id.ts'
 
 test('remote connector ids keep clean names readable', () => {
-	const ref = { kind: 'home', instanceId: 'home' }
+	const ref = { instanceId: 'home' }
 
 	expect(remoteConnectorDomainId(ref)).toBe('remote:home')
 	expect(remoteConnectorKodyName(ref)).toBe('home')
@@ -18,8 +18,8 @@ test('remote connector ids keep clean names readable', () => {
 })
 
 test('remote connector ids disambiguate names that sanitize to the same slug', () => {
-	const spacedRef = { kind: 'home', instanceId: 'living room' }
-	const underscoredRef = { kind: 'home', instanceId: 'living_room' }
+	const spacedRef = { instanceId: 'living room' }
+	const underscoredRef = { instanceId: 'living_room' }
 	const spacedTool = remoteConnectorToolName('set pin')
 	const underscoredTool = remoteConnectorToolName('set_pin')
 

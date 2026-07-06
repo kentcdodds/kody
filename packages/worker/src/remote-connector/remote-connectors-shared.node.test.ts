@@ -4,31 +4,20 @@ import {
 	userScopedConnectorWebSocketUrl,
 } from '@kody-internal/shared/remote-connectors.ts'
 
-test('normalizeRemoteConnectorRefs normalizes connector lists and userScopedConnectorWebSocketUrl builds scoped URLs', () => {
+test('normalizeRemoteConnectorRefs trims and lowercases instance ids', () => {
 	expect(
 		normalizeRemoteConnectorRefs({
-			remoteConnectors: undefined,
+			remoteConnectors: [{ instanceId: '  Home  ' }, { instanceId: 'x' }],
 		}),
-	).toEqual([])
+	).toEqual([{ instanceId: 'home' }, { instanceId: 'x' }])
+})
 
-	expect(
-		normalizeRemoteConnectorRefs({
-			remoteConnectors: [
-				{ kind: 'Lights', instanceId: '  a  ' },
-				{ kind: 'custom', instanceId: 'x' },
-			],
-		}),
-	).toEqual([
-		{ kind: 'lights', instanceId: 'a' },
-		{ kind: 'custom', instanceId: 'x' },
-	])
-
+test('userScopedConnectorWebSocketUrl builds user-scoped connector URLs', () => {
 	expect(
 		userScopedConnectorWebSocketUrl({
-			origin: 'wss://kody.example.com/',
+			origin: 'wss://kody.example.com',
 			username: 'user-aaa',
-			kind: 'Lights',
 			instanceId: 'living room',
 		}),
-	).toBe('wss://kody.example.com/@user-aaa/connectors/lights/living%20room')
+	).toBe('wss://kody.example.com/@user-aaa/connectors/living%20room')
 })

@@ -1443,14 +1443,12 @@ function shouldIncludeRemoteConnectorStatus(status: RemoteConnectorStatus) {
 }
 
 function serializeRemoteConnectorStatus(status: RemoteConnectorStatus): {
-	connectorKind: string
 	connectorId: string
 	state: string
 	connected: boolean
 	toolCount: number
 } {
 	return {
-		connectorKind: status.connectorKind,
 		connectorId: status.connectorId ?? 'unknown',
 		state: status.state,
 		connected: status.connected,
@@ -1925,7 +1923,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					matches: Array<SearchMatch>
 					offline: boolean
 					remoteConnectorStatuses?: Array<{
-						connectorKind: string
 						connectorId: string
 						state: string
 						connected: boolean

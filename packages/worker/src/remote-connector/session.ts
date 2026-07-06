@@ -50,7 +50,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	private stateSnapshot: RemoteConnectorSessionState = {
 		persisted: {
 			connectorId: null,
-			connectorKind: null,
 			description: null,
 			connectedAt: null,
 			lastSeenAt: null,
@@ -219,15 +218,14 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	async getSnapshot(): Promise<RemoteConnectorSnapshot | null> {
-		const { connectorId, connectorKind, description, connectedAt, lastSeenAt } =
+		const { connectorId, description, connectedAt, lastSeenAt } =
 			this.stateSnapshot.persisted
 		if (!connectorId || !connectedAt || !lastSeenAt) return null
 		if (this.ctx.getWebSockets(connectorTag).length === 0) {
 			return null
 		}
-		const kind = (connectorKind && connectorKind.trim()) || 'unknown'
 		return {
-			connectorKind: kind,
+			connectorKind: connectorId,
 			connectorId,
 			...(description ? { description } : {}),
 			connectedAt,
@@ -238,7 +236,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 
 	async rpcExportUserSession(input: {
 		userId: string
-		kind: string
 		instanceId: string
 	}): Promise<RemoteConnectorSessionExport> {
 		const sessionKey = userScopedConnectorSessionKey(input)
@@ -252,11 +249,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	async rpcPurgeUserSession(input: {
-		userId: string
-		kind: string
-		instanceId: string
-	}) {
+	async rpcPurgeUserSession(input: { userId: string; instanceId: string }) {
 		const sessionKey = userScopedConnectorSessionKey(input)
 		if (!sessionKey) {
 			throw new Error('Remote connector session key was invalid.')
@@ -280,9 +273,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		const stored =
 			await this.ctx.storage.get<RemoteConnectorSessionState>(stateStorageKey)
 		if (!stored) return
-		if (stored.persisted.connectorKind === undefined) {
-			stored.persisted.connectorKind = null
-		}
 		if (stored.persisted.description === undefined) {
 			stored.persisted.description = null
 		}
@@ -386,7 +376,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		ws: WebSocket,
 		message: RemoteConnectorHelloMessage,
 	) {
-		const declaredKind = message.connectorKind.trim().toLowerCase()
 		const canonicalInstanceId = message.connectorId.trim()
 		const ingressUserId = this.loadIngressUserId(ws)
 		if (!ingressUserId) {
@@ -396,7 +385,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					level: 'error',
 					extra: {
 						connectorId: canonicalInstanceId,
-						declaredKind,
 					},
 				},
 			)
@@ -404,7 +392,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 				stringifyRemoteConnectorMessage({
 					type: 'server.error',
 					message:
-						'Connector ingress is missing the owning user id. Reconfigure the connector to use the /@{username}/connectors/{kind}/{instanceId} URL.',
+						'Connector ingress is missing the owning user id. Reconfigure the connector to use the /@{username}/connectors/{instanceId} URL.',
 				}),
 			)
 			ws.close(4002, 'missing-user')
@@ -412,7 +400,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 		const expectedSessionKey = userScopedConnectorSessionKey({
 			userId: ingressUserId,
-			kind: declaredKind,
 			instanceId: canonicalInstanceId,
 		})
 		const ingressSessionKey = this.loadIngressSessionKey(ws)
@@ -423,7 +410,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					level: 'error',
 					extra: {
 						connectorId: canonicalInstanceId,
-						declaredKind,
 						ingressSessionKeySummary: summarizeSessionKey(ingressSessionKey),
 						expectedSessionKeySummary: summarizeSessionKey(expectedSessionKey),
 						sessionKeyMatch: false,
@@ -442,7 +428,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 
 		const secretMatches = await remoteConnectorSharedSecretMatches({
 			userId: ingressUserId,
-			kind: declaredKind,
 			instanceId: canonicalInstanceId,
 			sharedSecret: message.sharedSecret,
 			env: this.env,
@@ -450,7 +435,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		if (!secretMatches) {
 			const hasExpectedSecret = await hasRemoteConnectorSharedSecret({
 				userId: ingressUserId,
-				kind: declaredKind,
 				instanceId: canonicalInstanceId,
 				env: this.env,
 			})
@@ -460,7 +444,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					level: 'error',
 					extra: {
 						connectorId: canonicalInstanceId,
-						declaredKind,
 						hasExpectedSecret,
 					},
 				},
@@ -478,7 +461,6 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		const now = new Date().toISOString()
 		this.stateSnapshot.persisted = {
 			connectorId: canonicalInstanceId,
-			connectorKind: declaredKind,
 			description: message.description?.trim() || null,
 			connectedAt: this.stateSnapshot.persisted.connectedAt ?? now,
 			lastSeenAt: now,

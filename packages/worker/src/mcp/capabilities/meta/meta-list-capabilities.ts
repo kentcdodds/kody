@@ -14,7 +14,6 @@ const capabilitySummarySchema = z.object({
 	source: z.enum(['builtin', 'remote-connector']),
 	remoteConnector: z
 		.object({
-			kind: z.string(),
 			instanceId: z.string(),
 			connectorId: z.string(),
 			connectorName: z.string(),

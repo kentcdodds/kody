@@ -63,7 +63,6 @@ test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async ()
 	const request = {
 		env,
 		userId: 'user-1',
-		kind: 'roku',
 		instanceId: 'home',
 	}
 
@@ -91,7 +90,6 @@ test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', 
 	const request = {
 		env,
 		userId: 'user-1',
-		kind: 'roku',
 		instanceId: 'home',
 	}
 
@@ -120,7 +118,6 @@ test('a failed connector RPC evicts the cached snapshot', async () => {
 	const request = {
 		env,
 		userId: 'user-1',
-		kind: 'roku',
 		instanceId: 'home',
 	}
 	const client = createRemoteConnectorMcpClient(request)
@@ -149,7 +146,6 @@ test('getCachedRemoteConnectorSnapshot does not share entries across users', asy
 	}))
 	const connector = {
 		env,
-		kind: 'roku',
 		instanceId: 'home',
 	}
 

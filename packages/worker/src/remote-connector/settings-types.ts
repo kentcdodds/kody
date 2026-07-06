@@ -1,7 +1,6 @@
 export type RemoteConnectorSettingRow = {
 	id: string
 	user_id: string
-	kind: string
 	instance_id: string
 	enabled: boolean
 	attached: boolean
@@ -12,7 +11,6 @@ export type RemoteConnectorSettingRow = {
 
 export type RemoteConnectorSettingMetadata = {
 	id: string
-	kind: string
 	instanceId: string
 	enabled: boolean
 	attached: boolean

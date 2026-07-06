@@ -569,7 +569,6 @@ async function buildKodyRemoteConnectorMetadata(input: {
 				})
 			: {
 					state: 'unavailable' as const,
-					connectorKind: ref.kind.trim().toLowerCase(),
 					connectorId: ref.instanceId,
 					connected: false,
 					connectedAt: null,
@@ -580,7 +579,6 @@ async function buildKodyRemoteConnectorMetadata(input: {
 				}
 		connectors.set(name, {
 			name,
-			kind: ref.kind.trim().toLowerCase(),
 			instanceId: ref.instanceId,
 			status: {
 				state: status.state,
@@ -601,14 +599,13 @@ async function buildKodyRemoteConnectorMetadata(input: {
 			connectors.get(remote.connectorName) ??
 			({
 				name: remote.connectorName,
-				kind: remote.kind,
 				instanceId: remote.instanceId,
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 0,
-					message: `The ${remote.kind} connector "${remote.instanceId}" is connected.`,
-					unavailableMessage: `The ${remote.kind} connector "${remote.instanceId}" is connected.`,
+					message: `The "${remote.instanceId}" connector is connected.`,
+					unavailableMessage: `The "${remote.instanceId}" connector is connected.`,
 				},
 				capabilities: [],
 			} satisfies KodyRemoteConnectorMetadata)

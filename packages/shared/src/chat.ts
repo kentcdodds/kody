@@ -9,17 +9,6 @@ import {
 	type InferOutput,
 } from 'remix/data-schema'
 
-const remoteConnectorKindFieldSchema = createSchema<unknown, string>(
-	(value, context) => {
-		if (typeof value !== 'string') return fail('Expected string', context.path)
-		const trimmed = value.trim().toLowerCase()
-		if (!trimmed) {
-			return fail('remote connector kind must not be empty', context.path)
-		}
-		return { value: trimmed }
-	},
-)
-
 const remoteConnectorInstanceIdFieldSchema = createSchema<unknown, string>(
 	(value, context) => {
 		if (typeof value !== 'string') return fail('Expected string', context.path)
@@ -59,7 +48,6 @@ export const mcpRepoContextSchema = object({
 })
 
 const remoteConnectorRefSchema = object({
-	kind: remoteConnectorKindFieldSchema,
 	instanceId: remoteConnectorInstanceIdFieldSchema,
 })
 

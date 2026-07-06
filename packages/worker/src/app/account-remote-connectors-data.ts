@@ -33,7 +33,6 @@ export async function loadAccountRemoteConnectorsData(input: {
 			connectorUrl: userScopedConnectorWebSocketUrl({
 				origin: connectorUrlOrigin,
 				username: input.user.username,
-				kind: connector.kind,
 				instanceId: connector.instanceId,
 			}),
 		})),

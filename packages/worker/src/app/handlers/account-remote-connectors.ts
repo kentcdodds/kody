@@ -120,7 +120,6 @@ async function handleSaveAction(input: {
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 		id: readOptionalString(input.body, 'id'),
-		kind: readString(input.body, 'kind'),
 		instanceId: readString(input.body, 'instanceId'),
 		enabled: readBoolean(input.body, 'enabled', true),
 		attached: readBoolean(input.body, 'attached', true),

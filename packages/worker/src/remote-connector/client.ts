@@ -23,12 +23,10 @@ export type RemoteConnectorMcpClient = {
 function getSessionStub(input: {
 	env: Env
 	userId: string
-	kind: string
 	instanceId: string
 }) {
 	const sessionKey = userScopedConnectorSessionKey({
 		userId: input.userId,
-		kind: input.kind,
 		instanceId: input.instanceId,
 	})
 	return input.env.REMOTE_CONNECTOR_SESSION.get(
@@ -39,7 +37,6 @@ function getSessionStub(input: {
 export function createRemoteConnectorMcpClient(input: {
 	env: Env
 	userId: string
-	kind: string
 	instanceId: string
 }): RemoteConnectorMcpClient {
 	const stub = getSessionStub(input)

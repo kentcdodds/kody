@@ -23,11 +23,14 @@ const mockModule = vi.hoisted(() => ({
 	listValues: vi.fn(async () => []),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
 	getRemoteConnectorStatus: vi.fn(async () => ({
-		connectorKind: 'home',
 		connectorId: 'home',
 		state: 'connected',
 		connected: true,
 		toolCount: 1,
+		message: 'connected',
+		error: null,
+		connectedAt: null,
+		lastSeenAt: null,
 	})),
 }))
 
@@ -80,7 +83,7 @@ async function getSearchRegistration() {
 		getCallerContext: vi.fn(() => ({
 			baseUrl: 'https://example.com',
 			user: null,
-			remoteConnectors: [{ kind: 'lights', instanceId: 'home' }],
+			remoteConnectors: [{ instanceId: 'home' }],
 		})),
 	} as never)
 

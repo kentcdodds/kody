@@ -75,7 +75,6 @@ type UserRepoSessionSnapshot = {
 }
 
 type UserRemoteConnectorSnapshot = {
-	kind: string
 	instanceId: string
 }
 
@@ -225,14 +224,13 @@ async function listUserRepoSessions(env: Env, userId: string) {
 
 async function listUserRemoteConnectors(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
-		`SELECT kind, instance_id
+		`SELECT instance_id
 		FROM remote_connector_settings
 		WHERE user_id = ?`,
 	)
 		.bind(userId)
-		.all<{ kind: string; instance_id: string }>()
+		.all<{ instance_id: string }>()
 	return (rows.results ?? []).map((row) => ({
-		kind: row.kind,
 		instanceId: row.instance_id,
 	}))
 }
@@ -515,7 +513,6 @@ async function purgeRemoteConnectorSessions(input: {
 	for (const connector of input.connectors) {
 		const sessionKey = userScopedConnectorSessionKey({
 			userId: input.userId,
-			kind: connector.kind,
 			instanceId: connector.instanceId,
 		})
 		try {
@@ -524,20 +521,18 @@ async function purgeRemoteConnectorSessions(input: {
 			) as unknown as {
 				rpcPurgeUserSession: (payload: {
 					userId: string
-					kind: string
 					instanceId: string
 				}) => Promise<{ ok: true }>
 			}
 			await stub.rpcPurgeUserSession({
 				userId: input.userId,
-				kind: connector.kind,
 				instanceId: connector.instanceId,
 			})
 			purged += 1
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			input.warnings.push(
-				`Remote connector session purge failed for ${connector.kind}/${connector.instanceId}: ${message}`,
+				`Remote connector session purge failed for ${connector.instanceId}: ${message}`,
 			)
 		}
 	}

@@ -20,7 +20,6 @@ const defaultSearchLimit = 15
 const maxSearchLimit = 100
 
 const remoteConnectorStatusSchema = z.object({
-	connectorKind: z.string(),
 	connectorId: z.string(),
 	state: z.string(),
 	connected: z.boolean(),
@@ -51,14 +50,12 @@ function normalizeLimit(limit: number | undefined) {
 }
 
 function serializeRemoteConnectorStatus(status: {
-	connectorKind: string
 	connectorId?: string | null
 	state: string
 	connected: boolean
 	toolCount: number
 }) {
 	return {
-		connectorKind: status.connectorKind,
 		connectorId: status.connectorId ?? 'unknown',
 		state: status.state,
 		connected: status.connected,

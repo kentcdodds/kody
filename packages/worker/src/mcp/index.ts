@@ -42,14 +42,12 @@ async function loadRemoteConnectorInstructionSummaries(input: {
 			const snapshot = await createRemoteConnectorMcpClient({
 				env: input.env,
 				userId,
-				kind: ref.kind,
 				instanceId: ref.instanceId,
 			}).getSnapshot()
 			if (!snapshot) return null
-			const connectorKind = snapshot.connectorKind.trim().toLowerCase()
 			const connectorId = snapshot.connectorId.trim()
 			return {
-				name: `${connectorKind}/${connectorId}`,
+				name: connectorId,
 				domain: remoteConnectorDomainId(ref),
 				description: snapshot.description ?? null,
 			}

@@ -8,16 +8,15 @@ calls to JSON-RPC on the socket.
 
 ## URLs and session keys
 
-`wss://<worker-origin>/@<username>/connectors/<kind>/<instanceId>`
+`wss://<worker-origin>/@<username>/connectors/<instanceId>`
 
-Session key = JSON tuple `[userId, kind, instanceId]` where `kind` is lowercase
-after trim.
+Session key = JSON tuple `[userId, instanceId]` where `instanceId` is the
+user-chosen connector name, lowercase after trim.
 
 The Worker sets header **`X-Kody-Connector-Session-Key`** on requests forwarded
 into the Durable Object. The connector’s **`connector.hello`** must declare a
-**`connectorKind`** and **`connectorId`** (instance id) that match the session
-key implied by the WebSocket URL; otherwise the session closes with a mismatch
-error.
+**`connectorId`** (instance id) that matches the session key implied by the
+WebSocket URL; otherwise the session closes with a mismatch error.
 
 ## WebSocket message protocol
 
@@ -31,8 +30,9 @@ All messages are **JSON objects** with a **`type`** field.
      (`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`, for example `home` or
      `living-room`). Connector names are globally unique per user.
    - **`sharedSecret`:** string — must match an enabled shared secret saved for
-     the connector ref in D1.
-   - **`connectorKind`:** non-empty string. Lowercase values are normalized.
+     the connector in D1.
+   - **`connectorKind`:** ignored by Kody (may still be sent for compatibility
+     with connector-kit clients).
 
 2. **`connector.heartbeat`**
    - **`type`:** `"connector.heartbeat"`
@@ -84,23 +84,22 @@ External connector authors only need the **WebSocket**.
 For capabilities to be synthesized from a connector, the MCP session must list
 that connector:
 
-- **`remoteConnectors`:** optional array of `{ kind, instanceId }`, where
-  `instanceId` is the explicit connector name. When present (including empty),
-  it fully defines the set of remote connectors for that session.
+- **`remoteConnectors`:** optional array of `{ instanceId }`, where `instanceId`
+  is the explicit connector name. When present (including empty), it fully
+  defines the set of remote connectors for that session.
 
 Regular authenticated MCP and chat sessions load this array from the user's
 saved remote connector settings. Operators can manage those settings at
 `/account/remote-connectors`:
 
-- **`kind`** is protocol metadata, and **`instanceId`** is the user-chosen
-  connector name. Names are unique per user across all kinds because they key
-  `kody.remote[name]`.
+- **`instanceId`** is the user-chosen connector name. Names are unique per user
+  and key `kody.remote[name]`.
 - **`enabled`** controls whether the saved shared secret can authenticate
-  `connector.hello` for that ref.
-- **`attached`** controls whether the ref is included in normal Kody MCP/chat
-  caller context.
+  `connector.hello` for that connector.
+- **`attached`** controls whether the connector is included in normal Kody
+  MCP/chat caller context.
 - **`sharedSecret`** is encrypted in D1 and authenticates only the user-scoped
-  connector URL for the saved ref.
+  connector URL for the saved name.
 
 Source: `packages/shared/src/chat.ts`,
 `packages/shared/src/remote-connectors.ts`, and
@@ -121,15 +120,15 @@ Source: `packages/shared/src/chat.ts`,
 ## Connector checklist
 
 1. **Outbound WebSocket** to your connector URL:
-   `wss://<worker-origin>/@<username>/connectors/<kind>/<connectorName>`.
-2. **Hello first** with matching **`connectorKind`** + **`connectorId`** and a
-   **valid `sharedSecret`** for that `kind:instanceId` pair.
+   `wss://<worker-origin>/@<username>/connectors/<connectorName>`.
+2. **Hello first** with matching **`connectorId`** and a **valid
+   `sharedSecret`** for that connector name.
 3. Implement **`tools/list`** and **`tools/call`** on the socket via
    **`connector.jsonrpc`** envelopes.
 4. **Heartbeats** if the service stays connected for a long time.
-5. **Operator config:** save the connector ref and shared secret from
-   `/account/remote-connectors`; enabled + attached refs are loaded into normal
-   Kody sessions so the registry merges your domain.
+5. **Operator config:** save the connector and shared secret from
+   `/account/remote-connectors`; enabled + attached connectors are loaded into
+   normal Kody sessions so the registry merges your domain.
 
 ## Reference implementation
 

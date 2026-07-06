@@ -359,7 +359,6 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			destructive: false,
 			source: 'remote-connector',
 			remoteConnector: {
-				kind: 'home',
 				instanceId: 'home',
 				connectorId: 'home',
 				connectorName: 'home',

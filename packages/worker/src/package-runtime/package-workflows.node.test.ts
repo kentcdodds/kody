@@ -351,7 +351,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 })
 
 test('DynamicCallableWorkflowBase restores attached remote connectors for inline code and package exports', async () => {
-	const remoteConnectors = [{ kind: 'home', instanceId: 'home' }]
+	const remoteConnectors = [{ instanceId: 'home' }]
 	const stepDo = vi.fn(
 		async (_name: string, _config: unknown, callback: () => unknown) =>
 			await callback(),

@@ -186,7 +186,7 @@ function createToken(
 		packageKodyIds: Array<string>
 		exportNames: Array<string>
 		sources: Array<string>
-		remoteConnectors: Array<{ kind: string; instanceId: string }>
+		remoteConnectors: Array<{ instanceId: string }>
 	}> = {},
 ) {
 	return {
@@ -661,7 +661,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
-			remoteConnectors: [{ kind: 'home', instanceId: 'home' }],
+			remoteConnectors: [{ instanceId: 'home' }],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -687,7 +687,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			remoteConnectors: [{ kind: 'home', instanceId: 'home' }],
+			remoteConnectors: [{ instanceId: 'home' }],
 		}),
 		expect.anything(),
 		expect.anything(),

@@ -16,7 +16,6 @@ let remoteConnectorSnapshotCache = createRemoteConnectorSnapshotCache()
 
 export function createRemoteConnectorSnapshotCacheKey(input: {
 	userId: string
-	kind: string
 	instanceId: string
 }) {
 	return userScopedConnectorSessionKey(input)
@@ -25,7 +24,6 @@ export function createRemoteConnectorSnapshotCacheKey(input: {
 export function getCachedRemoteConnectorSnapshot(input: {
 	env: Env
 	userId: string
-	kind: string
 	instanceId: string
 }): Promise<RemoteConnectorSnapshot | null> {
 	const cacheKey = createRemoteConnectorSnapshotCacheKey(input)
@@ -48,7 +46,6 @@ export function getCachedRemoteConnectorSnapshot(input: {
 
 export function invalidateRemoteConnectorSnapshotCache(input: {
 	userId: string
-	kind: string
 	instanceId: string
 }) {
 	remoteConnectorSnapshotCache.delete(

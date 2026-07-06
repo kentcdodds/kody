@@ -7,7 +7,6 @@ export type KodyRemoteCapabilityMetadata = {
 
 export type KodyRemoteConnectorMetadata = {
 	name: string
-	kind: string
 	instanceId: string
 	status: {
 		state: string

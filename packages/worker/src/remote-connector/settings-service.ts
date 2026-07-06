@@ -1,14 +1,13 @@
 import {
 	isValidRemoteConnectorName,
 	normalizeRemoteConnectorInstanceId,
-	normalizeRemoteConnectorKind,
 	type RemoteConnectorRef,
 } from '@kody-internal/shared/remote-connectors.ts'
 import { decryptSecretValue, encryptSecretValue } from '#mcp/secrets/crypto.ts'
 import {
 	deleteRemoteConnectorSettingRow,
 	getRemoteConnectorSettingRowById,
-	getRemoteConnectorSettingRowByRef,
+	getRemoteConnectorSettingRowByInstanceId,
 	listAttachedRemoteConnectorSettingRows,
 	listRemoteConnectorSettingRows,
 	listRemoteConnectorSharedSecretRows,
@@ -27,7 +26,6 @@ export type SaveRemoteConnectorSettingInput = {
 	env: RemoteConnectorSettingsEnv
 	userId: string
 	id?: string | null
-	kind: string
 	instanceId: string
 	enabled: boolean
 	attached: boolean
@@ -39,7 +37,6 @@ function toMetadata(
 ): RemoteConnectorSettingMetadata {
 	return {
 		id: row.id,
-		kind: row.kind,
 		instanceId: row.instance_id,
 		enabled: row.enabled,
 		attached: row.attached,
@@ -87,7 +84,6 @@ export async function listAttachedRemoteConnectorRefs(input: {
 		userId: input.userId,
 	})
 	return rows.map((row) => ({
-		kind: row.kind,
 		instanceId: row.instance_id,
 	}))
 }
@@ -95,11 +91,7 @@ export async function listAttachedRemoteConnectorRefs(input: {
 export async function saveRemoteConnectorSetting(
 	input: SaveRemoteConnectorSettingInput,
 ): Promise<RemoteConnectorSettingMetadata> {
-	const kind = normalizeRemoteConnectorKind(input.kind)
 	const instanceId = normalizeRemoteConnectorInstanceId(input.instanceId)
-	if (!kind) {
-		throw new Error('Connector kind is required.')
-	}
 	if (!instanceId) {
 		throw new Error('Connector name is required.')
 	}
@@ -125,10 +117,9 @@ export async function saveRemoteConnectorSetting(
 				userId: input.userId,
 				id: input.id,
 			})
-		: await getRemoteConnectorSettingRowByRef({
+		: await getRemoteConnectorSettingRowByInstanceId({
 				db: input.env.APP_DB,
 				userId: input.userId,
-				kind,
 				instanceId,
 			})
 	if (input.id && !existing) {
@@ -136,16 +127,13 @@ export async function saveRemoteConnectorSetting(
 	}
 
 	if (input.id) {
-		const refConflict = await getRemoteConnectorSettingRowByRef({
+		const refConflict = await getRemoteConnectorSettingRowByInstanceId({
 			db: input.env.APP_DB,
 			userId: input.userId,
-			kind,
 			instanceId,
 		})
 		if (refConflict && refConflict.id !== existing?.id) {
-			throw new Error(
-				'A remote connector with this kind and name already exists.',
-			)
+			throw new Error('A remote connector with this name already exists.')
 		}
 	}
 
@@ -161,7 +149,6 @@ export async function saveRemoteConnectorSetting(
 	const row = {
 		id: existing?.id ?? crypto.randomUUID(),
 		user_id: input.userId,
-		kind,
 		instance_id: instanceId,
 		enabled: input.enabled,
 		attached: input.attached,
@@ -202,17 +189,14 @@ export async function deleteRemoteConnectorSetting(input: {
 export async function listRemoteConnectorSharedSecretsForRef(input: {
 	env: RemoteConnectorSettingsEnv
 	userId: string
-	kind: string
 	instanceId: string
 }): Promise<Array<string>> {
-	const kind = normalizeRemoteConnectorKind(input.kind)
 	const instanceId = normalizeRemoteConnectorInstanceId(input.instanceId)
-	if (!kind || !instanceId) return []
+	if (!instanceId) return []
 
 	const rows = await listRemoteConnectorSharedSecretRows({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		kind,
 		instanceId,
 	})
 	const secrets: Array<string> = []
@@ -228,17 +212,14 @@ export async function listRemoteConnectorSharedSecretsForRef(input: {
 export async function hasRemoteConnectorSharedSecretForRef(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	kind: string
 	instanceId: string
 }) {
-	const kind = normalizeRemoteConnectorKind(input.kind)
 	const instanceId = normalizeRemoteConnectorInstanceId(input.instanceId)
-	if (!kind || !instanceId) return false
+	if (!instanceId) return false
 
 	const rows = await listRemoteConnectorSharedSecretRows({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		kind,
 		instanceId,
 	})
 	return rows.length > 0

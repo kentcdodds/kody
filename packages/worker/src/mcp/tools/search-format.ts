@@ -95,7 +95,6 @@ export type SearchResultStructuredContent = {
 		retrieverWarnings?: Array<string>
 	}
 	remoteConnectorStatuses?: Array<{
-		connectorKind: string
 		connectorId: string
 		state: string
 		connected: boolean

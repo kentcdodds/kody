@@ -21,7 +21,6 @@ export type CapabilitySchemaDefinition = CapabilityJsonSchema | ZodType
 export type CapabilitySource = 'builtin' | 'remote-connector'
 
 export type CapabilityRemoteConnectorMetadata = {
-	kind: string
 	instanceId: string
 	connectorId: string
 	connectorName: string

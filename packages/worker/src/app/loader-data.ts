@@ -233,7 +233,6 @@ export type AccountIntegrationsLoaderData = {
 
 export type AccountRemoteConnectorListItem = {
 	id: string
-	kind: string
 	instanceId: string
 	connectorUrl: string
 	enabled: boolean

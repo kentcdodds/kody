@@ -128,7 +128,6 @@ async function handleUserScopedConnectorRequest(request: Request, env: Env) {
 	}
 	const sessionKey = userScopedConnectorSessionKey({
 		userId: routeUser.mcpUserId,
-		kind: userScopedConnectorRoute.kind,
 		instanceId: userScopedConnectorRoute.instanceId,
 	})
 	const stub = env.REMOTE_CONNECTOR_SESSION.get(

@@ -94,12 +94,11 @@ function createTestDb(initial: RowMap): {
 							}
 							if (
 								lower ===
-								'select kind, instance_id from remote_connector_settings where user_id = ?'
+								'select instance_id from remote_connector_settings where user_id = ?'
 							) {
 								results = (rows.remote_connector_settings ?? [])
 									.filter((row) => row['user_id'] === userId)
 									.map((row) => ({
-										kind: row['kind'],
 										instance_id: row['instance_id'],
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
@@ -445,8 +444,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		value_buckets: [{ id: 'vb-1', user_id: userAaa }],
 		value_entries: [{ bucket_id: 'vb-1', name: 'v', user_id: 'unused' }],
 		remote_connector_settings: [
-			{ id: 'rc-1', user_id: userAaa, kind: 'home', instance_id: 'home' },
-			{ id: 'rc-2', user_id: userBbb, kind: 'home', instance_id: 'other' },
+			{ id: 'rc-1', user_id: userAaa, instance_id: 'home' },
+			{ id: 'rc-2', user_id: userBbb, instance_id: 'other' },
 		],
 		saved_packages: [
 			{
@@ -636,7 +635,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		},
 	])
 	expect(rows.remote_connector_settings).toEqual([
-		{ id: 'rc-2', user_id: userBbb, kind: 'home', instance_id: 'other' },
+		{ id: 'rc-2', user_id: userBbb, instance_id: 'other' },
 	])
 	expect(rows.published_bundle_artifacts).toEqual([
 		{ id: 'pba-2', user_id: userBbb, kv_key: 'bundle-artifact:v1:src-2' },
@@ -716,7 +715,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	})
 	expect(purgeRemoteConnectorMock).toHaveBeenCalledWith({
 		userId: userAaa,
-		kind: 'home',
+
 		instanceId: 'home',
 	})
 	expect(doFetchMock).toHaveBeenCalledTimes(3)

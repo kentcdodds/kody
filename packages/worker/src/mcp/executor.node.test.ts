@@ -95,14 +95,13 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 		remoteConnectors: [
 			{
 				name: 'home',
-				kind: 'home',
 				instanceId: 'home',
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 1,
-					message: 'The home connector "home" is connected.',
-					unavailableMessage: 'The home connector "home" is connected.',
+					message: 'The connector "home" is connected.',
+					unavailableMessage: 'The connector "home" is connected.',
 				},
 				capabilities: [
 					{
@@ -113,15 +112,14 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 			},
 			{
 				name: 'lights',
-				kind: 'lights',
 				instanceId: 'home',
 				status: {
 					state: 'disconnected',
 					connected: false,
 					toolCount: 0,
-					message: 'The lights connector "lights" is not connected.',
+					message: 'The connector "home" is not connected.',
 					unavailableMessage:
-						'The lights connector "lights" is not connected. Kody cannot use this connector until it reconnects.',
+						'The connector "home" is not connected. Kody cannot use this connector until it reconnects.',
 				},
 				capabilities: [],
 			},
@@ -148,7 +146,7 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 		'Unknown remote capability "missing_tool" for connector "home". Available capabilities: "set_pin".',
 	)
 	expect(() => remote['lights']?.set_pin).toThrow(
-		'The lights connector "lights" is not connected. Kody cannot use this connector until it reconnects.',
+		'The connector "home" is not connected. Kody cannot use this connector until it reconnects.',
 	)
 })
 
@@ -159,14 +157,13 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 		remoteConnectors: [
 			{
 				name: 'home',
-				kind: 'home',
 				instanceId: 'home',
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 1,
-					message: 'The home connector "home" is connected.',
-					unavailableMessage: 'The home connector "home" is connected.',
+					message: 'The connector "home" is connected.',
+					unavailableMessage: 'The connector "home" is connected.',
 				},
 				capabilities: [
 					{

@@ -6,10 +6,10 @@ export async function listRemoteConnectorSettingRows(input: {
 }): Promise<Array<RemoteConnectorSettingRow>> {
 	const { results } = await input.db
 		.prepare(
-			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
+			`SELECT id, user_id, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
 			FROM remote_connector_settings
 			WHERE user_id = ?
-			ORDER BY kind ASC, instance_id ASC`,
+			ORDER BY instance_id ASC`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
@@ -22,10 +22,10 @@ export async function listAttachedRemoteConnectorSettingRows(input: {
 }): Promise<Array<RemoteConnectorSettingRow>> {
 	const { results } = await input.db
 		.prepare(
-			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
+			`SELECT id, user_id, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
 			FROM remote_connector_settings
 			WHERE user_id = ? AND enabled = 1 AND attached = 1
-			ORDER BY kind ASC, instance_id ASC`,
+			ORDER BY instance_id ASC`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
@@ -35,18 +35,17 @@ export async function listAttachedRemoteConnectorSettingRows(input: {
 export async function listRemoteConnectorSharedSecretRows(input: {
 	db: D1Database
 	userId: string
-	kind: string
 	instanceId: string
 }): Promise<Array<RemoteConnectorSettingRow>> {
 	const { results } = await input.db
 		.prepare(
-			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
+			`SELECT id, user_id, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
 			FROM remote_connector_settings
-			WHERE user_id = ? AND kind = ? AND instance_id = ? AND enabled = 1
+			WHERE user_id = ? AND instance_id = ? AND enabled = 1
 				AND encrypted_shared_secret IS NOT NULL
 			ORDER BY updated_at DESC`,
 		)
-		.bind(input.userId, input.kind, input.instanceId)
+		.bind(input.userId, input.instanceId)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRemoteConnectorSettingRow)
 }
@@ -58,7 +57,7 @@ export async function getRemoteConnectorSettingRowById(input: {
 }): Promise<RemoteConnectorSettingRow | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
+			`SELECT id, user_id, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
 			FROM remote_connector_settings
 			WHERE user_id = ? AND id = ?
 			LIMIT 1`,
@@ -68,20 +67,19 @@ export async function getRemoteConnectorSettingRowById(input: {
 	return row ? mapRemoteConnectorSettingRow(row) : null
 }
 
-export async function getRemoteConnectorSettingRowByRef(input: {
+export async function getRemoteConnectorSettingRowByInstanceId(input: {
 	db: D1Database
 	userId: string
-	kind: string
 	instanceId: string
 }): Promise<RemoteConnectorSettingRow | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
+			`SELECT id, user_id, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
 			FROM remote_connector_settings
-			WHERE user_id = ? AND kind = ? AND instance_id = ?
+			WHERE user_id = ? AND instance_id = ?
 			LIMIT 1`,
 		)
-		.bind(input.userId, input.kind, input.instanceId)
+		.bind(input.userId, input.instanceId)
 		.first<Record<string, unknown>>()
 	return row ? mapRemoteConnectorSettingRow(row) : null
 }
@@ -97,9 +95,9 @@ export async function upsertRemoteConnectorSettingRow(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO remote_connector_settings (
-				id, user_id, kind, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(user_id, kind, instance_id)
+				id, user_id, instance_id, enabled, attached, encrypted_shared_secret, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, instance_id)
 			DO UPDATE SET
 				enabled = excluded.enabled,
 				attached = excluded.attached,
@@ -109,7 +107,6 @@ export async function upsertRemoteConnectorSettingRow(input: {
 		.bind(
 			input.row.id,
 			input.row.user_id,
-			input.row.kind,
 			input.row.instance_id,
 			input.row.enabled ? 1 : 0,
 			input.row.attached ? 1 : 0,
@@ -130,8 +127,7 @@ export async function updateRemoteConnectorSettingRow(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE remote_connector_settings
-			SET kind = ?,
-				instance_id = ?,
+			SET instance_id = ?,
 				enabled = ?,
 				attached = ?,
 				encrypted_shared_secret = ?,
@@ -139,7 +135,6 @@ export async function updateRemoteConnectorSettingRow(input: {
 			WHERE user_id = ? AND id = ?`,
 		)
 		.bind(
-			input.row.kind,
 			input.row.instance_id,
 			input.row.enabled ? 1 : 0,
 			input.row.attached ? 1 : 0,
@@ -172,7 +167,6 @@ function mapRemoteConnectorSettingRow(
 	return {
 		id: String(row['id']),
 		user_id: String(row['user_id']),
-		kind: String(row['kind']),
 		instance_id: String(row['instance_id']),
 		enabled: Boolean(Number(row['enabled'])),
 		attached: Boolean(Number(row['attached'])),

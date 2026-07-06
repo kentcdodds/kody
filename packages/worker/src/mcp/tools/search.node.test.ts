@@ -809,7 +809,7 @@ test('down remote connector statuses surface only disconnected connectors for si
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 		},
-		remoteConnectors: [{ kind: 'lights', instanceId: 'home' }],
+		remoteConnectors: [{ instanceId: 'home' }],
 	}
 	const disconnected = await loadDownRemoteConnectorStatuses({
 		env: {
@@ -864,7 +864,7 @@ test('down remote connector statuses surface only disconnected connectors for si
 	const anonymous = await loadDownRemoteConnectorStatuses({
 		env: {} as unknown as Env,
 		callerContext: {
-			remoteConnectors: [{ kind: 'lights', instanceId: 'home' }],
+			remoteConnectors: [{ instanceId: 'home' }],
 		},
 	})
 	expect(anonymous).toEqual([])

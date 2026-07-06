@@ -52,7 +52,7 @@ function createCapabilityRegistryCacheKey(input: {
 	const connectorParts = input.refs
 		.map((ref, index) => {
 			const snapshot = input.snapshots[index] ?? null
-			const refKey = `${ref.kind.trim().toLowerCase()}:${ref.instanceId.trim()}`
+			const refKey = ref.instanceId.trim()
 			if (!snapshot) {
 				return `${refKey}:disconnected`
 			}
@@ -115,7 +115,6 @@ export async function getCapabilityRegistryForContext(input: {
 			getCachedRemoteConnectorSnapshot({
 				env: input.env,
 				userId,
-				kind: ref.kind,
 				instanceId: ref.instanceId,
 			}),
 		),

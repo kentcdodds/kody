@@ -175,7 +175,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		INSERT INTO remote_connector_settings (
 			id,
 			user_id,
-			kind,
 			instance_id,
 			encrypted_shared_secret,
 			created_at,
@@ -184,7 +183,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		VALUES (
 			'connector-a',
 			'user-aaa',
-			'home',
 			'home',
 			'encrypted-connector-secret',
 			'2026-07-05',
@@ -245,7 +243,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(accountExport.d1.remote_connector_settings.rows[0]).toEqual(
 		expect.objectContaining({
 			id: 'connector-a',
-			kind: 'home',
 			instance_id: 'home',
 		}),
 	)

@@ -18,7 +18,6 @@ import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
 
 type RemoteToolCapabilityBinding = {
 	capabilityName: string
-	kind: string
 	instanceId: string
 	mcpToolName: string
 }
@@ -34,10 +33,8 @@ function buildKeywords(
 	ref: RemoteConnectorRef,
 	extraRoots: ReadonlyArray<string>,
 ) {
-	const kind = (snapshot.connectorKind ?? ref.kind).trim().toLowerCase()
 	const words = [
 		...extraRoots,
-		kind,
 		'connector',
 		'remote',
 		tool.name,
@@ -73,7 +70,6 @@ function createCapabilityFromTool(input: {
 	const cleanToolName = remoteConnectorToolName(tool.name)
 	const binding: RemoteToolCapabilityBinding = {
 		capabilityName,
-		kind: (snapshot.connectorKind ?? ref.kind).trim().toLowerCase(),
 		instanceId: ref.instanceId,
 		mcpToolName: tool.name,
 	}
@@ -84,7 +80,7 @@ function createCapabilityFromTool(input: {
 		description:
 			tool.description?.trim() ||
 			tool.title?.trim() ||
-			`Remote connector action (${ref.kind}) for ${tool.name}.`,
+			`Remote connector action for ${tool.name}.`,
 		keywords: buildKeywords(snapshot, tool, ref, domainKeywordRoots),
 		readOnly: Boolean(
 			(tool.annotations as Record<string, unknown> | undefined)?.[
@@ -103,7 +99,6 @@ function createCapabilityFromTool(input: {
 		),
 		source: 'remote-connector',
 		remoteConnector: {
-			kind: binding.kind,
 			instanceId: binding.instanceId,
 			connectorId: snapshot.connectorId,
 			connectorName,
@@ -116,13 +111,12 @@ function createCapabilityFromTool(input: {
 			const userId = ctx.callerContext.user?.userId
 			if (!userId) {
 				throw new Error(
-					`Remote capability "${binding.kind}:${binding.instanceId}:${tool.name}" requires an authenticated user.`,
+					`Remote capability "${binding.instanceId}:${tool.name}" requires an authenticated user.`,
 				)
 			}
 			const client = createRemoteConnectorMcpClient({
 				env: ctx.env,
 				userId,
-				kind: binding.kind,
 				instanceId: binding.instanceId,
 			})
 			let result: Awaited<ReturnType<typeof client.callTool>>
@@ -133,7 +127,6 @@ function createCapabilityFromTool(input: {
 					env: ctx.env,
 					userId,
 					ref: {
-						kind: binding.kind,
 						instanceId: binding.instanceId,
 					},
 				})
@@ -143,7 +136,7 @@ function createCapabilityFromTool(input: {
 				const message =
 					error instanceof Error ? error.message : 'Unknown connector error.'
 				throw new Error(
-					`Remote capability "${binding.kind}:${binding.instanceId}:${tool.name}" failed: ${message}`,
+					`Remote capability "${binding.instanceId}:${tool.name}" failed: ${message}`,
 				)
 			}
 			if (
@@ -174,18 +167,15 @@ export async function synthesizeRemoteToolDomain(input: {
 			: await createRemoteConnectorMcpClient({
 					env: input.env,
 					userId: input.userId,
-					kind: input.ref.kind,
 					instanceId: input.ref.instanceId,
 				}).getSnapshot()
 	const ref = input.ref
 	if (!snapshot || snapshot.tools.length === 0) return null
 
 	const domainId = remoteConnectorDomainId(ref)
-	const k = ref.kind.trim().toLowerCase()
 	const domainIdForCapabilities: CapabilityDomain = domainId
 
 	const domainKeywordRoots = [
-		k,
 		snapshot.description ?? '',
 		'integration',
 		'connector',
@@ -193,7 +183,7 @@ export async function synthesizeRemoteToolDomain(input: {
 
 	const domainDescription =
 		snapshot.description?.trim() ||
-		`Capabilities discovered from the connected "${ref.kind}" remote connector ("${ref.instanceId}").`
+		`Capabilities discovered from the connected remote connector "${ref.instanceId}".`
 
 	const capabilities: Array<Capability> = []
 	const bindings: Record<string, RemoteToolCapabilityBinding> = {}

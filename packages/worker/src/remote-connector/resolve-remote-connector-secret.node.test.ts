@@ -29,7 +29,6 @@ test('remote connector shared secrets are not read from environment variables', 
 		resolveRemoteConnectorSharedSecret({
 			env,
 			userId: 'user-aaa',
-			kind: 'custom',
 			instanceId: 'alpha',
 		}),
 	).resolves.toBeUndefined()
@@ -37,7 +36,6 @@ test('remote connector shared secrets are not read from environment variables', 
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-aaa',
-			kind: 'custom',
 			instanceId: 'alpha',
 			sharedSecret: 'alpha-secret',
 		}),
@@ -46,7 +44,6 @@ test('remote connector shared secrets are not read from environment variables', 
 		hasRemoteConnectorSharedSecret({
 			env,
 			userId: 'user-aaa',
-			kind: 'lights',
 			instanceId: 'home',
 		}),
 	).resolves.toBe(false)

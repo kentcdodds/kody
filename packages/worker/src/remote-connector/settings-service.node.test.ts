@@ -34,15 +34,14 @@ function createRemoteConnectorSettingsTestDb() {
 							if (
 								normalizedQuery.includes('from remote_connector_settings') &&
 								normalizedQuery.includes(
-									'where user_id = ? and kind = ? and instance_id = ?',
+									'where user_id = ? and instance_id = ?',
 								)
 							) {
-								const [userId, kind, instanceId] = params as Array<string>
+								const [userId, instanceId] = params as Array<string>
 								const row =
 									Array.from(rows.values()).find(
 										(candidate) =>
 											candidate.user_id === userId &&
-											candidate.kind === kind &&
 											candidate.instance_id === instanceId,
 									) ?? null
 								return row ? (clone(row) as T) : null
@@ -60,10 +59,8 @@ function createRemoteConnectorSettingsTestDb() {
 										(row) =>
 											row.user_id === userId && row.enabled && row.attached,
 									)
-									.sort(
-										(left, right) =>
-											left.kind.localeCompare(right.kind) ||
-											left.instance_id.localeCompare(right.instance_id),
+									.sort((left, right) =>
+										left.instance_id.localeCompare(right.instance_id),
 									)
 									.map(clone)
 								return { results: results as Array<T>, meta: { changes: 0 } }
@@ -71,15 +68,14 @@ function createRemoteConnectorSettingsTestDb() {
 							if (
 								normalizedQuery.includes('from remote_connector_settings') &&
 								normalizedQuery.includes(
-									'where user_id = ? and kind = ? and instance_id = ? and enabled = 1',
+									'where user_id = ? and instance_id = ? and enabled = 1',
 								)
 							) {
-								const [userId, kind, instanceId] = params as Array<string>
+								const [userId, instanceId] = params as Array<string>
 								const results = Array.from(rows.values())
 									.filter(
 										(row) =>
 											row.user_id === userId &&
-											row.kind === kind &&
 											row.instance_id === instanceId &&
 											row.enabled &&
 											row.encrypted_shared_secret,
@@ -97,10 +93,8 @@ function createRemoteConnectorSettingsTestDb() {
 								const [userId] = params as Array<string>
 								const results = Array.from(rows.values())
 									.filter((row) => row.user_id === userId)
-									.sort(
-										(left, right) =>
-											left.kind.localeCompare(right.kind) ||
-											left.instance_id.localeCompare(right.instance_id),
+									.sort((left, right) =>
+										left.instance_id.localeCompare(right.instance_id),
 									)
 									.map(clone)
 								return { results: results as Array<T>, meta: { changes: 0 } }
@@ -116,7 +110,6 @@ function createRemoteConnectorSettingsTestDb() {
 								const [
 									id,
 									userId,
-									kind,
 									instanceId,
 									enabled,
 									attached,
@@ -127,14 +120,11 @@ function createRemoteConnectorSettingsTestDb() {
 								const existing =
 									Array.from(rows.values()).find(
 										(row) =>
-											row.user_id === userId &&
-											row.kind === kind &&
-											row.instance_id === instanceId,
+											row.user_id === userId && row.instance_id === instanceId,
 									) ?? null
 								rows.set(existing?.id ?? String(id), {
 									id: existing?.id ?? String(id),
 									user_id: String(userId),
-									kind: String(kind),
 									instance_id: String(instanceId),
 									enabled: Boolean(Number(enabled)),
 									attached: Boolean(Number(attached)),
@@ -166,7 +156,6 @@ function createRemoteConnectorSettingsTestDb() {
 								)
 							) {
 								const [
-									kind,
 									instanceId,
 									enabled,
 									attached,
@@ -181,7 +170,6 @@ function createRemoteConnectorSettingsTestDb() {
 								}
 								rows.set(String(id), {
 									...existing,
-									kind: String(kind),
 									instance_id: String(instanceId),
 									enabled: Boolean(Number(enabled)),
 									attached: Boolean(Number(attached)),
@@ -216,7 +204,6 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	const saved = await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-1',
-		kind: ' Lights ',
 		instanceId: ' home ',
 		enabled: true,
 		attached: true,
@@ -224,7 +211,6 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	})
 
 	expect(saved).toMatchObject({
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: true,
@@ -253,12 +239,11 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 	])
 	await expect(
 		listAttachedRemoteConnectorRefs({ env, userId: 'user-1' }),
-	).resolves.toEqual([{ kind: 'lights', instanceId: 'home' }])
+	).resolves.toEqual([{ instanceId: 'home' }])
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-1',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'lights-secret',
 		}),
@@ -267,7 +252,6 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-1',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'wrong-secret',
 		}),
@@ -277,7 +261,6 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 		env,
 		userId: 'user-1',
 		id: saved.id,
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: false,
@@ -291,7 +274,6 @@ test('remote connector settings are generic and do not echo plaintext secrets', 
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-1',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'lights-secret',
 		}),
@@ -310,7 +292,6 @@ test('renames an existing remote connector setting by id', async () => {
 	const saved = await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-1',
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: true,
@@ -321,7 +302,6 @@ test('renames an existing remote connector setting by id', async () => {
 		env,
 		userId: 'user-1',
 		id: saved.id,
-		kind: 'roku',
 		instanceId: 'living-room',
 		enabled: true,
 		attached: true,
@@ -330,18 +310,16 @@ test('renames an existing remote connector setting by id', async () => {
 
 	expect(renamed).toMatchObject({
 		id: saved.id,
-		kind: 'roku',
 		instanceId: 'living-room',
 		hasSharedSecret: true,
 	})
 	await expect(
 		listAttachedRemoteConnectorRefs({ env, userId: 'user-1' }),
-	).resolves.toEqual([{ kind: 'roku', instanceId: 'living-room' }])
+	).resolves.toEqual([{ instanceId: 'living-room' }])
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-1',
-			kind: 'roku',
 			instanceId: 'living-room',
 			sharedSecret: 'lights-secret',
 		}),
@@ -353,7 +331,6 @@ test('disabled connector settings do not authenticate connector hello', async ()
 	await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-1',
-		kind: 'roku',
 		instanceId: 'living-room',
 		enabled: false,
 		attached: true,
@@ -367,7 +344,6 @@ test('disabled connector settings do not authenticate connector hello', async ()
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-1',
-			kind: 'roku',
 			instanceId: 'living-room',
 			sharedSecret: 'roku-secret',
 		}),
@@ -380,7 +356,6 @@ test('connector names are explicit, formatted, and globally unique per user', as
 		saveRemoteConnectorSetting({
 			env,
 			userId: 'user-1',
-			kind: 'lights',
 			instanceId: '',
 			enabled: true,
 			attached: true,
@@ -391,7 +366,6 @@ test('connector names are explicit, formatted, and globally unique per user', as
 		saveRemoteConnectorSetting({
 			env,
 			userId: 'user-1',
-			kind: 'lights',
 			instanceId: 'Living Room',
 			enabled: true,
 			attached: true,
@@ -402,7 +376,6 @@ test('connector names are explicit, formatted, and globally unique per user', as
 	await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-1',
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: true,
@@ -412,7 +385,6 @@ test('connector names are explicit, formatted, and globally unique per user', as
 		saveRemoteConnectorSetting({
 			env,
 			userId: 'user-1',
-			kind: 'roku',
 			instanceId: 'home',
 			enabled: true,
 			attached: true,
@@ -426,7 +398,6 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 	await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-aaa',
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: true,
@@ -435,20 +406,16 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 	await saveRemoteConnectorSetting({
 		env,
 		userId: 'user-bbb',
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: true,
 		sharedSecret: 'bbb-secret',
 	})
 
-	// Each user's secret only authenticates that user's connector even when
-	// (kind, instanceId) collide.
 	await expect(
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-aaa',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'aaa-secret',
 		}),
@@ -457,7 +424,6 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-aaa',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'bbb-secret',
 		}),
@@ -466,7 +432,6 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-bbb',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'bbb-secret',
 		}),
@@ -475,7 +440,6 @@ test('connector hello secrets are scoped to the user_id of the ingress', async (
 		remoteConnectorSharedSecretMatches({
 			env,
 			userId: 'user-bbb',
-			kind: 'lights',
 			instanceId: 'home',
 			sharedSecret: 'aaa-secret',
 		}),

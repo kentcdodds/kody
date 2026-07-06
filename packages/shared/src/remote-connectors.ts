@@ -5,16 +5,11 @@ import { buildUsernamePathPrefix } from './public-urls.ts'
 type McpCallerContext = InferOutput<typeof mcpCallerContextSchema>
 
 export type RemoteConnectorRef = {
-	kind: string
 	instanceId: string
 }
 
 export const remoteConnectorNamePattern =
 	/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
-
-export function normalizeRemoteConnectorKind(kind: string): string {
-	return kind.trim().toLowerCase()
-}
 
 export function normalizeRemoteConnectorInstanceId(instanceId: string): string {
 	return instanceId.trim().toLowerCase()
@@ -28,20 +23,17 @@ export function isValidRemoteConnectorName(instanceId: string): boolean {
 
 export function userScopedConnectorIngressPath(input: {
 	username: string
-	kind: string
 	instanceId: string
 }) {
-	const kind = encodeURIComponent(normalizeRemoteConnectorKind(input.kind))
 	const instanceId = encodeURIComponent(
 		normalizeRemoteConnectorInstanceId(input.instanceId),
 	)
-	return `${buildUsernamePathPrefix(input.username)}/connectors/${kind}/${instanceId}`
+	return `${buildUsernamePathPrefix(input.username)}/connectors/${instanceId}`
 }
 
 export function userScopedConnectorWebSocketUrl(input: {
 	origin: string
 	username: string
-	kind: string
 	instanceId: string
 }) {
 	const origin = input.origin.trim().replace(/\/+$/, '')
@@ -53,8 +45,7 @@ export function normalizeRemoteConnectorRefs(
 ): Array<RemoteConnectorRef> {
 	return (context.remoteConnectors ?? [])
 		.map((ref) => ({
-			kind: normalizeRemoteConnectorKind(ref.kind),
 			instanceId: normalizeRemoteConnectorInstanceId(ref.instanceId),
 		}))
-		.filter((ref) => ref.kind.length > 0 && ref.instanceId.length > 0)
+		.filter((ref) => ref.instanceId.length > 0)
 }

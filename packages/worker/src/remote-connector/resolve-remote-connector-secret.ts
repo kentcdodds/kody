@@ -1,7 +1,4 @@
-import {
-	normalizeRemoteConnectorInstanceId,
-	normalizeRemoteConnectorKind,
-} from '@kody-internal/shared/remote-connectors.ts'
+import { normalizeRemoteConnectorInstanceId } from '@kody-internal/shared/remote-connectors.ts'
 import {
 	hasRemoteConnectorSharedSecretForRef,
 	listRemoteConnectorSharedSecretsForRef,
@@ -43,7 +40,6 @@ function timingSafeStringEquals(left: string, right: string) {
 
 async function listStoredSharedSecrets(input: {
 	userId: string
-	kind: string
 	instanceId: string
 	env: Env
 }) {
@@ -51,13 +47,12 @@ async function listStoredSharedSecrets(input: {
 		return await listRemoteConnectorSharedSecretsForRef({
 			env: input.env,
 			userId: input.userId,
-			kind: input.kind,
 			instanceId: input.instanceId,
 		})
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)
 		console.error(
-			`[remote-connectors] failed to read persisted shared secrets for ${input.userId} ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
+			`[remote-connectors] failed to read persisted shared secrets for ${input.userId} ${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
 		)
 		return []
 	}
@@ -65,7 +60,6 @@ async function listStoredSharedSecrets(input: {
 
 async function storedSharedSecretExists(input: {
 	userId: string
-	kind: string
 	instanceId: string
 	env: Env
 }) {
@@ -73,13 +67,12 @@ async function storedSharedSecretExists(input: {
 		return await hasRemoteConnectorSharedSecretForRef({
 			env: input.env,
 			userId: input.userId,
-			kind: input.kind,
 			instanceId: input.instanceId,
 		})
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)
 		console.error(
-			`[remote-connectors] failed to check persisted shared secret for ${input.userId} ${normalizeRemoteConnectorKind(input.kind)}:${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
+			`[remote-connectors] failed to check persisted shared secret for ${input.userId} ${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
 		)
 		return false
 	}
@@ -87,7 +80,6 @@ async function storedSharedSecretExists(input: {
 
 export async function resolveRemoteConnectorSharedSecret(input: {
 	userId: string
-	kind: string
 	instanceId: string
 	env: Env
 }): Promise<string | undefined> {
@@ -97,7 +89,6 @@ export async function resolveRemoteConnectorSharedSecret(input: {
 
 export async function remoteConnectorSharedSecretMatches(input: {
 	userId: string
-	kind: string
 	instanceId: string
 	sharedSecret: string
 	env: Env
@@ -117,7 +108,6 @@ export async function remoteConnectorSharedSecretMatches(input: {
 
 export async function hasRemoteConnectorSharedSecret(input: {
 	userId: string
-	kind: string
 	instanceId: string
 	env: Env
 }): Promise<boolean> {

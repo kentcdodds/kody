@@ -38,7 +38,6 @@ import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-co
 
 type RemoteConnectorListItem = {
 	id: string
-	kind: string
 	instanceId: string
 	connectorUrl: string
 	enabled: boolean
@@ -60,7 +59,6 @@ type AccountRemoteConnectorsPayload = {
 
 type EditorState = {
 	id: string | null
-	kind: string
 	instanceId: string
 	enabled: boolean
 	attached: boolean
@@ -100,7 +98,6 @@ export async function accountRemoteConnectorsRouteLoader(
 function createEmptyEditorState(): EditorState {
 	return {
 		id: null,
-		kind: '',
 		instanceId: '',
 		enabled: true,
 		attached: true,
@@ -114,7 +111,6 @@ function createEditorStateFromConnector(
 ): EditorState {
 	return {
 		id: connector.id,
-		kind: connector.kind,
 		instanceId: connector.instanceId,
 		enabled: connector.enabled,
 		attached: connector.attached,
@@ -128,9 +124,9 @@ function formatTimestamp(value: string) {
 }
 
 function connectorLabel(
-	connector: Pick<RemoteConnectorListItem, 'kind' | 'instanceId'>,
+	connector: Pick<RemoteConnectorListItem, 'instanceId'>,
 ) {
-	return `${connector.kind}:${connector.instanceId}`
+	return connector.instanceId
 }
 
 function bytesToBase64Url(bytes: Uint8Array) {
@@ -409,7 +405,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		const enabled = formData.get('enabled') === 'on'
 		return {
 			...editorState,
-			kind: String(formData.get('kind') ?? '').trim(),
 			instanceId: String(formData.get('instanceId') ?? '').trim(),
 			sharedSecret: String(formData.get('sharedSecret') ?? ''),
 			enabled,
@@ -423,11 +418,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		if (saveState !== 'idle') return
 		const nextEditorState = form ? readEditorStateFromForm(form) : editorState
 		editorState = nextEditorState
-		if (!nextEditorState.kind.trim()) {
-			message = 'Connector kind is required.'
-			handle.update()
-			return
-		}
 		if (!nextEditorState.instanceId.trim()) {
 			message = 'Connector name is required.'
 			handle.update()
@@ -456,7 +446,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				body: JSON.stringify({
 					action: 'save',
 					id: nextEditorState.id,
-					kind: nextEditorState.kind,
 					instanceId: nextEditorState.instanceId,
 					enabled: nextEditorState.enabled,
 					attached: nextEditorState.attached,
@@ -565,11 +554,10 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 	function getEditorConnectorUrl() {
 		if (!username || !connectorUrlOrigin) return null
-		if (!editorState.kind.trim() || !editorState.instanceId.trim()) return null
+		if (!editorState.instanceId.trim()) return null
 		return userScopedConnectorWebSocketUrl({
 			origin: connectorUrlOrigin,
 			username,
-			kind: editorState.kind,
 			instanceId: editorState.instanceId,
 		})
 	}
@@ -609,10 +597,9 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		}
 		const isMutating = saveState !== 'idle'
 		const isEditing = Boolean(editorState.id)
-		const selectedLabel =
-			editorState.kind && editorState.instanceId
-				? `${editorState.kind}:${editorState.instanceId}`
-				: 'New remote connector'
+		const selectedLabel = editorState.instanceId
+			? editorState.instanceId
+			: 'New remote connector'
 		const connectorUrl = getEditorConnectorUrl()
 
 		return (
@@ -748,27 +735,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 							</div>
 
 							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Kind</span>
-								<input
-									name="kind"
-									type="text"
-									value={editorState.kind}
-									placeholder="lights"
-									disabled={isMutating}
-									required
-									mix={[
-										on('input', (event) => {
-											editorState = {
-												...editorState,
-												kind: event.currentTarget.value,
-											}
-											handle.update()
-										}),
-										css(inputCss),
-									]}
-								/>
-							</label>
-							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Connector name</span>
 								<input
 									name="instanceId"
@@ -820,8 +786,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									</div>
 								) : (
 									<p mix={css(descriptionCss)}>
-										Enter a kind and connector name to build the connector
-										WebSocket URL.
+										Enter a connector name to build the connector WebSocket URL.
 									</p>
 								)}
 								<p mix={css(descriptionCss)}>

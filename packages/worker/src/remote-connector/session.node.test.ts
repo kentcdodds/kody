@@ -27,7 +27,6 @@ const { RemoteConnectorSession } = await import('./session.ts')
 type StoredRemoteConnectorSessionState = {
 	persisted: {
 		connectorId: string | null
-		connectorKind: string | null
 		description?: string | null
 		connectedAt: string | null
 		lastSeenAt: string | null
@@ -100,7 +99,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				description: 'Local lighting automation.',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -120,13 +118,11 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	await expect(
 		restored.session.rpcExportUserSession({
 			userId: 'user-123',
-			kind: 'lights',
 			instanceId: 'home',
 		}),
 	).resolves.toEqual({
 		persisted: {
 			connectorId: 'home',
-			connectorKind: 'lights',
 			description: 'Local lighting automation.',
 			connectedAt: '2026-04-26T05:00:00.000Z',
 			lastSeenAt: '2026-04-26T05:01:00.000Z',
@@ -139,7 +135,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -152,7 +147,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -185,7 +179,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -214,7 +207,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -246,7 +238,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
@@ -280,7 +271,6 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		storedState: {
 			persisted: {
 				connectorId: 'home',
-				connectorKind: 'lights',
 				connectedAt: '2026-04-26T05:00:00.000Z',
 				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},

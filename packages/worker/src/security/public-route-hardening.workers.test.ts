@@ -31,16 +31,16 @@ test('public route hardening rejects unauthenticated connector access, unknown p
 	).run()
 
 	const unauthorizedConnectorRequests = [
-		createRequest('/@connector-user/connectors/lights/home/snapshot'),
-		createRequest('/@connector-user/connectors/lights/home/rpc/tools-list', {
+		createRequest('/@connector-user/connectors/home/snapshot'),
+		createRequest('/@connector-user/connectors/home/rpc/tools-list', {
 			method: 'POST',
 		}),
-		createRequest('/@connector-user/connectors/lights/home/rpc/tools-call', {
+		createRequest('/@connector-user/connectors/home/rpc/tools-call', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: 'test', arguments: {} }),
 		}),
-		createRequest('/@connector-user/connectors/lights/home/rpc/jsonrpc', {
+		createRequest('/@connector-user/connectors/home/rpc/jsonrpc', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -48,24 +48,18 @@ test('public route hardening rejects unauthenticated connector access, unknown p
 			}),
 		}),
 		createRequest('/@connector-user/connectors'),
-		createRequest('/@connector-user/connectors/home', {
-			headers: { Upgrade: 'websocket' },
-		}),
 	]
 	for (const request of unauthorizedConnectorRequests) {
 		const response = await workerFetch(request)
 		expect(response.status).toBe(404)
-		if (request.url.endsWith('/connectors') || request.url.endsWith('/home')) {
+		if (request.url.endsWith('/connectors')) {
 			await expect(response.text()).resolves.toBe('Not Found')
 		}
 	}
 
-	const websocketRequest = createRequest(
-		'/@connector-user/connectors/lights/home',
-		{
-			headers: { Upgrade: 'websocket' },
-		},
-	)
+	const websocketRequest = createRequest('/@connector-user/connectors/home', {
+		headers: { Upgrade: 'websocket' },
+	})
 	const websocketResponse = await workerFetch(websocketRequest)
 	expect(websocketResponse.status).toBe(101)
 	expect(websocketResponse.webSocket).toBeTruthy()

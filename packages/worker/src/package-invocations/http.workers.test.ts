@@ -62,7 +62,6 @@ async function createEnv(
 		{
 			id: 'home-default',
 			user_id: tokenUserId,
-			kind: 'home',
 			instance_id: 'home',
 			enabled: 1,
 			attached: 1,
@@ -394,7 +393,7 @@ test('package invocation API validates requests and invokes exports with scoped 
 			packageKodyIds: ['discord-gateway'],
 			exportNames: ['./dispatch-message-created'],
 			sources: ['discord-gateway'],
-			remoteConnectors: [{ kind: 'home', instanceId: 'home' }],
+			remoteConnectors: [{ instanceId: 'home' }],
 		},
 		request: {
 			packageIdOrKodyId: 'discord-gateway',

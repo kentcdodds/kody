@@ -769,7 +769,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ kind: 'lighting', instanceId: 'lighting' }],
+			remoteConnectors: [{ instanceId: 'lighting' }],
 		}),
 		{
 			resolveSecretValue: async (secret, capabilityName) =>
@@ -805,7 +805,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ kind: 'lighting', instanceId: 'lighting' }],
+			remoteConnectors: [{ instanceId: 'lighting' }],
 		}),
 	)
 	try {

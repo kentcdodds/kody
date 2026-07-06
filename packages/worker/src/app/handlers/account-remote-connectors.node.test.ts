@@ -19,7 +19,6 @@ const mockModule = vi.hoisted(() => ({
 	listRemoteConnectorSettingsWithSharedSecrets: vi.fn(async () => [
 		{
 			id: 'connector-1',
-			kind: 'lights',
 			instanceId: 'home',
 			enabled: true,
 			attached: true,
@@ -31,7 +30,6 @@ const mockModule = vi.hoisted(() => ({
 	]),
 	saveRemoteConnectorSetting: vi.fn(async () => ({
 		id: 'connector-1',
-		kind: 'lights',
 		instanceId: 'home',
 		enabled: true,
 		attached: true,
@@ -97,9 +95,8 @@ test('remote connector settings API lists connectors and saves submitted secrets
 		connectors: [
 			{
 				id: 'connector-1',
-				kind: 'lights',
 				instanceId: 'home',
-				connectorUrl: 'wss://example.com/@test-user/connectors/lights/home',
+				connectorUrl: 'wss://example.com/@test-user/connectors/home',
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,
@@ -116,7 +113,6 @@ test('remote connector settings API lists connectors and saves submitted secrets
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				action: 'save',
-				kind: 'roku',
 				instanceId: 'living-room',
 				enabled: true,
 				attached: true,
@@ -130,7 +126,6 @@ test('remote connector settings API lists connectors and saves submitted secrets
 	expect(mockModule.saveRemoteConnectorSetting).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
-			kind: 'roku',
 			instanceId: 'living-room',
 			sharedSecret: 'roku-secret',
 		}),
@@ -144,9 +139,8 @@ test('remote connector settings API lists connectors and saves submitted secrets
 		connectors: [
 			{
 				id: 'connector-1',
-				kind: 'lights',
 				instanceId: 'home',
-				connectorUrl: 'wss://example.com/@test-user/connectors/lights/home',
+				connectorUrl: 'wss://example.com/@test-user/connectors/home',
 				enabled: true,
 				attached: true,
 				hasSharedSecret: true,

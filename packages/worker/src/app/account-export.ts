@@ -82,7 +82,6 @@ type UserSavedPackageSnapshot = {
 }
 
 type UserRemoteConnectorSnapshot = {
-	kind: string
 	instanceId: string
 }
 
@@ -160,7 +159,6 @@ export type AccountExportArtifactRepo = {
 type AccountExportDurableObjects = {
 	jobManager: unknown | null
 	remoteConnectorSessions: Array<{
-		kind: string
 		instanceId: string
 		export: RemoteConnectorSessionExport | null
 	}>
@@ -524,15 +522,14 @@ async function listUserSavedPackages(env: Env, userId: string) {
 }
 
 async function listUserRemoteConnectors(env: Env, userId: string) {
-	const rows = await selectRows<{ kind: string; instance_id: string }>(
+	const rows = await selectRows<{ instance_id: string }>(
 		env,
-		`SELECT kind, instance_id
+		`SELECT instance_id
 		FROM remote_connector_settings
 		WHERE user_id = ?`,
 		[userId],
 	)
 	return rows.map((row) => ({
-		kind: row.kind,
 		instanceId: row.instance_id,
 	}))
 }
@@ -879,7 +876,6 @@ async function exportRemoteConnectorSessions(input: {
 	for (const connector of input.connectors) {
 		const sessionKey = userScopedConnectorSessionKey({
 			userId: input.userId,
-			kind: connector.kind,
 			instanceId: connector.instanceId,
 		})
 		try {
@@ -888,25 +884,21 @@ async function exportRemoteConnectorSessions(input: {
 			) as unknown as {
 				rpcExportUserSession: (payload: {
 					userId: string
-					kind: string
 					instanceId: string
 				}) => Promise<RemoteConnectorSessionExport>
 			}
 			sessions.push({
-				kind: connector.kind,
 				instanceId: connector.instanceId,
 				export: await stub.rpcExportUserSession({
 					userId: input.userId,
-					kind: connector.kind,
 					instanceId: connector.instanceId,
 				}),
 			})
 		} catch (error) {
 			input.warnings.push(
-				`Remote connector session export failed for ${connector.kind}/${connector.instanceId}: ${getErrorMessage(error)}`,
+				`Remote connector session export failed for ${connector.instanceId}: ${getErrorMessage(error)}`,
 			)
 			sessions.push({
-				kind: connector.kind,
 				instanceId: connector.instanceId,
 				export: null,
 			})
