@@ -309,6 +309,62 @@ test('loadAdminUsageData aggregates multiple users and warns above eighty percen
 	).toEqual(['saved_packages', 'email_sends_per_day'])
 })
 
+test('loadAdminUsageData shows email fallback limits for plan-less users', async () => {
+	const email = 'null-plan-email@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	const db = createAdminUsageTestDb({
+		users: [
+			{
+				id: 1,
+				username: 'nullplan',
+				email,
+				plan: null,
+			},
+		],
+		dailyCounters: [
+			{
+				user_id: usageUserId,
+				resource: 'email_receives_per_day',
+				day: '2026-07-05',
+				count: 190,
+			},
+		],
+		resourceCounts: {
+			[usageUserId]: { stored_email_messages: 12 },
+		},
+	})
+
+	const data = await loadAdminUsageData(
+		{ APP_DB: db } as Env,
+		'https://kody.local/admin/usage.json?userId=1',
+		new Date('2026-07-05T12:00:00.000Z'),
+	)
+
+	const consumption = new Map(
+		(data.selectedUser?.entitlementConsumption ?? []).map((entry) => [
+			entry.resource,
+			entry,
+		]),
+	)
+	// Plan-less users stay unlimited for ordinary resources...
+	expect(consumption.get('saved_packages')?.limit).toBeNull()
+	expect(consumption.get('email_sends_per_day')?.limit).toBeNull()
+	// ...but the inbound email resources show the deployment fallbacks.
+	expect(consumption.get('email_receives_per_day')).toMatchObject({
+		current: 190,
+		limit: 200,
+		overEightyPercent: true,
+	})
+	expect(consumption.get('stored_email_messages')).toMatchObject({
+		current: 12,
+		limit: 2000,
+		overEightyPercent: false,
+	})
+	expect(
+		data.selectedUser?.warnings.map((warning) => warning.resource),
+	).toEqual(['email_receives_per_day'])
+})
+
 test('loadAdminUsageData keeps current-month and month-over-month rollups on UTC month boundaries', async () => {
 	const email = 'month-boundary@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)

@@ -1,6 +1,8 @@
 import {
 	entitlementResourceLabels,
+	isEmailFallbackResource,
 	parsePlanName,
+	resolveEmailResourceLimit,
 	resolvePlanLimit,
 	type EntitlementResource,
 	type PlanName,
@@ -308,9 +310,13 @@ async function readEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
-			const limit = input.user.plan
-				? resolvePlanLimit(input.user.plan, resource)
-				: null
+			// Inbound email resources cap plan-less users with deployment
+			// fallbacks, so show the effective limit instead of unlimited.
+			const limit = isEmailFallbackResource(resource)
+				? resolveEmailResourceLimit(input.user.plan, resource)
+				: input.user.plan
+					? resolvePlanLimit(input.user.plan, resource)
+					: null
 			const percentOfLimit =
 				limit == null || limit === 0 ? null : current / limit
 			return {

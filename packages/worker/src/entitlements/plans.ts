@@ -136,6 +136,12 @@ export const nullPlanEmailFallbackLimits = {
 
 export type EmailFallbackResource = keyof typeof nullPlanEmailFallbackLimits
 
+export function isEmailFallbackResource(
+	resource: EntitlementResource,
+): resource is EmailFallbackResource {
+	return resource in nullPlanEmailFallbackLimits
+}
+
 /**
  * Resolve the effective limit for an inbound email resource: the plan limit
  * when the user has a plan, otherwise the NULL-plan fallback backstop.
