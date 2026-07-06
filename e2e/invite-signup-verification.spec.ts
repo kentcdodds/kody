@@ -93,7 +93,12 @@ test('admin invite signup and email verification happy path', async ({
 		page.getByRole('heading', { name: 'Verify your email' }),
 	).toBeVisible()
 	await expect(
-		page.getByText('Outbound email sending stays disabled'),
+		page.getByText('MCP access and email features stay disabled'),
+	).toBeVisible()
+
+	await page.getByRole('button', { name: 'Resend verification email' }).click()
+	await expect(
+		page.getByText('Verification email sent. Check your inbox.'),
 	).toBeVisible()
 
 	await setEmailVerificationTokenInE2eDatabase({
