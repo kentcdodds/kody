@@ -11,7 +11,7 @@ import {
 	readEntitlementResourceUsage,
 	utcDayKey,
 } from '#worker/entitlements/service.ts'
-import { resolveUserStableIdByEmail } from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AdminUsageDailyCounter,
 	type AdminUsageEntitlementConsumption,
@@ -70,6 +70,7 @@ type AdminUsageUserRow = {
 	username: string
 	email: string
 	plan: string | null
+	stable_user_id?: string | null
 }
 
 type AdminUsageRollupRow = {
@@ -112,7 +113,7 @@ export async function loadAdminUsageData(
 			total: number
 		}>(),
 		env.APP_DB.prepare(
-			`SELECT id, username, email, plan
+			`SELECT id, username, email, plan, stable_user_id
 			 FROM users
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
@@ -121,7 +122,7 @@ export async function loadAdminUsageData(
 			.all<AdminUsageUserRow>(),
 	])
 
-	const users = await addUsageIds(env.APP_DB, userRows.results ?? [])
+	const users = await addUsageIds(userRows.results ?? [])
 	const selectedUser = await loadSelectedUser({
 		db: env.APP_DB,
 		users,
@@ -166,7 +167,6 @@ export async function loadAdminUsageData(
 }
 
 async function addUsageIds(
-	db: D1Database,
 	rows: Array<AdminUsageUserRow>,
 ): Promise<Array<UserWithUsageId>> {
 	return await Promise.all(
@@ -175,7 +175,7 @@ async function addUsageIds(
 			username: row.username,
 			email: row.email,
 			plan: parsePlanName(row.plan),
-			usageUserId: await resolveUserStableIdByEmail({ db, email: row.email }),
+			usageUserId: await resolveUserStableId(row),
 		})),
 	)
 }
@@ -193,11 +193,13 @@ async function loadSelectedUser(input: {
 	if (visibleUser) return visibleUser
 
 	const row = await input.db
-		.prepare(`SELECT id, username, email, plan FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT id, username, email, plan, stable_user_id FROM users WHERE id = ?`,
+		)
 		.bind(input.selectedUserId)
 		.first<AdminUsageUserRow>()
 	if (!row) return input.users[0] ?? null
-	const [user] = await addUsageIds(input.db, [row])
+	const [user] = await addUsageIds([row])
 	return user ?? null
 }
 

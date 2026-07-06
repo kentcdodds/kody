@@ -96,7 +96,7 @@ function createAdminUsageTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan from users where id = ?',
+							'select id, username, email, plan, stable_user_id from users where id = ?',
 						)
 					) {
 						return (users.find((user) => user.id === Number(params[0])) ??
@@ -118,7 +118,7 @@ function createAdminUsageTestDb(input: {
 				async all<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan from users order by id asc limit ? offset ?',
+							'select id, username, email, plan, stable_user_id from users order by id asc limit ? offset ?',
 						)
 					) {
 						const pageSize = Number(params[0])
