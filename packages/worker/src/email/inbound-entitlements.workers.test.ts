@@ -28,6 +28,7 @@ import { ensureEmailTestSchema } from './test-schema.ts'
 async function seedAccountWithPlan(input: {
 	email: string
 	plan: 'personal' | null
+	emailVerifiedAt?: string | null
 }) {
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan)
@@ -37,7 +38,9 @@ async function seedAccountWithPlan(input: {
 			`inbound-entitlement-${crypto.randomUUID().slice(0, 8)}`,
 			input.email,
 			'test-password-hash',
-			new Date().toISOString(),
+			input.emailVerifiedAt === undefined
+				? new Date().toISOString()
+				: input.emailVerifiedAt,
 			input.plan,
 		)
 		.run()
@@ -210,9 +213,10 @@ test('inbound email rejects plan users at the stored message cap and still count
 test('inbound email applies the NULL-plan fallback receive limit', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	// No users row exists for this synthetic user id, so the plan lookup
-	// resolves nothing and the deployment fallback applies.
-	const userId = `inbound-fallback-${crypto.randomUUID()}`
+	// A verified account with a NULL plan gets the deployment fallback.
+	const email = `fallback-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedAccountWithPlan({ email, plan: null })
 	const fallbackLimit = nullPlanEmailFallbackLimits.email_receives_per_day
 	const { address } = await seedInboxWithAddress(userId)
 	await setDailyReceiveCounter(userId, fallbackLimit)
@@ -310,15 +314,19 @@ test('findUserAccountByStableUserId resolves accounts, caches hits, and recovers
 	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
 		email,
 		plan: 'personal',
+		emailVerified: true,
 	})
 	// Second call takes the cached-email point-read path and must still
-	// reflect the current plan value.
-	await env.APP_DB.prepare(`UPDATE users SET plan = NULL WHERE email = ?`)
+	// reflect the current plan and verified state.
+	await env.APP_DB.prepare(
+		`UPDATE users SET plan = NULL, email_verified_at = NULL WHERE email = ?`,
+	)
 		.bind(email)
 		.run()
 	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
 		email,
 		plan: null,
+		emailVerified: false,
 	})
 	// Deleting the account invalidates the cached entry.
 	await env.APP_DB.prepare(`DELETE FROM users WHERE email = ?`)
@@ -329,6 +337,42 @@ test('findUserAccountByStableUserId resolves accounts, caches hits, and recovers
 		await findUserAccountByStableUserId(env.APP_DB, `unknown-${userId}`),
 	).toBeNull()
 	expect(await findUserAccountByStableUserId(env.APP_DB, '  ')).toBeNull()
+})
+
+test('inbound email rejects unverified accounts without consuming quota, with bounded events', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const email = `unverified-quota-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedAccountWithPlan({ email, plan: 'personal', emailVerifiedAt: null })
+	const { address } = await seedInboxWithAddress(userId)
+
+	for (let index = 0; index < 2; index += 1) {
+		const message = buildInboundMessage(address)
+		await handleInboundEmail(message, env)
+		expect(message.rejectedReason).toBe('Account email is not verified.')
+	}
+
+	expect(
+		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
+	).toEqual([])
+	// An account that can never receive must not accumulate receive quota.
+	expect(await readDailyReceiveCounter(userId)).toBe(0)
+	const rejections = await readRejectionEvents(userId)
+	expect(rejections.detailed).toHaveLength(2)
+	expect(rejections.detailed[0]?.detail).toMatchObject({
+		phase: 'account-verification',
+		reason: 'Account email is not verified.',
+	})
+	expect(rejections.aggregate?.detail).toMatchObject({
+		count: 2,
+		last_phase: 'account-verification',
+	})
+	// Attempts are still metered for owner visibility.
+	expect(await readEmailReceivedRollup(userId)).toMatchObject({
+		event_count: 2,
+		error_count: 2,
+	})
 })
 
 test('inbound email under quota stores the message, counts the receive, and records usage', async () => {

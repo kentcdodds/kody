@@ -10,7 +10,11 @@ import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { emailUsageGetCapability } from './email-usage-get.ts'
 
-async function seedUser(input: { email: string; plan: 'personal' | null }) {
+async function seedUser(input: {
+	email: string
+	plan: 'personal' | null
+	emailVerifiedAt?: string | null
+}) {
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan)
 			VALUES (?, ?, ?, ?, ?)`,
@@ -19,7 +23,9 @@ async function seedUser(input: { email: string; plan: 'personal' | null }) {
 			`email-usage-${crypto.randomUUID().slice(0, 8)}`,
 			input.email,
 			'test-password-hash',
-			new Date().toISOString(),
+			input.emailVerifiedAt === undefined
+				? new Date().toISOString()
+				: input.emailVerifiedAt,
 			input.plan,
 		)
 		.run()
@@ -65,13 +71,24 @@ function buildCallerContext(user: { userId: string; email: string } | null) {
 	})
 }
 
-test('email_usage_get requires a signed-in user', async () => {
+test('email_usage_get requires a signed-in, verified user', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
 	await expect(
 		emailUsageGetCapability.handler(
 			{},
 			{ env, callerContext: buildCallerContext(null) },
 		),
 	).rejects.toThrow(/Authenticated MCP user/)
+
+	const email = `usage-unverified-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedUser({ email, plan: null, emailVerifiedAt: null })
+	await expect(
+		emailUsageGetCapability.handler(
+			{},
+			{ env, callerContext: buildCallerContext({ userId, email }) },
+		),
+	).rejects.toThrow(/Account email is not verified/)
 })
 
 test('email_usage_get returns plan limits and current counts for plan users', async () => {

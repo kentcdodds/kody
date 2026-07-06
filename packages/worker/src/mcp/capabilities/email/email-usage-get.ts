@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import {
 	planNames,
@@ -13,6 +12,7 @@ import {
 	readEntitlementResourceUsage,
 	utcDayKey,
 } from '#worker/entitlements/service.ts'
+import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
 const usageEntrySchema = z.object({
 	count: z.number().int().nonnegative(),
@@ -42,7 +42,7 @@ export const emailUsageGetCapability = defineDomainCapability(
 			max_message_bytes: z.number().int().nonnegative().nullable(),
 		}),
 		async handler(_args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const user = await requireVerifiedEmailAccountUser(ctx)
 			const db = ctx.env.APP_DB
 			const now = new Date()
 			const plan = await getUserPlan(db, {

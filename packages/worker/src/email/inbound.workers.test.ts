@@ -312,16 +312,30 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 		limit: 10,
 	})
 	expect(messages).toEqual([])
+	// Unverified-account rejections go through the bounded recorder: one
+	// detailed event plus the daily aggregate row.
 	const events = await env.APP_DB.prepare(
 		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
 	)
 		.bind(userId)
 		.all<{ event_type: string; detail_json: string }>()
-	expect(events.results).toHaveLength(1)
-	expect(events.results?.[0]?.event_type).toBe('rejected')
-	expect(JSON.parse(events.results?.[0]?.detail_json ?? '{}')).toMatchObject({
+	const details = (events.results ?? []).map((row) => ({
+		eventType: row.event_type,
+		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
+	}))
+	expect(details).toHaveLength(2)
+	expect(details.every((row) => row.eventType === 'rejected')).toBe(true)
+	expect(
+		details.find((row) => row.detail['aggregate'] !== true)?.detail,
+	).toMatchObject({
 		reason: 'Account email is not verified.',
 		phase: 'account-verification',
+	})
+	expect(
+		details.find((row) => row.detail['aggregate'] === true)?.detail,
+	).toMatchObject({
+		count: 1,
+		last_phase: 'account-verification',
 	})
 })
 

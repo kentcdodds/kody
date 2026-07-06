@@ -41,38 +41,62 @@ export async function getUserPlan(
  */
 const stableUserIdEmailCache = new Map<string, string>()
 
+export type StableUserAccount = {
+	email: string
+	plan: PlanName | null
+	/** Whether users.email_verified_at is set. Read fresh, never cached. */
+	emailVerified: boolean
+}
+
 /**
  * Reverse-resolve a stable MCP userId (SHA-256 of the normalized account
- * email) back to the account email and plan. There is no stored mapping, so
- * the cold path scans the users table and hashes each email until one
- * matches — the same pattern `isAccountEmailVerified` uses — and positive
- * matches are cached per isolate so hot paths pay one point read. Only call
- * this on paths that genuinely have no caller context email (for example
- * inbound email routing); interactive surfaces already carry the email.
+ * email) back to the account email, plan, and verified-email state. There
+ * is no stored mapping, so the cold path scans the users table and hashes
+ * each email until one matches — the same pattern `isAccountEmailVerified`
+ * uses — and positive matches are cached per isolate so hot paths pay one
+ * point read. Plan and verified state are always read fresh; only the
+ * id→email mapping (a content hash that can never go stale) is cached.
+ * Only call this on paths that genuinely have no caller context email
+ * (for example inbound email routing); interactive surfaces already carry
+ * the email.
  */
 export async function findUserAccountByStableUserId(
 	db: D1Database,
 	stableUserId: string,
-): Promise<{ email: string; plan: PlanName | null } | null> {
+): Promise<StableUserAccount | null> {
 	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	const cachedEmail = stableUserIdEmailCache.get(trimmed)
 	if (cachedEmail) {
 		const row = await db
-			.prepare(`SELECT plan FROM users WHERE email = ?`)
+			.prepare(`SELECT plan, email_verified_at FROM users WHERE email = ?`)
 			.bind(cachedEmail)
-			.first<{ plan: string | null }>()
-		if (row) return { email: cachedEmail, plan: parsePlanName(row.plan) }
+			.first<{ plan: string | null; email_verified_at: string | null }>()
+		if (row) {
+			return {
+				email: cachedEmail,
+				plan: parsePlanName(row.plan),
+				emailVerified: Boolean(row.email_verified_at),
+			}
+		}
 		// The account is gone (deleted); drop the entry and rescan.
 		stableUserIdEmailCache.delete(trimmed)
 	}
 	const rows = await db
-		.prepare(`SELECT email, plan FROM users`)
-		.all<{ email: string; plan: string | null }>()
+		.prepare(`SELECT email, plan, email_verified_at FROM users`)
+		.all<{
+			email: string
+			plan: string | null
+			email_verified_at: string | null
+		}>()
 	for (const row of rows.results ?? []) {
 		if ((await createStableUserIdFromEmail(row.email)) === trimmed) {
 			stableUserIdEmailCache.set(trimmed, row.email)
-			return { email: row.email, plan: parsePlanName(row.plan) }
+			return {
+				email: row.email,
+				plan: parsePlanName(row.plan),
+				emailVerified: Boolean(row.email_verified_at),
+			}
 		}
 	}
 	return null

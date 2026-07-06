@@ -13,21 +13,28 @@ const { emailMessageSearchCapability } =
 	await import('./email-message-search.ts')
 const { createMcpCallerContext } = await import('#mcp/context.ts')
 
-test('email_message_search requires a signed-in user and forwards the query scoped to that user', async () => {
-	const env = { APP_DB: {} } as Env
-	await expect(
-		emailMessageSearchCapability.handler(
-			{ query: 'invoice', limit: 25 },
-			{
-				env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-				}),
-			},
-		),
-	).rejects.toThrow(/Authenticated MCP user/)
+function createUsersDb(emailVerifiedAt: string | null) {
+	return {
+		prepare: () => ({
+			bind: () => ({
+				first: async () => ({ email_verified_at: emailVerifiedAt }),
+			}),
+		}),
+	} as unknown as D1Database
+}
 
-	const callerContext = createMcpCallerContext({
+function createEnv(options: { emailVerifiedAt?: string | null } = {}) {
+	return {
+		APP_DB: createUsersDb(
+			options.emailVerifiedAt === undefined
+				? '2026-01-01T00:00:00.000Z'
+				: options.emailVerifiedAt,
+		),
+	} as Env
+}
+
+function createUserContext() {
+	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
 			userId: 'user-1',
@@ -35,6 +42,33 @@ test('email_message_search requires a signed-in user and forwards the query scop
 			displayName: 'User Example',
 		},
 	})
+}
+
+test('email_message_search requires a signed-in, verified user and forwards the query scoped to that user', async () => {
+	await expect(
+		emailMessageSearchCapability.handler(
+			{ query: 'invoice', limit: 25 },
+			{
+				env: createEnv(),
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+				}),
+			},
+		),
+	).rejects.toThrow(/Authenticated MCP user/)
+
+	await expect(
+		emailMessageSearchCapability.handler(
+			{ query: 'invoice', limit: 25 },
+			{
+				env: createEnv({ emailVerifiedAt: null }),
+				callerContext: createUserContext(),
+			},
+		),
+	).rejects.toThrow(/Account email is not verified/)
+	expect(mockModule.searchEmailMessages).not.toHaveBeenCalled()
+
+	const env = createEnv()
 	mockModule.searchEmailMessages.mockResolvedValueOnce([
 		{
 			id: 'message-1',
@@ -63,11 +97,11 @@ test('email_message_search requires a signed-in user and forwards the query scop
 			direction: 'inbound',
 			limit: 10,
 		},
-		{ env, callerContext },
+		{ env, callerContext: createUserContext() },
 	)
 
 	expect(mockModule.searchEmailMessages).toHaveBeenCalledWith({
-		db: {},
+		db: env.APP_DB,
 		userId: 'user-1',
 		query: 'invoice',
 		inboxId: 'inbox-1',

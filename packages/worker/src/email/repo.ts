@@ -1017,18 +1017,20 @@ export async function getEmailAttachmentById(input: {
 }
 
 /**
- * How many quota/size rejections per inbox per UTC day get their own
- * delivery-event row before collapsing into the daily aggregate row.
+ * How many quota/size/verification rejections per inbox per UTC day get
+ * their own delivery-event row before collapsing into the daily aggregate
+ * row.
  */
 export const maxDetailedEmailRejectionEventsPerDay = 5
 
 /**
- * Record an entitlement/size rejection without unbounded row growth. Every
- * rejection upserts one aggregate 'rejected' event per inbox per UTC day
- * (deterministic id, counter in detail_json), and only the first
- * `maxDetailedEmailRejectionEventsPerDay` attempts of the day also store an
- * individual detailed event. Over-quota traffic is attacker-controlled and
- * unmetered by the daily receive counter (which is already exhausted), so
+ * Record an entitlement/size/verification rejection without unbounded row
+ * growth. Every rejection upserts one aggregate 'rejected' event per inbox
+ * per UTC day (deterministic id, counter in detail_json), and only the
+ * first `maxDetailedEmailRejectionEventsPerDay` attempts of the day also
+ * store an individual detailed event. This traffic is attacker-controlled
+ * and not limited by the daily receive counter (over-quota mail has
+ * already exhausted it; unverified-account mail never consumes it), so
  * without this cap a flood of rejected mail would grow D1 one row per
  * attempt — the denial-of-wallet shape the quotas exist to prevent.
  */
@@ -1038,7 +1040,7 @@ export async function recordBoundedEmailRejectionEvent(input: {
 	inboxId: string
 	recipient: string
 	reason: string
-	phase: 'entitlement' | 'size'
+	phase: 'entitlement' | 'size' | 'account-verification'
 	now?: Date
 }) {
 	const now = input.now ?? new Date()

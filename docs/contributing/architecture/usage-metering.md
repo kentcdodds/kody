@@ -52,11 +52,11 @@ stays reviewable in one place.
 | `email_received`   | one inbound receive attempt for a routed inbox  | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)      | email message id (when stored) |
 
 `email_received` covers receive attempts once an inbound message is routed to a
-known, enabled inbox: stored messages record `success`; size rejections,
-entitlement rejections, and parse failures record `error`. The `bytes` field
-always carries the raw message size, including for rejected mail. Mail rejected
-before inbox resolution (unknown alias, disabled inbox) has no owning user and
-is not metered.
+known, enabled inbox: stored messages record `success`; unverified-account
+rejections, size rejections, entitlement rejections, and parse failures record
+`error`. The `bytes` field always carries the raw message size, including for
+rejected mail. Mail rejected before inbox resolution (unknown alias, disabled
+inbox) has no owning user and is not metered.
 
 ### Nesting: metrics are independent, do not sum across types
 
