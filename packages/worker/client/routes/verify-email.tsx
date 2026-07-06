@@ -21,8 +21,7 @@ export function VerifyEmailRoute(handle: Handle) {
 				error:
 					'Open the verification link from your email to verify your account.',
 			} satisfies EmailVerificationLoaderData)
-		const isEmailChange =
-			data.ok && data.message.includes('email has been changed')
+		const isEmailChange = data.ok && data.kind === 'email_change'
 		const title = data.ok
 			? isEmailChange
 				? 'Email changed'

@@ -83,6 +83,12 @@ export async function createEmailChangeVerification(input: {
 	const tokenHash = await hashVerificationToken(token)
 	const expiresAt = Date.now() + emailChangeTokenExpiryMs
 
+	await input.appEnv.APP_DB.prepare(
+		`DELETE FROM pending_email_changes WHERE user_id = ?`,
+	)
+		.bind(input.userId)
+		.run()
+
 	await db.create(pendingEmailChangesTable, {
 		user_id: input.userId,
 		new_email: input.newEmail,

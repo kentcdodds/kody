@@ -97,6 +97,7 @@ export function createVerifyEmailChangeHandler(env: Env) {
 				loaderData: {
 					emailVerification: {
 						ok: true,
+						kind: 'email_change',
 						message: 'Your account email has been changed and verified.',
 					},
 				},

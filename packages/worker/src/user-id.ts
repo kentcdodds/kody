@@ -21,16 +21,40 @@ export async function resolveUserStableId(row: UserStableIdRow) {
 	return stored || (await createStableUserIdFromEmail(row.email))
 }
 
+function isMissingStableUserIdColumnError(error: unknown) {
+	let currentError = error
+	while (currentError instanceof Error) {
+		const message = currentError.message.toLowerCase()
+		if (
+			message.includes('stable_user_id') &&
+			(message.includes('no such column') ||
+				message.includes('unsupported first query'))
+		) {
+			return true
+		}
+		currentError = currentError.cause
+	}
+	return false
+}
+
 export async function resolveUserStableIdByEmail(input: {
 	db: D1Database
 	email: string
 }) {
 	const email = input.email.trim().toLowerCase()
-	const row = await input.db
-		.prepare(`SELECT email, stable_user_id FROM users WHERE email = ?`)
-		.bind(email)
-		.first<{ email: string; stable_user_id: string | null }>()
-		.catch(() => null)
+	let row: UserStableIdRow | null
+	try {
+		row = await input.db
+			.prepare(`SELECT email, stable_user_id FROM users WHERE email = ?`)
+			.bind(email)
+			.first<{ email: string; stable_user_id: string | null }>()
+	} catch (error) {
+		if (!isMissingStableUserIdColumnError(error)) throw error
+		row = await input.db
+			.prepare(`SELECT email FROM users WHERE email = ?`)
+			.bind(email)
+			.first<{ email: string }>()
+	}
 	return row
 		? await resolveUserStableId(row)
 		: await createStableUserIdFromEmail(email)
@@ -56,7 +80,8 @@ export async function findUserRowByStableUserId<
 			.bind(stableUserId)
 			.first<T>()
 		if (storedRow) return storedRow
-	} catch {
+	} catch (error) {
+		if (!isMissingStableUserIdColumnError(error)) throw error
 		// Some legacy tests and pre-migration databases do not expose
 		// stable_user_id; the scan below falls back to hashing the email.
 	}
@@ -64,7 +89,8 @@ export async function findUserRowByStableUserId<
 	let rows: D1Result<T>
 	try {
 		rows = await input.db.prepare(input.select).all<T>()
-	} catch {
+	} catch (error) {
+		if (!isMissingStableUserIdColumnError(error)) throw error
 		rows = await input.db
 			.prepare(withoutStableUserIdColumn(input.select))
 			.all<T>()

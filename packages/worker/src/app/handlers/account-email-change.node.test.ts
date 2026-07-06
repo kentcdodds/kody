@@ -212,6 +212,11 @@ test('email change requests require the current password and create a pending ve
 		}),
 	)
 	expect(wrongPasswordResponse.status).toBe(401)
+	expect(await wrongPasswordResponse.json()).toEqual({
+		ok: false,
+		code: 'invalid_password',
+		error: 'Password is incorrect.',
+	})
 	expect(
 		sqlite
 			.prepare(`SELECT COUNT(*) AS count FROM pending_email_changes`)
@@ -242,6 +247,30 @@ test('email change requests require the current password and create a pending ve
 		new_email: 'new@example.com',
 		token_hash: expect.any(String),
 	})
+	const firstPendingToken = (
+		sqlite
+			.prepare(`SELECT token_hash FROM pending_email_changes WHERE user_id = 1`)
+			.get() as { token_hash: string }
+	).token_hash
+
+	const resendResponse = await runHandler(
+		handler,
+		await createRequest({
+			session,
+			email: 'new@example.com',
+			password: 'correct-password',
+		}),
+	)
+	expect(resendResponse.status).toBe(200)
+	const pendingRows = sqlite
+		.prepare(`SELECT new_email, token_hash FROM pending_email_changes`)
+		.all() as Array<{ new_email: string; token_hash: string }>
+	expect(pendingRows).toHaveLength(1)
+	expect(pendingRows[0]).toMatchObject({
+		new_email: 'new@example.com',
+		token_hash: expect.any(String),
+	})
+	expect(pendingRows[0]?.token_hash).not.toBe(firstPendingToken)
 })
 
 test('email change requests reject emails already owned by another account', async () => {
@@ -290,17 +319,19 @@ test('email change verification updates email and preserves stable user id', asy
 	})
 	const token = 'verify-email-change-token'
 	const tokenHash = await hashVerificationToken(token)
+	const now = new Date('2026-07-06T00:00:00.000Z')
+	const expiresAt = now.getTime() + 60_000
 	sqlite.exec(`
 		INSERT INTO email_verifications (user_id, token_hash, expires_at)
-		VALUES (1, 'old-account-token', ${Date.now() + 60_000});
+		VALUES (1, 'old-account-token', ${expiresAt});
 		INSERT INTO pending_email_changes (user_id, new_email, token_hash, expires_at)
-		VALUES (1, 'new@example.com', ${quoteSql(tokenHash)}, ${Date.now() + 60_000});
+		VALUES (1, 'new@example.com', ${quoteSql(tokenHash)}, ${expiresAt});
 	`)
 
 	const result = await verifyEmailChangeToken({
 		db,
 		token,
-		now: new Date('2026-07-06T00:00:00.000Z'),
+		now,
 	})
 	expect(result).toEqual({
 		ok: true,

@@ -212,8 +212,10 @@ export function AccountRoute(handle: Handle) {
 				}),
 			})
 			if (response.status === 401) {
-				const payload = await readJson<{ error?: string }>(response)
-				if (payload?.error === 'Password is incorrect.') {
+				const payload = await readJson<{ code?: string; error?: string }>(
+					response,
+				)
+				if (payload?.code === 'invalid_password') {
 					throw new Error(payload.error)
 				}
 				window.location.assign('/login')

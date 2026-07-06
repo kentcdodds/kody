@@ -251,6 +251,7 @@ export type AccountProfileLoaderData = {
 export type EmailVerificationLoaderData =
 	| {
 			ok: true
+			kind: 'email_verify' | 'email_change'
 			message: string
 	  }
 	| {

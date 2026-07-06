@@ -69,6 +69,7 @@ export function createVerifyEmailHandler(env: Env) {
 				loaderData: {
 					emailVerification: {
 						ok: true,
+						kind: 'email_verify',
 						message: 'Your email address has been verified.',
 					},
 				},

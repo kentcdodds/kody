@@ -83,42 +83,6 @@ export function createAccountEmailChangeHandler(appEnv: AppEnv) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
 
-			const passwordValid = await verifyPassword(
-				password,
-				userRecord.password_hash,
-			)
-			if (!passwordValid) {
-				void logAuditEvent({
-					category: 'account',
-					action: 'email_change_request',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'invalid_password',
-				})
-				return jsonResponse({ ok: false, error: 'Password is incorrect.' }, 401)
-			}
-
-			const existingUser = await db.findOne(usersTable, {
-				where: { email: newEmail },
-			})
-			if (existingUser) {
-				void logAuditEvent({
-					category: 'account',
-					action: 'email_change_request',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'email_exists',
-				})
-				return jsonResponse(
-					{ ok: false, error: 'Email already registered.' },
-					409,
-				)
-			}
-
 			const rateLimitKey = `email-change:user:${user.userId}`
 			const rateLimit = await checkRateLimit(
 				appEnv.APP_DB,
@@ -141,6 +105,49 @@ export function createAccountEmailChangeHandler(appEnv: AppEnv) {
 					},
 					429,
 					{ 'Retry-After': String(rateLimit.retryAfterSeconds ?? 60) },
+				)
+			}
+
+			const passwordValid = await verifyPassword(
+				password,
+				userRecord.password_hash,
+			)
+			if (!passwordValid) {
+				void logAuditEvent({
+					category: 'account',
+					action: 'email_change_request',
+					result: 'failure',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'invalid_password',
+				})
+				return jsonResponse(
+					{
+						ok: false,
+						code: 'invalid_password',
+						error: 'Password is incorrect.',
+					},
+					401,
+				)
+			}
+
+			const existingUser = await db.findOne(usersTable, {
+				where: { email: newEmail },
+			})
+			if (existingUser) {
+				void logAuditEvent({
+					category: 'account',
+					action: 'email_change_request',
+					result: 'failure',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'email_exists',
+				})
+				return jsonResponse(
+					{ ok: false, error: 'Email already registered.' },
+					409,
 				)
 			}
 
