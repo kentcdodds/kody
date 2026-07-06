@@ -11,7 +11,11 @@ import {
 	consumeDailyEntitlement,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
-import { normalizeEmailAddress, normalizeSubject } from './address.ts'
+import {
+	normalizeEmailAddress,
+	normalizeSubject,
+	splitEmailLocalPart,
+} from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import {
 	maxInlineRawMimeBytes,
@@ -173,19 +177,24 @@ export async function handleInboundEmail(
 	const atIndex = recipient.lastIndexOf('@')
 	const localPart = recipient.slice(0, atIndex)
 	const recipientDomain = recipient.slice(atIndex + 1)
+	// RFC 5233 subaddressing: `user+tag@...` routes like `user@...`. The
+	// full tagged address stays visible in the stored message's
+	// to_addresses, so automations (for example email.message.received
+	// package handlers) can dispatch on the tag.
+	const { base: localBase } = splitEmailLocalPart(localPart)
 	// Operator-owned system inboxes live on the apex domain, next to the
 	// kody@<apex> transactional sender whose replies they receive. User mail
 	// lives exclusively on the user subdomain; all other apex mail rejects.
 	if (
 		systemDomain &&
 		recipientDomain === systemDomain &&
-		isSystemEmailLocal(localPart)
+		isSystemEmailLocal(localBase)
 	) {
 		await handleSystemInboundEmail({
 			message,
 			env,
 			recipient,
-			localPart,
+			localPart: localBase,
 			systemDomain,
 		})
 		return
@@ -194,14 +203,14 @@ export async function handleInboundEmail(
 		message.setReject('Unknown Kody email address.')
 		return
 	}
-	if (isReservedUsername(localPart)) {
+	if (isReservedUsername(localBase)) {
 		message.setReject('This address is reserved for system mail.')
 		return
 	}
 
 	const identity = await findPublicUserIdentityByUsername({
 		db: env.APP_DB,
-		username: localPart,
+		username: localBase,
 	})
 	if (!identity) {
 		message.setReject('Unknown Kody email address.')

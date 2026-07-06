@@ -129,6 +129,7 @@ test('inbound email routes {username}@platform-domain and auto-provisions the de
 	})
 	await handleInboundEmail(secondMessage, createInboundEnv())
 	expect(secondMessage.rejectedReason).toBeNull()
+
 	// The second delivery reuses the provisioned inbox instead of creating
 	// another one.
 	expect(
@@ -178,6 +179,39 @@ test('inbound email routes {username}@platform-domain and auto-provisions the de
 		limit: 1,
 	})
 	expect(subjectOnly[0]?.threadId).not.toBe(normalizedExistingThread.id)
+
+	// RFC 5233 subaddressing routes {username}+{tag} to the same inbox and
+	// keeps the full tagged address in the stored to_addresses so package
+	// handlers can dispatch on the tag.
+	const taggedAddress = `${username}+billing@${platformDomain}`
+	const taggedMessage = createForwardableEmailMessage({
+		from: 'invoices@example.net',
+		to: taggedAddress,
+		raw: [
+			'From: Invoices <invoices@example.net>',
+			`To: ${taggedAddress}`,
+			'Subject: Subaddressed mail',
+			'Message-ID: <subaddressed@example.net>',
+			'',
+			'Tagged body.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(taggedMessage, createInboundEnv())
+	expect(taggedMessage.rejectedReason).toBeNull()
+	const taggedStored = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		inboxId: inbox.id,
+		limit: 1,
+	})
+	expect(taggedStored[0]).toMatchObject({
+		subject: 'Subaddressed mail',
+		toAddresses: [taggedAddress],
+	})
+	// Still the same single auto-provisioned inbox after the tagged delivery.
+	expect(
+		await listEmailInboxesForUser({ db: env.APP_DB, userId }),
+	).toHaveLength(1)
 })
 
 test('inbound email rejects unknown usernames, reserved locals, and foreign domains', async () => {
@@ -209,6 +243,16 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 	await expectRejected({
 		to: `help@${platformDomain}`,
 		reason: 'This address is reserved for system mail.',
+	})
+	// Subaddressing cannot smuggle past the reserved or unknown checks: the
+	// base local part (before the +) is what routes.
+	await expectRejected({
+		to: `help+tag@${platformDomain}`,
+		reason: 'This address is reserved for system mail.',
+	})
+	await expectRejected({
+		to: `missing-${crypto.randomUUID().slice(0, 8)}+tag@${platformDomain}`,
+		reason: 'Unknown Kody email address.',
 	})
 	// Mail for other domains is never a Kody user inbox.
 	await expectRejected({

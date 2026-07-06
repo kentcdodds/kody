@@ -124,6 +124,34 @@ test('reserved system locals store under the operator-owned system inbox', async
 		.bind(systemEmailOwnerId)
 		.first<{ event_count: number; error_count: number }>()
 	expect(rollup).toMatchObject({ event_count: 1, error_count: 0 })
+
+	// Subaddressed system mail (support+tag@apex) routes to the same
+	// operator inbox for the base local part.
+	const tagged = buildInboundMessage({
+		to: `support+ticket-123@${systemDomain}`,
+		subject: 'Tagged system mail',
+	})
+	await handleInboundEmail(tagged, createInboundEnv())
+	expect(tagged.rejectedReason).toBeNull()
+	const taggedMessages = await listEmailMessages({
+		db: env.APP_DB,
+		userId: systemEmailOwnerId,
+		limit: 10,
+	})
+	expect(taggedMessages[0]).toMatchObject({
+		subject: 'Tagged system mail',
+		toAddresses: [`support+ticket-123@${systemDomain}`],
+	})
+	expect(
+		(
+			await listEmailInboxesForUser({
+				db: env.APP_DB,
+				userId: systemEmailOwnerId,
+			})
+		)
+			.map((inbox) => inbox.name)
+			.sort(),
+	).toEqual(['kody', 'support'])
 })
 
 test('non-system reserved locals still reject while username addresses are unaffected', async () => {

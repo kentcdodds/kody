@@ -14,6 +14,14 @@ platform-assigned sender address.
 - Inbound mail to `{username}@<platform domain>` routes to the user who owns
   that username. The default inbox is provisioned automatically at signup (or on
   the first inbound message), so there is nothing to create or configure.
+- Subaddressing (RFC 5233 plus addressing) is supported: mail to
+  `{username}+{tag}@<platform domain>` routes to `{username}`'s inbox (and
+  `support+{tag}@<apex>` to the corresponding system inbox). The base local part
+  — everything before the first `+` — is what routes, so a tag can never bypass
+  the reserved or unknown-username checks. The full tagged address is preserved
+  in the stored message's `to_addresses`, so a package subscribing to
+  `email.message.received` can dispatch on the tag (for example, only handle
+  mail addressed to `{username}+invoices@...`).
 - Mail to unknown usernames is rejected, and the app's apex domain is never a
   user inbox: user mail lives exclusively on the configured platform domain (the
   `inbox.` subdomain by default), while the apex hosts only system mail — the
