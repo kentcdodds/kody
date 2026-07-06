@@ -171,6 +171,7 @@ export const EnvSchema = object({
 		'Missing PACKAGE_SERVICE_INSTANCE binding for package service runtimes.',
 	),
 	APP_BASE_URL: optionalUrlStringSchema,
+	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
 	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,

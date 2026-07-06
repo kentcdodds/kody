@@ -18,7 +18,8 @@ import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runti
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
-const platformDomain = 'kody.example.com'
+// User mail lives on the inbox. subdomain derived from APP_BASE_URL.
+const platformDomain = 'inbox.kody.example.com'
 
 function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
@@ -214,6 +215,20 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 		to: 'someone@other.example.com',
 		reason: 'Unknown Kody email address.',
 	})
+	// The app's apex domain is not a user inbox either: user mail lives
+	// exclusively on the inbox. subdomain; the apex hosts only system mail.
+	{
+		const apexUsername = `apex-${crypto.randomUUID().slice(0, 8)}`
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: `apex-${crypto.randomUUID()}@example.com`,
+			username: apexUsername,
+		})
+		await expectRejected({
+			to: `${apexUsername}@kody.example.com`,
+			reason: 'Unknown Kody email address.',
+		})
+	}
 
 	// A disabled legacy row holding the platform address makes the inbox
 	// unavailable (clean reject) instead of crashing provisioning on the

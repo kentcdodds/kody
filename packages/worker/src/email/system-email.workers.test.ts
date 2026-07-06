@@ -17,7 +17,9 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
-const platformDomain = 'kody.example.com'
+// System inboxes live on the apex; user mail lives on the inbox. subdomain.
+const systemDomain = 'kody.example.com'
+const userDomain = 'inbox.kody.example.com'
 
 function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
@@ -86,7 +88,7 @@ test('reserved system locals store under the operator-owned system inbox', async
 	await seedVerifiedAccount({ email: legacyEmail, username: 'kody' })
 
 	const message = buildInboundMessage({
-		to: `kody@${platformDomain}`,
+		to: `kody@${systemDomain}`,
 		subject: 'Cloudflare confirmation',
 	})
 	await handleInboundEmail(message, createInboundEnv())
@@ -132,15 +134,30 @@ test('non-system reserved locals still reject while username addresses are unaff
 	await seedVerifiedAccount({ email, username })
 
 	const reservedMessage = buildInboundMessage({
-		to: `help@${platformDomain}`,
+		to: `help@${userDomain}`,
 	})
 	await handleInboundEmail(reservedMessage, createInboundEnv())
 	expect(reservedMessage.rejectedReason).toBe(
 		'This address is reserved for system mail.',
 	)
 
+	// System locals only route on the apex: on the user subdomain they stay
+	// reserved, and non-system locals on the apex are not addresses at all.
+	const subdomainSystemLocal = buildInboundMessage({
+		to: `kody@${userDomain}`,
+	})
+	await handleInboundEmail(subdomainSystemLocal, createInboundEnv())
+	expect(subdomainSystemLocal.rejectedReason).toBe(
+		'This address is reserved for system mail.',
+	)
+	const apexNonSystemLocal = buildInboundMessage({
+		to: `${username}@${systemDomain}`,
+	})
+	await handleInboundEmail(apexNonSystemLocal, createInboundEnv())
+	expect(apexNonSystemLocal.rejectedReason).toBe('Unknown Kody email address.')
+
 	const userMessage = buildInboundMessage({
-		to: `${username}@${platformDomain}`,
+		to: `${username}@${userDomain}`,
 		subject: 'User inbox still works',
 	})
 	await handleInboundEmail(userMessage, createInboundEnv())
@@ -154,7 +171,7 @@ test('system email size and daily caps reject before storage with bounded events
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 
-	const oversize = buildInboundMessage({ to: `abuse@${platformDomain}` })
+	const oversize = buildInboundMessage({ to: `abuse@${systemDomain}` })
 	Object.defineProperty(oversize, 'rawSize', {
 		value: systemEmailLimits.maxMessageBytes + 1,
 	})
@@ -184,7 +201,7 @@ test('system email size and daily caps reject before storage with bounded events
 	const attempts = maxDetailedEmailRejectionEventsPerDay + 2
 	for (let index = 0; index < attempts; index += 1) {
 		const capped = buildInboundMessage({
-			to: `support@${platformDomain}`,
+			to: `support@${systemDomain}`,
 			messageId: `system-cap-${index}`,
 		})
 		await handleInboundEmail(capped, createInboundEnv())

@@ -17,7 +17,10 @@ import {
 	maxInlineRawMimeBytes,
 	parseForwardableEmailMessage,
 } from './parser.ts'
-import { getPlatformEmailDomain } from './platform-address.ts'
+import {
+	getPlatformEmailDomain,
+	getSystemEmailDomain,
+} from './platform-address.ts'
 import {
 	createEmailThread,
 	findEmailThreadForInboundMessage,
@@ -146,7 +149,11 @@ export async function handleInboundEmail(
 	message: ForwardableEmailMessage,
 	env: Pick<
 		Env,
-		'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'USAGE_EVENTS'
+		| 'APP_DB'
+		| 'BUNDLE_ARTIFACTS_KV'
+		| 'APP_BASE_URL'
+		| 'USER_EMAIL_DOMAIN'
+		| 'USAGE_EVENTS'
 	>,
 	_ctx?: ExecutionContext,
 ) {
@@ -157,7 +164,8 @@ export async function handleInboundEmail(
 	}
 
 	const platformDomain = getPlatformEmailDomain(env)
-	if (!platformDomain) {
+	const systemDomain = getSystemEmailDomain(env)
+	if (!platformDomain && !systemDomain) {
 		message.setReject('Email routing is not configured.')
 		return
 	}
@@ -165,18 +173,25 @@ export async function handleInboundEmail(
 	const atIndex = recipient.lastIndexOf('@')
 	const localPart = recipient.slice(0, atIndex)
 	const recipientDomain = recipient.slice(atIndex + 1)
-	if (recipientDomain !== platformDomain) {
-		message.setReject('Unknown Kody email address.')
-		return
-	}
-	if (isSystemEmailLocal(localPart)) {
+	// Operator-owned system inboxes live on the apex domain, next to the
+	// kody@<apex> transactional sender whose replies they receive. User mail
+	// lives exclusively on the user subdomain; all other apex mail rejects.
+	if (
+		systemDomain &&
+		recipientDomain === systemDomain &&
+		isSystemEmailLocal(localPart)
+	) {
 		await handleSystemInboundEmail({
 			message,
 			env,
 			recipient,
 			localPart,
-			platformDomain,
+			systemDomain,
 		})
+		return
+	}
+	if (!platformDomain || recipientDomain !== platformDomain) {
+		message.setReject('Unknown Kody email address.')
 		return
 	}
 	if (isReservedUsername(localPart)) {
@@ -375,12 +390,12 @@ async function handleSystemInboundEmail(input: {
 	>
 	recipient: string
 	localPart: SystemEmailLocal
-	platformDomain: string
+	systemDomain: string
 }) {
 	const provisioned = await ensureSystemEmailInbox({
 		db: input.env.APP_DB,
 		localPart: input.localPart,
-		domain: input.platformDomain,
+		domain: input.systemDomain,
 	})
 	if (!provisioned) {
 		input.message.setReject('Email inbox is unavailable.')

@@ -16,7 +16,8 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
-const platformDomain = 'kody.example.com'
+// User mail lives on the inbox. subdomain derived from APP_BASE_URL.
+const platformDomain = 'inbox.kody.example.com'
 
 function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }

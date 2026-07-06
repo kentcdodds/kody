@@ -25,7 +25,8 @@ const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
 
 const platformBaseUrl = 'https://kody.example.com'
-const platformDomain = 'kody.example.com'
+// User mail lives on the inbox. subdomain derived from APP_BASE_URL.
+const platformDomain = 'inbox.kody.example.com'
 
 function createBindingSendEnv() {
 	return {

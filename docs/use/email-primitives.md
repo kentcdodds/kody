@@ -2,24 +2,27 @@
 
 Kody has a storage-first email surface for Cloudflare Email Service and Email
 Routing. Every user gets an automatic inbox address at
-`{username}@<platform domain>` (the hostname of the deployment's `APP_BASE_URL`,
-for example `you@heykody.dev`). Kody receives routed mail for that address,
-stores parsed messages for later automation, and can send notify-self mail and
-replies from the matching platform-assigned sender address.
+`{username}@<platform domain>`, where the platform domain is the deployment's
+user email domain: the `USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.`
+plus the hostname of `APP_BASE_URL` (for example `you@inbox.heykody.dev`). Kody
+receives routed mail for that address, stores parsed messages for later
+automation, and can send notify-self mail and replies from the matching
+platform-assigned sender address.
 
 ## Addressing model
 
 - Inbound mail to `{username}@<platform domain>` routes to the user who owns
   that username. The default inbox is provisioned automatically at signup (or on
   the first inbound message), so there is nothing to create or configure.
-- Mail to unknown usernames is rejected.
+- Mail to unknown usernames is rejected, and the app's apex domain is never a
+  user inbox: user mail lives exclusively on the dedicated subdomain, while the
+  apex hosts only system mail — the transactional sender (`kody@<apex>`, used
+  for verification and password-reset mail) and the operator-owned system
+  inboxes (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin` at
+  the apex route to Kody's system inbox, so replies to transactional mail land
+  there). All other apex mail is rejected.
 - Reserved local parts never route to a user inbox and can never be registered
-  as usernames. A configured subset is operator-owned system mail: `kody`,
-  `support`, `abuse`, `postmaster`, `security`, and `admin` at the platform
-  domain route to Kody's system inbox. Other reserved locals still reject.
-- `kody@<platform domain>` is also the system transactional sender for
-  verification and password-reset mail. Inbound replies to that address are
-  operator-owned system mail, not a user's inbox.
+  as usernames.
 - User outbound mail always sends from `{username}@<platform domain>`. The from
   address is platform-assigned: a verified sender identity for it is provisioned
   automatically alongside the default inbox. There is no self-service sender
@@ -174,14 +177,15 @@ the signed-in user.
 
 Run the worker locally with `APP_BASE_URL` set, sign up a user, then post raw
 MIME to Wrangler's email test endpoint addressed to
-`{username}@<APP_BASE_URL hostname>`. The local worker defaults to port `3742`
-unless you set `PORT`:
+`{username}@inbox.<APP_BASE_URL hostname>` (or `{username}@<USER_EMAIL_DOMAIN>`
+when the override is set). The local worker defaults to port `3742` unless you
+set `PORT`:
 
 ```sh
 curl --request POST \
-  'http://localhost:3742/cdn-cgi/handler/email?from=sender@example.com&to=username@example.com' \
+  'http://localhost:3742/cdn-cgi/handler/email?from=sender@example.com&to=username@inbox.example.com' \
   --data-raw 'From: Sender <sender@example.com>
-To: Username <username@example.com>
+To: Username <username@inbox.example.com>
 Subject: Hello
 Message-ID: <hello@example.com>
 

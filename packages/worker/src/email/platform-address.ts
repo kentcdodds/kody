@@ -3,12 +3,20 @@ import { isReservedUsername } from '#app/reserved-usernames.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 /**
- * The email domain every user inbox and user outbound sender lives on:
- * the hostname of `APP_BASE_URL` (for example `heykody.dev`). Returns null
- * when the deployment has no configured base URL, in which case user email
- * addressing is unavailable.
+ * The label prepended to the app hostname to form the default user email
+ * domain (`inbox.heykody.dev` for `APP_BASE_URL` `https://heykody.dev`).
  */
-export function getPlatformEmailDomain(env: {
+export const defaultUserEmailSubdomainLabel = 'inbox'
+
+const bareHostnamePattern = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
+
+/**
+ * The email domain operator-owned system mail lives on: the hostname of
+ * `APP_BASE_URL` (for example `heykody.dev`). The transactional sender
+ * (`kody@<apex>`) and the operator system inboxes both use this apex
+ * domain, keeping them structurally separate from the user subdomain.
+ */
+export function getSystemEmailDomain(env: {
 	APP_BASE_URL?: string | null
 }): string | null {
 	const configuredBaseUrl = env.APP_BASE_URL?.trim()
@@ -16,6 +24,44 @@ export function getPlatformEmailDomain(env: {
 	try {
 		const hostname = new URL(configuredBaseUrl).hostname.toLowerCase()
 		return hostname.length > 0 ? hostname : null
+	} catch {
+		return null
+	}
+}
+
+/**
+ * The email domain every user inbox and user outbound sender lives on: the
+ * `USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.` plus the
+ * hostname of `APP_BASE_URL` (for example `inbox.heykody.dev`).
+ *
+ * User mail deliberately lives on a dedicated subdomain, not the apex: the
+ * user-controlled address namespace stays structurally separate from system
+ * mail on the apex (the `kody@<apex>` transactional sender and the operator
+ * system inboxes), and user outbound sender reputation (SPF/DKIM/DMARC) is
+ * isolated from the system sender's.
+ *
+ * Returns null when nothing is configured, in which case user email
+ * addressing is unavailable.
+ */
+export function getPlatformEmailDomain(env: {
+	APP_BASE_URL?: string | null
+	USER_EMAIL_DOMAIN?: string | null
+}): string | null {
+	const configuredDomain = env.USER_EMAIL_DOMAIN?.trim()
+		.toLowerCase()
+		.replace(/\.$/, '')
+	if (configuredDomain && bareHostnamePattern.test(configuredDomain)) {
+		return configuredDomain
+	}
+	// Runtime env validation should already catch a malformed override; fall
+	// back to the derived default defensively (same as getAppBaseUrl).
+	const configuredBaseUrl = env.APP_BASE_URL?.trim()
+	if (!configuredBaseUrl) return null
+	try {
+		const hostname = new URL(configuredBaseUrl).hostname.toLowerCase()
+		return hostname.length > 0
+			? `${defaultUserEmailSubdomainLabel}.${hostname}`
+			: null
 	} catch {
 		return null
 	}

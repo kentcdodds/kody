@@ -132,6 +132,15 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   control-plane endpoints used by `packages/worker/src/repo/artifacts.ts`
   (`repos`, `tokens`, and `fork`), so local repo create/get/list/token/fork
   calls do not need the live Artifacts REST API.
+- `USER_EMAIL_DOMAIN` — optional override for the user email domain (see
+  `packages/worker/src/email/platform-address.ts`). Defaults to
+  `inbox.<APP_BASE_URL hostname>` (for example `inbox.heykody.dev`): every user
+  inbox and user outbound sender lives at `{username}@<this domain>`. User mail
+  deliberately lives on a subdomain so the user-controlled namespace and its
+  sender reputation stay separate from system transactional mail
+  (`kody@<apex>`). The deployment's Cloudflare zone needs Email Routing enabled
+  for this subdomain (Email > Email Routing > Settings > Add subdomain) with its
+  catch-all routed to the Worker.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
   Defaults to `default` when unset (local dev and tests). Wrangler sets
   `production` and `preview` per environment in
