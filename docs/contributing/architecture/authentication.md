@@ -104,16 +104,49 @@ through `packages/worker/src/app/email/cloudflare-email.ts`, and store
 `users.email_verified_at` only after `GET /verify-email?token=...` succeeds.
 Verification tokens expire after 24 hours and only token hashes are stored.
 
+Signup fails hard when the verification email cannot be sent: the created user
+row is rolled back and any consumed invite use is released, so the
+email/username can be retried. An account must never exist without a way to
+verify it. The only exception is non-production runtimes (local dev, preview,
+test — see `isNonProductionRuntime`) with no Cloudflare email sender configured;
+there the send is skipped and accounts are verified through seeded tokens
+instead.
+
+Signed-in users with an unverified email can request a fresh link with
+`POST /account/resend-verification.json`
+(`packages/worker/src/app/handlers/account-resend-verification.ts`), surfaced as
+a "Resend verification email" button on `/account`. The endpoint reuses
+`createEmailVerification` (invalidating older tokens) and is rate-limited per
+user (3 requests per 15 minutes).
+
 Existing accounts are marked verified by the migration that introduces
 `email_verified_at` so shipped users are not silently blocked by the new gate.
 Seeded/test fixture accounts are also created verified. New accounts created via
 normal signup start unverified, can still sign in, and see the unverified state
 on `/account`.
 
-At minimum, unverified accounts are blocked from sending outbound email. The MCP
-email send/reply capabilities pass the authenticated account email into
-`packages/worker/src/email/outbound.ts`, which checks `users.email_verified_at`
-before sending through a verified sender identity.
+Unverified accounts can still use browser sessions and complete OAuth flows
+(authorize + token exchange keep working so clients can finish login), but
+assistant features are blocked until the email is verified:
+
+- **MCP**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is the single
+  chokepoint for `/mcp`. After token validation it checks
+  `users.email_verified_at` (via `isAccountEmailVerified`) and rejects
+  unverified — or unidentifiable — accounts with a
+  `403 email_verification_required` JSON response pointing at `/account`. The
+  gate fails closed: when verification cannot be established, the request is
+  rejected.
+- **Inbound email**: `handleInboundEmail` in
+  `packages/worker/src/email/inbound.ts` rejects routed mail for unverified
+  accounts right after inbox lookup (`setReject` plus a `rejected` email
+  delivery event); nothing is stored.
+- **Email capabilities**: every capability in the MCP `email` domain calls
+  `requireVerifiedEmailAccountUser`
+  (`packages/worker/src/mcp/capabilities/email/require-verified-user.ts`) as
+  defense-in-depth for callers that do not pass through `/mcp` (execute runtime,
+  package jobs). Outbound sending additionally re-checks the account inside
+  `packages/worker/src/email/outbound.ts` before using a verified sender
+  identity.
 
 ### Password policy
 
@@ -227,6 +260,9 @@ routed from `packages/worker/src/index.ts`.
 - Token is validated via OAuth provider helpers (`unwrapToken`)
 - Audience must match the app origin or `<origin>/mcp`
 - Unauthenticated requests return `401` with `WWW-Authenticate` metadata
+- The account email must be verified; unverified accounts receive a
+  `403 email_verification_required` response (see the email verification section
+  above)
 
 ## What to read when changing auth
 
@@ -239,8 +275,10 @@ routed from `packages/worker/src/index.ts`.
   `packages/worker/src/app/handlers/admin-invites.ts` for invite management
 - `packages/worker/src/app/admin-user-creation.ts` for admin-created account
   setup links
-- `packages/worker/src/app/email-verification.ts` and
-  `packages/worker/src/app/handlers/verify-email.ts` for verification tokens
+- `packages/worker/src/app/email-verification.ts`,
+  `packages/worker/src/app/handlers/verify-email.ts`, and
+  `packages/worker/src/app/handlers/account-resend-verification.ts` for
+  verification tokens and resends
 - `packages/worker/src/app/handlers/account-secrets.ts` for owner-scoped secret
   reveal
 - `packages/worker/src/app/deployment-env.ts` for the production/non-production

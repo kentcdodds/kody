@@ -20,7 +20,12 @@ Use the MCP `email` domain:
 
 ## Safety model
 
-- Any email routed to a configured Kody inbox is stored.
+- Every email capability requires a **verified account email**. Until the
+  account email is verified (via the link sent at signup, or a resend from the
+  `/account` page), email capabilities are rejected, inbound mail routed to the
+  account's aliases is rejected before storage, and MCP access as a whole is
+  disabled.
+- Any email routed to a configured Kody inbox on a verified account is stored.
 - Unknown aliases are rejected before storage.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
