@@ -9,7 +9,7 @@ import {
 import { createEmailInboxWithAddress } from '#worker/email/repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 import { emailInboxCreateOutputSchema } from './shared.ts'
 
 export const emailInboxCreateCapability = defineDomainCapability(
@@ -29,7 +29,7 @@ export const emailInboxCreateCapability = defineDomainCapability(
 		}),
 		outputSchema: emailInboxCreateOutputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const user = await requireVerifiedEmailAccountUser(ctx)
 			const address = requireNormalizedEmailAddress(
 				args.address,
 				'Inbox address',

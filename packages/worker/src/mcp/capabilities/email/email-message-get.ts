@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 import {
 	getEmailMessageById,
 	listEmailAttachmentsForMessage,
@@ -23,7 +23,7 @@ export const emailMessageGetCapability = defineDomainCapability(
 		}),
 		outputSchema: emailMessageDetailSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const user = await requireVerifiedEmailAccountUser(ctx)
 			const message = await getEmailMessageById({
 				db: ctx.env.APP_DB,
 				userId: user.userId,

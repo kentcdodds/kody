@@ -20,10 +20,11 @@ import { ensureEmailTestSchema } from './test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
-async function seedVerifiedAccount(input: {
+async function seedAccount(input: {
 	db: D1Database
 	email: string
 	username: string
+	emailVerifiedAt?: string | null
 }) {
 	await input.db
 		.prepare(
@@ -51,9 +52,19 @@ async function seedVerifiedAccount(input: {
 			input.username,
 			input.email,
 			'test-password-hash',
-			new Date().toISOString(),
+			input.emailVerifiedAt === undefined
+				? new Date().toISOString()
+				: input.emailVerifiedAt,
 		)
 		.run()
+}
+
+async function seedVerifiedAccount(input: {
+	db: D1Database
+	email: string
+	username: string
+}) {
+	await seedAccount(input)
 }
 
 function createForwardableEmailMessage(input: {
@@ -90,7 +101,13 @@ function createForwardableEmailMessage(input: {
 
 test('inbound email handler stores all routed inbound messages', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `email-user-${crypto.randomUUID()}`
+	const accountEmail = `email-user-${crypto.randomUUID()}@example.com`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username: `email-user-${crypto.randomUUID()}`,
+	})
+	const userId = await createStableUserIdFromEmail(accountEmail)
 	const address = requireNormalizedEmailAddress(
 		`support-${crypto.randomUUID()}@example.com`,
 	)
@@ -209,7 +226,13 @@ test('inbound email handler rejects unknown aliases and malformed messages witho
 	})
 	expect(unknownAliasMessages).toEqual([])
 
-	const userId = `email-parse-user-${crypto.randomUUID()}`
+	const accountEmail = `email-parse-user-${crypto.randomUUID()}@example.com`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username: `email-parse-user-${crypto.randomUUID()}`,
+	})
+	const userId = await createStableUserIdFromEmail(accountEmail)
 	const address = requireNormalizedEmailAddress(
 		`parse-${crypto.randomUUID()}@example.com`,
 	)
@@ -246,6 +269,69 @@ test('inbound email handler rejects unknown aliases and malformed messages witho
 		limit: 10,
 	})
 	expect(malformedMessages).toEqual([])
+})
+
+test('inbound email handler rejects mail for unverified accounts', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `email-unverified-${crypto.randomUUID()}@example.com`
+	await seedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username: `email-unverified-${crypto.randomUUID()}`,
+		emailVerifiedAt: null,
+	})
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = requireNormalizedEmailAddress(
+		`unverified-${crypto.randomUUID()}@example.com`,
+	)
+	const inbox = await createEmailInbox({
+		db: env.APP_DB,
+		userId,
+		name: 'Unverified',
+		description: 'Unverified account inbox',
+	})
+	await createEmailInboxAddress({
+		db: env.APP_DB,
+		inboxId: inbox.id,
+		userId,
+		address,
+		localPart: getEmailLocalPart(address),
+		domain: getEmailDomain(address),
+	})
+
+	const message = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: Should be rejected',
+			'Message-ID: <rejected@example.net>',
+			'',
+			'Please help.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(message, env)
+
+	expect(message.rejectedReason).toBe('Account email is not verified.')
+	const messages = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		inboxId: inbox.id,
+		limit: 10,
+	})
+	expect(messages).toEqual([])
+	const events = await env.APP_DB.prepare(
+		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.all<{ event_type: string; detail_json: string }>()
+	expect(events.results).toHaveLength(1)
+	expect(events.results?.[0]?.event_type).toBe('rejected')
+	expect(JSON.parse(events.results?.[0]?.detail_json ?? '{}')).toMatchObject({
+		reason: 'Account email is not verified.',
+		phase: 'account-verification',
+	})
 })
 
 test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {

@@ -1,3 +1,4 @@
+import { isAccountEmailVerified } from '#app/email-verification.ts'
 import {
 	findReplyTokenHash,
 	normalizeEmailAddress,
@@ -63,6 +64,28 @@ export async function handleInboundEmail(
 	}
 
 	const userId = inboxAddress.userId
+	const accountEmailVerified = await isAccountEmailVerified({
+		db: env.APP_DB,
+		stableUserId: userId,
+	})
+	if (!accountEmailVerified) {
+		const reason = 'Account email is not verified.'
+		message.setReject(reason)
+		await insertEmailDeliveryEvent({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			eventType: 'rejected',
+			provider: 'cloudflare-email-routing',
+			detail: {
+				recipient,
+				reason,
+				phase: 'account-verification',
+			},
+		}).catch(() => undefined)
+		return
+	}
+
 	let parsed: Awaited<ReturnType<typeof parseForwardableEmailMessage>>
 	try {
 		parsed = await parseForwardableEmailMessage(message)

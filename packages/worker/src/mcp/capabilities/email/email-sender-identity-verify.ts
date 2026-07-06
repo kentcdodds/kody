@@ -6,7 +6,7 @@ import {
 import { upsertEmailSenderIdentity } from '#worker/email/repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
 const emailSenderIdentityVerifyOutputSchema = z.object({
 	identity_id: z.string(),
@@ -27,7 +27,7 @@ export const emailSenderIdentityVerifyCapability = defineDomainCapability(
 		}),
 		outputSchema: emailSenderIdentityVerifyOutputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const user = await requireVerifiedEmailAccountUser(ctx)
 			const email = requireNormalizedEmailAddress(args.email)
 			const identity = await upsertEmailSenderIdentity({
 				db: ctx.env.APP_DB,

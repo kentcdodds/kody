@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 import { sendOutboundEmail } from '#worker/email/outbound.ts'
 import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
@@ -37,7 +37,7 @@ export const emailSendCapability = defineDomainCapability(
 			error: z.string().nullable(),
 		}),
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const user = await requireVerifiedEmailAccountUser(ctx)
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,

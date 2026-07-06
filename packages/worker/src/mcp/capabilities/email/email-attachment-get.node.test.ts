@@ -13,6 +13,16 @@ const { emailAttachmentGetCapability } =
 	await import('./email-attachment-get.ts')
 const { createMcpCallerContext } = await import('#mcp/context.ts')
 
+function createUsersDb(emailVerifiedAt: string | null) {
+	return {
+		prepare: () => ({
+			bind: () => ({
+				first: async () => ({ email_verified_at: emailVerifiedAt }),
+			}),
+		}),
+	} as unknown as D1Database
+}
+
 test('email capabilities require a signed-in user and return attachment content or reject missing ids', async () => {
 	await expect(
 		emailAttachmentGetCapability.handler(
@@ -34,7 +44,19 @@ test('email capabilities require a signed-in user and return attachment content 
 			displayName: 'User Example',
 		},
 	})
-	const env = { APP_DB: {} } as Env
+	const verifiedDb = createUsersDb('2026-01-01T00:00:00.000Z')
+	const env = { APP_DB: verifiedDb } as Env
+
+	await expect(
+		emailAttachmentGetCapability.handler(
+			{ attachment_id: 'attachment-1' },
+			{
+				env: { APP_DB: createUsersDb(null) } as Env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow(/Account email is not verified/)
+	expect(mockModule.getEmailAttachmentById).not.toHaveBeenCalled()
 
 	mockModule.getEmailAttachmentById.mockResolvedValueOnce({
 		id: 'attachment-1',
@@ -56,7 +78,7 @@ test('email capabilities require a signed-in user and return attachment content 
 	)
 
 	expect(mockModule.getEmailAttachmentById).toHaveBeenCalledWith({
-		db: {},
+		db: verifiedDb,
 		userId: 'user-1',
 		attachmentId: 'attachment-1',
 	})

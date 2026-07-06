@@ -16,9 +16,25 @@ vi.mock('#worker/email/outbound.ts', () => ({
 
 const { emailReplyCapability } = await import('./email-reply.ts')
 
-function createContext() {
+function createUsersDb(emailVerifiedAt: string | null) {
 	return {
-		env: {} as Env,
+		prepare: () => ({
+			bind: () => ({
+				first: async () => ({ email_verified_at: emailVerifiedAt }),
+			}),
+		}),
+	} as unknown as D1Database
+}
+
+function createContext(options: { emailVerifiedAt?: string | null } = {}) {
+	return {
+		env: {
+			APP_DB: createUsersDb(
+				options.emailVerifiedAt === undefined
+					? '2026-01-01T00:00:00.000Z'
+					: options.emailVerifiedAt,
+			),
+		} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
@@ -29,6 +45,20 @@ function createContext() {
 		}),
 	}
 }
+
+test('email_reply is rejected for unverified accounts', async () => {
+	await expect(
+		emailReplyCapability.handler(
+			{
+				message_id: 'inbound-1',
+				from: 'kody@heykody.dev',
+				text: 'Reply body',
+			},
+			createContext({ emailVerifiedAt: null }),
+		),
+	).rejects.toThrow(/Account email is not verified/)
+	expect(mocks.sendOutboundEmail).not.toHaveBeenCalled()
+})
 
 test('email_reply throws when provider delivery is persisted as failed', async () => {
 	mocks.getEmailMessageById.mockResolvedValue({
