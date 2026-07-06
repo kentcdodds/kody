@@ -150,9 +150,12 @@ function createEnv(
 	} as unknown as Env
 }
 
-async function workerFetch(request: Request): Promise<Response> {
+async function workerFetch(
+	request: Request,
+	workerEnv: Env = env,
+): Promise<Response> {
 	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, env, ctx)
+	const response = await exports.default.fetch(request, workerEnv, ctx)
 	await waitOnExecutionContext(ctx)
 	return response
 }
@@ -606,6 +609,27 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 	await expect(tokenResponse.json()).resolves.toEqual({
 		error: 'invalid_client',
 		error_description: 'Invalid OAuth client registration.',
+	})
+})
+
+test('worker entrypoint renders OAuth errors for delegated authorize route exceptions', async () => {
+	const response = await workerFetch(
+		new Request(claudeAuthorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'multipart/form-data',
+			},
+			body: 'not a valid multipart body',
+		}),
+	)
+
+	expect(response.status).toBe(500)
+	expect(response.headers.get('Content-Type')).toContain('application/json')
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: 'OAuth authorization failed. Please start the connection again.',
+		code: 'server_error',
 	})
 })
 

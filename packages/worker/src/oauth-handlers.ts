@@ -98,6 +98,19 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 	})
 }
 
+function standaloneAuthorizeErrorHtmlResponse(message: string, status: number) {
+	return new Response(
+		`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OAuth authorization failed</title></head><body><main style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><p style="font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:#57606a">Kody secure connection</p><h1>Authorize access</h1><p>${message}</p><p><a href="/">Back home</a></p></main></body></html>`,
+		{
+			status,
+			headers: {
+				'Cache-Control': 'no-store',
+				'Content-Type': 'text/html; charset=utf-8',
+			},
+		},
+	)
+}
+
 function getOAuthHelpers(env: Env) {
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
 	if (!helpers) {
@@ -638,6 +651,37 @@ export async function handleAuthorizeInfo(
 			headers: createSetCookieHeaders([setCookie]),
 		},
 	)
+}
+
+export function handleAuthorizeRouteException(
+	request: Request,
+): Promise<Response> | Response {
+	const url = new URL(request.url)
+	if (url.pathname === oauthPaths.authorizeInfo) {
+		return jsonResponse(
+			{
+				ok: false,
+				error: 'Unable to load authorization details.',
+				allowClientReset: false,
+			},
+			{ status: 500 },
+		)
+	}
+
+	const message =
+		'OAuth authorization failed. Please start the connection again.'
+	if (wantsJson(request)) {
+		return jsonResponse(
+			{ ok: false, error: message, code: 'server_error' },
+			{ status: 500 },
+		)
+	}
+
+	if (request.method === 'POST') {
+		return createAuthorizeErrorRedirect(request, 'server_error', message)
+	}
+
+	return standaloneAuthorizeErrorHtmlResponse(message, 500)
 }
 
 export async function handleAuthorizeRequest(

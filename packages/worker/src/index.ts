@@ -12,6 +12,7 @@ import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
 import {
 	apiHandler,
+	handleAuthorizeRouteException,
 	handleAuthorizeRequest,
 	handleAuthorizeInfo,
 	handleOAuthCallback,
@@ -231,11 +232,21 @@ const appHandler = withCors({
 		}
 
 		if (url.pathname === oauthPaths.authorize) {
-			return handleAuthorizeRequest(request, env)
+			try {
+				return await handleAuthorizeRequest(request, env)
+			} catch (error) {
+				Sentry.captureException(error)
+				return handleAuthorizeRouteException(request)
+			}
 		}
 
 		if (url.pathname === oauthPaths.authorizeInfo) {
-			return handleAuthorizeInfo(request, env)
+			try {
+				return await handleAuthorizeInfo(request, env)
+			} catch (error) {
+				Sentry.captureException(error)
+				return handleAuthorizeRouteException(request)
+			}
 		}
 
 		if (url.pathname === oauthPaths.callback) {
