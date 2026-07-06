@@ -15,8 +15,28 @@ Use the MCP `email` domain:
 - `email_reply` replies to a stored inbound message.
 - `email_attachment_get` returns stored attachment bytes by attachment id.
 - `email_message_list` lists stored inbound and outbound messages.
+- `email_message_search` searches stored messages by case-insensitive substring
+  match against the subject, header `From`, and envelope sender. It accepts the
+  same `inbox_id` / `direction` / `processing_status` filters and limit caps as
+  `email_message_list`.
 - `email_message_get` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
+- `email_usage_get` returns the signed-in user's email usage and limits: stored
+  message count, today's send and receive counts, the applicable caps, and the
+  plan name.
+
+## Quotas
+
+Inbound storage is quota-gated per user:
+
+- A daily receive limit (`email_receives_per_day`) and a stored-message cap
+  (`stored_email_messages`) apply at storage time. Mail over quota is rejected
+  at the routing layer with a generic "over quota" response to the sender, and
+  the detailed reason is recorded as a `rejected` delivery event.
+- Plan users get their plan's limits; users without a plan get conservative
+  deployment fallbacks (they are not unlimited for inbound mail).
+- Outbound sending stays limited by `email_sends_per_day` for plan users.
+- Check where you stand with `email_usage_get`.
 
 ## Safety model
 
@@ -25,7 +45,8 @@ Use the MCP `email` domain:
   `/account` page), email capabilities are rejected, inbound mail routed to the
   account's aliases is rejected before storage, and MCP access as a whole is
   disabled.
-- Any email routed to a configured Kody inbox on a verified account is stored.
+- Any email routed to a configured Kody inbox on a verified account is stored,
+  subject to the quotas above.
 - Unknown aliases are rejected before storage.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
@@ -124,4 +145,5 @@ Message-ID: <hello@example.com>
 Hello from local email routing.'
 ```
 
-Then inspect the message with `email_message_list` and `email_message_get`.
+Then inspect the message with `email_message_list`, `email_message_search`, and
+`email_message_get`.

@@ -809,6 +809,59 @@ export async function listEmailMessages(input: {
 	return (result.results ?? []).map(mapMessageRow)
 }
 
+/** Escape LIKE wildcards so user queries match literally. */
+function escapeLikePattern(value: string) {
+	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
+}
+
+/**
+ * Case-insensitive substring search over stored messages' subject, header
+ * From, and envelope sender. Same filters, ordering, and limit contract as
+ * `listEmailMessages`; always scoped to one user.
+ */
+export async function searchEmailMessages(input: {
+	db: D1Database
+	userId: string
+	query: string
+	inboxId?: string | null
+	direction?: EmailDirection | null
+	processingStatus?: EmailProcessingStatus | null
+	limit: number
+}) {
+	const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_messages
+			WHERE user_id = ?
+				AND (? IS NULL OR inbox_id = ?)
+				AND (? IS NULL OR direction = ?)
+				AND (? IS NULL OR processing_status = ?)
+				AND (
+					LOWER(subject) LIKE ? ESCAPE '\\'
+					OR LOWER(from_address) LIKE ? ESCAPE '\\'
+					OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
+				)
+			ORDER BY created_at DESC, id DESC
+			LIMIT ?`,
+		)
+		.bind(
+			input.userId,
+			input.inboxId ?? null,
+			input.inboxId ?? null,
+			input.direction ?? null,
+			input.direction ?? null,
+			input.processingStatus ?? null,
+			input.processingStatus ?? null,
+			pattern,
+			pattern,
+			pattern,
+			input.limit,
+		)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map(mapMessageRow)
+}
+
 export async function deleteEmailMessageById(input: {
 	db: D1Database
 	messageId: string
