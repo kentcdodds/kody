@@ -9,12 +9,20 @@ export function normalizeUsername(value: unknown) {
 	return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
-export function getUsernameValidationError(username: string) {
+export function getUsernameFormatValidationError(username: string) {
 	if (!username) {
 		return 'Username is required.'
 	}
 	if (!usernamePattern.test(username)) {
 		return usernameRequirements
+	}
+	return null
+}
+
+export function getUsernameValidationError(username: string) {
+	const formatError = getUsernameFormatValidationError(username)
+	if (formatError) {
+		return formatError
 	}
 	return getReservedUsernameError(username)
 }

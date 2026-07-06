@@ -17,7 +17,7 @@ import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
-import { getUsernameValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#app/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 
 export const oauthPaths = {
@@ -47,7 +47,8 @@ type OAuthContext = ExecutionContext & {
 }
 
 function getValidOAuthUsername(value: unknown) {
-	return typeof value === 'string' && !getUsernameValidationError(value.trim())
+	return typeof value === 'string' &&
+		!getUsernameFormatValidationError(value.trim())
 		? value.trim()
 		: null
 }
