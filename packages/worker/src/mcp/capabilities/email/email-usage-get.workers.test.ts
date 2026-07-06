@@ -156,7 +156,10 @@ test('email_usage_get returns usage for verified users and enforces auth require
 			count: 0,
 			limit: nullPlanEmailFallbackLimits.stored_email_messages,
 		},
-		sends_today: { count: 0, limit: null },
+		sends_today: {
+			count: 0,
+			limit: nullPlanEmailFallbackLimits.email_sends_per_day,
+		},
 		receives_today: {
 			count: 0,
 			limit: nullPlanEmailFallbackLimits.email_receives_per_day,

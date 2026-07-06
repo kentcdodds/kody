@@ -5,7 +5,6 @@ import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import {
 	planNames,
 	resolveEmailResourceLimit,
-	resolvePlanLimit,
 } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
@@ -78,9 +77,7 @@ export const emailUsageGetCapability = defineDomainCapability(
 				},
 				sends_today: {
 					count: sendsToday,
-					// Outbound sends have no NULL-plan fallback: plan-less users
-					// are unlimited (attempts are still counted).
-					limit: plan ? resolvePlanLimit(plan, 'email_sends_per_day') : null,
+					limit: resolveEmailResourceLimit(plan, 'email_sends_per_day'),
 				},
 				receives_today: {
 					count: receivesToday,
