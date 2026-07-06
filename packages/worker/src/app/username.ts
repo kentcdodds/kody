@@ -1,3 +1,5 @@
+import { getReservedUsernameError } from '#app/reserved-usernames.ts'
+
 export const usernameRequirements =
 	'Username must be 3 to 32 characters, use only letters, numbers, hyphens, or underscores, and start and end with a letter or number.'
 
@@ -14,5 +16,5 @@ export function getUsernameValidationError(username: string) {
 	if (!usernamePattern.test(username)) {
 		return usernameRequirements
 	}
-	return null
+	return getReservedUsernameError(username)
 }
