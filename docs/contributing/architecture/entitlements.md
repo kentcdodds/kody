@@ -154,7 +154,7 @@ The exemplar is job scheduling: `createJob` in
    entity-source creation.
 2. Make sure the acting user's `userId` **and** account email reach that
    function. Thread an explicit `userEmail` parameter if the service only
-   receives `userId` today; MCP capabilities get it from
+   receives only `userId`; MCP capabilities get it from
    `requireMcpUser(ctx.callerContext).email`, app handlers from the session
    user.
 3. Call the single helper and let it throw:

@@ -67,7 +67,7 @@ or Durable Object lookup is scoped to that id.
 
 Exports are versioned JSON documents:
 
-- `manifest.schemaVersion` — currently `1`.
+- `manifest.schemaVersion` — `1`.
 - `manifest.generatedAt` — UTC timestamp.
 - `manifest.sections` — per-section counts, warnings, and redacted columns.
 - `manifest.security.secretValuesExported` — always `false`.
@@ -395,7 +395,7 @@ Production note:
 
 This section records identifiers and serialized shapes that should be treated as
 permanent unless a planned migration explicitly says otherwise. They are cheap
-to document now and expensive to discover after user data depends on them.
+to document and expensive to discover after user data depends on them.
 
 ### D1 JSON shadow schemas
 
@@ -424,7 +424,7 @@ on write unless a migration backfills existing rows.
 - `email_messages.*_addresses_json`, `email_messages.references_json`,
   `email_messages.headers_json`, and `email_delivery_events.detail_json`
   (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`) store parsed
-  email metadata; `detail_json` is currently write-mostly audit detail.
+  email metadata; `detail_json` is write-mostly audit detail.
 - `mcp_memories.tags_json` and `mcp_memories.source_uris_json`
   (`0016-mcp-memories.sql`, `0018-mcp-memory-source-uris.sql`) back memory
   search and provenance.
@@ -497,8 +497,8 @@ global built-in metadata and are rebuilt through the maintenance reindex path.
 `entity_sources` is the durable repo pointer table:
 `(user_id, entity_kind, entity_id) -> source_id`. Child tables store
 `source_id = entity_sources.id`; KV snapshots use that same source id plus the
-published commit. `entity_kind` currently accepts `job` and `package`.
-`manifest_path`, `source_root`, `published_commit`, `indexed_commit`, and
+published commit. `entity_kind` accepts `job` and `package`. `manifest_path`,
+`source_root`, `published_commit`, `indexed_commit`, and
 `last_external_check_at` are part of the repo-source synchronization contract.
 
 Saved package imports in user code use `kody:@scope/name/export` specifiers:

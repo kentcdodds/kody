@@ -152,9 +152,9 @@ assistant features are blocked until the email is verified:
 
 New passwords (signup and password-reset confirmation) must satisfy the
 server-side policy in `@kody-internal/shared/password-policy.ts`
-(`minPasswordLength`, currently 8). The server is the trust boundary; the
-browser hint is advisory only. Login does **not** re-check length so
-pre-existing accounts are never locked out.
+(`minPasswordLength`, 8). The server is the trust boundary; the browser hint is
+advisory only. Login does **not** re-check length so pre-existing accounts are
+never locked out.
 
 ## Account deletion
 
@@ -214,7 +214,7 @@ Password reset handlers are in
 
 The account secrets API (`packages/worker/src/app/handlers/account-secrets.ts`)
 returns a decrypted secret value to the **owner** only, and only for the
-currently selected secret:
+selected secret:
 
 - `GET /account/secrets.json?selected=<secretId>` resolves the value into the
   `selectedSecret.value` field of the JSON payload

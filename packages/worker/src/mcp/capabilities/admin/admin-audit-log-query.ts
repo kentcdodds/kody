@@ -36,7 +36,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.optional()
-		.describe('Previously returned actor email hash to filter by.'),
+		.describe('Actor email hash from the prior page of results.'),
 	startTime: z
 		.string()
 		.datetime()
