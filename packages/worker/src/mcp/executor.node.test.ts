@@ -11,12 +11,14 @@ import {
 	createKodyRemoteProxy,
 	createKodyProviderProxySource,
 	createExecuteExecutor,
+	createExecutorModuleSource,
 	extractRawContent,
 	formatExecutionOutput,
 	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 } from './executor.ts'
+import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
 
@@ -150,6 +152,35 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 	expect(() => remote['lights']?.set_pin).toThrow(
 		'The lights connector "lights" is not connected. Kody cannot use this connector until it reconnects.',
 	)
+})
+
+test('generated kody provider source avoids bundle-scoped __name helpers', () => {
+	const source = createKodyProviderProxySource({
+		providerName: 'kody',
+		remoteConnectors: [],
+	})
+	expect(source).not.toMatch(/\b__name\b/u)
+	assertGeneratedExecutorSourceIsBundleSafe(source)
+
+	const bundledFactorySource = `const __kodyCreateRemoteProxy = __name(function createKodyRemoteProxy() { return {}; }, "createKodyRemoteProxy");`
+	expect(bundledFactorySource).toMatch(/\b__name\b/u)
+	expect(() => new Function('__dispatchers', bundledFactorySource)({})).toThrow(
+		/__name is not defined/u,
+	)
+
+	const moduleSource = createExecutorModuleSource({
+		code: 'async () => "ok"',
+		providers: [
+			{
+				name: 'kody',
+				fns: {},
+				kodyRemoteConnectors: [],
+			},
+		],
+		shadowGlobalThis: false,
+		timeoutMs: 1_000,
+	})
+	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
 })
 
 test('generated kody provider source wires remote proxy dispatch', async () => {

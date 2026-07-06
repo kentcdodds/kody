@@ -38,6 +38,7 @@ import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
 import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
+import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
@@ -209,6 +210,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-capabilities') {
 			return handleCapabilityReindexRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/execute-smoke') {
+			return handleExecuteSmokeRequest(request, env)
 		}
 
 		if (url.pathname === '/__maintenance/reindex-memories') {

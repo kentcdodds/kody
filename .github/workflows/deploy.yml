@@ -251,6 +251,49 @@ jobs:
           fi
           exit 1
 
+      - name: 🧪 Execute smoke check (production)
+        shell: bash
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CAPABILITY_REINDEX_SECRET:-}" ]; then
+            echo "Skipping execute smoke check (CAPABILITY_REINDEX_SECRET not set)."
+            exit 0
+          fi
+          if [ -z "${DEPLOY_URL:-}" ]; then
+            echo "Missing deploy URL output; cannot run execute smoke check." >&2
+            exit 1
+          fi
+
+          base="${DEPLOY_URL%/}"
+          smoke_url="${base}/__maintenance/execute-smoke"
+          echo "POST ${smoke_url}"
+
+          attempts=10
+          delay_seconds=3
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            status="$(curl --silent --show-error --location --max-time 30 \
+              -X POST \
+              -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
+              -H "Accept: application/json" \
+              --output execute-smoke.json \
+              --write-out "%{http_code}" \
+              "${smoke_url}")"
+            cat execute-smoke.json
+            echo
+            if [ "$status" -ge 200 ] && [ "$status" -lt 300 ] && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('execute-smoke.json','utf8')); if (json?.ok !== true || json?.result !== 42) { console.error('execute-smoke-unexpected-response', json); process.exit(1); } console.log('execute-smoke-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "Execute smoke check failed after ${attempts} attempts: ${smoke_url}" >&2
+          exit 1
+
       - name: 🧭 Reindex capability vectors (Vectorize)
         shell: bash
         env:

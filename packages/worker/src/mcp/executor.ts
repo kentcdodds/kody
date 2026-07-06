@@ -29,6 +29,10 @@ import {
 	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
+import {
+	assertGeneratedExecutorSourceIsBundleSafe,
+	kodyRemoteProxyFactorySource,
+} from '#mcp/kody-remote-proxy-source.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -383,6 +387,15 @@ function createExecutorModule(input: {
 	].join('\n')
 }
 
+export function createExecutorModuleSource(input: {
+	code: string
+	providers: Array<ResolvedProvider>
+	shadowGlobalThis: boolean
+	timeoutMs: number
+}) {
+	return createExecutorModule(input)
+}
+
 function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as KodyResolvedProvider
 	if (provider.name === 'kody' && kodyProvider.kodyRemoteConnectors) {
@@ -401,7 +414,7 @@ export function createKodyProviderProxySource(input: {
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 }) {
 	const metadataJson = JSON.stringify(input.remoteConnectors)
-	return `    const __kodyCreateRemoteProxy = ${createKodyRemoteProxy.toString()};
+	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
     const __kodyRemote = __kodyCreateRemoteProxy({
       remoteConnectors: ${metadataJson},
       callTool: async (dispatchName, args) => {
@@ -427,6 +440,8 @@ export function createKodyProviderProxySource(input: {
         };
       }
     });`
+	assertGeneratedExecutorSourceIsBundleSafe(source)
+	return source
 }
 
 function createToolDispatchers(
