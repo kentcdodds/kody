@@ -71,7 +71,7 @@ function buildCallerContext(user: { userId: string; email: string } | null) {
 	})
 }
 
-test('email_usage_get requires a signed-in, verified user', async () => {
+test('email_usage_get returns usage for verified users and enforces auth requirements', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await expect(
 		emailUsageGetCapability.handler(
@@ -80,36 +80,48 @@ test('email_usage_get requires a signed-in, verified user', async () => {
 		),
 	).rejects.toThrow(/Authenticated MCP user/)
 
-	const email = `usage-unverified-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedUser({ email, plan: null, emailVerifiedAt: null })
+	const unverifiedEmail = `usage-unverified-${crypto.randomUUID()}@example.com`
+	const unverifiedUserId = await createStableUserIdFromEmail(unverifiedEmail)
+	await seedUser({ email: unverifiedEmail, plan: null, emailVerifiedAt: null })
 	await expect(
 		emailUsageGetCapability.handler(
 			{},
-			{ env, callerContext: buildCallerContext({ userId, email }) },
+			{
+				env,
+				callerContext: buildCallerContext({
+					userId: unverifiedUserId,
+					email: unverifiedEmail,
+				}),
+			},
 		),
 	).rejects.toThrow(/Account email is not verified/)
-})
 
-test('email_usage_get returns plan limits and current counts for plan users', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `usage-plan-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedUser({ email, plan: 'personal' })
-	await seedDailyCounter({ userId, resource: 'email_sends_per_day', count: 3 })
+	const planEmail = `usage-plan-${crypto.randomUUID()}@example.com`
+	const planUserId = await createStableUserIdFromEmail(planEmail)
+	await seedUser({ email: planEmail, plan: 'personal' })
 	await seedDailyCounter({
-		userId,
+		userId: planUserId,
+		resource: 'email_sends_per_day',
+		count: 3,
+	})
+	await seedDailyCounter({
+		userId: planUserId,
 		resource: 'email_receives_per_day',
 		count: 5,
 	})
-	await seedStoredMessages(userId, 2)
+	await seedStoredMessages(planUserId, 2)
 
-	const result = await emailUsageGetCapability.handler(
+	const planResult = await emailUsageGetCapability.handler(
 		{},
-		{ env, callerContext: buildCallerContext({ userId, email }) },
+		{
+			env,
+			callerContext: buildCallerContext({
+				userId: planUserId,
+				email: planEmail,
+			}),
+		},
 	)
-
-	expect(result).toEqual({
+	expect(planResult).toEqual({
 		plan: 'personal',
 		day: utcDayKey(),
 		stored_messages: {
@@ -123,27 +135,27 @@ test('email_usage_get returns plan limits and current counts for plan users', as
 		},
 		max_message_bytes: planLimits.personal.maxEmailMessageBytes,
 	})
-})
 
-test('email_usage_get reports fallback limits for users without a plan', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `usage-null-plan-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedUser({ email, plan: null })
-
-	const result = await emailUsageGetCapability.handler(
+	const nullPlanEmail = `usage-null-plan-${crypto.randomUUID()}@example.com`
+	const nullPlanUserId = await createStableUserIdFromEmail(nullPlanEmail)
+	await seedUser({ email: nullPlanEmail, plan: null })
+	const nullPlanResult = await emailUsageGetCapability.handler(
 		{},
-		{ env, callerContext: buildCallerContext({ userId, email }) },
+		{
+			env,
+			callerContext: buildCallerContext({
+				userId: nullPlanUserId,
+				email: nullPlanEmail,
+			}),
+		},
 	)
-
-	expect(result).toEqual({
+	expect(nullPlanResult).toEqual({
 		plan: null,
 		day: utcDayKey(),
 		stored_messages: {
 			count: 0,
 			limit: nullPlanEmailFallbackLimits.stored_email_messages,
 		},
-		// Outbound sends stay unlimited for plan-less users.
 		sends_today: { count: 0, limit: null },
 		receives_today: {
 			count: 0,

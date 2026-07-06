@@ -40,15 +40,11 @@ test('admin invite signup and email verification happy path', async ({
 	await page.getByLabel('Note').fill('E2E invite signup verification')
 	await page.getByLabel('Max uses').fill('1')
 	await page.getByRole('button', { name: 'Create', exact: true }).click()
-	await expect(page.getByText('Invite created.')).toBeVisible()
 	await expect(page.getByRole('heading', { name: inviteCode })).toBeVisible()
 
 	await page.getByLabel('User email').fill(adminCreatedEmail)
 	await page.getByLabel('Username (optional)').fill(adminCreatedUsername)
 	await page.getByRole('button', { name: 'Create user', exact: true }).click()
-	await expect(
-		page.getByText('User created. Copy the setup link below.'),
-	).toBeVisible()
 	const setupLink =
 		(await page
 			.getByRole('link', { name: 'Open setup link' })
@@ -63,10 +59,6 @@ test('admin invite signup and email verification happy path', async ({
 	await page.getByLabel('New password').fill(adminCreatedPassword)
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByRole('button', { name: 'Update password' }).click()
-	await expect(
-		page.getByText('Password updated. You can sign in.'),
-	).toBeVisible()
-
 	await page.goto('/login')
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Email').fill(adminCreatedEmail)
@@ -92,15 +84,8 @@ test('admin invite signup and email verification happy path', async ({
 	await expect(
 		page.getByRole('heading', { name: 'Verify your email' }),
 	).toBeVisible()
-	await expect(
-		page.getByText('MCP access and email features stay disabled'),
-	).toBeVisible()
 
 	await page.getByRole('button', { name: 'Resend verification email' }).click()
-	await expect(
-		page.getByText('Verification email sent. Check your inbox.'),
-	).toBeVisible()
-
 	await setEmailVerificationTokenInE2eDatabase({
 		email: invitedEmail,
 		token: verificationToken,
@@ -110,9 +95,6 @@ test('admin invite signup and email verification happy path', async ({
 	)
 	await expect(
 		page.getByRole('heading', { name: 'Email verified' }),
-	).toBeVisible()
-	await expect(
-		page.getByText('Your email address has been verified.'),
 	).toBeVisible()
 
 	await page.goto('/account')

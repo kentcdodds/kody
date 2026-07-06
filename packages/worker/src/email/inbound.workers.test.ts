@@ -18,6 +18,7 @@ import {
 } from './repo.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -264,6 +265,7 @@ test('inbound email handler rejects unknown aliases and malformed messages witho
 
 test('inbound email handler rejects mail for unverified accounts', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const accountEmail = `email-unverified-${crypto.randomUUID()}@example.com`
 	await seedAccount({
 		db: env.APP_DB,
@@ -290,21 +292,23 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 		domain: getEmailDomain(address),
 	})
 
-	const message = createForwardableEmailMessage({
-		from: 'stranger@example.net',
-		to: address,
-		raw: [
-			'From: Stranger <stranger@example.net>',
-			`To: ${address}`,
-			'Subject: Should be rejected',
-			'Message-ID: <rejected@example.net>',
-			'',
-			'Please help.',
-		].join('\r\n'),
-	})
-	await handleInboundEmail(message, env)
+	for (let index = 0; index < 2; index += 1) {
+		const message = createForwardableEmailMessage({
+			from: 'stranger@example.net',
+			to: address,
+			raw: [
+				'From: Stranger <stranger@example.net>',
+				`To: ${address}`,
+				'Subject: Should be rejected',
+				`Message-ID: <rejected-${index}@example.net>`,
+				'',
+				'Please help.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(message, env)
+		expect(message.rejectedReason).toBe('Account email is not verified.')
+	}
 
-	expect(message.rejectedReason).toBe('Account email is not verified.')
 	const messages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
@@ -312,8 +316,13 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 		limit: 10,
 	})
 	expect(messages).toEqual([])
-	// Unverified-account rejections go through the bounded recorder: one
-	// detailed event plus the daily aggregate row.
+	const counterRow = await env.APP_DB.prepare(
+		`SELECT count FROM entitlement_daily_counters
+			WHERE user_id = ? AND resource = 'email_receives_per_day'`,
+	)
+		.bind(userId)
+		.first<{ count: number }>()
+	expect(counterRow).toBeNull()
 	const events = await env.APP_DB.prepare(
 		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
 	)
@@ -323,7 +332,7 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 		eventType: row.event_type,
 		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
 	}))
-	expect(details).toHaveLength(2)
+	expect(details).toHaveLength(3)
 	expect(details.every((row) => row.eventType === 'rejected')).toBe(true)
 	expect(
 		details.find((row) => row.detail['aggregate'] !== true)?.detail,
@@ -334,9 +343,16 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 	expect(
 		details.find((row) => row.detail['aggregate'] === true)?.detail,
 	).toMatchObject({
-		count: 1,
+		count: 2,
 		last_phase: 'account-verification',
 	})
+	const rollup = await env.APP_DB.prepare(
+		`SELECT event_count, error_count FROM usage_rollups
+			WHERE user_id = ? AND metric = 'email_received' AND month = ?`,
+	)
+		.bind(userId, new Date().toISOString().slice(0, 7))
+		.first<{ event_count: number; error_count: number }>()
+	expect(rollup).toMatchObject({ event_count: 2, error_count: 2 })
 })
 
 test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {

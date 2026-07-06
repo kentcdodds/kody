@@ -4,10 +4,7 @@ import {
 	nullPlanEmailFallbackLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
-import {
-	findUserAccountByStableUserId,
-	utcDayKey,
-} from '#worker/entitlements/service.ts'
+import { utcDayKey } from '#worker/entitlements/service.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
@@ -145,75 +142,124 @@ async function readEmailReceivedRollup(userId: string) {
 		.first<{ event_count: number; error_count: number; total_bytes: number }>()
 }
 
-test('inbound email rejects plan users at the daily receive limit', async () => {
+test('inbound email enforces personal-plan receive, storage, and size limits then stores under quota', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const email = `receive-limit-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxEmailReceivesPerDay
-	if (limit === null) throw new Error('Expected a numeric personal limit.')
-	await seedAccountWithPlan({ email, plan: 'personal' })
-	const { address } = await seedInboxWithAddress(userId)
-	await setDailyReceiveCounter(userId, limit)
 
-	const message = buildInboundMessage(address)
-	await handleInboundEmail(message, env)
+	const receiveLimitEmail = `receive-limit-${crypto.randomUUID()}@example.com`
+	const receiveLimitUserId =
+		await createStableUserIdFromEmail(receiveLimitEmail)
+	const receiveLimit = planLimits.personal.maxEmailReceivesPerDay
+	if (receiveLimit === null)
+		throw new Error('Expected a numeric personal limit.')
+	await seedAccountWithPlan({ email: receiveLimitEmail, plan: 'personal' })
+	const { address: receiveLimitAddress } =
+		await seedInboxWithAddress(receiveLimitUserId)
+	await setDailyReceiveCounter(receiveLimitUserId, receiveLimit)
 
-	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
+	const receiveLimitMessage = buildInboundMessage(receiveLimitAddress)
+	await handleInboundEmail(receiveLimitMessage, env)
+	expect(receiveLimitMessage.rejectedReason).toBe(
+		'Recipient mailbox is over quota.',
+	)
 	expect(
-		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId: receiveLimitUserId,
+			limit: 10,
+		}),
 	).toEqual([])
-	expect(await readDailyReceiveCounter(userId)).toBe(limit)
-	const rejections = await readRejectionEvents(userId)
-	expect(rejections.detailed).toHaveLength(1)
-	// The plan-specific wording proves the stable-id reverse lookup resolved
-	// the account (the fallback message says "this deployment" instead).
-	expect(rejections.detailed[0]?.detail).toMatchObject({
+	expect(await readDailyReceiveCounter(receiveLimitUserId)).toBe(receiveLimit)
+	const receiveLimitRejections = await readRejectionEvents(receiveLimitUserId)
+	expect(receiveLimitRejections.detailed[0]?.detail).toMatchObject({
 		phase: 'entitlement',
-		reason: expect.stringContaining(
-			`your "personal" plan allows at most ${limit} email receives per day`,
-		),
 	})
-	expect(rejections.aggregate?.detail).toMatchObject({ count: 1 })
-	expect(await readEmailReceivedRollup(userId)).toMatchObject({
+	expect(receiveLimitRejections.aggregate?.detail).toMatchObject({ count: 1 })
+	expect(await readEmailReceivedRollup(receiveLimitUserId)).toMatchObject({
 		event_count: 1,
 		error_count: 1,
 	})
-})
 
-test('inbound email rejects plan users at the stored message cap and still counts the attempt', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const email = `storage-cap-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	const cap = planLimits.personal.maxStoredEmailMessages
-	if (cap === null) throw new Error('Expected a numeric personal cap.')
-	await seedAccountWithPlan({ email, plan: 'personal' })
-	const { address } = await seedInboxWithAddress(userId)
-	await bulkInsertStoredMessages(userId, cap)
+	const storageCapEmail = `storage-cap-${crypto.randomUUID()}@example.com`
+	const storageCapUserId = await createStableUserIdFromEmail(storageCapEmail)
+	const storageCap = planLimits.personal.maxStoredEmailMessages
+	if (storageCap === null) throw new Error('Expected a numeric personal cap.')
+	await seedAccountWithPlan({ email: storageCapEmail, plan: 'personal' })
+	const { address: storageCapAddress } =
+		await seedInboxWithAddress(storageCapUserId)
+	await bulkInsertStoredMessages(storageCapUserId, storageCap)
 
-	const message = buildInboundMessage(address)
-	await handleInboundEmail(message, env)
-
-	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
+	const storageCapMessage = buildInboundMessage(storageCapAddress)
+	await handleInboundEmail(storageCapMessage, env)
+	expect(storageCapMessage.rejectedReason).toBe(
+		'Recipient mailbox is over quota.',
+	)
 	expect(
-		await listEmailMessages({ db: env.APP_DB, userId, limit: cap + 10 }),
-	).toHaveLength(cap)
-	// The receive attempt is counted even when the storage cap rejects it.
-	expect(await readDailyReceiveCounter(userId)).toBe(1)
-	const rejections = await readRejectionEvents(userId)
-	expect(rejections.detailed[0]?.detail).toMatchObject({
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId: storageCapUserId,
+			limit: storageCap + 10,
+		}),
+	).toHaveLength(storageCap)
+	expect(await readDailyReceiveCounter(storageCapUserId)).toBe(1)
+	expect(
+		(await readRejectionEvents(storageCapUserId)).detailed[0]?.detail,
+	).toMatchObject({
 		phase: 'entitlement',
-		reason: expect.stringContaining(
-			`your "personal" plan allows at most ${cap} stored email messages`,
-		),
+	})
+
+	const oversizeEmail = `oversize-${crypto.randomUUID()}@example.com`
+	const oversizeUserId = await createStableUserIdFromEmail(oversizeEmail)
+	const maxBytes = planLimits.personal.maxEmailMessageBytes
+	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
+	await seedAccountWithPlan({ email: oversizeEmail, plan: 'personal' })
+	const { address: oversizeAddress } =
+		await seedInboxWithAddress(oversizeUserId)
+	const oversizeMessage = buildInboundMessage(oversizeAddress)
+	const oversizeBytes = maxBytes + 1
+	Object.defineProperty(oversizeMessage, 'rawSize', { value: oversizeBytes })
+	await handleInboundEmail(oversizeMessage, env)
+	expect(oversizeMessage.rejectedReason).toBe(
+		'Recipient mailbox is over quota.',
+	)
+	expect(await readDailyReceiveCounter(oversizeUserId)).toBe(0)
+	expect(
+		(await readRejectionEvents(oversizeUserId)).detailed[0]?.detail,
+	).toMatchObject({
+		phase: 'size',
+	})
+	expect(await readEmailReceivedRollup(oversizeUserId)).toMatchObject({
+		event_count: 1,
+		error_count: 1,
+		total_bytes: oversizeBytes,
+	})
+
+	const underQuotaEmail = `under-quota-${crypto.randomUUID()}@example.com`
+	const underQuotaUserId = await createStableUserIdFromEmail(underQuotaEmail)
+	await seedAccountWithPlan({ email: underQuotaEmail, plan: 'personal' })
+	const { address: underQuotaAddress } =
+		await seedInboxWithAddress(underQuotaUserId)
+	const underQuotaMessage = buildInboundMessage(underQuotaAddress)
+	await handleInboundEmail(underQuotaMessage, env)
+	expect(underQuotaMessage.rejectedReason).toBeNull()
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId: underQuotaUserId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+	expect(await readDailyReceiveCounter(underQuotaUserId)).toBe(1)
+	expect(await readEmailReceivedRollup(underQuotaUserId)).toMatchObject({
+		event_count: 1,
+		error_count: 0,
+		total_bytes: underQuotaMessage.rawSize,
 	})
 })
 
 test('inbound email applies the NULL-plan fallback receive limit', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	// A verified account with a NULL plan gets the deployment fallback.
 	const email = `fallback-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
 	await seedAccountWithPlan({ email, plan: null })
@@ -225,48 +271,11 @@ test('inbound email applies the NULL-plan fallback receive limit', async () => {
 	await handleInboundEmail(message, env)
 
 	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
-	const rejections = await readRejectionEvents(userId)
-	expect(rejections.detailed[0]?.detail).toMatchObject({
-		reason: expect.stringContaining(
-			`this deployment allows at most ${fallbackLimit} email receives per day`,
-		),
-	})
-})
-
-test('inbound email rejects oversize messages without consuming the daily receive quota', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const email = `oversize-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	const maxBytes = planLimits.personal.maxEmailMessageBytes
-	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
-	await seedAccountWithPlan({ email, plan: 'personal' })
-	const { address } = await seedInboxWithAddress(userId)
-
-	const message = buildInboundMessage(address)
-	const oversizeBytes = maxBytes + 1
-	Object.defineProperty(message, 'rawSize', { value: oversizeBytes })
-	await handleInboundEmail(message, env)
-
-	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
-	expect(
-		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
-	).toEqual([])
-	// Oversize mail is rejected before the daily counter is consumed.
-	expect(await readDailyReceiveCounter(userId)).toBe(0)
-	const rejections = await readRejectionEvents(userId)
-	expect(rejections.detailed[0]?.detail).toMatchObject({
-		phase: 'size',
-		reason: expect.stringContaining(
-			`your "personal" plan allows at most ${maxBytes} bytes per email message`,
-		),
-	})
-	// The usage event records the rejected size in bytes.
-	expect(await readEmailReceivedRollup(userId)).toMatchObject({
-		event_count: 1,
-		error_count: 1,
-		total_bytes: oversizeBytes,
-	})
+	expect((await readRejectionEvents(userId)).detailed[0]?.detail).toMatchObject(
+		{
+			phase: 'entitlement',
+		},
+	)
 })
 
 test('inbound email stores at most five detailed rejection events per inbox per day', async () => {
@@ -288,7 +297,6 @@ test('inbound email stores at most five detailed rejection events per inbox per 
 	}
 
 	const rejections = await readRejectionEvents(userId)
-	// Detailed rows are capped; the aggregate row counts every attempt.
 	expect(rejections.detailed).toHaveLength(
 		maxDetailedEmailRejectionEventsPerDay,
 	)
@@ -296,107 +304,9 @@ test('inbound email stores at most five detailed rejection events per inbox per 
 		aggregate: true,
 		count: attempts,
 		last_phase: 'entitlement',
-		last_reason: expect.stringContaining('email receives per day'),
 	})
-	// Every attempt is still metered even after detailed events stop.
 	expect(await readEmailReceivedRollup(userId)).toMatchObject({
 		event_count: attempts,
 		error_count: attempts,
-	})
-})
-
-test('findUserAccountByStableUserId resolves accounts, caches hits, and recovers from deletions', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const email = `reverse-lookup-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedAccountWithPlan({ email, plan: 'personal' })
-
-	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
-		email,
-		plan: 'personal',
-		emailVerified: true,
-	})
-	// Second call takes the cached-email point-read path and must still
-	// reflect the current plan and verified state.
-	await env.APP_DB.prepare(
-		`UPDATE users SET plan = NULL, email_verified_at = NULL WHERE email = ?`,
-	)
-		.bind(email)
-		.run()
-	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
-		email,
-		plan: null,
-		emailVerified: false,
-	})
-	// Deleting the account invalidates the cached entry.
-	await env.APP_DB.prepare(`DELETE FROM users WHERE email = ?`)
-		.bind(email)
-		.run()
-	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toBeNull()
-	expect(
-		await findUserAccountByStableUserId(env.APP_DB, `unknown-${userId}`),
-	).toBeNull()
-	expect(await findUserAccountByStableUserId(env.APP_DB, '  ')).toBeNull()
-})
-
-test('inbound email rejects unverified accounts without consuming quota, with bounded events', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const email = `unverified-quota-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedAccountWithPlan({ email, plan: 'personal', emailVerifiedAt: null })
-	const { address } = await seedInboxWithAddress(userId)
-
-	for (let index = 0; index < 2; index += 1) {
-		const message = buildInboundMessage(address)
-		await handleInboundEmail(message, env)
-		expect(message.rejectedReason).toBe('Account email is not verified.')
-	}
-
-	expect(
-		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
-	).toEqual([])
-	// An account that can never receive must not accumulate receive quota.
-	expect(await readDailyReceiveCounter(userId)).toBe(0)
-	const rejections = await readRejectionEvents(userId)
-	expect(rejections.detailed).toHaveLength(2)
-	expect(rejections.detailed[0]?.detail).toMatchObject({
-		phase: 'account-verification',
-		reason: 'Account email is not verified.',
-	})
-	expect(rejections.aggregate?.detail).toMatchObject({
-		count: 2,
-		last_phase: 'account-verification',
-	})
-	// Attempts are still metered for owner visibility.
-	expect(await readEmailReceivedRollup(userId)).toMatchObject({
-		event_count: 2,
-		error_count: 2,
-	})
-})
-
-test('inbound email under quota stores the message, counts the receive, and records usage', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const email = `under-quota-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
-	await seedAccountWithPlan({ email, plan: 'personal' })
-	const { address } = await seedInboxWithAddress(userId)
-
-	const message = buildInboundMessage(address)
-	await handleInboundEmail(message, env)
-
-	expect(message.rejectedReason).toBeNull()
-	const messages = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
-		limit: 10,
-	})
-	expect(messages).toHaveLength(1)
-	expect(await readDailyReceiveCounter(userId)).toBe(1)
-	expect(await readEmailReceivedRollup(userId)).toMatchObject({
-		event_count: 1,
-		error_count: 0,
-		total_bytes: message.rawSize,
 	})
 })

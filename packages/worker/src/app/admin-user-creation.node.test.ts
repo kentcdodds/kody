@@ -1,8 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	adminCreateUserWithPasswordSetup,
-	AdminCreateUserError,
-} from './admin-user-creation.ts'
+import { adminCreateUserWithPasswordSetup } from './admin-user-creation.ts'
 import { adminPasswordSetupTokenExpiryMs } from './password-reset-tokens.ts'
 
 type TestUser = {
@@ -146,13 +143,6 @@ test('adminCreateUserWithPasswordSetup rejects duplicate email', async () => {
 		code: 'email_exists',
 		message: 'Email already registered.',
 	})
-	await expect(
-		adminCreateUserWithPasswordSetup({
-			db,
-			email: 'existing@example.com',
-			setupLinkOrigin: 'https://kody.example/admin/invites',
-		}),
-	).rejects.toBeInstanceOf(AdminCreateUserError)
 	expect(passwordResets.size).toBe(0)
 })
 

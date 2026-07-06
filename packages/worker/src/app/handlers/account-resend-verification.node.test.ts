@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, expect, test, vi } from 'vitest'
+import { beforeAll, expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
@@ -139,10 +139,6 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
-
 test('resend verification requires an authenticated session', async () => {
 	const testDb = createResendTestDb()
 	const handler = createAccountResendVerificationHandler(
@@ -241,4 +237,5 @@ test('resend verification surfaces send failures without pretending success', as
 	// net-new token remains and prior tokens stay untouched.
 	expect(testDb.state.verificationInserts).toBe(1)
 	expect(testDb.state.verificationDeletes).toBe(1)
+	vi.unstubAllGlobals()
 })
