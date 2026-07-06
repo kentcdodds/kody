@@ -3,6 +3,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { repoDiscardSessionCapability } from './repo-discard-session.ts'
 import { repoGetCheckStatusCapability } from './repo-get-check-status.ts'
 import { repoGetSessionCapability } from './repo-get-session.ts'
+import { repoListSessionsCapability } from './repo-list-sessions.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
 import { repoPublishSessionCapability } from './repo-publish-session.ts'
 import { repoReadFileCapability } from './repo-read-file.ts'
@@ -20,6 +21,7 @@ export const repoDomain = defineDomain({
 		'Repo-backed source sessions for MCP-native edits when agents cannot or should not use a local clone: open workspaces, run constrained git command workflows, search code, validate, and publish live overlays.',
 	keywords: ['repo', 'artifact', 'session', 'workspace', 'git', 'search'],
 	capabilities: [
+		repoListSessionsCapability,
 		repoOpenSessionCapability,
 		repoRunCommandsCapability,
 		repoGetSessionCapability,

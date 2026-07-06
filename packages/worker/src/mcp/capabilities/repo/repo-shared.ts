@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { repoRunCommandsCommandsFieldDescription } from './repo-run-commands-text.ts'
-import { entityKindValues } from '#worker/repo/types.ts'
+import {
+	entityKindValues,
+	repoSessionStatusValues,
+} from '#worker/repo/types.ts'
 import { privateVisibilityChangeConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
 
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
@@ -124,6 +127,44 @@ export const repoSessionInfoSchema = z.object({
 	published_commit: z.string().nullable(),
 	manifest_path: z.string(),
 	entity_type: z.enum(entityKindValues),
+})
+
+export const repoListSessionStatusValues = [
+	...repoSessionStatusValues,
+	'all',
+] as const
+
+export const repoListSessionStatusSchema = z.enum(repoListSessionStatusValues)
+
+export const repoListSessionsInputSchema = z.object({
+	status: repoListSessionStatusSchema
+		.optional()
+		.default('active')
+		.describe(
+			'Which repo session lifecycle status to include. Defaults to active sessions.',
+		),
+	source_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe('Optional repo-backed source id to narrow the session list.'),
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(100)
+		.optional()
+		.default(100)
+		.describe('Maximum sessions to return. Capped at 100.'),
+})
+
+export const repoListSessionInfoSchema = repoSessionInfoSchema.extend({
+	status: z.enum(repoSessionStatusValues),
+	resolved_target: repoResolvedTargetSchema,
+})
+
+export const repoListSessionsOutputSchema = z.object({
+	sessions: z.array(repoListSessionInfoSchema),
 })
 
 export const repoOpenSessionOutputSchema = repoSessionInfoSchema.extend({

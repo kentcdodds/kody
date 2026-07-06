@@ -125,6 +125,9 @@ parsing.
 Use the lower-level repo capabilities when you need more control over the
 session:
 
+- discover current sessions with `repo_list_sessions` before you know a
+  `session_id`; it defaults to active sessions and can be filtered by `status`
+  or `source_id`
 - browse files with `repo_tree` and `repo_read_file`
 - search the workspace with `repo_search`
 - overwrite or create files with `repo_write_file` (preferred over `git apply`
@@ -134,6 +137,9 @@ session:
 - run checks separately from publish
 - inspect status with `repo_get_check_status`
 - repair drift with `repo_rebase_session`
+
+If you find an active session you no longer need, pass its `id` as `session_id`
+to `repo_discard_session` to close it.
 
 ### `repo_write_file` vs `git apply`
 
