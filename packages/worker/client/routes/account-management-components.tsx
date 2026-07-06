@@ -18,6 +18,12 @@ import {
 
 type AccountManagementSlot = any
 
+type AccountManagementLinkNavItem = {
+	href: string
+	label: string
+	active: boolean
+}
+
 type AccountManagementShellProps = {
 	maxWidth?: string
 	children: AccountManagementSlot
@@ -106,6 +112,44 @@ const adminNavItems = [
 	},
 ] as const
 
+type AccountManagementLinkNavProps = {
+	label: string
+	items: Array<AccountManagementLinkNavItem>
+}
+
+export function AccountManagementLinkNav(
+	handle: Handle<AccountManagementLinkNavProps>,
+) {
+	const secondaryButtonCss = getSecondaryButtonCss()
+
+	return () => (
+		<nav
+			aria-label={handle.props.label}
+			mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+		>
+			{handle.props.items.map((item) => (
+				<a
+					key={item.href}
+					href={item.href}
+					aria-current={item.active ? 'page' : undefined}
+					mix={css({
+						...secondaryButtonCss,
+						textDecoration: 'none',
+						...(item.active
+							? {
+									borderColor: colors.primary,
+									backgroundColor: colors.primarySoftest,
+								}
+							: {}),
+					})}
+				>
+					{item.label}
+				</a>
+			))}
+		</nav>
+	)
+}
+
 type AdminPageHeaderProps = {
 	title: string
 	description: string
@@ -113,8 +157,6 @@ type AdminPageHeaderProps = {
 }
 
 export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
-	const secondaryButtonCss = getSecondaryButtonCss()
-
 	return () => {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
@@ -125,33 +167,14 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 					title={handle.props.title}
 					description={handle.props.description}
 				/>
-				<nav
-					aria-label="Admin sections"
-					mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
-				>
-					{adminNavItems.map((item) => {
-						const isCurrent = item.paths.some((path) => path === currentPath)
-						return (
-							<a
-								key={item.href}
-								href={item.href}
-								aria-current={isCurrent ? 'page' : undefined}
-								mix={css({
-									...secondaryButtonCss,
-									textDecoration: 'none',
-									...(isCurrent
-										? {
-												borderColor: colors.primary,
-												backgroundColor: colors.primarySoftest,
-											}
-										: {}),
-								})}
-							>
-								{item.label}
-							</a>
-						)
-					})}
-				</nav>
+				<AccountManagementLinkNav
+					label="Admin sections"
+					items={adminNavItems.map((item) => ({
+						href: item.href,
+						label: item.label,
+						active: item.paths.some((path) => path === currentPath),
+					}))}
+				/>
 			</>
 		)
 	}
@@ -391,4 +414,23 @@ export const noticeCardCss = {
 	borderRadius: radius.lg,
 	border: `1px solid ${colors.primary}`,
 	backgroundColor: colors.primarySoftest,
+}
+
+export const accountManagementTableCss = {
+	width: '100%',
+	borderCollapse: 'collapse' as const,
+	fontSize: typography.fontSize.sm,
+}
+
+export const accountManagementTableCellCss = {
+	padding: `${spacing.sm} ${spacing.md}`,
+	borderBottom: `1px solid ${colors.border}`,
+	textAlign: 'left' as const,
+	verticalAlign: 'top' as const,
+}
+
+export const accountManagementTableNumericCellCss = {
+	...accountManagementTableCellCss,
+	textAlign: 'right' as const,
+	fontVariantNumeric: 'tabular-nums',
 }

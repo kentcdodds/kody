@@ -4,7 +4,7 @@ import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import { cardCss } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
@@ -12,6 +12,10 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 	MetadataGrid,
+	accountManagementTableCellCss,
+	accountManagementTableCss,
+	accountManagementTableNumericCellCss,
+	noticeCardCss,
 } from './account-management-components.tsx'
 import {
 	type AdminUsageLoaderData,
@@ -164,22 +168,9 @@ export function AdminUsageRoute(handle: Handle) {
 		return true
 	}
 
-	const tableCss = {
-		width: '100%',
-		borderCollapse: 'collapse' as const,
-		fontSize: typography.fontSize.sm,
-	}
-	const cellCss = {
-		padding: `${spacing.sm} ${spacing.md}`,
-		borderBottom: `1px solid ${colors.border}`,
-		textAlign: 'left' as const,
-		verticalAlign: 'top' as const,
-	}
-	const numericCellCss = {
-		...cellCss,
-		textAlign: 'right' as const,
-		fontVariantNumeric: 'tabular-nums',
-	}
+	const tableCss = accountManagementTableCss
+	const cellCss = accountManagementTableCellCss
+	const numericCellCss = accountManagementTableNumericCellCss
 
 	let lastSeenHref = ''
 
@@ -390,15 +381,7 @@ export function AdminUsageRoute(handle: Handle) {
 									]}
 								/>
 								{selectedUser.warnings.length > 0 ? (
-									<div
-										mix={css({
-											padding: spacing.md,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.primary}`,
-											backgroundColor: colors.primarySoftest,
-											color: colors.text,
-										})}
-									>
+									<div mix={css(noticeCardCss)}>
 										<strong>Quota watch:</strong>{' '}
 										{selectedUser.warnings
 											.map(

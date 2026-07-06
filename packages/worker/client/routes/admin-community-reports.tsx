@@ -16,6 +16,7 @@ import {
 	inputCss,
 } from '#client/styles/style-primitives.ts'
 import {
+	AccountManagementLinkNav,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AdminPageHeader,
@@ -282,27 +283,14 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 					currentHref={currentHref}
 				/>
 
-				<div mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}>
-					{statusOptions.map((option) => (
-						<a
-							key={option.value}
-							href={buildReportsHref(handle, option.value)}
-							aria-current={statusFilter === option.value ? 'page' : undefined}
-							mix={css({
-								...secondaryButtonCss,
-								textDecoration: 'none',
-								...(statusFilter === option.value
-									? {
-											borderColor: colors.primary,
-											backgroundColor: colors.primarySoftest,
-										}
-									: {}),
-							})}
-						>
-							{option.label}
-						</a>
-					))}
-				</div>
+				<AccountManagementLinkNav
+					label="Report status"
+					items={statusOptions.map((option) => ({
+						href: buildReportsHref(handle, option.value),
+						label: option.label,
+						active: statusFilter === option.value,
+					}))}
+				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>

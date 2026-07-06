@@ -20,6 +20,7 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 	MetadataGrid,
+	noticeCardCss,
 } from './account-management-components.tsx'
 import {
 	type AdminCreatedUserSetup,
@@ -248,7 +249,7 @@ export function AdminInvitesRoute(handle: Handle) {
 				/>
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading invites...
+						Loading invites…
 					</p>
 				) : null}
 				{message ? (
@@ -296,20 +297,11 @@ export function AdminInvitesRoute(handle: Handle) {
 							disabled={isMutating}
 							mix={css(primaryButtonCss)}
 						>
-							{actionState === 'creatingUser' ? 'Creating...' : 'Create user'}
+							{actionState === 'creatingUser' ? 'Creating…' : 'Create user'}
 						</button>
 					</div>
 					{createdUser ? (
-						<div
-							mix={css({
-								display: 'grid',
-								gap: spacing.sm,
-								padding: spacing.md,
-								border: `1px solid ${colors.primary}`,
-								borderRadius: '0.75rem',
-								backgroundColor: colors.primarySoftest,
-							})}
-						>
+						<div mix={css(noticeCardCss)}>
 							<p mix={css({ margin: 0 })}>
 								Setup link for <strong>{createdUser.email}</strong>:
 							</p>
@@ -394,7 +386,7 @@ export function AdminInvitesRoute(handle: Handle) {
 							disabled={isMutating}
 							mix={css(primaryButtonCss)}
 						>
-							{actionState === 'creating' ? 'Creating...' : 'Create'}
+							{actionState === 'creating' ? 'Creating…' : 'Create'}
 						</button>
 					</div>
 				</AccountManagementPanel>
@@ -458,7 +450,7 @@ export function AdminInvitesRoute(handle: Handle) {
 											css(secondaryButtonCss),
 										]}
 									>
-										{actionState === 'revoking' ? 'Revoking...' : 'Revoke'}
+										{actionState === 'revoking' ? 'Revoking…' : 'Revoke'}
 									</button>
 								</div>
 								<MetadataGrid
