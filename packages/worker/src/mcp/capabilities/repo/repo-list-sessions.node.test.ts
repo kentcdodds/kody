@@ -226,3 +226,48 @@ test('repo_list_sessions supports source_id narrowing and limit', async () => {
 		'session-source-new',
 	])
 })
+
+test('repo_list_sessions applies limit after dropping sessions with missing sources', async () => {
+	resetMocks()
+	mockModule.listRepoSessionsByUser.mockResolvedValue([
+		createSession({
+			id: 'session-missing-source',
+			source_id: 'source-missing',
+			updated_at: '2026-04-28T00:03:00.000Z',
+		}),
+		createSession({
+			id: 'session-valid',
+			source_id: 'source-1',
+			updated_at: '2026-04-28T00:02:00.000Z',
+		}),
+	])
+	mockModule.getEntitySourceByIdForUser.mockImplementation(
+		async (_db: D1Database, input: { id: string; userId: string }) =>
+			input.id === 'source-missing' || input.userId !== 'user-1'
+				? null
+				: createSource(input.id),
+	)
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@user/demo',
+		kodyId: 'demo',
+		description: 'Demo package',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-28T00:00:00.000Z',
+		updatedAt: '2026-04-28T00:00:00.000Z',
+	})
+
+	const result = await repoListSessionsCapability.handler(
+		{ limit: 1 },
+		createContext(),
+	)
+
+	expect(result.sessions.map((session) => session.id)).toEqual([
+		'session-valid',
+	])
+	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledTimes(2)
+})

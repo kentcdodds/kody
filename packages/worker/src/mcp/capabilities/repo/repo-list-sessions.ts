@@ -80,15 +80,14 @@ export const repoListSessionsCapability = defineDomainCapability(
 						sourceId: args.source_id,
 					})
 				: await listRepoSessionsByUser(ctx.env.APP_DB, user.userId)
-			const filteredRows = rows
-				.filter(
-					(row) =>
-						row.user_id === user.userId &&
-						(args.status === 'all' || row.status === args.status),
-				)
-				.slice(0, args.limit)
 			const sessions: RepoListSessionsOutput['sessions'] = []
-			for (const row of filteredRows) {
+			for (const row of rows) {
+				if (
+					row.user_id !== user.userId ||
+					(args.status !== 'all' && row.status !== args.status)
+				) {
+					continue
+				}
 				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
 					id: row.source_id,
 					userId: user.userId,
@@ -103,6 +102,7 @@ export const repoListSessionsCapability = defineDomainCapability(
 						source,
 					}),
 				})
+				if (sessions.length >= args.limit) break
 			}
 			return { sessions }
 		},
