@@ -15,12 +15,13 @@ platform-assigned sender address.
   that username. The default inbox is provisioned automatically at signup (or on
   the first inbound message), so there is nothing to create or configure.
 - Mail to unknown usernames is rejected, and the app's apex domain is never a
-  user inbox: user mail lives exclusively on the dedicated subdomain, while the
-  apex hosts only system mail — the transactional sender (`kody@<apex>`, used
-  for verification and password-reset mail) and the operator-owned system
-  inboxes (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin` at
-  the apex route to Kody's system inbox, so replies to transactional mail land
-  there). All other apex mail is rejected.
+  user inbox: user mail lives exclusively on the configured platform domain (the
+  `inbox.` subdomain by default), while the apex hosts only system mail — the
+  transactional sender (`kody@<apex>`, used for verification and password-reset
+  mail) and the operator-owned system inboxes (`kody`, `support`, `abuse`,
+  `postmaster`, `security`, and `admin` at the apex route to Kody's system
+  inbox, so replies to transactional mail land there). All other apex mail is
+  rejected.
 - Reserved local parts never route to a user inbox and can never be registered
   as usernames.
 - User outbound mail always sends from `{username}@<platform domain>`. The from
