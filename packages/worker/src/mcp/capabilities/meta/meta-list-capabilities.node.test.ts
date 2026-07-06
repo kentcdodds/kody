@@ -183,6 +183,31 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 		),
 	).toBe(true)
 
+	const repoOnly = await metaListCapabilitiesCapability.handler(
+		{
+			domain: 'repo',
+			detail: true,
+		},
+		{
+			env: {} as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+			}),
+		},
+	)
+	const listSessionsCapability = repoOnly.capabilities.find(
+		(capability) => capability.name === 'repo_list_sessions',
+	)
+	expect(listSessionsCapability).toMatchObject({
+		domain: 'repo',
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		requiredInputFields: [],
+		inputTypeDefinition: expect.stringContaining('status'),
+		outputTypeDefinition: expect.stringContaining('sessions'),
+	})
+
 	const remoteOnly = await metaListCapabilitiesCapability.handler(
 		{
 			domain: 'remote:roku',
