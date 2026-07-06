@@ -818,6 +818,10 @@ function escapeLikePattern(value: string) {
  * Case-insensitive substring search over stored messages' subject, header
  * From, and envelope sender. Same filters, ordering, and limit contract as
  * `listEmailMessages`; always scoped to one user.
+ *
+ * The leading-wildcard LIKE is a per-user linear scan (bounded by the
+ * stored_email_messages entitlement cap). Revisit with FTS5 or a search
+ * index if mailboxes outgrow that.
  */
 export async function searchEmailMessages(input: {
 	db: D1Database

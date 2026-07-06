@@ -131,6 +131,10 @@ export async function handleInboundEmail(
 			resource: 'email_receives_per_day',
 			fallbackLimit: nullPlanEmailFallbackLimits.email_receives_per_day,
 		})
+		// Check-then-insert: a concurrent burst can overshoot the stored cap
+		// by a few rows, which is the documented row-count-limit trade-off
+		// (see entitlements.md "Concurrency") — this is a denial-of-wallet
+		// backstop, not billing-grade accounting.
 		await assertWithinEntitlement({
 			db: env.APP_DB,
 			userId,

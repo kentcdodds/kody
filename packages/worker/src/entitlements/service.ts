@@ -34,12 +34,21 @@ export async function getUserPlan(
 }
 
 /**
+ * Per-isolate cache of stable user id → account email. The mapping is a
+ * content hash (sha256 of the normalized email), so a positive entry can
+ * never go stale; only cache hits are trusted and deleted entries fall
+ * back to a fresh scan.
+ */
+const stableUserIdEmailCache = new Map<string, string>()
+
+/**
  * Reverse-resolve a stable MCP userId (SHA-256 of the normalized account
  * email) back to the account email and plan. There is no stored mapping, so
- * this scans the users table and hashes each email until one matches — the
- * same pattern `isAccountEmailVerified` uses. Only call this on paths that
- * genuinely have no caller context email (for example inbound email
- * routing); interactive surfaces already carry the email.
+ * the cold path scans the users table and hashes each email until one
+ * matches — the same pattern `isAccountEmailVerified` uses — and positive
+ * matches are cached per isolate so hot paths pay one point read. Only call
+ * this on paths that genuinely have no caller context email (for example
+ * inbound email routing); interactive surfaces already carry the email.
  */
 export async function findUserAccountByStableUserId(
 	db: D1Database,
@@ -47,11 +56,22 @@ export async function findUserAccountByStableUserId(
 ): Promise<{ email: string; plan: PlanName | null } | null> {
 	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
+	const cachedEmail = stableUserIdEmailCache.get(trimmed)
+	if (cachedEmail) {
+		const row = await db
+			.prepare(`SELECT plan FROM users WHERE email = ?`)
+			.bind(cachedEmail)
+			.first<{ plan: string | null }>()
+		if (row) return { email: cachedEmail, plan: parsePlanName(row.plan) }
+		// The account is gone (deleted); drop the entry and rescan.
+		stableUserIdEmailCache.delete(trimmed)
+	}
 	const rows = await db
 		.prepare(`SELECT email, plan FROM users`)
 		.all<{ email: string; plan: string | null }>()
 	for (const row of rows.results ?? []) {
 		if ((await createStableUserIdFromEmail(row.email)) === trimmed) {
+			stableUserIdEmailCache.set(trimmed, row.email)
 			return { email: row.email, plan: parsePlanName(row.plan) }
 		}
 	}

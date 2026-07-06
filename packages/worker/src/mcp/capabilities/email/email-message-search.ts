@@ -3,6 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { searchEmailMessages } from '#worker/email/repo.ts'
+import {
+	emailDirectionValues,
+	emailProcessingStatusValues,
+} from '#worker/email/types.ts'
 import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
 export const emailMessageSearchCapability = defineDomainCapability(
@@ -25,8 +29,8 @@ export const emailMessageSearchCapability = defineDomainCapability(
 					'Substring to match (case-insensitive) against subject, from address, and envelope sender.',
 				),
 			inbox_id: z.string().min(1).optional(),
-			direction: z.enum(['inbound', 'outbound']).optional(),
-			processing_status: z.enum(['stored', 'sent', 'failed']).optional(),
+			direction: z.enum(emailDirectionValues).optional(),
+			processing_status: z.enum(emailProcessingStatusValues).optional(),
 			limit: z.number().int().positive().max(100).default(25),
 		}),
 		outputSchema: z.object({

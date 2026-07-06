@@ -56,8 +56,10 @@ One path cannot fail open: inbound email routing has no caller context but must
 enforce receive quotas. `findUserAccountByStableUserId` in `service.ts`
 reverse-resolves the stable user id to the account email (and plan) by scanning
 the users table and hashing each email — the same pattern
-`isAccountEmailVerified` uses. Only use it on contextless paths; interactive
-surfaces already carry the email.
+`isAccountEmailVerified` uses. Positive matches are cached per isolate (the
+mapping is a content hash, so hits can never go stale) and re-verified with one
+point read. Only use it on contextless paths; interactive surfaces already carry
+the email.
 
 ## The error shape
 

@@ -4,7 +4,10 @@ import {
 	nullPlanEmailFallbackLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
-import { utcDayKey } from '#worker/entitlements/service.ts'
+import {
+	findUserAccountByStableUserId,
+	utcDayKey,
+} from '#worker/entitlements/service.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
@@ -218,6 +221,36 @@ test('inbound email applies the NULL-plan fallback receive limit', async () => {
 			`this deployment allows at most ${fallbackLimit} email receives per day`,
 		),
 	})
+})
+
+test('findUserAccountByStableUserId resolves accounts, caches hits, and recovers from deletions', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const email = `reverse-lookup-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedAccountWithPlan({ email, plan: 'personal' })
+
+	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
+		email,
+		plan: 'personal',
+	})
+	// Second call takes the cached-email point-read path and must still
+	// reflect the current plan value.
+	await env.APP_DB.prepare(`UPDATE users SET plan = NULL WHERE email = ?`)
+		.bind(email)
+		.run()
+	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
+		email,
+		plan: null,
+	})
+	// Deleting the account invalidates the cached entry.
+	await env.APP_DB.prepare(`DELETE FROM users WHERE email = ?`)
+		.bind(email)
+		.run()
+	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toBeNull()
+	expect(
+		await findUserAccountByStableUserId(env.APP_DB, `unknown-${userId}`),
+	).toBeNull()
+	expect(await findUserAccountByStableUserId(env.APP_DB, '  ')).toBeNull()
 })
 
 test('inbound email under quota stores the message, counts the receive, and records usage', async () => {
