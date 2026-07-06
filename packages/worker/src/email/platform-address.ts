@@ -74,6 +74,7 @@ export type ResolvedPlatformSender = {
 	 */
 	accountEmail: string
 	username: string
+	domain: string
 }
 
 /**
@@ -111,5 +112,6 @@ export async function resolveUserPlatformSender(input: {
 		from: buildPlatformEmailAddress({ username: account.username, domain }),
 		accountEmail: account.email,
 		username: account.username,
+		domain,
 	}
 }

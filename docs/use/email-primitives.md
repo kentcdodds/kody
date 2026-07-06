@@ -18,7 +18,9 @@ replies from the matching platform-assigned sender address.
   `kody@<platform domain>` is the system transactional sender (verification and
   password-reset mail) only.
 - User outbound mail always sends from `{username}@<platform domain>`. The from
-  address is platform-assigned; there is no self-service sender verification.
+  address is platform-assigned: a verified sender identity for it is provisioned
+  automatically alongside the default inbox. There is no self-service sender
+  registration or verification step.
 
 ## Capabilities
 

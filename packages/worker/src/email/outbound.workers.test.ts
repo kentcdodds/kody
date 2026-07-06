@@ -151,6 +151,20 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 			'X-Kody-Email-Message-Id': result.message.messageIdHeader,
 		},
 	})
+	// The send auto-provisioned (and referenced) the platform sender
+	// identity — no self-service verify step exists.
+	expect(stored?.senderIdentityId).toBeTruthy()
+	const identity = await env.APP_DB.prepare(
+		`SELECT user_id, email, domain, status FROM email_sender_identities WHERE id = ?`,
+	)
+		.bind(stored?.senderIdentityId)
+		.first<Record<string, unknown>>()
+	expect(identity).toEqual({
+		user_id: userId,
+		email: from,
+		domain: platformDomain,
+		status: 'verified',
+	})
 	const listed = await listEmailMessages({
 		db: env.APP_DB,
 		userId,

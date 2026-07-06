@@ -7,6 +7,7 @@ import {
 	type EmailInboxRecord,
 	type EmailMessageRecord,
 	type EmailProcessingStatus,
+	type EmailSenderIdentityRecord,
 	type EmailThreadRecord,
 } from './types.ts'
 
@@ -323,6 +324,82 @@ export async function getEmailInboxByName(input: {
 		.bind(input.userId, input.name)
 		.first<Record<string, unknown>>()
 	return row ? mapInboxRow(row) : null
+}
+
+function mapSenderIdentityRow(
+	row: Record<string, unknown>,
+): EmailSenderIdentityRecord {
+	return {
+		id: String(row['id']),
+		userId: String(row['user_id']),
+		email: String(row['email']),
+		domain: String(row['domain']),
+		status: String(row['status']) as EmailSenderIdentityRecord['status'],
+		verifiedAt: row['verified_at'] == null ? null : String(row['verified_at']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+async function getSenderIdentityByEmail(input: {
+	db: D1Database
+	userId: string
+	email: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_sender_identities
+			WHERE user_id = ?
+				AND email = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.email)
+		.first<Record<string, unknown>>()
+	return row ? mapSenderIdentityRow(row) : null
+}
+
+/**
+ * Ensure the platform-assigned sender identity row
+ * (`{username}@<platform domain>`, status `verified`) exists for the user.
+ * This is the only way sender identities are created: they are provisioned
+ * by the platform, never self-registered or "verified" by users.
+ */
+export async function ensurePlatformSenderIdentity(input: {
+	db: D1Database
+	userId: string
+	email: string
+	domain: string
+}): Promise<EmailSenderIdentityRecord> {
+	const existing = await getSenderIdentityByEmail(input)
+	if (existing?.status === 'verified') return existing
+	const timestamp = nowIso()
+	await input.db
+		.prepare(
+			`INSERT INTO email_sender_identities (
+				id, user_id, email, domain, status, verified_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, 'verified', ?, ?, ?)
+			ON CONFLICT(user_id, email) DO UPDATE SET
+				domain = excluded.domain,
+				status = excluded.status,
+				verified_at = excluded.verified_at,
+				updated_at = excluded.updated_at`,
+		)
+		.bind(
+			crypto.randomUUID(),
+			input.userId,
+			input.email,
+			input.domain,
+			timestamp,
+			timestamp,
+			timestamp,
+		)
+		.run()
+	const persisted = await getSenderIdentityByEmail(input)
+	if (!persisted) {
+		throw new Error('Failed to provision the platform sender identity.')
+	}
+	return persisted
 }
 
 async function findThreadForMessage(input: {

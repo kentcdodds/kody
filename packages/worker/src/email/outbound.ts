@@ -10,6 +10,7 @@ import { normalizeEmailAddress } from './address.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import {
 	createEmailThread,
+	ensurePlatformSenderIdentity,
 	getEmailMessageById,
 	getEmailMessageByMessageIdHeader,
 	insertEmailMessage,
@@ -251,6 +252,15 @@ export async function sendOutboundEmail(
 	if (!accountEmailVerified) {
 		throw new Error('Account email must be verified before sending email.')
 	}
+	// Sends reference the platform-provisioned sender identity. It is
+	// normally created alongside the default inbox at signup; ensuring it
+	// here also covers accounts provisioned before the identity existed.
+	const senderIdentity = await ensurePlatformSenderIdentity({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: sender.from,
+		domain: sender.domain,
+	})
 
 	let original: EmailMessageRecord | null = null
 	let to: Array<string>
@@ -329,7 +339,7 @@ export async function sendOutboundEmail(
 			userId: input.userId,
 			inboxId: original?.inboxId ?? input.inboxId ?? null,
 			threadId,
-			senderIdentityId: null,
+			senderIdentityId: senderIdentity.id,
 			fromAddress: from,
 			envelopeFrom: from,
 			toAddresses: to,

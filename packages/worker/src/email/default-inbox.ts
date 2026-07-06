@@ -1,6 +1,7 @@
 import {
 	createEmailInbox,
 	createEmailInboxAddress,
+	ensurePlatformSenderIdentity,
 	getEmailInboxAddressByAddress,
 	getEmailInboxById,
 	getEmailInboxByName,
@@ -17,10 +18,12 @@ export type ProvisionedDefaultInbox = {
 
 /**
  * Ensure the user's automatic default inbox at `{username}@<platform domain>`
- * exists. Idempotent and race-tolerant: signup provisioning and
- * first-inbound provisioning may run concurrently, so each insert falls back
- * to re-reading the row another writer created. Returns null when the
- * address is already claimed by a different user's legacy alias row.
+ * exists, together with the platform-assigned verified sender identity for
+ * the same address (there is no user-facing sender verification).
+ * Idempotent and race-tolerant: signup provisioning and first-inbound
+ * provisioning may run concurrently, so each insert falls back to re-reading
+ * the row another writer created. Returns null when the address is already
+ * claimed by a different user's legacy alias row.
  */
 export async function ensureDefaultEmailInbox(input: {
 	db: D1Database
@@ -30,6 +33,12 @@ export async function ensureDefaultEmailInbox(input: {
 }): Promise<ProvisionedDefaultInbox | null> {
 	const address = buildPlatformEmailAddress({
 		username: input.username,
+		domain: input.domain,
+	})
+	await ensurePlatformSenderIdentity({
+		db: input.db,
+		userId: input.userId,
+		email: address,
 		domain: input.domain,
 	})
 

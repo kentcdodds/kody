@@ -118,6 +118,19 @@ test('inbound email routes {username}@platform-domain and auto-provisions the de
 		localPart: username,
 		domain: platformDomain,
 	})
+	// Provisioning also created the platform-assigned verified sender
+	// identity for the same address.
+	const identity = await env.APP_DB.prepare(
+		`SELECT email, domain, status FROM email_sender_identities
+			WHERE user_id = ? AND email = ?`,
+	)
+		.bind(userId, address)
+		.first<Record<string, unknown>>()
+	expect(identity).toEqual({
+		email: address,
+		domain: platformDomain,
+		status: 'verified',
+	})
 	const inbox = inboxes[0]!
 
 	const secondMessage = createForwardableEmailMessage({

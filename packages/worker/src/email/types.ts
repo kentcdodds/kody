@@ -73,6 +73,17 @@ export type EmailInboxAddressRecord = {
 	updatedAt: string
 }
 
+export type EmailSenderIdentityRecord = {
+	id: string
+	userId: string
+	email: string
+	domain: string
+	status: 'pending' | 'verified' | 'disabled'
+	verifiedAt: string | null
+	createdAt: string
+	updatedAt: string
+}
+
 export type EmailThreadRecord = {
 	id: string
 	userId: string
