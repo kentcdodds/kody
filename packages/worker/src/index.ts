@@ -393,6 +393,57 @@ function addOAuthDiscoveryCorsHeaders(
 	})
 }
 
+function isOAuthProviderOwnedPath(pathname: string) {
+	return (
+		pathname === oauthPaths.token ||
+		pathname === oauthPaths.register ||
+		pathname === '/.well-known/oauth-authorization-server' ||
+		pathname === protectedResourceMetadataPath ||
+		pathname.startsWith(`${protectedResourceMetadataPath}/`) ||
+		pathname.startsWith(oauthPaths.apiPrefix)
+	)
+}
+
+function isMalformedOAuthClientException(error: unknown, pathname: string) {
+	const message = error instanceof Error ? error.message : ''
+	return (
+		pathname === oauthPaths.token &&
+		message.includes("Cannot read properties of undefined (reading 'some')")
+	)
+}
+
+function createOAuthProviderExceptionResponse(
+	error: unknown,
+	pathname: string,
+) {
+	const headers = {
+		'Cache-Control': 'no-store',
+		'Content-Type': 'application/json',
+	}
+	if (isMalformedOAuthClientException(error, pathname)) {
+		return new Response(
+			JSON.stringify({
+				error: 'invalid_client',
+				error_description: 'Invalid OAuth client registration.',
+			}),
+			{ status: 401, headers },
+		)
+	}
+
+	const errorDescription =
+		pathname === oauthPaths.register
+			? 'Invalid OAuth client registration.'
+			: 'OAuth provider request failed.'
+	return new Response(
+		JSON.stringify({
+			error:
+				pathname === oauthPaths.register ? 'invalid_request' : 'server_error',
+			error_description: errorDescription,
+		}),
+		{ status: pathname === oauthPaths.register ? 400 : 500, headers },
+	)
+}
+
 const workerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
@@ -448,7 +499,15 @@ const workerHandler = {
 				return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
 			}
 		}
-		return oauthProvider.fetch(request, env, ctx)
+		try {
+			return await oauthProvider.fetch(request, env, ctx)
+		} catch (error) {
+			if (!isOAuthProviderOwnedPath(url.pathname)) throw error
+			if (!isMalformedOAuthClientException(error, url.pathname)) {
+				Sentry.captureException(error)
+			}
+			return createOAuthProviderExceptionResponse(error, url.pathname)
+		}
 	},
 	async email(
 		message: ForwardableEmailMessage,

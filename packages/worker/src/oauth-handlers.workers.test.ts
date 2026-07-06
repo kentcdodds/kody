@@ -157,6 +157,48 @@ async function workerFetch(request: Request): Promise<Response> {
 	return response
 }
 
+async function createS256CodeChallenge(verifier: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(verifier),
+	)
+	return btoa(String.fromCharCode(...new Uint8Array(digest)))
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/, '')
+}
+
+async function createSha256Hex(value: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(value),
+	)
+	return Array.from(new Uint8Array(digest))
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
+}
+
+async function seedWorkerUser(email: string, password: string) {
+	const passwordHash = await createPasswordHash(password)
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			username TEXT NOT NULL UNIQUE,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+	).run()
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash)
+			VALUES (?, ?, ?)
+			ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash`,
+	)
+		.bind(`user-${crypto.randomUUID().slice(0, 8)}`, email, passwordHash)
+		.run()
+}
+
 function createFormRequest(
 	data: Record<string, string>,
 	headers: Record<string, string> = {},
@@ -423,6 +465,148 @@ test('worker entrypoint renders a recoverable error for malformed Claude clients
 	const html = await response.text()
 	expect(html).toContain('Invalid OAuth client registration.')
 	expect(html).toContain('"oauthAuthorize"')
+})
+
+test('worker entrypoint completes Claude-shaped dynamic registration and token exchange', async () => {
+	const email = `claude-oauth-${crypto.randomUUID()}@example.com`
+	const password = 'password123'
+	await seedWorkerUser(email, password)
+
+	const registerResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				redirect_uris: [claudeAuthRequest.redirectUri],
+				client_name: 'Claude',
+				token_endpoint_auth_method: 'none',
+				grant_types: ['authorization_code', 'refresh_token'],
+				response_types: ['code'],
+			}),
+		}),
+	)
+	expect(registerResponse.status).toBe(201)
+	const registeredClient = (await registerResponse.json()) as {
+		client_id: string
+	}
+	const verifier = 'claude-verifier-0123456789'
+	const authorizeUrl = new URL(claudeAuthorizeUrl)
+	authorizeUrl.searchParams.set('client_id', registeredClient.client_id)
+	authorizeUrl.searchParams.set(
+		'code_challenge',
+		await createS256CodeChallenge(verifier),
+	)
+
+	const authorizeResponse = await workerFetch(new Request(authorizeUrl))
+	expect(authorizeResponse.status).toBe(200)
+	expect(await authorizeResponse.text()).toContain('Claude')
+
+	const approvalResponse = await workerFetch(
+		new Request(authorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				email,
+				password,
+			}),
+		}),
+	)
+	expect(approvalResponse.status).toBe(200)
+	const approvalPayload = (await approvalResponse.json()) as {
+		redirectTo: string
+	}
+	const callbackUrl = new URL(approvalPayload.redirectTo)
+	const code = callbackUrl.searchParams.get('code')
+	expect(code).toBeTruthy()
+
+	const tokenResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				client_id: registeredClient.client_id,
+				code: code ?? '',
+				redirect_uri: claudeAuthRequest.redirectUri,
+				code_verifier: verifier,
+				resource: 'https://heykody.dev/mcp',
+			}),
+		}),
+	)
+	expect(tokenResponse.status).toBe(200)
+	await expect(tokenResponse.json()).resolves.toMatchObject({
+		token_type: 'bearer',
+		resource: 'https://heykody.dev/mcp',
+		scope: 'profile email',
+	})
+})
+
+test('worker entrypoint returns OAuth errors for provider-owned route exceptions', async () => {
+	const registerResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: 'null',
+		}),
+	)
+	expect(registerResponse.status).toBe(400)
+	await expect(registerResponse.json()).resolves.toEqual({
+		error: 'invalid_request',
+		error_description: 'Invalid OAuth client registration.',
+	})
+
+	const clientId = `malformed-token-client-${crypto.randomUUID()}`
+	const userId = `oauth-user-${crypto.randomUUID()}`
+	const grantId = `oauth-grant-${crypto.randomUUID()}`
+	const code = `${userId}:${grantId}:secret`
+	await env.OAUTH_KV.put(
+		`client:${clientId}`,
+		JSON.stringify({
+			clientId,
+			clientName: 'Claude',
+			tokenEndpointAuthMethod: 'none',
+		}),
+	)
+	await env.OAUTH_KV.put(
+		`grant:${userId}:${grantId}`,
+		JSON.stringify({
+			id: grantId,
+			clientId,
+			userId,
+			scope: ['profile', 'email'],
+			metadata: {},
+			encryptedProps: '',
+			createdAt: Math.floor(Date.now() / 1000),
+			authCodeId: await createSha256Hex(code),
+			resource: 'https://heykody.dev/mcp',
+			codeChallenge: 'verifier',
+			codeChallengeMethod: 'plain',
+		}),
+	)
+
+	const tokenResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				client_id: clientId,
+				code,
+				redirect_uri: claudeAuthRequest.redirectUri,
+				code_verifier: 'verifier',
+				resource: 'https://heykody.dev/mcp',
+			}),
+		}),
+	)
+	expect(tokenResponse.status).toBe(401)
+	await expect(tokenResponse.json()).resolves.toEqual({
+		error: 'invalid_client',
+		error_description: 'Invalid OAuth client registration.',
+	})
 })
 
 test('reset client deletes matching grants for redirect-uri, client-id, and authorize-info mismatches', async () => {
