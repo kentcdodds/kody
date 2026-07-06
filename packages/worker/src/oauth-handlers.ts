@@ -465,13 +465,19 @@ async function handleResetClientRequest(
 	}
 
 	try {
-		const db = createDb(env.APP_DB)
-		const userRecord = await db.findOne(usersTable, {
-			where: { email: sessionEmail },
-		})
-		const userId = userRecord
-			? await resolveUserStableId(userRecord)
-			: await createStableUserIdFromEmail(sessionEmail)
+		let userId = await createStableUserIdFromEmail(sessionEmail)
+		try {
+			const db = createDb(env.APP_DB)
+			const userRecord = await db.findOne(usersTable, {
+				where: { email: sessionEmail },
+			})
+			if (userRecord) {
+				userId = await resolveUserStableId(userRecord)
+			}
+		} catch {
+			// Reset cleanup predated stored stable ids and can run in OAuth-only
+			// test/adaptor contexts where the users table is unavailable.
+		}
 		const grants = await listUserGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
 			grants.map((grant) => helpers.revokeGrant(grant.id, userId)),
