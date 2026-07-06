@@ -141,6 +141,7 @@ jobs:
       - name: 🗄️ Apply D1 Migrations (preview)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run:
@@ -151,6 +152,7 @@ jobs:
         id: deploy_mocks
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
         run: |
           set -euo pipefail
@@ -232,6 +234,7 @@ jobs:
         id: deploy_preview
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
@@ -254,6 +257,7 @@ jobs:
       - name: 🔐 Sync preview app Worker secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           OVERRIDES_FILE: ${{ steps.deploy_mocks.outputs.overrides_file }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
@@ -297,6 +301,7 @@ jobs:
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
@@ -522,14 +527,16 @@ jobs:
       - name: 🗑️ Delete preview Workers
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
         run: |
           set -euo pipefail
           delete_worker() {
             local name="$1"
+            local config="$2"
             local output=""
             set +e
-            output="$(npx wrangler delete "$name" --env preview --force 2>&1)"
+            output="$(npx wrangler delete "$name" --env preview --config "$config" --force 2>&1)"
             local exit_code="$?"
             set -e
 
@@ -549,7 +556,7 @@ jobs:
             return "$exit_code"
           }
 
-          delete_worker "$APP_WORKER_NAME"
+          delete_worker "$APP_WORKER_NAME" "packages/worker/wrangler.jsonc"
 
           for dir in packages/mock-servers/*; do
             if [ ! -d "$dir" ]; then
@@ -561,13 +568,14 @@ jobs:
 
             service="$(basename "$dir")"
             mock_worker_name="${APP_WORKER_NAME}-mock-${service}"
-            delete_worker "$mock_worker_name"
+            delete_worker "$mock_worker_name" "$dir/wrangler.jsonc"
           done
 
       - name: 🧹 Delete preview resources (D1 + KV)
         if: always()
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
         run: |
           set -euo pipefail
