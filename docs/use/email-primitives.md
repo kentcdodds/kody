@@ -1,18 +1,37 @@
 # Email primitives
 
 Kody has a storage-first email surface for Cloudflare Email Service and Email
-Routing. It can send from verified identities, receive routed mail, and store
-parsed messages for later automation.
+Routing. Every user gets an automatic inbox address at
+`{username}@<platform domain>` (the hostname of the deployment's `APP_BASE_URL`,
+for example `you@heykody.dev`). Kody receives routed mail for that address,
+stores parsed messages for later automation, and can send notify-self mail and
+replies from the matching platform-assigned sender address.
+
+## Addressing model
+
+- Inbound mail to `{username}@<platform domain>` routes to the user who owns
+  that username. The default inbox is provisioned automatically at signup (or on
+  the first inbound message), so there is nothing to create or configure.
+- Mail to unknown usernames is rejected.
+- Reserved local parts (`kody`, `postmaster`, `abuse`, and other role or system
+  names) never route to a user inbox and can never be registered as usernames.
+  `kody@<platform domain>` is the system transactional sender (verification and
+  password-reset mail) only.
+- User outbound mail always sends from `{username}@<platform domain>`. The from
+  address is platform-assigned: a verified sender identity for it is provisioned
+  automatically alongside the default inbox. There is no self-service sender
+  registration or verification step.
 
 ## Capabilities
 
 Use the MCP `email` domain:
 
-- `email_inbox_create` creates an inbox and routable alias.
-- `email_inbox_list` lists inboxes and aliases for the signed-in user.
-- `email_sender_identity_verify` verifies an outbound sender identity.
-- `email_send` sends outbound mail from a verified sender identity.
-- `email_reply` replies to a stored inbound message.
+- `email_inbox_list` lists inboxes and automatic platform addresses for the
+  signed-in user.
+- `email_send` sends a notification email to your own account email address
+  (notify-self only; any other recipient is rejected).
+- `email_reply` replies to a stored inbound message. The recipient always comes
+  from the stored message.
 - `email_attachment_get` returns stored attachment bytes by attachment id.
 - `email_message_list` lists stored inbound and outbound messages.
 - `email_message_search` searches stored messages by case-insensitive substring
@@ -52,14 +71,19 @@ Inbound storage is quota-gated per user:
 - Every email capability requires a **verified account email**. Until the
   account email is verified (via the link sent at signup, or a resend from the
   `/account` page), email capabilities are rejected, inbound mail routed to the
-  account's aliases is rejected before storage, and MCP access as a whole is
-  disabled.
-- Any email routed to a configured Kody inbox on a verified account is stored,
-  subject to the quotas above.
-- Unknown aliases are rejected before storage.
+  account's platform address is rejected before storage, and MCP access as a
+  whole is disabled.
+- Any email routed to a verified user's platform address is stored, subject to
+  the quotas above.
+- Unknown usernames and reserved local parts are rejected before storage.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
-- Outbound sending requires a verified sender identity.
+- Outbound sending requires a verified account email, sends only from the
+  platform-assigned address, and `email_send` only delivers to the signed-in
+  user's own account email. `email_reply` is the only way to address external
+  recipients, and only recipients taken from stored inbound mail.
+- Outbound sends consume a per-day entitlement. Users without a plan are capped
+  by a global daily backstop instead of sending unlimited mail.
 - Stored inbound mail is the source of truth. If a user wants email automation,
   they can publish a package that subscribes to the stored inbound email topic
   `email.message.received` using normal package subscriptions. This is package
@@ -139,15 +163,16 @@ the signed-in user.
 
 ## Local inbound testing
 
-Run the worker locally, create an inbox alias, then post raw MIME to Wrangler's
-email test endpoint. The local worker defaults to port `3742` unless you set
-`PORT`:
+Run the worker locally with `APP_BASE_URL` set, sign up a user, then post raw
+MIME to Wrangler's email test endpoint addressed to
+`{username}@<APP_BASE_URL hostname>`. The local worker defaults to port `3742`
+unless you set `PORT`:
 
 ```sh
 curl --request POST \
-  'http://localhost:3742/cdn-cgi/handler/email?from=sender@example.com&to=alias@example.com' \
+  'http://localhost:3742/cdn-cgi/handler/email?from=sender@example.com&to=username@example.com' \
   --data-raw 'From: Sender <sender@example.com>
-To: Alias <alias@example.com>
+To: Username <username@example.com>
 Subject: Hello
 Message-ID: <hello@example.com>
 

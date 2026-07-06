@@ -138,15 +138,15 @@ assistant features are blocked until the email is verified:
   rejected.
 - **Inbound email**: `handleInboundEmail` in
   `packages/worker/src/email/inbound.ts` rejects routed mail for unverified
-  accounts right after inbox lookup (`setReject` plus a `rejected` email
-  delivery event); nothing is stored.
+  accounts right after username routing (`setReject` plus a bounded `rejected`
+  email delivery event); nothing is stored.
 - **Email capabilities**: every capability in the MCP `email` domain calls
   `requireVerifiedEmailAccountUser`
   (`packages/worker/src/mcp/capabilities/email/require-verified-user.ts`) as
   defense-in-depth for callers that do not pass through `/mcp` (execute runtime,
   package jobs). Outbound sending additionally re-checks the account inside
-  `packages/worker/src/email/outbound.ts` before using a verified sender
-  identity.
+  `packages/worker/src/email/outbound.ts` before sending from the
+  platform-assigned `{username}@<platform domain>` sender address.
 
 ### Password policy
 

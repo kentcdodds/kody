@@ -443,6 +443,21 @@ test('auth handler login and signup workflow', async () => {
 			'Username must be 3 to 32 characters, use only letters, numbers, hyphens, or underscores, and start and end with a letter or number.',
 	})
 
+	// Reserved usernames double as reserved email local parts
+	// ({username}@<platform domain>), so signup must deny them.
+	for (const reserved of ['kody', 'postmaster', 'kody-r-0123456789abcdef']) {
+		const reservedUsernameResponse = await signupContext.request({
+			email: `${crypto.randomUUID().slice(0, 8)}@example.com`,
+			username: reserved,
+			password: 'password123',
+			mode: 'signup',
+		})
+		expect(reservedUsernameResponse.status).toBe(400)
+		expect(await reservedUsernameResponse.json()).toEqual({
+			error: 'This username is reserved.',
+		})
+	}
+
 	const duplicateUsernameResponse = await signupContext.request({
 		email: 'duplicate@example.com',
 		username: 'Existing-User',

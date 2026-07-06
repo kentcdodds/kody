@@ -15,7 +15,7 @@ export const emailReplyCapability = defineDomainCapability(
 	{
 		name: 'email_reply',
 		description:
-			'Reply to a stored inbound email using a verified sender identity, preserving thread headers.',
+			'Reply to a stored inbound email from your platform-assigned {username}@<platform domain> address, preserving thread headers. The recipient always comes from the stored message.',
 		keywords: ['email', 'reply', 'thread', 'message'],
 		readOnly: false,
 		idempotent: false,
@@ -23,7 +23,6 @@ export const emailReplyCapability = defineDomainCapability(
 		inputSchema: z
 			.object({
 				message_id: z.string().min(1),
-				from: z.string().email(),
 				text: z.string().min(1).optional(),
 				html: z.string().min(1).optional(),
 			})
@@ -41,18 +40,14 @@ export const emailReplyCapability = defineDomainCapability(
 			})
 			if (!original)
 				throw new Error(`Email message not found: ${args.message_id}`)
-			const fromAddress =
-				stringArray(original.replyToAddresses)[0] ??
-				original.fromAddress ??
-				original.envelopeFrom
-			if (!fromAddress)
-				throw new Error('Original message has no reply address.')
+			// The recipient is derived from the stored message inside
+			// sendOutboundEmail; this capability never chooses it.
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,
 				accountEmail: user.email,
-				from: args.from,
-				to: fromAddress,
+				recipientPolicy: 'reply',
+				replyToMessageId: original.id,
 				subject: original.subject?.toLowerCase().startsWith('re:')
 					? original.subject
 					: `Re: ${original.subject ?? '(no subject)'}`,

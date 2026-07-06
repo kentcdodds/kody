@@ -147,8 +147,19 @@ const reservedUsernameList = [
 
 const reservedUsernames = new Set<string>(reservedUsernameList)
 
+/**
+ * Local parts shaped like the legacy inbound reply-token aliases
+ * (`kody-r-<hex>`). Reserved so a user can never register a username that
+ * collides with that address space.
+ */
+const reservedUsernamePrefixPattern = /^kody-r-/
+
 export function isReservedUsername(username: string) {
-	return reservedUsernames.has(username.trim().toLowerCase())
+	const normalized = username.trim().toLowerCase()
+	return (
+		reservedUsernames.has(normalized) ||
+		reservedUsernamePrefixPattern.test(normalized)
+	)
 }
 
 export function getReservedUsernameError(username: string) {

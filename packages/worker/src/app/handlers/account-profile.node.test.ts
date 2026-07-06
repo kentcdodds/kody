@@ -246,6 +246,20 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 	)
 	expect(invalidResponse.status).toBe(400)
 
+	const reservedResponse = await runHandler(
+		handler,
+		await createRequest({
+			session,
+			method: 'POST',
+			body: { username: 'kody' },
+		}),
+	)
+	expect(reservedResponse.status).toBe(400)
+	expect(await reservedResponse.json()).toEqual({
+		ok: false,
+		error: 'This username is reserved.',
+	})
+
 	const duplicateResponse = await runHandler(
 		handler,
 		await createRequest({

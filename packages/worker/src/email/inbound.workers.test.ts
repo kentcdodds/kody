@@ -1,20 +1,15 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import {
-	getEmailDomain,
-	getEmailLocalPart,
-	requireNormalizedEmailAddress,
-} from './address.ts'
 import { handleInboundEmail } from './inbound.ts'
+import { defaultEmailInboxName } from './default-inbox.ts'
 import {
-	createEmailInbox,
-	createEmailInboxAddress,
 	createEmailThread,
 	insertEmailMessageWithAttachments,
 	getEmailAttachmentById,
+	listEmailInboxesForUser,
+	listEmailInboxAddressesForUser,
 	listEmailMessages,
 	listEmailAttachmentsForMessage,
-	upsertEmailSenderIdentity,
 } from './repo.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -22,25 +17,19 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
+const platformBaseUrl = 'https://kody.example.com'
+const platformDomain = 'kody.example.com'
+
+function createInboundEnv() {
+	return { ...env, APP_BASE_URL: platformBaseUrl }
+}
+
 async function seedAccount(input: {
 	db: D1Database
 	email: string
 	username: string
 	emailVerifiedAt?: string | null
 }) {
-	await input.db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS users (
-				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-				username TEXT NOT NULL UNIQUE,
-				email TEXT NOT NULL UNIQUE,
-				password_hash TEXT NOT NULL,
-				email_verified_at TEXT,
-				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-			)`,
-		)
-		.run()
 	await input.db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, email_verified_at)
@@ -69,31 +58,16 @@ async function seedVerifiedAccount(input: {
 	await seedAccount(input)
 }
 
-test('inbound email handler stores all routed inbound messages', async () => {
+test('inbound email routes {username}@platform-domain and auto-provisions the default inbox', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const accountEmail = `email-user-${crypto.randomUUID()}@example.com`
+	const username = `inbound-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
 	await seedVerifiedAccount({
 		db: env.APP_DB,
 		email: accountEmail,
-		username: `email-user-${crypto.randomUUID()}`,
-	})
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const address = requireNormalizedEmailAddress(
-		`support-${crypto.randomUUID()}@example.com`,
-	)
-	const inbox = await createEmailInbox({
-		db: env.APP_DB,
-		userId,
-		name: 'Support',
-		description: 'Support inbox',
-	})
-	await createEmailInboxAddress({
-		db: env.APP_DB,
-		inboxId: inbox.id,
-		userId,
-		address,
-		localPart: getEmailLocalPart(address),
-		domain: getEmailDomain(address),
+		username,
 	})
 
 	const firstMessage = createForwardableEmailMessage({
@@ -108,12 +82,41 @@ test('inbound email handler stores all routed inbound messages', async () => {
 			'Please help.',
 		].join('\r\n'),
 	})
-	await handleInboundEmail(firstMessage, env)
+	await handleInboundEmail(firstMessage, createInboundEnv())
 	expect(firstMessage.rejectedReason).toBeNull()
+
+	// First inbound provisioned the default inbox and address.
+	const inboxes = await listEmailInboxesForUser({ db: env.APP_DB, userId })
+	expect(inboxes).toHaveLength(1)
+	expect(inboxes[0]).toMatchObject({ name: defaultEmailInboxName })
+	const addresses = await listEmailInboxAddressesForUser({
+		db: env.APP_DB,
+		userId,
+	})
+	expect(addresses).toHaveLength(1)
+	expect(addresses[0]).toMatchObject({
+		address,
+		localPart: username,
+		domain: platformDomain,
+	})
+	// Provisioning also created the platform-assigned verified sender
+	// identity for the same address.
+	const identity = await env.APP_DB.prepare(
+		`SELECT email, domain, status FROM email_sender_identities
+			WHERE user_id = ? AND email = ?`,
+	)
+		.bind(userId, address)
+		.first<Record<string, unknown>>()
+	expect(identity).toEqual({
+		email: address,
+		domain: platformDomain,
+		status: 'verified',
+	})
+	const inbox = inboxes[0]!
 
 	const secondMessage = createForwardableEmailMessage({
 		from: 'agent@trusted.example',
-		to: address,
+		to: `${username.toUpperCase()}@${platformDomain}`,
 		raw: [
 			'From: Agent <agent@trusted.example>',
 			`To: ${address}`,
@@ -123,8 +126,13 @@ test('inbound email handler stores all routed inbound messages', async () => {
 			'Approved body.',
 		].join('\r\n'),
 	})
-	await handleInboundEmail(secondMessage, env)
+	await handleInboundEmail(secondMessage, createInboundEnv())
 	expect(secondMessage.rejectedReason).toBeNull()
+	// The second delivery reuses the provisioned inbox instead of creating
+	// another one.
+	expect(
+		await listEmailInboxesForUser({ db: env.APP_DB, userId }),
+	).toHaveLength(1)
 
 	const messages = await listEmailMessages({
 		db: env.APP_DB,
@@ -161,7 +169,7 @@ test('inbound email handler stores all routed inbound messages', async () => {
 			'Subject-only body.',
 		].join('\r\n'),
 	})
-	await handleInboundEmail(subjectOnlyMessage, env)
+	await handleInboundEmail(subjectOnlyMessage, createInboundEnv())
 	const subjectOnly = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
@@ -171,57 +179,111 @@ test('inbound email handler stores all routed inbound messages', async () => {
 	expect(subjectOnly[0]?.threadId).not.toBe(normalizedExistingThread.id)
 })
 
-test('inbound email handler rejects unknown aliases and malformed messages without persisting them', async () => {
+test('inbound email rejects unknown usernames, reserved locals, and foreign domains', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const recipient = `missing-${crypto.randomUUID()}@example.com`
-	const unknownAliasMessage = createForwardableEmailMessage({
+
+	async function expectRejected(input: { to: string; reason: string }) {
+		const message = createForwardableEmailMessage({
+			from: 'stranger@example.net',
+			to: input.to,
+			raw: [
+				'From: Stranger <stranger@example.net>',
+				`To: ${input.to}`,
+				'Subject: Should be rejected',
+				'',
+				'Please help.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(message, createInboundEnv())
+		expect(message.rejectedReason).toBe(input.reason)
+	}
+
+	// Unknown username on the platform domain.
+	await expectRejected({
+		to: `missing-${crypto.randomUUID().slice(0, 8)}@${platformDomain}`,
+		reason: 'Unknown Kody email address.',
+	})
+	// kody@ is the system transactional sender, never a user inbox. The
+	// reserved check runs before any username lookup, so even a legacy user
+	// row holding a reserved username can never receive here.
+	await expectRejected({
+		to: `kody@${platformDomain}`,
+		reason: 'This address is reserved for system mail.',
+	})
+	await expectRejected({
+		to: `postmaster@${platformDomain}`,
+		reason: 'This address is reserved for system mail.',
+	})
+	// Mail for other domains is never a Kody user inbox.
+	await expectRejected({
+		to: 'someone@other.example.com',
+		reason: 'Unknown Kody email address.',
+	})
+
+	// A disabled legacy row holding the platform address makes the inbox
+	// unavailable (clean reject) instead of crashing provisioning on the
+	// unique address constraint.
+	{
+		const username = `disabled-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `disabled-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
+		const heldAddress = `${username}@${platformDomain}`
+		const primer = createForwardableEmailMessage({
+			from: 'stranger@example.net',
+			to: heldAddress,
+			raw: [
+				'From: Stranger <stranger@example.net>',
+				`To: ${heldAddress}`,
+				'Subject: Provision first',
+				'',
+				'Body.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(primer, createInboundEnv())
+		expect(primer.rejectedReason).toBeNull()
+		await env.APP_DB.prepare(
+			`UPDATE email_inbox_addresses SET enabled = 0 WHERE address = ? AND user_id = ?`,
+		)
+			.bind(heldAddress, userId)
+			.run()
+		await expectRejected({
+			to: heldAddress,
+			reason: 'Email inbox is unavailable.',
+		})
+	}
+
+	// Without APP_BASE_URL there is no platform domain to route.
+	const unroutable = createForwardableEmailMessage({
 		from: 'stranger@example.net',
-		to: recipient,
+		to: `user@${platformDomain}`,
 		raw: [
 			'From: Stranger <stranger@example.net>',
-			`To: ${recipient}`,
-			'Subject: Unknown alias',
+			`To: user@${platformDomain}`,
+			'Subject: Unroutable',
 			'',
-			'Please help.',
+			'Body.',
 		].join('\r\n'),
 	})
+	await handleInboundEmail(unroutable, { ...env, APP_BASE_URL: undefined })
+	expect(unroutable.rejectedReason).toBe('Email routing is not configured.')
 
-	await handleInboundEmail(unknownAliasMessage, env)
-
-	expect(unknownAliasMessage.rejectedReason).toBe('Unknown Kody email alias.')
-	const unknownAliasMessages = await listEmailMessages({
-		db: env.APP_DB,
-		userId: 'unknown',
-		limit: 10,
-	})
-	expect(unknownAliasMessages).toEqual([])
-
-	const accountEmail = `email-parse-user-${crypto.randomUUID()}@example.com`
+	// Oversize mail for a valid user trips the pre-parse
+	// email_message_bytes gate (the NULL-plan fallback is 512 KiB) with the
+	// generic over-quota reason, before anything is stored.
+	const username = `parse-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `parse-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
 	await seedVerifiedAccount({
 		db: env.APP_DB,
 		email: accountEmail,
-		username: `email-parse-user-${crypto.randomUUID()}`,
+		username,
 	})
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const address = requireNormalizedEmailAddress(
-		`parse-${crypto.randomUUID()}@example.com`,
-	)
-	const inbox = await createEmailInbox({
-		db: env.APP_DB,
-		userId,
-		name: 'Parse failures',
-		description: 'Parse failure inbox',
-	})
-	await createEmailInboxAddress({
-		db: env.APP_DB,
-		inboxId: inbox.id,
-		userId,
-		address,
-		localPart: getEmailLocalPart(address),
-		domain: getEmailDomain(address),
-	})
-	// Oversize mail now trips the pre-parse email_message_bytes gate (the
-	// NULL-plan fallback is 512 KiB) with the generic over-quota reason.
 	const oversizeMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
@@ -231,7 +293,7 @@ test('inbound email handler rejects unknown aliases and malformed messages witho
 		value: 600 * 1024,
 	})
 
-	await handleInboundEmail(oversizeMessage, env)
+	await handleInboundEmail(oversizeMessage, createInboundEnv())
 
 	expect(oversizeMessage.rejectedReason).toBe(
 		'Recipient mailbox is over quota.',
@@ -251,45 +313,111 @@ test('inbound email handler rejects unknown aliases and malformed messages witho
 		}),
 	})
 
-	await handleInboundEmail(unreadableMessage, env)
+	await handleInboundEmail(unreadableMessage, createInboundEnv())
 
 	expect(unreadableMessage.rejectedReason).toMatch(/raw stream read failed/)
 	const rejectedMessages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
-		inboxId: inbox.id,
 		limit: 10,
 	})
 	expect(rejectedMessages).toEqual([])
 })
 
+test('inbound email reclaims a platform address left behind by a username change', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `recycled-${crypto.randomUUID().slice(0, 8)}`
+	const address = `${username}@${platformDomain}`
+	const firstEmail = `first-owner-${crypto.randomUUID()}@example.com`
+	const firstUserId = await createStableUserIdFromEmail(firstEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: firstEmail,
+		username,
+	})
+
+	const primer = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: First owner mail',
+			'',
+			'Body.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(primer, createInboundEnv())
+	expect(primer.rejectedReason).toBeNull()
+
+	// The first owner renames; a new user registers the freed username.
+	await env.APP_DB.prepare(`UPDATE users SET username = ? WHERE email = ?`)
+		.bind(`renamed-${crypto.randomUUID().slice(0, 8)}`, firstEmail)
+		.run()
+	const secondEmail = `second-owner-${crypto.randomUUID()}@example.com`
+	const secondUserId = await createStableUserIdFromEmail(secondEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: secondEmail,
+		username,
+	})
+
+	const message = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: Second owner mail',
+			'',
+			'Body.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(message, createInboundEnv())
+	expect(message.rejectedReason).toBeNull()
+
+	// The stale address row was reclaimed for the current username owner...
+	const addresses = await listEmailInboxAddressesForUser({
+		db: env.APP_DB,
+		userId: secondUserId,
+	})
+	expect(addresses.map((row) => row.address)).toEqual([address])
+	expect(
+		await listEmailInboxAddressesForUser({
+			db: env.APP_DB,
+			userId: firstUserId,
+		}),
+	).toEqual([])
+	// ...and the new mail routed to them while the old owner keeps their
+	// previously stored messages.
+	const secondMessages = await listEmailMessages({
+		db: env.APP_DB,
+		userId: secondUserId,
+		limit: 10,
+	})
+	expect(secondMessages.map((row) => row.subject)).toEqual([
+		'Second owner mail',
+	])
+	const firstMessages = await listEmailMessages({
+		db: env.APP_DB,
+		userId: firstUserId,
+		limit: 10,
+	})
+	expect(firstMessages.map((row) => row.subject)).toEqual(['First owner mail'])
+})
+
 test('inbound email handler rejects mail for unverified accounts', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const username = `unverified-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `email-unverified-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
 	await seedAccount({
 		db: env.APP_DB,
 		email: accountEmail,
-		username: `email-unverified-${crypto.randomUUID()}`,
+		username,
 		emailVerifiedAt: null,
-	})
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const address = requireNormalizedEmailAddress(
-		`unverified-${crypto.randomUUID()}@example.com`,
-	)
-	const inbox = await createEmailInbox({
-		db: env.APP_DB,
-		userId,
-		name: 'Unverified',
-		description: 'Unverified account inbox',
-	})
-	await createEmailInboxAddress({
-		db: env.APP_DB,
-		inboxId: inbox.id,
-		userId,
-		address,
-		localPart: getEmailLocalPart(address),
-		domain: getEmailDomain(address),
 	})
 
 	for (let index = 0; index < 2; index += 1) {
@@ -305,14 +433,13 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 				'Please help.',
 			].join('\r\n'),
 		})
-		await handleInboundEmail(message, env)
+		await handleInboundEmail(message, createInboundEnv())
 		expect(message.rejectedReason).toBe('Account email is not verified.')
 	}
 
 	const messages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
-		inboxId: inbox.id,
 		limit: 10,
 	})
 	expect(messages).toEqual([])
@@ -448,22 +575,21 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 
 test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	const username = `subscriber-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `email-subscription-user-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
-	const address = requireNormalizedEmailAddress(
-		`package-inbox-${crypto.randomUUID()}@example.com`,
-	)
+	const address = `${username}@${platformDomain}`
+	const replyFrom = `${username}@${platformDomain}`
 	const sourceId = `source-${crypto.randomUUID()}`
 	const packageId = `package-${crypto.randomUUID()}`
 	const bundleKv = new Map<string, string>()
 	const subscriptionCalls: Array<Record<string, unknown>> = []
-	const replyFrom = `package-reply-${crypto.randomUUID()}@example.com`
 
 	const db = env.APP_DB
 	await seedVerifiedAccount({
 		db,
 		email: accountEmail,
-		username: `email-subscription-${crypto.randomUUID()}`,
+		username,
 	})
 	await db
 		.prepare(
@@ -548,14 +674,6 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 			ON package_invocations(user_id, token_id, package_id, export_name, idempotency_key)`,
 		)
 		.run()
-	await upsertEmailSenderIdentity({
-		db,
-		userId,
-		email: replyFrom,
-		domain: getEmailDomain(replyFrom),
-		status: 'verified',
-		packageId,
-	})
 
 	const now = new Date().toISOString()
 	await db
@@ -663,7 +781,6 @@ export default async function main(input = {}) {
     : null
   const reply = await email.reply({
     message_id: input.message.id,
-    from: ${JSON.stringify(replyFrom)},
     text: 'Thanks for the email.',
   })
   return {
@@ -710,21 +827,6 @@ export default async function main(input = {}) {
 			now,
 		)
 		.run()
-	const inbox = await createEmailInbox({
-		db: env.APP_DB,
-		userId,
-		name: 'Package inbox',
-		description: 'Package-managed inbox',
-		packageId,
-	})
-	await createEmailInboxAddress({
-		db: env.APP_DB,
-		inboxId: inbox.id,
-		userId,
-		address,
-		localPart: getEmailLocalPart(address),
-		domain: getEmailDomain(address),
-	})
 
 	const ctx = {
 		waitUntil(promise: Promise<unknown>) {
@@ -782,7 +884,7 @@ export default async function main(input = {}) {
 				'--mail-boundary--',
 			].join('\r\n'),
 		})
-		await handleInboundEmail(firstMessage, env, ctx)
+		await handleInboundEmail(firstMessage, createInboundEnv(), ctx)
 		expect(firstMessage.rejectedReason).toBeNull()
 
 		const secondMessage = createForwardableEmailMessage({
@@ -797,7 +899,7 @@ export default async function main(input = {}) {
 				'Approved body.',
 			].join('\r\n'),
 		})
-		await handleInboundEmail(secondMessage, env, ctx)
+		await handleInboundEmail(secondMessage, createInboundEnv(), ctx)
 		expect(secondMessage.rejectedReason).toBeNull()
 
 		for (const entry of subscriptionCalls) {
@@ -858,6 +960,7 @@ export default async function main(input = {}) {
 			},
 		})
 		expect(outboundMessages).toHaveLength(2)
+		// Replies always go out from the platform-assigned username address.
 		expect(outboundMessages.map((message) => message.fromAddress)).toEqual([
 			replyFrom,
 			replyFrom,

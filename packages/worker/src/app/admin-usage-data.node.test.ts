@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	type AdminUsageLoaderData,
@@ -348,8 +349,11 @@ test('loadAdminUsageData shows email fallback limits for plan-less users', async
 	)
 	// Plan-less users stay unlimited for ordinary resources...
 	expect(consumption.get('saved_packages')?.limit).toBeNull()
-	expect(consumption.get('email_sends_per_day')?.limit).toBeNull()
-	// ...but the inbound email resources show the deployment fallbacks.
+	// ...but the email resources show the deployment fallbacks (outbound
+	// sends included: plan-less users are not unlimited for email).
+	expect(consumption.get('email_sends_per_day')?.limit).toBe(
+		nullPlanEmailFallbackLimits.email_sends_per_day,
+	)
 	expect(consumption.get('email_receives_per_day')).toMatchObject({
 		current: 190,
 		limit: 200,

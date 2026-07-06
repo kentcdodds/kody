@@ -1,5 +1,3 @@
-import { toHex } from '@kody-internal/shared/hex.ts'
-
 const mailboxAddressPattern = /<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>?/i
 
 export function normalizeEmailAddress(value: string) {
@@ -56,43 +54,6 @@ export function normalizeSubject(subject: string | null | undefined) {
 		.replace(/^(?:(?:re|fw|fwd):\s*)+/i, '')
 		.replace(/\s+/g, ' ')
 		.toLowerCase()
-}
-
-export function createReplyToken() {
-	const bytes = new Uint8Array(24)
-	crypto.getRandomValues(bytes)
-	return toHex(bytes)
-}
-
-export async function hashReplyToken(token: string) {
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(token.trim()),
-	)
-	return toHex(new Uint8Array(digest))
-}
-
-export async function findReplyTokenHash(input: {
-	headers: Headers
-	recipients: ReadonlyArray<string>
-}) {
-	const explicit =
-		input.headers.get('X-Kody-Reply-Token') ??
-		input.headers.get('X-Reply-Token') ??
-		null
-	if (explicit?.trim()) {
-		return hashReplyToken(explicit)
-	}
-	for (const recipient of input.recipients) {
-		const normalized = normalizeEmailAddress(recipient)
-		if (!normalized) continue
-		const localPart = getEmailLocalPart(normalized)
-		const match = localPart.match(/\bkody-r-([a-f0-9]{16,128})\b/i)
-		if (match?.[1]) {
-			return hashReplyToken(match[1])
-		}
-	}
-	return null
 }
 
 export function extractReplyToken(input: {

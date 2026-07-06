@@ -134,14 +134,18 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
- * Fallback limits for users without a plan on the inbound email resources.
+ * Fallback limits for users without a plan on the email resources.
  *
- * Inbound mail is attacker-controlled volume (anyone who learns an alias can
- * send to it), so unlike other resources the NULL-plan invariant does not
- * mean unlimited here: plan-less users get these deployment-level backstops
- * instead. The numbers match the `personal` plan.
+ * Email is abuse-sensitive in both directions — inbound volume is
+ * attacker-controlled (anyone can send to a `{username}@<platform domain>`
+ * address) and outbound sending is an outreach-abuse surface — so unlike
+ * other resources the NULL-plan invariant does not mean unlimited here:
+ * plan-less users get these deployment-level backstops instead. The inbound
+ * numbers match the `personal` plan; the send backstop sits between the
+ * `personal` and `pro` send limits.
  */
 export const nullPlanEmailFallbackLimits = {
+	email_sends_per_day: 100,
 	email_receives_per_day: 200,
 	stored_email_messages: 2000,
 	email_message_bytes: 512 * 1024,

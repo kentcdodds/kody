@@ -7,8 +7,9 @@ import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
 const emailSendInputSchema = z
 	.object({
-		from: z.string().min(1),
-		to: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+		to: z
+			.union([z.string().min(1), z.array(z.string().min(1)).min(1)])
+			.optional(),
 		subject: z.string().min(1),
 		text: z.string().min(1).optional(),
 		html: z.string().min(1).optional(),
@@ -24,8 +25,8 @@ export const emailSendCapability = defineDomainCapability(
 	{
 		name: 'email_send',
 		description:
-			'Send an outbound email from a verified sender identity and store delivery audit events.',
-		keywords: ['email', 'send', 'mail', 'outbound', 'sender identity'],
+			'Send a notification email to your own account email address. The from address is your platform-assigned {username}@<platform domain>; any other recipient is rejected (use email_reply to answer stored inbound mail).',
+		keywords: ['email', 'send', 'mail', 'outbound', 'notify'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -42,8 +43,8 @@ export const emailSendCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				accountEmail: user.email,
-				from: args.from,
-				to: args.to,
+				recipientPolicy: 'self',
+				to: args.to ?? null,
 				subject: args.subject,
 				text: args.text ?? null,
 				html: args.html ?? null,

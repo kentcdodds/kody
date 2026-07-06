@@ -24,12 +24,14 @@ stored plan values are also treated as NULL so plan renames can never lock users
 out. Enforcement activates only when a known plan name is set — existing
 accounts keep working unchanged.
 
-Exception: the inbound email resources (`email_receives_per_day`,
-`stored_email_messages`, `email_message_bytes`) apply the
-`nullPlanEmailFallbackLimits` backstops from `plans.ts` to plan-less users,
-because inbound volume is attacker-controlled (anyone who learns an alias can
-send to it). Use `resolveEmailResourceLimit` to read the effective limit for
-those resources.
+Exception: the email resources are abuse-sensitive and bind plan-less users to
+the `nullPlanEmailFallbackLimits` backstops from `plans.ts` instead of unlimited
+— outbound sends (`email_sends_per_day`) because sending is an outreach-abuse
+surface, and the inbound resources (`email_receives_per_day`,
+`stored_email_messages`, `email_message_bytes`) because inbound volume is
+attacker-controlled (anyone can send to a `{username}@<platform domain>`
+address). Use `resolveEmailResourceLimit` to read the effective limit for those
+resources.
 
 ## Plan lookup
 
@@ -114,8 +116,8 @@ Rules:
   check-then-increment race), and still increments (uncapped) for users without
   a plan so counters reflect real usage the moment a plan is assigned — unless
   the caller passes `fallbackLimit`, which caps plan-less users with a
-  deployment-level backstop (inbound email does this). Counting attempts rather
-  than successes keeps the limit abuse-resistant.
+  deployment-level backstop (both email sends and receives do this). Counting
+  attempts rather than successes keeps the limit abuse-resistant.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
@@ -170,11 +172,13 @@ The exemplar is job scheduling: `createJob` in
    })
    ```
 
-   Use `fallbackLimit` only to preserve a pre-existing global backstop for
-   plan-less users (the workflow concurrency limit absorbed the
-   `WORKFLOW_CONCURRENT_LIMIT` env var this way via
-   `getWorkflowConcurrencyBackstop`). Use `getCurrent` only when the built-in D1
-   counter cannot express the resource.
+   Use `fallbackLimit` only for global backstops that must bind plan-less users
+   (the workflow concurrency limit absorbed the `WORKFLOW_CONCURRENT_LIMIT` env
+   var this way via `getWorkflowConcurrencyBackstop`, and the email resources
+   cap plan-less users via `nullPlanEmailFallbackLimits`).
+   `consumeDailyEntitlement` accepts the same `fallbackLimit` for daily rate
+   resources. Use `getCurrent` only when the built-in D1 counter cannot express
+   the resource.
 
 4. If the resource is a new one, register it in `plans.ts`
    (`entitlementResources`, `PlanLimits`, `planLimits`,
@@ -195,7 +199,7 @@ The exemplar is job scheduling: `createJob` in
 | `package_services`            | `service_start` capability path                                                    |
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                         |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                  |
-| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`)                             |
+| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan backstop)         |
 | `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback)        |
 | `stored_email_messages`       | `handleInboundEmail` before storage (NULL-plan fallback)                           |
 | `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size, NULL-plan fallback) |

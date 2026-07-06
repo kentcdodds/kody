@@ -60,27 +60,7 @@ function mapInboxAddressRow(
 		address: String(row['address']),
 		localPart: String(row['local_part']),
 		domain: String(row['domain']),
-		replyTokenHash:
-			row['reply_token_hash'] == null ? null : String(row['reply_token_hash']),
 		enabled: Number(row['enabled']) === 1,
-		createdAt: String(row['created_at']),
-		updatedAt: String(row['updated_at']),
-	}
-}
-
-function mapSenderIdentityRow(
-	row: Record<string, unknown>,
-): EmailSenderIdentityRecord {
-	return {
-		id: String(row['id']),
-		userId: String(row['user_id']),
-		packageId: row['package_id'] == null ? null : String(row['package_id']),
-		email: String(row['email']),
-		domain: String(row['domain']),
-		displayName:
-			row['display_name'] == null ? null : String(row['display_name']),
-		status: String(row['status']) as EmailSenderIdentityRecord['status'],
-		verifiedAt: row['verified_at'] == null ? null : String(row['verified_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -220,6 +200,16 @@ export async function createEmailInbox(input: {
 	return mapInboxRow(row)
 }
 
+export async function deleteEmailInboxAddressById(input: {
+	db: D1Database
+	addressId: string
+}) {
+	await input.db
+		.prepare(`DELETE FROM email_inbox_addresses WHERE id = ?`)
+		.bind(input.addressId)
+		.run()
+}
+
 export async function createEmailInboxAddress(input: {
 	db: D1Database
 	inboxId: string
@@ -227,7 +217,6 @@ export async function createEmailInboxAddress(input: {
 	address: string
 	localPart: string
 	domain: string
-	replyTokenHash?: string | null
 }) {
 	const timestamp = nowIso()
 	const row = {
@@ -237,7 +226,6 @@ export async function createEmailInboxAddress(input: {
 		address: input.address,
 		local_part: input.localPart,
 		domain: input.domain,
-		reply_token_hash: input.replyTokenHash ?? null,
 		enabled: 1,
 		created_at: timestamp,
 		updated_at: timestamp,
@@ -245,8 +233,8 @@ export async function createEmailInboxAddress(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO email_inbox_addresses (
-				id, inbox_id, user_id, address, local_part, domain, reply_token_hash, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, inbox_id, user_id, address, local_part, domain, enabled, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -255,64 +243,12 @@ export async function createEmailInboxAddress(input: {
 			row.address,
 			row.local_part,
 			row.domain,
-			row.reply_token_hash,
 			row.enabled,
 			row.created_at,
 			row.updated_at,
 		)
 		.run()
 	return mapInboxAddressRow(row)
-}
-
-export async function deleteEmailInboxById(input: {
-	db: D1Database
-	inboxId: string
-}) {
-	await input.db
-		.prepare(
-			`DELETE FROM email_inboxes
-			WHERE id = ?`,
-		)
-		.bind(input.inboxId)
-		.run()
-}
-
-export async function createEmailInboxWithAddress(input: {
-	db: D1Database
-	userId: string
-	name: string
-	description?: string | null
-	packageId?: string | null
-	address: string
-	localPart: string
-	domain: string
-	replyTokenHash?: string | null
-}) {
-	const inbox = await createEmailInbox({
-		db: input.db,
-		userId: input.userId,
-		name: input.name,
-		description: input.description ?? null,
-		packageId: input.packageId ?? null,
-	})
-	try {
-		const address = await createEmailInboxAddress({
-			db: input.db,
-			inboxId: inbox.id,
-			userId: input.userId,
-			address: input.address,
-			localPart: input.localPart,
-			domain: input.domain,
-			replyTokenHash: input.replyTokenHash ?? null,
-		})
-		return { inbox, address }
-	} catch (error) {
-		await deleteEmailInboxById({
-			db: input.db,
-			inboxId: inbox.id,
-		}).catch(() => undefined)
-		throw error
-	}
 }
 
 export async function listEmailInboxesForUser(input: {
@@ -347,6 +283,11 @@ export async function listEmailInboxAddressesForUser(input: {
 	return (result.results ?? []).map(mapInboxAddressRow)
 }
 
+/**
+ * Read the row holding a (globally unique) address regardless of its
+ * enabled state, so callers can distinguish "address free" from "address
+ * held but disabled" instead of tripping the unique constraint.
+ */
 export async function getEmailInboxAddressByAddress(input: {
 	db: D1Database
 	address: string
@@ -356,27 +297,9 @@ export async function getEmailInboxAddressByAddress(input: {
 			`SELECT *
 			FROM email_inbox_addresses
 			WHERE address = ?
-				AND enabled = 1
 			LIMIT 1`,
 		)
 		.bind(input.address)
-		.first<Record<string, unknown>>()
-	return row ? mapInboxAddressRow(row) : null
-}
-
-export async function getEmailInboxAddressByReplyTokenHash(input: {
-	db: D1Database
-	replyTokenHash: string
-}) {
-	const row = await input.db
-		.prepare(
-			`SELECT *
-			FROM email_inbox_addresses
-			WHERE reply_token_hash = ?
-				AND enabled = 1
-			LIMIT 1`,
-		)
-		.bind(input.replyTokenHash)
 		.first<Record<string, unknown>>()
 	return row ? mapInboxAddressRow(row) : null
 }
@@ -399,82 +322,40 @@ export async function getEmailInboxById(input: {
 	return row ? mapInboxRow(row) : null
 }
 
-export async function upsertEmailSenderIdentity(input: {
+export async function getEmailInboxByName(input: {
 	db: D1Database
 	userId: string
-	email: string
-	domain: string
-	displayName?: string | null
-	status?: EmailSenderIdentityRecord['status']
-	verifiedAt?: string | null
-	packageId?: string | null
+	name: string
 }) {
-	const existing = await input.db
+	const row = await input.db
 		.prepare(
 			`SELECT *
-			FROM email_sender_identities
+			FROM email_inboxes
 			WHERE user_id = ?
-				AND email = ?
+				AND name = ?
 			LIMIT 1`,
 		)
-		.bind(input.userId, input.email)
+		.bind(input.userId, input.name)
 		.first<Record<string, unknown>>()
-	const timestamp = nowIso()
-	const row = {
-		id: existing ? String(existing['id']) : crypto.randomUUID(),
-		user_id: input.userId,
-		package_id: input.packageId ?? null,
-		email: input.email,
-		domain: input.domain,
-		display_name: input.displayName ?? '',
-		status: input.status ?? 'verified',
-		verified_at: input.verifiedAt ?? timestamp,
-		created_at: existing ? String(existing['created_at']) : timestamp,
-		updated_at: timestamp,
-	}
-	await input.db
-		.prepare(
-			`INSERT INTO email_sender_identities (
-				id, user_id, package_id, email, domain, display_name, status, verified_at, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(user_id, email) DO UPDATE SET
-				package_id = excluded.package_id,
-				domain = excluded.domain,
-				display_name = excluded.display_name,
-				status = excluded.status,
-				verified_at = excluded.verified_at,
-				updated_at = excluded.updated_at`,
-		)
-		.bind(
-			row.id,
-			row.user_id,
-			row.package_id,
-			row.email,
-			row.domain,
-			row.display_name,
-			row.status,
-			row.verified_at,
-			row.created_at,
-			row.updated_at,
-		)
-		.run()
-	const persisted = await input.db
-		.prepare(
-			`SELECT *
-			FROM email_sender_identities
-			WHERE user_id = ?
-				AND email = ?
-			LIMIT 1`,
-		)
-		.bind(input.userId, input.email)
-		.first<Record<string, unknown>>()
-	if (!persisted) {
-		throw new Error('Failed to read saved sender identity.')
-	}
-	return mapSenderIdentityRow(persisted)
+	return row ? mapInboxRow(row) : null
 }
 
-export async function getVerifiedSenderIdentity(input: {
+function mapSenderIdentityRow(
+	row: Record<string, unknown>,
+): EmailSenderIdentityRecord {
+	return {
+		id: String(row['id']),
+		userId: String(row['user_id']),
+		email: String(row['email']),
+		domain: String(row['domain']),
+		status: String(row['status']) as EmailSenderIdentityRecord['status'],
+		verifiedAt: row['verified_at'] == null ? null : String(row['verified_at']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+async function getSenderIdentityByEmail(input: {
 	db: D1Database
 	userId: string
 	email: string
@@ -485,12 +366,59 @@ export async function getVerifiedSenderIdentity(input: {
 			FROM email_sender_identities
 			WHERE user_id = ?
 				AND email = ?
-				AND status = 'verified'
 			LIMIT 1`,
 		)
 		.bind(input.userId, input.email)
 		.first<Record<string, unknown>>()
 	return row ? mapSenderIdentityRow(row) : null
+}
+
+/**
+ * Ensure the platform-assigned sender identity row
+ * (`{username}@<platform domain>`, status `verified`) exists for the user.
+ * This is the only way sender identities are created: they are provisioned
+ * by the platform, never self-registered or "verified" by users. Any
+ * non-verified stored status is overwritten: identity status carries no
+ * authorization meaning under the platform-assigned model (outbound is
+ * gated by the verified-account check and the reserved-username block, not
+ * by identity rows), so a legacy 'pending'/'disabled' row is just stale
+ * bookkeeping to repair.
+ */
+export async function ensurePlatformSenderIdentity(input: {
+	db: D1Database
+	userId: string
+	email: string
+	domain: string
+}): Promise<EmailSenderIdentityRecord> {
+	const existing = await getSenderIdentityByEmail(input)
+	if (existing?.status === 'verified') return existing
+	const timestamp = nowIso()
+	await input.db
+		.prepare(
+			`INSERT INTO email_sender_identities (
+				id, user_id, email, domain, status, verified_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, 'verified', ?, ?, ?)
+			ON CONFLICT(user_id, email) DO UPDATE SET
+				domain = excluded.domain,
+				status = excluded.status,
+				verified_at = excluded.verified_at,
+				updated_at = excluded.updated_at`,
+		)
+		.bind(
+			crypto.randomUUID(),
+			input.userId,
+			input.email,
+			input.domain,
+			timestamp,
+			timestamp,
+			timestamp,
+		)
+		.run()
+	const persisted = await getSenderIdentityByEmail(input)
+	if (!persisted) {
+		throw new Error('Failed to provision the platform sender identity.')
+	}
+	return persisted
 }
 
 async function findThreadForMessage(input: {

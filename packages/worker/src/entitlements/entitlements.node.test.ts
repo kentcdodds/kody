@@ -416,6 +416,37 @@ test('plan-less users count uncapped sends but honor fallback receive limits', a
 	})
 })
 
+test('consumeDailyEntitlement prefers the plan limit over fallbackLimit', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { db, counters } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'personal' }],
+	})
+	const limit = planLimits.personal.maxEmailSendsPerDay
+	if (limit === null) throw new Error('Expected a numeric email send limit.')
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	for (let index = 0; index < limit; index += 1) {
+		await consumeDailyEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_sends_per_day',
+			fallbackLimit: 1,
+			now,
+		})
+	}
+	expect(counters[0]?.count).toBe(limit)
+	await expect(
+		consumeDailyEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'email_sends_per_day',
+			fallbackLimit: 1,
+			now,
+		}),
+	).rejects.toBeInstanceOf(EntitlementLimitError)
+})
+
 test('email_message_bytes enforces the per-message size via getCurrent', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({

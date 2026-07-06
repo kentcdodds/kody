@@ -75,3 +75,16 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)
 })
+
+test('the email domain no longer exposes self-service inbox or sender-identity capabilities', () => {
+	// Inboxes are auto-provisioned at {username}@<platform domain> and the
+	// outbound from address is platform-assigned, so these capabilities were
+	// removed and must never come back silently.
+	expect(capabilityMap.email_inbox_create).toBeUndefined()
+	expect(capabilityMap.email_sender_identity_verify).toBeUndefined()
+	expect(capabilityMap.email_inbox_list).toBeTruthy()
+	expect(capabilityMap.email_send).toBeTruthy()
+	expect(capabilityMap.email_reply).toBeTruthy()
+	expect(capabilityMap.email_message_list).toBeTruthy()
+	expect(capabilityMap.email_message_get).toBeTruthy()
+})

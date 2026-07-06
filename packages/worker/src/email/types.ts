@@ -68,7 +68,6 @@ export type EmailInboxAddressRecord = {
 	address: string
 	localPart: string
 	domain: string
-	replyTokenHash: string | null
 	enabled: boolean
 	createdAt: string
 	updatedAt: string
@@ -77,10 +76,8 @@ export type EmailInboxAddressRecord = {
 export type EmailSenderIdentityRecord = {
 	id: string
 	userId: string
-	packageId: string | null
 	email: string
 	domain: string
-	displayName: string | null
 	status: 'pending' | 'verified' | 'disabled'
 	verifiedAt: string | null
 	createdAt: string

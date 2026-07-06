@@ -13,8 +13,8 @@ export const emailInboxListCapability = defineDomainCapability(
 	{
 		name: 'email_inbox_list',
 		description:
-			'List email inboxes and routable aliases owned by the signed-in user.',
-		keywords: ['email', 'inbox', 'alias', 'list'],
+			'List email inboxes and automatic platform addresses owned by the signed-in user.',
+		keywords: ['email', 'inbox', 'address', 'list'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -40,7 +40,6 @@ export const emailInboxListCapability = defineDomainCapability(
 						.map((address) => ({
 							id: address.id,
 							address: address.address,
-							reply_token_hash: address.replyTokenHash,
 							enabled: address.enabled,
 							created_at: address.createdAt,
 						})),
