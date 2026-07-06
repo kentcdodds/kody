@@ -8,7 +8,11 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { env, exports } from 'cloudflare:workers'
-import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
+import {
+	createAuthCookie,
+	readAuthSessionResult,
+	setAuthSessionSecret,
+} from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import {
@@ -194,13 +198,14 @@ async function seedWorkerUser(email: string, password: string) {
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
 	).run()
-	await env.APP_DB.prepare(
+	const result = await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash)
 			VALUES (?, ?, ?)
 			ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash`,
 	)
 		.bind(`user-${crypto.randomUUID().slice(0, 8)}`, email, passwordHash)
 		.run()
+	return Number(result.meta.last_row_id)
 }
 
 function createFormRequest(
@@ -422,6 +427,54 @@ test('Claude-shaped authorize requests render and approve without throwing', asy
 	})
 	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
 	expect(capturedOptions?.request.scope).toEqual(['profile', 'email'])
+})
+
+test('session approval uses database user id when cookie email is stale', async () => {
+	const currentEmail = `changed-oauth-${crypto.randomUUID()}@example.com`
+	const userId = await seedWorkerUser(currentEmail, 'password123')
+	let capturedOptions: CompleteAuthorizationOptions | null = null
+	const helpers = createHelpers({
+		async completeAuthorization(options) {
+			capturedOptions = options
+			return { redirectTo: 'https://example.com/callback?code=stale-session' }
+		},
+	})
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{
+			id: String(userId),
+			email: `old-${currentEmail}`,
+			rememberMe: false,
+		},
+		false,
+	)
+
+	const response = await handleAuthorizeRequest(
+		createFormRequest(
+			{ decision: 'approve' },
+			{ Accept: 'application/json', Cookie: cookie },
+		),
+		createEnv(helpers, env.APP_DB),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		redirectTo: 'https://example.com/callback?code=stale-session',
+	})
+	expect(capturedOptions?.metadata).toMatchObject({ email: currentEmail })
+	expect(capturedOptions?.props).toMatchObject({ email: currentEmail })
+	const refreshedCookie = response.headers.get('Set-Cookie')
+	expect(refreshedCookie).toContain('kody_session=')
+	await expect(
+		readAuthSessionResult(
+			new Request('https://example.com', {
+				headers: { Cookie: getCookiePair(refreshedCookie ?? '') },
+			}),
+		),
+	).resolves.toMatchObject({
+		session: { id: String(userId), email: currentEmail },
+	})
 })
 
 test('worker entrypoint handles Claude-shaped authorize GET requests', async () => {
