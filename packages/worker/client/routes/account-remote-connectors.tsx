@@ -624,7 +624,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 											<li key={connector.id}>
 												<AccountManagementListItemButton
 													active={editorState.id === connector.id}
-													onClick={() => selectConnector(connector)}
+													disabled={isMutating}
+													onClick={() => {
+														if (isMutating) return
+														selectConnector(connector)
+													}}
 												>
 													<strong>{connectorLabel(connector)}</strong>
 													<span
