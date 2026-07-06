@@ -1,4 +1,5 @@
 import {
+	createStableUserIdFromEmail,
 	findUserRowByStableUserId,
 	resolveUserStableId,
 } from '#worker/user-id.ts'
@@ -30,14 +31,21 @@ export async function getUserPlan(
 	const email = input.email?.trim().toLowerCase()
 	if (!email || !input.userId) return null
 	const row = await db
-		.prepare(`SELECT email, stable_user_id, plan FROM users WHERE email = ?`)
+		.prepare(`SELECT email, plan FROM users WHERE email = ?`)
 		.bind(email)
 		.first<{
 			email: string
-			stable_user_id: string | null
 			plan: string | null
 		}>()
-	if (!row || (await resolveUserStableId(row)) !== input.userId) return null
+	if (!row) return null
+	if ((await createStableUserIdFromEmail(row.email)) !== input.userId) {
+		const storedMatch = await db
+			.prepare(`SELECT id FROM users WHERE email = ? AND stable_user_id = ?`)
+			.bind(email, input.userId)
+			.first<{ id: number }>()
+			.catch(() => null)
+		if (!storedMatch) return null
+	}
 	return parsePlanName(row?.plan)
 }
 
@@ -74,8 +82,8 @@ export async function findUserAccountByStableUserId(
 		const row = await db
 			.prepare(
 				`SELECT email, stable_user_id, plan, email_verified_at
-				FROM users
-				WHERE email = ?`,
+				 FROM users
+				 WHERE email = ?`,
 			)
 			.bind(cachedEmail)
 			.first<{
@@ -84,6 +92,23 @@ export async function findUserAccountByStableUserId(
 				plan: string | null
 				email_verified_at: string | null
 			}>()
+			.catch(async () => {
+				const legacyRow = await db
+					.prepare(
+						`SELECT email, plan, email_verified_at
+						 FROM users
+						 WHERE email = ?`,
+					)
+					.bind(cachedEmail)
+					.first<{
+						email: string
+						plan: string | null
+						email_verified_at: string | null
+					}>()
+				return legacyRow
+					? { ...legacyRow, stable_user_id: null as string | null }
+					: null
+			})
 		if (row && (await resolveUserStableId(row)) === trimmed) {
 			return {
 				email: row.email,

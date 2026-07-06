@@ -100,6 +100,15 @@ async function findUserAccount(input: {
 				stable_user_id: string | null
 				username: string | null
 			}>()
+			.catch(async () => {
+				const legacyRow = await input.db
+					.prepare(`SELECT email, username FROM users WHERE email = ?`)
+					.bind(email)
+					.first<{ email: string; username: string | null }>()
+				return legacyRow
+					? { ...legacyRow, stable_user_id: null as string | null }
+					: null
+			})
 		if (!row) return null
 		if ((await resolveUserStableId(row)) === userId) {
 			return {

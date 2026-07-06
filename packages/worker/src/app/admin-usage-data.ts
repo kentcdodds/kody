@@ -11,7 +11,7 @@ import {
 	readEntitlementResourceUsage,
 	utcDayKey,
 } from '#worker/entitlements/service.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { resolveUserStableIdByEmail } from '#worker/user-id.ts'
 import {
 	type AdminUsageDailyCounter,
 	type AdminUsageEntitlementConsumption,
@@ -69,7 +69,6 @@ type AdminUsageUserRow = {
 	id: number
 	username: string
 	email: string
-	stable_user_id: string | null
 	plan: string | null
 }
 
@@ -113,7 +112,7 @@ export async function loadAdminUsageData(
 			total: number
 		}>(),
 		env.APP_DB.prepare(
-			`SELECT id, username, email, stable_user_id, plan
+			`SELECT id, username, email, plan
 			 FROM users
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
@@ -122,7 +121,7 @@ export async function loadAdminUsageData(
 			.all<AdminUsageUserRow>(),
 	])
 
-	const users = await addUsageIds(userRows.results ?? [])
+	const users = await addUsageIds(env.APP_DB, userRows.results ?? [])
 	const selectedUser = await loadSelectedUser({
 		db: env.APP_DB,
 		users,
@@ -167,6 +166,7 @@ export async function loadAdminUsageData(
 }
 
 async function addUsageIds(
+	db: D1Database,
 	rows: Array<AdminUsageUserRow>,
 ): Promise<Array<UserWithUsageId>> {
 	return await Promise.all(
@@ -175,7 +175,7 @@ async function addUsageIds(
 			username: row.username,
 			email: row.email,
 			plan: parsePlanName(row.plan),
-			usageUserId: await resolveUserStableId(row),
+			usageUserId: await resolveUserStableIdByEmail({ db, email: row.email }),
 		})),
 	)
 }
@@ -193,13 +193,11 @@ async function loadSelectedUser(input: {
 	if (visibleUser) return visibleUser
 
 	const row = await input.db
-		.prepare(
-			`SELECT id, username, email, stable_user_id, plan FROM users WHERE id = ?`,
-		)
+		.prepare(`SELECT id, username, email, plan FROM users WHERE id = ?`)
 		.bind(input.selectedUserId)
 		.first<AdminUsageUserRow>()
 	if (!row) return input.users[0] ?? null
-	const [user] = await addUsageIds([row])
+	const [user] = await addUsageIds(input.db, [row])
 	return user ?? null
 }
 

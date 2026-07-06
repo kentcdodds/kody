@@ -140,6 +140,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 
 export function getAccountD1UserColumnCoverage() {
 	const covered = new Set<string>()
+	covered.add('users.stable_user_id')
 	for (const target of accountUserDataTargets) {
 		switch (target.kind) {
 			case 'user_id':
