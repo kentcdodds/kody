@@ -12,7 +12,7 @@ const workerWranglerConfigPath = path.resolve(
 	'../../packages/worker/wrangler.jsonc',
 )
 
-test('writeGeneratedWranglerConfig orders migrations and copies environment asset routing', async () => {
+test('writeGeneratedWranglerConfig preserves migrations and copies environment asset routing', async () => {
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
 
 	try {
@@ -28,16 +28,14 @@ test('writeGeneratedWranglerConfig orders migrations and copies environment asse
 			d1DatabaseId: 'dry-run-kody',
 			oauthKvId: 'dry-run-kody-oauth',
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
-			extraMigrations: [
-				{
-					deleted_classes: ['AppRunner'],
-					tag: 'v12',
-				},
-			],
 		})
 
 		const productionConfig = parseJsonc<{
-			migrations: Array<{ tag: string; new_sqlite_classes?: Array<string> }>
+			migrations: Array<{
+				tag: string
+				deleted_classes?: Array<string>
+				new_sqlite_classes?: Array<string>
+			}>
 			assets?: { run_worker_first?: Array<string> }
 			env?: {
 				production?: { assets?: { run_worker_first?: Array<string> } }
@@ -46,11 +44,16 @@ test('writeGeneratedWranglerConfig orders migrations and copies environment asse
 		const migrationTags = productionConfig.migrations.map(
 			(migration) => migration.tag,
 		)
-		const v12Index = migrationTags.indexOf('v12')
+		const v11Index = migrationTags.indexOf('v11')
 		const v13Index = migrationTags.indexOf('v13')
 
-		expect(v12Index).toBeGreaterThanOrEqual(0)
-		expect(v13Index).toBeGreaterThan(v12Index)
+		expect(v11Index).toBeGreaterThanOrEqual(0)
+		expect(v13Index).toBeGreaterThan(v11Index)
+		expect(
+			productionConfig.migrations.some((migration) => {
+				return migration.deleted_classes?.includes('AppRunner')
+			}),
+		).toBe(false)
 		expect(
 			productionConfig.migrations[v13Index]?.new_sqlite_classes?.length,
 		).toBeGreaterThan(0)
