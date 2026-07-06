@@ -5,13 +5,14 @@ import {
 	type CompleteAuthorizationOptions,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env, exports } from 'cloudflare:workers'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
-	handleOAuthCallback,
 	oauthScopes,
 } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -31,6 +32,24 @@ const baseClient: ClientInfo = {
 	tokenEndpointAuthMethod: 'client_secret_basic',
 }
 const cookieSecret = 'test-secret-0123456789abcdef0123456789'
+const claudeAuthorizeUrl =
+	'https://heykody.dev/oauth/authorize?response_type=code&client_id=ZlV_ZKY8Xe1Hnw2a&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback&code_challenge=sp23xso5O3jXO-73NoQqSxwu742uqSbPXw1VA8jRfNE&code_challenge_method=S256&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc&scope=profile+email&resource=https%3A%2F%2Fheykody.dev%2Fmcp'
+const claudeAuthRequest: AuthRequest = {
+	responseType: 'code',
+	clientId: 'ZlV_ZKY8Xe1Hnw2a',
+	redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+	scope: ['profile', 'email'],
+	state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+	codeChallenge: 'sp23xso5O3jXO-73NoQqSxwu742uqSbPXw1VA8jRfNE',
+	codeChallengeMethod: 'S256',
+	resource: 'https://heykody.dev/mcp',
+}
+const claudeClient: ClientInfo = {
+	clientId: claudeAuthRequest.clientId,
+	redirectUris: [claudeAuthRequest.redirectUri],
+	clientName: 'Claude',
+	tokenEndpointAuthMethod: 'none',
+}
 
 function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	return {
@@ -129,6 +148,13 @@ function createEnv(
 			'package-service-instance-test-id',
 		),
 	} as unknown as Env
+}
+
+async function workerFetch(request: Request): Promise<Response> {
+	const ctx = createExecutionContext()
+	const response = await exports.default.fetch(request, env, ctx)
+	await waitOnExecutionContext(ctx)
+	return response
 }
 
 function createFormRequest(
@@ -295,6 +321,108 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	)
 	const defaultScopeOptions = await capturedOptionsPromise
 	expect(defaultScopeOptions.scope).toEqual(oauthScopes)
+})
+
+test('Claude-shaped authorize requests render and approve without throwing', async () => {
+	const htmlResponse = await handleAuthorizeRequest(
+		new Request(claudeAuthorizeUrl),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => claudeAuthRequest,
+				lookupClient: async () => claudeClient,
+			}),
+		),
+	)
+
+	expect(htmlResponse.status).toBe(200)
+	expect(htmlResponse.headers.get('Content-Type')).toContain('text/html')
+	const html = await htmlResponse.text()
+	expect(html).toContain('Claude')
+	expect(html).toContain('"oauthAuthorize"')
+
+	let capturedOptions: CompleteAuthorizationOptions | null = null
+	const helpers = createHelpers({
+		parseAuthRequest: async () => claudeAuthRequest,
+		lookupClient: async () => claudeClient,
+		async completeAuthorization(options) {
+			capturedOptions = options
+			return {
+				redirectTo:
+					'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+			}
+		},
+	})
+	const postResponse = await handleAuthorizeRequest(
+		new Request(claudeAuthorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				email: 'user@example.com',
+				password: 'password123',
+			}),
+		}),
+		createEnv(helpers, await createDatabase('password123')),
+	)
+
+	expect(postResponse.status).toBe(200)
+	await expect(postResponse.json()).resolves.toEqual({
+		ok: true,
+		redirectTo:
+			'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
+	})
+	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
+	expect(capturedOptions?.request.scope).toEqual(['profile', 'email'])
+})
+
+test('worker entrypoint handles Claude-shaped authorize GET requests', async () => {
+	await env.OAUTH_KV.put(
+		`client:${claudeClient.clientId}`,
+		JSON.stringify(claudeClient),
+	)
+
+	const response = await workerFetch(new Request(claudeAuthorizeUrl))
+
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Claude')
+	expect(html).toContain('"oauthAuthorize"')
+})
+
+test('worker entrypoint renders a recoverable error for missing Claude clients', async () => {
+	await env.OAUTH_KV.delete(`client:${claudeClient.clientId}`)
+
+	const response = await workerFetch(new Request(claudeAuthorizeUrl))
+
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Invalid client')
+	expect(html).toContain('"oauthAuthorize"')
+})
+
+test('worker entrypoint renders a recoverable error for malformed Claude clients', async () => {
+	await env.OAUTH_KV.put(
+		`client:${claudeClient.clientId}`,
+		JSON.stringify({
+			client_id: claudeClient.clientId,
+			redirect_uris: [claudeAuthRequest.redirectUri],
+			client_name: claudeClient.clientName,
+			token_endpoint_auth_method: 'none',
+		}),
+	)
+
+	const response = await workerFetch(new Request(claudeAuthorizeUrl))
+
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Invalid OAuth client registration.')
+	expect(html).toContain('"oauthAuthorize"')
 })
 
 test('reset client deletes matching grants for redirect-uri, client-id, and authorize-info mismatches', async () => {

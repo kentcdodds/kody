@@ -1,5 +1,6 @@
 import {
 	type AuthRequest,
+	type ClientInfo,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createCookie } from '@remix-run/cookie'
@@ -30,6 +31,8 @@ export const oauthPaths = {
 }
 
 export const oauthScopes: Array<string> = ['profile', 'email']
+const invalidOAuthClientRegistrationMessage =
+	'Invalid OAuth client registration.'
 
 type OAuthProps = {
 	userId: string
@@ -222,7 +225,11 @@ async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
 		return { authRequest, client }
 	} catch (error) {
 		const message =
-			error instanceof Error ? error.message : 'Unable to parse OAuth request.'
+			error instanceof TypeError
+				? invalidOAuthClientRegistrationMessage
+				: error instanceof Error
+					? error.message
+					: 'Unable to parse OAuth request.'
 		return { error: message }
 	}
 }
@@ -266,6 +273,14 @@ function redirectUriMatchesRegisteredUri(
 	})
 }
 
+function readRegisteredRedirectUris(client: ClientInfo) {
+	const redirectUris = (client as { redirectUris?: unknown }).redirectUris
+	return Array.isArray(redirectUris) &&
+		redirectUris.every((uri) => typeof uri === 'string')
+		? redirectUris
+		: null
+}
+
 async function requestHasRedirectUriMismatch(
 	helpers: OAuthHelpers,
 	request: Request,
@@ -274,9 +289,16 @@ async function requestHasRedirectUriMismatch(
 	const clientId = url.searchParams.get('client_id')?.trim()
 	const redirectUri = url.searchParams.get('redirect_uri')?.trim()
 	if (!clientId || !redirectUri) return false
-	const client = await helpers.lookupClient(clientId)
+	let client: ClientInfo | null
+	try {
+		client = await helpers.lookupClient(clientId)
+	} catch {
+		return false
+	}
 	if (!client) return false
-	return !redirectUriMatchesRegisteredUri(redirectUri, client.redirectUris)
+	const registeredUris = readRegisteredRedirectUris(client)
+	if (!registeredUris) return true
+	return !redirectUriMatchesRegisteredUri(redirectUri, registeredUris)
 }
 
 async function listUserGrantsForClient(
