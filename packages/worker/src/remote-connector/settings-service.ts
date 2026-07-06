@@ -7,7 +7,6 @@ import { decryptSecretValue, encryptSecretValue } from '#mcp/secrets/crypto.ts'
 import {
 	deleteRemoteConnectorSettingRow,
 	getRemoteConnectorSettingRowById,
-	getRemoteConnectorSettingRowByInstanceId,
 	listAttachedRemoteConnectorSettingRows,
 	listRemoteConnectorSettingRows,
 	listRemoteConnectorSharedSecretRows,
@@ -117,24 +116,9 @@ export async function saveRemoteConnectorSetting(
 				userId: input.userId,
 				id: input.id,
 			})
-		: await getRemoteConnectorSettingRowByInstanceId({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				instanceId,
-			})
+		: null
 	if (input.id && !existing) {
 		throw new Error('Remote connector setting not found.')
-	}
-
-	if (input.id) {
-		const refConflict = await getRemoteConnectorSettingRowByInstanceId({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			instanceId,
-		})
-		if (refConflict && refConflict.id !== existing?.id) {
-			throw new Error('A remote connector with this name already exists.')
-		}
 	}
 
 	const sharedSecret = input.sharedSecret?.trim() ?? ''
