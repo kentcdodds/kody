@@ -15,6 +15,7 @@ const usageMetricSchema = z.enum([
 	'service_runtime',
 	'outbound_fetch',
 	'email_send',
+	'email_received',
 ])
 
 const entitlementResourceSchema = z.enum([
@@ -24,6 +25,8 @@ const entitlementResourceSchema = z.enum([
 	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
+	'email_receives_per_day',
+	'stored_email_messages',
 	'secrets',
 	'concurrent_workflows',
 	'storage_bytes',

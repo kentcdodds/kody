@@ -37,6 +37,7 @@ type ResourceCount = Partial<
 		| 'scheduled_jobs'
 		| 'package_services'
 		| 'repo_sessions'
+		| 'stored_email_messages'
 		| 'secrets'
 		| 'concurrent_workflows',
 		number
@@ -71,6 +72,9 @@ function createAdminUsageTestDb(input: {
 		}
 		if (normalizedQuery.includes('from repo_sessions')) {
 			return counts.repo_sessions ?? 0
+		}
+		if (normalizedQuery.includes('from email_messages')) {
+			return counts.stored_email_messages ?? 0
 		}
 		if (normalizedQuery.includes('from secret_entries')) {
 			return counts.secrets ?? 0
@@ -213,6 +217,11 @@ test('loadAdminUsageData returns zeroed usage for empty rollups', async () => {
 	).toBe(true)
 	expect(data.users[0]?.todayCounters).toEqual([
 		{ resource: 'email_sends_per_day', label: 'email sends per day', count: 0 },
+		{
+			resource: 'email_receives_per_day',
+			label: 'email receives per day',
+			count: 0,
+		},
 	])
 	expect(data.selectedUser?.monthUsage).toEqual([
 		{

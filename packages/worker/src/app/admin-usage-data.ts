@@ -30,6 +30,7 @@ export const adminUsageMetrics = [
 	'service_runtime',
 	'outbound_fetch',
 	'email_send',
+	'email_received',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
 export const adminUsageLiveResourceCounts = [
@@ -47,12 +48,15 @@ const adminUsageEntitlementResources = [
 	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
+	'email_receives_per_day',
+	'stored_email_messages',
 	'secrets',
 	'concurrent_workflows',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 const adminUsageDailyCounterResources = [
 	'email_sends_per_day',
+	'email_receives_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 const defaultPageSize = 20
