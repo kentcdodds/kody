@@ -13,16 +13,14 @@ import {
 } from '#client/route-loader.ts'
 import {
 	AccountManagementHeader,
+	AccountManagementLayout,
+	AccountManagementList,
+	AccountManagementListItemButton,
 	AccountManagementMessage,
 	AccountManagementShell,
+	AccountManagementSidebar,
 } from '#client/routes/account-management-components.tsx'
-import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -34,6 +32,7 @@ import {
 	getSecondaryButtonCss,
 	inputCss,
 } from '#client/styles/style-primitives.ts'
+import { writeClipboardText } from '#client/clipboard.ts'
 import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-connectors.ts'
 
 type RemoteConnectorListItem = {
@@ -183,30 +182,6 @@ function CheckIcon() {
 			<path d="M20 6 9 17l-5-5" />
 		</svg>
 	)
-}
-
-async function writeClipboardText(value: string) {
-	const textArea = document.createElement('textarea')
-	textArea.value = value
-	textArea.setAttribute('readonly', '')
-	textArea.style.position = 'fixed'
-	textArea.style.opacity = '0'
-	document.body.append(textArea)
-	textArea.select()
-	try {
-		if (
-			typeof document.execCommand === 'function' &&
-			document.execCommand('copy')
-		) {
-			return
-		}
-	} catch {
-		// Ignore legacy clipboard failures and fall through to the modern API.
-	} finally {
-		textArea.remove()
-	}
-
-	await navigator.clipboard.writeText(value)
 }
 
 function EyeIcon(props: { showSecret: boolean }) {
@@ -632,64 +607,24 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<section
-						mix={css({
-							display: 'grid',
-							gridTemplateColumns: 'minmax(18rem, 24rem) minmax(0, 1fr)',
-							gap: spacing.lg,
-							alignItems: 'start',
-							[mq.mobile]: {
-								gridTemplateColumns: '1fr',
-							},
-						})}
-					>
-						<aside mix={css(cardCss)}>
-							<div mix={css({ display: 'grid', gap: spacing.xs })}>
-								<h2 mix={css(cardTitleCss)}>Configured connectors</h2>
-								<p mix={css(descriptionCss)}>
-									Enabled and attached entries are included in your standard MCP
-									and chat caller context.
-								</p>
-							</div>
-							{connectors.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No remote connectors yet. Create one to get started.
-								</p>
-							) : (
-								<ul
-									mix={css({
-										listStyle: 'none',
-										padding: 0,
-										margin: 0,
-										display: 'grid',
-										gap: spacing.sm,
-									})}
-								>
-									{connectors.map((connector) => {
-										const isSelected = editorState.id === connector.id
-										return (
+					<AccountManagementLayout
+						sidebarWidth="minmax(18rem, 24rem)"
+						sidebar={
+							<AccountManagementSidebar
+								title="Configured connectors"
+								description="Enabled and attached entries are included in your standard MCP and chat caller context."
+							>
+								{connectors.length === 0 ? (
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										No remote connectors yet. Create one to get started.
+									</p>
+								) : (
+									<AccountManagementList>
+										{connectors.map((connector) => (
 											<li key={connector.id}>
-												<button
-													type="button"
-													mix={[
-														on('click', () => selectConnector(connector)),
-														css({
-															width: '100%',
-															display: 'grid',
-															gap: spacing.xs,
-															textAlign: 'left',
-															padding: spacing.md,
-															borderRadius: radius.md,
-															border: `1px solid ${
-																isSelected ? colors.primary : colors.border
-															}`,
-															backgroundColor: isSelected
-																? colors.primarySoftest
-																: colors.background,
-															color: colors.text,
-															cursor: 'pointer',
-														}),
-													]}
+												<AccountManagementListItemButton
+													active={editorState.id === connector.id}
+													onClick={() => selectConnector(connector)}
 												>
 													<strong>{connectorLabel(connector)}</strong>
 													<span
@@ -704,14 +639,14 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 															? 'Secret saved'
 															: 'Missing secret'}
 													</span>
-												</button>
+												</AccountManagementListItemButton>
 											</li>
-										)
-									})}
-								</ul>
-							)}
-						</aside>
-
+										))}
+									</AccountManagementList>
+								)}
+							</AccountManagementSidebar>
+						}
+					>
 						<form
 							method="post"
 							noValidate
@@ -1016,7 +951,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								) : null}
 							</div>
 						</form>
-					</section>
+					</AccountManagementLayout>
 				) : null}
 			</AccountManagementShell>
 		)

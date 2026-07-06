@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { writeClipboardText } from '#client/clipboard.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -515,7 +516,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	async function copyEditorRawToken() {
 		if (!editorState.rawToken || saveState !== 'idle') return
 		try {
-			await navigator.clipboard.writeText(editorState.rawToken)
+			await writeClipboardText(editorState.rawToken)
 			message = 'Copied raw token to clipboard.'
 			messageTone = 'info'
 		} catch {

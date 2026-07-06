@@ -23,6 +23,11 @@ import {
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 import {
+	AccountManagementHeader,
+	AccountManagementMessage,
+	AccountManagementShell,
+} from '#client/routes/account-management-components.tsx'
+import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
@@ -339,30 +344,11 @@ export function AccountRoute(handle: Handle) {
 		const normalizedDraftEmail = draftEmail.trim().toLowerCase()
 
 		return (
-			<section
-				mix={css({
-					maxWidth: layoutMaxWidths.content,
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.xl,
-				})}
-			>
-				<header mix={css({ display: 'grid', gap: spacing.xs })}>
-					<h1
-						mix={css({
-							fontSize: typography.fontSize.xl,
-							fontWeight: typography.fontWeight.semibold,
-							color: colors.text,
-							margin: 0,
-						})}
-					>
-						{username ? `${username} account` : 'Account'}
-					</h1>
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Manage your profile, integrations, approval requests, stored
-						secrets, and package invocation tokens.
-					</p>
-				</header>
+			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+				<AccountManagementHeader
+					title={username ? `${username} account` : 'Account'}
+					description="Manage your profile, integrations, approval requests, stored secrets, and package invocation tokens."
+				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -370,14 +356,9 @@ export function AccountRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<p
-						role="alert"
-						mix={css({
-							color: messageTone === 'error' ? colors.error : colors.text,
-						})}
-					>
+					<AccountManagementMessage tone={messageTone}>
 						{message}
-					</p>
+					</AccountManagementMessage>
 				) : null}
 
 				{status === 'ready' ? (
@@ -623,7 +604,7 @@ export function AccountRoute(handle: Handle) {
 						Privacy
 					</a>
 				</p>
-			</section>
+			</AccountManagementShell>
 		)
 	}
 }

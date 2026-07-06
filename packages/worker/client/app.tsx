@@ -16,7 +16,11 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
-import { layoutMaxWidths } from './styles/style-primitives.ts'
+import {
+	getSecondaryButtonCss,
+	layoutMaxWidths,
+	primaryLinkCss,
+} from './styles/style-primitives.ts'
 import { type AppLoaderData } from '#app/loader-data.ts'
 import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
@@ -98,17 +102,8 @@ export function App(handle: Handle<AppProps>) {
 		})
 	}
 
-	const navLinkCss = {
-		color: colors.primaryText,
-		fontWeight: typography.fontWeight.medium,
-		textDecoration: 'none',
-		'&:hover': {
-			textDecoration: 'underline',
-		},
-	}
-
 	const navHomeLinkCss = {
-		...navLinkCss,
+		...primaryLinkCss,
 		display: 'flex',
 		alignItems: 'center',
 		lineHeight: 0,
@@ -119,13 +114,8 @@ export function App(handle: Handle<AppProps>) {
 	}
 
 	const logOutButtonCss = {
+		...getSecondaryButtonCss(),
 		padding: `${spacing.xs} ${spacing.md}`,
-		borderRadius: '999px',
-		border: `1px solid ${colors.border}`,
-		backgroundColor: 'transparent',
-		color: colors.text,
-		fontWeight: typography.fontWeight.medium,
-		cursor: 'pointer',
 	}
 
 	const compactNavCss = {
@@ -195,41 +185,41 @@ export function App(handle: Handle<AppProps>) {
 								})}
 							/>
 						</a>
-						<a href="/community" mix={css(navLinkCss)}>
+						<a href="/community" mix={css(primaryLinkCss)}>
 							Community
 						</a>
 						{showAuthLinks ? (
 							<>
-								<a href={loginHref} mix={css(navLinkCss)}>
+								<a href={loginHref} mix={css(primaryLinkCss)}>
 									Login
 								</a>
-								<a href={signupHref} mix={css(navLinkCss)}>
+								<a href={signupHref} mix={css(primaryLinkCss)}>
 									Signup
 								</a>
 							</>
 						) : null}
 						{isLoggedIn ? (
 							<>
-								<a href="/account" mix={css(navLinkCss)}>
+								<a href="/account" mix={css(primaryLinkCss)}>
 									{sessionDisplayName}
 								</a>
-								<a href="/account/secrets" mix={css(navLinkCss)}>
+								<a href="/account/secrets" mix={css(primaryLinkCss)}>
 									Secrets
 								</a>
-								<a href="/account/integrations" mix={css(navLinkCss)}>
+								<a href="/account/integrations" mix={css(primaryLinkCss)}>
 									Integrations
 								</a>
 								<a
 									href="/account/package-invocation-tokens"
-									mix={css(navLinkCss)}
+									mix={css(primaryLinkCss)}
 								>
 									Package tokens
 								</a>
-								<a href="/account/remote-connectors" mix={css(navLinkCss)}>
+								<a href="/account/remote-connectors" mix={css(primaryLinkCss)}>
 									Connectors
 								</a>
 								{showAdminLink ? (
-									<a href="/admin/users" mix={css(navLinkCss)}>
+									<a href="/admin/users" mix={css(primaryLinkCss)}>
 										Admin
 									</a>
 								) : null}
