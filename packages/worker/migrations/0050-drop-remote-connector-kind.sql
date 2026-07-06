@@ -23,17 +23,21 @@ INSERT INTO remote_connector_settings_new (
 	updated_at
 )
 SELECT
-	id,
-	user_id,
-	instance_id,
-	enabled,
-	attached,
-	encrypted_shared_secret,
-	created_at,
-	updated_at
-FROM remote_connector_settings
-GROUP BY user_id, instance_id
-HAVING rowid = MIN(rowid);
+	r.id,
+	r.user_id,
+	r.instance_id,
+	r.enabled,
+	r.attached,
+	r.encrypted_shared_secret,
+	r.created_at,
+	r.updated_at
+FROM remote_connector_settings AS r
+INNER JOIN (
+	SELECT user_id, instance_id, MIN(rowid) AS min_rowid
+	FROM remote_connector_settings
+	GROUP BY user_id, instance_id
+) AS winners
+	ON r.rowid = winners.min_rowid;
 
 DROP TABLE remote_connector_settings;
 

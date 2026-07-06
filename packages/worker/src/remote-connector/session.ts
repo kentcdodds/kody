@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
+import { normalizeRemoteConnectorInstanceId } from '@kody-internal/shared/remote-connectors.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	type RemoteConnectorHelloMessage,
@@ -376,7 +377,9 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		ws: WebSocket,
 		message: RemoteConnectorHelloMessage,
 	) {
-		const canonicalInstanceId = message.connectorId.trim()
+		const canonicalInstanceId = normalizeRemoteConnectorInstanceId(
+			message.connectorId,
+		)
 		const ingressUserId = this.loadIngressUserId(ws)
 		if (!ingressUserId) {
 			this.captureSessionMessage(
