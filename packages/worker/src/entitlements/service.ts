@@ -33,6 +33,31 @@ export async function getUserPlan(
 	return parsePlanName(row?.plan)
 }
 
+/**
+ * Reverse-resolve a stable MCP userId (SHA-256 of the normalized account
+ * email) back to the account email and plan. There is no stored mapping, so
+ * this scans the users table and hashes each email until one matches — the
+ * same pattern `isAccountEmailVerified` uses. Only call this on paths that
+ * genuinely have no caller context email (for example inbound email
+ * routing); interactive surfaces already carry the email.
+ */
+export async function findUserAccountByStableUserId(
+	db: D1Database,
+	stableUserId: string,
+): Promise<{ email: string; plan: PlanName | null } | null> {
+	const trimmed = stableUserId.trim()
+	if (!trimmed) return null
+	const rows = await db
+		.prepare(`SELECT email, plan FROM users`)
+		.all<{ email: string; plan: string | null }>()
+	for (const row of rows.results ?? []) {
+		if ((await createStableUserIdFromEmail(row.email)) === trimmed) {
+			return { email: row.email, plan: parsePlanName(row.plan) }
+		}
+	}
+	return null
+}
+
 export function utcDayKey(date: Date = new Date()) {
 	return date.toISOString().slice(0, 'YYYY-MM-DD'.length)
 }
@@ -178,12 +203,19 @@ export async function readEntitlementResourceUsage(input: {
 				[userId],
 			)
 		case 'email_sends_per_day':
+		case 'email_receives_per_day':
 			return await readDailyEntitlementCounter({
 				db,
 				userId,
 				resource,
 				now,
 			})
+		case 'stored_email_messages':
+			return await countRows(
+				db,
+				`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`,
+				[userId],
+			)
 		case 'secrets':
 			return await countRows(
 				db,
@@ -289,13 +321,19 @@ export async function assertWithinEntitlement(
  *
  * Users without a plan (or without a resolvable limit) consume without a
  * cap: the counter still accumulates so limits bind the moment a plan is
- * assigned.
+ * assigned. Pass `fallbackLimit` to cap plan-less users with a
+ * deployment-level backstop (for example inbound email receives).
  */
 export async function consumeDailyEntitlement(input: {
 	db: D1Database
 	userId: string
 	email: string | null | undefined
 	resource: EntitlementResource
+	/**
+	 * Limit that applies when the user has no plan. Default: no limit for
+	 * plan-less users (the counter still accumulates).
+	 */
+	fallbackLimit?: number | null
 	now?: Date
 }): Promise<void> {
 	const now = input.now ?? new Date()
@@ -303,7 +341,9 @@ export async function consumeDailyEntitlement(input: {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = plan ? resolvePlanLimit(plan, input.resource) : null
+	const limit = plan
+		? resolvePlanLimit(plan, input.resource)
+		: (input.fallbackLimit ?? null)
 	if (limit == null) {
 		await incrementDailyEntitlementCounter({
 			db: input.db,

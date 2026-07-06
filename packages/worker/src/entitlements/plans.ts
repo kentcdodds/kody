@@ -31,6 +31,10 @@ export type PlanLimits = {
 	maxRepoSessions: number | null
 	/** Maximum outbound email send attempts per UTC day. */
 	maxEmailSendsPerDay: number | null
+	/** Maximum stored inbound email receipts per UTC day. */
+	maxEmailReceivesPerDay: number | null
+	/** Maximum stored email messages (rows in email_messages). */
+	maxStoredEmailMessages: number | null
 	/** Maximum stored secret entries across non-expired buckets. */
 	maxSecrets: number | null
 	/** Maximum durable storage bytes. Defined but not yet enforced. */
@@ -52,6 +56,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		packageServicePersistentAllowed: false,
 		maxRepoSessions: 5,
 		maxEmailSendsPerDay: 20,
+		maxEmailReceivesPerDay: 200,
+		maxStoredEmailMessages: 2000,
 		maxSecrets: 20,
 		maxStorageBytes: 256 * 1024 * 1024,
 		maxConcurrentWorkflows: 10,
@@ -63,6 +69,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		packageServicePersistentAllowed: true,
 		maxRepoSessions: 20,
 		maxEmailSendsPerDay: 200,
+		maxEmailReceivesPerDay: 1000,
+		maxStoredEmailMessages: 10_000,
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
@@ -74,6 +82,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		packageServicePersistentAllowed: true,
 		maxRepoSessions: 40,
 		maxEmailSendsPerDay: 500,
+		maxEmailReceivesPerDay: 2000,
+		maxStoredEmailMessages: 25_000,
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
@@ -87,6 +97,8 @@ export const entitlementResources = [
 	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
+	'email_receives_per_day',
+	'stored_email_messages',
 	'secrets',
 	'storage_bytes',
 	'concurrent_workflows',
@@ -102,9 +114,39 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	persistent_package_services: 'persistent package services',
 	repo_sessions: 'active repo sessions',
 	email_sends_per_day: 'email sends per day',
+	email_receives_per_day: 'email receives per day',
+	stored_email_messages: 'stored email messages',
 	secrets: 'secrets',
 	storage_bytes: 'storage bytes',
 	concurrent_workflows: 'concurrent workflows',
+}
+
+/**
+ * Fallback limits for users without a plan on the inbound email resources.
+ *
+ * Inbound mail is attacker-controlled volume (anyone who learns an alias can
+ * send to it), so unlike other resources the NULL-plan invariant does not
+ * mean unlimited here: plan-less users get these deployment-level backstops
+ * instead. The numbers match the `personal` plan.
+ */
+export const nullPlanEmailFallbackLimits = {
+	email_receives_per_day: 200,
+	stored_email_messages: 2000,
+} as const satisfies Partial<Record<EntitlementResource, number>>
+
+export type EmailFallbackResource = keyof typeof nullPlanEmailFallbackLimits
+
+/**
+ * Resolve the effective limit for an inbound email resource: the plan limit
+ * when the user has a plan, otherwise the NULL-plan fallback backstop.
+ */
+export function resolveEmailResourceLimit(
+	plan: PlanName | null,
+	resource: EmailFallbackResource,
+): number | null {
+	return plan
+		? resolvePlanLimit(plan, resource)
+		: nullPlanEmailFallbackLimits[resource]
 }
 
 /**
@@ -130,6 +172,10 @@ export function resolvePlanLimit(
 			return limits.maxRepoSessions
 		case 'email_sends_per_day':
 			return limits.maxEmailSendsPerDay
+		case 'email_receives_per_day':
+			return limits.maxEmailReceivesPerDay
+		case 'stored_email_messages':
+			return limits.maxStoredEmailMessages
 		case 'secrets':
 			return limits.maxSecrets
 		case 'storage_bytes':

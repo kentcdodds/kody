@@ -24,6 +24,12 @@ stored plan values are also treated as NULL so plan renames can never lock users
 out. Enforcement activates only when a known plan name is set — existing
 accounts keep working unchanged.
 
+Exception: the inbound email resources (`email_receives_per_day`,
+`stored_email_messages`) apply the `nullPlanEmailFallbackLimits` backstops from
+`plans.ts` to plan-less users, because inbound volume is attacker-controlled
+(anyone who learns an alias can send to it). Use `resolveEmailResourceLimit` to
+read the effective limit for those resources.
+
 ## Plan lookup
 
 The MCP `userId` is the SHA-256 hash of the normalized account email
@@ -45,6 +51,13 @@ available. Both auth surfaces provide it — app sessions expose
 (for example package-manifest job sync or workflow-spawned inline code) are
 documented fail-open gaps, acceptable because they are only reachable after a
 user action that is itself gated.
+
+One path cannot fail open: inbound email routing has no caller context but must
+enforce receive quotas. `findUserAccountByStableUserId` in `service.ts`
+reverse-resolves the stable user id to the account email (and plan) by scanning
+the users table and hashing each email — the same pattern
+`isAccountEmailVerified` uses. Only use it on contextless paths; interactive
+surfaces already carry the email.
 
 ## The error shape
 
@@ -85,13 +98,15 @@ Rules:
   concurrent workflows, running package services) are counted **directly from
   their source D1 tables at the enforcement point** via built-in counters in
   `service.ts`. They do not depend on any metering or rollup tables.
-- **Rate-style limits** (email sends per day) use the
+- **Rate-style limits** (email sends and receives per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
   plan limit and increments the counter in one conditional D1 upsert (no
   check-then-increment race), and still increments (uncapped) for users without
-  a plan so counters reflect real usage the moment a plan is assigned. Counting
-  attempts rather than successes keeps the limit abuse-resistant.
+  a plan so counters reflect real usage the moment a plan is assigned — unless
+  the caller passes `fallbackLimit`, which caps plan-less users with a
+  deployment-level backstop (inbound email does this). Counting attempts rather
+  than successes keeps the limit abuse-resistant.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
@@ -166,6 +181,8 @@ The exemplar is job scheduling: `createJob` in
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                       |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                |
 | `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`)                           |
+| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback)      |
+| `stored_email_messages`       | `handleInboundEmail` before storage (NULL-plan fallback)                         |
 | `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts` |
 | `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)     |
 | `storage_bytes`               | not yet enforced                                                                 |
