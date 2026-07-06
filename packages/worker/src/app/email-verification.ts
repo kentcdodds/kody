@@ -127,12 +127,19 @@ export async function createEmailVerification(input: {
 	}
 
 	// The new token is delivered (or the send was deliberately skipped in a
-	// non-production runtime); retire older outstanding tokens now.
+	// non-production runtime); retire older outstanding tokens. Best-effort
+	// only: the email is already out, so a cleanup failure must not bubble
+	// up and make callers (signup rollback) treat the send as failed —
+	// stale tokens expire on their own and are purged when any token
+	// verifies.
 	await input.appEnv.APP_DB.prepare(
 		`DELETE FROM email_verifications WHERE user_id = ? AND token_hash != ?`,
 	)
 		.bind(input.userId, tokenHash)
 		.run()
+		.catch((error) => {
+			console.warn('email-verification-token-cleanup-failed', error)
+		})
 }
 
 export type VerifyEmailResult =

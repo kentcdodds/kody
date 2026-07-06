@@ -64,6 +64,11 @@ export async function handleInboundEmail(
 	}
 
 	const userId = inboxAddress.userId
+	// Inbox rows only store the stable user id, so this uses the stable-id
+	// scan inside `isAccountEmailVerified` (same pattern as outbound send).
+	// Cost is O(users) hashing per inbound message; if user counts grow
+	// enough to matter, add an indexed stable-id column on `users` instead
+	// of weakening this fail-closed check.
 	const accountEmailVerified = await isAccountEmailVerified({
 		db: env.APP_DB,
 		stableUserId: userId,
