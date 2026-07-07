@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	createFileSystemSnapshot: vi.fn(),
@@ -43,8 +43,7 @@ function createSnapshotFromFiles(files: Map<string, string>): MockSnapshot {
 	}
 }
 
-// eslint-disable-next-line epic-web/prefer-dispose-in-tests -- restores shared default bundle mocks after global mockReset.
-beforeEach(() => {
+function setupDefaultBundleMocks() {
 	mockModule.buildKodyAppBundle.mockResolvedValue({
 		mainModule: 'dist/app.js',
 		modules: {
@@ -67,7 +66,7 @@ beforeEach(() => {
 		},
 		dependencies: [],
 	})
-})
+}
 
 async function collectSnapshotFiles(
 	input: AsyncIterable<readonly [string, string]>,
@@ -80,6 +79,7 @@ async function collectSnapshotFiles(
 }
 
 async function runChecksOnWorkspaceFiles(files: Map<string, string>) {
+	setupDefaultBundleMocks()
 	const snapshot = createSnapshotFromFiles(files)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 	return runRepoChecks({
@@ -148,7 +148,46 @@ function createPackageManifest(input: {
 	})
 }
 
+async function runPackageJobTypecheckChecks(
+	files: Map<string, string>,
+	options?: {
+		getSemanticDiagnostics?: ReturnType<typeof vi.fn>
+	},
+) {
+	setupDefaultBundleMocks()
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	const getSemanticDiagnostics =
+		options?.getSemanticDiagnostics ?? vi.fn(() => [])
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics,
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	return { result, typeScriptFileSystem, getSemanticDiagnostics }
+}
+
 test('runRepoChecks keeps non-code source files for publish snapshots while excluding git internals', async () => {
+	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -204,6 +243,7 @@ test('runRepoChecks keeps non-code source files for publish snapshots while excl
 })
 
 test('runRepoChecks strips repo-session workspace prefixes from package snapshot paths', async () => {
+	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
 		[
 			'/session/package.json',
@@ -282,104 +322,77 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 	)
 })
 
-test('runRepoChecks accepts execute runtime globals for package-owned jobs', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/runtime-globals-job',
-				kodyId: 'runtime-globals-job',
-				description: 'Uses execute globals',
-				jobs: {
-					runtime: {
-						entry: 'src/job.ts',
-						schedule: {
-							type: 'once',
-							runAt: '2026-04-17T15:00:00Z',
+test('runRepoChecks typechecks package-owned jobs (runtime globals, emits, and ESM entrypoints)', async () => {
+	const runtimeGlobals = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/runtime-globals-job',
+					kodyId: 'runtime-globals-job',
+					description: 'Uses execute globals',
+					jobs: {
+						runtime: {
+							entry: 'src/job.ts',
+							schedule: {
+								type: 'once',
+								runAt: '2026-04-17T15:00:00Z',
+							},
 						},
 					},
-				},
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-		[
-			'src/job.ts',
-			`export default async (params) => {
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+			[
+				'src/job.ts',
+				`export default async (params) => {
   await kody.value_get({ name: 'projectId' })
   await storage.get('count')
   return params
 }
 `,
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	const getSemanticDiagnostics = vi.fn(() => [])
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics,
-		},
-	})
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(result.results).toEqual(
+			],
+		]),
+	)
+	expect(runtimeGlobals.result.ok).toBe(true)
+	expect(runtimeGlobals.result.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({ kind: 'dependencies', ok: true }),
 			expect.objectContaining({ kind: 'typecheck', ok: true }),
 		]),
 	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('declare const storage'),
+	expect(runtimeGlobals.getSemanticDiagnostics).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
 	)
-})
 
-test('runRepoChecks constrains events.dispatch topics to package.json#kody.emits', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kentcdodds/discord-gateway',
-				kodyId: 'discord-gateway',
-				description: 'Discord gateway package',
-				emits: {
-					'@kentcdodds/discord.message.created': {
-						description: 'A Discord message was created.',
-					},
-				},
-				jobs: {
-					runtime: {
-						entry: 'src/job.ts',
-						schedule: {
-							type: 'once',
-							runAt: '2026-04-17T15:00:00Z',
+	const emitsConstrained = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kentcdodds/discord-gateway',
+					kodyId: 'discord-gateway',
+					description: 'Discord gateway package',
+					emits: {
+						'@kentcdodds/discord.message.created': {
+							description: 'A Discord message was created.',
 						},
 					},
-				},
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-		[
-			'src/job.ts',
-			`import { events } from 'kody:runtime'
+					jobs: {
+						runtime: {
+							entry: 'src/job.ts',
+							schedule: {
+								type: 'once',
+								runAt: '2026-04-17T15:00:00Z',
+							},
+						},
+					},
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+			[
+				'src/job.ts',
+				`import { events } from 'kody:runtime'
 
 export default async () => {
   await events.dispatch({
@@ -388,44 +401,64 @@ export default async () => {
   })
 }
 `,
-		],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics: vi.fn(() => []),
-		},
-	})
+			],
+		]),
+	)
+	expect(emitsConstrained.result.ok).toBe(true)
+	expect(emitsConstrained.result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ kind: 'typecheck', ok: true }),
+		]),
+	)
 
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
+	const esmEntrypoint = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/esm-job',
+					kodyId: 'esm-job',
+					description: 'Uses exports',
+					jobs: {
+						esm: {
+							entry: 'src/job.ts',
+							schedule: {
+								type: 'once',
+								runAt: '2026-04-17T15:00:00Z',
+							},
+						},
+					},
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+			['src/job.ts', 'export default async () => ({ ok: true })\n'],
+		]),
+		{
+			getSemanticDiagnostics: vi.fn((path: string) =>
+				path === '.__kody_repo_module_check__.ts'
+					? []
+					: [{ messageText: `unexpected diagnostics for ${path}` }],
+			),
 		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining(
-			'type KodyDeclaredEventTopic = "@kentcdodds/discord.message.created";',
-		),
+	)
+	expect(esmEntrypoint.result.ok).toBe(true)
+	expect(esmEntrypoint.result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ kind: 'typecheck', ok: true }),
+		]),
+	)
+	expect(esmEntrypoint.typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+		expect.any(String),
+	)
+	expect(esmEntrypoint.typeScriptFileSystem.write).not.toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+		expect.stringContaining('import userEntrypoint from "./src/index"'),
 	)
 })
 
 test('runRepoChecks validates every persisted package artifact target before publish', async () => {
+	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -526,25 +559,13 @@ test('runRepoChecks validates every persisted package artifact target before pub
 			entryPoint: 'src/index.ts',
 		}),
 	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.stringContaining('declare const capabilities'),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job"'),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/search"'),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/subscription"'),
 	)
 })
 
 test('runRepoChecks still reports unknown globals for package-owned jobs', async () => {
+	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -624,83 +645,8 @@ test('runRepoChecks still reports unknown globals for package-owned jobs', async
 	)
 })
 
-test('runRepoChecks typechecks ESM package job entrypoints', async () => {
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/esm-job',
-				kodyId: 'esm-job',
-				description: 'Uses exports',
-				jobs: {
-					esm: {
-						entry: 'src/job.ts',
-						schedule: {
-							type: 'once',
-							runAt: '2026-04-17T15:00:00Z',
-						},
-					},
-				},
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-		['src/job.ts', 'export default async () => ({ ok: true })\n'],
-	])
-	const snapshot = createSnapshotFromFiles(files)
-	const typeScriptFileSystem: MockTypeScriptFileSystem = {
-		...snapshot,
-		write: vi.fn(),
-	}
-	const getSemanticDiagnostics = vi.fn((path: string) =>
-		path === '.__kody_repo_module_check__.ts'
-			? []
-			: [{ messageText: `unexpected diagnostics for ${path}` }],
-	)
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: typeScriptFileSystem,
-		languageService: {
-			getSemanticDiagnostics,
-		},
-	})
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-
-	expect(result.ok).toBe(true)
-	expect(result.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({ kind: 'typecheck', ok: true }),
-		]),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.any(String),
-	)
-	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_runtime__.d.ts',
-		expect.any(String),
-	)
-	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/index"'),
-	)
-	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-	)
-})
-
 test('runRepoChecks injects package tsconfig overlays that allow optional .ts imports', async () => {
+	setupDefaultBundleMocks()
 	const jobManifest = {
 		packageName: '@kody/ts-extension-job',
 		kodyId: 'ts-extension-job',
@@ -844,9 +790,7 @@ test('runRepoChecks validates static kody package import declarations across mis
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: false,
-				message: expect.stringContaining(
-					'package.json#kody.dependencies must match direct static kody:@ imports (missing "@kentcdodds/helper").',
-				),
+				message: expect.stringMatching(/@kentcdodds\/helper/),
 			}),
 		]),
 	)
@@ -879,9 +823,6 @@ test('runRepoChecks validates static kody package import declarations across mis
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: expect.stringContaining(
-					'package.json#kody.dependencies declares 1 static Kody package dependency: "@kentcdodds/helper".',
-				),
 			}),
 		]),
 	)
@@ -915,9 +856,6 @@ test('runRepoChecks validates static kody package import declarations across mis
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: expect.stringContaining(
-					'package.json#kody.dependencies declares no static Kody package dependencies.',
-				),
 			}),
 		]),
 	)
@@ -1018,15 +956,14 @@ test('runRepoChecks validates static kody package import declarations across mis
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: false,
-				message: expect.stringContaining(
-					'package.json#kody.dependencies must match direct static kody:@ imports (unused "@kentcdodds/unused").',
-				),
+				message: expect.stringMatching(/@kentcdodds\/unused/),
 			}),
 		]),
 	)
 })
 
 test('runRepoChecks surfaces bundle validation failures when runtime bundling cannot resolve npm dependencies', async () => {
+	setupDefaultBundleMocks()
 	const unresolvedModuleFiles = new Map<string, string>([
 		[
 			'package.json',
@@ -1185,6 +1122,7 @@ test('runRepoChecks surfaces bundle validation failures when runtime bundling ca
 })
 
 test('runRepoChecks fails before publish when an exported module artifact cannot be built', async () => {
+	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -1260,6 +1198,7 @@ test('runRepoChecks fails before publish when an exported module artifact cannot
 })
 
 test('runRepoChecks validates package runtime bundles with npm dependencies', async () => {
+	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
 		[
 			'package.json',

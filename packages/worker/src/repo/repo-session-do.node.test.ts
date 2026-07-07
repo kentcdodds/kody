@@ -480,16 +480,18 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	}
 })
 
-test('runCommands applies deletion patches and returns per-file diffs', async () => {
+test('runCommands applies git apply patches (modify, delete, and rename)', async () => {
 	setCommonSessionFixtures()
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
 		if (path === '/session/src/keep.ts') return 'export const keep = false\n'
 		if (path === '/session/src/delete.ts') return 'export const remove = true\n'
+		if (path === '/session/src/old-name.ts')
+			return 'export const name = "old"\n'
 		return ''
 	})
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 
-	const result = await repoSession.runCommands({
+	const modifyAndDelete = await repoSession.runCommands({
 		sessionId: 'session-1',
 		userId: 'user-1',
 		runChecks: false,
@@ -519,10 +521,10 @@ test('runCommands applies deletion patches and returns per-file diffs', async ()
 			force: true,
 		},
 	)
-	const edits = result.commands[0]?.output as {
+	const modifyAndDeleteEdits = modifyAndDelete.commands[0]?.output as {
 		edits: Array<{ path: string; content: string; diff: string }>
 	}
-	expect(edits.edits).toEqual([
+	expect(modifyAndDeleteEdits.edits).toEqual([
 		expect.objectContaining({
 			path: 'src/keep.ts',
 			content: 'export const keep = true\n',
@@ -532,22 +534,12 @@ test('runCommands applies deletion patches and returns per-file diffs', async ()
 			content: '',
 		}),
 	])
-	expect(edits.edits[0]?.diff).toContain('src/keep.ts')
-	expect(edits.edits[0]?.diff).not.toContain('src/delete.ts')
-	expect(edits.edits[1]?.diff).toContain('src/delete.ts')
-	expect(edits.edits[1]?.diff).not.toContain('src/keep.ts')
-})
+	expect(modifyAndDeleteEdits.edits[0]?.diff).toContain('src/keep.ts')
+	expect(modifyAndDeleteEdits.edits[0]?.diff).not.toContain('src/delete.ts')
+	expect(modifyAndDeleteEdits.edits[1]?.diff).toContain('src/delete.ts')
+	expect(modifyAndDeleteEdits.edits[1]?.diff).not.toContain('src/keep.ts')
 
-test('runCommands applies rename patches from the old file path', async () => {
-	setCommonSessionFixtures()
-	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
-		if (path === '/session/src/old-name.ts')
-			return 'export const name = "old"\n'
-		return ''
-	})
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-
-	const result = await repoSession.runCommands({
+	const rename = await repoSession.runCommands({
 		sessionId: 'session-1',
 		userId: 'user-1',
 		runChecks: false,
@@ -576,10 +568,10 @@ test('runCommands applies rename patches from the old file path', async () => {
 		'/session/src/new-name.ts',
 		'export const name = "new"\n',
 	)
-	const edits = result.commands[0]?.output as {
+	const renameEdits = rename.commands[0]?.output as {
 		edits: Array<{ path: string; content: string; diff: string }>
 	}
-	expect(edits.edits[0]).toEqual(
+	expect(renameEdits.edits[0]).toEqual(
 		expect.objectContaining({
 			path: 'src/new-name.ts',
 			content: 'export const name = "new"\n',
@@ -1131,13 +1123,9 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	).rejects.toThrow(/does not match published commit/)
 })
 
-test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
+test('readFile retries D1 reads and falls back to cached sessions when replicas lag', async () => {
 	restoreRepoSessionMockBaseline()
-	// This test covers the alarm-driven scheduled-job failure mode where a fresh
-	// DO instance handles a follow-up RPC call before the in-memory cache from
-	// openSession is available, and D1 read replicas have not yet caught up to
-	// the freshly inserted repo session row.
-	const sessionRow = {
+	const replicaLagSessionRow = {
 		id: 'job-runtime-session-replica-lag',
 		user_id: 'user-1',
 		source_id: 'source-1',
@@ -1156,7 +1144,7 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 		created_at: '2026-04-16T00:00:00.000Z',
 		updated_at: '2026-04-16T00:00:00.000Z',
 	}
-	const source = {
+	const replicaLagSource = {
 		id: 'source-1',
 		user_id: 'user-1',
 		entity_kind: 'job' as const,
@@ -1172,10 +1160,10 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	mockModule.getRepoSessionById
 		.mockResolvedValueOnce(null)
 		.mockResolvedValueOnce(null)
-		.mockResolvedValueOnce(sessionRow)
+		.mockResolvedValueOnce(replicaLagSessionRow)
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(null)
-		.mockResolvedValueOnce(source)
+		.mockResolvedValueOnce(replicaLagSource)
 	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
 		info: vi.fn(async () => ({
 			remote: 'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
@@ -1186,19 +1174,151 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	})
 	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
 
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-	const file = await repoSession.readFile({
+	const replicaLagSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+	const replicaLagFile = await replicaLagSession.readFile({
 		sessionId: 'job-runtime-session-replica-lag',
 		userId: 'user-1',
 		path: 'kody.json',
 	})
-
-	expect(file).toEqual({
+	expect(replicaLagFile).toEqual({
 		path: 'kody.json',
 		content: '{"version":1,"kind":"job"}',
 	})
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
+
+	setCommonSessionFixtures()
+	const initialSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-initial',
+		manifest_path: 'kody.json',
+		source_root: '/',
+	}
+	const initialSession = {
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		source_repo_id: 'source-repo',
+		session_branch: 'sessions/session1',
+		source_branch: 'main',
+		base_commit: 'commit-initial',
+		status: 'active',
+		last_checkpoint_commit: 'commit-initial',
+	}
+	const movedSession = {
+		...initialSession,
+		base_commit: 'commit-rebased',
+		last_checkpoint_commit: 'commit-rebased',
+	}
+	const movedSource = {
+		...initialSource,
+		published_commit: 'commit-moved',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(initialSession)
+		.mockResolvedValueOnce(movedSession)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(initialSource)
+		.mockResolvedValueOnce(movedSource)
+	mockModule.workspaceReadFile.mockResolvedValue('hello world')
+
+	const updatedRowSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+	const firstRead = await updatedRowSession.readFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'greeting.txt',
+	})
+	expect(firstRead).toEqual({
+		path: 'greeting.txt',
+		content: 'hello world',
+	})
+
+	const secondRead = await updatedRowSession.readFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'greeting.txt',
+	})
+	expect(secondRead).toEqual({
+		path: 'greeting.txt',
+		content: 'hello world',
+	})
+	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(5)
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(4)
+
+	mockModule.getRepoSessionById.mockReset()
+	mockModule.getEntitySourceById.mockReset()
+	const cachedFallbackSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'job' as const,
+		entity_id: 'job-1',
+		repo_id: 'job-job-1',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(null)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(cachedFallbackSource)
+		.mockResolvedValueOnce(cachedFallbackSource)
+		.mockResolvedValueOnce(null)
+	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			id: 'job-repo-1',
+			name: 'job-job-1',
+			description: null,
+			defaultBranch: 'main',
+			createdAt: '2026-04-16T00:00:00.000Z',
+			updatedAt: '2026-04-16T00:00:00.000Z',
+			lastPushAt: null,
+			source: null,
+			readOnly: false,
+			remote: 'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
+		})),
+		createToken: vi.fn(async () => ({
+			id: 'token-1',
+			plaintext: 'art_source_secret?expires=1760000200',
+			scope: 'write',
+			expiresAt: '2026-10-09T08:16:40.000Z',
+		})),
+	})
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.workspaceReadFile.mockResolvedValue('export default {}')
+
+	const cachedFallbackSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+	await cachedFallbackSession.openSession({
+		sessionId: 'job-runtime-session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+		sourceRoot: '/',
+	})
+	const cachedFallbackFile = await cachedFallbackSession.readFile({
+		sessionId: 'job-runtime-session-1',
+		userId: 'user-1',
+		path: 'kody.json',
+	})
+
+	expect(cachedFallbackFile).toEqual({
+		path: 'kody.json',
+		content: 'export default {}',
+	})
 })
 
 test('publishFromExternalRef rejects stale expected HEAD values', async () => {
@@ -1275,133 +1395,4 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 			},
 		}),
 	)
-})
-
-test('readFile re-reads D1 for updated session rows and falls back when rows are not yet readable', async () => {
-	setCommonSessionFixtures()
-	const initialSource = {
-		id: 'source-1',
-		user_id: 'user-1',
-		repo_id: 'source-repo',
-		published_commit: 'commit-initial',
-		manifest_path: 'kody.json',
-		source_root: '/',
-	}
-	const initialSession = {
-		id: 'session-1',
-		user_id: 'user-1',
-		source_id: 'source-1',
-		source_repo_id: 'source-repo',
-		session_branch: 'sessions/session1',
-		source_branch: 'main',
-		base_commit: 'commit-initial',
-		status: 'active',
-		last_checkpoint_commit: 'commit-initial',
-	}
-	const movedSession = {
-		...initialSession,
-		base_commit: 'commit-rebased',
-		last_checkpoint_commit: 'commit-rebased',
-	}
-	const movedSource = {
-		...initialSource,
-		published_commit: 'commit-moved',
-	}
-	mockModule.getRepoSessionById
-		.mockResolvedValueOnce(initialSession)
-		.mockResolvedValueOnce(movedSession)
-	mockModule.getEntitySourceById
-		.mockResolvedValueOnce(initialSource)
-		.mockResolvedValueOnce(movedSource)
-	mockModule.workspaceReadFile.mockResolvedValue('hello world')
-
-	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
-	const firstRead = await repoSession.readFile({
-		sessionId: 'session-1',
-		userId: 'user-1',
-		path: 'greeting.txt',
-	})
-	expect(firstRead).toEqual({
-		path: 'greeting.txt',
-		content: 'hello world',
-	})
-
-	const secondRead = await repoSession.readFile({
-		sessionId: 'session-1',
-		userId: 'user-1',
-		path: 'greeting.txt',
-	})
-	expect(secondRead).toEqual({
-		path: 'greeting.txt',
-		content: 'hello world',
-	})
-	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(2)
-	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
-
-	mockModule.getRepoSessionById.mockReset()
-	mockModule.getEntitySourceById.mockReset()
-	const source = {
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'job' as const,
-		entity_id: 'job-1',
-		repo_id: 'job-job-1',
-		published_commit: 'commit-base',
-		indexed_commit: null,
-		manifest_path: 'kody.json',
-		source_root: '/',
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
-	}
-	mockModule.getRepoSessionById
-		.mockResolvedValueOnce(null)
-		.mockResolvedValueOnce(null)
-	mockModule.getEntitySourceById
-		.mockResolvedValueOnce(source)
-		.mockResolvedValueOnce(source)
-		.mockResolvedValueOnce(null)
-	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'job-repo-1',
-			name: 'job-job-1',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote: 'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
-		})),
-		createToken: vi.fn(async () => ({
-			id: 'token-1',
-			plaintext: 'art_source_secret?expires=1760000200',
-			scope: 'write',
-			expiresAt: '2026-10-09T08:16:40.000Z',
-		})),
-	})
-	mockModule.workspaceExists.mockResolvedValue(false)
-	mockModule.workspaceReadFile.mockResolvedValue('export default {}')
-
-	const cachedFallbackSession = new RepoSession(
-		createDurableObjectState(),
-		createEnv(),
-	)
-	await cachedFallbackSession.openSession({
-		sessionId: 'job-runtime-session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		baseUrl: 'https://example.com',
-		sourceRoot: '/',
-	})
-	const cachedFallbackFile = await cachedFallbackSession.readFile({
-		sessionId: 'job-runtime-session-1',
-		userId: 'user-1',
-		path: 'kody.json',
-	})
-
-	expect(cachedFallbackFile).toEqual({
-		path: 'kody.json',
-		content: 'export default {}',
-	})
 })
