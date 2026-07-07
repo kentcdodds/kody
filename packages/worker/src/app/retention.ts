@@ -20,6 +20,7 @@ type IdValue = string | number
 export const retentionCronGateMinutes = 5
 export const retentionCronIntervalMinutes = 60
 export const retentionDefaultBatchSize = 250
+export const retentionDeleteIdsMaxParameters = 100
 export const publishedBundleArtifactRetentionBatchSize = 100
 
 export const packageRuntimeRunRetentionDays = 30
@@ -182,12 +183,53 @@ async function deleteByIds(input: {
 	ids: ReadonlyArray<IdValue>
 }) {
 	if (input.ids.length === 0) return 0
+	let deleted = 0
+	for (
+		let index = 0;
+		index < input.ids.length;
+		index += retentionDeleteIdsMaxParameters
+	) {
+		const ids = input.ids.slice(index, index + retentionDeleteIdsMaxParameters)
+		const result = await input.db
+			.prepare(
+				`DELETE FROM ${input.table}
+				WHERE ${input.idColumn} IN (${placeholders(ids)})`,
+			)
+			.bind(...ids)
+			.run()
+		deleted += result.meta.changes ?? 0
+	}
+	return deleted
+}
+
+async function deletePublishedBundleArtifactRowIfStillStale(input: {
+	db: D1Database
+	id: string
+	kvKey: string
+	cutoff: string
+}) {
 	const result = await input.db
 		.prepare(
-			`DELETE FROM ${input.table}
-			WHERE ${input.idColumn} IN (${placeholders(input.ids)})`,
+			`DELETE FROM published_bundle_artifacts
+			WHERE id = ?
+				AND kv_key = ?
+				AND created_at < ?
+				AND NOT EXISTS (
+					SELECT 1
+					FROM entity_sources AS source
+					WHERE source.user_id = published_bundle_artifacts.user_id
+						AND source.id = published_bundle_artifacts.source_id
+						AND source.published_commit = published_bundle_artifacts.published_commit
+				)
+				AND NOT EXISTS (
+					SELECT 1
+					FROM repo_sessions AS session
+					WHERE session.user_id = published_bundle_artifacts.user_id
+						AND session.source_id = published_bundle_artifacts.source_id
+						AND session.status = 'active'
+				)`,
 		)
-		.bind(...input.ids)
+		.bind(input.id, input.kvKey, input.cutoff)
 		.run()
 	return result.meta.changes ?? 0
 }
@@ -404,14 +446,21 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 		.bind(cutoff, input.batchSize ?? publishedBundleArtifactRetentionBatchSize)
 		.all<{ id: string; kv_key: string }>()
 	const rows = results ?? []
-	const deletedRowIds: Array<string> = []
+	let deletedRows = 0
 	let deletedKvKeys = 0
 	let kvDeleteErrors = 0
 	for (const row of rows) {
+		const rowDeleted = await deletePublishedBundleArtifactRowIfStillStale({
+			db: input.env.APP_DB,
+			id: row.id,
+			kvKey: row.kv_key,
+			cutoff,
+		})
+		if (rowDeleted === 0) continue
+		deletedRows += rowDeleted
 		try {
 			await input.env.BUNDLE_ARTIFACTS_KV.delete(row.kv_key)
 			deletedKvKeys += 1
-			deletedRowIds.push(row.id)
 		} catch (error) {
 			kvDeleteErrors += 1
 			console.warn('retention-published-bundle-kv-delete-failed', {
@@ -421,12 +470,6 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 			})
 		}
 	}
-	const deletedRows = await deleteByIds({
-		db: input.env.APP_DB,
-		table: 'published_bundle_artifacts',
-		idColumn: 'id',
-		ids: deletedRowIds,
-	})
 	return { deletedRows, deletedKvKeys, kvDeleteErrors }
 }
 

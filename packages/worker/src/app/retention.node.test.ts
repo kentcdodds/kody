@@ -35,11 +35,23 @@ function applyMigrations(db: DatabaseSync) {
 	}
 }
 
-function createD1FromSqlite(db: DatabaseSync) {
+function createD1FromSqlite(
+	db: DatabaseSync,
+	options?: { maxBindings?: number },
+) {
+	function assertBindingCount(params: Array<unknown>) {
+		if (
+			options?.maxBindings !== undefined &&
+			params.length > options.maxBindings
+		) {
+			throw new Error(`too many SQL variables: ${params.length}`)
+		}
+	}
 	return {
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
+					assertBindingCount(params)
 					return {
 						async all<T>() {
 							const statement = db.prepare(query)
@@ -621,6 +633,90 @@ test('published bundle artifact retention deletes only stale unreferenced rows a
 	])
 })
 
+test('published bundle artifact retention rechecks staleness before deleting selected rows', async () => {
+	const { sqlite } = createRetentionDb()
+	const baseDb = createD1FromSqlite(sqlite)
+	const kvDelete = vi.fn(async () => undefined)
+	let refreshedBeforeDelete = false
+	const dbWithRefreshRace = {
+		prepare(query: string) {
+			const prepared = baseDb.prepare(query)
+			if (
+				query.includes('DELETE FROM published_bundle_artifacts') &&
+				query.includes('AND kv_key = ?')
+			) {
+				return {
+					bind(...params: Array<unknown>) {
+						const bound = prepared.bind(...params)
+						return {
+							async run() {
+								refreshedBeforeDelete = true
+								sqlite
+									.prepare(
+										`UPDATE entity_sources
+										SET published_commit = 'commit-old'
+										WHERE id = 'source-race'`,
+									)
+									.run()
+								return bound.run()
+							},
+							all: bound.all,
+							first: bound.first,
+						}
+					},
+				}
+			}
+			return prepared
+		},
+	} as unknown as D1Database
+	const env = {
+		APP_DB: dbWithRefreshRace,
+		BUNDLE_ARTIFACTS_KV: {
+			delete: kvDelete,
+		},
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+	sqlite
+		.prepare(
+			`INSERT INTO entity_sources (
+				id, user_id, entity_kind, entity_id, repo_id, published_commit,
+				created_at, updated_at
+			) VALUES ('source-race', 'user-1', 'package', 'pkg-race', 'repo-race',
+				'commit-current', ?, ?)`,
+		)
+		.run(daysAgo(60), daysAgo(60))
+	sqlite
+		.prepare(
+			`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind, entry_point,
+				kv_key, created_at, updated_at
+			) VALUES (
+				'artifact-race', 'user-1', 'source-race', 'commit-old', 'module',
+				'src/index.ts', 'kv:artifact-race', ?, ?
+			)`,
+		)
+		.run(
+			daysAgo(publishedBundleArtifactRetentionDays + 1),
+			daysAgo(publishedBundleArtifactRetentionDays + 1),
+		)
+
+	const result = await prunePublishedBundleArtifactsForRetention({
+		env,
+		now,
+		batchSize: 10,
+	})
+
+	expect(refreshedBeforeDelete).toBe(true)
+	expect(result).toEqual({
+		deletedRows: 0,
+		deletedKvKeys: 0,
+		kvDeleteErrors: 0,
+	})
+	expect(kvDelete).not.toHaveBeenCalled()
+	expect(idsForTable(sqlite, 'published_bundle_artifacts')).toEqual([
+		'artifact-race',
+	])
+})
+
 test('retention pruning deletes only one configured batch per table invocation', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (let index = 0; index < 3; index += 1) {
@@ -641,6 +737,27 @@ test('retention pruning deletes only one configured batch per table invocation',
 	expect(
 		await prunePackageInvocationsForRetention({ db, now, batchSize: 2 }),
 	).toBe(1)
+	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
+})
+
+test('retention row deletes chunk ids to stay within the D1 binding limit', async () => {
+	const { sqlite } = createRetentionDb()
+	const db = createD1FromSqlite(sqlite, { maxBindings: 100 })
+	for (let index = 0; index < 101; index += 1) {
+		sqlite
+			.prepare(
+				`INSERT INTO package_invocations (
+					id, user_id, token_id, package_id, package_kody_id, export_name,
+					idempotency_key, request_hash, status, created_at, updated_at
+				) VALUES (?, 'user-1', 'token', 'pkg-1', 'pkg-1', '.', ?, 'hash',
+					'completed', ?, ?)`,
+			)
+			.run(`inv-${index}`, `key-${index}`, daysAgo(120), daysAgo(120))
+	}
+
+	expect(
+		await prunePackageInvocationsForRetention({ db, now, batchSize: 101 }),
+	).toBe(101)
 	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
 })
 
