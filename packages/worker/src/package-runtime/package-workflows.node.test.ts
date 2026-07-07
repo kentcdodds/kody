@@ -685,7 +685,10 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	])
 
 	const preProjectionDb = createWorkflowRunsDatabase()
-	const preProjectionInstances = new Map<string, WorkflowInstanceCreateOptions>()
+	const preProjectionInstances = new Map<
+		string,
+		WorkflowInstanceCreateOptions
+	>()
 	const preProjectionCreate = vi.fn(
 		async (input: WorkflowInstanceCreateOptions) => {
 			expect([...preProjectionDb.workflowRuns.values()]).toEqual([
