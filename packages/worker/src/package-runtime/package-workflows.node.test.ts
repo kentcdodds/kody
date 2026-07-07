@@ -750,6 +750,25 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		vi.useRealTimers()
 	}
 
+	const existingOverLimitBinding = createWorkflowBinding({})
+	await expect(
+		createDynamicCallableWorkflow({
+			env: {
+				APP_DB: createWorkflowRunsDatabase({ activeCount: 100 }),
+				DYNAMIC_CALLABLE_WORKFLOWS: existingOverLimitBinding.workflow,
+			} as Env,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'existing-over-limit-key',
+			},
+		}),
+	).resolves.toMatchObject({
+		ok: true,
+		status: 'waiting',
+	})
+	expect(existingOverLimitBinding.create).not.toHaveBeenCalled()
+
 	const perUserBinding = createStatefulWorkflowBinding()
 	const userOne = await createDynamicCallableWorkflow({
 		env: {
