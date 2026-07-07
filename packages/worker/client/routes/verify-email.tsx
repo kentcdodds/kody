@@ -35,8 +35,8 @@ export function VerifyEmailRoute(handle: Handle) {
 					<p mix={css(pageDescriptionCss)}>
 						{data.ok
 							? isEmailChange
-								? 'Your Kody account now uses the new email address.'
-								: 'Your Kody account can now send outbound email.'
+								? 'Your Kody account uses this email address.'
+								: 'Your Kody account can send outbound email.'
 							: 'We could not verify your email address.'}
 					</p>
 				</header>
