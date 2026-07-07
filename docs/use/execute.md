@@ -32,8 +32,9 @@ helpers are runtime exports:
   bound to a storage id
 - use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
   Workflows from execute calls, ad hoc jobs, package jobs, package
-  subscriptions, package services, and package exports. See
-  [Workflows](./workflows.md)
+  subscriptions, package services, and package exports. Prefer workflows for
+  durable batch sweeps, migrations, polling loops, retryable steps, or work that
+  may run longer than execute's timeout. See [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
@@ -95,6 +96,11 @@ Prefer **one execute** when the plan is clear: import what you need, call
 several capabilities or package exports, branch on results, and return the final
 structured result. Split into multiple **execute** calls only when you need new
 user input, confirmation, or a result that changes the plan.
+
+Plain **execute** has a hard timeout (~90s by default). For multi-step or
+long-running work (>~60s, batch sweeps, migrations, polling loops), use one
+**execute** call to submit `workflows.create({ code, params })`, then inspect
+progress with `workflow_run_list` instead of chaining many MCP tool calls.
 
 To read field shapes while coding, use **search** with
 **`entity: "{name}:capability"`** for builtin capability type definitions, or

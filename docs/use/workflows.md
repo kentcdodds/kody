@@ -4,16 +4,29 @@ Kody exposes Cloudflare Workflows through `kody:runtime` in every server-side
 runtime context: `execute`, ad hoc scheduled jobs, saved package jobs, package
 subscriptions, package exports, and package services.
 
+Use workflows instead of plain `execute` for durable batch sweeps, migrations,
+polling loops, retryable steps, or work that may run longer than execute's
+timeout. The initial `execute` call only queues the workflow; inspect it later
+with `workflow_run_list`.
+
 ```ts
 import { workflows } from 'kody:runtime'
 
-export default async function main() {
+export default async function main(input = {}) {
 	return await workflows.create({
-		runAt: new Date(Date.now() + 60_000).toISOString(),
-		idempotencyKey: `execute-smoke-${Date.now()}`,
 		code: 'export default async function main(p) { return { ok: true, p } }',
-		params: { greeting: 'hello' },
+		params: { greeting: input.greeting ?? 'hello' },
 	})
+}
+```
+
+Check status from a later MCP call:
+
+```ts
+import { kody } from 'kody:runtime'
+
+export default async function main() {
+	return await kody.workflow_run_list({ limit: 10 })
 }
 ```
 
@@ -25,22 +38,18 @@ export default async function main() {
   Kody resolves `packageId` from `packageContext`. Outside a package runtime,
   pass `packageId` explicitly.
 
-Both shapes require:
+Both shapes accept:
 
-- `runAt`: ISO date-time string or `Date`
-- `idempotencyKey`: caller-chosen dedupe key
+- `runAt`: optional ISO date-time string or `Date`; defaults to now
+- `idempotencyKey`: optional caller-chosen dedupe key; omitted keys create a
+  fresh run
 - `params`: optional JSON object passed to the workflow body
 
-Calling `create` again with the same dedupe fields returns the existing workflow
-instead of starting a duplicate. For inline code, repeat the same signed-in
-user, source type (`code`), workflow name (or the default `inline-code`),
-`idempotencyKey`, and `runAt`. For package exports, repeat the same signed-in
-user, package, workflow name (or export name fallback), `idempotencyKey`, and
-`runAt`. For example, retrying `code` with `idempotencyKey: "execute-smoke-123"`
-and `runAt: "2026-05-08T18:00:00.000Z"` returns the same workflow only when
-those dedupe fields are repeated. Kody enforces a per-user concurrent workflow
-limit (default: 100); if the cap is reached, `workflows.create` returns a clear
-quota error.
+Calling `create` again with the same explicit `idempotencyKey` for the same user
+returns the existing workflow instead of starting a duplicate. Choose keys that
+include the logical job identity, for example `storage-sweep:2026-05-08`. Kody
+enforces a per-user concurrent workflow limit (default: 100); if the cap is
+reached, `workflows.create` returns a clear quota error.
 
 Use `workflow_run_list` to inspect recent workflow runs and statuses.
 

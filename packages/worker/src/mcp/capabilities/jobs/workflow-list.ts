@@ -38,7 +38,7 @@ export const workflowListCapability = defineDomainCapability(
 	{
 		name: 'workflow_run_list',
 		description:
-			'List recent Cloudflare Workflow runs created through kody:runtime workflows.create, including source, status, and completion/error metadata.',
+			'List recent Cloudflare Workflow runs created through kody:runtime workflows.create for durable work that may outlive execute timeouts, including source, status, and completion/error metadata.',
 		keywords: [
 			'workflow',
 			'workflows',
@@ -47,6 +47,8 @@ export const workflowListCapability = defineDomainCapability(
 			'debug',
 			'status',
 			'background',
+			'timeout',
+			'migration',
 		],
 		readOnly: true,
 		idempotent: true,
