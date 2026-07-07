@@ -115,6 +115,7 @@ function createContext() {
 
 test('protected resource metadata and auth challenge resolve origin consistently', async () => {
 	const requestOrigin = 'https://example.com'
+	const workersDevOrigin = 'https://kody-production.kentcdodds.workers.dev'
 	const appBaseUrl = 'https://heykody.dev'
 
 	const requestOriginMetadataResponse = handleProtectedResourceMetadata(
@@ -125,17 +126,17 @@ test('protected resource metadata and auth challenge resolve origin consistently
 		buildProtectedResourceMetadata(requestOrigin),
 	)
 
+	// Request origin wins even when APP_BASE_URL is configured differently —
+	// MCP clients require resource metadata to match the URL they connected to.
 	const appBaseUrlMetadataResponse = handleProtectedResourceMetadata(
-		new Request(
-			`https://kody-production.kentcdodds.workers.dev${protectedResourceMetadataPath}`,
-		),
+		new Request(`${workersDevOrigin}${protectedResourceMetadataPath}`),
 		{
 			APP_BASE_URL: appBaseUrl,
 		} as Env,
 	)
 	expect(appBaseUrlMetadataResponse.status).toBe(200)
 	expect(await appBaseUrlMetadataResponse.json()).toEqual(
-		buildProtectedResourceMetadata(appBaseUrl),
+		buildProtectedResourceMetadata(workersDevOrigin),
 	)
 
 	const requestOriginUnauthorizedResponse = await handleMcpRequest({
@@ -151,9 +152,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 	)
 
 	const appBaseUrlUnauthorizedResponse = await handleMcpRequest({
-		request: new Request(
-			`https://kody-production.kentcdodds.workers.dev${mcpResourcePath}`,
-		),
+		request: new Request(`${workersDevOrigin}${mcpResourcePath}`),
 		env: createEnv(createHelpers(), {
 			APP_BASE_URL: appBaseUrl,
 		}),
@@ -163,7 +162,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 	expect(appBaseUrlUnauthorizedResponse.status).toBe(401)
 	expectAuthenticateHeader(
 		appBaseUrlUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
-		appBaseUrl,
+		workersDevOrigin,
 	)
 })
 

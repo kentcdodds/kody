@@ -75,10 +75,11 @@ automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
 - `SECRET_STORE_KEY` (required; generate with `openssl rand -base64 48`)
-- `APP_BASE_URL` (optional; defaults to request origin for most app URLs,
-  example `https://app.example.com`; also sets the canonical public origin used
-  for MCP auth metadata, generated UI resources, and email links. Password reset
-  email sends require this value and use `kody@<hostname>` as the sender.)
+- `APP_BASE_URL` (optional; used as the fallback public origin when no request
+  URL is available — e.g. workflows and email. Example `https://heykody.dev`.
+  Most request-scoped app/MCP URLs use the inbound request origin so OAuth
+  metadata matches the host the client connected to. Password reset email sends
+  require this value and use `kody@<hostname>` as the sender.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
 - `CLOUDFLARE_ACCOUNT_ID` (required for the Cloudflare Email Service REST API
@@ -121,8 +122,10 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `COOKIE_SECRET` (same format as local)
 - `SECRET_STORE_KEY` (same format as local; required for deploys)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
-  deploy as the canonical public app origin, the password-reset email sender
-  hostname, and written into the generated Worker `vars` config before deploy)
+  deploy as the fallback public app origin when no request URL is available —
+  workflows, password-reset email sender hostname — and written into the
+  generated Worker `vars` config before deploy. Request-scoped MCP/app URLs use
+  the inbound request origin.)
 - `AI_GATEWAY_ID` (optional for production deploys; enables AI Gateway routing
   for Workers AI embeddings)
 - `AI_GATEWAY_ID_PREVIEW` (optional for preview deploys; enables AI Gateway
@@ -152,12 +155,15 @@ How to get/set each value:
   - Generate locally: `openssl rand -hex 32`
   - Store the exact value as a repository secret in GitHub Actions.
 - `APP_BASE_URL` (optional)
-  - Use your production app URL (for example `https://app.example.com`).
+  - Use your production app URL (for example `https://heykody.dev`) as the
+    fallback public origin for workflows and password-reset email.
   - Add it when password reset email should send; the sender is derived as
     `kody@<hostname>`, so verify that sender/domain in Cloudflare Email Service.
   - It also lets deploy-time health/version checks use a fixed URL.
   - Production CI writes this into the generated Wrangler `vars` config before
     deploy, rather than syncing it as a Worker secret.
+  - Request-scoped MCP/app URLs use the inbound request origin so OAuth resource
+    metadata matches the host the client connected to.
   - Do not also upload `APP_BASE_URL` through `wrangler secret bulk` or pass it
     as a deploy-time `--var`, because Wrangler treats that as a conflicting
     binding name.

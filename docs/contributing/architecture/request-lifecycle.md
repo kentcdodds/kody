@@ -17,7 +17,10 @@ library’s built-in handler for that path advertises `resource` as the request
 our own metadata on that URL keeps the RFC 8707 `resource` value consistent for
 clients (e.g. some MCP stacks) that discover metadata from the 401
 `resource_metadata` URL and would otherwise get `invalid_target` at the token
-endpoint.
+endpoint. Protected-resource metadata and MCP auth challenges resolve the origin
+from the inbound request URL (via `getAppBaseUrl`) so clients connecting through
+`heykody.dev` or a workers.dev host get matching resource values. `APP_BASE_URL`
+is only the fallback for background work with no request URL.
 
 ## Routing order
 

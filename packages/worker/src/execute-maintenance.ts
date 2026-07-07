@@ -1,4 +1,5 @@
 import { exports as workerExports } from 'cloudflare:workers'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
 import { handleSecretMaintenanceRequest } from './maintenance-handler.ts'
 import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
@@ -22,7 +23,7 @@ export async function runExecuteSmokeCheck(env: Env) {
 		)
 	}
 
-	const origin = env.APP_BASE_URL?.trim() || 'https://heykody.dev'
+	const origin = getAppBaseUrl({ env })
 	const executor = createExecuteExecutor({
 		env,
 		exports: workerExports,

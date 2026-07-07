@@ -1022,7 +1022,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			env: this.env,
 			baseUrl: getAppBaseUrl({
 				env: this.env,
-				requestUrl: 'https://kody.invalid/',
 			}),
 			token: {
 				tokenId: packageWorkflowTokenId,
@@ -1070,7 +1069,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			createMcpCallerContext({
 				baseUrl: getAppBaseUrl({
 					env: this.env,
-					requestUrl: 'https://kody.invalid/',
 				}),
 				user: {
 					userId: payload.userId,
