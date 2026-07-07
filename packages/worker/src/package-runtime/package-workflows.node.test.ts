@@ -684,11 +684,39 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		}),
 	])
 
-	const preProjectionBinding = createStatefulWorkflowBinding()
 	const preProjectionDb = createWorkflowRunsDatabase()
+	const preProjectionInstances = new Map<string, WorkflowInstanceCreateOptions>()
+	const preProjectionCreate = vi.fn(
+		async (input: WorkflowInstanceCreateOptions) => {
+			expect([...preProjectionDb.workflowRuns.values()]).toEqual([
+				expect.objectContaining({
+					id: input.id,
+					idempotency_key: 'inline-pre-projection-key',
+					run_at: '2026-05-08T19:30:00.000Z',
+				}),
+			])
+			preProjectionInstances.set(input.id, input)
+			return {
+				id: input.id,
+				status: async () => ({ status: 'queued' }),
+			} as WorkflowInstance
+		},
+	)
+	const preProjectionGet = vi.fn(async (id: string) => {
+		if (!preProjectionInstances.has(id)) {
+			throw new Error('workflow instance does not exist')
+		}
+		return {
+			id,
+			status: async () => ({ status: 'waiting' }),
+		} as WorkflowInstance
+	})
 	const preProjectionEnv = {
 		APP_DB: preProjectionDb,
-		DYNAMIC_CALLABLE_WORKFLOWS: preProjectionBinding.workflow,
+		DYNAMIC_CALLABLE_WORKFLOWS: {
+			get: preProjectionGet,
+			create: preProjectionCreate,
+		} as unknown as Workflow,
 	} as Env
 	vi.useFakeTimers()
 	try {
@@ -701,7 +729,6 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 				idempotencyKey: 'inline-pre-projection-key',
 			},
 		})
-		preProjectionDb.workflowRuns.clear()
 		vi.setSystemTime(new Date('2026-05-08T19:31:00.000Z'))
 		const replayPreProjection = await createDynamicCallableWorkflow({
 			env: preProjectionEnv,
@@ -713,8 +740,9 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		})
 
 		expect(replayPreProjection.id).toBe(firstPreProjection.id)
-		expect(preProjectionBinding.create).toHaveBeenCalledTimes(1)
-		expect(preProjectionBinding.instances.size).toBe(1)
+		expect(replayPreProjection.run_at).toBe(firstPreProjection.run_at)
+		expect(preProjectionCreate).toHaveBeenCalledTimes(1)
+		expect(preProjectionInstances.size).toBe(1)
 	} finally {
 		vi.useRealTimers()
 	}

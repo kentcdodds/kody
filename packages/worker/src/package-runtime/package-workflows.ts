@@ -649,6 +649,20 @@ async function recordWorkflowRun(input: {
 		.run()
 }
 
+async function deleteWorkflowRun(input: {
+	db: D1Database
+	id: string
+	userId: string
+}) {
+	await input.db
+		.prepare(
+			`DELETE FROM workflow_runs
+			WHERE id = ? AND user_id = ?`,
+		)
+		.bind(input.id, input.userId)
+		.run()
+}
+
 async function updateWorkflowRunStatus(input: {
 	env: Env
 	id: string
@@ -780,6 +794,25 @@ export async function createDynamicCallableWorkflow(input: {
 		// workflow_runs projection row is written.
 		includeRunAt: !idempotencyKeyInput,
 	})
+	if (input.env.APP_DB) {
+		await assertWithinEntitlement({
+			db: input.env.APP_DB,
+			userId: payload.userId,
+			email: input.userEmail,
+			resource: 'concurrent_workflows',
+			fallbackLimit: getWorkflowConcurrencyBackstop(input.env as Env),
+		})
+	}
+	let preRecordedWorkflowRun = false
+	if (input.env.APP_DB && idempotencyKeyInput) {
+		await recordWorkflowRun({
+			db: input.env.APP_DB,
+			id,
+			payload,
+			status: 'queued',
+		})
+		preRecordedWorkflowRun = true
+	}
 	const existing = await getExistingWorkflowInstance(
 		input.env.DYNAMIC_CALLABLE_WORKFLOWS,
 		id,
@@ -794,15 +827,6 @@ export async function createDynamicCallableWorkflow(input: {
 			})
 		}
 		return createWorkflowCreateResult({ summary: existing, payload })
-	}
-	if (input.env.APP_DB) {
-		await assertWithinEntitlement({
-			db: input.env.APP_DB,
-			userId: payload.userId,
-			email: input.userEmail,
-			resource: 'concurrent_workflows',
-			fallbackLimit: getWorkflowConcurrencyBackstop(input.env as Env),
-		})
 	}
 	let instance: WorkflowInstance
 	try {
@@ -826,6 +850,13 @@ export async function createDynamicCallableWorkflow(input: {
 					payload,
 				})
 			}
+		}
+		if (preRecordedWorkflowRun && input.env.APP_DB) {
+			await deleteWorkflowRun({
+				db: input.env.APP_DB,
+				id,
+				userId: payload.userId,
+			})
 		}
 		throw error
 	}
