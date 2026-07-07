@@ -280,6 +280,9 @@ export async function createPackageWorkflowInstanceId(input: {
 	workflowName: string
 	idempotencyKey: string
 	runAt: string | Date
+	options?: {
+		includeRunAt?: boolean
+	}
 }) {
 	const canonical = canonicalJsonStringify({
 		userId: normalizeNonEmptyString(input.userId, 'userId'),
@@ -289,7 +292,9 @@ export async function createPackageWorkflowInstanceId(input: {
 			input.idempotencyKey,
 			'idempotencyKey',
 		),
-		runAt: normalizeRunAt(input.runAt),
+		...(input.options?.includeRunAt === false
+			? {}
+			: { runAt: normalizeRunAt(input.runAt) }),
 	})
 	return `pkgwf-${(await sha256Base64Url(canonical)).slice(0, 43)}`
 }
@@ -521,6 +526,9 @@ async function createInlineWorkflowInstanceId(input: {
 	workflowName: string
 	idempotencyKey: string
 	runAt: string | Date
+	options?: {
+		includeRunAt?: boolean
+	}
 }) {
 	const canonical = canonicalJsonStringify({
 		userId: normalizeNonEmptyString(input.userId, 'userId'),
@@ -530,18 +538,23 @@ async function createInlineWorkflowInstanceId(input: {
 			input.idempotencyKey,
 			'idempotencyKey',
 		),
-		runAt: normalizeRunAt(input.runAt),
+		...(input.options?.includeRunAt === false
+			? {}
+			: { runAt: normalizeRunAt(input.runAt) }),
 	})
 	return `dynwf-${(await sha256Base64Url(canonical)).slice(0, 43)}`
 }
 
 async function createDynamicCallableWorkflowInstanceId(
 	payload: DynamicCallableWorkflowPayload,
+	options?: {
+		includeRunAt?: boolean
+	},
 ) {
 	if (payload.sourceType === 'package') {
-		return await createPackageWorkflowInstanceId(payload)
+		return await createPackageWorkflowInstanceId({ ...payload, options })
 	}
-	return await createInlineWorkflowInstanceId(payload)
+	return await createInlineWorkflowInstanceId({ ...payload, options })
 }
 
 function mapWorkflowRunRow(
@@ -762,7 +775,11 @@ export async function createDynamicCallableWorkflow(input: {
 		}
 	}
 	const payload = await resolveWorkflowPayload(input)
-	const id = await createDynamicCallableWorkflowInstanceId(payload)
+	const id = await createDynamicCallableWorkflowInstanceId(payload, {
+		// An explicit idempotency key must single-flight even before the
+		// workflow_runs projection row is written.
+		includeRunAt: !idempotencyKeyInput,
+	})
 	const existing = await getExistingWorkflowInstance(
 		input.env.DYNAMIC_CALLABLE_WORKFLOWS,
 		id,

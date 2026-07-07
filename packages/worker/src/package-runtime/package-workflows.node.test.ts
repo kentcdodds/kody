@@ -684,6 +684,41 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		}),
 	])
 
+	const preProjectionBinding = createStatefulWorkflowBinding()
+	const preProjectionDb = createWorkflowRunsDatabase()
+	const preProjectionEnv = {
+		APP_DB: preProjectionDb,
+		DYNAMIC_CALLABLE_WORKFLOWS: preProjectionBinding.workflow,
+	} as Env
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-05-08T19:30:00.000Z'))
+		const firstPreProjection = await createDynamicCallableWorkflow({
+			env: preProjectionEnv,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'inline-pre-projection-key',
+			},
+		})
+		preProjectionDb.workflowRuns.clear()
+		vi.setSystemTime(new Date('2026-05-08T19:31:00.000Z'))
+		const replayPreProjection = await createDynamicCallableWorkflow({
+			env: preProjectionEnv,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'inline-pre-projection-key',
+			},
+		})
+
+		expect(replayPreProjection.id).toBe(firstPreProjection.id)
+		expect(preProjectionBinding.create).toHaveBeenCalledTimes(1)
+		expect(preProjectionBinding.instances.size).toBe(1)
+	} finally {
+		vi.useRealTimers()
+	}
+
 	const perUserBinding = createStatefulWorkflowBinding()
 	const userOne = await createDynamicCallableWorkflow({
 		env: {
