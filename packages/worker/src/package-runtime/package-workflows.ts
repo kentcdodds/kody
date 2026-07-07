@@ -142,6 +142,7 @@ type DynamicCallableWorkflowStep = {
 const packageWorkflowTokenId = 'internal:package-workflows'
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
 const workflowStatusRefreshTtlMs = 30_000
+const creatingWorkflowRunStatus = 'creating'
 const knownWorkflowStatusValues = [
 	...activeWorkflowStatusValues,
 	...terminalWorkflowStatusValues,
@@ -512,10 +513,11 @@ async function findWorkflowRunByIdempotencyKey(input: {
 			`SELECT *
 			FROM workflow_runs
 			WHERE user_id = ? AND idempotency_key = ?
+				AND COALESCE(status, '') != ?
 			ORDER BY created_at ASC
 			LIMIT 1`,
 		)
-		.bind(input.userId, trimmedKey)
+		.bind(input.userId, trimmedKey, creatingWorkflowRunStatus)
 		.first<Record<string, unknown>>()
 	if (!result) return null
 	return mapWorkflowRunRow(result)
@@ -792,6 +794,14 @@ export async function createDynamicCallableWorkflow(input: {
 				payload,
 				status: existing.status ?? null,
 			})
+			if (idempotencyKeyInput) {
+				const projectedRun = await findWorkflowRunByIdempotencyKey({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					idempotencyKey: idempotencyKeyInput,
+				})
+				if (projectedRun) return createWorkflowCreateResultFromRow(projectedRun)
+			}
 		}
 		return createWorkflowCreateResult({ summary: existing, payload })
 	}
@@ -809,7 +819,7 @@ export async function createDynamicCallableWorkflow(input: {
 			db: input.env.APP_DB,
 			id,
 			payload,
-			status: 'queued',
+			status: creatingWorkflowRunStatus,
 		})
 	}
 	let instance: WorkflowInstance
@@ -829,6 +839,24 @@ export async function createDynamicCallableWorkflow(input: {
 				id,
 			)
 			if (concurrent) {
+				if (input.env.APP_DB) {
+					await recordWorkflowRun({
+						db: input.env.APP_DB,
+						id,
+						payload,
+						status: concurrent.status ?? null,
+					})
+					if (idempotencyKeyInput) {
+						const projectedRun = await findWorkflowRunByIdempotencyKey({
+							db: input.env.APP_DB,
+							userId: input.userId,
+							idempotencyKey: idempotencyKeyInput,
+						})
+						if (projectedRun) {
+							return createWorkflowCreateResultFromRow(projectedRun)
+						}
+					}
+				}
 				return createWorkflowCreateResult({
 					summary: concurrent,
 					payload,
@@ -853,6 +881,14 @@ export async function createDynamicCallableWorkflow(input: {
 			payload,
 			status: summary.status,
 		})
+	}
+	if (input.env.APP_DB && idempotencyKeyInput) {
+		const projectedRun = await findWorkflowRunByIdempotencyKey({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			idempotencyKey: idempotencyKeyInput,
+		})
+		if (projectedRun) return createWorkflowCreateResultFromRow(projectedRun)
 	}
 	return createWorkflowCreateResult({ summary, payload })
 }

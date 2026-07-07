@@ -147,11 +147,17 @@ function createWorkflowRunsDatabase(options?: {
 							) {
 								const userId = params[0]
 								const idempotencyKey = params[1]
+								const ignoredStatus = query.includes(
+									"COALESCE(status, '') != ?",
+								)
+									? params[2]
+									: null
 								const matches = [...workflowRuns.values()]
 									.filter(
 										(row) =>
 											row['user_id'] === userId &&
-											row['idempotency_key'] === idempotencyKey,
+											row['idempotency_key'] === idempotencyKey &&
+											row['status'] !== ignoredStatus,
 									)
 									.sort((left, right) =>
 										String(left['created_at']).localeCompare(
@@ -178,24 +184,34 @@ function createWorkflowRunsDatabase(options?: {
 						},
 						async run() {
 							if (query.includes('INSERT INTO workflow_runs')) {
-								workflowRuns.set(String(params[0]), {
-									id: params[0],
-									user_id: params[1],
-									source_type: params[2],
-									package_id: params[3],
-									kody_id: params[4],
-									source_id: params[5],
-									workflow_name: params[6],
-									export_name: params[7],
-									idempotency_key: params[8],
-									run_at: params[9],
-									plan_date: params[10],
-									status: params[11],
-									created_at: params[12],
-									updated_at: params[13],
-									completed_at: params[14],
-									last_error: params[15],
-								})
+								const id = String(params[0])
+								const existing = workflowRuns.get(id)
+								if (existing) {
+									existing['status'] = params[11]
+									existing['updated_at'] = params[13]
+									existing['completed_at'] =
+										params[14] ?? existing['completed_at']
+									existing['last_error'] = params[15] ?? existing['last_error']
+								} else {
+									workflowRuns.set(id, {
+										id: params[0],
+										user_id: params[1],
+										source_type: params[2],
+										package_id: params[3],
+										kody_id: params[4],
+										source_id: params[5],
+										workflow_name: params[6],
+										export_name: params[7],
+										idempotency_key: params[8],
+										run_at: params[9],
+										plan_date: params[10],
+										status: params[11],
+										created_at: params[12],
+										updated_at: params[13],
+										completed_at: params[14],
+										last_error: params[15],
+									})
+								}
 							}
 							if (query.includes('UPDATE workflow_runs')) {
 								const row = workflowRuns.get(String(params[2]))
@@ -696,6 +712,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 					id: input.id,
 					idempotency_key: 'inline-pre-projection-key',
 					run_at: '2026-05-08T19:30:00.000Z',
+					status: 'creating',
 				}),
 			])
 			preProjectionInstances.set(input.id, input)
@@ -768,6 +785,79 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		status: 'waiting',
 	})
 	expect(existingOverLimitBinding.create).not.toHaveBeenCalled()
+
+	const failedCreateDb = createWorkflowRunsDatabase()
+	const failedCreateInstances = new Map<string, WorkflowInstanceCreateOptions>()
+	let shouldFailCreate = true
+	const retryCreate = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
+		if (shouldFailCreate) {
+			shouldFailCreate = false
+			throw new Error('transient workflow create failure')
+		}
+		failedCreateInstances.set(input.id, input)
+		return {
+			id: input.id,
+			status: async () => ({ status: 'queued' }),
+		} as WorkflowInstance
+	})
+	const retryGet = vi.fn(async (id: string) => {
+		if (!failedCreateInstances.has(id)) {
+			throw new Error('workflow instance does not exist')
+		}
+		return {
+			id,
+			status: async () => ({ status: 'waiting' }),
+		} as WorkflowInstance
+	})
+	const failedCreateEnv = {
+		APP_DB: failedCreateDb,
+		DYNAMIC_CALLABLE_WORKFLOWS: {
+			get: retryGet,
+			create: retryCreate,
+		} as unknown as Workflow,
+	} as Env
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-05-08T19:30:00.000Z'))
+		await expect(
+			createDynamicCallableWorkflow({
+				env: failedCreateEnv,
+				userId: 'user-1',
+				body: {
+					code: 'export default async function main() { return { ok: true } }',
+					idempotencyKey: 'failed-create-retry-key',
+				},
+			}),
+		).rejects.toThrow('transient workflow create failure')
+		expect([...failedCreateDb.workflowRuns.values()]).toEqual([
+			expect.objectContaining({
+				idempotency_key: 'failed-create-retry-key',
+				run_at: '2026-05-08T19:30:00.000Z',
+				status: 'creating',
+			}),
+		])
+		vi.setSystemTime(new Date('2026-05-08T19:31:00.000Z'))
+		const retryAfterFailure = await createDynamicCallableWorkflow({
+			env: failedCreateEnv,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'failed-create-retry-key',
+			},
+		})
+
+		expect(retryAfterFailure.run_at).toBe('2026-05-08T19:30:00.000Z')
+		expect(retryCreate).toHaveBeenCalledTimes(2)
+		expect([...failedCreateDb.workflowRuns.values()]).toEqual([
+			expect.objectContaining({
+				idempotency_key: 'failed-create-retry-key',
+				run_at: '2026-05-08T19:30:00.000Z',
+				status: 'queued',
+			}),
+		])
+	} finally {
+		vi.useRealTimers()
+	}
 
 	const perUserBinding = createStatefulWorkflowBinding()
 	const userOne = await createDynamicCallableWorkflow({
