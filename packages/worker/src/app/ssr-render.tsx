@@ -7,6 +7,7 @@ import {
 	buildStylesheetHref,
 	getClientBuildId,
 } from '#app/client-build-id.ts'
+import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
 import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
@@ -38,6 +39,9 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		status,
 		extraSetCookies,
 	} = input
+	// OAuth authorize (and any SSR entry) can run outside appHandler, so configure
+	// the session cookie before reading request cookies.
+	setAuthSessionSecret(getEnv(env).COOKIE_SECRET)
 	const { session, setCookie } = await loadSessionInfo(request, env)
 	const requestUrl = new URL(request.url)
 	const url = getRequestUrl(request)

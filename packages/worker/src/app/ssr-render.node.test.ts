@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import {
 	createAuthCookie,
+	resetAuthSessionSecretForTests,
 	setAuthSessionSecret,
 	type AuthSession,
 } from '#app/auth-session.ts'
@@ -278,4 +279,29 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(readAppRootProps(resetConfirmHtml).url).toBe(
 		'/reset-password?token=reset-token',
 	)
+})
+
+test('renderAppPage configures session secret before reading cookies', async () => {
+	resetDataCacheForTests()
+	resetAuthSessionSecretForTests()
+	const env = createTestEnv(createUserTestDb([]))
+
+	const response = await renderAppPage({
+		request: new Request('https://example.com/oauth/authorize', {
+			headers: { Cookie: 'kody_session=stale-or-unsigned; other=1' },
+		}),
+		env,
+		loaderData: {
+			oauthAuthorize: {
+				ok: true,
+				client: { id: 'client-1', name: 'Cursor' },
+				scopes: ['profile', 'email'],
+			},
+		},
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('Authorize access')
+	expect(html).not.toContain('OAuth authorization failed')
 })

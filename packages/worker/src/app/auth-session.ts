@@ -44,6 +44,12 @@ export function setAuthSessionSecret(secret: string) {
 	})
 }
 
+/** Clears configured session cookie state so SSR entry points re-initialize. */
+export function resetAuthSessionSecretForTests() {
+	sessionCookie = null
+	sessionSecret = null
+}
+
 function getSessionCookie() {
 	if (!sessionCookie) {
 		throw new Error('Session cookie not configured. Call setAuthSessionSecret.')
