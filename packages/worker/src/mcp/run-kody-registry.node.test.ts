@@ -12,10 +12,7 @@ import {
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
-import {
-	createKodyProviderProxySource,
-	createToolDispatchers,
-} from '#mcp/executor.ts'
+import * as mcpExecutor from '#mcp/executor.ts'
 import { type KodyResolvedProvider } from '#mcp/kody-remote-types.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
@@ -219,6 +216,108 @@ export default async function run() {
 			workflowName: 'custom',
 		})
 	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
+test('runModuleWithRegistry queues inline workflows.create calls without runAt or idempotencyKey', async () => {
+	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const env = {
+		APP_DB: {
+			prepare(query: string) {
+				return {
+					bind() {
+						return {
+							async first() {
+								if (query.includes('COUNT(*) AS count')) return { count: 0 }
+								return null
+							},
+							async run() {
+								return { success: true }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as D1Database,
+		DYNAMIC_CALLABLE_WORKFLOWS: {
+			get: async () => {
+				throw new Error('not found')
+			},
+			create: async (options?: WorkflowInstanceCreateOptions<unknown>) => {
+				if (!options) throw new Error('missing options')
+				created.push(options)
+				return {
+					id: options.id ?? 'generated',
+					status: async () => ({ status: 'queued' }),
+				} as WorkflowInstance
+			},
+		} as Workflow<unknown>,
+	} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://app.example.com',
+		user: {
+			userId: 'user-1',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+		storageContext: null,
+	})
+	let wrappedSource = ''
+	const createExecuteExecutorSpy = vi
+		.spyOn(mcpExecutor, 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(_wrapped, providers) {
+				wrappedSource = String(_wrapped)
+				const provider = providers[0] as {
+					fns: Record<string, (args: unknown) => Promise<unknown>>
+				}
+				return {
+					result: await provider.fns.package_workflow_create({
+						code: 'export default async function main() { return { ok: true } }',
+					}),
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		vi.useFakeTimers()
+		vi.setSystemTime(new Date('2026-05-03T12:34:56.000Z'))
+		const result = await runModuleWithRegistry(
+			env,
+			callerContext,
+			`import { workflows } from 'kody:runtime'
+export default async function main() {
+  return await workflows.create({ code: \`export default async function main() { return { ok: true } }\` })
+}`,
+		)
+
+		expect(result.result).toMatchObject({
+			ok: true,
+			source_type: 'inline',
+			workflow_name: 'inline-code',
+			export_name: null,
+			run_at: '2026-05-03T12:34:56.000Z',
+			plan_date: '2026-05-03',
+			status: 'queued',
+		})
+		expect(wrappedSource).toContain('const workflows = {')
+		expect(wrappedSource).toContain('kody.package_workflow_create')
+		expect(created).toHaveLength(1)
+		expect(created[0]?.params).toEqual(
+			expect.objectContaining({
+				sourceType: 'inline',
+				userId: 'user-1',
+				workflowName: 'inline-code',
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: expect.stringMatching(/^generated:/),
+				runAt: '2026-05-03T12:34:56.000Z',
+				planDate: '2026-05-03',
+			}),
+		)
+	} finally {
+		vi.useRealTimers()
 		createExecuteExecutorSpy.mockRestore()
 	}
 })
@@ -1006,8 +1105,10 @@ test('remote connector calls round-trip through sanitized ToolDispatcher names',
 			dispatchName: 'remotelightinglutron_set_credentials',
 		}),
 	])
-	const dispatchers = createToolDispatchers([provider], { active: true })
-	const source = createKodyProviderProxySource({
+	const dispatchers = mcpExecutor.createToolDispatchers([provider], {
+		active: true,
+	})
+	const source = mcpExecutor.createKodyProviderProxySource({
 		providerName: provider.name,
 		remoteConnectors,
 	})

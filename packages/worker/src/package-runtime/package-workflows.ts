@@ -28,8 +28,8 @@ export type PackageWorkflowParams = Record<string, unknown>
 
 type WorkflowCreateBaseInput = {
 	workflowName?: string
-	runAt: string | Date
-	idempotencyKey: string
+	runAt?: string | Date
+	idempotencyKey?: string
 	params?: PackageWorkflowParams
 }
 
@@ -234,8 +234,13 @@ function normalizeOptionalWorkflowName(
 	return workflowName?.trim() || fallback
 }
 
-function normalizeRunAt(runAt: string | Date) {
-	const date = typeof runAt === 'string' ? new Date(runAt) : runAt
+function normalizeRunAt(runAt: string | Date | undefined) {
+	const date =
+		runAt === undefined
+			? new Date()
+			: typeof runAt === 'string'
+				? new Date(runAt)
+				: runAt
 	if (Number.isNaN(date.getTime())) {
 		throw new Error('runAt must be a valid date or ISO string.')
 	}
@@ -293,16 +298,24 @@ export function createPackageWorkflowPlanDate(runAt: string | Date) {
 	return normalizeRunAt(runAt).slice(0, 'YYYY-MM-DD'.length)
 }
 
+function normalizeWorkflowIdempotencyKey(idempotencyKey: string | undefined) {
+	if (idempotencyKey !== undefined) {
+		return normalizeNonEmptyString(idempotencyKey, 'idempotencyKey')
+	}
+	return `generated:${crypto.randomUUID()}`
+}
+
 function createInlineWorkflowPayload(input: {
 	userId: string
 	workflowName?: string
 	code: string
-	idempotencyKey: string
-	runAt: string | Date
+	idempotencyKey?: string
+	runAt?: string | Date
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
 }): DynamicCallableWorkflowPayload {
 	const runAt = normalizeRunAt(input.runAt)
+	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
 	const params = normalizePackageWorkflowParams(input.params)
 	return {
 		version: 2,
@@ -313,10 +326,7 @@ function createInlineWorkflowPayload(input: {
 			'inline-code',
 		),
 		code: normalizeNonEmptyString(input.code, 'code'),
-		idempotencyKey: normalizeNonEmptyString(
-			input.idempotencyKey,
-			'idempotencyKey',
-		),
+		idempotencyKey,
 		runAt,
 		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
 		...(params === undefined ? {} : { params }),
@@ -330,12 +340,13 @@ function createDynamicPackageWorkflowPayload(input: {
 	sourceId: string
 	workflowName?: string
 	exportName: string
-	idempotencyKey: string
-	runAt: string | Date
+	idempotencyKey?: string
+	runAt?: string | Date
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
 }): DynamicCallableWorkflowPayload {
 	const runAt = normalizeRunAt(input.runAt)
+	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
 	const params = normalizePackageWorkflowParams(input.params)
 	const workflowName = normalizeNonEmptyString(
 		normalizeOptionalWorkflowName(input.workflowName, input.exportName),
@@ -350,10 +361,7 @@ function createDynamicPackageWorkflowPayload(input: {
 		sourceId: normalizeNonEmptyString(input.sourceId, 'sourceId'),
 		workflowName,
 		exportName: normalizeWorkflowExportName(input.exportName),
-		idempotencyKey: normalizeNonEmptyString(
-			input.idempotencyKey,
-			'idempotencyKey',
-		),
+		idempotencyKey,
 		runAt,
 		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
 		...(params === undefined ? {} : { params }),
