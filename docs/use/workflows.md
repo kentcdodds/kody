@@ -6,8 +6,8 @@ subscriptions, package exports, and package services.
 
 Use workflows instead of plain `execute` for durable batch sweeps, migrations,
 polling loops, retryable steps, or work that may run longer than execute's
-timeout. The initial `execute` call only queues the workflow; inspect it later
-with `workflow_run_list`.
+timeout. The initial `execute` call should submit one `workflows.create`;
+inspect that workflow later with `workflow_run_list`.
 
 ```ts
 import { workflows } from 'kody:runtime'
@@ -45,11 +45,12 @@ Both shapes accept:
   fresh run
 - `params`: optional JSON object passed to the workflow body
 
-Calling `create` again with the same explicit `idempotencyKey` for the same user
-returns the existing workflow instead of starting a duplicate. Choose keys that
-include the logical job identity, for example `storage-sweep:2026-05-08`. Kody
-enforces a per-user concurrent workflow limit (default: 100); if the cap is
-reached, `workflows.create` returns a clear quota error.
+Calling `create` again with the same explicit `idempotencyKey` and matching
+workflow identity for the same user returns the existing workflow instead of
+starting a duplicate. Choose keys that include the logical job identity, for
+example `storage-sweep:2026-05-08`. Kody enforces a per-user concurrent workflow
+limit (default: 100); if the cap is reached, `workflows.create` returns a clear
+quota error.
 
 Use `workflow_run_list` to inspect recent workflow runs and statuses.
 
