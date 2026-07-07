@@ -120,6 +120,14 @@ test('package app workflows proxy validates required workflow input fields', asy
 	})
 	await expect(
 		workflows.create({
+			exportName: './run-event',
+			code: '',
+		}),
+	).resolves.toEqual({
+		exportName: './run-event',
+	})
+	await expect(
+		workflows.create({
 			workflowName: 'shade-event',
 			exportName: './run-event',
 			runAt: 'not-a-date',
@@ -157,6 +165,16 @@ test('package app workflows proxy forwards inline code workflow input', async ()
 		runAt: new Date('2026-05-03T12:00:00.000Z'),
 		idempotencyKey: 'event-key',
 		params: { eventId: 'event-1' },
+	})
+
+	await expect(
+		workflows.create({
+			code,
+			params: { eventId: 'event-2' },
+		}),
+	).resolves.toEqual({
+		code,
+		params: { eventId: 'event-2' },
 	})
 })
 

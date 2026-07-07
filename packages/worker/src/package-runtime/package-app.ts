@@ -266,13 +266,11 @@ function createWorkflowsProxy(runtimeBridge) {
 		const value = input?.[fieldName];
 		return typeof value === 'string' && value.trim() ? value : null;
 	};
-	const normalizeRequiredString = (input, fieldName) => {
-		const value = normalizeOptionalString(input, fieldName);
-		if (!value) throw new Error('workflows.create requires a non-empty ' + fieldName + '.');
-		return value;
-	};
 	const normalizeRunAt = (input) => {
 		const value = input?.runAt;
+		if (value === undefined || value === null || value === '') {
+			return null;
+		}
 		const date =
 			value instanceof Date
 				? value
@@ -300,9 +298,11 @@ function createWorkflowsProxy(runtimeBridge) {
 			}
 			const workflowName = normalizeOptionalString(input, 'workflowName');
 			const packageId = normalizeOptionalString(input, 'packageId');
+			const runAt = normalizeRunAt(input);
+			const idempotencyKey = normalizeOptionalString(input, 'idempotencyKey');
 			const payload = {
-				runAt: normalizeRunAt(input),
-				idempotencyKey: normalizeRequiredString(input, 'idempotencyKey'),
+				...(runAt ? { runAt } : {}),
+				...(idempotencyKey ? { idempotencyKey } : {}),
 				...(input.params === undefined ? {} : { params: input.params }),
 				...(workflowName ? { workflowName } : {}),
 				...(packageId ? { packageId } : {}),
