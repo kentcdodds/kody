@@ -807,7 +807,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.community_bans).toBe(1)
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedKvKeys).toBe(11)
-	expect(result.deletedVectors).toBe(4)
+	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,
 		jobManagers: 1,
