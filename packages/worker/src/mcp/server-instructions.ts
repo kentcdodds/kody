@@ -78,6 +78,7 @@ Conventions
 - Package services are inspected and controlled through \`service_list\`, \`service_get\`, \`service_start\`, and \`service_stop\`.
 - Memory writes are verify-first: always run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`. Kody retrieves related memories; the consuming agent decides whether to upsert, delete, both, or do nothing. \`meta_memory_upsert\` creates a new memory when \`memory_id\` is omitted and updates an existing memory when \`memory_id\` is provided.
 - User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions (reconnect to refresh what the host shows).
+- Kody friction: when capabilities, packages, memories, or guides create avoidable friction, call \`coding_guide_get\` with \`guide: "platform_friction"\`; mention the friction to the user, ask before memory changes, and make obvious local docs/package improvements when already in scope.
 
 Kody repository (for contributors): https://github.com/kentcdodds/kody
 
