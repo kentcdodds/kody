@@ -57,6 +57,7 @@ import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
 
 export {
 	RepoSession,
@@ -535,7 +536,13 @@ const workerHandler = {
 	) {
 		const baseUrl = env.APP_BASE_URL ?? 'https://kody.local'
 		const scheduledAt = new Date(controller.scheduledTime)
-		const [pushesResult, cleanupResult, systemEmailResult] =
+		const retentionPromise = shouldRunRetentionCron(scheduledAt)
+			? pruneRetention({
+					env,
+					now: scheduledAt,
+				})
+			: Promise.resolve(null)
+		const [pushesResult, cleanupResult, systemEmailResult, retentionResult] =
 			await Promise.allSettled([
 				reconcileArtifactsPushes({
 					env,
@@ -550,10 +557,12 @@ const workerHandler = {
 					db: env.APP_DB,
 					now: scheduledAt,
 				}),
+				retentionPromise,
 			])
 		if (pushesResult.status === 'rejected') throw pushesResult.reason
 		if (cleanupResult.status === 'rejected') throw cleanupResult.reason
 		if (systemEmailResult.status === 'rejected') throw systemEmailResult.reason
+		if (retentionResult.status === 'rejected') throw retentionResult.reason
 	},
 } satisfies ExportedHandler<Env>
 

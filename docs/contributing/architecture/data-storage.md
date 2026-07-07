@@ -549,15 +549,49 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 Do not change this grammar or static/dynamic distinction without a user-code
 migration plan.
 
-### Growth and retention watch list
+### Growth and retention policies
 
-These tables can grow without a built-in retention policy beyond account
-deletion or narrow cleanup paths: `audit_events`, user-owned `email_messages`
-and related email tables, `package_runtime_runs`, `package_runtime_logs`,
-`workflow_runs`, `package_invocations`, and old published bundle/KV artifacts.
-System email rows under `system:email` are the email exception: cron prunes
-messages and delivery events older than 90 days, deletes stale
-`system_email_daily_counters`, and caps stored system messages at 5000. User
-email retention is still account-deletion scoped. `usage_rollups` is bounded by
-`(user_id, metric, month)`, while raw Analytics Engine usage events follow
-platform retention.
+The Worker scheduled handler runs every five minutes, but
+`packages/worker/src/app/retention.ts` gates the general retention job to the
+top of the hour and deletes at most one configured batch per table each time.
+This keeps D1 single-writer pressure bounded when a backlog exists; progress is
+reported with a one-line `retention-prune` log. The retention module owns the
+named constants and manifest, and
+`packages/worker/src/app/retention.node.test.ts` fails if a future
+growth-pattern D1 table is added without either a policy or a documented
+exemption.
+
+Current retention policies:
+
+- `package_runtime_runs` / `package_runtime_logs`: keep 30 days of debug runs
+  and at most 500 runs per `(user_id, package_id)`. Logs are deleted before
+  their runs, and orphan logs are pruned separately. Rows with
+  `status = 'running'`, active invocation/workflow/session references, or a
+  running child debug run are kept.
+- `package_invocations`: keep terminal idempotency rows for 90 days. Rows with
+  `status = 'in_progress'` are never pruned so duplicate requests cannot bypass
+  the in-flight guard.
+- `mcp_memory_conversation_suppressions`: keep active suppressions and prune
+  expired rows only after they have not been seen for 90 days. The existing
+  request-time memory prune may remove expired rows sooner.
+- `workflow_runs`: keep terminal projections (`complete`, `errored`,
+  `terminated`) for 90 days based on `completed_at` / `updated_at` /
+  `created_at`. Non-terminal workflow rows are never pruned by retention.
+- `published_bundle_artifacts`: delete D1 rows and their `BUNDLE_ARTIFACTS_KV`
+  blobs only when the row is older than 30 days, its `published_commit` is no
+  longer current for any matching `entity_sources` row, and there is no active
+  repo session for the source. Ambiguous publish/edit cases are intentionally
+  kept.
+- `email_delivery_events`: user-owned delivery events keep 90 days. System email
+  rows under `system:email` remain governed by the system-email retention job,
+  which prunes messages and delivery events older than 90 days, deletes stale
+  `system_email_daily_counters`, and caps stored system messages at 5000.
+- `audit_events`: global hashed auth/security audit events keep 180 days. They
+  are not user-owned D1 rows and remain independent of account deletion/export.
+
+`email_messages` and related user inbox tables remain account-deletion scoped;
+the scheduled policy currently bounds delivery/audit metadata, not user message
+history. `usage_rollups` is bounded by `(user_id, metric, month)`, while raw
+Analytics Engine usage events follow platform retention.
+`archived_job_artifacts` is explicitly exempt from the retention manifest
+because job artifact cleanup is driven by each row's `retain_until` value.
