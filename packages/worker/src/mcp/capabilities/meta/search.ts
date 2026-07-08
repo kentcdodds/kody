@@ -2,8 +2,6 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
-import { listValues } from '#mcp/values/service.ts'
 import {
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
@@ -14,7 +12,6 @@ import {
 	resolveConversationId,
 } from '#mcp/tools/tool-call-context.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 
 const defaultSearchLimit = 15
 const maxSearchLimit = 100
@@ -49,64 +46,16 @@ function normalizeLimit(limit: number | undefined) {
 	return Math.max(1, Math.min(Math.floor(limit), maxSearchLimit))
 }
 
-function serializeRemoteConnectorStatus(status: {
-	connectorId?: string | null
-	state: string
-	connected: boolean
-	toolCount: number
-}) {
-	return {
-		connectorId: status.connectorId ?? 'unknown',
-		state: status.state,
-		connected: status.connected,
-		toolCount: status.toolCount,
-	}
-}
-
 async function loadSearchRows(input: {
 	ctx: CapabilityContext
 	userId: string | null
 }) {
-	const { env, callerContext } = input.ctx
-	const { getCapabilityRegistryForContext } =
-		await import('#mcp/capabilities/registry.ts')
-	const { buildSavedPackageSearchRows, loadOptionalSearchRows } =
-		await import('#mcp/tools/search.ts')
-	const [registry, optionalRows] = await Promise.all([
-		getCapabilityRegistryForContext({ env, callerContext }),
-		loadOptionalSearchRows({
-			userId: input.userId,
-			loadPackages: async () => {
-				const savedPackages = await listSavedPackagesByUserId(env.APP_DB, {
-					userId: input.userId!,
-				})
-				return await buildSavedPackageSearchRows({
-					env,
-					baseUrl: callerContext.baseUrl,
-					userId: input.userId!,
-					records: savedPackages,
-				})
-			},
-			loadUserSecrets: () =>
-				listUserSecretsForSearch({
-					env,
-					userId: input.userId!,
-				}),
-			loadUserValues: () =>
-				listValues({
-					env,
-					userId: input.userId!,
-					storageContext: {
-						sessionId: callerContext.storageContext?.sessionId ?? null,
-						appId: callerContext.storageContext?.appId ?? null,
-					},
-				}),
-		}),
-	])
-	return {
-		registry,
-		...optionalRows,
-	}
+	const { loadSearchRowsAndRegistry } = await import('#mcp/tools/search.ts')
+	return await loadSearchRowsAndRegistry({
+		env: input.ctx.env,
+		callerContext: input.ctx.callerContext,
+		userId: input.userId,
+	})
 }
 
 async function runPackageRetrieverSearch(input: {
@@ -199,6 +148,7 @@ export const searchCapability = defineDomainCapability(
 				loadDownRemoteConnectorStatuses,
 				resolveSearchMemoryContext,
 				searchUnified,
+				serializeRemoteConnectorStatus,
 			} = await import('#mcp/tools/search.ts')
 			const result = await searchUnified({
 				env: ctx.env,

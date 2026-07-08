@@ -656,7 +656,12 @@ async function buildKodyMcpServerMetadata(input: {
 		const refs = await listEnabledMcpServerRefs({
 			env: input.env,
 			userId,
-		}).catch(() => [])
+		}).catch((error: unknown) => {
+			// Degrade to "no MCP servers" but leave a trail: silently losing
+			// kody.mcp[...] accessors is very hard to debug otherwise.
+			console.warn('mcp-server-refs-load-failed', error)
+			return []
+		})
 		for (const ref of refs) {
 			const name = mcpServerKodyName(ref)
 			const status = await getMcpServerStatus({
