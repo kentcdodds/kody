@@ -70,6 +70,10 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page).toHaveURL(/\/admin\/users\/?$/)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
 	await expect(page.getByText('Unable to load admin users.')).toHaveCount(0)
+	// The detail panel must render the auto-selected user after SPA
+	// navigation (regression: preloaded loader data consumed mid-render left
+	// derivations from pre-navigation state on screen).
+	await expect(page.getByText('Account metadata only')).toBeVisible()
 	expect(
 		await page.evaluate(
 			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,

@@ -247,10 +247,9 @@ export function AdminUsersRoute(handle: Handle) {
 			lastSeenHref = currentHref
 			lastFailedHref = null
 		}
-		const totalPages = Math.max(1, Math.ceil(total / pageSize))
-		const selectedUser = getSelectedUser()
-		const isMutating = actionState !== 'idle'
-
+		// Consume route-loader data before deriving `totalPages` and
+		// `selectedUser`; deriving first would render this pass from the
+		// stale pre-navigation closure state.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
 		// href change; the stale marker forces the fallback refetch.
@@ -267,6 +266,10 @@ export function AdminUsersRoute(handle: Handle) {
 			loadingForHref = currentHref
 			handle.queueTask(loadAdminUsers)
 		}
+
+		const totalPages = Math.max(1, Math.ceil(total / pageSize))
+		const selectedUser = getSelectedUser()
+		const isMutating = actionState !== 'idle'
 
 		return (
 			<AccountManagementShell>

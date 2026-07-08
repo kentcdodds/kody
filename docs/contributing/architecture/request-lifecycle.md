@@ -107,6 +107,12 @@ loader finishes (or is skipped when no loader matches) does the router commit
 the URL change and notify subscribers. Route components consume that payload
 synchronously on first render via `tryConsumeRouteLoaderData`, so the UI updates
 once with data already present instead of swapping routes into a loading state.
+Because consumption mutates route closure state mid-render, a successful consume
+also schedules one follow-up render of the consuming component (flushed in the
+same microtask, before paint); values a route derived before the consume call
+therefore cannot persist stale. Routes should still consume before deriving
+list/detail state — the follow-up render is a safety net, not the primary
+ordering contract.
 
 Route loaders are registered in `clientRouteLoaders` (`routes/index.tsx`) and
 matched with the same Remix route-pattern specificity as `clientRoutes`. Loaders
