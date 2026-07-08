@@ -724,6 +724,12 @@ async function deleteUserScopedRows(input: {
 					tableName = target.table
 					break
 				}
+				case 'db_user_target': {
+					sql = `DELETE FROM ${target.table} WHERE target = ?`
+					params = [String(input.dbUserId)]
+					tableName = target.table
+					break
+				}
 				case 'user_columns': {
 					sql = `DELETE FROM ${target.table} WHERE ${target.columns
 						.map((column) => `${column} = ?`)

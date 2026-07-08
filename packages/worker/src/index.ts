@@ -89,12 +89,15 @@ function shouldApplyLongLivedAssetCaching(pathname: string, env: Env) {
 
 // Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
 // so brute-force attempts cannot fan out across parallel paths (password login,
-// OAuth inline login, password-reset request, and password-reset confirm).
+// OAuth inline login, password-reset request/confirm, two-factor code
+// verification, and passkey sign-in).
 const rateLimitedAuthPaths = new Set([
 	'/auth',
 	'/oauth/authorize',
 	'/password-reset',
 	'/password-reset/confirm',
+	'/verify/2fa.json',
+	'/webauthn/authentication',
 ])
 
 function isNamespacedPackageInvocationEndpointPath(pathname: string) {

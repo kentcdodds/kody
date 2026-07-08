@@ -36,6 +36,7 @@ const redactedColumnsByTable: Readonly<Record<string, ReadonlyArray<string>>> =
 		remote_connector_settings: ['encrypted_shared_secret'],
 		secret_entries: ['encrypted_value', 'lookup_hash'],
 		users: ['password_hash'],
+		verifications: ['secret'],
 	}
 
 export const accountExportSectionNames = [
@@ -272,6 +273,13 @@ function buildSelectForTarget(input: {
 				table: target.table,
 				sql: `SELECT * FROM ${target.table} WHERE user_id = ?`,
 				params: [input.dbUserId],
+			}
+		}
+		case 'db_user_target': {
+			return {
+				table: target.table,
+				sql: `SELECT * FROM ${target.table} WHERE target = ?`,
+				params: [String(input.dbUserId)],
 			}
 		}
 		case 'user_columns': {

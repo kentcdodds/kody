@@ -1,6 +1,11 @@
 import { type Action } from 'remix/router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
 import { createAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import { isTwoFactorEnabled } from '#app/two-factor.ts'
+import {
+	createVerifySessionCookie,
+	setVerifySessionSecret,
+} from '#app/verify-session.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
@@ -450,6 +455,37 @@ export function createAuthHandler(appEnv: AppEnv) {
 				return Response.json(
 					{ error: 'Invalid email or password.' },
 					{ status: 401 },
+				)
+			}
+
+			// Two-factor accounts get a short-lived pending cookie instead of a
+			// session; the real session cookie is only issued once the TOTP code
+			// passes at POST /verify/2fa.json.
+			if (await isTwoFactorEnabled(appEnv.APP_DB, userRecord.id)) {
+				setVerifySessionSecret(appEnv.COOKIE_SECRET)
+				const verifyCookie = await createVerifySessionCookie(
+					{
+						id: String(userRecord.id),
+						email: normalizedEmail,
+						rememberMe,
+					},
+					isSecureRequest(request),
+				)
+				void logAuditEvent({
+					category: 'auth',
+					action: 'login_2fa_challenge',
+					result: 'success',
+					email: normalizedEmail,
+					ip: requestIp,
+					path: url.pathname,
+				})
+				return Response.json(
+					{ ok: true, mode: normalizedMode, requiresTwoFactor: true },
+					{
+						headers: {
+							'Set-Cookie': verifyCookie,
+						},
+					},
 				)
 			}
 

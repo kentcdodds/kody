@@ -20,6 +20,7 @@ import {
 } from '#worker/user-id.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
+import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import { getUsernameFormatValidationError } from '#app/username.ts'
@@ -832,6 +833,24 @@ export async function handleAuthorizeRequest(
 				reason: 'username_missing',
 			})
 			return respondAuthorizeError(request, 'Username is required.', 401)
+		}
+		// The inline OAuth password form has no TOTP step, so 2FA accounts must
+		// establish a browser session (which enforces the second factor) first.
+		if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
+			void logAuditEvent({
+				category: 'oauth',
+				action: 'authorize',
+				result: 'failure',
+				email: normalizedEmail,
+				ip: requestIp,
+				clientId: authRequest.clientId,
+				reason: 'two_factor_required',
+			})
+			return respondAuthorizeError(
+				request,
+				'Two-factor authentication is enabled for this account. Log in on this device first, then retry connecting.',
+				401,
+			)
 		}
 		approvedEmail = normalizedEmail
 		approvedUsername = username

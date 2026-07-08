@@ -1,3 +1,4 @@
+import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
@@ -16,6 +17,7 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getPrimaryButtonCss,
+	getSecondaryButtonCss,
 	inputCss,
 	mutedLinkCss,
 	pageDescriptionCss,
@@ -38,6 +40,12 @@ function normalizeRedirectTo(value: string | null) {
 function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
 	const path = mode === 'signup' ? '/signup' : '/login'
 	return buildAuthLink(path, redirectTo)
+}
+
+function buildVerifyPath(redirectTo: string | null) {
+	return redirectTo
+		? `/verify?redirectTo=${encodeURIComponent(redirectTo)}`
+		: '/verify'
 }
 
 function getAuthModeFromPathname(pathname: string): AuthMode {
@@ -150,8 +158,75 @@ export function LoginRoute(handle: Handle) {
 			}
 
 			if (typeof window !== 'undefined') {
+				if (payload?.requiresTwoFactor === true) {
+					window.location.assign(buildVerifyPath(getCurrentRedirectTo(handle)))
+					return
+				}
 				window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
 			}
+		} catch {
+			setState('error', 'Network error. Please try again.')
+		}
+	}
+
+	async function handlePasskeySignIn() {
+		setState('submitting')
+
+		try {
+			const optionsResponse = await fetch('/webauthn/authentication', {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			})
+			const optionsPayload = await optionsResponse.json().catch(() => null)
+			if (
+				!optionsResponse.ok ||
+				optionsPayload?.ok !== true ||
+				!optionsPayload.options
+			) {
+				setState('error', 'Unable to start passkey sign-in.')
+				return
+			}
+
+			let authenticationResponse
+			try {
+				authenticationResponse = await startAuthentication({
+					optionsJSON: optionsPayload.options,
+				})
+			} catch {
+				setState('idle')
+				return
+			}
+
+			const rememberMeInput = document.querySelector('input[name="rememberMe"]')
+			const rememberMe =
+				rememberMeInput instanceof HTMLInputElement && rememberMeInput.checked
+
+			const verificationResponse = await fetch('/webauthn/authentication', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({
+					response: authenticationResponse,
+					rememberMe,
+				}),
+			})
+			const verificationPayload = await verificationResponse
+				.json()
+				.catch(() => null)
+			if (!verificationResponse.ok || verificationPayload?.ok !== true) {
+				const errorMessage =
+					typeof verificationPayload?.error === 'string'
+						? verificationPayload.error
+						: 'Passkey sign-in failed.'
+				setState('error', errorMessage)
+				return
+			}
+
+			if (verificationPayload.requiresTwoFactor === true) {
+				window.location.assign(buildVerifyPath(getCurrentRedirectTo(handle)))
+				return
+			}
+			window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
 		} catch {
 			setState('error', 'Network error. Please try again.')
 		}
@@ -282,6 +357,15 @@ export function LoginRoute(handle: Handle) {
 					>
 						{isSubmitting ? 'Submitting...' : submitLabel}
 					</button>
+					{!isSignup ? (
+						<button
+							type="button"
+							disabled={isSubmitting}
+							mix={[css(secondaryButtonCss), on('click', handlePasskeySignIn)]}
+						>
+							Sign in with a passkey
+						</button>
+					) : null}
 					{message ? (
 						<p
 							aria-live="polite"
@@ -326,6 +410,8 @@ const pageCss = {
 }
 
 const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+
+const secondaryButtonCss = getSecondaryButtonCss({ size: 'lg' })
 
 const actionLinkCss = {
 	...primaryLinkCss,

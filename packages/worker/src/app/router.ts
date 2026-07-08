@@ -36,7 +36,15 @@ import {
 	createAccountPackageInvocationTokensApiHandler,
 	createAccountPackageInvocationTokensHandler,
 } from '#app/handlers/account-package-invocation-tokens.ts'
+import {
+	createAccountPasskeysApiHandler,
+	createAccountPasskeysHandler,
+} from '#app/handlers/account-passkeys.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
+import {
+	createAccountTwoFactorApiHandler,
+	createAccountTwoFactorHandler,
+} from '#app/handlers/account-two-factor.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import {
 	createAccountRemoteConnectorsApiHandler,
@@ -63,8 +71,16 @@ import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
+import {
+	createTwoFactorVerifyApiHandler,
+	createVerifyHandler,
+} from '#app/handlers/verify.ts'
 import { createVerifyEmailChangeHandler } from '#app/handlers/verify-email-change.ts'
 import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
+import {
+	createWebauthnAuthenticationHandler,
+	createWebauthnRegistrationHandler,
+} from '#app/handlers/webauthn.ts'
 import { logout } from '#app/handlers/logout.ts'
 import {
 	createPasswordResetConfirmHandler,
@@ -117,8 +133,14 @@ export function createAppRouter(appEnv: AppEnv) {
 				createAccountPackageInvocationTokensApiHandler(env),
 			accountPackageInvocationTokensApiPost:
 				createAccountPackageInvocationTokensApiHandler(env),
+			accountPasskeys: createAccountPasskeysHandler(env),
+			accountPasskeysApi: createAccountPasskeysApiHandler(appEnv),
+			accountPasskeysApiPost: createAccountPasskeysApiHandler(appEnv),
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
+			accountTwoFactor: createAccountTwoFactorHandler(env),
+			accountTwoFactorApi: createAccountTwoFactorApiHandler(appEnv),
+			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(appEnv),
 			accountEmailChange: createAccountEmailChangeHandler(appEnv),
 			accountResendVerification: createAccountResendVerificationHandler(appEnv),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),
@@ -163,6 +185,12 @@ export function createAppRouter(appEnv: AppEnv) {
 			logout,
 			passwordResetRequest: createPasswordResetRequestHandler(appEnv),
 			passwordResetConfirm: createPasswordResetConfirmHandler(appEnv),
+			verify: createVerifyHandler(env),
+			verifyTwoFactorApi: createTwoFactorVerifyApiHandler(appEnv),
+			webauthnRegistration: createWebauthnRegistrationHandler(appEnv),
+			webauthnRegistrationPost: createWebauthnRegistrationHandler(appEnv),
+			webauthnAuthentication: createWebauthnAuthenticationHandler(appEnv),
+			webauthnAuthenticationPost: createWebauthnAuthenticationHandler(appEnv),
 		},
 	})
 

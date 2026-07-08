@@ -540,6 +540,14 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ user_id: 1, role_id: 1 },
 			{ user_id: 2, role_id: 2 },
 		],
+		passkeys: [
+			{ id: 'pk-1', user_id: 1 },
+			{ id: 'pk-2', user_id: 2 },
+		],
+		verifications: [
+			{ id: 1, type: '2fa', target: '1' },
+			{ id: 2, type: '2fa', target: '2' },
+		],
 		mcp_user_server_instructions: [{ user_id: userAaa }],
 		package_invocation_tokens: [{ id: 'pit-1', user_id: userAaa }],
 		package_invocations: [{ id: 'pi-1', user_id: userAaa }],
@@ -698,6 +706,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	])
 	expect(rows.password_resets).toEqual([{ id: 3, user_id: 2 }])
 	expect(rows.user_roles).toEqual([{ user_id: 2, role_id: 2 }])
+	expect(rows.passkeys).toEqual([{ id: 'pk-2', user_id: 2 }])
+	expect(rows.verifications).toEqual([{ id: 2, type: '2fa', target: '2' }])
 
 	// User-scoped data is removed.
 	expect(rows.secret_buckets).toEqual([])

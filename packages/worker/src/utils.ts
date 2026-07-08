@@ -42,7 +42,10 @@ export function withCors<Props>({
 }
 
 /**
- * Merge multiple headers objects into one (uses set so headers are overridden)
+ * Merge multiple headers objects into one (uses set so headers are
+ * overridden). Set-Cookie is the exception: responses can legitimately carry
+ * several cookies (e.g. issue a session and expire a pending cookie), and
+ * `set` would silently drop all but the last one, so those are appended.
  */
 export function mergeHeaders(
 	...headers: Array<ResponseInit['headers'] | null | undefined>
@@ -50,8 +53,13 @@ export function mergeHeaders(
 	const merged = new Headers()
 	for (const header of headers) {
 		if (!header) continue
-		for (const [key, value] of new Headers(header).entries()) {
+		const parsed = new Headers(header)
+		for (const [key, value] of parsed.entries()) {
+			if (key.toLowerCase() === 'set-cookie') continue
 			merged.set(key, value)
+		}
+		for (const cookie of parsed.getSetCookie()) {
+			merged.append('Set-Cookie', cookie)
 		}
 	}
 	return merged

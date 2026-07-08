@@ -9,6 +9,10 @@ import {
 	accountPackageInvocationTokensRouteLoader,
 } from './account-package-invocation-tokens.tsx'
 import {
+	AccountPasskeysRoute,
+	accountPasskeysRouteLoader,
+} from './account-passkeys.tsx'
+import {
 	AccountRemoteConnectorsRoute,
 	accountRemoteConnectorsRouteLoader,
 } from './account-remote-connectors.tsx'
@@ -16,6 +20,10 @@ import {
 	AccountSecretsRoute,
 	accountSecretsRouteLoader,
 } from './account-secrets.tsx'
+import {
+	AccountTwoFactorRoute,
+	accountTwoFactorRouteLoader,
+} from './account-two-factor.tsx'
 import {
 	AdminCommunityReportsRoute,
 	adminCommunityReportsRouteLoader,
@@ -44,6 +52,7 @@ import {
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ResetPasswordRoute } from './reset-password.tsx'
 import { VerifyEmailRoute } from './verify-email.tsx'
+import { VerifyRoute } from './verify.tsx'
 
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/account': accountRouteLoader,
@@ -54,6 +63,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountPackageInvocationTokensRouteLoader,
 	'/account/package-invocation-tokens/:tokenId':
 		accountPackageInvocationTokensRouteLoader,
+	'/account/passkeys': accountPasskeysRouteLoader,
 	'/account/remote-connectors': accountRemoteConnectorsRouteLoader,
 	'/account/secrets': accountSecretsRouteLoader,
 	'/account/secrets/new': accountSecretsRouteLoader,
@@ -62,6 +72,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/account/secrets/user/:secretName': accountSecretsRouteLoader,
 	'/account/secrets/app/:appId/:secretName': accountSecretsRouteLoader,
 	'/account/secrets/session/:sessionId/:secretName': accountSecretsRouteLoader,
+	'/account/two-factor': accountTwoFactorRouteLoader,
 	'/admin': adminUsersRouteLoader,
 	'/admin/users': adminUsersRouteLoader,
 	'/admin/invites': adminInvitesRouteLoader,
@@ -85,6 +96,7 @@ export const clientRoutes = {
 	'/account/package-invocation-tokens/:tokenId': (
 		<AccountPackageInvocationTokensRoute />
 	),
+	'/account/passkeys': <AccountPasskeysRoute />,
 	'/account/remote-connectors': <AccountRemoteConnectorsRoute />,
 	'/account/secrets': <AccountSecretsRoute />,
 	'/account/secrets/new': <AccountSecretsRoute />,
@@ -93,6 +105,7 @@ export const clientRoutes = {
 	'/account/secrets/user/:secretName': <AccountSecretsRoute />,
 	'/account/secrets/app/:appId/:secretName': <AccountSecretsRoute />,
 	'/account/secrets/session/:sessionId/:secretName': <AccountSecretsRoute />,
+	'/account/two-factor': <AccountTwoFactorRoute />,
 	'/admin': <AdminUsersRoute />,
 	'/admin/users': <AdminUsersRoute />,
 	'/admin/invites': <AdminInvitesRoute />,
@@ -106,6 +119,7 @@ export const clientRoutes = {
 	'/privacy': <PrivacyRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
+	'/verify': <VerifyRoute />,
 	'/verify-email': <VerifyEmailRoute />,
 	'/verify-email-change': <VerifyEmailRoute />,
 	'/connect/oauth': <ConnectOauthRoute />,

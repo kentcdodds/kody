@@ -248,6 +248,23 @@ export type AccountProfileLoaderData = {
 	displayName: string
 }
 
+export type AccountTwoFactorLoaderData = {
+	ok: true
+	enabled: boolean
+}
+
+export type AccountPasskeyListItem = {
+	id: string
+	deviceType: string
+	backedUp: boolean
+	createdAt: string
+}
+
+export type AccountPasskeysLoaderData = {
+	ok: true
+	passkeys: Array<AccountPasskeyListItem>
+}
+
 export type EmailVerificationLoaderData =
 	| {
 			ok: true
@@ -401,6 +418,8 @@ export type AppLoaderData = {
 	adminUsage?: AdminUsageLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
+	accountTwoFactor?: AccountTwoFactorLoaderData
+	accountPasskeys?: AccountPasskeysLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData

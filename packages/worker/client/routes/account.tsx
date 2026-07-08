@@ -528,6 +528,21 @@ export function AccountRoute(handle: Handle) {
 							</form>
 						</section>
 						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Security</h2>
+							<p mix={css(descriptionCss)}>
+								Protect your account with two-factor authentication, or sign in
+								without a password using passkeys.
+							</p>
+							<div mix={css({ display: 'flex', gap: spacing.md })}>
+								<a href="/account/two-factor" mix={css(primaryLinkCss)}>
+									Two-factor authentication
+								</a>
+								<a href="/account/passkeys" mix={css(primaryLinkCss)}>
+									Passkeys
+								</a>
+							</div>
+						</section>
+						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Secret management</h2>
 							<p mix={css(descriptionCss)}>
 								Create, edit, and delete secrets from the dedicated management

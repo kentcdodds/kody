@@ -1,6 +1,9 @@
 export type UserScopedDataTarget =
 	| { kind: 'user_id'; table: string }
 	| { kind: 'db_user_id'; table: string }
+	// Rows keyed by a `target` column holding the stringified database user id
+	// (Epic Stack-style verifications: 2fa secrets etc).
+	| { kind: 'db_user_target'; table: string }
 	| { kind: 'user_columns'; table: string; columns: ReadonlyArray<string> }
 	| {
 			kind: 'null_user_column'
@@ -136,6 +139,10 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'db_user_id', table: 'pending_email_changes' },
 	{ kind: 'db_user_id', table: 'password_resets' },
 	{ kind: 'db_user_id', table: 'user_roles' },
+	{ kind: 'db_user_id', table: 'passkeys' },
+	// Two-factor verification rows are keyed by `target` = stringified db user
+	// id rather than a user_id column, so they need the dedicated kind.
+	{ kind: 'db_user_target', table: 'verifications' },
 ]
 
 export function getAccountD1UserColumnCoverage() {
@@ -169,7 +176,10 @@ export function getAccountD1UserColumnCoverage() {
 			}
 			case 'bucket_parent':
 			case 'attachment_parent':
-			case 'community_listing_child': {
+			case 'community_listing_child':
+			// db_user_target tables key rows by `target`, not a *_user_id
+			// column, so there is no schema column for the guard to cover.
+			case 'db_user_target': {
 				break
 			}
 			default: {
