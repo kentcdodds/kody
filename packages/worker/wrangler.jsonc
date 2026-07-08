@@ -71,6 +71,10 @@
 			"deleted_classes": ["ChatAgent", "AgentTurnRunner"],
 			"tag": "v17",
 		},
+		{
+			"new_sqlite_classes": ["McpClientHub"],
+			"tag": "v18",
+		},
 	],
 
 	"observability": {
@@ -118,6 +122,10 @@
 					{
 						"class_name": "RemoteConnectorSession",
 						"name": "REMOTE_CONNECTOR_SESSION",
+					},
+					{
+						"class_name": "McpClientHub",
+						"name": "MCP_CLIENT_HUB",
 					},
 					{
 						"class_name": "JobManager",
@@ -222,6 +230,10 @@
 						"name": "REMOTE_CONNECTOR_SESSION",
 					},
 					{
+						"class_name": "McpClientHub",
+						"name": "MCP_CLIENT_HUB",
+					},
+					{
 						"class_name": "JobManager",
 						"name": "JOB_MANAGER",
 					},
@@ -322,6 +334,10 @@
 					{
 						"class_name": "RemoteConnectorSession",
 						"name": "REMOTE_CONNECTOR_SESSION",
+					},
+					{
+						"class_name": "McpClientHub",
+						"name": "MCP_CLIENT_HUB",
 					},
 					{
 						"class_name": "JobManager",

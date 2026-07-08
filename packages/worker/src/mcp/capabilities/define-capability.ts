@@ -52,6 +52,7 @@ export function defineCapability<
 		...(definition.remoteConnector
 			? { remoteConnector: definition.remoteConnector }
 			: {}),
+		...(definition.mcpServer ? { mcpServer: definition.mcpServer } : {}),
 		inputSchema,
 		...(outputSchema ? { outputSchema } : {}),
 		inputTypeDefinition: createSchemaTypeDefinition({

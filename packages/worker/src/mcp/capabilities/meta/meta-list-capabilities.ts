@@ -11,12 +11,21 @@ const capabilitySummarySchema = z.object({
 	readOnly: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
-	source: z.enum(['builtin', 'remote-connector']),
+	source: z.enum(['builtin', 'remote-connector', 'mcp-server']),
 	remoteConnector: z
 		.object({
 			instanceId: z.string(),
 			connectorId: z.string(),
 			connectorName: z.string(),
+			mcpToolName: z.string(),
+			toolName: z.string(),
+		})
+		.optional(),
+	mcpServer: z
+		.object({
+			serverId: z.string(),
+			serverName: z.string(),
+			kodyName: z.string(),
 			mcpToolName: z.string(),
 			toolName: z.string(),
 		})
@@ -120,6 +129,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								...(spec.remoteConnector
 									? { remoteConnector: spec.remoteConnector }
 									: {}),
+								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
 								requiredInputFields: spec.requiredInputFields,
 								inputTypeDefinition: spec.inputTypeDefinition,
 								...(spec.outputTypeDefinition
@@ -140,6 +150,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								...(spec.remoteConnector
 									? { remoteConnector: spec.remoteConnector }
 									: {}),
+								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
 								requiredInputFields: spec.requiredInputFields,
 							},
 				)

@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
 import { RemoteConnectorSession } from './remote-connector/session.ts'
+import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
 import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
@@ -63,6 +64,7 @@ export {
 	RepoSession,
 	KodyFetchGateway,
 	RemoteConnectorSession,
+	McpClientHub,
 	MCP,
 	JobManager,
 	PackageRealtimeSession,
