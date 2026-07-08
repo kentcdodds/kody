@@ -35,7 +35,7 @@ export const secretSetCapability = defineDomainCapability(
 	{
 		name: 'secret_set',
 		description:
-			'Create or update a stored secret reference for the signed-in user. Use this for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation. Host use and direct capability access are authorized through secret policy approvals.',
+			'Create or update a stored secret reference for the signed-in user. Use this for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
 		keywords: ['secret', 'persist', 'store', 'oauth', 'token', 'credential'],
 		readOnly: false,
 		idempotent: false,

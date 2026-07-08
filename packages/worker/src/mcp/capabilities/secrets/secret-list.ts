@@ -12,7 +12,7 @@ export const secretListCapability = defineDomainCapability(
 	{
 		name: 'secret_list',
 		description:
-			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, and allowed kody. Use `kody.secret_list({ scope })` inside execute-time code when you want the same metadata from the sandbox. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation.',
+			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, and allowed kody. Use `kody.secret_list({ scope })` inside execute-time code when you want the same metadata from the sandbox. To use a listed secret in an outbound `fetch`, reference it by placeholder — e.g. `Authorization: "Bearer {{secret:name}}"` (optionally `{{secret:name|scope=user}}`) — and Kody resolves it for approved hosts; plaintext values are never returned. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation.',
 		keywords: ['secret', 'list', 'discovery', 'metadata', 'credentials'],
 		readOnly: true,
 		idempotent: true,

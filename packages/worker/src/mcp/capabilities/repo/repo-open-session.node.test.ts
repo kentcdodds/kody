@@ -3,6 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
@@ -129,6 +130,26 @@ function resetMocks() {
 	mockModule.getSavedPackageByKodyId.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 }
+
+test('repo target accepts camelCase aliases for its snake_case fields', () => {
+	// Agents guess `kodyId` / `packageId` often enough that the schema
+	// normalizes both spellings instead of failing the round trip.
+	expect(
+		repoOpenSessionInputSchema.parse({
+			target: { kind: 'package', kodyId: 'triage-github-pr' },
+		}).target,
+	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
+	expect(
+		repoOpenSessionInputSchema.parse({
+			target: { kind: 'package', packageId: 'package-1' },
+		}).target,
+	).toEqual({ kind: 'package', package_id: 'package-1' })
+	expect(
+		repoOpenSessionInputSchema.parse({
+			target: { kind: 'package', kody_id: 'triage-github-pr' },
+		}).target,
+	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
+})
 
 test('repo_open_session enforces the repo sessions entitlement for plan users opening a new session', async () => {
 	resetMocks()

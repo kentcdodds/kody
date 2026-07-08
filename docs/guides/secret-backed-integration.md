@@ -77,6 +77,32 @@ contract:
 If the auth contract has multiple fields, save only the truly sensitive fields
 as secrets. Keep readable identifiers and defaults in values.
 
+## Using a saved secret in `fetch`
+
+Saved secrets are referenced by **placeholder**, never by plaintext. Inside
+`execute` (and package code), put `{{secret:name}}` — or
+`{{secret:name|scope=user}}` to pin a scope — in the URL, headers, or body of an
+outbound `fetch`. Kody resolves the placeholder for **approved** hosts only:
+
+```ts
+const response = await fetch('https://api.example.com/v1/me', {
+	headers: {
+		Authorization: 'Bearer {{secret:providerAccessToken}}',
+	},
+})
+```
+
+Rules:
+
+- `kody.secret_list({})` returns metadata only (names, allowed hosts) — use it
+  to find the right secret name, then reference that name in a placeholder.
+- Placeholders only resolve in secret-aware `fetch` paths and capability inputs
+  marked `x-kody-secret`; they are not general string interpolation.
+- Never echo the literal `{{secret:...}}` form into chat, logs, issue bodies, or
+  any content that may later be sent over `fetch`.
+- For Basic Auth derived from two secrets, use `secretHeaders.basic(...)` from
+  `kody:runtime` (see the secrets usage docs).
+
 ## When `/account/secrets/new` is enough
 
 In the common case, `/account/secrets/new` is the whole setup surface.

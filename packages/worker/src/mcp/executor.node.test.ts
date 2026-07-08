@@ -719,9 +719,33 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		},
 	})
 
+	// A bare ReferenceError for a kody:runtime export must point at the
+	// missing import instead of leaving the caller to guess.
+	expect(
+		getExecutionErrorDetails(new Error('kody is not defined')),
+	).toMatchObject({
+		kind: 'runtime_import_missing',
+		exportName: 'kody',
+		nextStep: expect.stringContaining("import { kody } from 'kody:runtime'"),
+		suggestedAction: { type: 'fix_code' },
+	})
+	expect(
+		getExecutionErrorDetails(
+			new Error('ReferenceError: secretHeaders is not defined'),
+		),
+	).toMatchObject({
+		kind: 'runtime_import_missing',
+		exportName: 'secretHeaders',
+	})
+	// Unknown identifiers stay unhinted: they are ordinary user-code bugs.
+	expect(
+		getExecutionErrorDetails(new Error('myHelper is not defined')),
+	).toBeNull()
+
 	const errors = [
 		capabilityError,
 		new Error(createMissingSecretMessage('missingToken')),
+		new Error('kody is not defined'),
 	]
 	for (const error of errors) {
 		const output = formatExecutionOutput({ error } as const)

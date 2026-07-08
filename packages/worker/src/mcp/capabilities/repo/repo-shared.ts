@@ -9,7 +9,7 @@ import { privateVisibilityChangeConfirmationDescription } from '#worker/repo/sou
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
 export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
 
-export const repoTargetSchema = z.union([
+const repoTargetShapeSchema = z.union([
 	z.object({
 		kind: z.literal('package'),
 		package_id: z
@@ -27,6 +27,33 @@ export const repoTargetSchema = z.union([
 			),
 	}),
 ])
+
+/**
+ * Agents routinely guess camelCase (`kodyId`, `packageId`) for the snake_case
+ * target fields and burn a round trip on the validation error, so the schema
+ * accepts both spellings and normalizes to snake_case.
+ */
+function normalizeRepoTargetAliases(value: unknown) {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return value
+	}
+	const record = value as Record<string, unknown>
+	const normalized: Record<string, unknown> = { ...record }
+	if (normalized['package_id'] === undefined && 'packageId' in record) {
+		normalized['package_id'] = record['packageId']
+		delete normalized['packageId']
+	}
+	if (normalized['kody_id'] === undefined && 'kodyId' in record) {
+		normalized['kody_id'] = record['kodyId']
+		delete normalized['kodyId']
+	}
+	return normalized
+}
+
+export const repoTargetSchema = z.preprocess(
+	normalizeRepoTargetAliases,
+	repoTargetShapeSchema,
+)
 
 export const repoResolvedTargetSchema = z.union([
 	z.object({

@@ -748,6 +748,15 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'runtime_import_missing'
+			message: string
+			nextStep: string
+			exportName: string
+			suggestedAction: {
+				type: 'fix_code'
+			}
+	  }
+	| {
 			kind: 'entitlement_limit_exceeded'
 			message: string
 			nextStep: string
@@ -892,7 +901,51 @@ export function getExecutionErrorDetails(
 		}
 	}
 
+	const missingRuntimeExport = parseMissingRuntimeExportMessage(message)
+	if (missingRuntimeExport) {
+		return {
+			kind: 'runtime_import_missing',
+			message,
+			nextStep: `\`${missingRuntimeExport}\` is provided by the Kody runtime module and must be imported: add \`import { ${missingRuntimeExport} } from 'kody:runtime'\` at the top of the module, then retry.`,
+			exportName: missingRuntimeExport,
+			suggestedAction: {
+				type: 'fix_code',
+			},
+		}
+	}
+
 	return null
+}
+
+/**
+ * Named exports of the virtual `kody:runtime` module (see
+ * `buildRuntimeModuleSource` in `#worker/package-runtime/module-graph.ts`).
+ * Referencing one without the import throws a bare `X is not defined`
+ * ReferenceError that gives no hint about the required import.
+ */
+const kodyRuntimeExportNames = new Set([
+	'kody',
+	'storage',
+	'refreshAccessToken',
+	'createAuthenticatedFetch',
+	'secretHeaders',
+	'oauthClientCredentials',
+	'packageContext',
+	'serviceContext',
+	'service',
+	'packageSecrets',
+	'email',
+	'workflows',
+	'packages',
+	'events',
+])
+
+function parseMissingRuntimeExportMessage(message: string) {
+	const match = /^(?:ReferenceError: )?(\w+) is not defined\b/.exec(message)
+	const exportName = match?.[1]
+	return exportName && kodyRuntimeExportNames.has(exportName)
+		? exportName
+		: null
 }
 
 function toEntitlementExecutionErrorDetails(
