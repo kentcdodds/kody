@@ -60,6 +60,11 @@ import {
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
+import {
+	createSocialAuthCallbackHandler,
+	createSocialAuthProvidersHandler,
+	createSocialAuthStartHandler,
+} from '#app/handlers/social-auth.ts'
 import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
 import {
 	createCommunityApiHandler,
@@ -187,6 +192,9 @@ export function createAppRouter(env: Env) {
 			communityReportApiPost: createCommunityReportApiPostHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			auth: createAuthHandler(env),
+			authSocial: createSocialAuthStartHandler(env),
+			authSocialCallback: createSocialAuthCallbackHandler(env),
+			authProviders: createSocialAuthProvidersHandler(env),
 			session: createSessionHandler(env),
 			logout,
 			passwordResetRequest: createPasswordResetRequestHandler(env),

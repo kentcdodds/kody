@@ -190,6 +190,13 @@ export const EnvSchema = object({
 	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
+	GITHUB_CLIENT_ID: optionalNonEmptyStringSchema,
+	GITHUB_CLIENT_SECRET: optionalNonEmptyStringSchema,
+	GOOGLE_CLIENT_ID: optionalNonEmptyStringSchema,
+	GOOGLE_CLIENT_SECRET: optionalNonEmptyStringSchema,
+	X_CLIENT_ID: optionalNonEmptyStringSchema,
+	X_CLIENT_SECRET: optionalNonEmptyStringSchema,
+	SOCIAL_AUTH_MOCK: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

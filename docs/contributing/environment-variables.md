@@ -110,6 +110,24 @@ Optional Worker secret:
   per-user `userId` metadata on user-owned rows. Local dev uses offline search
   while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 
+## Social sign-in (optional)
+
+OAuth client credentials for browser sign-in. When a provider's client id and
+secret are both set, `/login` shows a matching button and the Worker exposes
+`/auth/<provider>` plus `/auth/<provider>/callback`. Callback URLs must be
+registered on each provider using your deployment origin, for example
+`https://heykody.dev/auth/github/callback`.
+
+- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+- `X_CLIENT_ID` / `X_CLIENT_SECRET`
+- `SOCIAL_AUTH_MOCK` — set to `1` for mock provider HTTP during local dev (tests
+  enable this automatically via `SENTRY_ENVIRONMENT=test`)
+
+Production and preview deploy workflows sync the OAuth secrets from GitHub
+Actions repository secrets when present (see `.github/workflows/deploy.yml` and
+`.github/workflows/preview.yml`).
+
 ## Cloudflare API (Worker + Email)
 
 Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and

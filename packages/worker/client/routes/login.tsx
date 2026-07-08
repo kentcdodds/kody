@@ -6,6 +6,7 @@ import {
 	getPathname,
 	listenToRouterNavigation,
 } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	readRouterPathname,
 	readRouterSearch,
@@ -62,6 +63,21 @@ function getCurrentAuthMode(handle: Handle) {
 
 function getCurrentRedirectTo(handle: Handle) {
 	return normalizeRedirectTo(getSearchParams(handle).get('redirectTo'))
+}
+
+function buildSocialAuthHref(
+	startPath: string,
+	redirectTo: string | null,
+	inviteCode: string | null,
+) {
+	const url = new URL(startPath, 'https://kody.local')
+	if (redirectTo) {
+		url.searchParams.set('redirectTo', redirectTo)
+	}
+	if (inviteCode) {
+		url.searchParams.set('inviteCode', inviteCode)
+	}
+	return `${url.pathname}${url.search}${url.hash}`
 }
 
 export function LoginRoute(handle: Handle) {
@@ -244,6 +260,14 @@ export function LoginRoute(handle: Handle) {
 		const redirectTo = getCurrentRedirectTo(handle)
 		const isSignup = mode === 'signup'
 		const isSubmitting = status === 'submitting'
+		const loginAuth = tryConsumeRouteLoaderData(
+			handle,
+			'loginAuth',
+			getPathname(handle),
+		)
+		const socialProviders = loginAuth?.providers ?? []
+		const inviteCodeFromQuery = getSearchParams(handle).get('inviteCode') ?? ''
+		const errorFromQuery = getSearchParams(handle).get('error')
 		const title = isSignup ? 'Create your account' : 'Welcome back'
 		const description = isSignup
 			? 'Sign up to start using kody.'
@@ -377,7 +401,53 @@ export function LoginRoute(handle: Handle) {
 							{message}
 						</p>
 					) : null}
+					{!message && errorFromQuery ? (
+						<p
+							aria-live="polite"
+							mix={css({
+								color: colors.error,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
+							{errorFromQuery}
+						</p>
+					) : null}
 				</form>
+				{socialProviders.length > 0 ? (
+					<div mix={css({ display: 'grid', gap: spacing.sm })}>
+						<p
+							mix={css({
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+								margin: 0,
+							})}
+						>
+							Or continue with
+						</p>
+						{socialProviders.map((provider) => (
+							<a
+								key={provider.id}
+								href={buildSocialAuthHref(
+									provider.startPath,
+									redirectTo,
+									isSignup ? inviteCodeFromQuery : null,
+								)}
+								aria-disabled={isSubmitting}
+								mix={[
+									css(secondaryButtonCss),
+									css({
+										textAlign: 'center',
+										textDecoration: 'none',
+										pointerEvents: isSubmitting ? 'none' : 'auto',
+										opacity: isSubmitting ? 0.6 : 1,
+									}),
+								]}
+							>
+								Continue with {provider.label}
+							</a>
+						))}
+					</div>
+				) : null}
 				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<a
 						href={buildAuthPath(isSignup ? 'login' : 'signup', redirectTo)}

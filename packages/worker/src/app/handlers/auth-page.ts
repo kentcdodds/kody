@@ -1,4 +1,5 @@
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
+import { listConfiguredSocialAuthProviders } from '#app/social-auth-providers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 
@@ -27,7 +28,15 @@ export function createAuthPageHandler(env: Env) {
 				return Response.redirect(redirectUrl, 302)
 			}
 
-			return renderAppPage({ request, env })
+			return renderAppPage({
+				request,
+				env,
+				loaderData: {
+					loginAuth: {
+						providers: listConfiguredSocialAuthProviders(env),
+					},
+				},
+			})
 		},
 	}
 }

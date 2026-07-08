@@ -431,6 +431,14 @@ export type OAuthAuthorizeLoaderData =
 			allowClientReset: boolean
 	  }
 
+export type LoginAuthLoaderData = {
+	providers: Array<{
+		id: 'github' | 'google' | 'x'
+		label: string
+		startPath: string
+	}>
+}
+
 export type AppLoaderData = {
 	communityDetailShell?: CommunityDetailShellLoaderData
 	adminUsers?: AdminUsersLoaderData
@@ -448,6 +456,7 @@ export type AppLoaderData = {
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	emailVerification?: EmailVerificationLoaderData
+	loginAuth?: LoginAuthLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 }
 

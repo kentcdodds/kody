@@ -49,6 +49,29 @@ request so cookie signing and verification are available to handlers.
 - Returns signed session cookie via `Set-Cookie` on success
 - Emits structured audit events through `packages/worker/src/app/audit-log.ts`
 
+### Social sign-in (GitHub, Google, X)
+
+Optional OAuth sign-in is implemented in
+`packages/worker/src/app/handlers/social-auth.ts` using Remix 3's built-in
+`remix/auth` providers and an Epic Stack–style `auth_connections` table.
+
+- Start routes: `GET /auth/github`, `GET /auth/google`, `GET /auth/x`
+- Callback routes: `GET /auth/<provider>/callback`
+- OAuth transaction state is stored in the short-lived signed
+  `kody_oauth_transaction` cookie (same pattern as WebAuthn challenges)
+- Provider buttons appear on `/login` and `/signup` only when the matching
+  client id + secret env vars are configured
+- Existing connections sign in immediately; matching emails auto-link a new
+  connection to the existing account; otherwise a new OAuth-only account is
+  created (sentinel password hash, no usable password login)
+- Production signup still requires an invite when no existing account matches;
+  pass `inviteCode` on the start URL (the login UI forwards signup invite codes)
+- Accounts with TOTP enabled receive the existing `/verify` challenge after
+  OAuth, same as password and passkey login
+- `SOCIAL_AUTH_MOCK=1` (or `SENTRY_ENVIRONMENT=test`) enables mock provider
+  flows for local development and unit tests via
+  `packages/worker/src/app/social-auth-mock.ts`
+
 ### Signup posture and invites
 
 Production signup is invite-gated. The auth handler uses
