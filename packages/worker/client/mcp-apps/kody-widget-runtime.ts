@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 /// <reference lib="dom" />
 import {
 	type GeneratedUiAppBackendBootstrap,
@@ -1856,7 +1857,7 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 				)
 				return normalizeFetchWithSecretsResult(result)
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
+				const message = getErrorMessage(error)
 				if (
 					message.includes('not allowed for host') ||
 					message.includes('Secrets require host approval:')
@@ -2147,8 +2148,7 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 									{
 										name: '',
 										ok: false,
-										error:
-											error instanceof Error ? error.message : String(error),
+										error: getErrorMessage(error),
 									},
 								],
 							},

@@ -7,7 +7,7 @@ import { reindexCapabilityVectors } from './mcp/capabilities/capability-reindex.
 import { reindexJobVectors } from './jobs/job-reindex.ts'
 import { reindexMemoryVectors } from './mcp/memory/memory-reindex.ts'
 import { reindexSavedPackageVectors } from './package-registry/package-reindex.ts'
-import { getErrorMessage } from './mcp/capabilities/error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 
 type ReindexStepResult = {
 	upserted: number

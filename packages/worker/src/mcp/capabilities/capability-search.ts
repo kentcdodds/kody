@@ -1,5 +1,5 @@
 import { type CapabilitySpec } from './types.ts'
-import { getErrorMessage } from './error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 
 type CapabilityVectorizeEnv = {
 	AI?: Ai

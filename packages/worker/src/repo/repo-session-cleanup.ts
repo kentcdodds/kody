@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { listRepoSessionsForBranchCleanup } from './repo-sessions.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
@@ -42,7 +43,7 @@ export async function cleanupRepoSessionBranches(input: {
 				JSON.stringify({
 					message: 'repo session branch cleanup failed',
 					reason,
-					error: error instanceof Error ? error.message : String(error),
+					error: getErrorMessage(error),
 				}),
 			)
 		}

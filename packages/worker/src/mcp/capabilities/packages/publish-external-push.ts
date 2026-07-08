@@ -5,7 +5,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	errorCauseChainIncludes,
 	getErrorMessage,
-} from '#mcp/capabilities/error-message.ts'
+} from '@kody-internal/shared/error-message.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	getStaticPackageDependentsSummary,

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
@@ -322,14 +323,14 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					level: 'error',
 					extra: {
 						connectorId: this.stateSnapshot.persisted.connectorId,
-						error: error instanceof Error ? error.message : String(error),
+						error: getErrorMessage(error),
 					},
 				},
 			)
 			ws.send(
 				stringifyRemoteConnectorMessage({
 					type: 'server.error',
-					message: error instanceof Error ? error.message : String(error),
+					message: getErrorMessage(error),
 				}),
 			)
 			return
@@ -355,7 +356,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					extra: {
 						connectorId: this.stateSnapshot.persisted.connectorId,
 						messageType: parsed.type,
-						error: error instanceof Error ? error.message : String(error),
+						error: getErrorMessage(error),
 					},
 				},
 			)
@@ -363,7 +364,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 				ws.send(
 					stringifyRemoteConnectorMessage({
 						type: 'server.error',
-						message: error instanceof Error ? error.message : String(error),
+						message: getErrorMessage(error),
 					}),
 				)
 			} catch {
@@ -485,7 +486,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					level: 'error',
 					extra: {
 						connectorId: this.stateSnapshot.persisted.connectorId,
-						error: error instanceof Error ? error.message : String(error),
+						error: getErrorMessage(error),
 					},
 				},
 			)
@@ -521,7 +522,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 						level: 'error',
 						extra: {
 							connectorId: this.stateSnapshot.persisted.connectorId,
-							error: error instanceof Error ? error.message : String(error),
+							error: getErrorMessage(error),
 						},
 					},
 				)

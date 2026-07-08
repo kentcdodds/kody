@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
@@ -78,9 +79,9 @@ export function parseAuthoredPackageJson(input: {
 		parsed = JSON.parse(input.content)
 	} catch (cause) {
 		throw new Error(
-			`Failed to parse ${input.manifestPath ?? packageManifestPath}: ${
-				cause instanceof Error ? cause.message : String(cause)
-			}`,
+			`Failed to parse ${input.manifestPath ?? packageManifestPath}: ${getErrorMessage(
+				cause,
+			)}`,
 		)
 	}
 	if (

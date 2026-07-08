@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 export const packageRuntimeSurfaceValues = [
 	'export',
 	'subscription',
@@ -132,7 +133,7 @@ function toJsonSafeValue(value: unknown): unknown {
 	try {
 		return JSON.parse(JSON.stringify(value)) as unknown
 	} catch {
-		return value instanceof Error ? value.message : String(value)
+		return getErrorMessage(value)
 	}
 }
 

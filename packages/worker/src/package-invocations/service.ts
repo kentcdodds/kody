@@ -4,7 +4,7 @@ import { toHex } from '@kody-internal/shared/hex.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	runBundledModuleWithRegistry,
 	type PackageEventDispatchInput,
@@ -236,7 +236,7 @@ function toJsonSafeValue(value: unknown): unknown {
 	try {
 		return JSON.parse(JSON.stringify(value)) as unknown
 	} catch {
-		return value instanceof Error ? value.message : String(value)
+		return getErrorMessage(value)
 	}
 }
 
@@ -746,8 +746,7 @@ function buildExecutionErrorResponse(input: {
 	error: unknown
 	logs: Array<string>
 }): PackageInvocationStoredResponse {
-	const message =
-		input.error instanceof Error ? input.error.message : String(input.error)
+	const message = getErrorMessage(input.error)
 	return {
 		status: 500,
 		body: {
@@ -1262,7 +1261,7 @@ async function invokeSavedPackageModule(input: {
 			const response = buildJsonErrorResponse({
 				status: 404,
 				code: input.notFoundCode,
-				message: error instanceof Error ? error.message : String(error),
+				message: getErrorMessage(error),
 				idempotencyKey: input.idempotencyKey,
 			})
 			await updatePackageInvocationResult({
@@ -1279,7 +1278,7 @@ async function invokeSavedPackageModule(input: {
 		const response = buildJsonErrorResponse({
 			status: 500,
 			code: 'invocation_failed',
-			message: error instanceof Error ? error.message : String(error),
+			message: getErrorMessage(error),
 			idempotencyKey: input.idempotencyKey,
 		})
 		await updatePackageInvocationResult({

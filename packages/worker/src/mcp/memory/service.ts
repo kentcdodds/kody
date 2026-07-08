@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	deleteMemory as deleteMemoryRow,
@@ -49,8 +50,7 @@ function logMemoryVectorSyncError(input: {
 		memoryId: input.memoryId,
 		userId: input.userId,
 		category: input.category,
-		error:
-			input.error instanceof Error ? input.error.message : String(input.error),
+		error: getErrorMessage(input.error),
 	})
 }
 

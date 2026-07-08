@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -110,7 +111,7 @@ async function fetchGuideMarkdown(guide: KodyOfficialGuideId): Promise<string> {
 			redirect: 'follow',
 		})
 	} catch (cause) {
-		const message = cause instanceof Error ? cause.message : String(cause)
+		const message = getErrorMessage(cause)
 		throw new Error(`Kody guide fetch failed: ${message}`)
 	}
 

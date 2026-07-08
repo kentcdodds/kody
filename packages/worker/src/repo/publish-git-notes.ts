@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
 import * as Sentry from '@sentry/cloudflare'
@@ -374,7 +375,7 @@ export async function attachPublishGitNoteBestEffort(input: {
 			sourceId: input.note.sourceId,
 			commit: input.note.commit,
 			publishedBy: input.note.publishedBy,
-			error: error instanceof Error ? error.message : String(error),
+			error: getErrorMessage(error),
 		})
 	}
 }
@@ -479,7 +480,7 @@ function isMissingPublishGitNoteError(error: unknown) {
 	) {
 		return true
 	}
-	const message = error instanceof Error ? error.message : String(error)
+	const message = getErrorMessage(error)
 	return /refs\/notes\/commits|could not find refs\/notes\/commits/i.test(
 		message,
 	)

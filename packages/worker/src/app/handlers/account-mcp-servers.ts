@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type Action } from 'remix/router'
 import { loadAccountMcpServersData } from '#app/account-mcp-servers-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
@@ -144,7 +145,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				authError = outcome.authError
 				serverName = outcome.serverName
 			} catch (error) {
-				authError = error instanceof Error ? error.message : String(error)
+				authError = getErrorMessage(error)
 			}
 
 			const target = new URL('/account/mcp-servers', request.url)

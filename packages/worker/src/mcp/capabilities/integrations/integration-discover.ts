@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -180,7 +181,7 @@ async function fetchIntegrationDiscover(
 			signal: AbortSignal.timeout(DISCOVER_FETCH_TIMEOUT_MS),
 		})
 	} catch (cause) {
-		const message = cause instanceof Error ? cause.message : String(cause)
+		const message = getErrorMessage(cause)
 		throw new Error(`integrations.sh discover failed: ${message}`)
 	}
 
@@ -210,7 +211,7 @@ async function fetchIntegrationDiscover(
 	try {
 		parsed = JSON.parse(body)
 	} catch (cause) {
-		const message = cause instanceof Error ? cause.message : String(cause)
+		const message = getErrorMessage(cause)
 		throw new Error(
 			`integrations.sh discover failed: invalid JSON (${message})`,
 		)

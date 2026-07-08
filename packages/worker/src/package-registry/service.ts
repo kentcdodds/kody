@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
@@ -309,7 +310,7 @@ export async function deleteSavedPackageProjection(input: {
 					userId: input.userId,
 					packageId: input.packageId,
 					sourceId: savedPackage.sourceId,
-					error: error instanceof Error ? error.message : String(error),
+					error: getErrorMessage(error),
 				}),
 			)
 		})
@@ -323,7 +324,7 @@ export async function deleteSavedPackageProjection(input: {
 					userId: input.userId,
 					packageId: input.packageId,
 					sourceId: savedPackage.sourceId,
-					error: error instanceof Error ? error.message : String(error),
+					error: getErrorMessage(error),
 				}),
 			)
 		})

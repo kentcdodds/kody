@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	getArtifactsBinding,
 	hasArtifactsAccess,
@@ -51,7 +52,7 @@ export async function deleteUserScopedArtifactRepo(input: {
 		})
 		return true
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		input.warnings?.push(
 			`Artifact repo delete failed for ${repoName}: ${message}`,
 		)

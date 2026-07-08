@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
@@ -437,7 +438,7 @@ export async function sendOutboundEmail(
 		}
 	} catch (error) {
 		sendOutcome = 'error'
-		const messageText = error instanceof Error ? error.message : String(error)
+		const messageText = getErrorMessage(error)
 		await updateEmailMessageDelivery({
 			db: input.env.APP_DB,
 			messageId: message.id,

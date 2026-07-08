@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	normalizeCode,
 	resolveProvider,
@@ -1299,8 +1300,7 @@ async function rewriteCapabilitySecretError(input: {
 	env: Env
 	callerContext: McpCallerContext
 }) {
-	const message =
-		input.error instanceof Error ? input.error.message : String(input.error)
+	const message = getErrorMessage(input.error)
 	const capabilityMatch = message.match(
 		/^Secret "([^"]+)" is not allowed for capability "([^"]+)"/,
 	)

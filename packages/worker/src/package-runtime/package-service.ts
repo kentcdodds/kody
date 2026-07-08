@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
@@ -515,8 +516,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				lastResult: result,
 			})
 		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : String(error)
+			const errorMessage = getErrorMessage(error)
 			await this.finalizeServiceRun({
 				runId: input.runId,
 				nextStatus: this.stateSnapshot.stopRequested ? 'stopped' : 'error',
@@ -841,8 +841,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.ctx.waitUntil(task)
 			}
 		} catch (error) {
-			this.stateSnapshot.lastError =
-				error instanceof Error ? error.message : String(error)
+			this.stateSnapshot.lastError = getErrorMessage(error)
 			this.stateSnapshot.status = 'error'
 			await this.persistState()
 			if (

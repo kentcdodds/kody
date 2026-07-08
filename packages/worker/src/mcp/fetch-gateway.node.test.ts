@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	executeGatewayFetch,
@@ -48,7 +49,7 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 		await expandSecretPlaceholders({ request: createRequest(), props, env })
 		throw new Error('Expected host approval error.')
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		const approvals = parseHostApprovalRequiredBatchMessage(message)
 		expect(approvals).toEqual([
 			expect.objectContaining({
@@ -286,7 +287,7 @@ test.each([
 			await expandSecretPlaceholders({ request, props, env })
 			throw new Error('Expected host approval error.')
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			const approvals = parseHostApprovalRequiredBatchMessage(message)
 			expect(approvals).toEqual([
 				expect.objectContaining({

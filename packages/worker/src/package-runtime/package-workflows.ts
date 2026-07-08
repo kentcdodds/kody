@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import {
 	WorkflowEntrypoint,
@@ -191,7 +192,7 @@ function toSerializableJson(value: unknown): JsonValue {
 	try {
 		return JSON.parse(JSON.stringify(value)) as JsonValue
 	} catch {
-		return value instanceof Error ? value.message : String(value)
+		return getErrorMessage(value)
 	}
 }
 
@@ -1022,7 +1023,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				id: event.instanceId,
 				payload,
 				status: 'errored',
-				lastError: error instanceof Error ? error.message : String(error),
+				lastError: getErrorMessage(error),
 				completedAt: new Date().toISOString(),
 			})
 			await this.recordWorkflowRunUsage({

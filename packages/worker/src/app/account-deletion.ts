@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
@@ -337,47 +338,47 @@ async function collectUserDeletionInventory(input: {
 		communityListingIds,
 	] = await Promise.all([
 		listUserVectorIds(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate vector ids: ${message}`)
 			return [] as Array<string>
 		}),
 		listUserStorageIds(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate storage ids: ${message}`)
 			return [] as Array<string>
 		}),
 		listUserSourceSnapshots(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate source snapshots: ${message}`)
 			return [] as Array<UserSourceSnapshot>
 		}),
 		listUserSavedPackages(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate saved packages: ${message}`)
 			return [] as Array<UserSavedPackageSnapshot>
 		}),
 		listUserRepoSessions(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate repo sessions: ${message}`)
 			return [] as Array<UserRepoSessionSnapshot>
 		}),
 		listUserRemoteConnectors(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate remote connectors: ${message}`)
 			return [] as Array<UserRemoteConnectorSnapshot>
 		}),
 		listUserMcpServers(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate MCP servers: ${message}`)
 			return [] as Array<UserMcpServerSnapshot>
 		}),
 		listUserPackageServices(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate package services: ${message}`)
 			return [] as Array<UserPackageServiceSnapshot>
 		}),
 		listUserCommunityListingIds(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate community listings: ${message}`)
 			return [] as Array<string>
 		}),
@@ -388,7 +389,7 @@ async function collectUserDeletionInventory(input: {
 		sourceSnapshots,
 		communityListingIds,
 	}).catch((error) => {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		input.warnings.push(`Failed to enumerate bundle KV keys: ${message}`)
 		return [] as Array<string>
 	})
@@ -422,7 +423,7 @@ async function revokeAllOAuthGrants(input: {
 		try {
 			page = await input.helpers.listUserGrants(input.userId, { cursor })
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(
 				`OAuth grant listing failed; revoked ${revoked} grant(s) before the failure: ${message}`,
 			)
@@ -433,7 +434,7 @@ async function revokeAllOAuthGrants(input: {
 				await input.helpers.revokeGrant(grant.id, input.userId)
 				revoked += 1
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
+				const message = getErrorMessage(error)
 				input.warnings.push(
 					`OAuth grant revoke failed for grant ${grant.id}: ${message}`,
 				)
@@ -461,7 +462,7 @@ async function clearStorageRunners(input: {
 			await stub.clearStorage()
 			cleared += 1
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(
 				`Storage runner clear failed for ${storageId}: ${message}`,
 			)
@@ -487,7 +488,7 @@ async function purgeJobManager(input: {
 		}
 		return result.purged ? 1 : 0
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		input.warnings.push(`Job manager purge failed: ${message}`)
 		return 0
 	}
@@ -508,7 +509,7 @@ async function purgeRepoSessions(input: {
 			})
 			purged += 1
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(
 				`Repo session purge failed for ${session.id}: ${message}`,
 			)
@@ -553,7 +554,7 @@ async function purgeRemoteConnectorSessions(input: {
 			})
 			purged += 1
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(
 				`Remote connector session purge failed for ${connector.instanceId}: ${message}`,
 			)
@@ -586,7 +587,7 @@ async function purgeMcpClientHub(input: {
 		await stub.purgeForAccountDeletion()
 		return 1
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		input.warnings.push(`MCP client hub purge failed: ${message}`)
 		return 0
 	}
@@ -611,7 +612,7 @@ async function purgePackageRealtimeSessions(input: {
 			}).purge()
 			purged += 1
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(
 				`Package realtime session purge failed for ${savedPackage.id}: ${message}`,
 			)
@@ -640,7 +641,7 @@ async function purgePackageServices(input: {
 			}).purge()
 			purged += 1
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(
 				`Package service purge failed for ${service.packageId}/${service.serviceName}: ${message}`,
 			)
@@ -665,7 +666,7 @@ async function deleteVectorsByIds(input: {
 			await index.deleteByIds(batch)
 			deleted += batch.length
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Vectorize deleteByIds batch failed: ${message}`)
 		}
 	}
@@ -683,7 +684,7 @@ async function deleteKvKeys(input: {
 			await input.kv.delete(key)
 			deleted += 1
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`KV delete failed for ${key}: ${message}`)
 		}
 	}
@@ -710,7 +711,7 @@ async function listKvKeysByPrefix(input: {
 				}
 				cursor = result.list_complete ? undefined : result.cursor
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
+				const message = getErrorMessage(error)
 				input.warnings.push(
 					`KV prefix listing failed for ${prefix}: ${message}`,
 				)
@@ -734,7 +735,7 @@ async function deleteRetrieverCache(input: {
 			packageIds: input.packageIds,
 		})
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		input.warnings.push(`Package retriever KV cleanup failed: ${message}`)
 		return 0
 	}
@@ -856,7 +857,7 @@ async function deleteUserScopedRows(input: {
 				recordDeleted(tableName, result.meta.changes)
 			}
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			const targetLabel =
 				target.kind === 'mcp_memory_suppression'
 					? 'mcp_memory_conversation_suppressions'
@@ -888,7 +889,7 @@ async function deleteUserRow(input: {
 			.run()
 		return result.meta.changes ?? 0
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		input.warnings.push(`Failed to delete user row: ${message}`)
 		return 0
 	}
@@ -943,7 +944,7 @@ export async function deleteUserAccount(input: {
 		userId: input.mcpUserId,
 		warnings,
 	}).catch((error) => {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		warnings.push(`Artifact repo cleanup failed unexpectedly: ${message}`)
 		return 0
 	})
@@ -1042,7 +1043,7 @@ export async function deleteUserAccount(input: {
 				warnings,
 			})
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			warnings.push(`OAuth grant revocation failed unexpectedly: ${message}`)
 		}
 	} else {

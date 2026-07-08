@@ -5,6 +5,7 @@ import {
 	type ExecuteResult,
 	type ResolvedProvider,
 } from '@cloudflare/codemode'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -777,7 +778,7 @@ export type ExecutionErrorDetails =
 export function getExecutionErrorDetails(
 	error: unknown,
 ): ExecutionErrorDetails | null {
-	const message = stringifyExecutionError(error)
+	const message = getErrorMessage(error)
 
 	if (isEntitlementLimitError(error)) {
 		return toEntitlementExecutionErrorDetails(message, error.details)
@@ -929,7 +930,7 @@ function toEntitlementExecutionErrorDetails(
 
 export function formatExecutionOutput(result: ExecuteResult) {
 	if (result.error) {
-		const errorText = stringifyExecutionError(result.error)
+		const errorText = getErrorMessage(result.error)
 		const details = getExecutionErrorDetails(result.error)
 		if (!details) return `Error: ${errorText}`
 		return `Error: ${errorText}\n\nNext step: ${details.nextStep}`
@@ -947,10 +948,6 @@ export function extractRawContent(value: unknown): Array<ContentBlock> | null {
 		return (value as { __mcpContent: Array<ContentBlock> }).__mcpContent
 	}
 	return null
-}
-
-function stringifyExecutionError(error: unknown) {
-	return error instanceof Error ? error.message : String(error)
 }
 
 function extractFirstUrl(message: string) {

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { createRemoteConnectorMcpClient } from './client.ts'
 import { type RemoteConnectorSnapshot } from './types.ts'
@@ -57,7 +58,7 @@ function createErrorStatus(
 	ref: RemoteConnectorRef,
 	error: unknown,
 ): RemoteConnectorStatus {
-	const message = error instanceof Error ? error.message : String(error)
+	const message = getErrorMessage(error)
 	const label = connectorLabel(ref.instanceId)
 	return {
 		state: 'error',

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountUserDataTargets,
 	accountUserDataExcludedOwnerIds,
@@ -242,10 +243,6 @@ function uniqueStrings(values: Iterable<string | null | undefined>) {
 
 function normalizeBoolean(value: unknown) {
 	return value === 1 || value === '1' || value === true
-}
-
-function getErrorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error)
 }
 
 function getTargetTableName(target: UserScopedDataTarget) {

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
 	blendLexicalAndVectorScore,
@@ -155,7 +156,7 @@ async function cleanupFailedCommunityFork(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 				sourceId: input.sourceId,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			}),
 		)
 	})
@@ -169,7 +170,7 @@ async function cleanupFailedCommunityFork(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 				sourceId: input.sourceId,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			}),
 		)
 	})

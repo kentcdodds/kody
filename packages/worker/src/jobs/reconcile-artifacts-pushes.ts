@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	listEntitySourcesForExternalReconcile,
 	updateEntitySource,
@@ -76,10 +77,7 @@ export async function reconcileArtifactsPushes(input: {
 					console.warn('reconcile_artifacts_pushes token cleanup failed', {
 						sourceId: source.id,
 						repoId: source.repo_id,
-						error:
-							cleanupError instanceof Error
-								? cleanupError.message
-								: String(cleanupError),
+						error: getErrorMessage(cleanupError),
 					})
 				}
 			}
@@ -138,7 +136,7 @@ export async function reconcileArtifactsPushes(input: {
 			console.warn('reconcile_artifacts_pushes source failed', {
 				sourceId: source.id,
 				repoId: source.repo_id,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			})
 			try {
 				await updateEntitySource(input.env.APP_DB, {
@@ -150,10 +148,7 @@ export async function reconcileArtifactsPushes(input: {
 				console.warn('reconcile_artifacts_pushes cursor update failed', {
 					sourceId: source.id,
 					repoId: source.repo_id,
-					error:
-						updateError instanceof Error
-							? updateError.message
-							: String(updateError),
+					error: getErrorMessage(updateError),
 				})
 			}
 		}
