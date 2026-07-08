@@ -505,15 +505,16 @@ const workerHandler = {
 		// Lane failures are isolated: each rejection is logged and reported to
 		// Sentry explicitly (the withSentry wrapper flushes captured events via
 		// waitUntil), but the handler never throws, so one broken lane cannot
-		// fail the cron invocation or hide sibling lane failures.
-		const results = await Promise.allSettled(lanes.map((lane) => lane.run()))
-		for (const [index, result] of results.entries()) {
-			if (result.status !== 'rejected') continue
-			console.error(
-				`scheduled_lane_failed lane=${lanes[index]?.name ?? 'unknown'}`,
-				result.reason,
-			)
-			Sentry.captureException(result.reason)
+		// fail the cron invocation or hide sibling lane failures. Lanes run
+		// sequentially so D1 write-heavy crons (retention, reconcile, usage
+		// aggregation) do not contend for the same SQLite lock.
+		for (const lane of lanes) {
+			try {
+				await lane.run()
+			} catch (error) {
+				console.error(`scheduled_lane_failed lane=${lane.name}`, error)
+				Sentry.captureException(error)
+			}
 		}
 	},
 } satisfies ExportedHandler<Env>
