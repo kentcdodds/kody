@@ -218,6 +218,9 @@ export function App(handle: Handle<AppProps>) {
 								<a href="/account/remote-connectors" mix={css(primaryLinkCss)}>
 									Connectors
 								</a>
+								<a href="/account/mcp-servers" mix={css(primaryLinkCss)}>
+									MCP servers
+								</a>
 								{showAdminLink ? (
 									<a href="/admin/users" mix={css(primaryLinkCss)}>
 										Admin

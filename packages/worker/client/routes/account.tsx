@@ -585,6 +585,18 @@ export function AccountRoute(handle: Handle) {
 							</div>
 						</section>
 						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>MCP servers</h2>
+							<p mix={css(descriptionCss)}>
+								Connect remote MCP servers so their tools become Kody
+								capabilities, including OAuth-protected servers.
+							</p>
+							<div>
+								<a href="/account/mcp-servers" mix={css(primaryLinkCss)}>
+									Manage MCP servers
+								</a>
+							</div>
+						</section>
+						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Remote connectors</h2>
 							<p mix={css(descriptionCss)}>
 								Attach generic remote connector refs to normal Kody sessions and

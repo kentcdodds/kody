@@ -5,6 +5,10 @@ import {
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
 import {
+	AccountMcpServersRoute,
+	accountMcpServersRouteLoader,
+} from './account-mcp-servers.tsx'
+import {
 	AccountPackageInvocationTokensRoute,
 	accountPackageInvocationTokensRouteLoader,
 } from './account-package-invocation-tokens.tsx'
@@ -48,6 +52,7 @@ import { VerifyEmailRoute } from './verify-email.tsx'
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/account': accountRouteLoader,
 	'/account/integrations': accountIntegrationsRouteLoader,
+	'/account/mcp-servers': accountMcpServersRouteLoader,
 	'/account/package-invocation-tokens':
 		accountPackageInvocationTokensRouteLoader,
 	'/account/package-invocation-tokens/new':
@@ -78,6 +83,7 @@ export const clientRoutes = {
 	'/': <HomeRoute />,
 	'/account': <AccountRoute />,
 	'/account/integrations': <AccountIntegrationsRoute />,
+	'/account/mcp-servers': <AccountMcpServersRoute />,
 	'/account/package-invocation-tokens': <AccountPackageInvocationTokensRoute />,
 	'/account/package-invocation-tokens/new': (
 		<AccountPackageInvocationTokensRoute />

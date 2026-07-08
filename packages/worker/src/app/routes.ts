@@ -5,6 +5,10 @@ export const routes = route({
 	connectOauth: '/connect/oauth',
 	accountIntegrations: '/account/integrations',
 	accountIntegrationsApi: '/account/integrations.json',
+	accountMcpServers: '/account/mcp-servers',
+	accountMcpServersOauthCallback: '/account/mcp-servers/oauth/callback',
+	accountMcpServersApi: '/account/mcp-servers.json',
+	accountMcpServersApiPost: post('/account/mcp-servers.json'),
 	accountPackageInvocationTokens: '/account/package-invocation-tokens',
 	accountPackageInvocationTokenNew: '/account/package-invocation-tokens/new',
 	accountPackageInvocationTokenDetail:

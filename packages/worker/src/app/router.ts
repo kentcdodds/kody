@@ -33,6 +33,11 @@ import {
 	createAccountIntegrationsHandler,
 } from '#app/handlers/account-integrations.ts'
 import {
+	createAccountMcpServersApiHandler,
+	createAccountMcpServersHandler,
+	createAccountMcpServersOauthCallbackHandler,
+} from '#app/handlers/account-mcp-servers.ts'
+import {
 	createAccountPackageInvocationTokensApiHandler,
 	createAccountPackageInvocationTokensHandler,
 } from '#app/handlers/account-package-invocation-tokens.ts'
@@ -107,6 +112,11 @@ export function createAppRouter(appEnv: AppEnv) {
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
+			accountMcpServers: createAccountMcpServersHandler(env),
+			accountMcpServersOauthCallback:
+				createAccountMcpServersOauthCallbackHandler(env),
+			accountMcpServersApi: createAccountMcpServersApiHandler(env),
+			accountMcpServersApiPost: createAccountMcpServersApiHandler(env),
 			accountPackageInvocationTokens:
 				createAccountPackageInvocationTokensHandler(env),
 			accountPackageInvocationTokenNew:
