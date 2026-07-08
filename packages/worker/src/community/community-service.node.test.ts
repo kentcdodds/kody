@@ -7,7 +7,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityBan: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
 	getCommunityListingById: vi.fn(),
-	listAllCommunityListings: vi.fn(),
+	listCommunityListingCandidates: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
 	countCommunityForksByListingIds: vi.fn(),
 	writeCommunitySnapshot: vi.fn(),
@@ -74,8 +74,8 @@ vi.mock('./repo.ts', () => ({
 		mockModule.getCommunityListingByOwnerAndPackage(...args),
 	getCommunityListingById: (...args: Array<unknown>) =>
 		mockModule.getCommunityListingById(...args),
-	listAllCommunityListings: (...args: Array<unknown>) =>
-		mockModule.listAllCommunityListings(...args),
+	listCommunityListingCandidates: (...args: Array<unknown>) =>
+		mockModule.listCommunityListingCandidates(...args),
 	getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
 		mockModule.getCommunityRatingAggregatesByListingIds(...args),
 	countCommunityForksByListingIds: (...args: Array<unknown>) =>
@@ -385,7 +385,7 @@ test('searchCommunityListings empty query uses publishedAt tiebreaker', async ()
 		id: 'listing-newer',
 		publishedAt: '2026-07-03T00:00:00.000Z',
 	})
-	mockModule.listAllCommunityListings.mockResolvedValue([
+	mockModule.listCommunityListingCandidates.mockResolvedValue([
 		olderListing,
 		newerListing,
 	])

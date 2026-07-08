@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
 import {
+	CAPABILITY_EMBEDDING_DIMENSIONS,
+	deterministicEmbedding,
+} from '#mcp/capabilities/capability-search.ts'
+import {
 	deleteMemory,
 	getMemory,
 	searchMemoryRecords,
@@ -43,6 +47,25 @@ function createMemoryTestDb() {
 							return null
 						},
 						async all<T>() {
+							if (
+								normalizedQuery.includes('from mcp_memories') &&
+								normalizedQuery.includes('and id in (')
+							) {
+								const [userId, ...rest] = params as Array<string>
+								const statusValues = new Set(['active', 'archived', 'deleted'])
+								const ids = rest.filter((value) => !statusValues.has(value))
+								const statuses = rest.filter((value) => statusValues.has(value))
+								const rows = [...memories.values()]
+									.filter((row) => row.user_id === userId)
+									.filter((row) => ids.includes(row.id))
+									.filter((row) =>
+										statuses.length === 0
+											? true
+											: statuses.includes(row.status),
+									)
+									.map((row) => ({ ...row }))
+								return { results: rows as Array<T>, meta: { changes: 0 } }
+							}
 							if (
 								normalizedQuery.includes('from mcp_memories') &&
 								normalizedQuery.includes('order by updated_at desc')
@@ -243,6 +266,21 @@ const env = (db: D1Database) =>
 	({
 		APP_DB: db,
 	}) satisfies Pick<Env, 'APP_DB'> as Pick<Env, 'APP_DB' | 'AI'>
+
+function createDeterministicAiBinding(): Ai {
+	return {
+		async run(...args: Array<unknown>) {
+			const input = args[1] as { text?: unknown }
+			const texts = Array.isArray(input.text)
+				? input.text.map(String)
+				: [String(input.text ?? '')]
+			return {
+				data: texts.map((text) => deterministicEmbedding(text)),
+				shape: [texts.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+			}
+		},
+	} as unknown as Ai
+}
 
 test('memory service upserts, verifies, and soft deletes', async () => {
 	const testDb = createMemoryTestDb()
@@ -483,4 +521,99 @@ test('memory service rejects invalid source uris and tolerates missing stored va
 	})
 
 	expect(loaded?.sourceUris).toEqual([])
+})
+
+test('memory search online queries Vectorize first and hydrates vector hits by id', async () => {
+	const testDb = createMemoryTestDb()
+	const baseTime = Date.parse('2026-06-01T00:00:00.000Z')
+	function seedMemory(input: {
+		id: string
+		subject: string
+		summary: string
+		ageMinutes: number
+	}) {
+		const timestamp = new Date(
+			baseTime - input.ageMinutes * 60_000,
+		).toISOString()
+		testDb.memories.set(input.id, {
+			id: input.id,
+			user_id: 'user-123',
+			category: null,
+			status: 'active',
+			subject: input.subject,
+			summary: input.summary,
+			details: '',
+			tags_json: '[]',
+			source_uris_json: '[]',
+			dedupe_key: null,
+			created_at: timestamp,
+			updated_at: timestamp,
+			last_accessed_at: null,
+			deleted_at: null,
+		})
+	}
+	seedMemory({
+		id: 'memory-recent',
+		subject: 'Deployment window',
+		summary: 'User prefers deployments after 4pm.',
+		ageMinutes: 0,
+	})
+	// Enough newer filler rows that the old memory falls outside the bounded
+	// lexical candidate set (most recent 50 rows).
+	for (let index = 0; index < 60; index += 1) {
+		seedMemory({
+			id: `filler-${index}`,
+			subject: `Filler note ${index}`,
+			summary: 'Unrelated grocery reminder.',
+			ageMinutes: index + 1,
+		})
+	}
+	seedMemory({
+		id: 'memory-old-vector-hit',
+		subject: 'Deployment window history',
+		summary: 'Old deployment window memory only reachable via Vectorize.',
+		ageMinutes: 10_000,
+	})
+
+	const vectorQueryCalls: Array<{
+		topK: number
+		filter?: Record<string, unknown>
+	}> = []
+	const runtimeEnv = {
+		APP_DB: testDb.db,
+		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
+		CAPABILITY_VECTOR_INDEX: {
+			async query(
+				_values: Array<number>,
+				options: { topK: number; filter?: Record<string, unknown> },
+			) {
+				vectorQueryCalls.push(options)
+				return {
+					matches: [{ id: 'memory_memory-old-vector-hit', score: 0.92 }],
+				}
+			},
+		},
+	} as unknown as Pick<Env, 'APP_DB' | 'CAPABILITY_VECTOR_INDEX'>
+
+	const result = await searchMemoryRecords({
+		env: runtimeEnv,
+		userId: 'user-123',
+		query: 'deployment window',
+		limit: 5,
+	})
+
+	// One Vectorize query with user/kind/status metadata filters; no second
+	// query happens inside the fusion step.
+	expect(vectorQueryCalls).toHaveLength(1)
+	expect(vectorQueryCalls[0]).toMatchObject({
+		filter: {
+			kind: { $eq: 'memory' },
+			userId: { $eq: 'user-123' },
+			status: { $in: ['active', 'archived'] },
+		},
+	})
+	const matchedIds = result.matches.map((match) => match.id)
+	expect(matchedIds).toContain('memory-old-vector-hit')
+	expect(matchedIds).toContain('memory-recent')
 })

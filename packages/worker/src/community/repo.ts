@@ -100,6 +100,37 @@ function listingStatusFilter(includeDelisted: boolean) {
 	return includeDelisted ? '' : `WHERE status = 'active'`
 }
 
+// D1 caps bound parameters per statement, so IN (...) lookups over large id
+// sets are issued in chunks.
+const maxSqlBindingsPerChunk = 90
+
+function chunkValues<T>(values: Array<T>, size: number): Array<Array<T>> {
+	const chunks: Array<Array<T>> = []
+	for (let offset = 0; offset < values.length; offset += size) {
+		chunks.push(values.slice(offset, offset + size))
+	}
+	return chunks
+}
+
+const communityListingSearchTextColumns = [
+	'name',
+	'kody_id',
+	'description',
+	'search_text',
+	'tags_json',
+	'readme_content',
+] as const
+
+const maxCommunityListingLikeTokens = 8
+
+function extractCommunityListingLikeTokens(query: string): Array<string> {
+	// Tokens are restricted to [a-z0-9]+ so they are safe to embed inside
+	// LIKE patterns without wildcard escaping.
+	return Array.from(
+		new Set(query.toLowerCase().match(/[a-z0-9]+/g) ?? []),
+	).slice(0, maxCommunityListingLikeTokens)
+}
+
 export async function insertCommunityListing(
 	db: D1Database,
 	row: Omit<
@@ -271,21 +302,50 @@ export async function listCommunityListings(
 	return (rows.results ?? []).map(mapCommunityListingRow)
 }
 
-export async function listAllCommunityListings(
+/**
+ * Bounded candidate query for community search/browse. Applies SQL-level text
+ * pre-filtering (LIKE across name/kody_id/description/search_text/tags_json/
+ * readme_content) when a query is provided, orders by recency, and never
+ * returns more than `limit` rows so scoring stays off the full table.
+ */
+export async function listCommunityListingCandidates(
 	db: D1Database,
 	input: {
 		includeDelisted: boolean
+		limit: number
+		query?: string | null
 	},
 ): Promise<Array<CommunityListingRecord>> {
+	const conditions: Array<string> = []
+	const bindings: Array<unknown> = []
+	if (!input.includeDelisted) {
+		conditions.push(`status = 'active'`)
+	}
+	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
+	if (tokens.length > 0) {
+		const tokenClauses = tokens.map((token) => {
+			const pattern = `%${token}%`
+			const columnClauses = communityListingSearchTextColumns.map((column) => {
+				bindings.push(pattern)
+				return `${column} LIKE ?`
+			})
+			return `(${columnClauses.join(' OR ')})`
+		})
+		conditions.push(`(${tokenClauses.join(' OR ')})`)
+	}
+	const whereClause =
+		conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 	const rows = await db
 		.prepare(
 			`SELECT id, owner_user_id, package_id, source_id, kody_id, name, description,
 				tags_json, search_text, readme_content, license, pinned_commit, status,
 				created_at, updated_at, published_at
 			FROM community_listings
-			${listingStatusFilter(input.includeDelisted)}
-			ORDER BY published_at DESC`,
+			${whereClause}
+			ORDER BY published_at DESC
+			LIMIT ?`,
 		)
+		.bind(...bindings, input.limit)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapCommunityListingRow)
 }
@@ -395,21 +455,23 @@ export async function countCommunityForksByListingIds(
 	listingIds: Array<string>,
 ): Promise<Record<string, number>> {
 	if (listingIds.length === 0) return {}
-	const placeholders = listingIds.map(() => '?').join(', ')
-	const rows = await db
-		.prepare(
-			`SELECT listing_id, COUNT(*) AS fork_count
-			FROM community_forks
-			WHERE listing_id IN (${placeholders})
-			GROUP BY listing_id`,
-		)
-		.bind(...listingIds)
-		.all<Record<string, unknown>>()
 	const counts: Record<string, number> = Object.fromEntries(
 		listingIds.map((listingId) => [listingId, 0]),
 	)
-	for (const row of rows.results ?? []) {
-		counts[String(row['listing_id'])] = Number(row['fork_count'] ?? 0)
+	for (const idChunk of chunkValues(listingIds, maxSqlBindingsPerChunk)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT listing_id, COUNT(*) AS fork_count
+				FROM community_forks
+				WHERE listing_id IN (${placeholders})
+				GROUP BY listing_id`,
+			)
+			.bind(...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of rows.results ?? []) {
+			counts[String(row['listing_id'])] = Number(row['fork_count'] ?? 0)
+		}
 	}
 	return counts
 }
@@ -489,20 +551,6 @@ export async function getCommunityRatingAggregatesByListingIds(
 	listingIds: Array<string>,
 ): Promise<Record<string, CommunityRatingAggregate>> {
 	if (listingIds.length === 0) return {}
-	const placeholders = listingIds.map(() => '?').join(', ')
-	const rows = await db
-		.prepare(
-			`SELECT
-				listing_id,
-				COUNT(*) AS rating_count,
-				AVG(stars) AS average_stars,
-				AVG(adaptation_effort) AS average_adaptation_effort
-			FROM community_ratings
-			WHERE listing_id IN (${placeholders})
-			GROUP BY listing_id`,
-		)
-		.bind(...listingIds)
-		.all<Record<string, unknown>>()
 	const aggregates: Record<string, CommunityRatingAggregate> =
 		Object.fromEntries(
 			listingIds.map((listingId) => [
@@ -515,18 +563,34 @@ export async function getCommunityRatingAggregatesByListingIds(
 				},
 			]),
 		)
-	for (const row of rows.results ?? []) {
-		const listingId = String(row['listing_id'])
-		const ratingCount = Number(row['rating_count'] ?? 0)
-		aggregates[listingId] = {
-			listingId,
-			ratingCount,
-			averageStars:
-				ratingCount === 0 ? null : Number(row['average_stars'] ?? 0),
-			averageAdaptationEffort:
-				ratingCount === 0
-					? null
-					: Number(row['average_adaptation_effort'] ?? 0),
+	for (const idChunk of chunkValues(listingIds, maxSqlBindingsPerChunk)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT
+					listing_id,
+					COUNT(*) AS rating_count,
+					AVG(stars) AS average_stars,
+					AVG(adaptation_effort) AS average_adaptation_effort
+				FROM community_ratings
+				WHERE listing_id IN (${placeholders})
+				GROUP BY listing_id`,
+			)
+			.bind(...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of rows.results ?? []) {
+			const listingId = String(row['listing_id'])
+			const ratingCount = Number(row['rating_count'] ?? 0)
+			aggregates[listingId] = {
+				listingId,
+				ratingCount,
+				averageStars:
+					ratingCount === 0 ? null : Number(row['average_stars'] ?? 0),
+				averageAdaptationEffort:
+					ratingCount === 0
+						? null
+						: Number(row['average_adaptation_effort'] ?? 0),
+			}
 		}
 	}
 	return aggregates
