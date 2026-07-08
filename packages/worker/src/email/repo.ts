@@ -704,7 +704,7 @@ export async function insertEmailMessage(input: {
 			.run()
 	} catch (error) {
 		// Best-effort orphan cleanup: the blob was written before the row.
-		if (rawMimeKey != null && input.blobs) {
+		if (rawMimeKey != null) {
 			await input.blobs.delete(rawMimeKey).catch(() => undefined)
 		}
 		throw error
