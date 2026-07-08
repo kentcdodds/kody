@@ -127,7 +127,15 @@ export async function addMcpServer(input: {
 		const message = error instanceof Error ? error.message : String(error)
 		throw new Error(`Unable to connect to MCP server: ${message}`)
 	}
-	await insertMcpServerSettingRow({ db: input.env.APP_DB, row })
+	try {
+		await insertMcpServerSettingRow({ db: input.env.APP_DB, row })
+	} catch (error) {
+		// Roll back the hub registration so a failed insert does not leave
+		// orphaned connection state (or OAuth data) with no D1 record to
+		// manage it.
+		await hub.removeServer({ serverId: row.id }).catch(() => {})
+		throw error
+	}
 	return {
 		setting: toMetadata(row),
 		connection,

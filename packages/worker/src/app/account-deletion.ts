@@ -565,14 +565,15 @@ async function purgeRemoteConnectorSessions(input: {
 async function purgeMcpClientHub(input: {
 	env: Env
 	userId: string
-	mcpServers: ReadonlyArray<UserMcpServerSnapshot>
 	warnings: Array<string>
 }): Promise<number> {
-	if (input.mcpServers.length === 0) return 0
+	// Always purge, even when no mcp_server_settings rows remain: the hub DO
+	// can still hold OAuth tokens and SDK registrations (for example after a
+	// failed add), and those must not survive account deletion.
 	const namespace = input.env.MCP_CLIENT_HUB
 	if (!namespace) {
 		input.warnings.push(
-			`MCP_CLIENT_HUB binding was unavailable; the MCP client hub with ${input.mcpServers.length} server(s) was not purged.`,
+			'MCP_CLIENT_HUB binding was unavailable; the MCP client hub was not purged.',
 		)
 		return 0
 	}
@@ -962,7 +963,6 @@ export async function deleteUserAccount(input: {
 	result.clearedDurableObjects.mcpClientHubs = await purgeMcpClientHub({
 		env: input.env,
 		userId: input.mcpUserId,
-		mcpServers: inventory.mcpServers,
 		warnings,
 	})
 	result.clearedDurableObjects.packageRealtimeSessions =

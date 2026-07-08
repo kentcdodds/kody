@@ -633,6 +633,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeMcpClientHubMock = vi.fn(async () => undefined)
 	const doFetchMock = vi.fn(async () => Response.json({ ok: true }))
 	const deleteVectorsMock = vi.fn(async () => undefined)
 	const env = {
@@ -656,6 +657,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		REMOTE_CONNECTOR_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ rpcPurgeUserSession: purgeRemoteConnectorMock }),
+		},
+		MCP_CLIENT_HUB: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ purgeForAccountDeletion: purgeMcpClientHubMock }),
 		},
 		PACKAGE_REALTIME_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -813,9 +818,14 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		jobManagers: 1,
 		repoSessions: 1,
 		remoteConnectorSessions: 1,
+		// The MCP client hub is purged even when the user has no
+		// mcp_server_settings rows, since the hub DO can still hold OAuth
+		// tokens from failed or removed registrations.
+		mcpClientHubs: 1,
 		packageRealtimeSessions: 1,
 		packageServiceInstances: 2,
 	})
+	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
 	expect(result.warnings.length).toBeGreaterThan(0)
 })
 
