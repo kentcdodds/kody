@@ -137,25 +137,27 @@ the same way).
 
 ### Where guards are used
 
-| Route / handler                               | Guard                                              |
-| --------------------------------------------- | -------------------------------------------------- |
-| `GET /admin`                                  | `requireUserWithRole('admin')` → redirect to users |
-| `GET /admin/users`                            | `requireUserWithRole('admin')`                     |
-| `GET /admin/users.json`                       | `requireUserWithPermission('read:user:any')`       |
-| `POST /admin/users.json` (assign/remove role) | `requireUserWithPermission('update:user:any')`     |
-| `GET /admin/roles`                            | `requireUserWithRole('admin')`                     |
-| `GET /admin/roles.json`                       | `requireUserWithPermission('read:role:any')`       |
-| `GET /admin/invites`                          | `requireUserWithRole('admin')`                     |
-| `GET/POST /admin/invites.json`                | `requireUserWithRole('admin')`                     |
-| `GET /admin/system-email`                     | `requireUserWithRole('admin')`                     |
-| `GET /admin/system-email.json`                | `requireUserWithRole('admin')`                     |
+| Route / handler                        | Guard                                              |
+| -------------------------------------- | -------------------------------------------------- |
+| `GET /admin`                           | `requireUserWithRole('admin')` → redirect to users |
+| `GET /admin/users`                     | `requireUserWithRole('admin')`                     |
+| `GET /admin/users.json`                | `requireUserWithPermission('read:user:any')`       |
+| `POST /admin/users.json` (roles, plan) | `requireUserWithPermission('update:user:any')`     |
+| `GET /admin/roles`                     | `requireUserWithRole('admin')`                     |
+| `GET /admin/roles.json`                | `requireUserWithPermission('read:role:any')`       |
+| `GET /admin/invites`                   | `requireUserWithRole('admin')`                     |
+| `GET/POST /admin/invites.json`         | `requireUserWithRole('admin')`                     |
+| `GET /admin/system-email`              | `requireUserWithRole('admin')`                     |
+| `GET /admin/system-email.json`         | `requireUserWithRole('admin')`                     |
 
 Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
 `packages/worker/src/app/handlers/admin-roles.ts`,
 `packages/worker/src/app/handlers/admin-invites.ts`.
 
-Role assignment and removal emit audit events via `logAuditEvent` with category
-`admin`.
+`POST /admin/users.json` dispatches on an `action` field: `assign_role`,
+`remove_role`, and `update_plan` (set or clear — `plan: null` — a user's
+entitlement plan; see [Entitlements](./entitlements.md)). All three mutations
+emit audit events via `logAuditEvent` with category `admin`.
 
 ### Last-admin guardrail
 
@@ -235,7 +237,10 @@ behind `search`/`execute`.
 The admin role is an **account-administration** role, not a data-access role.
 
 **Admins can see** account metadata only: user id, username, email,
-`created_at`, `updated_at`, and role assignments.
+email-verification state, entitlement plan, `created_at`, `updated_at`, and role
+assignments. The plan is account metadata (it drives quota enforcement), not
+user content, and admins can change it via `/admin/users` or the
+`admin_user_update` MCP capability.
 
 **Admins cannot see** user content (secrets, values, memories, packages, jobs,
 user inbox email, chat threads, durable storage, remote connectors, OAuth
@@ -258,10 +263,10 @@ This boundary is enforced structurally:
    is separate and filters email rows by `user_id = 'system:email'`.
 3. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
-   (`id`, `username`, `email`, `created_at`, `updated_at`, `roles`). The unit
-   test in `admin-users.node.test.ts` asserts every user object in the list
-   response has exactly those keys — an accidental widening fails
-   `npm run validate`.
+   (`id`, `username`, `email`, `email_verified`, `email_verified_at`, `plan`,
+   `created_at`, `updated_at`, `roles`). The unit test in
+   `admin-users.node.test.ts` asserts every user object in the list response has
+   exactly those keys — an accidental widening fails `npm run validate`.
 4. **Existing owner-only paths take no admin bypass.** Secret reveal remains
    session-authenticated and owner-only.
 

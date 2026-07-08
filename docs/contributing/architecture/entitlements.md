@@ -33,6 +33,25 @@ attacker-controlled (anyone can send to a `{username}@<platform domain>`
 address). Use `resolveEmailResourceLimit` to read the effective limit for those
 resources.
 
+## Assigning plans
+
+Signup and invites never set a plan — new accounts start with `plan = NULL`
+(legacy/unlimited plus the email backstops above). Admins assign or clear plans
+through two audited, admin-only surfaces, both backed by `updateAdminUserPlan`
+in `packages/worker/src/app/admin-users-data.ts`:
+
+- **Admin UI** — the "Manage plan" panel on `/admin/users` posts
+  `{ action: 'update_plan', userId, plan }` to `POST /admin/users.json` (guarded
+  by `update:user:any`). `plan: null` clears the plan; unknown plan strings are
+  rejected with `400` rather than coerced to null.
+- **MCP** — the `admin_user_update` capability (`requiredRole: 'admin'`) updates
+  one user by `id` or `email` and accepts `plan: PlanName | null`.
+
+Both paths validate against the plan registry (`parsePlanName` / `planNames`)
+and write an `admin`-category audit event with reason `target_user_id=…;plan=…`.
+Because daily counters accumulate even for plan-less users, assigning a plan
+later binds immediately against the usage already counted that day.
+
 ## Plan lookup
 
 The MCP `userId` is the SHA-256 hash of the normalized account email

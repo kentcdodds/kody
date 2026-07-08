@@ -119,11 +119,13 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 			'email_verified',
 			'email_verified_at',
 			'id',
+			'plan',
 			'roles',
 			'updated_at',
 			'username',
 		].sort(),
 	)
+	expect(memberRecord.plan).toBe(null)
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
 
@@ -145,6 +147,21 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await page.goto(`/admin/users?pageSize=100&page=${lastUsersPage}`)
 	await page.getByRole('button', { name: memberUser.username }).click()
 	await expect(page.getByText('Account metadata only')).toBeVisible()
+
+	const planSelect = page.getByLabel('Plan')
+	await expect(planSelect).toHaveValue('')
+	await planSelect.selectOption('pro')
+	await page.getByRole('button', { name: 'Save plan' }).click()
+	await expect(page.getByText('Updated plan to pro.')).toBeVisible()
+	const planApiResponse = await page.request.get(
+		`/admin/users.json?pageSize=100&page=${lastUsersPage}`,
+	)
+	expect(planApiResponse.ok()).toBe(true)
+	const planPayload = await planApiResponse.json()
+	const memberAfterPlan = planPayload.users.find(
+		(user: { email: string }) => user.email === memberUser.email,
+	)
+	expect(memberAfterPlan.plan).toBe('pro')
 
 	const roleSelect = page.getByLabel('Role')
 	await roleSelect.selectOption('admin')

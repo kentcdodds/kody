@@ -115,6 +115,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			pageSize: 25,
 			total: 0,
 			availableRoles: [],
+			availablePlans: [],
 		},
 	}
 	setPreloadedNavigationData('/account', payload)

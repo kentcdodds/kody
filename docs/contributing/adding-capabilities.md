@@ -149,6 +149,7 @@ Current admin capabilities:
 - `admin_user_list`
 - `admin_user_get`
 - `admin_user_create`
+- `admin_user_update`
 - `admin_audit_log_query`
 
 When adding more admin actions, expose service-layer functions by adding new

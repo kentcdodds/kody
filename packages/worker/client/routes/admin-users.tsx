@@ -28,6 +28,7 @@ import {
 } from './account-management-components.tsx'
 import { type RoleName } from '#app/permissions.ts'
 import {
+	type AdminPlanName,
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
 } from '#app/loader-data.ts'
@@ -78,13 +79,18 @@ export function AdminUsersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let users: Array<AdminUserListItem> = []
 	let availableRoles: Array<RoleName> = []
+	let availablePlans: Array<AdminPlanName> = []
 	let page = 1
 	let pageSize = 20
 	let total = 0
 	let selectedUserId: number | null = null
 	let message: string | null = null
-	let actionState: 'idle' | 'assigning' | 'removing' = 'idle'
+	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
 	let selectedRoleToAssign = 'user' as RoleName
+	// '' represents the NULL plan (legacy/unlimited). The draft follows the
+	// selected user (see the render body) until the admin edits it.
+	let selectedPlanChoice: AdminPlanName | '' = ''
+	let planDraftUserId: number | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
@@ -121,6 +127,7 @@ export function AdminUsersRoute(handle: Handle) {
 			}
 			users = payload.users
 			availableRoles = payload.availableRoles
+			availablePlans = payload.availablePlans
 			page = payload.page
 			pageSize = payload.pageSize
 			total = payload.total
@@ -186,6 +193,7 @@ export function AdminUsersRoute(handle: Handle) {
 			}
 			users = payload.users
 			availableRoles = payload.availableRoles
+			availablePlans = payload.availablePlans
 			page = payload.page
 			pageSize = payload.pageSize
 			total = payload.total
@@ -206,6 +214,61 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
+	async function submitPlanAction() {
+		const selectedUser = getSelectedUser()
+		if (!selectedUser || actionState !== 'idle') return
+		const plan = selectedPlanChoice === '' ? null : selectedPlanChoice
+		actionState = 'saving-plan'
+		message = null
+		handle.update()
+		try {
+			// Carry the current query string so the server rebuilds the same
+			// page/pageSize slice the user is viewing, not page one.
+			const search = new URL(readCurrentRouterHref(handle), 'http://localhost')
+				.search
+			const response = await fetch(`${adminUsersApiPath}${search}`, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'update_plan',
+					userId: selectedUser.id,
+					plan,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminUsersLoaderData & { ok?: boolean; error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to update user plan.')
+			}
+			users = payload.users
+			availableRoles = payload.availableRoles
+			availablePlans = payload.availablePlans
+			page = payload.page
+			pageSize = payload.pageSize
+			total = payload.total
+			selectedUserId = selectedUser.id
+			lastLoadedHref = readCurrentRouterHref(handle)
+			message = `Updated plan to ${plan ?? 'legacy/unlimited'}.`
+			status = 'ready'
+			actionState = 'idle'
+			handle.update()
+		} catch (error) {
+			actionState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to update user plan.'
+			handle.update()
+		}
+	}
+
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
 
@@ -215,6 +278,7 @@ export function AdminUsersRoute(handle: Handle) {
 		if (!routeData) return false
 		users = routeData.users
 		availableRoles = routeData.availableRoles
+		availablePlans = routeData.availablePlans
 		page = routeData.page
 		pageSize = routeData.pageSize
 		total = routeData.total
@@ -268,11 +332,18 @@ export function AdminUsersRoute(handle: Handle) {
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
 
+		// Re-seed the plan draft whenever a different user becomes selected so
+		// the select always starts from that user's stored plan.
+		if (selectedUser && selectedUser.id !== planDraftUserId) {
+			planDraftUserId = selectedUser.id
+			selectedPlanChoice = selectedUser.plan ?? ''
+		}
+
 		return (
 			<AccountManagementShell>
 				<AdminPageHeader
 					title="Admin users"
-					description="Review account metadata and manage role assignments. User content is never shown here."
+					description="Review account metadata and manage role assignments and entitlement plans. User content is never shown here."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
@@ -416,6 +487,10 @@ export function AdminUsersRoute(handle: Handle) {
 													: 'None',
 										},
 										{
+											label: 'Plan',
+											value: selectedUser.plan ?? 'Legacy/unlimited',
+										},
+										{
 											label: 'Created',
 											value: formatTimestamp(selectedUser.created_at),
 										},
@@ -479,6 +554,55 @@ export function AdminUsersRoute(handle: Handle) {
 											]}
 										>
 											{actionState === 'removing' ? 'Removing…' : 'Remove'}
+										</button>
+									</div>
+								</AccountManagementPanel>
+								<AccountManagementPanel title="Manage plan">
+									<div
+										mix={css({
+											display: 'grid',
+											gap: spacing.md,
+											gridTemplateColumns: 'minmax(0, 1fr) auto',
+											alignItems: 'end',
+											[mq.mobile]: { gridTemplateColumns: '1fr' },
+										})}
+									>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Plan</span>
+											<select
+												value={selectedPlanChoice}
+												disabled={isMutating}
+												aria-label="Plan"
+												mix={[
+													on('change', (event) => {
+														selectedPlanChoice = event.currentTarget.value as
+															| AdminPlanName
+															| ''
+														handle.update()
+													}),
+													css(inputCss),
+												]}
+											>
+												<option value="">Legacy/unlimited (no plan)</option>
+												{availablePlans.map((plan) => (
+													<option key={plan} value={plan}>
+														{plan}
+													</option>
+												))}
+											</select>
+										</label>
+										<button
+											type="button"
+											disabled={
+												isMutating ||
+												selectedPlanChoice === (selectedUser.plan ?? '')
+											}
+											mix={[
+												on('click', () => void submitPlanAction()),
+												css(primaryButtonCss),
+											]}
+										>
+											{actionState === 'saving-plan' ? 'Saving…' : 'Save plan'}
 										</button>
 									</div>
 								</AccountManagementPanel>

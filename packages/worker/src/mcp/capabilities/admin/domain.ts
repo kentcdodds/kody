@@ -7,6 +7,7 @@ import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
+import { adminUserUpdateCapability } from './admin-user-update.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -18,6 +19,7 @@ export const adminDomain = defineDomain({
 		'account metadata',
 		'users',
 		'roles',
+		'plans',
 		'audit',
 		'system email',
 	],
@@ -25,6 +27,7 @@ export const adminDomain = defineDomain({
 		adminUserListCapability,
 		adminUserGetCapability,
 		adminUserCreateCapability,
+		adminUserUpdateCapability,
 		adminAuditLogQueryCapability,
 		adminUsageOverviewCapability,
 		adminSystemEmailListCapability,

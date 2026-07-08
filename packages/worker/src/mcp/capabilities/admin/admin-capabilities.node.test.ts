@@ -7,6 +7,7 @@ import { adminUsageOverviewCapability } from './admin-usage-overview.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
+import { adminUserUpdateCapability } from './admin-user-update.ts'
 
 type UserRow = {
 	id: number
@@ -158,7 +159,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, created_at, updated_at from users where id = ?',
+							'select id, username, email, email_verified_at, plan, created_at, updated_at from users where id = ?',
 						)
 					) {
 						return (users.find((user) => user.id === params[0]) ??
@@ -174,7 +175,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, created_at, updated_at from users where email = ? collate nocase',
+							'select id, username, email, email_verified_at, plan, created_at, updated_at from users where email = ? collate nocase',
 						)
 					) {
 						const email = String(params[0]).toLowerCase()
@@ -250,7 +251,7 @@ function createAdminCapabilityTestDb(input: {
 				async all<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, created_at, updated_at from users order by id asc limit ? offset ?',
+							'select id, username, email, email_verified_at, plan, created_at, updated_at from users order by id asc limit ? offset ?',
 						)
 					) {
 						const pageSize = Number(params[0])
@@ -397,6 +398,17 @@ function createAdminCapabilityTestDb(input: {
 							expires_at: Number(expiresAt),
 						})
 						return { meta: { changes: 1, last_row_id: 1 } }
+					}
+					if (
+						normalizedQuery.includes(
+							'update users set plan = ?, updated_at = ? where id = ?',
+						)
+					) {
+						const user = users.find((row) => row.id === Number(params[2]))
+						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
+						user.plan = params[0] === null ? null : String(params[0])
+						user.updated_at = String(params[1])
+						return { meta: { changes: 1, last_row_id: 0 } }
 					}
 					if (normalizedQuery.startsWith('delete from users')) {
 						const userId = Number(params[0])
@@ -662,6 +674,103 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	])
 })
 
+test('admin_user_update sets and clears the entitlement plan with audit metadata', async () => {
+	const { db, auditEvents, users } = createAdminCapabilityTestDb({
+		users: [
+			{
+				id: 1,
+				username: 'admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+			{
+				id: 2,
+				username: 'jane',
+				email: 'jane@example.com',
+				email_verified_at: null,
+				plan: null,
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'admin' },
+			{ user_id: 2, role_name: 'user' },
+		],
+	})
+	const ctx = createAdminCapabilityContext(db)
+
+	const setByEmail = await adminUserUpdateCapability.handler(
+		{ email: 'JANE@example.com', plan: 'pro' },
+		ctx,
+	)
+	expect(setByEmail.user).toMatchObject({
+		id: 2,
+		username: 'jane',
+		plan: 'pro',
+		roles: ['user'],
+	})
+	expect(users.find((user) => user.id === 2)?.plan).toBe('pro')
+
+	const clearById = await adminUserUpdateCapability.handler(
+		{ id: 2, plan: null },
+		ctx,
+	)
+	expect(clearById.user).toMatchObject({ id: 2, plan: null })
+	expect(users.find((user) => user.id === 2)?.plan).toBe(null)
+
+	expect(auditEvents).toEqual([
+		expect.objectContaining({
+			action: 'admin_user_update',
+			result: 'success',
+			reason: 'target_user_id=2;plan=pro',
+		}),
+		expect.objectContaining({
+			action: 'admin_user_update',
+			result: 'success',
+			reason: 'target_user_id=2;plan=null',
+		}),
+	])
+})
+
+test('admin_user_update rejects unknown users and unknown plan names', async () => {
+	const { db, auditEvents } = createAdminCapabilityTestDb({
+		users: [
+			{
+				id: 1,
+				username: 'admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 1, role_name: 'admin' }],
+	})
+	const ctx = createAdminCapabilityContext(db)
+
+	await expect(
+		adminUserUpdateCapability.handler(
+			{ email: 'missing@example.com', plan: 'pro' },
+			ctx,
+		),
+	).rejects.toThrow('User not found.')
+	expect(auditEvents).toEqual([
+		expect.objectContaining({
+			action: 'admin_user_update',
+			result: 'failure',
+			reason: 'User not found.',
+		}),
+	])
+
+	await expect(
+		adminUserUpdateCapability.handler(
+			{ id: 1, plan: 'enterprise' } as never,
+			ctx,
+		),
+	).rejects.toThrow()
+})
+
 test('admin capabilities reject non-admin direct handler calls', async () => {
 	const { db } = createAdminCapabilityTestDb({
 		users: [],
@@ -704,5 +813,24 @@ test('admin capabilities reject non-admin direct handler calls', async () => {
 		),
 	).rejects.toThrow(
 		'MCP user lacks required role "admin" for capability "admin_system_email_list".',
+	)
+	await expect(
+		adminUserUpdateCapability.handler(
+			{ id: 1, plan: 'pro' },
+			{
+				env: { APP_DB: db } as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+						displayName: 'user',
+						roles: ['user'],
+					},
+				}),
+			},
+		),
+	).rejects.toThrow(
+		'MCP user lacks required role "admin" for capability "admin_user_update".',
 	)
 })

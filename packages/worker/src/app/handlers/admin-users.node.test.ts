@@ -22,6 +22,7 @@ type UserRow = {
 	username: string
 	email: string
 	email_verified_at?: string | null
+	plan?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -124,6 +125,14 @@ function createAdminTestEnv(input: {
 								}
 								if (
 									normalizedQuery.includes(
+										'select id, username, email, email_verified_at, plan, created_at, updated_at from users where id =',
+									)
+								) {
+									const user = users.get(Number(params[0]))
+									return user ? ({ ...user } as T) : null
+								}
+								if (
+									normalizedQuery.includes(
 										'count(distinct ur.user_id) as count',
 									)
 								) {
@@ -185,6 +194,17 @@ function createAdminTestEnv(input: {
 									if (index >= 0) userRoles.splice(index, 1)
 									return { meta: { changes: 1 } }
 								}
+								if (
+									normalizedQuery.includes(
+										'update users set plan = ?, updated_at = ? where id =',
+									)
+								) {
+									const user = users.get(Number(params[2]))
+									if (!user) return { meta: { changes: 0 } }
+									user.plan = params[0] === null ? null : String(params[0])
+									user.updated_at = String(params[1])
+									return { meta: { changes: 1 } }
+								}
 								return { meta: { changes: 0 } }
 							},
 						}
@@ -208,6 +228,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 				username: 'admin-user',
 				email: 'admin@example.com',
 				email_verified_at: '2026-01-01T00:00:00.000Z',
+				plan: 'pro',
 				created_at: '2026-01-01 00:00:00',
 				updated_at: '2026-01-02 00:00:00',
 			},
@@ -216,6 +237,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 				username: 'member',
 				email: 'member@example.com',
 				email_verified_at: null,
+				plan: 'not-a-real-plan',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},
@@ -238,7 +260,15 @@ test('admin users list payload exposes only account metadata fields', async () =
 	expect(response.status).toBe(200)
 	const payload = await response.json()
 	expect(Object.keys(payload).sort()).toEqual(
-		['availableRoles', 'ok', 'page', 'pageSize', 'total', 'users'].sort(),
+		[
+			'availablePlans',
+			'availableRoles',
+			'ok',
+			'page',
+			'pageSize',
+			'total',
+			'users',
+		].sort(),
 	)
 	for (const user of payload.users) {
 		expect(Object.keys(user).sort()).toEqual(
@@ -250,11 +280,14 @@ test('admin users list payload exposes only account metadata fields', async () =
 			email: 'admin@example.com',
 			email_verified: true,
 			email_verified_at: '2026-01-01T00:00:00.000Z',
+			plan: 'pro',
 		}),
 		expect.objectContaining({
 			email: 'member@example.com',
 			email_verified: false,
 			email_verified_at: null,
+			// Unknown stored plan values read back as null (legacy/unlimited).
+			plan: null,
 		}),
 	])
 })
@@ -400,6 +433,162 @@ test('remove role removes admin when another admin remains', async () => {
 			result: 'success',
 		}),
 	)
+})
+
+test('update plan action sets the plan and logs an audit event', async () => {
+	mockModule.logAuditEvent.mockClear()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				plan: null,
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 2, role_name: 'user' }],
+	})
+
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'update_plan',
+				userId: 2,
+				plan: 'personal',
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload.users[0].plan).toBe('personal')
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'update_plan',
+			result: 'success',
+			reason: 'target_user_id=2;plan=personal',
+		}),
+	)
+})
+
+test('update plan action clears the plan with explicit null', async () => {
+	mockModule.logAuditEvent.mockClear()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				plan: 'pro',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 2, role_name: 'user' }],
+	})
+
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ action: 'update_plan', userId: 2, plan: null }),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload.users[0].plan).toBe(null)
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'update_plan',
+			result: 'success',
+			reason: 'target_user_id=2;plan=null',
+		}),
+	)
+})
+
+test('update plan action rejects unknown plan values and missing plan key', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				plan: 'pro',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 2, role_name: 'user' }],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+
+	for (const body of [
+		{ action: 'update_plan', userId: 2, plan: 'enterprise' },
+		{ action: 'update_plan', userId: 2 },
+	]) {
+		const response = await handler.handler({
+			request: new Request('https://example.com/admin/users.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			}),
+			params: {},
+			url: new URL('https://example.com/admin/users.json'),
+		} as never)
+		expect(response.status).toBe(400)
+	}
+})
+
+test('update plan action returns 404 for an unknown user', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({ users: [], userRoles: [] })
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ action: 'update_plan', userId: 42, plan: 'pro' }),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+	expect(response.status).toBe(404)
 })
 
 test('admin users API returns 403 without read:user:any permission', async () => {

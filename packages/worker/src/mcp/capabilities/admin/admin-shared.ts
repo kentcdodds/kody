@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { logAuditEvent, redactEmailRecipient } from '#app/audit-log.ts'
 import { roleNames } from '#app/permissions.ts'
+import { planNames } from '#worker/entitlements/plans.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 
 export const adminCapabilityAccess = {
@@ -19,6 +20,8 @@ export const adminMutationCapabilityAccess = {
 
 export const roleNameSchema = z.enum(roleNames)
 
+export const planNameSchema = z.enum(planNames)
+
 export const adminUserMetadataSchema = z.object({
 	id: z.number().int().positive(),
 	username: z.string(),
@@ -30,6 +33,11 @@ export const adminUserMetadataSchema = z.object({
 		.string()
 		.nullable()
 		.describe('Raw users.email_verified_at timestamp, or null if unverified.'),
+	plan: planNameSchema
+		.nullable()
+		.describe(
+			'Entitlement plan, or null for legacy/unlimited (no entitlement enforcement).',
+		),
 	created_at: z.string(),
 	updated_at: z.string(),
 	roles: z.array(roleNameSchema),

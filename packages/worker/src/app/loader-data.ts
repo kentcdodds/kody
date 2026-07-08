@@ -34,6 +34,7 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
+	plan: AdminPlanName | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -46,6 +47,7 @@ export type AdminUsersLoaderData = {
 	pageSize: number
 	total: number
 	availableRoles: Array<RoleName>
+	availablePlans: Array<AdminPlanName>
 }
 
 export type AdminRoleListItem = {
@@ -118,7 +120,7 @@ export type AdminUsageEntitlementResource =
 	| 'concurrent_workflows'
 	| 'storage_bytes'
 
-export type AdminUsagePlanName = 'partner' | 'personal' | 'pro'
+export type AdminPlanName = 'partner' | 'personal' | 'pro'
 
 export type AdminUsageRollup = {
 	metric: AdminUsageMetric
@@ -159,7 +161,7 @@ export type AdminUsageUserSummary = {
 	id: number
 	username: string
 	email: string
-	plan: AdminUsagePlanName | null
+	plan: AdminPlanName | null
 	currentMonthUsage: Array<AdminUsageRollup>
 	todayCounters: Array<AdminUsageDailyCounter>
 	resourceCounts: Array<AdminUsageResourceCount>

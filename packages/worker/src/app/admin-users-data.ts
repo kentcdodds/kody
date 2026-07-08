@@ -1,6 +1,12 @@
+import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { readPagination } from '#app/query-params.ts'
 import { type AdminUsersLoaderData } from '#app/loader-data.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
+import {
+	parsePlanName,
+	planNames,
+	type PlanName,
+} from '#worker/entitlements/plans.ts'
 import {
 	chunkArray,
 	maxD1BoundParameters,
@@ -12,6 +18,7 @@ export const adminUserListItemFieldNames = [
 	'email',
 	'email_verified',
 	'email_verified_at',
+	'plan',
 	'created_at',
 	'updated_at',
 	'roles',
@@ -26,6 +33,7 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
+	plan: PlanName | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -49,20 +57,13 @@ export async function loadAdminUsersData(
 			total: number
 		}>(),
 		env.APP_DB.prepare(
-			`SELECT id, username, email, email_verified_at, created_at, updated_at
+			`SELECT id, username, email, email_verified_at, plan, created_at, updated_at
 			 FROM users
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
 		)
 			.bind(pageSize, offset)
-			.all<{
-				id: number
-				username: string
-				email: string
-				email_verified_at: string | null
-				created_at: string
-				updated_at: string
-			}>(),
+			.all<AdminUserRow>(),
 	])
 	const total = totalResult?.total ?? 0
 
@@ -78,6 +79,7 @@ export async function loadAdminUsersData(
 		pageSize,
 		total,
 		availableRoles: [...roleNames],
+		availablePlans: [...planNames],
 	}
 }
 
@@ -89,40 +91,46 @@ export async function loadAdminUserByIdOrEmail(
 	const userRow = input.id
 		? await db
 				.prepare(
-					`SELECT id, username, email, email_verified_at, created_at, updated_at
+					`SELECT id, username, email, email_verified_at, plan, created_at, updated_at
 					 FROM users
 					 WHERE id = ?`,
 				)
 				.bind(input.id)
-				.first<{
-					id: number
-					username: string
-					email: string
-					email_verified_at: string | null
-					created_at: string
-					updated_at: string
-				}>()
+				.first<AdminUserRow>()
 		: email
 			? await db
 					.prepare(
-						`SELECT id, username, email, email_verified_at, created_at, updated_at
+						`SELECT id, username, email, email_verified_at, plan, created_at, updated_at
 						 FROM users
 						 WHERE email = ? COLLATE NOCASE`,
 					)
 					.bind(email)
-					.first<{
-						id: number
-						username: string
-						email: string
-						email_verified_at: string | null
-						created_at: string
-						updated_at: string
-					}>()
+					.first<AdminUserRow>()
 			: null
 	if (!userRow) return null
 
 	const rolesByUserId = await loadRolesByUserIds(db, [userRow.id])
 	return toAdminUserListItem(userRow, rolesByUserId.get(userRow.id) ?? [])
+}
+
+/**
+ * Set or clear (null = legacy/unlimited) the entitlement plan on one user
+ * account. Returns the updated account metadata record, or null when no
+ * user matches `id`/`email`.
+ */
+export async function updateAdminUserPlan(
+	db: D1Database,
+	input: { id?: number; email?: string; plan: PlanName | null },
+): Promise<AdminUserListItem | null> {
+	const existing = await loadAdminUserByIdOrEmail(db, input)
+	if (!existing) return null
+
+	await db
+		.prepare(`UPDATE users SET plan = ?, updated_at = ? WHERE id = ?`)
+		.bind(input.plan, utcSqliteTimestamp(), existing.id)
+		.run()
+
+	return loadAdminUserByIdOrEmail(db, { id: existing.id })
 }
 
 export async function loadRolesByUserIds(
@@ -160,15 +168,18 @@ export async function loadRolesByUserIds(
 	return rolesByUserId
 }
 
+type AdminUserRow = {
+	id: number
+	username: string
+	email: string
+	email_verified_at: string | null
+	plan: string | null
+	created_at: string
+	updated_at: string
+}
+
 function toAdminUserListItem(
-	row: {
-		id: number
-		username: string
-		email: string
-		email_verified_at: string | null
-		created_at: string
-		updated_at: string
-	},
+	row: AdminUserRow,
 	roles: Array<RoleName>,
 ): AdminUserListItem {
 	return {
@@ -177,6 +188,7 @@ function toAdminUserListItem(
 		email: row.email,
 		email_verified: Boolean(row.email_verified_at),
 		email_verified_at: row.email_verified_at,
+		plan: parsePlanName(row.plan),
 		created_at: row.created_at,
 		updated_at: row.updated_at,
 		roles,

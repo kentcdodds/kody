@@ -6,8 +6,10 @@ import {
 	loadAdminUsersData,
 	loadRolesByUserIds,
 	adminUserListItemFieldNames,
+	updateAdminUserPlan,
 	type AdminUserListItem,
 } from '#app/admin-users-data.ts'
+import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -106,6 +108,15 @@ export function createAdminUsersApiHandler(env: Env) {
 				}
 				if (action === 'remove_role') {
 					return handleRemoveRoleAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+					})
+				}
+				if (action === 'update_plan') {
+					return handleUpdatePlanAction({
 						env,
 						request,
 						url,
@@ -255,6 +266,70 @@ async function handleRemoveRoleAction(input: {
 
 	const payload = await loadAdminUsersData(input.env, input.request.url)
 	return jsonResponse(payload)
+}
+
+async function handleUpdatePlanAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+}) {
+	const targetUserId = readPositiveInt(readString(input.body, 'userId'), 0)
+	if (!targetUserId) {
+		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	}
+	const planUpdate = readPlanUpdate(input.body)
+	if (!planUpdate.ok) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					'Plan must be one of the known plan names, or null to clear the plan.',
+			},
+			400,
+		)
+	}
+
+	const updatedUser = await updateAdminUserPlan(input.env.APP_DB, {
+		id: targetUserId,
+		plan: planUpdate.plan,
+	})
+	if (!updatedUser) {
+		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
+	}
+
+	const requestIp = getRequestIp(input.request) ?? undefined
+	void logAuditEvent({
+		category: 'admin',
+		action: 'update_plan',
+		result: 'success',
+		email: input.actor.email,
+		ip: requestIp,
+		path: input.url.pathname,
+		reason: `target_user_id=${targetUserId};plan=${planUpdate.plan ?? 'null'}`,
+	})
+
+	const payload = await loadAdminUsersData(input.env, input.request.url)
+	return jsonResponse(payload)
+}
+
+/**
+ * Read the requested plan value: a known plan name sets it, explicit null
+ * clears it (legacy/unlimited). Anything else — including a missing key or
+ * an unknown plan string — is rejected instead of being coerced to null.
+ */
+function readPlanUpdate(
+	body: object,
+): { ok: true; plan: PlanName | null } | { ok: false } {
+	if (!('plan' in body)) return { ok: false }
+	const value = (body as Record<string, unknown>).plan
+	if (value === null) return { ok: true, plan: null }
+	if (typeof value === 'string') {
+		const plan = parsePlanName(value.trim())
+		if (plan) return { ok: true, plan }
+	}
+	return { ok: false }
 }
 
 function isRoleName(value: string): value is RoleName {
