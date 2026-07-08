@@ -398,6 +398,12 @@ export async function resolveSocialAuthUser(input: {
 			where: { email: profileEmail },
 		})
 		if (existingUser) {
+			if (!existingUser.email_verified_at) {
+				throw new SocialAuthResolutionError(
+					'An account with this email exists but is not verified. Verify the email or sign in with your password first.',
+					403,
+				)
+			}
 			await createAuthConnection(db, {
 				userId: existingUser.id,
 				provider,

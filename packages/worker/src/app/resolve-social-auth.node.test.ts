@@ -289,6 +289,50 @@ test('resolveSocialAuthUser links GitHub email to an existing account', async ()
 	expect(connections.get(`github:${mockGitHubProfile.id}`)?.user_id).toBe(11)
 })
 
+test('resolveSocialAuthUser does not auto-link to an unverified existing account', async () => {
+	const { env, users, usersById, connections } =
+		createResolveSocialAuthTestEnv()
+	const passwordHash = await createPasswordHash('password123')
+	const email = 'unverified-existing@example.com'
+	const user: TestUser = {
+		id: 13,
+		email,
+		username: 'unverified-existing',
+		password_hash: passwordHash,
+		email_verified_at: null,
+		stable_user_id: 'stable-unverified-existing',
+	}
+	users.set(user.email, user)
+	usersById.set(user.id, user)
+
+	await expect(
+		resolveSocialAuthUser({
+			env,
+			result: {
+				provider: 'google',
+				account: {
+					provider: 'google',
+					providerAccountId: 'google-unverified-existing',
+				},
+				profile: {
+					sub: 'google-unverified-existing',
+					email,
+					email_verified: true,
+					name: 'Verified IdP Unverified Account',
+				},
+				tokens: {
+					accessToken: 'token',
+				},
+			},
+		}),
+	).rejects.toMatchObject({
+		message:
+			'An account with this email exists but is not verified. Verify the email or sign in with your password first.',
+		status: 403,
+	})
+	expect(connections.get('google:google-unverified-existing')).toBeUndefined()
+})
+
 test('resolveSocialAuthUser does not auto-link unverified Google email', async () => {
 	const { env, users, usersById, connections } =
 		createResolveSocialAuthTestEnv()
