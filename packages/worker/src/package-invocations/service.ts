@@ -1173,6 +1173,7 @@ async function invokeSavedPackageModule(input: {
 					getAttachment: async (attachmentId) => {
 						const attachment = await getEmailAttachmentById({
 							db: input.env.APP_DB,
+							blobs: input.env.EMAIL_BLOBS,
 							userId: input.actor.userId,
 							attachmentId,
 						})

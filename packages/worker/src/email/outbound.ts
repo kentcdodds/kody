@@ -21,6 +21,7 @@ type SendEmailEnv = Pick<
 	Env,
 	| 'APP_DB'
 	| 'EMAIL'
+	| 'EMAIL_BLOBS'
 	| 'USAGE_EVENTS'
 	| 'APP_BASE_URL'
 	| 'USER_EMAIL_DOMAIN'
@@ -333,6 +334,7 @@ export async function sendOutboundEmail(
 	const providerHeaders = buildProviderHeaders(storedHeaders)
 	const message = await insertEmailMessage({
 		db: input.env.APP_DB,
+		blobs: input.env.EMAIL_BLOBS,
 		message: {
 			direction: 'outbound',
 			userId: input.userId,

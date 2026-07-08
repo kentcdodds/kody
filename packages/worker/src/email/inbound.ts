@@ -50,6 +50,7 @@ type ParsedInboundEmail = Awaited<
 
 async function parseAndStoreInboundEmail(input: {
 	db: D1Database
+	blobs?: R2Bucket | null
 	message: ForwardableEmailMessage
 	recipient: string
 	userId: string
@@ -90,6 +91,7 @@ async function parseAndStoreInboundEmail(input: {
 		}))
 	const stored = await insertEmailMessageWithAttachments({
 		db: input.db,
+		blobs: input.blobs,
 		message: {
 			direction: 'inbound',
 			userId: input.userId,
@@ -154,6 +156,7 @@ export async function handleInboundEmail(
 	env: Pick<
 		Env,
 		| 'APP_DB'
+		| 'EMAIL_BLOBS'
 		| 'BUNDLE_ARTIFACTS_KV'
 		| 'APP_BASE_URL'
 		| 'USER_EMAIL_DOMAIN'
@@ -350,6 +353,7 @@ export async function handleInboundEmail(
 
 	const stored = await parseAndStoreInboundEmail({
 		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
 		message,
 		recipient,
 		userId,
@@ -395,7 +399,11 @@ async function handleSystemInboundEmail(input: {
 	message: ForwardableEmailMessage
 	env: Pick<
 		Env,
-		'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'USAGE_EVENTS'
+		| 'APP_DB'
+		| 'EMAIL_BLOBS'
+		| 'BUNDLE_ARTIFACTS_KV'
+		| 'APP_BASE_URL'
+		| 'USAGE_EVENTS'
 	>
 	recipient: string
 	localPart: SystemEmailLocal
@@ -477,6 +485,7 @@ async function handleSystemInboundEmail(input: {
 
 	const stored = await parseAndStoreInboundEmail({
 		db: input.env.APP_DB,
+		blobs: input.env.EMAIL_BLOBS,
 		message: input.message,
 		recipient: input.recipient,
 		userId: systemEmailOwnerId,

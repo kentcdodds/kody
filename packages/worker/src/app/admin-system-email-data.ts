@@ -1,4 +1,5 @@
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
+import { loadRawMime } from '#worker/email/repo.ts'
 import {
 	systemEmailLimits,
 	systemEmailLocals,
@@ -129,6 +130,7 @@ async function listAttachments(db: D1Database, messageId: string) {
 export async function loadAdminSystemEmailMessageById(
 	db: D1Database,
 	messageId: string,
+	blobs?: R2Bucket | null,
 ): Promise<AdminSystemEmailDetail | null> {
 	const row = await db
 		.prepare(
@@ -166,7 +168,14 @@ export async function loadAdminSystemEmailMessageById(
 		),
 		text_body: row['text_body'] == null ? null : String(row['text_body']),
 		html_body: row['html_body'] == null ? null : String(row['html_body']),
-		raw_mime: row['raw_mime'] == null ? null : String(row['raw_mime']),
+		raw_mime: await loadRawMime({
+			blobs,
+			message: {
+				rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
+				rawMimeKey:
+					row['raw_mime_key'] == null ? null : String(row['raw_mime_key']),
+			},
+		}),
 		attachments: await listAttachments(db, messageId),
 	}
 }
@@ -209,7 +218,11 @@ export async function loadAdminSystemEmailData(
 			.bind(systemEmailOwnerId, pageSize, offset)
 			.all<Record<string, unknown>>(),
 		selectedMessageId
-			? loadAdminSystemEmailMessageById(env.APP_DB, selectedMessageId)
+			? loadAdminSystemEmailMessageById(
+					env.APP_DB,
+					selectedMessageId,
+					env.EMAIL_BLOBS,
+				)
 			: Promise.resolve(null),
 	])
 	return {

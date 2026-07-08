@@ -108,6 +108,98 @@ export function listKvNamespaces(): Array<KvNamespaceListEntry> {
 	}
 }
 
+const ansiEscape = String.fromCharCode(27)
+
+/**
+ * `wrangler r2 bucket list` has no JSON output; it prints labelled-value
+ * blocks (`name: <bucket>` / `creation_date: ...`). Parse the bucket
+ * names out of that listing. Piped wrangler output is normally
+ * color-free, but ANSI sequences are stripped defensively.
+ */
+export function parseR2BucketListOutput(output: string): Array<string> {
+	const names: Array<string> = []
+	for (const line of output.split('\n')) {
+		const plain = line
+			.split(ansiEscape)
+			.map((part, index) =>
+				index === 0 ? part : part.replace(/^\[[0-9;]*m/, ''),
+			)
+			.join('')
+		const match = /^name:\s*(\S+)\s*$/.exec(plain.trim())
+		if (match?.[1]) names.push(match[1])
+	}
+	return names
+}
+
+export function listR2BucketNames(): Array<string> {
+	const result = runWrangler(['r2', 'bucket', 'list'], { quiet: true })
+	if (result.status !== 0) {
+		fail('Failed to list R2 buckets (wrangler r2 bucket list).')
+	}
+	return parseR2BucketListOutput(result.stdout)
+}
+
+export function ensureR2Bucket({
+	name,
+	dryRun,
+}: {
+	name: string
+	dryRun: boolean
+}) {
+	if (dryRun) {
+		console.error(`[dry-run] ensure R2 bucket: ${name}`)
+		return { name }
+	}
+
+	if (listR2BucketNames().includes(name)) {
+		console.error(`R2 bucket exists: ${name}`)
+		return { name }
+	}
+
+	const createResult = runWrangler(['r2', 'bucket', 'create', name], {
+		quiet: true,
+	})
+	if (createResult.status !== 0) {
+		fail(`Failed to create R2 bucket: ${name}`)
+	}
+
+	if (!listR2BucketNames().includes(name)) {
+		fail(`Created R2 bucket "${name}" but could not find it via list.`)
+	}
+	console.error(`Created R2 bucket: ${name}`)
+	return { name }
+}
+
+export function deleteR2Bucket({
+	name,
+	dryRun,
+}: {
+	name: string
+	dryRun: boolean
+}) {
+	if (dryRun) {
+		console.error(`[dry-run] delete R2 bucket: ${name}`)
+		return
+	}
+
+	if (!listR2BucketNames().includes(name)) {
+		console.error(`R2 bucket already deleted: ${name}`)
+		return
+	}
+
+	const result = runWrangler(['r2', 'bucket', 'delete', name], { quiet: true })
+	if (result.status !== 0) {
+		// R2 refuses to delete non-empty buckets and wrangler has no purge
+		// command; a leftover preview bucket is preferable to a failed
+		// cleanup run, so warn instead of failing the workflow.
+		console.error(
+			`Warning: failed to delete R2 bucket ${name} (it may not be empty); it must be cleaned up manually.`,
+		)
+		return
+	}
+	console.error(`Deleted R2 bucket: ${name}`)
+}
+
 function stripJsonc(source: string) {
 	let output = ''
 	let inString = false
@@ -283,6 +375,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId,
 	oauthKvId,
 	bundleArtifactsKvId,
+	emailBlobsBucketName,
 	workerVars,
 	extraMigrations,
 }: {
@@ -294,6 +387,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId: string
 	oauthKvId: string
 	bundleArtifactsKvId: string
+	emailBlobsBucketName: string
 	workerVars?: Record<string, string | undefined>
 	extraMigrations?: Array<WranglerMigration>
 }) {
@@ -394,6 +488,32 @@ export async function writeGeneratedWranglerConfig({
 		...bundleArtifactsKvEntry,
 		id: bundleArtifactsKvId,
 		preview_id: bundleArtifactsKvId,
+	}
+
+	const r2Buckets = (targetEnv as Record<string, unknown>).r2_buckets
+	if (!Array.isArray(r2Buckets)) {
+		fail(
+			`wrangler config "${baseConfigPath}" is missing "env.${envName}.r2_buckets".`,
+		)
+	}
+
+	const emailBlobsEntryIndex = r2Buckets.findIndex((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === 'EMAIL_BLOBS'
+	})
+	if (emailBlobsEntryIndex < 0) {
+		fail(
+			`wrangler config "${baseConfigPath}" has no ${envName} R2 binding for "EMAIL_BLOBS".`,
+		)
+	}
+
+	const emailBlobsEntry = r2Buckets[emailBlobsEntryIndex] as Record<
+		string,
+		unknown
+	>
+	r2Buckets[emailBlobsEntryIndex] = {
+		...emailBlobsEntry,
+		bucket_name: emailBlobsBucketName,
 	}
 
 	const existingVars = (targetEnv as Record<string, unknown>).vars
