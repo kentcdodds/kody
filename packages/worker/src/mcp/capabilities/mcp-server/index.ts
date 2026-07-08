@@ -126,12 +126,14 @@ function createCapabilityFromTool(input: {
 					args: (args ?? {}) as Record<string, unknown>,
 				})
 			} catch (error) {
+				// The status check adds context for disconnected servers, but it
+				// must never mask the original tool-call error if it fails itself.
 				const status = await getMcpServerStatus({
 					env: ctx.env,
 					userId,
 					ref,
-				})
-				if (!status.ready || status.toolCount === 0) {
+				}).catch(() => null)
+				if (status && (!status.ready || status.toolCount === 0)) {
 					throw new Error(formatMcpServerUnavailableMessage(status))
 				}
 				const message =
