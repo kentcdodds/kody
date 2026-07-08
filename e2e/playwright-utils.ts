@@ -68,7 +68,7 @@ export const test = base.extend<{
 			return { email, username, password }
 		})
 	},
-	login: async ({ page, baseURL }, use) => {
+	login: async ({ page }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
 			const username =
@@ -99,15 +99,18 @@ export const test = base.extend<{
 				})
 			}
 
+			// `page.request` already shares the browser context's cookie jar, so
+			// the session cookie is registered for the 127.0.0.1 base URL by the
+			// /auth response itself. This extra registration makes the same
+			// session valid on `localhost` too, which the passkey specs need
+			// because WebAuthn relying party ids must be domains, not IPs.
 			const setCookieHeader = response.headers()['set-cookie']
 			if (setCookieHeader) {
 				const parsed = setCookieParser.parseString(setCookieHeader)
 				const cookieConfig = {
 					name: parsed.name,
 					value: parsed.value,
-					// The cookie host must match the browsing host or the
-					// browser will not send it back.
-					domain: baseURL ? new URL(baseURL).hostname : 'localhost',
+					domain: 'localhost',
 					path: parsed.path || '/',
 					httpOnly: parsed.httpOnly,
 					secure: parsed.secure,
