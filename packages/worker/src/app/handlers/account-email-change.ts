@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
@@ -103,8 +104,12 @@ export function createAccountEmailChangeHandler(appEnv: AppEnv) {
 						ok: false,
 						error: 'Too many email change requests. Please try again later.',
 					},
-					429,
-					{ 'Retry-After': String(rateLimit.retryAfterSeconds ?? 60) },
+					{
+						status: 429,
+						headers: {
+							'Retry-After': String(rateLimit.retryAfterSeconds ?? 60),
+						},
+					},
 				)
 			}
 
@@ -205,19 +210,4 @@ export function createAccountEmailChangeHandler(appEnv: AppEnv) {
 			})
 		},
 	} satisfies Action<typeof routes.accountEmailChange>
-}
-
-function jsonResponse(
-	body: Record<string, unknown>,
-	status = 200,
-	extraHeaders: Record<string, string> = {},
-) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-			...extraHeaders,
-		},
-	})
 }

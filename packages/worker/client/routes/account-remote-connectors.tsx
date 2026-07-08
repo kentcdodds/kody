@@ -33,6 +33,7 @@ import {
 	inputCss,
 } from '#client/styles/style-primitives.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
+import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { userScopedConnectorWebSocketUrl } from '@kody-internal/shared/remote-connectors.ts'
 
 type RemoteConnectorListItem = {
@@ -126,17 +127,6 @@ function connectorLabel(
 	connector: Pick<RemoteConnectorListItem, 'instanceId'>,
 ) {
 	return connector.instanceId
-}
-
-function bytesToBase64Url(bytes: Uint8Array) {
-	let binary = ''
-	for (const value of bytes) {
-		binary += String.fromCharCode(value)
-	}
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replaceAll('=', '')
 }
 
 function generateSharedSecret() {

@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import {
@@ -282,14 +283,4 @@ function readPositiveInt(value: string | null, fallback: number) {
 		return fallback
 	}
 	return parsed
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

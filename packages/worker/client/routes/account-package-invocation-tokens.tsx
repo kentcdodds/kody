@@ -1,3 +1,4 @@
+import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
@@ -281,17 +282,6 @@ function parseListText(value: string) {
 		.filter((entry) => entry.length > 0)
 }
 
-function encodeBase64Url(bytes: Uint8Array) {
-	let binary = ''
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-		.replace(/\+/g, '-')
-		.replace(/\//g, '_')
-		.replace(/=+$/g, '')
-}
-
 function generatePackageInvocationRawToken() {
 	const cryptoApi = globalThis.crypto
 	if (!cryptoApi?.getRandomValues) {
@@ -299,7 +289,7 @@ function generatePackageInvocationRawToken() {
 	}
 	const bytes = new Uint8Array(32)
 	cryptoApi.getRandomValues(bytes)
-	return `kody_${encodeBase64Url(bytes)}`
+	return `kody_${bytesToBase64Url(bytes)}`
 }
 
 function formatScope(values: Array<string>) {

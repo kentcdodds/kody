@@ -9,8 +9,8 @@ import {
 import {
 	getUserPlan,
 	readEntitlementResourceUsage,
-	utcDayKey,
 } from '#worker/entitlements/service.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
 const usageEntrySchema = z.object({

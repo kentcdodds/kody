@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
 	buildAccountSecretId,
@@ -978,14 +979,4 @@ function readAppIdForScope(input: {
 	const appId = readString(input.body, 'appId')
 	if (!appId) return null
 	return input.packageApps.some((app) => app.id === appId) ? appId : null
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

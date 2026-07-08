@@ -1,3 +1,5 @@
+import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
+import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import {
@@ -152,23 +154,6 @@ const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
 const terminalWorkflowStatuses = new Set<string>(terminalWorkflowStatusValues)
 const knownWorkflowStatuses = new Set<string>(knownWorkflowStatusValues)
 
-function toBase64Url(bytes: ArrayBuffer) {
-	let binary = ''
-	for (const byte of new Uint8Array(bytes)) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/u, '')
-}
-
-async function sha256Base64Url(value: string) {
-	return toBase64Url(
-		await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
-	)
-}
-
 function canonicalizeJsonValue(value: unknown): unknown {
 	if (Array.isArray(value)) {
 		return value.map((entry) => canonicalizeJsonValue(entry))
@@ -302,7 +287,7 @@ export async function createPackageWorkflowInstanceId(input: {
 }
 
 export function createPackageWorkflowPlanDate(runAt: string | Date) {
-	return normalizeRunAt(runAt).slice(0, 'YYYY-MM-DD'.length)
+	return isoTimestampDayKey(normalizeRunAt(runAt))
 }
 
 function normalizeWorkflowIdempotencyKey(idempotencyKey: string | undefined) {

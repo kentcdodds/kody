@@ -1,3 +1,5 @@
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import {
 	type EmailAttachmentRecord,
@@ -15,13 +17,6 @@ function nowIso() {
 	return new Date().toISOString()
 }
 
-function bytesToBase64(bytes: Uint8Array) {
-	let binary = ''
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-}
 function parseJsonArray(value: string | null) {
 	if (!value) return []
 	const parsed = JSON.parse(value) as unknown
@@ -973,7 +968,7 @@ export async function recordBoundedEmailRejectionEvent(input: {
 }) {
 	const now = input.now ?? new Date()
 	const nowIsoString = now.toISOString()
-	const day = nowIsoString.slice(0, 'YYYY-MM-DD'.length)
+	const day = isoTimestampDayKey(nowIsoString)
 	const aggregateDetail = JSON.stringify({
 		aggregate: true,
 		day,

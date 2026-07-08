@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, optional, parseSafe, string } from 'remix/data-schema'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
@@ -242,14 +243,4 @@ async function loadTwoFactorStatus(db: D1Database, userId: number) {
 		ok: true,
 		enabled: await isTwoFactorEnabled(db, userId),
 	}
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

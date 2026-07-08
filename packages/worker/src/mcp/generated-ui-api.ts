@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { createRouter, type Action } from 'remix/router'
 import { post, route } from 'remix/routes'
 import { z } from 'zod'
@@ -466,16 +467,6 @@ function parseOptionalScope(value: string | null) {
 	return secretScopeValues.includes(value as (typeof secretScopeValues)[number])
 		? (value as (typeof secretScopeValues)[number])
 		: null
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }
 
 function containsReturnedSecretPlaceholder(value: unknown): boolean {

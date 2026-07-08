@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountIntegrationsData } from '#app/account-integrations-data.ts'
 import {
@@ -50,14 +51,4 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 			return jsonResponse(await loadAccountIntegrationsData(env, user))
 		},
 	} satisfies Action<typeof routes.accountIntegrationsApi>
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Content-Type': 'application/json',
-			'Cache-Control': 'no-store',
-		},
-	})
 }

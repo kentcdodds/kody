@@ -1,3 +1,4 @@
+import { jsonResponse as buildJsonResponse } from '#worker/json-response.ts'
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type RemixNode } from 'remix/ui'
@@ -210,17 +211,9 @@ function jsonResponse(
 	body: Record<string, unknown>,
 	status = 200,
 ) {
-	const headers: Record<string, string> = {
-		'Cache-Control': 'no-store',
-		'Content-Type': 'application/json; charset=utf-8',
-	}
 	const cacheLookup = getRequestDataCacheLookup(request)
-	if (cacheLookup) {
-		headers['X-Kody-Cache'] = cacheLookup
-	}
-
-	return new Response(JSON.stringify(body), {
+	return buildJsonResponse(body, {
 		status,
-		headers,
+		headers: cacheLookup ? { 'X-Kody-Cache': cacheLookup } : undefined,
 	})
 }

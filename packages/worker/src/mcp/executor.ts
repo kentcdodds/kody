@@ -5,7 +5,9 @@ import {
 	type ExecuteResult,
 	type ResolvedProvider,
 } from '@cloudflare/codemode'
+import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -628,13 +630,13 @@ function canonicalizeForHash(value: unknown): unknown {
 	if (value instanceof ArrayBuffer) {
 		return {
 			__kodyType: 'arrayBuffer',
-			value: toBase64Url(new Uint8Array(value)),
+			value: bytesToBase64Url(new Uint8Array(value)),
 		}
 	}
 	if (ArrayBuffer.isView(value)) {
 		return {
 			__kodyType: 'arrayBuffer',
-			value: toBase64Url(
+			value: bytesToBase64Url(
 				new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
 			),
 		}
@@ -647,25 +649,6 @@ function canonicalizeForHash(value: unknown): unknown {
 			.sort((left, right) => left.localeCompare(right))
 			.map((key) => [key, canonicalizeForHash(record[key])]),
 	)
-}
-
-async function sha256Base64Url(value: string) {
-	return toBase64Url(
-		new Uint8Array(
-			await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
-		),
-	)
-}
-
-function toBase64Url(bytes: Uint8Array) {
-	let binary = ''
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/u, '')
 }
 
 export type ExecutionErrorDetails =

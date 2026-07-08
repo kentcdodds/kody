@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountPackageInvocationTokensData } from '#app/account-package-invocation-tokens-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
@@ -553,14 +554,4 @@ function splitStringList(value: string) {
 		.split(/[\n,]/)
 		.map((entry) => entry.trim())
 		.filter((entry) => entry.length > 0)
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

@@ -1,3 +1,4 @@
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	createStableUserIdFromEmail,
 	findUserRowByStableUserId,
@@ -135,10 +136,6 @@ export async function findUserAccountByStableUserId(
 		plan: parsePlanName(row.plan),
 		emailVerified: Boolean(row.email_verified_at),
 	}
-}
-
-export function utcDayKey(date: Date = new Date()) {
-	return date.toISOString().slice(0, 'YYYY-MM-DD'.length)
 }
 
 /**

@@ -7,10 +7,8 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import {
-	readEntitlementResourceUsage,
-	utcDayKey,
-} from '#worker/entitlements/service.ts'
+import { readEntitlementResourceUsage } from '#worker/entitlements/service.ts'
+import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AdminUsageDailyCounter,
@@ -423,10 +421,6 @@ function toUsageRollup(
 
 function isAdminUsageMetric(metric: string): metric is AdminUsageMetric {
 	return (adminUsageMetrics as ReadonlyArray<string>).includes(metric)
-}
-
-function utcMonthKey(date: Date) {
-	return date.toISOString().slice(0, 'YYYY-MM'.length)
 }
 
 function readPositiveInt(value: string | null, fallback: number) {
