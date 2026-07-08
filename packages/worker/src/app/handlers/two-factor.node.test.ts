@@ -2,7 +2,7 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { generateTOTP } from '@epic-web/totp'
-import { beforeAll, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
@@ -217,10 +217,10 @@ async function generateCurrentCode(row: {
 	return otp
 }
 
-beforeAll(() => {
+function initTestSecrets() {
 	setAuthSessionSecret(testCookieSecret)
 	setVerifySessionSecret(testCookieSecret)
-})
+}
 
 const session: AuthSession = {
 	id: '1',
@@ -237,10 +237,25 @@ async function seedPrimaryUser(sqlite: DatabaseSync) {
 	})
 }
 
-test('two-factor setup requires a valid code before activating', async () => {
-	const { sqlite, db } = createMigratedDb()
+test('two-factor setup requires authentication and a valid code before activating', async () => {
+	initTestSecrets()
+	const { db } = createMigratedDb()
+	const unauthenticatedHandler = createAccountTwoFactorApiHandler(
+		createAppEnv(db),
+	)
+	const unauthenticated = await runHandler(
+		unauthenticatedHandler,
+		new Request('http://example.com/account/two-factor.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ intent: 'setup' }),
+		}),
+	)
+	expect(unauthenticated.status).toBe(401)
+
+	const { sqlite, db: authedDb } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
+	const handler = createAccountTwoFactorApiHandler(createAppEnv(authedDb))
 
 	const setupResponse = await runHandler(
 		handler,
@@ -290,6 +305,7 @@ test('two-factor setup requires a valid code before activating', async () => {
 })
 
 test('cancelling a pending setup removes it without touching active 2fa', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
 	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
@@ -308,6 +324,7 @@ test('cancelling a pending setup removes it without touching active 2fa', async 
 })
 
 test('login with 2fa enabled defers the session cookie to code verification', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
 	const appEnv = createAppEnv(db)
@@ -411,13 +428,8 @@ test('login with 2fa enabled defers the session cookie to code verification', as
 				cookie.startsWith('kody_verify=') && cookie.includes('Max-Age=0'),
 		),
 	).toBe(true)
-})
 
-test('verify endpoint rejects requests without a pending session', async () => {
-	const { db } = createMigratedDb()
-	const verifyHandler = createTwoFactorVerifyApiHandler(createAppEnv(db))
-
-	const response = await runHandler(
+	const missingVerifyResponse = await runHandler(
 		verifyHandler,
 		new Request('http://example.com/verify/2fa.json', {
 			method: 'POST',
@@ -425,11 +437,15 @@ test('verify endpoint rejects requests without a pending session', async () => {
 			body: JSON.stringify({ code: '123456' }),
 		}),
 	)
-	expect(response.status).toBe(401)
-	expect(await response.json()).toMatchObject({ ok: false, code: 'expired' })
+	expect(missingVerifyResponse.status).toBe(401)
+	expect(await missingVerifyResponse.json()).toMatchObject({
+		ok: false,
+		code: 'expired',
+	})
 })
 
 test('login without 2fa still issues the session cookie directly', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
 	const authHandler = createAuthHandler(
@@ -453,7 +469,8 @@ test('login without 2fa still issues the session cookie directly', async () => {
 	expect(loginResponse.headers.get('Set-Cookie')).toContain('kody_session=')
 })
 
-test('disabling 2fa requires a valid current code', async () => {
+test('disabling 2fa requires a valid current code and clears stale pending rows', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
 	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
@@ -484,6 +501,21 @@ test('disabling 2fa requires a valid current code', async () => {
 	expect(invalidDisable.status).toBe(400)
 	expect(readVerificationRow(sqlite, '1')?.type).toBe('2fa')
 
+	sqlite.exec(`
+		INSERT INTO verifications (
+			type, target, secret, algorithm, digits, period, char_set, expires_at
+		) VALUES ('2fa-verify', '1', 'STALESECRET', 'SHA-1', 6, 30, '0123456789', NULL);
+	`)
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`,
+				)
+				.get() as { count: number }
+		).count,
+	).toBe(2)
+
 	const validDisable = await runHandler(
 		handler,
 		await createTwoFactorApiRequest({
@@ -496,56 +528,19 @@ test('disabling 2fa requires a valid current code', async () => {
 	)
 	expect(validDisable.status).toBe(200)
 	expect(await validDisable.json()).toEqual({ ok: true, enabled: false })
-	expect(readVerificationRow(sqlite, '1')).toBeUndefined()
-})
-
-test('disabling 2fa also clears a pending re-setup', async () => {
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
-
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const activeRow = readVerificationRow(sqlite, '1')!
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
-		}),
-	)
-	// Re-setup via the API is blocked while 2fa is active, so simulate a
-	// stale pending row (e.g. left over from before enabling) directly.
-	sqlite.exec(`
-		INSERT INTO verifications (
-			type, target, secret, algorithm, digits, period, char_set, expires_at
-		) VALUES ('2fa-verify', '1', 'STALESECRET', 'SHA-1', 6, 30, '0123456789', NULL);
-	`)
-	const rowCountBefore = sqlite
-		.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
-		.get() as { count: number }
-	expect(rowCountBefore.count).toBe(2)
-
-	const disableResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: {
-				intent: 'disable',
-				code: await generateCurrentCode(activeRow),
-			},
-		}),
-	)
-	expect(disableResponse.status).toBe(200)
-	const rowCountAfter = sqlite
-		.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
-		.get() as { count: number }
-	expect(rowCountAfter.count).toBe(0)
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`,
+				)
+				.get() as { count: number }
+		).count,
+	).toBe(0)
 })
 
 test('setup and confirm are rejected while 2fa is already enabled', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
 	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
@@ -586,6 +581,7 @@ test('setup and confirm are rejected while 2fa is already enabled', async () => 
 })
 
 test('a duplicate confirm cannot delete the active factor', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedPrimaryUser(sqlite)
 	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
@@ -605,19 +601,4 @@ test('a duplicate confirm cannot delete the active factor', async () => {
 		type: '2fa',
 		secret: pendingRow.secret,
 	})
-})
-
-test('two-factor endpoints require authentication', async () => {
-	const { db } = createMigratedDb()
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
-
-	const response = await runHandler(
-		handler,
-		new Request('http://example.com/account/two-factor.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ intent: 'setup' }),
-		}),
-	)
-	expect(response.status).toBe(401)
 })

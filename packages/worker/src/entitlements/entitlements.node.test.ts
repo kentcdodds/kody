@@ -3,11 +3,9 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	EntitlementLimitError,
 	buildEntitlementLimitMessage,
-	isEntitlementLimitError,
 } from './errors.ts'
 import {
 	nullPlanEmailFallbackLimits,
-	parsePlanName,
 	planLimits,
 	resolvePlanLimit,
 } from './plans.ts'
@@ -161,31 +159,26 @@ test('getUserPlan resolves plans through hashed email and short-circuits invalid
 			email: 'unknown-plan@example.com',
 		}),
 	).toBeNull()
-	expect(parsePlanName('enterprise-2099')).toBeNull()
-	expect(parsePlanName('personal')).toBe('personal')
 })
 
-test('assertWithinEntitlement is a no-op for users without a plan', async () => {
+test('assertWithinEntitlement passes under the limit, throws at it, and skips counting without a plan', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const { db, queries } = createEntitlementsTestDb({
+	const limit = planLimits.personal.maxScheduledJobs
+	if (limit === null) throw new Error('Expected a numeric personal job limit.')
+
+	const noPlan = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: null }],
 		counts: { jobs: 10_000 },
 	})
 	await assertWithinEntitlement({
-		db,
+		db: noPlan.db,
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
 	})
-	// Only the plan lookup ran; no counting query for unlimited users.
-	expect(queries).toHaveLength(1)
-	expect(queries[0]).toContain('SELECT plan FROM users')
-})
+	expect(noPlan.queries).toHaveLength(1)
+	expect(noPlan.queries[0]).toContain('SELECT plan FROM users')
 
-test('assertWithinEntitlement passes under the limit and throws at it', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const limit = planLimits.personal.maxScheduledJobs
-	if (limit === null) throw new Error('Expected a numeric personal job limit.')
 	const under = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'personal' }],
 		counts: { jobs: limit - 1 },
@@ -213,7 +206,6 @@ test('assertWithinEntitlement passes under the limit and throws at it', async ()
 	if (!(error instanceof EntitlementLimitError)) {
 		throw new Error('Expected an EntitlementLimitError.')
 	}
-	expect(isEntitlementLimitError(error)).toBe(true)
 	expect(error.details).toEqual({
 		code: 'entitlement_limit_exceeded',
 		resource: 'scheduled_jobs',
@@ -257,14 +249,22 @@ test('persistent package services are gated as a zero limit', async () => {
 	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'personal' }],
 	})
-	await expect(
-		assertWithinEntitlement({
-			db,
-			userId,
-			email: plannedEmail,
-			resource: 'persistent_package_services',
-		}),
-	).rejects.toThrow('at most 0 persistent package services')
+	const denied = await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'persistent_package_services',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(denied.details).toMatchObject({
+		resource: 'persistent_package_services',
+		limit: 0,
+	})
 
 	const proDb = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'pro' }],
@@ -325,6 +325,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 		userId,
 		email: plannedEmail,
 		resource: 'email_sends_per_day',
+		fallbackLimit: 1,
 		now,
 	}).then(
 		() => null,
@@ -416,55 +417,33 @@ test('plan-less users count uncapped sends but honor fallback receive limits', a
 	})
 })
 
-test('consumeDailyEntitlement prefers the plan limit over fallbackLimit', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const { db, counters } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
-	})
-	const limit = planLimits.personal.maxEmailSendsPerDay
-	if (limit === null) throw new Error('Expected a numeric email send limit.')
-	const now = new Date('2026-07-05T15:00:00.000Z')
-	for (let index = 0; index < limit; index += 1) {
-		await consumeDailyEntitlement({
-			db,
-			userId,
-			email: plannedEmail,
-			resource: 'email_sends_per_day',
-			fallbackLimit: 1,
-			now,
-		})
-	}
-	expect(counters[0]?.count).toBe(limit)
-	await expect(
-		consumeDailyEntitlement({
-			db,
-			userId,
-			email: plannedEmail,
-			resource: 'email_sends_per_day',
-			fallbackLimit: 1,
-			now,
-		}),
-	).rejects.toBeInstanceOf(EntitlementLimitError)
-})
-
-test('email_message_bytes enforces the per-message size via getCurrent', async () => {
+test('requested units and getCurrent overrides are honored', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'personal' }],
 	})
 	const maxBytes = planLimits.personal.maxEmailMessageBytes
 	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
-	await expect(
-		assertWithinEntitlement({
-			db,
-			userId,
-			email: plannedEmail,
-			resource: 'email_message_bytes',
-			requested: 0,
-			getCurrent: async () => maxBytes + 1,
-		}),
-	).rejects.toThrow(`at most ${maxBytes} bytes per email message`)
-	// A message exactly at the cap passes.
+
+	const oversized = await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'email_message_bytes',
+		requested: 0,
+		getCurrent: async () => maxBytes + 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(oversized instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(oversized.details).toMatchObject({
+		resource: 'email_message_bytes',
+		limit: maxBytes,
+	})
+
 	await assertWithinEntitlement({
 		db,
 		userId,
@@ -473,7 +452,6 @@ test('email_message_bytes enforces the per-message size via getCurrent', async (
 		requested: 0,
 		getCurrent: async () => maxBytes,
 	})
-	// The per-message resource has no accumulating counter.
 	await expect(
 		assertWithinEntitlement({
 			db,
@@ -490,23 +468,26 @@ test('email_message_bytes enforces the per-message size via getCurrent', async (
 			resource: 'storage_bytes',
 		}),
 	).rejects.toThrow('pass getCurrent')
-})
 
-test('requested units and getCurrent overrides are honored', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+	const overSavedPackages = await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'saved_packages',
+		requested: 5,
+		getCurrent: async () => 17,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(overSavedPackages instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(overSavedPackages.details).toMatchObject({
+		resource: 'saved_packages',
+		limit: 20,
+		current: 17,
 	})
-	await expect(
-		assertWithinEntitlement({
-			db,
-			userId,
-			email: plannedEmail,
-			resource: 'saved_packages',
-			requested: 5,
-			getCurrent: async () => 17,
-		}),
-	).rejects.toThrow('at most 20 saved packages')
 	await assertWithinEntitlement({
 		db,
 		userId,

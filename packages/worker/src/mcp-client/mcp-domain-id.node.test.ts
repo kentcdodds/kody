@@ -7,13 +7,20 @@ import {
 } from './mcp-domain-id.ts'
 
 test('MCP server ids keep clean names readable', () => {
-	const ref = { name: 'linear' }
+	const linearRef = { name: 'linear' }
+	const dashedRef = { name: 'my-server' }
 
-	expect(mcpServerDomainId(ref)).toBe('mcp:linear')
-	expect(mcpServerKodyName(ref)).toBe('linear')
+	expect(mcpServerDomainId(linearRef)).toBe('mcp:linear')
+	expect(mcpServerKodyName(linearRef)).toBe('linear')
 	expect(mcpServerToolName('create_issue')).toBe('create_issue')
-	expect(mcpServerCapabilityId({ ref, toolName: 'create_issue' })).toBe(
-		'mcp:linear:create_issue',
+	expect(
+		mcpServerCapabilityId({ ref: linearRef, toolName: 'create_issue' }),
+	).toBe('mcp:linear:create_issue')
+
+	expect(mcpServerKodyName(dashedRef)).toBe('my-server')
+	expect(mcpServerDomainId(dashedRef)).toBe('mcp:my-server')
+	expect(mcpServerCapabilityId({ ref: dashedRef, toolName: 'search' })).toBe(
+		'mcp:my-server:search',
 	)
 })
 
@@ -31,14 +38,4 @@ test('MCP server ids disambiguate names that sanitize to the same slug', () => {
 		mcpServerKodyName(underscoredRef),
 	)
 	expect(spacedTool).not.toBe(underscoredTool)
-})
-
-test('dashed MCP server names keep a stable tool-call accessor', () => {
-	const ref = { name: 'my-server' }
-
-	expect(mcpServerKodyName(ref)).toBe('my-server')
-	expect(mcpServerDomainId(ref)).toBe('mcp:my-server')
-	expect(mcpServerCapabilityId({ ref, toolName: 'search' })).toBe(
-		'mcp:my-server:search',
-	)
 })

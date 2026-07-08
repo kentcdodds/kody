@@ -71,9 +71,7 @@ test('synthesizes an mcp:<server> domain with a capability per tool', () => {
 		(capability) => capability.name === 'mcp:linear:list_issues',
 	)
 	expect(listIssues?.readOnly).toBe(true)
-})
 
-test('returns null when the server is not ready or has no tools', () => {
 	expect(synthesizeMcpServerToolDomain({ ref, snapshot: null })).toBeNull()
 	expect(
 		synthesizeMcpServerToolDomain({

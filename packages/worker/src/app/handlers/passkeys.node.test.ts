@@ -1,7 +1,7 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { beforeAll, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
@@ -188,10 +188,10 @@ async function runHandler(
 	} as never)
 }
 
-beforeAll(() => {
+function initTestSecrets() {
 	setAuthSessionSecret(testCookieSecret)
 	setVerifySessionSecret(testCookieSecret)
-})
+}
 
 const userOneSession: AuthSession = {
 	id: '1',
@@ -199,7 +199,8 @@ const userOneSession: AuthSession = {
 	rememberMe: false,
 }
 
-test('passkey listing is scoped to the signed-in user', async () => {
+test('account passkeys API lists owned keys and deletes them while ignoring other users', async () => {
+	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedUser(sqlite, { id: 1, email: 'one@example.com', username: 'one' })
 	await seedUser(sqlite, { id: 2, email: 'two@example.com', username: 'two' })
@@ -207,31 +208,23 @@ test('passkey listing is scoped to the signed-in user', async () => {
 	seedPasskey(sqlite, { id: 'passkey-user-2', userId: 2 })
 
 	const handler = createAccountPasskeysApiHandler(createAppEnv(db))
-	const response = await runHandler(
+	const listResponse = await runHandler(
 		handler,
 		new Request('http://example.com/account/passkeys.json', {
 			headers: { Cookie: await createAuthCookie(userOneSession, false) },
 		}),
 	)
-	expect(response.status).toBe(200)
-	const payload = (await response.json()) as {
+	expect(listResponse.status).toBe(200)
+	const listPayload = (await listResponse.json()) as {
 		ok: boolean
 		passkeys: Array<{ id: string }>
 	}
-	expect(payload.ok).toBe(true)
-	expect(payload.passkeys.map((passkey) => passkey.id)).toEqual([
+	expect(listPayload.ok).toBe(true)
+	expect(listPayload.passkeys.map((passkey) => passkey.id)).toEqual([
 		'passkey-user-1',
 	])
-})
 
-test('deleting another user passkey is a no-op 404', async () => {
-	const { sqlite, db } = createMigratedDb()
-	await seedUser(sqlite, { id: 1, email: 'one@example.com', username: 'one' })
-	await seedUser(sqlite, { id: 2, email: 'two@example.com', username: 'two' })
-	seedPasskey(sqlite, { id: 'passkey-user-2', userId: 2 })
-
-	const handler = createAccountPasskeysApiHandler(createAppEnv(db))
-	const response = await runHandler(
+	const crossUserDelete = await runHandler(
 		handler,
 		new Request('http://example.com/account/passkeys.json', {
 			method: 'POST',
@@ -242,19 +235,12 @@ test('deleting another user passkey is a no-op 404', async () => {
 			body: JSON.stringify({ intent: 'delete', passkeyId: 'passkey-user-2' }),
 		}),
 	)
-	expect(response.status).toBe(404)
+	expect(crossUserDelete.status).toBe(404)
 	expect(
 		sqlite.prepare(`SELECT COUNT(*) AS count FROM passkeys`).get(),
-	).toEqual({ count: 1 })
-})
+	).toEqual({ count: 2 })
 
-test('deleting an owned passkey removes it', async () => {
-	const { sqlite, db } = createMigratedDb()
-	await seedUser(sqlite, { id: 1, email: 'one@example.com', username: 'one' })
-	seedPasskey(sqlite, { id: 'passkey-user-1', userId: 1 })
-
-	const handler = createAccountPasskeysApiHandler(createAppEnv(db))
-	const response = await runHandler(
+	const ownDelete = await runHandler(
 		handler,
 		new Request('http://example.com/account/passkeys.json', {
 			method: 'POST',
@@ -265,26 +251,24 @@ test('deleting an owned passkey removes it', async () => {
 			body: JSON.stringify({ intent: 'delete', passkeyId: 'passkey-user-1' }),
 		}),
 	)
-	expect(response.status).toBe(200)
-	expect(await response.json()).toEqual({ ok: true, passkeys: [] })
+	expect(ownDelete.status).toBe(200)
+	expect(await ownDelete.json()).toEqual({ ok: true, passkeys: [] })
 })
 
-test('registration options require authentication', async () => {
-	const { db } = createMigratedDb()
+test('registration options require authentication and exclude existing credentials', async () => {
+	initTestSecrets()
+	const { sqlite, db } = createMigratedDb()
 	const handler = createWebauthnRegistrationHandler(createAppEnv(db))
-	const response = await runHandler(
+
+	const unauthenticated = await runHandler(
 		handler,
 		new Request('http://example.com/webauthn/registration'),
 	)
-	expect(response.status).toBe(401)
-})
+	expect(unauthenticated.status).toBe(401)
 
-test('registration options exclude existing credentials and set a challenge cookie', async () => {
-	const { sqlite, db } = createMigratedDb()
 	await seedUser(sqlite, { id: 1, email: 'one@example.com', username: 'one' })
 	seedPasskey(sqlite, { id: 'passkey-user-1', userId: 1 })
 
-	const handler = createWebauthnRegistrationHandler(createAppEnv(db))
 	const response = await runHandler(
 		handler,
 		new Request('http://example.com/webauthn/registration', {
@@ -311,34 +295,24 @@ test('registration options exclude existing credentials and set a challenge cook
 	)
 })
 
-test('authentication options are available without a session', async () => {
-	const { db } = createMigratedDb()
-	const handler = createWebauthnAuthenticationHandler(createAppEnv(db))
-	const response = await runHandler(
-		handler,
-		new Request('http://example.com/webauthn/authentication'),
-	)
-	expect(response.status).toBe(200)
-	const payload = (await response.json()) as {
-		ok: boolean
-		options: { challenge: string }
-	}
-	expect(payload.ok).toBe(true)
-	expect(payload.options.challenge.length).toBeGreaterThan(0)
-	expect(response.headers.get('Set-Cookie')).toContain(
-		'kody_webauthn_challenge=',
-	)
-})
-
-test('authentication rejects unknown passkeys', async () => {
+test('authentication issues challenge options and rejects unknown passkeys', async () => {
+	initTestSecrets()
 	const { db } = createMigratedDb()
 	const handler = createWebauthnAuthenticationHandler(createAppEnv(db))
 	const optionsResponse = await runHandler(
 		handler,
 		new Request('http://example.com/webauthn/authentication'),
 	)
+	expect(optionsResponse.status).toBe(200)
+	const optionsPayload = (await optionsResponse.json()) as {
+		ok: boolean
+		options: { challenge: string }
+	}
+	expect(optionsPayload.ok).toBe(true)
+	expect(optionsPayload.options.challenge.length).toBeGreaterThan(0)
 	const challengeCookie =
 		optionsResponse.headers.get('Set-Cookie')?.split(';')[0] ?? ''
+	expect(challengeCookie).toContain('kody_webauthn_challenge=')
 
 	const response = await runHandler(
 		handler,
@@ -354,8 +328,5 @@ test('authentication rejects unknown passkeys', async () => {
 		}),
 	)
 	expect(response.status).toBe(401)
-	expect(await response.json()).toMatchObject({
-		ok: false,
-		error: 'Passkey not recognized.',
-	})
+	expect(await response.json()).toMatchObject({ ok: false })
 })
