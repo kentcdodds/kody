@@ -84,8 +84,11 @@ primitives:
     name: Browser sessions
     summary:
       Signed kody_session cookie auth for browser users; production signup
-      invite-gated, non-production signup open, and account email verification
-      surfaced in session state.
+      invite-gated, non-production signup open, account email verification
+      surfaced in session state, and opt-in second factors — TOTP two-factor
+      (verifications table, pending kody_verify cookie gates login until
+      /verify) and passkeys (WebAuthn sign-in as an alternative first factor
+      that still honors 2FA).
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
@@ -93,7 +96,16 @@ primitives:
       - packages/worker/src/app/handlers/admin-invites.ts
       - packages/worker/src/app/invites.ts
       - packages/worker/src/app/email-verification.ts
+      - packages/worker/src/app/two-factor.ts
+      - packages/worker/src/app/verify-session.ts
+      - packages/worker/src/app/passkeys.ts
+      - packages/worker/src/app/webauthn.ts
+      - packages/worker/src/app/handlers/verify.ts
+      - packages/worker/src/app/handlers/webauthn.ts
+      - packages/worker/src/app/handlers/account-two-factor.ts
+      - packages/worker/src/app/handlers/account-passkeys.ts
       - packages/worker/migrations/0046-invites-email-verification.sql
+      - packages/worker/migrations/0053-two-factor-passkeys.sql
     docs:
       - docs/contributing/architecture/authentication.md
 
