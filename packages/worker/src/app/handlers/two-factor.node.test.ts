@@ -352,12 +352,27 @@ test('login with 2fa enabled defers the session cookie to code verification', as
 		mode: 'login',
 		requiresTwoFactor: true,
 	})
-	const loginSetCookie = loginResponse.headers.get('Set-Cookie') ?? ''
-	expect(loginSetCookie).toContain('kody_verify=')
-	expect(loginSetCookie).not.toContain('kody_session=')
+	const loginSetCookies = loginResponse.headers.getSetCookie()
+	const pendingCookie = loginSetCookies.find((cookie) =>
+		cookie.startsWith('kody_verify='),
+	)
+	expect(pendingCookie).toBeDefined()
+	// Any pre-existing session is cleared while the second factor is pending.
+	expect(
+		loginSetCookies.some(
+			(cookie) =>
+				cookie.startsWith('kody_session=') && cookie.includes('Max-Age=0'),
+		),
+	).toBe(true)
+	expect(
+		loginSetCookies.some(
+			(cookie) =>
+				cookie.startsWith('kody_session=') && !cookie.includes('Max-Age=0'),
+		),
+	).toBe(false)
 
 	const verifyHandler = createTwoFactorVerifyApiHandler(appEnv)
-	const verifyCookieValue = loginSetCookie.split(';')[0] ?? ''
+	const verifyCookieValue = pendingCookie?.split(';')[0] ?? ''
 
 	const invalidVerifyResponse = await runHandler(
 		verifyHandler,

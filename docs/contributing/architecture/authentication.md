@@ -197,6 +197,10 @@ Both are opt-in and adapted from the Epic Stack.
 - Re-enrolling a new authenticator while two-factor is active is rejected; users
   must disable first (which requires a current code), so a hijacked session
   cannot silently swap the second factor.
+- Known limitation: sessions are stateless signed cookies, so enabling
+  two-factor (like changing a password) cannot revoke session cookies issued
+  earlier; they stay valid until they expire. Starting a new login does clear
+  that browser's session cookie while the second factor is pending.
 
 ## Account deletion
 

@@ -11,6 +11,8 @@ const challengeMaxAgeSeconds = 60 * 10
 export type WebAuthnChallenge = {
 	challenge: string
 	webauthnUserId?: string
+	/** Registration only: the app user the ceremony was started for. */
+	userId?: number
 }
 
 let challengeCookie: ReturnType<typeof createCookie> | null = null
@@ -52,7 +54,8 @@ function isWebAuthnChallenge(value: unknown): value is WebAuthnChallenge {
 		typeof record.challenge === 'string' &&
 		record.challenge.length > 0 &&
 		(record.webauthnUserId === undefined ||
-			typeof record.webauthnUserId === 'string')
+			typeof record.webauthnUserId === 'string') &&
+		(record.userId === undefined || typeof record.userId === 'number')
 	)
 }
 

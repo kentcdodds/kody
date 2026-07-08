@@ -11,6 +11,7 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import {
 	createAuthCookie,
+	destroyAuthCookie,
 	isSecureRequest,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
@@ -78,7 +79,11 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 
 				return jsonResponse({ ok: true, options }, 200, {
 					'Set-Cookie': await createWebAuthnChallengeCookie(
-						{ challenge: options.challenge, webauthnUserId: options.user.id },
+						{
+							challenge: options.challenge,
+							webauthnUserId: options.user.id,
+							userId: user.userId,
+						},
 						secure,
 					),
 				})
@@ -91,7 +96,13 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 			const requestIp = getRequestIp(request) ?? undefined
 			const challengeData = await readWebAuthnChallenge(request)
 			const clearChallengeCookie = await destroyWebAuthnChallengeCookie(secure)
-			if (!challengeData?.webauthnUserId) {
+			// The ceremony must complete for the same user it started for, so a
+			// session swap between GET and POST can't bind the credential to the
+			// wrong account.
+			if (
+				!challengeData?.webauthnUserId ||
+				challengeData.userId !== user.userId
+			) {
 				return jsonResponse(
 					{
 						ok: false,
@@ -337,6 +348,9 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 						secure,
 					),
 				)
+				// A pre-existing session must not stay usable while the second
+				// factor is still pending for this new login.
+				headers.append('Set-Cookie', await destroyAuthCookie(secure))
 				void logAuditEvent({
 					category: 'auth',
 					action: 'login_2fa_challenge',

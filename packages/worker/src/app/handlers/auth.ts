@@ -1,6 +1,10 @@
 import { type Action } from 'remix/router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
-import { createAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import {
+	createAuthCookie,
+	destroyAuthCookie,
+	isSecureRequest,
+} from '#app/auth-session.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import {
 	createVerifySessionCookie,
@@ -463,13 +467,14 @@ export function createAuthHandler(appEnv: AppEnv) {
 			// passes at POST /verify/2fa.json.
 			if (await isTwoFactorEnabled(appEnv.APP_DB, userRecord.id)) {
 				setVerifySessionSecret(appEnv.COOKIE_SECRET)
+				const secure = isSecureRequest(request)
 				const verifyCookie = await createVerifySessionCookie(
 					{
 						id: String(userRecord.id),
 						email: normalizedEmail,
 						rememberMe,
 					},
-					isSecureRequest(request),
+					secure,
 				)
 				void logAuditEvent({
 					category: 'auth',
@@ -479,13 +484,14 @@ export function createAuthHandler(appEnv: AppEnv) {
 					ip: requestIp,
 					path: url.pathname,
 				})
+				const headers = new Headers()
+				headers.append('Set-Cookie', verifyCookie)
+				// A pre-existing session must not stay usable while the second
+				// factor is still pending for this new login.
+				headers.append('Set-Cookie', await destroyAuthCookie(secure))
 				return Response.json(
 					{ ok: true, mode: normalizedMode, requiresTwoFactor: true },
-					{
-						headers: {
-							'Set-Cookie': verifyCookie,
-						},
-					},
+					{ headers },
 				)
 			}
 
