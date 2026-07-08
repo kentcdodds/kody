@@ -1,3 +1,8 @@
+import { jsonResponse } from '#worker/json-response.ts'
+import {
+	normalizeProviderKey,
+	safeParseHost,
+} from '@kody-internal/shared/url-hosts.ts'
 import { type Action } from 'remix/router'
 import {
 	buildAccountSecretId,
@@ -602,11 +607,6 @@ function readTokenField(
 	return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-function normalizeProviderKey(value: string) {
-	const normalized = value.trim().toLowerCase()
-	return normalized.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
 function readApprovalHost(url: URL) {
 	const value = url.searchParams.get('allowed-host')
 	return value?.trim() ? value.trim() : null
@@ -936,14 +936,6 @@ function readRawOptionalString(body: object, key: string) {
 	return typeof value === 'string' ? value : null
 }
 
-function safeParseHost(raw: string) {
-	try {
-		return new URL(raw).hostname
-	} catch {
-		return null
-	}
-}
-
 function readStringArray(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	if (!Array.isArray(value)) return []
@@ -978,14 +970,4 @@ function readAppIdForScope(input: {
 	const appId = readString(input.body, 'appId')
 	if (!appId) return null
 	return input.packageApps.some((app) => app.id === appId) ? appId : null
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

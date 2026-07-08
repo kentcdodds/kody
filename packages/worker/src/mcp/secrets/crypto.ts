@@ -1,28 +1,12 @@
+import {
+	base64UrlToBytes,
+	bytesToBase64Url,
+} from '@kody-internal/shared/base64.ts'
+
 const ivBytes = 12
 
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
-
-function bytesToBase64Url(bytes: Uint8Array) {
-	let binary = ''
-	for (const value of bytes) {
-		binary += String.fromCharCode(value)
-	}
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replaceAll('=', '')
-}
-
-function base64UrlToBytes(value: string) {
-	const normalized = value.replaceAll('-', '+').replaceAll('_', '/')
-	const padded = normalized.padEnd(
-		normalized.length + ((4 - (normalized.length % 4)) % 4),
-		'=',
-	)
-	const binary = atob(padded)
-	return Uint8Array.from(binary, (char) => char.charCodeAt(0))
-}
 
 const derivedEncryptionKeyCache = new Map<string, Promise<CryptoKey>>()
 

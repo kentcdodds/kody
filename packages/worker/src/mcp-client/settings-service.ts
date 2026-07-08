@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	isValidMcpServerName,
 	normalizeMcpServerName,
@@ -124,7 +125,7 @@ export async function addMcpServer(input: {
 			callbackUrl: buildMcpServerOAuthCallbackUrl(input.baseUrl),
 		})
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		throw new Error(`Unable to connect to MCP server: ${message}`)
 	}
 	try {

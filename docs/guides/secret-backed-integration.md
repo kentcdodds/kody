@@ -19,7 +19,7 @@ Keep the integration flow simple:
 3. run one real authenticated smoke test
 4. only then build the downstream package or workflow
 
-Do **not** jump straight to a generated UI or saved package if the secret and
+Do **not** jump straight to a package app or saved package if the secret and
 smoke-test path is unclear.
 
 ## Default recipe
@@ -89,9 +89,9 @@ Use it when:
 
 This should be the default assumption for non-OAuth integrations.
 
-## When to avoid generated UI
+## When to avoid package apps
 
-Generated UI is **not** the default integration path.
+A package app is **not** the default integration path.
 
 Do **not** build one just to:
 
@@ -100,7 +100,7 @@ Do **not** build one just to:
 - work around the need to ask the user for a secret through
   `/account/secrets/new`
 
-Generated UI is the exception when the setup requires something
+A package app is the exception when the setup requires something
 `/account/secrets/new` cannot express cleanly, such as:
 
 - browser-side OAuth or hosted callback handling
@@ -131,7 +131,7 @@ Example:
 
 Avoid these mistakes:
 
-- building a generated UI before checking whether `/account/secrets/new` is
+- building a package app before checking whether `/account/secrets/new` is
   enough
 - saving readable config as a secret
 - saving the downstream package before the smoke test passes

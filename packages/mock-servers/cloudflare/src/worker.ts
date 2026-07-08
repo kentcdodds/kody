@@ -2,6 +2,8 @@
  * Minimal Cloudflare API v4 mock for local dev and tests.
  * Mirrors Cloudflare API v4 routes used by tests and internal clients.
  */
+import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
+import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { parseSafe } from 'remix/data-schema'
 import {
 	outboundEmailSchema,
@@ -197,15 +199,6 @@ function errorEnvelope(
 	)
 }
 
-function htmlEscape(value: string) {
-	return value
-		.replaceAll('&', '&amp;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-		.replaceAll('"', '&quot;')
-		.replaceAll("'", '&#39;')
-}
-
 function withTokenQueryParam(baseUrl: URL, href: string, token: string | null) {
 	if (!token) return href
 	const next = new URL(href, baseUrl)
@@ -254,14 +247,6 @@ function isAuthorized(request: Request, env: MockCloudflareEnv, url: URL) {
 	if (!expected) return true
 	const provided = readAuthToken(request, url)
 	return Boolean(provided && provided === expected)
-}
-
-async function sha256Hex(value: string) {
-	const data = new TextEncoder().encode(value)
-	const digest = await crypto.subtle.digest('SHA-256', data)
-	return Array.from(new Uint8Array(digest))
-		.map((byte) => byte.toString(16).padStart(2, '0'))
-		.join('')
 }
 
 function getTokenPartition(env: MockCloudflareEnv) {
@@ -408,13 +393,13 @@ async function handleDashboard(
 			)
 			const pathCell =
 				endpoint.method === 'GET'
-					? `<a href="${htmlEscape(endpointHref)}"><code>${htmlEscape(endpoint.path)}</code></a>`
-					: `<code>${htmlEscape(endpoint.path)}</code>`
+					? `<a href="${escapeHtml(endpointHref)}"><code>${escapeHtml(endpoint.path)}</code></a>`
+					: `<code>${escapeHtml(endpoint.path)}</code>`
 			return `<tr>
-				<td><code>${htmlEscape(endpoint.method)}</code></td>
+				<td><code>${escapeHtml(endpoint.method)}</code></td>
 				<td>${pathCell}</td>
 				<td>${authBadge}</td>
-				<td>${htmlEscape(endpoint.description)}</td>
+				<td>${escapeHtml(endpoint.description)}</td>
 			</tr>`
 		})
 		.join('')
@@ -508,7 +493,7 @@ async function handleDashboard(
 	<body>
 		<div class="container">
 			<h1>Mock: Cloudflare API</h1>
-			<p class="subtitle">${htmlEscape(tokenHint)}</p>
+			<p class="subtitle">${escapeHtml(tokenHint)}</p>
 			<div class="grid">
 				<div class="card">
 					<div class="stat-label">Auth</div>
@@ -539,8 +524,8 @@ async function handleDashboard(
 					</tbody>
 				</table>
 				<p class="footer">
-					Meta: <a href="${htmlEscape(withTokenQueryParam(url, '/__mocks/meta', dashboardToken))}">/__mocks/meta</a>
-					· Messages: <a href="${htmlEscape(withTokenQueryParam(url, '/__mocks/messages', dashboardToken))}">/__mocks/messages</a>
+					Meta: <a href="${escapeHtml(withTokenQueryParam(url, '/__mocks/meta', dashboardToken))}">/__mocks/meta</a>
+					· Messages: <a href="${escapeHtml(withTokenQueryParam(url, '/__mocks/messages', dashboardToken))}">/__mocks/messages</a>
 				</p>
 			</div>
 		</div>

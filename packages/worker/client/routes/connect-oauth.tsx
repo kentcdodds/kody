@@ -1,3 +1,11 @@
+import {
+	base64UrlToBytes,
+	bytesToBase64Url,
+} from '@kody-internal/shared/base64.ts'
+import {
+	normalizeProviderKey,
+	safeParseHost,
+} from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
@@ -1466,19 +1474,6 @@ function isSafeExternalUrl(raw: string) {
 	}
 }
 
-function safeParseHost(raw: string) {
-	try {
-		return new URL(raw).hostname
-	} catch {
-		return null
-	}
-}
-
-function normalizeProviderKey(value: string) {
-	const normalized = value.trim().toLowerCase()
-	return normalized.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
 function parseProviderSetupInstructions(raw: string | null) {
 	if (!raw) return null
 	const trimmed = raw.trim()
@@ -1491,13 +1486,9 @@ function parseProviderSetupInstructions(raw: string | null) {
 }
 
 function decodeBase64Payload(raw: string) {
-	const normalized = raw.replace(/-/g, '+').replace(/_/g, '/')
-	const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-	if (!/^[A-Za-z0-9+/=]+$/.test(padded)) return null
+	if (!/^[A-Za-z0-9+/=_-]+$/.test(raw)) return null
 	try {
-		const binary = atob(padded)
-		const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
-		return new TextDecoder().decode(bytes)
+		return new TextDecoder().decode(base64UrlToBytes(raw))
 	} catch {
 		return null
 	}
@@ -1518,22 +1509,13 @@ function isMostlyPrintable(text: string) {
 async function createCodeChallenge(verifier: string) {
 	const data = new TextEncoder().encode(verifier)
 	const digest = await crypto.subtle.digest('SHA-256', data)
-	return base64UrlEncode(digest)
-}
-
-function base64UrlEncode(input: ArrayBuffer | Uint8Array) {
-	const bytes = input instanceof Uint8Array ? input : new Uint8Array(input)
-	let text = ''
-	for (const byte of bytes) {
-		text += String.fromCharCode(byte)
-	}
-	return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+	return bytesToBase64Url(new Uint8Array(digest))
 }
 
 function createCodeVerifier() {
 	const bytes = new Uint8Array(64)
 	crypto.getRandomValues(bytes)
-	return base64UrlEncode(bytes)
+	return bytesToBase64Url(bytes)
 }
 
 const pageCss = {

@@ -21,7 +21,7 @@ export async function resolveUserStableId(row: UserStableIdRow) {
 	return stored || (await createStableUserIdFromEmail(row.email))
 }
 
-function isMissingStableUserIdColumnError(error: unknown) {
+export function isMissingStableUserIdColumnError(error: unknown) {
 	let currentError = error
 	while (currentError instanceof Error) {
 		const message = currentError.message.toLowerCase()

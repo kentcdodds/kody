@@ -326,7 +326,7 @@ token.
 ## Values
 
 Readable non-secret configuration uses **`kody.value_get`** and
-**`kody.value_list`** (for example data generated UI should persist).
+**`kody.value_list`** (for example data package apps should persist).
 
 ## Returning content blocks
 

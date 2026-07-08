@@ -6,25 +6,11 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 const emailChangeTokenBytes = 32
 const emailChangeTokenExpiryMs = 24 * 60 * 60 * 1000
-const htmlEscapeReplacements: Record<string, string> = {
-	'&': '&amp;',
-	'<': '&lt;',
-	'>': '&gt;',
-	'"': '&quot;',
-	"'": '&#39;',
-}
-
-function escapeHtml(value: string) {
-	return value.replace(
-		/[&<>"']/g,
-		(character) => htmlEscapeReplacements[character]!,
-	)
-}
-
 function generateEmailChangeToken() {
 	const bytes = new Uint8Array(emailChangeTokenBytes)
 	crypto.getRandomValues(bytes)

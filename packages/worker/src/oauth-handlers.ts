@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import {
 	type AuthRequest,
 	type ClientInfo,
@@ -95,15 +96,6 @@ const oauthClientResetVerificationCookiePath = '/oauth'
 let oauthClientResetVerificationCookie: ReturnType<typeof createCookie> | null =
 	null
 let oauthClientResetVerificationCookieSecret: string | null = null
-
-function jsonResponse(data: unknown, init?: ResponseInit) {
-	const headers = new Headers(init?.headers)
-	headers.set('Content-Type', 'application/json')
-	return new Response(JSON.stringify(data), {
-		...init,
-		headers,
-	})
-}
 
 function standaloneAuthorizeErrorHtmlResponse(message: string, status: number) {
 	return new Response(

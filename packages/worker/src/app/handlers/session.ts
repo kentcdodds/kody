@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
 	destroyAuthCookie,
@@ -6,17 +7,6 @@ import {
 } from '#app/auth-session.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { type routes } from '#app/routes.ts'
-
-function jsonResponse(data: unknown, init?: ResponseInit) {
-	return new Response(JSON.stringify(data), {
-		...init,
-		headers: {
-			'Content-Type': 'application/json',
-			'Cache-Control': 'no-store',
-			...init?.headers,
-		},
-	})
-}
 
 export function createSessionHandler(env: Env) {
 	return {

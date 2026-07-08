@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	listPackageServices,
 	listPackageRetrievers,
@@ -671,9 +672,7 @@ async function validatePackageBundles(input: {
 				throw new Error(`Unsupported package bundle target kind: ${exhaustive}`)
 			}
 		} catch (error) {
-			failures.push(
-				`${target.path}: ${error instanceof Error ? error.message : String(error)}`,
-			)
+			failures.push(`${target.path}: ${getErrorMessage(error)}`)
 		}
 	}
 	return {

@@ -1,3 +1,4 @@
+import { readPositiveInt } from '#app/query-params.ts'
 import { type AdminUsersLoaderData } from '#app/loader-data.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
 
@@ -178,13 +179,4 @@ function toAdminUserListItem(
 
 function isRoleName(value: string): value is RoleName {
 	return (roleNames as ReadonlyArray<string>).includes(value)
-}
-
-function readPositiveInt(value: string | null, fallback: number) {
-	if (!value) return fallback
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1) {
-		return fallback
-	}
-	return parsed
 }

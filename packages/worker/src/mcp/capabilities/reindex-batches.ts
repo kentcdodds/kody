@@ -1,4 +1,4 @@
-import { getErrorMessage } from './error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { embedTextsForVectorize } from './capability-search.ts'
 
 export type VectorReindexFailurePhase = 'load' | 'embed' | 'upsert'

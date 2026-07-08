@@ -1,6 +1,6 @@
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
-import { formatErrorCauseChain } from '#mcp/capabilities/error-message.ts'
+import { formatErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 
 function describePackageArtifactTarget(
 	target: PublishedPackageArtifactBuildTarget,

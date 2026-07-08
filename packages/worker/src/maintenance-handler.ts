@@ -1,4 +1,4 @@
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	createStableUserIdFromEmail,
 	normalizeStableUserId,

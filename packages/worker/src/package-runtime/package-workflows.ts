@@ -1,3 +1,11 @@
+import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
+import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import {
+	toJsonSafeValue,
+	type JsonValue,
+} from '@kody-internal/shared/json-safe-value.ts'
+import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import {
 	WorkflowEntrypoint,
@@ -105,14 +113,6 @@ export type WorkflowRunInspection = {
 	lastError: string | null
 }
 
-type JsonValue =
-	| null
-	| boolean
-	| number
-	| string
-	| Array<JsonValue>
-	| { [key: string]: JsonValue }
-
 type WorkflowStepDoConfig = {
 	retries?: {
 		limit: number
@@ -150,50 +150,6 @@ const knownWorkflowStatusValues = [
 const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
 const terminalWorkflowStatuses = new Set<string>(terminalWorkflowStatusValues)
 const knownWorkflowStatuses = new Set<string>(knownWorkflowStatusValues)
-
-function toBase64Url(bytes: ArrayBuffer) {
-	let binary = ''
-	for (const byte of new Uint8Array(bytes)) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/u, '')
-}
-
-async function sha256Base64Url(value: string) {
-	return toBase64Url(
-		await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
-	)
-}
-
-function canonicalizeJsonValue(value: unknown): unknown {
-	if (Array.isArray(value)) {
-		return value.map((entry) => canonicalizeJsonValue(entry))
-	}
-	if (value && typeof value === 'object') {
-		const record = value as Record<string, unknown>
-		return Object.fromEntries(
-			Object.keys(record)
-				.sort((left, right) => left.localeCompare(right))
-				.map((key) => [key, canonicalizeJsonValue(record[key])]),
-		)
-	}
-	return value
-}
-
-function canonicalJsonStringify(value: unknown) {
-	return JSON.stringify(canonicalizeJsonValue(value))
-}
-
-function toSerializableJson(value: unknown): JsonValue {
-	try {
-		return JSON.parse(JSON.stringify(value)) as JsonValue
-	} catch {
-		return value instanceof Error ? value.message : String(value)
-	}
-}
 
 function getWorkflowInvocationErrorMessage(response: {
 	status: number
@@ -301,7 +257,7 @@ export async function createPackageWorkflowInstanceId(input: {
 }
 
 export function createPackageWorkflowPlanDate(runAt: string | Date) {
-	return normalizeRunAt(runAt).slice(0, 'YYYY-MM-DD'.length)
+	return isoTimestampDayKey(normalizeRunAt(runAt))
 }
 
 function normalizeWorkflowIdempotencyKey(idempotencyKey: string | undefined) {
@@ -1022,7 +978,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				id: event.instanceId,
 				payload,
 				status: 'errored',
-				lastError: error instanceof Error ? error.message : String(error),
+				lastError: getErrorMessage(error),
 				completedAt: new Date().toISOString(),
 			})
 			await this.recordWorkflowRunUsage({
@@ -1117,7 +1073,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		}
 		return {
 			status: response.status,
-			body: toSerializableJson(response.body),
+			body: toJsonSafeValue(response.body),
 		}
 	}
 
@@ -1151,9 +1107,9 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			payload.params,
 		)
 		if (result.error) {
-			throw new Error(String(result.error))
+			throw new Error(result.error)
 		}
-		return toSerializableJson(result.result) as JsonValue
+		return toJsonSafeValue(result.result) as JsonValue
 	}
 }
 

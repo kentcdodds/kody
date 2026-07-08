@@ -44,12 +44,12 @@ test('coding_guide_get fetches markdown and surfaces fetch failures', async () =
 
 	{
 		using _server = createMswNodeServer([
-			http.get(buildKodyOfficialGuideUrlForTest('generated_ui_oauth'), () =>
+			http.get(buildKodyOfficialGuideUrlForTest('oauth'), () =>
 				HttpResponse.error(),
 			),
 		])
 		await expect(
-			kodyOfficialGuideCapability.handler({ guide: 'generated_ui_oauth' }, ctx),
+			kodyOfficialGuideCapability.handler({ guide: 'oauth' }, ctx),
 		).rejects.toThrow(/Kody guide fetch failed: Failed to fetch/)
 	}
 })

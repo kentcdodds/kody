@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
@@ -18,16 +19,6 @@ type PackageInvocationRequestBody = {
 	idempotencyKey?: string
 	source?: string | null
 	topic?: string | null
-}
-
-function jsonResponse(data: unknown, init?: ResponseInit) {
-	const headers = new Headers(init?.headers)
-	headers.set('Content-Type', 'application/json')
-	headers.set('Cache-Control', 'no-store')
-	return new Response(JSON.stringify(data), {
-		...init,
-		headers,
-	})
 }
 
 function buildAuthenticateHeader() {

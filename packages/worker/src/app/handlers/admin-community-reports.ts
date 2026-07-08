@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { loadAdminCommunityReportsData } from '#app/admin-community-reports-data.ts'
@@ -178,14 +179,4 @@ export function createAdminCommunityReportsApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.adminCommunityReportsApi>
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

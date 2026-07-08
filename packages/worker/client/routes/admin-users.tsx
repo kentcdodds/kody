@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -42,10 +43,6 @@ const adminUsersApiPath = '/admin/users.json'
 function isAdminUsersPath(href: string) {
 	const path = new URL(href, 'http://localhost').pathname
 	return path === '/admin/users' || path === '/admin'
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function buildUsersHref(handle: Handle, page: number) {
@@ -247,10 +244,9 @@ export function AdminUsersRoute(handle: Handle) {
 			lastSeenHref = currentHref
 			lastFailedHref = null
 		}
-		const totalPages = Math.max(1, Math.ceil(total / pageSize))
-		const selectedUser = getSelectedUser()
-		const isMutating = actionState !== 'idle'
-
+		// Consume route-loader data before deriving `totalPages` and
+		// `selectedUser`; deriving first would render this pass from the
+		// stale pre-navigation closure state.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
 		// href change; the stale marker forces the fallback refetch.
@@ -267,6 +263,10 @@ export function AdminUsersRoute(handle: Handle) {
 			loadingForHref = currentHref
 			handle.queueTask(loadAdminUsers)
 		}
+
+		const totalPages = Math.max(1, Math.ceil(total / pageSize))
+		const selectedUser = getSelectedUser()
+		const isMutating = actionState !== 'idle'
 
 		return (
 			<AccountManagementShell>

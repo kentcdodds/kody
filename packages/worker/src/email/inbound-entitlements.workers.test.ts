@@ -4,7 +4,7 @@ import {
 	nullPlanEmailFallbackLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
-import { utcDayKey } from '#worker/entitlements/service.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { handleInboundEmail } from './inbound.ts'

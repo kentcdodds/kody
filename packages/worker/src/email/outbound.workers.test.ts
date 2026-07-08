@@ -15,10 +15,8 @@ import {
 	nullPlanEmailFallbackLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
-import {
-	incrementDailyEntitlementCounter,
-	utcDayKey,
-} from '#worker/entitlements/service.ts'
+import { incrementDailyEntitlementCounter } from '#worker/entitlements/service.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const cloudflareEmailApi =

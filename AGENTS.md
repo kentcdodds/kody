@@ -53,7 +53,6 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 - [docs/contributing/remix.md](./docs/contributing/remix.md) and the repo-local
   [Remix skill](./.agents/skills/remix/SKILL.md)
 - [docs/contributing/cloudflare-agents-sdk.md](./docs/contributing/cloudflare-agents-sdk.md)
-- [docs/contributing/mcp-apps-spec-notes.md](./docs/contributing/mcp-apps-spec-notes.md)
 - MCP capabilities (search/execute graph, domains, registry):
   - [docs/contributing/adding-capabilities.md](./docs/contributing/adding-capabilities.md)
 - Project setup references:

@@ -41,9 +41,6 @@ If those conditions are not met, stop and fix the integration first.
    - Non-OAuth secret-backed API: after `connect_secret`, load
      `coding_guide_get` with `guide: "secret_backed_integration"` for the
      default "research auth, collect secret, smoke-test, then build" recipe.
-   - OAuth inside a package app: load `guide: "oauth"` first, then use
-     `guide: "generated_ui_oauth"` only when you deliberately need the package
-     app callback flow.
    - When the provider's auth contract is unknown (authorize/token URLs, API
      base, credential type), research before building `/connect/oauth` URLs or
      collecting secrets:
@@ -105,8 +102,8 @@ app will depend on:
 
 ## Important exceptions
 
-The main exception is a package app whose explicit purpose is to complete
-`generated_ui_oauth`.
+The main exception is a package app whose explicit purpose is to complete a
+provider OAuth flow.
 
 Even in that case:
 
@@ -132,6 +129,6 @@ Avoid these common mistakes:
 - building a polished UI first and only discovering later that auth is missing
 - saving a package app that assumes a non-existent secret or integration
 - treating a rendered app as success when the first authenticated API call fails
-- using `generated_ui_oauth` by default instead of the standard `/connect/oauth`
-  path
+- building a package-app OAuth callback flow by default instead of the standard
+  `/connect/oauth` path
 - skipping the authenticated smoke test after the user completes setup

@@ -1,3 +1,4 @@
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
@@ -29,12 +30,7 @@ const adminSystemEmailApiPath = '/admin/system-email.json'
 function isAdminSystemEmailPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/system-email'
 }
-
-function formatTimestamp(value: string | null) {
-	return value ? new Date(value).toLocaleString() : 'Unknown'
-}
-
-function formatBytes(value: number) {
+function formatByteCount(value: number) {
 	return new Intl.NumberFormat().format(value)
 }
 
@@ -224,12 +220,13 @@ export function AdminSystemEmailRoute(handle: Handle) {
 													{systemMessage.subject || '(no subject)'}
 												</td>
 												<td mix={css(numericCellCss)}>
-													{formatBytes(systemMessage.raw_size)}
+													{formatByteCount(systemMessage.raw_size)}
 												</td>
 												<td mix={css(cellCss)}>
-													{formatTimestamp(
+													{formatNullableTimestamp(
 														systemMessage.received_at ??
 															systemMessage.created_at,
+														'Unknown',
 													)}
 												</td>
 											</tr>
@@ -270,9 +267,10 @@ export function AdminSystemEmailRoute(handle: Handle) {
 										},
 										{
 											label: 'Received',
-											value: formatTimestamp(
+											value: formatNullableTimestamp(
 												selectedMessage.received_at ??
 													selectedMessage.created_at,
+												'Unknown',
 											),
 										},
 										{

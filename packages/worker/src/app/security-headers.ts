@@ -4,9 +4,8 @@
  * These are applied to the trusted account/auth UI shell (see
  * `packages/worker/src/app/render.ts`). They are intentionally NOT applied to
  * untrusted, dynamically-authored surfaces such as hosted package apps
- * (`/@username/packages/*`) or the generated-UI runtime (`/mcp-apps/*`,
- * `/dev/generated-ui`), which execute author-supplied HTML/JS and need their
- * own, looser policies.
+ * (`/@username/packages/*`), which execute author-supplied HTML/JS and need
+ * their own, looser policies.
  *
  * Content-Security-Policy notes:
  * - `script-src 'self'` (no `'unsafe-inline'`) is the important protection: the

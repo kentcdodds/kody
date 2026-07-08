@@ -1,3 +1,4 @@
+import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
@@ -101,24 +102,6 @@ function getBundleArtifactsKv(env: Env) {
 	return kv
 }
 
-function toBase64(value: ArrayBuffer) {
-	const bytes = new Uint8Array(value)
-	let binary = ''
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-}
-
-function fromBase64(value: string) {
-	const binary = atob(value)
-	const bytes = new Uint8Array(binary.length)
-	for (let index = 0; index < binary.length; index += 1) {
-		bytes[index] = binary.charCodeAt(index)
-	}
-	return bytes.buffer
-}
-
 function serializeWorkerLoaderModules(
 	modules: WorkerLoaderModules,
 ): Record<string, SerializedWorkerLoaderModule> {
@@ -134,7 +117,7 @@ function serializeWorkerLoaderModules(
 					...(module.cjs !== undefined ? { cjs: module.cjs } : {}),
 					...(module.text !== undefined ? { text: module.text } : {}),
 					...(module.data !== undefined
-						? { dataBase64: toBase64(module.data) }
+						? { dataBase64: bytesToBase64(new Uint8Array(module.data)) }
 						: {}),
 					...(module.json !== undefined ? { json: module.json } : {}),
 				} satisfies SerializedWorkerLoaderModule,
@@ -158,7 +141,7 @@ function deserializeWorkerLoaderModules(
 					...(module.cjs !== undefined ? { cjs: module.cjs } : {}),
 					...(module.text !== undefined ? { text: module.text } : {}),
 					...(module.dataBase64 !== undefined
-						? { data: fromBase64(module.dataBase64) }
+						? { data: base64ToBytes(module.dataBase64).buffer }
 						: {}),
 					...(module.json !== undefined ? { json: module.json } : {}),
 				},

@@ -1,3 +1,4 @@
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -42,10 +43,6 @@ type TestCallToolParams = CallToolRequest['params'] & {
 type ConnectedTestClient = {
 	callTool(params: TestCallToolParams): ReturnType<Client['callTool']>
 	listTools(): ReturnType<Client['listTools']>
-}
-
-function quoteSql(value: string) {
-	return `'${value.replace(/'/g, "''")}'`
 }
 
 export async function createTestDatabase() {
@@ -184,7 +181,7 @@ export async function markEmailVerifiedInMcpTestDatabase(input: {
 UPDATE users
 SET email_verified_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
-WHERE email = ${quoteSql(input.email)};`.trim()
+WHERE email = ${quoteSqlString(input.email)};`.trim()
 	const proc = spawnProcess({
 		cmd: [
 			nodeBin,
@@ -229,7 +226,7 @@ export async function assignRoleInMcpTestDatabase(input: {
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
-WHERE u.email = ${quoteSql(input.email)} AND r.name = ${quoteSql(input.role)};`.trim()
+WHERE u.email = ${quoteSqlString(input.email)} AND r.name = ${quoteSqlString(input.role)};`.trim()
 	const proc = spawnProcess({
 		cmd: [
 			nodeBin,

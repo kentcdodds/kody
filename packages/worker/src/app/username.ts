@@ -19,6 +19,22 @@ export function getUsernameFormatValidationError(username: string) {
 	return null
 }
 
+/**
+ * Derive a valid default username from an email local part, satisfying the
+ * username format rules (3-32 chars, alphanumeric edges).
+ */
+export function usernameFromEmail(email: string) {
+	const localPart = email.split('@')[0] ?? 'user'
+	const normalized = localPart
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/g, '-')
+		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+	const truncated = normalized
+		.slice(0, 32)
+		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+	return truncated.length >= 3 ? truncated : `user-${truncated || 'new'}`
+}
+
 export function getUsernameValidationError(username: string) {
 	const formatError = getUsernameFormatValidationError(username)
 	if (formatError) {

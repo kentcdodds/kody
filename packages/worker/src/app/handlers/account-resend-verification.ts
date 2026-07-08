@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -51,8 +52,12 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 						error:
 							'Too many verification emails requested. Please try again later.',
 					},
-					429,
-					{ 'Retry-After': String(rateLimit.retryAfterSeconds ?? 60) },
+					{
+						status: 429,
+						headers: {
+							'Retry-After': String(rateLimit.retryAfterSeconds ?? 60),
+						},
+					},
 				)
 			}
 
@@ -103,19 +108,4 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 			})
 		},
 	} satisfies Action<typeof routes.accountResendVerification>
-}
-
-function jsonResponse(
-	body: Record<string, unknown>,
-	status = 200,
-	extraHeaders: Record<string, string> = {},
-) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-			...extraHeaders,
-		},
-	})
 }

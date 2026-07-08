@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import {
 	generateAuthenticationOptions,
 	generateRegistrationOptions,
@@ -77,16 +78,21 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 					},
 				})
 
-				return jsonResponse({ ok: true, options }, 200, {
-					'Set-Cookie': await createWebAuthnChallengeCookie(
-						{
-							challenge: options.challenge,
-							webauthnUserId: options.user.id,
-							userId: user.userId,
+				return jsonResponse(
+					{ ok: true, options },
+					{
+						headers: {
+							'Set-Cookie': await createWebAuthnChallengeCookie(
+								{
+									challenge: options.challenge,
+									webauthnUserId: options.user.id,
+									userId: user.userId,
+								},
+								secure,
+							),
 						},
-						secure,
-					),
-				})
+					},
+				)
 			}
 
 			if (request.method !== 'POST') {
@@ -108,8 +114,7 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 						ok: false,
 						error: 'Registration session expired. Please try again.',
 					},
-					400,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 400, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -119,8 +124,7 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 			if (!body?.response || typeof body.response !== 'object') {
 				return jsonResponse(
 					{ ok: false, error: 'Invalid registration response.' },
-					400,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 400, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -146,16 +150,14 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 				console.warn('Passkey registration verification failed:', error)
 				return jsonResponse(
 					{ ok: false, error: 'Passkey registration failed.' },
-					400,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 400, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
 			if (!verification.verified || !verification.registrationInfo) {
 				return jsonResponse(
 					{ ok: false, error: 'Passkey registration failed.' },
-					400,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 400, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -169,8 +171,7 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 			if (existingPasskey) {
 				return jsonResponse(
 					{ ok: false, error: 'This passkey is already registered.' },
-					409,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 409, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -194,9 +195,10 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 				ip: requestIp,
 				path: url.pathname,
 			})
-			return jsonResponse({ ok: true }, 200, {
-				'Set-Cookie': clearChallengeCookie,
-			})
+			return jsonResponse(
+				{ ok: true },
+				{ headers: { 'Set-Cookie': clearChallengeCookie } },
+			)
 		},
 	} satisfies Action<typeof routes.webauthnRegistration>
 }
@@ -219,12 +221,17 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 					rpID: config.rpID,
 					userVerification: 'required',
 				})
-				return jsonResponse({ ok: true, options }, 200, {
-					'Set-Cookie': await createWebAuthnChallengeCookie(
-						{ challenge: options.challenge },
-						secure,
-					),
-				})
+				return jsonResponse(
+					{ ok: true, options },
+					{
+						headers: {
+							'Set-Cookie': await createWebAuthnChallengeCookie(
+								{ challenge: options.challenge },
+								secure,
+							),
+						},
+					},
+				)
 			}
 
 			if (request.method !== 'POST') {
@@ -237,8 +244,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			if (!challengeData) {
 				return jsonResponse(
 					{ ok: false, error: 'Sign-in session expired. Please try again.' },
-					400,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 400, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -249,8 +255,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			if (!body?.response || typeof body.response !== 'object') {
 				return jsonResponse(
 					{ ok: false, error: 'Invalid authentication response.' },
-					400,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 400, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 			const rememberMe = body.rememberMe === true
@@ -267,8 +272,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 				})
 				return jsonResponse(
 					{ ok: false, error: 'Passkey not recognized.' },
-					401,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 401, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -298,16 +302,14 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 				console.warn('Passkey authentication verification failed:', error)
 				return jsonResponse(
 					{ ok: false, error: 'Passkey sign-in failed.' },
-					401,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 401, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
 			if (!verification.verified) {
 				return jsonResponse(
 					{ ok: false, error: 'Passkey sign-in failed.' },
-					401,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 401, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -323,8 +325,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			if (!userRecord) {
 				return jsonResponse(
 					{ ok: false, error: 'Passkey sign-in failed.' },
-					401,
-					{ 'Set-Cookie': clearChallengeCookie },
+					{ status: 401, headers: { 'Set-Cookie': clearChallengeCookie } },
 				)
 			}
 
@@ -391,19 +392,4 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			})
 		},
 	} satisfies Action<typeof routes.webauthnAuthentication>
-}
-
-function jsonResponse(
-	body: Record<string, unknown>,
-	status = 200,
-	extraHeaders: Record<string, string> = {},
-) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-			...extraHeaders,
-		},
-	})
 }

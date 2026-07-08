@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { repoManifestSchema, type RepoManifest } from './types.ts'
 
@@ -12,9 +13,9 @@ export function parseRepoManifest(input: {
 		parsed = JSON.parse(input.content)
 	} catch (cause) {
 		throw new Error(
-			`Failed to parse ${input.manifestPath ?? defaultManifestPath}: ${
-				cause instanceof Error ? cause.message : String(cause)
-			}`,
+			`Failed to parse ${input.manifestPath ?? defaultManifestPath}: ${getErrorMessage(
+				cause,
+			)}`,
 		)
 	}
 	const result = repoManifestSchema.safeParse(parsed)

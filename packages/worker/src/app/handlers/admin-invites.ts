@@ -1,3 +1,5 @@
+import { readPositiveInt } from '#app/query-params.ts'
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminInvitesData } from '#app/admin-invites-data.ts'
 import {
@@ -245,23 +247,4 @@ function readString(body: object, key: string) {
 		return String(value)
 	}
 	return null
-}
-
-function readPositiveInt(value: string | null, fallback: number) {
-	if (!value) return fallback
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1) {
-		return fallback
-	}
-	return parsed
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

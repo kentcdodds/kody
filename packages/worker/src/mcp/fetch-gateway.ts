@@ -1,3 +1,4 @@
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import {
@@ -435,16 +436,8 @@ function readResolvedSecretValue(
 }
 
 function buildBasicAuthHeader(input: { username: string; password: string }) {
-	return `Basic ${encodeBase64(`${input.username}:${input.password}`)}`
-}
-
-function encodeBase64(value: string) {
-	const bytes = new TextEncoder().encode(value)
-	let binary = ''
-	const chunkSize = 0x8000
-	for (let index = 0; index < bytes.length; index += chunkSize) {
-		const chunk = bytes.slice(index, index + chunkSize)
-		binary += String.fromCharCode(...chunk)
-	}
-	return btoa(binary)
+	const credentials = new TextEncoder().encode(
+		`${input.username}:${input.password}`,
+	)
+	return `Basic ${bytesToBase64(credentials)}`
 }

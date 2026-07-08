@@ -1,3 +1,6 @@
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
+import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
+import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
@@ -98,26 +101,6 @@ function createEmptyEditorState(): EditorState {
 		sourcesText: '',
 	}
 }
-
-function formatTimestamp(value: string | null) {
-	return value ? new Date(value).toLocaleString() : 'Never'
-}
-
-function readTrimmedParam(params: URLSearchParams, key: string) {
-	const value = params.get(key)
-	return value?.trim() ? value.trim() : null
-}
-
-function readCommaListParams(params: URLSearchParams, keys: Array<string>) {
-	return keys.flatMap((key) =>
-		params
-			.getAll(key)
-			.flatMap((value) => value.split(','))
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.length > 0),
-	)
-}
-
 function createEditorStateFromNewTokenQuery(href: string): EditorState {
 	const params = new URL(href, 'http://localhost').searchParams
 	const state = createEmptyEditorState()
@@ -281,17 +264,6 @@ function parseListText(value: string) {
 		.filter((entry) => entry.length > 0)
 }
 
-function encodeBase64Url(bytes: Uint8Array) {
-	let binary = ''
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte)
-	}
-	return btoa(binary)
-		.replace(/\+/g, '-')
-		.replace(/\//g, '_')
-		.replace(/=+$/g, '')
-}
-
 function generatePackageInvocationRawToken() {
 	const cryptoApi = globalThis.crypto
 	if (!cryptoApi?.getRandomValues) {
@@ -299,7 +271,7 @@ function generatePackageInvocationRawToken() {
 	}
 	const bytes = new Uint8Array(32)
 	cryptoApi.getRandomValues(bytes)
-	return `kody_${encodeBase64Url(bytes)}`
+	return `kody_${bytesToBase64Url(bytes)}`
 }
 
 function formatScope(values: Array<string>) {
@@ -1603,19 +1575,21 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											},
 											{
 												label: 'Last used',
-												value: formatTimestamp(selectedToken.lastUsedAt),
+												value: formatNullableTimestamp(
+													selectedToken.lastUsedAt,
+												),
 											},
 											{
 												label: 'Created',
-												value: formatTimestamp(selectedToken.createdAt),
+												value: formatNullableTimestamp(selectedToken.createdAt),
 											},
 											{
 												label: 'Updated',
-												value: formatTimestamp(selectedToken.updatedAt),
+												value: formatNullableTimestamp(selectedToken.updatedAt),
 											},
 											{
 												label: 'Revoked',
-												value: formatTimestamp(selectedToken.revokedAt),
+												value: formatNullableTimestamp(selectedToken.revokedAt),
 											},
 										]}
 									/>

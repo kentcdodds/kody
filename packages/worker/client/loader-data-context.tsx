@@ -67,8 +67,27 @@ export function tryConsumeEmbeddedLoaderData<K extends keyof AppLoaderData>(
 }
 
 /**
+ * Consumption happens mid-render and the caller applies the payload by
+ * mutating route closure state, so anything the route derived earlier in the
+ * same render pass is stale. Schedule one follow-up render so the route
+ * re-derives everything from the applied data. The scheduler flushes queued
+ * tasks and the resulting update in the same microtask as the current render
+ * (before the browser paints), and consume-once semantics guarantee the
+ * follow-up pass consumes nothing, so this cannot loop. `queueTask` (not a
+ * direct `update()`) because a component's update scheduling is not wired
+ * until its first render returns; on the server `queueTask` is a no-op.
+ */
+function scheduleCorrectiveRender(handle: Handle) {
+	handle.queueTask(() => {
+		void handle.update()
+	})
+}
+
+/**
  * Returns loader data for `key` from SSR-embedded props or a preloaded SPA
- * navigation slot. Each source is consume-once per key.
+ * navigation slot. Each source is consume-once per key. Successful reads
+ * schedule a follow-up render of the consuming component so values derived
+ * before consumption in the same render pass cannot persist stale.
  */
 export function tryConsumeRouteLoaderData<K extends keyof AppLoaderData>(
 	handle: Handle,
@@ -76,6 +95,12 @@ export function tryConsumeRouteLoaderData<K extends keyof AppLoaderData>(
 	currentHref: string,
 ): AppLoaderData[K] | undefined {
 	const embedded = tryConsumeEmbeddedLoaderData(handle, key, currentHref)
-	if (embedded !== undefined) return embedded
-	return tryConsumePreloadedLoaderData(key, currentHref)
+	const data =
+		embedded !== undefined
+			? embedded
+			: tryConsumePreloadedLoaderData(key, currentHref)
+	if (data !== undefined) {
+		scheduleCorrectiveRender(handle)
+	}
+	return data
 }

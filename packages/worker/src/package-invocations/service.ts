@@ -4,7 +4,9 @@ import { toHex } from '@kody-internal/shared/hex.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
+import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	runBundledModuleWithRegistry,
 	type PackageEventDispatchInput,
@@ -232,14 +234,6 @@ function createRepoContext(source: EntitySourceRow) {
 	}
 }
 
-function toJsonSafeValue(value: unknown): unknown {
-	try {
-		return JSON.parse(JSON.stringify(value)) as unknown
-	} catch {
-		return value instanceof Error ? value.message : String(value)
-	}
-}
-
 function markStoredResponseAsReplayed(
 	response: PackageInvocationStoredResponse,
 ) {
@@ -273,25 +267,6 @@ async function createRequestHash(input: {
 		new TextEncoder().encode(canonical),
 	)
 	return toHex(new Uint8Array(digest))
-}
-
-function canonicalJsonStringify(value: unknown): string {
-	return JSON.stringify(canonicalizeJsonValue(value))
-}
-
-function canonicalizeJsonValue(value: unknown): unknown {
-	if (Array.isArray(value)) {
-		return value.map((entry) => canonicalizeJsonValue(entry))
-	}
-	if (value && typeof value === 'object') {
-		const record = value as Record<string, unknown>
-		return Object.fromEntries(
-			Object.keys(record)
-				.sort((left, right) => left.localeCompare(right))
-				.map((key) => [key, canonicalizeJsonValue(record[key])]),
-		)
-	}
-	return value
 }
 
 async function createAutoPackageInvokeIdempotencyKey(input: {
@@ -746,8 +721,7 @@ function buildExecutionErrorResponse(input: {
 	error: unknown
 	logs: Array<string>
 }): PackageInvocationStoredResponse {
-	const message =
-		input.error instanceof Error ? input.error.message : String(input.error)
+	const message = getErrorMessage(input.error)
 	return {
 		status: 500,
 		body: {
@@ -1263,7 +1237,7 @@ async function invokeSavedPackageModule(input: {
 			const response = buildJsonErrorResponse({
 				status: 404,
 				code: input.notFoundCode,
-				message: error instanceof Error ? error.message : String(error),
+				message: getErrorMessage(error),
 				idempotencyKey: input.idempotencyKey,
 			})
 			await updatePackageInvocationResult({
@@ -1280,7 +1254,7 @@ async function invokeSavedPackageModule(input: {
 		const response = buildJsonErrorResponse({
 			status: 500,
 			code: 'invocation_failed',
-			message: error instanceof Error ? error.message : String(error),
+			message: getErrorMessage(error),
 			idempotencyKey: input.idempotencyKey,
 		})
 		await updatePackageInvocationResult({

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { normalizeRemoteConnectorInstanceId } from '@kody-internal/shared/remote-connectors.ts'
 import {
 	hasRemoteConnectorSharedSecretForRef,
@@ -50,7 +51,7 @@ async function listStoredSharedSecrets(input: {
 			instanceId: input.instanceId,
 		})
 	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error)
+		const detail = getErrorMessage(error)
 		console.error(
 			`[remote-connectors] failed to read persisted shared secrets for ${input.userId} ${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
 		)
@@ -70,7 +71,7 @@ async function storedSharedSecretExists(input: {
 			instanceId: input.instanceId,
 		})
 	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error)
+		const detail = getErrorMessage(error)
 		console.error(
 			`[remote-connectors] failed to check persisted shared secret for ${input.userId} ${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
 		)

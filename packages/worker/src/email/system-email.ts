@@ -1,3 +1,4 @@
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { maxInlineRawMimeBytes } from './parser.ts'
 import {
 	createEmailInbox,
@@ -142,7 +143,7 @@ export async function ensureSystemEmailInbox(input: {
 }
 
 export function systemEmailDayKey(now = new Date()) {
-	return now.toISOString().slice(0, 'YYYY-MM-DD'.length)
+	return utcDayKey(now)
 }
 
 export async function consumeSystemEmailDailyReceive(input: {

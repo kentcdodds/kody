@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { loadAdminSystemEmailData } from '#app/admin-system-email-data.ts'
@@ -89,14 +90,4 @@ export function createAdminSystemEmailApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.adminSystemEmailApi>
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

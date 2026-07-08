@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -86,10 +87,6 @@ export async function accountIntegrationsRouteLoader(
 		throw new Error('Unable to load integrations.')
 	}
 	return { accountIntegrations: payload }
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function formatList(values: Array<string> | null | undefined) {

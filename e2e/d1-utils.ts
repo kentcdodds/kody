@@ -1,3 +1,4 @@
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
@@ -5,10 +6,6 @@ import { hashVerificationToken } from '../packages/worker/src/app/email-verifica
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
-
-function quoteSql(value: string) {
-	return `'${value.replace(/'/g, "''")}'`
-}
 
 function sleepSync(ms: number) {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
@@ -66,7 +63,7 @@ function buildSeedUserSql(input: {
 }) {
 	return `
 INSERT INTO users (username, email, password_hash, email_verified_at)
-VALUES (${quoteSql(input.username)}, ${quoteSql(input.email)}, ${quoteSql(input.passwordHash)}, CURRENT_TIMESTAMP)
+VALUES (${quoteSqlString(input.username)}, ${quoteSqlString(input.email)}, ${quoteSqlString(input.passwordHash)}, CURRENT_TIMESTAMP)
 ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,
@@ -75,7 +72,7 @@ ON CONFLICT(email) DO UPDATE SET
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
-WHERE u.email = ${quoteSql(input.email)} AND r.name = 'user';`.trim()
+WHERE u.email = ${quoteSqlString(input.email)} AND r.name = 'user';`.trim()
 }
 
 export async function seedUserInE2eDatabase(input: {
@@ -98,7 +95,7 @@ export function assignRoleInE2eDatabase(email: string, role: string) {
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
-WHERE u.email = ${quoteSql(email)} AND r.name = ${quoteSql(role)};`.trim()
+WHERE u.email = ${quoteSqlString(email)} AND r.name = ${quoteSqlString(role)};`.trim()
 	executeE2eD1Command(sql)
 }
 
@@ -122,11 +119,11 @@ export async function setEmailVerificationTokenInE2eDatabase(input: {
 	const expiresAt = input.expiresAt ?? Date.now() + 60 * 60 * 1000
 	const sql = `
 DELETE FROM email_verifications
-WHERE user_id IN (SELECT id FROM users WHERE email = ${quoteSql(input.email)});
+WHERE user_id IN (SELECT id FROM users WHERE email = ${quoteSqlString(input.email)});
 INSERT INTO email_verifications (user_id, token_hash, expires_at)
-SELECT id, ${quoteSql(tokenHash)}, ${expiresAt}
+SELECT id, ${quoteSqlString(tokenHash)}, ${expiresAt}
 FROM users
-WHERE email = ${quoteSql(input.email)};`.trim()
+WHERE email = ${quoteSqlString(input.email)};`.trim()
 	executeE2eD1Command(sql)
 }
 
@@ -162,15 +159,15 @@ INSERT INTO community_listings (
 	pinned_commit,
 	status
 ) VALUES (
-	${quoteSql(input.listingId)},
-	${quoteSql(ownerUserId)},
-	${quoteSql(packageId)},
-	${quoteSql(sourceId)},
-	${quoteSql(kodyId)},
-	${quoteSql(input.name)},
-	${quoteSql(input.description)},
-	${quoteSql(tagsJson)},
-	${readmeContent === null ? 'NULL' : quoteSql(readmeContent)},
+	${quoteSqlString(input.listingId)},
+	${quoteSqlString(ownerUserId)},
+	${quoteSqlString(packageId)},
+	${quoteSqlString(sourceId)},
+	${quoteSqlString(kodyId)},
+	${quoteSqlString(input.name)},
+	${quoteSqlString(input.description)},
+	${quoteSqlString(tagsJson)},
+	${readmeContent === null ? 'NULL' : quoteSqlString(readmeContent)},
 	'MIT',
 	'abc1234567890abcdef1234567890abcdef12345678',
 	'active'
@@ -192,9 +189,9 @@ export function updateCommunityListingDescriptionInE2eDatabase(input: {
 }) {
 	const sql = `
 UPDATE community_listings
-SET description = ${quoteSql(input.description)},
+SET description = ${quoteSqlString(input.description)},
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ${quoteSql(input.listingId)};`.trim()
+WHERE id = ${quoteSqlString(input.listingId)};`.trim()
 	executeE2eD1Command(sql)
 }
 
@@ -215,13 +212,13 @@ INSERT INTO community_forks (
 	forked_source_id,
 	target_kody_id
 ) VALUES (
-	${quoteSql(forkId)},
-	${quoteSql(input.listingId)},
-	${quoteSql(forkerUserId)},
+	${quoteSqlString(forkId)},
+	${quoteSqlString(input.listingId)},
+	${quoteSqlString(forkerUserId)},
 	'abc1234567890abcdef1234567890abcdef12345678',
-	${quoteSql(`pkg-fork-${forkId}`)},
-	${quoteSql(`src-fork-${forkId}`)},
-	${quoteSql(input.listingId)}
+	${quoteSqlString(`pkg-fork-${forkId}`)},
+	${quoteSqlString(`src-fork-${forkId}`)},
+	${quoteSqlString(input.listingId)}
 );`.trim()
 	executeE2eD1Command(sql)
 }

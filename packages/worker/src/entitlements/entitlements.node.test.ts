@@ -16,8 +16,8 @@ import {
 	consumeDailyEntitlement,
 	getUserPlan,
 	incrementDailyEntitlementCounter,
-	utcDayKey,
 } from './service.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 
 type CounterRow = {
 	user_id: string

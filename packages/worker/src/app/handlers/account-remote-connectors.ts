@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountRemoteConnectorsData } from '#app/account-remote-connectors-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
@@ -182,14 +183,4 @@ function readOptionalString(body: object, key: string) {
 function readBoolean(body: object, key: string, defaultValue: boolean) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'boolean' ? value : defaultValue
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Content-Type': 'application/json',
-			'Cache-Control': 'no-store',
-		},
-	})
 }

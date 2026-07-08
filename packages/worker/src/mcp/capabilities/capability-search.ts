@@ -1,5 +1,6 @@
 import { type CapabilitySpec } from './types.ts'
-import { getErrorMessage } from './error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { fnv1a32 } from '@kody-internal/shared/fnv1a.ts'
 
 type CapabilityVectorizeEnv = {
 	AI?: Ai
@@ -29,15 +30,6 @@ export const CAPABILITY_SEARCH_RRF_K = 60
 function truncateEmbeddingInput(text: string) {
 	if (text.length <= CAPABILITY_EMBEDDING_MAX_INPUT_CHARS) return text
 	return text.slice(0, CAPABILITY_EMBEDDING_MAX_INPUT_CHARS)
-}
-
-function fnv1a32(input: string): number {
-	let hash = 2_166_136_261
-	for (let i = 0; i < input.length; i += 1) {
-		hash ^= input.charCodeAt(i)
-		hash = Math.imul(hash, 16_777_619)
-	}
-	return hash >>> 0
 }
 
 /**

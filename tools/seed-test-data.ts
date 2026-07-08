@@ -1,8 +1,10 @@
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
+import { usernameFromEmail } from '../packages/worker/src/app/username.ts'
 import {
 	getDefaultWranglerConfigPath,
 	resolveWranglerConfigPath,
@@ -170,22 +172,6 @@ export function resolveWranglerEnv({
 	return process.env.CLOUDFLARE_ENV ?? 'production'
 }
 
-function quoteSql(value: string) {
-	return `'${value.replace(/'/g, "''")}'`
-}
-
-function usernameFromEmail(email: string) {
-	const localPart = email.split('@')[0] ?? 'user'
-	const normalized = localPart
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/g, '-')
-		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
-	const truncated = normalized
-		.slice(0, 32)
-		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
-	return truncated.length >= 3 ? truncated : `user-${truncated || 'test'}`
-}
-
 type SeedAccount = {
 	email: string
 	username: string
@@ -203,18 +189,18 @@ function buildAccountSeedSql({
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
-WHERE u.email = ${quoteSql(email)} AND r.name = 'user';`
+WHERE u.email = ${quoteSqlString(email)} AND r.name = 'user';`
 	const adminRoleSql = admin
 		? `
 INSERT OR IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u, roles r
-WHERE u.email = ${quoteSql(email)} AND r.name = 'admin';`
+WHERE u.email = ${quoteSqlString(email)} AND r.name = 'admin';`
 		: ''
 
 	return `
 INSERT INTO users (username, email, password_hash, email_verified_at)
-VALUES (${quoteSql(username)}, ${quoteSql(email)}, ${quoteSql(passwordHash)}, CURRENT_TIMESTAMP)
+VALUES (${quoteSqlString(username)}, ${quoteSqlString(email)}, ${quoteSqlString(passwordHash)}, CURRENT_TIMESTAMP)
 ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,

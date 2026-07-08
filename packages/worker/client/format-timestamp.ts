@@ -1,0 +1,19 @@
+/**
+ * Format a DB timestamp for display in the user's locale. SQLite
+ * CURRENT_TIMESTAMP is `YYYY-MM-DD HH:MM:SS` (UTC); the space separator is
+ * not valid ISO 8601 so Safari rejects it without the `T`, and the `Z` marks
+ * the value as UTC instead of local time.
+ */
+export function formatTimestamp(value: string) {
+	const date = new Date(
+		value.includes('T') ? value : `${value.replace(' ', 'T')}Z`,
+	)
+	return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+export function formatNullableTimestamp(
+	value: string | null,
+	fallback = 'Never',
+) {
+	return value ? formatTimestamp(value) : fallback
+}

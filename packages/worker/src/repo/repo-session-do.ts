@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import rawGit from 'isomorphic-git'
@@ -1938,7 +1939,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				force: true,
 			})
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			throw new Error(
 				buildSourceRecoveryProblemMessage({
 					source,
@@ -2015,7 +2016,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					scope: 'repo.publishFromExternalRef.publish-git-note-setup',
 					sourceId: source.id,
 					commit: input.newCommit,
-					error: error instanceof Error ? error.message : String(error),
+					error: getErrorMessage(error),
 				})
 			}
 		}

@@ -1,3 +1,8 @@
+import {
+	base64ToBytes,
+	bytesToBase64Url,
+	utf8ToBase64Url,
+} from '@kody-internal/shared/base64.ts'
 import { z } from 'zod'
 
 export const jwtAlgorithmSchema = z.enum(['RS256'])
@@ -12,8 +17,8 @@ export async function signJwt(input: {
 }) {
 	const header = buildJwtHeader(input.algorithm, input.header ?? {})
 	const signingInput = [
-		base64UrlEncodeUtf8(JSON.stringify(header)),
-		base64UrlEncodeUtf8(JSON.stringify(input.claims)),
+		utf8ToBase64Url(JSON.stringify(header)),
+		utf8ToBase64Url(JSON.stringify(input.claims)),
 	].join('.')
 	const key = await importPrivateKey(input.privateKeyPem, input.algorithm)
 	const signature = await crypto.subtle.sign(
@@ -21,7 +26,7 @@ export async function signJwt(input: {
 		key,
 		new TextEncoder().encode(signingInput),
 	)
-	return `${signingInput}.${base64UrlEncodeBytes(new Uint8Array(signature))}`
+	return `${signingInput}.${bytesToBase64Url(new Uint8Array(signature))}`
 }
 
 export function extractPrivateKeyPem(input: {
@@ -97,20 +102,5 @@ function pemToArrayBuffer(pem: string) {
 	if (!base64) {
 		throw new Error('Private key PEM is empty.')
 	}
-	const binary = atob(base64)
-	const bytes = new Uint8Array(binary.length)
-	for (let index = 0; index < binary.length; index += 1) {
-		bytes[index] = binary.charCodeAt(index)
-	}
-	return bytes.buffer
-}
-
-function base64UrlEncodeUtf8(value: string) {
-	return base64UrlEncodeBytes(new TextEncoder().encode(value))
-}
-
-function base64UrlEncodeBytes(bytes: Uint8Array) {
-	let binary = ''
-	for (const byte of bytes) binary += String.fromCharCode(byte)
-	return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+	return base64ToBytes(base64).buffer
 }

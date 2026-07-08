@@ -9,7 +9,7 @@ import {
 	type VectorReindexFailure,
 	type VectorReindexResult,
 } from '#mcp/capabilities/reindex-batches.ts'
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { listSavedPackagesPage, savedPackageVectorId } from './repo.ts'
 import { loadPackageManifestBySourceId } from './source.ts'

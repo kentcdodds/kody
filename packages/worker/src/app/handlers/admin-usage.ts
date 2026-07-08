@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminUsageData } from '#app/admin-usage-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
@@ -48,14 +49,4 @@ export function createAdminUsageApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.adminUsageApi>
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
 }

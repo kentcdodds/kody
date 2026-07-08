@@ -5,7 +5,11 @@ import {
 	createPasswordResetToken,
 } from '#app/password-reset-tokens.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
-import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+import {
+	getUsernameValidationError,
+	normalizeUsername,
+	usernameFromEmail,
+} from '#app/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'
@@ -35,18 +39,6 @@ export type AdminCreatedUser = {
 	username: string
 	setupLink: string
 	setupTokenExpiresAt: number
-}
-
-function usernameFromEmail(email: string) {
-	const localPart = email.split('@')[0] ?? 'user'
-	const normalized = localPart
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/g, '-')
-		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
-	const truncated = normalized
-		.slice(0, 32)
-		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
-	return truncated.length >= 3 ? truncated : `user-${truncated || 'new'}`
 }
 
 async function userExistsByUsername(db: D1Database, username: string) {

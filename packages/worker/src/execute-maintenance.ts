@@ -2,7 +2,7 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
 import { handleSecretMaintenanceRequest } from './maintenance-handler.ts'
-import { getErrorMessage } from '#mcp/capabilities/error-message.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 
 const executeSmokeCode = 'async () => 42'
 const executeSmokeProviders = [

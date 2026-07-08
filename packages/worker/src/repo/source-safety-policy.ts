@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { loadPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	requiresPrivateVisibilityConfirmation,
@@ -78,7 +79,7 @@ export async function assertRestorablePackageSourceSnapshot(input: {
 			source: input.source,
 		})
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		throw new Error(
 			buildSourceRecoveryProblemMessage({
 				source: input.source,
@@ -170,7 +171,7 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			input.source.repo_id,
 		)
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		throw new Error(
 			buildSourceRecoveryProblemMessage({
 				source: input.source,
@@ -193,7 +194,7 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 	try {
 		head = await resolveArtifactDefaultBranchHead({ repo })
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		throw new Error(
 			buildSourceRecoveryProblemMessage({
 				source: input.source,

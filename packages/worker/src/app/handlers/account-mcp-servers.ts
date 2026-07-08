@@ -1,3 +1,5 @@
+import { jsonResponse } from '#worker/json-response.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type Action } from 'remix/router'
 import { loadAccountMcpServersData } from '#app/account-mcp-servers-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
@@ -144,7 +146,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				authError = outcome.authError
 				serverName = outcome.serverName
 			} catch (error) {
-				authError = error instanceof Error ? error.message : String(error)
+				authError = getErrorMessage(error)
 			}
 
 			const target = new URL('/account/mcp-servers', request.url)
@@ -286,14 +288,4 @@ function readString(body: object, key: string) {
 function readBoolean(body: object, key: string, defaultValue: boolean) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'boolean' ? value : defaultValue
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Content-Type': 'application/json',
-			'Cache-Control': 'no-store',
-		},
-	})
 }

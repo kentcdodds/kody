@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { getCachedMcpClientHubSnapshot } from './hub-client.ts'
 import { type McpServerConnectionState } from './types.ts'
@@ -58,7 +59,7 @@ export async function getMcpServerStatus(input: {
 			error: server.error,
 		}
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = getErrorMessage(error)
 		return {
 			state: 'unknown',
 			serverId: input.ref.serverId,

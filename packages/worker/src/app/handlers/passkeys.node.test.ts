@@ -1,3 +1,4 @@
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { beforeAll, expect, test } from 'vitest'
@@ -112,10 +113,6 @@ function createMigratedDb() {
 	}
 }
 
-function quoteSql(value: string) {
-	return `'${value.replace(/'/g, "''")}'`
-}
-
 async function seedUser(
 	sqlite: DatabaseSync,
 	input: {
@@ -136,10 +133,10 @@ async function seedUser(
 			email_verified_at
 		) VALUES (
 			${input.id},
-			${quoteSql(input.username)},
-			${quoteSql(input.email)},
-			${quoteSql(stableUserId)},
-			${quoteSql(passwordHash)},
+			${quoteSqlString(input.username)},
+			${quoteSqlString(input.email)},
+			${quoteSqlString(stableUserId)},
+			${quoteSqlString(passwordHash)},
 			CURRENT_TIMESTAMP
 		);
 	`)
@@ -154,7 +151,7 @@ function seedPasskey(
 			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
 			device_type, backed_up, transports
 		) VALUES (
-			${quoteSql(input.id)},
+			${quoteSqlString(input.id)},
 			'00000000-0000-0000-0000-000000000000',
 			'cHVibGljLWtleQ',
 			${input.userId},

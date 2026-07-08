@@ -1,3 +1,4 @@
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { beforeAll, expect, test } from 'vitest'
@@ -109,10 +110,6 @@ function createMigratedDb() {
 	}
 }
 
-function quoteSql(value: string) {
-	return `'${value.replace(/'/g, "''")}'`
-}
-
 async function seedUser(
 	sqlite: DatabaseSync,
 	input: {
@@ -135,10 +132,10 @@ async function seedUser(
 			email_verified_at
 		) VALUES (
 			${input.id},
-			${quoteSql(input.username)},
-			${quoteSql(input.email)},
-			${quoteSql(stableUserId)},
-			${quoteSql(passwordHash)},
+			${quoteSqlString(input.username)},
+			${quoteSqlString(input.email)},
+			${quoteSqlString(stableUserId)},
+			${quoteSqlString(passwordHash)},
 			${input.verified === false ? 'NULL' : 'CURRENT_TIMESTAMP'}
 		);
 	`)
@@ -325,7 +322,7 @@ test('email change verification updates email and preserves stable user id', asy
 		INSERT INTO email_verifications (user_id, token_hash, expires_at)
 		VALUES (1, 'old-account-token', ${expiresAt});
 		INSERT INTO pending_email_changes (user_id, new_email, token_hash, expires_at)
-		VALUES (1, 'new@example.com', ${quoteSql(tokenHash)}, ${expiresAt});
+		VALUES (1, 'new@example.com', ${quoteSqlString(tokenHash)}, ${expiresAt});
 	`)
 
 	const result = await verifyEmailChangeToken({
