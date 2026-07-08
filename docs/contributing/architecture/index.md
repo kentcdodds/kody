@@ -30,6 +30,9 @@ to become.
   same PR whenever a primitive is added, removed, or reshaped.
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
+- [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers
+  Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
+  `kody.mcp[...]` capability synthesis).
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.

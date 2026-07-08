@@ -54,6 +54,11 @@ domains synthesized from outbound WebSocket connectors (see
 Those domains are driven by MCP **`remoteConnectors`** rather than by editing
 `builtinDomains` in-repo.
 
+**MCP client servers:** the same runtime merge also synthesizes `mcp:<server>`
+domains from the user's enabled MCP servers (see
+[`architecture/mcp-client-servers.md`](./architecture/mcp-client-servers.md)),
+driven by the `mcp_server_settings` D1 table and per-user hub snapshots.
+
 `defineCapability()` in
 `packages/worker/src/mcp/capabilities/define-capability.ts` normalizes Zod →
 JSON Schema and wraps handlers with logging; domain helpers call it for you.

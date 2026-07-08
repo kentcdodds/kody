@@ -150,9 +150,9 @@ primitives:
     name: Capability registry
     summary:
       Builtin capability domains (account, admin, apps, coding, community,
-      email, integrations, jobs, meta, packages, repo, secrets, services,
-      storage, values) merged with synthesized remote-connector domains behind
-      search/execute.
+      email, integrations, jobs, mcp_servers, meta, packages, repo, secrets,
+      services, storage, values) merged with synthesized remote-connector and
+      MCP server domains behind search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
     docs:
@@ -298,6 +298,24 @@ primitives:
       - packages/worker/migrations/0034-remote-connector-settings.sql
     docs:
       - docs/contributing/architecture/remote-connectors.md
+
+  - id: mcp-client-servers
+    group: assistant
+    name: MCP client servers
+    summary:
+      User-added remote MCP servers Kody connects to as a client via the Agents
+      SDK MCPClientManager in the per-user McpClientHub Durable Object (OAuth
+      tokens in DO storage), with D1-backed settings, account UI at
+      /account/mcp-servers, the mcp_servers capability domain, and synthesized
+      mcp:<server> capability domains callable via kody.mcp[...].
+    code:
+      - packages/worker/src/mcp-client/
+      - packages/worker/src/mcp/capabilities/mcp-server/
+      - packages/worker/src/mcp/capabilities/mcp-servers/
+      - packages/worker/src/app/handlers/account-mcp-servers.ts
+      - packages/worker/migrations/0053-mcp-server-settings.sql
+    docs:
+      - docs/contributing/architecture/mcp-client-servers.md
 
   - id: realtime-sessions
     group: assistant
