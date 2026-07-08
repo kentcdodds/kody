@@ -1,3 +1,4 @@
+import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
 	type CommunityBanRecord,
@@ -91,16 +92,8 @@ function listingStatusFilter(includeDelisted: boolean) {
 }
 
 // D1 caps bound parameters per statement, so IN (...) lookups over large id
-// sets are issued in chunks.
+// sets are issued in chunks (90 leaves headroom for fixed bindings).
 const maxSqlBindingsPerChunk = 90
-
-function chunkValues<T>(values: Array<T>, size: number): Array<Array<T>> {
-	const chunks: Array<Array<T>> = []
-	for (let offset = 0; offset < values.length; offset += size) {
-		chunks.push(values.slice(offset, offset + size))
-	}
-	return chunks
-}
 
 const communityListingSearchTextColumns = [
 	'name',
@@ -450,7 +443,7 @@ export async function countCommunityForksByListingIds(
 	const counts: Record<string, number> = Object.fromEntries(
 		listingIds.map((listingId) => [listingId, 0]),
 	)
-	for (const idChunk of chunkValues(listingIds, maxSqlBindingsPerChunk)) {
+	for (const idChunk of chunkArray(listingIds, maxSqlBindingsPerChunk)) {
 		const placeholders = idChunk.map(() => '?').join(', ')
 		const rows = await db
 			.prepare(
@@ -555,7 +548,7 @@ export async function getCommunityRatingAggregatesByListingIds(
 				},
 			]),
 		)
-	for (const idChunk of chunkValues(listingIds, maxSqlBindingsPerChunk)) {
+	for (const idChunk of chunkArray(listingIds, maxSqlBindingsPerChunk)) {
 		const placeholders = idChunk.map(() => '?').join(', ')
 		const rows = await db
 			.prepare(

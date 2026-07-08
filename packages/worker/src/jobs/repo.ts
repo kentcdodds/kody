@@ -63,9 +63,15 @@ function serializeJob(job: JobRecord) {
 	}
 }
 
+// A corrupt stored JSON column must not fail list/get for every job of the
+// user, so parsing degrades to the caller's fallback shape.
 function parseJson<T>(value: string | null, fallback: T): T {
 	if (!value) return fallback
-	return JSON.parse(value) as T
+	try {
+		return JSON.parse(value) as T
+	} catch {
+		return fallback
+	}
 }
 
 function mapRow(row: Record<string, unknown>): JobRow {

@@ -84,19 +84,29 @@ export async function loadRawMime(input: {
 	return await object.text()
 }
 
+// One corrupt stored row must not fail an entire list/search response, so
+// both parsers degrade to their empty shape on malformed JSON.
 function parseJsonArray(value: string | null) {
 	if (!value) return []
-	const parsed = JSON.parse(value) as unknown
-	return Array.isArray(parsed) ? parsed : []
+	try {
+		const parsed = JSON.parse(value) as unknown
+		return Array.isArray(parsed) ? parsed : []
+	} catch {
+		return []
+	}
 }
 
 function parseOptionalJsonRecord(value: string | null) {
 	if (!value) return null
-	const parsed = JSON.parse(value) as unknown
-	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+	try {
+		const parsed = JSON.parse(value) as unknown
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			return null
+		}
+		return parsed as Record<string, unknown>
+	} catch {
 		return null
 	}
-	return parsed as Record<string, unknown>
 }
 
 function mapInboxRow(row: Record<string, unknown>): EmailInboxRecord {
@@ -892,15 +902,15 @@ export async function deleteEmailMessageById(input: {
 	blobs?: R2Bucket | null
 	messageId: string
 }) {
-	// Capture the blob key before the row disappears. Blob cleanup is
-	// best-effort and must never block the D1 delete.
+	// Capture the blob key before the row disappears. A failed read must
+	// abort the delete (and be retried) rather than orphan the R2 blob; only
+	// the R2 delete itself is best-effort.
 	let rawMimeKey: string | null = null
 	if (input.blobs) {
 		const row = await input.db
 			.prepare(`SELECT raw_mime_key FROM email_messages WHERE id = ?`)
 			.bind(input.messageId)
 			.first<{ raw_mime_key: string | null }>()
-			.catch(() => null)
 		rawMimeKey = row?.raw_mime_key ?? null
 	}
 	await input.db

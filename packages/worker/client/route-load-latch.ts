@@ -41,6 +41,12 @@ export function createRouteLoadLatch() {
 				lastSeenHref = input.currentHref
 				lastFailedHref = null
 			}
+			// A stale-refresh signal is one-shot (the caller consumes it from
+			// navigation state), so it represents a fresh user-driven reload and
+			// must win over a previous failure for the same location.
+			if (input.needsStaleRefresh) {
+				lastFailedHref = null
+			}
 			return (
 				!input.appliedRouteData &&
 				(input.isLoading ||

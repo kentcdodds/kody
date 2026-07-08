@@ -39,6 +39,22 @@ test('location changes and stale refreshes trigger loads', () => {
 	).toBe(true)
 })
 
+test('a stale refresh overrides a prior failure for the same href', () => {
+	const latch = createRouteLoadLatch()
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	latch.markFailed('/a')
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
+	// A same-path reload whose loader failed signals staleness once; that
+	// user-driven refresh must not be blocked by the failure latch.
+	expect(
+		latch.needsLoad({
+			...baseInput,
+			currentHref: '/a',
+			needsStaleRefresh: true,
+		}),
+	).toBe(true)
+})
+
 test('applied route loader data suppresses the fallback fetch', () => {
 	const latch = createRouteLoadLatch()
 	expect(
