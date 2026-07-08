@@ -81,6 +81,7 @@ export function AdminInvitesRoute(handle: Handle) {
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
+	let loadRequestId = 0
 
 	function applyData(payload: AdminInvitesLoaderData) {
 		invites = payload.invites
@@ -92,11 +93,15 @@ export function AdminInvitesRoute(handle: Handle) {
 	async function loadInvites() {
 		const href = readCurrentRouterHref(handle)
 		loadingForHref = href
+		// A slow response that resolves after a newer load started must not
+		// clobber the newer load's state (matches the other admin loaders).
+		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(adminInvitesApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 			})
+			if (requestId !== loadRequestId) return
 			if (response.status === 401) {
 				window.location.assign('/login')
 				return
@@ -118,6 +123,7 @@ export function AdminInvitesRoute(handle: Handle) {
 			lastFailedHref = null
 			handle.update()
 		} catch (error) {
+			if (requestId !== loadRequestId) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load invites.'
@@ -125,7 +131,7 @@ export function AdminInvitesRoute(handle: Handle) {
 			lastFailedHref = href
 			handle.update()
 		} finally {
-			loadingForHref = null
+			if (requestId === loadRequestId) loadingForHref = null
 		}
 	}
 
@@ -149,6 +155,10 @@ export function AdminInvitesRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify(body),
 			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const payload = await readJson<
 				AdminInvitesLoaderData & {
 					ok?: boolean

@@ -33,6 +33,7 @@ export const emailAttachmentGetCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const attachment = await getEmailAttachmentById({
 				db: ctx.env.APP_DB,
+				blobs: ctx.env.EMAIL_BLOBS,
 				userId: user.userId,
 				attachmentId: args.attachment_id,
 			})

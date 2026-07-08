@@ -5,7 +5,8 @@ type RedirectToLoginOptions = {
 	setCookie?: string
 }
 
-function normalizeRedirectTo(value: string | null) {
+/** Allow only same-origin absolute paths as post-auth redirect targets. */
+export function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
 	if (!value.startsWith('/')) return null
 	if (value.startsWith('//')) return null

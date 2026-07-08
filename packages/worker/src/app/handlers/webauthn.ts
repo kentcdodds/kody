@@ -37,15 +37,12 @@ import {
 	setWebAuthnChallengeSecret,
 } from '#app/webauthn.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
-export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
-	const env = appEnv as unknown as Env
-
+export function createWebauthnRegistrationHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url }) {
-			setWebAuthnChallengeSecret(appEnv.COOKIE_SECRET)
+			setWebAuthnChallengeSecret(env.COOKIE_SECRET)
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
@@ -56,7 +53,7 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 
 			if (request.method === 'GET') {
 				const existingPasskeys = await listPasskeysForUser(
-					appEnv.APP_DB,
+					env.APP_DB,
 					user.userId,
 				)
 				const options = await generateRegistrationOptions({
@@ -164,10 +161,7 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 			const { credential, credentialDeviceType, credentialBackedUp, aaguid } =
 				verification.registrationInfo
 
-			const existingPasskey = await findPasskeyById(
-				appEnv.APP_DB,
-				credential.id,
-			)
+			const existingPasskey = await findPasskeyById(env.APP_DB, credential.id)
 			if (existingPasskey) {
 				return jsonResponse(
 					{ ok: false, error: 'This passkey is already registered.' },
@@ -175,7 +169,7 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 				)
 			}
 
-			await createPasskey(appEnv.APP_DB, {
+			await createPasskey(env.APP_DB, {
 				id: credential.id,
 				aaguid,
 				publicKey: isoBase64URL.fromBuffer(credential.publicKey),
@@ -203,15 +197,15 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 	} satisfies Action<typeof routes.webauthnRegistration>
 }
 
-export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
-	const db = createDb(appEnv.APP_DB)
+export function createWebauthnAuthenticationHandler(env: Env) {
+	const db = createDb(env.APP_DB)
 
 	return {
 		middleware: [],
 		async handler({ request, url }) {
-			setWebAuthnChallengeSecret(appEnv.COOKIE_SECRET)
-			setAuthSessionSecret(appEnv.COOKIE_SECRET)
-			setVerifySessionSecret(appEnv.COOKIE_SECRET)
+			setWebAuthnChallengeSecret(env.COOKIE_SECRET)
+			setAuthSessionSecret(env.COOKIE_SECRET)
+			setVerifySessionSecret(env.COOKIE_SECRET)
 
 			const config = getWebAuthnConfig(request)
 			const secure = isSecureRequest(request)
@@ -260,7 +254,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			}
 			const rememberMe = body.rememberMe === true
 
-			const passkey = await findPasskeyById(appEnv.APP_DB, body.response.id)
+			const passkey = await findPasskeyById(env.APP_DB, body.response.id)
 			if (!passkey) {
 				void logAuditEvent({
 					category: 'auth',
@@ -314,7 +308,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			}
 
 			await updatePasskeyCounter(
-				appEnv.APP_DB,
+				env.APP_DB,
 				passkey.id,
 				verification.authenticationInfo.newCounter,
 			)
@@ -337,7 +331,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 
 			// Passkeys are an alternative first factor: accounts with TOTP
 			// enabled still get the second-factor challenge (Epic Stack parity).
-			if (await isTwoFactorEnabled(appEnv.APP_DB, userRecord.id)) {
+			if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
 				headers.append(
 					'Set-Cookie',
 					await createVerifySessionCookie(

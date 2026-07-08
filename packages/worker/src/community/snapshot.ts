@@ -12,7 +12,14 @@ export async function readCommunitySnapshot(
 ): Promise<CommunitySnapshot | null> {
 	const raw = await kv.get(buildCommunitySnapshotKvKey(listingId))
 	if (!raw) return null
-	const parsed = JSON.parse(raw) as CommunitySnapshot
+	// Corrupt KV payloads are treated as cache misses instead of failing the
+	// read path.
+	let parsed: CommunitySnapshot
+	try {
+		parsed = JSON.parse(raw) as CommunitySnapshot
+	} catch {
+		return null
+	}
 	if (parsed.version !== 1) {
 		throw new Error(
 			`Unsupported community snapshot version for listing "${listingId}".`,

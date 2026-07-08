@@ -454,13 +454,9 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 		'success',
 	])
 	expect(dataPoints[0]?.doubles?.[0]).toBeGreaterThanOrEqual(0)
-	expect(rollupWrites).toHaveLength(1)
-	expect(rollupWrites[0]?.slice(0, 4)).toEqual([
-		'usage-user-1',
-		'execute',
-		String(rollupWrites[0]?.[7]).slice(0, 7),
-		0,
-	])
+	// With USAGE_EVENTS present, rollups are derived from Analytics Engine
+	// by the scheduled aggregation instead of a per-event D1 upsert.
+	expect(rollupWrites).toHaveLength(0)
 
 	// Sandbox run returning an error result: one error event.
 	const errorLoader = {
@@ -488,8 +484,7 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	expect(errorResult.error).toBe('boom')
 	expect(dataPoints).toHaveLength(2)
 	expect(dataPoints[1]?.blobs?.[3]).toBe('error')
-	expect(rollupWrites).toHaveLength(2)
-	expect(rollupWrites[1]?.[3]).toBe(1)
+	expect(rollupWrites).toHaveLength(0)
 
 	// Loader throwing: error event recorded, original error rethrown.
 	const throwingLoader = {
@@ -521,7 +516,7 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 		gatewayProps: { ...createGatewayProps('usage-user-1'), userId: null },
 	}).execute('async () => "ok"', providers)
 	expect(dataPoints).toHaveLength(3)
-	expect(rollupWrites).toHaveLength(3)
+	expect(rollupWrites).toHaveLength(0)
 
 	// Provider validation failure never reaches the sandbox: nothing recorded.
 	const validationLoader = createFakeWorkerLoader()
@@ -535,7 +530,7 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	}).execute('async () => "ok"', [{ name: 'class', fns: {} }])
 	expect(validationResult.error).toContain('reserved')
 	expect(dataPoints).toHaveLength(3)
-	expect(rollupWrites).toHaveLength(3)
+	expect(rollupWrites).toHaveLength(0)
 })
 
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {

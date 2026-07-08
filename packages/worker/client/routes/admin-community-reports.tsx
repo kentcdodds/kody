@@ -208,6 +208,10 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 					note: getNote(reportId) || undefined,
 				}),
 			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const payload = await readJson<{ ok: boolean; error?: string }>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error ?? 'Unable to complete action.')

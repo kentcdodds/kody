@@ -1,4 +1,3 @@
-import { type APIRequestContext } from '@playwright/test'
 import { seedUserInE2eDatabase } from './d1-utils.ts'
 
 export const primaryTestUser = {
@@ -7,6 +6,7 @@ export const primaryTestUser = {
 	password: 'ilikecode',
 }
 
-export async function ensurePrimaryUserExists(_request: APIRequestContext) {
+/** Seed the primary test user straight into the local E2E D1 database. */
+export async function ensurePrimaryUserExists() {
 	await seedUserInE2eDatabase(primaryTestUser)
 }

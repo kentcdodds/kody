@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import {
 	defaultExecutionResponseLimitBytes,
@@ -176,146 +177,201 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			const { baseUrl, hasUser, storageContext } =
 				callerContextFields(callerContext)
 			const activeStorageId = storageContext?.storageId ?? null
-			const { getCapabilityRegistryForContext } =
-				await import('#mcp/capabilities/registry.ts')
-			const registry = await getCapabilityRegistryForContext({
-				env,
-				callerContext,
-			})
-			const surfacedMemories = await surfaceToolMemories({
-				env,
-				callerContext,
-				conversationId: resolvedConversationId,
-				retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
-			})
-			const registeredCapabilityCount = Object.keys(
-				registry.capabilityHandlers,
-			).length
-			const result = await Sentry.startSpan(
-				{
-					name: 'mcp.tool.execute',
-					op: 'mcp.tool',
-					attributes: {
-						'mcp.tool': 'execute',
-					},
-				},
-				async () => {
-					const packageInvokeTools = callerContext.user?.userId
-						? await import('#worker/package-invocations/service.ts').then(
-								({ createExecutePackageInvokeTools }) =>
-									createExecutePackageInvokeTools({
-										env,
-										baseUrl: callerContext.baseUrl,
-										callerContext,
-									}),
-							)
-						: undefined
-					return await runModuleWithRegistry(env, callerContext, code, params, {
-						executorExports: agent.getLoopbackExports(),
-						capabilityRegistry: registry,
-						storageTools: activeStorageId
-							? {
-									userId: callerContext.user?.userId ?? '',
-									storageId: activeStorageId,
-									writable: writable ?? false,
-								}
-							: undefined,
-						packageInvokeTools,
-					})
-				},
-			)
-			const timing = finishToolTiming(timingStart)
-			const durationMs = timing.durationMs
-
-			if (result.error) {
-				const errorDetails = getExecutionErrorDetails(result.error)
-				const { errorName, errorMessage } = errorFields(result.error)
+			try {
+				return await runExecuteTool()
+			} catch (cause) {
+				// Setup failures (registry build, module bundling, executor
+				// creation) must return a structured MCP error instead of an
+				// unhandled rejection, mirroring the search tool boundary.
+				const timing = finishToolTiming(timingStart)
+				const error = cause instanceof Error ? cause : new Error(String(cause))
+				const { errorName, errorMessage } = errorFields(error)
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'execute',
 					toolName: 'execute',
 					outcome: 'failure',
+					durationMs: timing.durationMs,
+					baseUrl,
+					hasUser,
+					sandboxError: false,
+					errorName,
+					errorMessage,
+					cause: error,
+				})
+				return {
+					content: prependToolMetadataContent(resolvedConversationId, [
+						{ type: 'text', text: `Error: ${error.message}` },
+					]),
+					structuredContent: {
+						conversationId: resolvedConversationId,
+						timing,
+						error: error.message,
+					},
+					isError: true,
+				}
+			}
+
+			async function runExecuteTool() {
+				const { getCapabilityRegistryForContext } =
+					await import('#mcp/capabilities/registry.ts')
+				const registry = await getCapabilityRegistryForContext({
+					env,
+					callerContext,
+				})
+				const surfacedMemories = await surfaceToolMemories({
+					env,
+					callerContext,
+					conversationId: resolvedConversationId,
+					retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
+				})
+				const registeredCapabilityCount = Object.keys(
+					registry.capabilityHandlers,
+				).length
+				const result = await Sentry.startSpan(
+					{
+						name: 'mcp.tool.execute',
+						op: 'mcp.tool',
+						attributes: {
+							'mcp.tool': 'execute',
+						},
+					},
+					async () => {
+						const packageInvokeTools = callerContext.user?.userId
+							? await import('#worker/package-invocations/service.ts').then(
+									({ createExecutePackageInvokeTools }) =>
+										createExecutePackageInvokeTools({
+											env,
+											baseUrl: callerContext.baseUrl,
+											callerContext,
+										}),
+								)
+							: undefined
+						try {
+							return await runModuleWithRegistry(
+								env,
+								callerContext,
+								code,
+								params,
+								{
+									executorExports: agent.getLoopbackExports(),
+									capabilityRegistry: registry,
+									storageTools: activeStorageId
+										? {
+												userId: callerContext.user?.userId ?? '',
+												storageId: activeStorageId,
+												writable: writable ?? false,
+											}
+										: undefined,
+									packageInvokeTools,
+								},
+							)
+						} catch (cause) {
+							// Bundling the caller-provided module (syntax errors,
+							// unresolved imports) throws before the sandbox runs;
+							// route it through the sandbox-error result path so it
+							// is not logged as a platform failure.
+							return {
+								result: undefined,
+								error: getErrorMessage(cause),
+								logs: [],
+							}
+						}
+					},
+				)
+				const timing = finishToolTiming(timingStart)
+				const durationMs = timing.durationMs
+
+				if (result.error) {
+					const errorDetails = getExecutionErrorDetails(result.error)
+					const { errorName, errorMessage } = errorFields(result.error)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'execute',
+						toolName: 'execute',
+						outcome: 'failure',
+						durationMs,
+						baseUrl,
+						hasUser,
+						registeredCapabilityCount,
+						sandboxError: true,
+						errorName,
+						errorMessage,
+						cause: result.error,
+					})
+					return {
+						content: prependToolMetadataContent(resolvedConversationId, [
+							{
+								type: 'text',
+								text: formatExecutionOutput(result),
+							},
+							...formatSurfacedMemoriesMarkdown(surfacedMemories),
+						]),
+						structuredContent: {
+							conversationId: resolvedConversationId,
+							timing,
+							...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
+							returnedBytes: 0,
+							error: errorMessage,
+							errorDetails,
+							logs: result.logs ?? [],
+							...buildMemoryStructuredContent(surfacedMemories),
+						},
+						isError: true,
+					}
+				}
+
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'execute',
+					toolName: 'execute',
+					outcome: 'success',
 					durationMs,
 					baseUrl,
 					hasUser,
 					registeredCapabilityCount,
-					sandboxError: true,
-					errorName,
-					errorMessage,
-					cause: result.error,
+					sandboxError: false,
+					context: activeStorageId ? { storageId: activeStorageId } : undefined,
 				})
+				const limitedResult = limitExecutionResultValue(
+					result.result,
+					responseLimit ?? defaultExecutionResponseLimitBytes,
+				)
+				const rawContent = limitedResult.truncated
+					? null
+					: extractRawContent(limitedResult.value)
 				return {
 					content: prependToolMetadataContent(resolvedConversationId, [
-						{
-							type: 'text',
-							text: formatExecutionOutput(result),
-						},
+						...(rawContent ?? [
+							{
+								type: 'text',
+								text: formatLimitedExecutionOutput({
+									value: limitedResult.value,
+									truncated: limitedResult.truncated,
+									note: limitedResult.note,
+									displayText: limitedResult.displayText,
+								}),
+							},
+						]),
 						...formatSurfacedMemoriesMarkdown(surfacedMemories),
 					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						timing,
 						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
-						returnedBytes: 0,
-						error: errorMessage,
-						errorDetails,
+						returnedBytes: limitedResult.returnedBytes,
+						...(limitedResult.truncated
+							? {
+									truncated: true,
+									note: limitedResult.note,
+								}
+							: {}),
+						result: rawContent ? null : limitedResult.value,
 						logs: result.logs ?? [],
 						...buildMemoryStructuredContent(surfacedMemories),
 					},
-					isError: true,
+					isError: false,
 				}
-			}
-
-			logMcpEvent({
-				category: 'mcp',
-				tool: 'execute',
-				toolName: 'execute',
-				outcome: 'success',
-				durationMs,
-				baseUrl,
-				hasUser,
-				registeredCapabilityCount,
-				sandboxError: false,
-				context: activeStorageId ? { storageId: activeStorageId } : undefined,
-			})
-			const limitedResult = limitExecutionResultValue(
-				result.result,
-				responseLimit ?? defaultExecutionResponseLimitBytes,
-			)
-			const rawContent = limitedResult.truncated
-				? null
-				: extractRawContent(limitedResult.value)
-			return {
-				content: prependToolMetadataContent(resolvedConversationId, [
-					...(rawContent ?? [
-						{
-							type: 'text',
-							text: formatLimitedExecutionOutput({
-								value: limitedResult.value,
-								truncated: limitedResult.truncated,
-								note: limitedResult.note,
-								displayText: limitedResult.displayText,
-							}),
-						},
-					]),
-					...formatSurfacedMemoriesMarkdown(surfacedMemories),
-				]),
-				structuredContent: {
-					conversationId: resolvedConversationId,
-					timing,
-					...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
-					returnedBytes: limitedResult.returnedBytes,
-					...(limitedResult.truncated
-						? {
-								truncated: true,
-								note: limitedResult.note,
-							}
-						: {}),
-					result: rawContent ? null : limitedResult.value,
-					logs: result.logs ?? [],
-					...buildMemoryStructuredContent(surfacedMemories),
-				},
-				isError: false,
 			}
 		},
 	)

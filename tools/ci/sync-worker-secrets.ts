@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isExecutedDirectly, resolveLocalBinary } from '../node-runtime.ts'
+import { fail } from './resource-utils.ts'
 
 export type CliOptions = {
 	env?: string
@@ -16,11 +17,6 @@ export type CliOptions = {
 	generateCookieSecret: boolean
 	includeEmpty: boolean
 	emptyAsSpace: boolean
-}
-
-function fail(message: string): never {
-	console.error(message)
-	process.exit(1)
 }
 
 function parseArgs(argv: Array<string>): CliOptions {

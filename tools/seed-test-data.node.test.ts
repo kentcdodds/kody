@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 
+import { toHex } from '../packages/shared/src/hex.ts'
+import { stableUserIdFromEmail } from './seed-sql.ts'
 import {
 	buildSeedSql,
 	shouldSeedCompanionAccount,
@@ -82,6 +84,28 @@ test('buildSeedSql seeds each account with its roles', () => {
 	expect(sql).toContain(
 		`WHERE u.email = 'kody@example.com' AND r.name = 'admin'`,
 	)
+})
+
+test('seeded users carry the same stable id the signup path derives', async () => {
+	const email = 'Kody+Mixed.Case@Example.com '
+	// Reference implementation mirroring the worker's async derivation in
+	// `packages/worker/src/user-id.ts` (`createStableUserIdFromEmail`): the
+	// sync seeding helper must stay byte-identical or fixtures would fall
+	// back to the legacy full-table scan.
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(email.trim().toLowerCase()),
+	)
+	expect(stableUserIdFromEmail(email)).toBe(toHex(new Uint8Array(digest)))
+	const sql = buildSeedSql([
+		{
+			email: 'kody@example.com',
+			username: 'kody',
+			passwordHash: 'hash-a',
+			admin: true,
+		},
+	])
+	expect(sql).toContain(stableUserIdFromEmail('kody@example.com'))
 })
 
 test('companion fixture account is local-only', () => {

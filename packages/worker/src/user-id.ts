@@ -76,6 +76,51 @@ function withoutStableUserIdColumn(select: string) {
 	return select.replace(/,\s*stable_user_id\b/g, '')
 }
 
+/**
+ * Best-effort write-back for the scan fallback: persist the computed stable
+ * id on a legacy row that still has a NULL `stable_user_id`, so each such row
+ * pays the full-table scan at most once. The `stable_user_id IS NULL` guard
+ * means a concurrently-materialized id is never overwritten, and errors
+ * (missing column on pre-migration databases, read-only test doubles) are
+ * swallowed: healing must never break the lookup.
+ */
+async function persistHealedStableUserId(input: {
+	db: D1Database
+	stableUserId: string
+	row: { id?: unknown; email?: unknown }
+}) {
+	try {
+		if (typeof input.row.id === 'number') {
+			await input.db
+				.prepare(
+					`UPDATE users SET stable_user_id = ?
+					 WHERE id = ? AND stable_user_id IS NULL`,
+				)
+				.bind(input.stableUserId, input.row.id)
+				.run()
+			return
+		}
+		if (typeof input.row.email === 'string' && input.row.email) {
+			await input.db
+				.prepare(
+					`UPDATE users SET stable_user_id = ?
+					 WHERE email = ? AND stable_user_id IS NULL`,
+				)
+				.bind(input.stableUserId, input.row.email)
+				.run()
+		}
+	} catch (error) {
+		console.debug('stable-user-id-write-back-failed', error)
+	}
+}
+
+/**
+ * Resolve a users row from a stable user id: one indexed point read on
+ * `stable_user_id`, falling back to a full scan that hashes each email for
+ * legacy rows without a materialized id. When the scan matches a row with a
+ * NULL `stable_user_id` (and the select includes `id` or `email`), the
+ * computed id is written back so the row is found via the index next time.
+ */
 export async function findUserRowByStableUserId<
 	T extends UserStableIdRow & { id: number },
 >(input: {
@@ -108,7 +153,11 @@ export async function findUserRowByStableUserId<
 			.all<T>()
 	}
 	for (const row of rows.results ?? []) {
-		if ((await resolveUserStableId(row)) === stableUserId) return row
+		if ((await resolveUserStableId(row)) !== stableUserId) continue
+		if (!normalizeStableUserId(row.stable_user_id)) {
+			await persistHealedStableUserId({ db: input.db, stableUserId, row })
+		}
+		return row
 	}
 	return null
 }

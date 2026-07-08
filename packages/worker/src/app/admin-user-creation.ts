@@ -147,10 +147,16 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	try {
 		const result = await input.db
 			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at)
-				 VALUES (?, ?, ?, ?)`,
+				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+				 VALUES (?, ?, ?, ?, ?)`,
 			)
-			.bind(username, email, adminCreatedNoUsablePasswordHash, nowIso)
+			.bind(
+				username,
+				email,
+				adminCreatedNoUsablePasswordHash,
+				nowIso,
+				stableUserId,
+			)
 			.run()
 		const lastRowId = result.meta.last_row_id
 		if (!Number.isSafeInteger(lastRowId) || lastRowId < 1) {
@@ -160,11 +166,6 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			)
 		}
 		userId = lastRowId
-		await input.db
-			.prepare(`UPDATE users SET stable_user_id = ? WHERE id = ?`)
-			.bind(stableUserId, userId)
-			.run()
-			.catch(() => undefined)
 	} catch (error) {
 		const uniqueField = getUniqueConstraintField(error)
 		if (uniqueField === 'email') {

@@ -48,6 +48,7 @@ export type AccountDeletionResult = {
 	deletedRowCounts: Record<string, number>
 	updatedRowCounts: Record<string, number>
 	deletedKvKeys: number
+	deletedEmailBlobs: number
 	deletedArtifactRepos: number
 	revokedOAuthGrants: number
 	clearedDurableObjects: Record<string, number>
@@ -94,6 +95,7 @@ type UserDeletionInventory = {
 	vectorIds: Array<string>
 	storageIds: Array<string>
 	bundleKvKeys: Array<string>
+	emailRawMimeKeys: Array<string>
 	sourceSnapshots: Array<UserSourceSnapshot>
 	savedPackages: Array<UserSavedPackageSnapshot>
 	repoSessions: Array<UserRepoSessionSnapshot>
@@ -281,6 +283,17 @@ async function listUserPackageServices(env: Env, userId: string) {
 	}))
 }
 
+async function listUserEmailRawMimeKeys(env: Env, userId: string) {
+	const rows = await env.APP_DB.prepare(
+		`SELECT raw_mime_key
+		FROM email_messages
+		WHERE user_id = ? AND raw_mime_key IS NOT NULL`,
+	)
+		.bind(userId)
+		.all<{ raw_mime_key: string }>()
+	return uniqueStrings((rows.results ?? []).map((row) => row.raw_mime_key))
+}
+
 async function listUserCommunityListingIds(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id FROM community_listings WHERE owner_user_id = ?`,
@@ -329,6 +342,7 @@ async function collectUserDeletionInventory(input: {
 	const [
 		vectorIds,
 		storageIds,
+		emailRawMimeKeys,
 		sourceSnapshots,
 		savedPackages,
 		repoSessions,
@@ -345,6 +359,13 @@ async function collectUserDeletionInventory(input: {
 		listUserStorageIds(input.env, input.userId).catch((error) => {
 			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate storage ids: ${message}`)
+			return [] as Array<string>
+		}),
+		listUserEmailRawMimeKeys(input.env, input.userId).catch((error) => {
+			const message = error instanceof Error ? error.message : String(error)
+			input.warnings.push(
+				`Failed to enumerate email raw-MIME blob keys: ${message}`,
+			)
 			return [] as Array<string>
 		}),
 		listUserSourceSnapshots(input.env, input.userId).catch((error) => {
@@ -397,6 +418,7 @@ async function collectUserDeletionInventory(input: {
 		vectorIds,
 		storageIds,
 		bundleKvKeys,
+		emailRawMimeKeys,
 		sourceSnapshots,
 		savedPackages,
 		repoSessions,
@@ -691,6 +713,24 @@ async function deleteKvKeys(input: {
 	return deleted
 }
 
+async function deleteEmailBlobs(input: {
+	blobs: R2Bucket
+	keys: ReadonlyArray<string>
+	warnings: Array<string>
+}): Promise<number> {
+	let deleted = 0
+	for (const key of input.keys) {
+		try {
+			await input.blobs.delete(key)
+			deleted += 1
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			input.warnings.push(`Email blob delete failed for ${key}: ${message}`)
+		}
+	}
+	return deleted
+}
+
 async function listKvKeysByPrefix(input: {
 	kv: KVNamespace
 	prefixes: ReadonlyArray<string>
@@ -920,6 +960,7 @@ export async function deleteUserAccount(input: {
 		deletedRowCounts: {},
 		updatedRowCounts: {},
 		deletedKvKeys: 0,
+		deletedEmailBlobs: 0,
 		deletedArtifactRepos: 0,
 		revokedOAuthGrants: 0,
 		clearedDurableObjects: {},
@@ -1022,6 +1063,18 @@ export async function deleteUserAccount(input: {
 	) {
 		warnings.push(
 			`BUNDLE_ARTIFACTS_KV binding was unavailable; ${inventory.bundleKvKeys.length} bundle/source/community key(s) and retriever cache entries for ${inventory.savedPackages.length} package(s) referenced by the deleted user were not removed and must be cleaned up manually.`,
+		)
+	}
+
+	if (input.env.EMAIL_BLOBS) {
+		result.deletedEmailBlobs = await deleteEmailBlobs({
+			blobs: input.env.EMAIL_BLOBS,
+			keys: inventory.emailRawMimeKeys,
+			warnings,
+		})
+	} else if (inventory.emailRawMimeKeys.length > 0) {
+		warnings.push(
+			`EMAIL_BLOBS binding was unavailable; ${inventory.emailRawMimeKeys.length} raw email MIME blob(s) referenced by the deleted user were not removed and must be cleaned up manually.`,
 		)
 	}
 

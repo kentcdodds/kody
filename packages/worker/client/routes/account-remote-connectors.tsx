@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -294,7 +295,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let connectors: Array<RemoteConnectorListItem> = []
 	let editorState = createEmptyEditorState()
 	let message: string | null = null
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 	let deleteConfirm = false
 	let showSharedSecret = false
 
@@ -303,9 +304,8 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	const dangerButtonCss = getDangerButtonCss()
 
 	async function loadRemoteConnectors(signal: AbortSignal) {
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
-			lastLoadedHref = href
 			const response = await fetch(accountRemoteConnectorsApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -323,6 +323,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			applyPayload(payload)
 			status = 'ready'
 			message = null
+			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -331,6 +332,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				error instanceof Error
 					? error.message
 					: 'Unable to load remote connector settings.'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -536,7 +538,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		applyPayload(routeData)
 		status = 'ready'
 		message = null
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		return true
 	}
 
@@ -547,15 +549,13 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		// href change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadRemoteConnectors)
 		}
 		const isMutating = saveState !== 'idle'

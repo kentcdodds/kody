@@ -19,23 +19,71 @@ import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import { getCachedRemoteConnectorSnapshot } from '#worker/remote-connector/snapshot-cache.ts'
 import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
 
-const staticRegistry = buildCapabilityRegistry(builtinDomains)
+let staticRegistryMemo: BuiltCapabilityRegistry | null = null
 
-export const capabilityList = staticRegistry.capabilityList
+/**
+ * Building the builtin registry converts ~99 capability Zod schemas to JSON
+ * Schema, which is far too expensive to run at module scope on every isolate
+ * cold start. Memoized so the work happens at most once per isolate, on first
+ * use.
+ */
+export function getStaticRegistry(): BuiltCapabilityRegistry {
+	staticRegistryMemo ??= buildCapabilityRegistry(builtinDomains)
+	return staticRegistryMemo
+}
 
-export const capabilityDomains = staticRegistry.capabilityDomains
+/**
+ * Lazy view over one field of the static registry, so the legacy constant
+ * exports below keep working without forcing the registry build at module
+ * load. The proxy target only supplies the right base shape (array vs plain
+ * object); every operation is forwarded to the real, memoized registry.
+ */
+function lazyStaticRegistryField<Key extends keyof BuiltCapabilityRegistry>(
+	key: Key,
+	target: object,
+): BuiltCapabilityRegistry[Key] {
+	const resolve = () => getStaticRegistry()[key] as object
+	return new Proxy(target, {
+		get(_target, property) {
+			return Reflect.get(resolve(), property)
+		},
+		has(_target, property) {
+			return Reflect.has(resolve(), property)
+		},
+		ownKeys() {
+			return Reflect.ownKeys(resolve())
+		},
+		getOwnPropertyDescriptor(_target, property) {
+			return Object.getOwnPropertyDescriptor(resolve(), property)
+		},
+	}) as BuiltCapabilityRegistry[Key]
+}
 
-export const capabilityDomainDescriptionsByName =
-	staticRegistry.capabilityDomainDescriptionsByName
+export const capabilityList = lazyStaticRegistryField('capabilityList', [])
 
-export const capabilityMap = staticRegistry.capabilityMap
+export const capabilityDomains = lazyStaticRegistryField(
+	'capabilityDomains',
+	[],
+)
 
-export const capabilitySpecs = staticRegistry.capabilitySpecs
+export const capabilityDomainDescriptionsByName = lazyStaticRegistryField(
+	'capabilityDomainDescriptionsByName',
+	{},
+)
 
-export const capabilityToolDescriptors =
-	staticRegistry.capabilityToolDescriptors
+export const capabilityMap = lazyStaticRegistryField('capabilityMap', {})
 
-export const capabilityHandlers = staticRegistry.capabilityHandlers
+export const capabilitySpecs = lazyStaticRegistryField('capabilitySpecs', {})
+
+export const capabilityToolDescriptors = lazyStaticRegistryField(
+	'capabilityToolDescriptors',
+	{},
+)
+
+export const capabilityHandlers = lazyStaticRegistryField(
+	'capabilityHandlers',
+	{},
+)
 
 export const capabilityRegistryCacheTtlMs = 30_000
 export const capabilityRegistryCacheLimit = 50
@@ -115,7 +163,7 @@ async function buildCapabilityRegistryForDynamicSources(input: {
 		(domain) => (domain ? [domain.domain] : []),
 	)
 	if (synthesizedDomains.length === 0) {
-		return staticRegistry
+		return getStaticRegistry()
 	}
 	return buildCapabilityRegistry([...builtinDomains, ...synthesizedDomains])
 }
@@ -174,7 +222,7 @@ export async function getCapabilityRegistryForContext(input: {
 	const userId = input.callerContext.user?.userId ?? null
 	if (!userId) {
 		return filterRegistryForContext({
-			registry: staticRegistry,
+			registry: getStaticRegistry(),
 			callerContext: input.callerContext,
 		})
 	}
@@ -184,7 +232,7 @@ export async function getCapabilityRegistryForContext(input: {
 	})
 	if (refs.length === 0 && mcpServerRefs.length === 0) {
 		return filterRegistryForContext({
-			registry: staticRegistry,
+			registry: getStaticRegistry(),
 			callerContext: input.callerContext,
 		})
 	}

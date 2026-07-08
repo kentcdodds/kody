@@ -68,13 +68,17 @@ primitives:
     group: surfaces
     name: Scheduled handler
     summary:
-      Worker cron entry point (Artifacts push reconcile every five minutes,
-      daily stale-token cleanup around 03:00 UTC, and abandoned repo-session
-      branch cleanup).
+      Worker cron entry point with independently isolated lanes (time-budgeted
+      Artifacts push reconcile, hourly retention pruning, hourly usage rollup
+      aggregation, system-email retention, daily stale-token cleanup around
+      03:00 UTC, and abandoned repo-session branch cleanup); one failing lane
+      never aborts the others.
     code:
       - packages/worker/src/index.ts
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
       - packages/worker/src/repo/repo-session-cleanup.ts
+      - packages/worker/src/app/retention.ts
+      - packages/worker/src/usage/aggregate-rollups.ts
     docs:
       - docs/contributing/architecture/data-storage.md
 
@@ -449,15 +453,30 @@ primitives:
     name: Usage metering
     summary:
       Per-user usage events recorded at runtime chokepoints via recordUsage();
-      raw events go to the USAGE_EVENTS Analytics Engine dataset and per-user,
-      per-metric, per-month counters accumulate in D1 usage_rollups.
+      raw events go to the USAGE_EVENTS Analytics Engine dataset and D1
+      usage_rollups is a derived aggregate recomputed hourly from the AE SQL API
+      (direct D1 upserts only in local dev without the AE binding).
       Observability only; entitlements use separate source-table counts and
       daily counters.
     code:
       - packages/worker/src/usage/record-usage.ts
+      - packages/worker/src/usage/aggregate-rollups.ts
       - packages/worker/migrations/0047-usage-rollups.sql
     docs:
       - docs/contributing/architecture/usage-metering.md
+
+  - id: email-blobs-r2
+    group: storage
+    name: Email blob storage (R2)
+    summary:
+      EMAIL_BLOBS R2 bucket holding raw email MIME under the frozen key contract
+      email-raw:v1:{userId}/{messageId}; D1 email_messages keeps metadata plus
+      raw_mime_key, with inline raw_mime as the fallback when the binding is
+      unavailable. Covered by account deletion and retention.
+    code:
+      - packages/worker/src/email/repo.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
 
 invariants:
   - id: per-user-isolation

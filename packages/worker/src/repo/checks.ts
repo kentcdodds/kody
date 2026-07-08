@@ -52,6 +52,16 @@ const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
 const repoChecksSyntheticTsconfigExtendsPath =
 	'./.__kody_repo_tsconfig_base__.json'
 
+/**
+ * Publish checks materialize the whole source root in memory before bundling
+ * and typechecking, so the walk is capped to keep a single check run within
+ * Durable Object CPU/memory limits. The caps are intentionally larger than
+ * the execution-path caps in `repo-kody-execution.ts` (250 files / 2 MiB)
+ * because published packages may ship assets alongside runtime code.
+ */
+export const repoChecksSourceMaxFiles = 2_000
+export const repoChecksSourceMaxTotalBytes = 15 * 1024 * 1024
+
 async function loadWorkerBundlerSnapshotTools() {
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createFileSystemSnapshot } =
@@ -884,16 +894,50 @@ export async function runRepoChecks(input: {
 		/\/+$/,
 		'',
 	)
-	const sourceFiles = await (async () => {
+	const sourceWalk = await (async () => {
 		const collected: Record<string, string> = {}
+		const encoder = new TextEncoder()
+		let fileCount = 0
+		let totalBytes = 0
 		for await (const [path, content] of workspaceFilesForSnapshot({
 			workspace: input.workspace,
 			root: sourceRoot,
 		})) {
+			fileCount += 1
+			if (fileCount > repoChecksSourceMaxFiles) {
+				return {
+					ok: false as const,
+					message: `Repo checks aborted: source root "${sourceRoot || '/'}" contains more than the ${repoChecksSourceMaxFiles}-file publish check limit. Remove files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
+				}
+			}
+			totalBytes += encoder.encode(content).byteLength
+			if (totalBytes > repoChecksSourceMaxTotalBytes) {
+				return {
+					ok: false as const,
+					message: `Repo checks aborted: source root "${sourceRoot || '/'}" exceeds the ${repoChecksSourceMaxTotalBytes}-byte (${Math.round(repoChecksSourceMaxTotalBytes / (1024 * 1024))} MiB) publish check limit. Remove or shrink large files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
+				}
+			}
 			collected[path] = content
 		}
-		return collected
+		return {
+			ok: true as const,
+			collected,
+		}
 	})()
+	if (!sourceWalk.ok) {
+		results.push({
+			kind: 'bundle',
+			ok: false,
+			message: sourceWalk.message,
+		})
+		return {
+			ok: false,
+			results,
+			manifest,
+			sourceFiles: {},
+		}
+	}
+	const sourceFiles = sourceWalk.collected
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {

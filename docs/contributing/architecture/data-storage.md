@@ -59,6 +59,12 @@ Deletion must cover these user-owned surfaces:
   authorized user requests.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
+- **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
+  `email_messages.raw_mime_key` while the rows still exist and deleted
+  best-effort with warnings, mirroring the KV/Vectorize reporting. Rows owned by
+  `system:email` keep their blobs here (they are not user data); those blobs are
+  removed when the system-email retention prune deletes the messages through the
+  shared delete-message helper.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
   community listing snapshots, and per-user package retriever cache/index keys
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
@@ -119,6 +125,12 @@ migration-safe chunked interface:
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability.
 
+D1 rows are always read with SQL-level keyset pagination: every query orders by
+the table's `rowid`, resumes strictly after an opaque cursor, and applies a SQL
+`LIMIT`, so a single query never loads a whole table. `account_export_section`
+fetches only the requested page, and the full browser export streams each table
+page by page (500 rows per query) before assembling the final JSON document.
+
 Durable Object export behavior:
 
 - `StorageRunner` bucket contents are exported with paged entries. These buckets
@@ -154,12 +166,16 @@ Relational app data lives in D1.
 
 The schema is defined by migrations in `packages/worker/migrations/`:
 
-- `users`: login identity and password hash. There is no persisted mapping from
-  the stable MCP `userId` (SHA-256 of the normalized email) back to the row;
-  contextless paths (inbound email) reverse-resolve it by scanning and hashing
-  (`findUserAccountByStableUserId`). A persisted, indexed `stable_user_id`
-  column with an app-level backfill is required before onboarding external users
-  / design partners.
+- `users`: login identity and password hash, plus the persisted stable MCP
+  `userId` (`stable_user_id`, SHA-256 of the normalized email, unique partial
+  index from migration 0052; written at signup). Inbound email routing does not
+  reverse-resolve stable ids at all — it uses the indexed username lookup
+  (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
+  stable ids with one indexed point read (`findUserRowByStableUserId` /
+  `findUserAccountByStableUserId`); legacy rows with a NULL `stable_user_id`
+  fall back to a scan-and-hash that self-heals by writing the computed id back,
+  and the `POST /__maintenance/backfill-stable-user-ids` endpoint backfills all
+  remaining legacy rows in one pass.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history
@@ -195,6 +211,28 @@ snapshots are stored in `BUNDLE_ARTIFACTS_KV`.
   source ids, published commits, bundle artifact rows, community listing ids,
   and package ids.
 
+## R2 (`EMAIL_BLOBS`)
+
+Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket instead of D1.
+`email_messages` stores an object key in `raw_mime_key`
+(`email-raw:v1:{userId}/{messageId}`), and the legacy inline `raw_mime` column
+is kept only for rows written before the offload (or when the binding is
+unavailable at write time — the write path falls back to inline storage rather
+than losing mail, and never throws from that decision).
+
+- All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
+  which prefers the inline payload and otherwise fetches the blob by key.
+  Attachment content extraction re-parses the resolved MIME the same way as
+  before.
+- `deleteEmailMessageById` deletes the message's blob best-effort after the D1
+  row delete; blob cleanup never blocks the delete.
+- Account deletion enumerates the user's `raw_mime_key` values before D1 rows
+  are removed and deletes the blobs with warnings on failure.
+- Bucket names: `kody-email-blobs` (production), per-preview
+  `{worker}-email-blobs` buckets created and cleaned up by
+  `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
+  name locally (Wrangler/vitest-pool-workers simulate the bucket).
+
 ## Durable Objects (`MCP_OBJECT`)
 
 MCP server runtime state is hosted via a Durable Object class (`MCP`) in
@@ -215,6 +253,12 @@ Jobs use two Durable Object roles:
 - `StorageRunner`: one object per durable storage id, responsible for isolated
   SQLite state that can be bound to execute calls, jobs, and dedicated storage
   inspection capabilities
+
+Each `JobManager` alarm processes at most `maxDueJobsPerAlarm` due jobs
+(`packages/worker/src/jobs/repo.ts`, oldest `next_run_at` first). When more due
+jobs remain after a run, the post-run alarm resync arms a near-immediate
+follow-up alarm so large backlogs drain across multiple short invocations
+instead of one Durable Object wake.
 
 Storage split:
 
@@ -286,6 +330,7 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `APP_DB` (D1)
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
+- `EMAIL_BLOBS` (R2, raw email MIME blobs)
 - `MCP_OBJECT` (Durable Objects)
 - `REMOTE_CONNECTOR_SESSION` (Durable Objects)
 - `JOB_MANAGER` (Durable Objects)
@@ -377,17 +422,29 @@ pushed the session commit to the source Artifacts repo.
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 external pushes that were not followed by an explicit
 `package_publish_external_push` call. The Worker scheduled handler runs every
-five minutes (`wrangler.jsonc` `*/5 * * * *`), selects a small batch of stale
-`entity_sources` rows by `last_external_check_at`, resolves the Artifacts
-default-branch HEAD, and calls the same external publish path when HEAD differs
-from `published_commit`.
+five minutes (`wrangler.jsonc` `*/5 * * * *`) and loops over batches of stale
+`entity_sources` rows (selected by `last_external_check_at`) until the backlog
+is drained or a wall-clock time budget (`reconcileTimeBudgetMs`, ~60 seconds) is
+exhausted, so throughput scales with backlog size instead of being capped at one
+batch per tick. For each source it resolves the Artifacts default-branch HEAD
+cheaply; when HEAD matches `published_commit` (or is unresolvable) it only
+advances `last_external_check_at` without any Durable Object work, and it spins
+up the RepoSession publish path only when HEAD differs.
 
 The reconcile loop is idempotent: if another caller publishes the same commit
 first, the publish path returns `already_published`. Check failures and
 non-fast-forward results leave D1/KV untouched and are counted in the one-line
-metrics log. Once per day during the 03:00 UTC cron window, reconcile also calls
-`revokeStaleArtifactsTokens(...)` for checked repos to clean up expired
+metrics log, which also records batches processed and whether the time budget
+was exhausted. Once per day during the 03:00 UTC cron window, reconcile also
+calls `revokeStaleArtifactsTokens(...)` for checked repos to clean up expired
 Artifacts tokens.
+
+Reconcile runs as one lane of the scheduled handler in
+`packages/worker/src/index.ts`, alongside repo-session cleanup, system-email
+retention, general retention, and hourly usage-rollup aggregation. Lane failures
+are isolated: each rejected lane is logged with a `scheduled_lane_failed` tag
+and reported to Sentry, and the handler never throws, so one broken lane cannot
+abort or mask the others.
 
 Production note:
 
@@ -493,13 +550,27 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `community-snapshot:v1:{listingId}`.
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index:v1:{userId}:{scope}` for the legacy combined
-  retriever index blob.
+  retriever index blob. No longer written (the combined blob risked the 25MB KV
+  value limit); refresh and removal delete it best-effort, and it is read only
+  as a fallback when the KV binding does not support `list()`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage
 or a deliberate retention note.
+
+### R2 key contracts
+
+App-owned `EMAIL_BLOBS` keys are:
+
+- `email-raw:v1:{userId}/{messageId}` — raw email MIME for the message row that
+  stores this key in `email_messages.raw_mime_key`. The `userId` prefix is part
+  of the per-user isolation contract; account deletion deletes a user's blobs by
+  the keys stored on their rows.
+
+New R2 key prefixes must add corresponding account-deletion coverage or a
+deliberate retention note, same as KV.
 
 ### Vectorize metadata contracts
 
@@ -553,13 +624,17 @@ migration plan.
 
 The Worker scheduled handler runs every five minutes, but
 `packages/worker/src/app/retention.ts` gates the general retention job to the
-top of the hour and deletes at most one configured batch per table each time.
-This keeps D1 single-writer pressure bounded when a backlog exists; progress is
-reported with a one-line `retention-prune` log. The retention module owns the
-named constants and manifest, and
-`packages/worker/src/app/retention.node.test.ts` fails if a future
-growth-pattern D1 table is added without either a policy or a documented
-exemption.
+top of the hour. Each hourly run loops in round-robin passes over the policy
+tables — every pending table gets one configured batch before any table gets a
+second one — until every table is drained or the run's time budget
+(`retentionRunTimeBudgetMs`, ~20 seconds measured with `Date.now`) is exhausted.
+The first pass always completes so a hot table cannot starve the others, and
+per-batch sizes stay small to bound D1 single-writer pressure. Progress is
+reported with a one-line `retention-prune` log that includes batches-per-table
+counts and whether the budget ran out. The retention module owns the named
+constants and manifest, and `packages/worker/src/app/retention.node.test.ts`
+fails if a future growth-pattern D1 table is added without either a policy or a
+documented exemption.
 
 Current retention policies:
 
@@ -567,7 +642,11 @@ Current retention policies:
   and at most 500 runs per `(user_id, package_id)`. Logs are deleted before
   their runs, and orphan logs are pruned separately. Rows with
   `status = 'running'`, active invocation/workflow/session references, or a
-  running child debug run are kept.
+  running child debug run are kept. The age prune is index-driven; the
+  per-package cap prune ranks only a bounded set of the largest
+  `(user_id, package_id)` pairs per batch (`packageRuntimeCapPairsPerBatch`)
+  instead of window-ranking the whole table, so it stays cheap as the table
+  grows.
 - `package_invocations`: keep terminal idempotency rows for 90 days. Rows with
   `status = 'in_progress'` are never pruned so duplicate requests cannot bypass
   the in-flight guard.
@@ -580,18 +659,35 @@ Current retention policies:
 - `published_bundle_artifacts`: delete D1 rows and their `BUNDLE_ARTIFACTS_KV`
   blobs only when the row is older than 30 days, its `published_commit` is no
   longer current for any matching `entity_sources` row, and there is no active
-  repo session for the source. Ambiguous publish/edit cases are intentionally
-  kept.
+  repo session for the source. When a row is pruned, the matching
+  `source-snapshot:v1:{sourceId}:{commit}` and
+  `source-manifest-snapshot:v1:{sourceId}:{commit}` KV keys are deleted under
+  the same safety conditions, so per-commit snapshots no longer accumulate
+  forever. Ambiguous publish/edit cases are intentionally kept.
 - `email_delivery_events`: user-owned delivery events keep 90 days. System email
   rows under `system:email` remain governed by the system-email retention job,
-  which prunes messages and delivery events older than 90 days, deletes stale
-  `system_email_daily_counters`, and caps stored system messages at 5000.
+  which prunes messages (and their `EMAIL_BLOBS` raw-MIME blobs) and delivery
+  events older than 90 days in bounded batches within its own time budget,
+  deletes stale `system_email_daily_counters`, and caps stored system messages
+  at 5000.
+- `email_messages` / `email_attachments` / `email_threads`: user-owned messages
+  (excluding the `system:email` owner) keep 365 days, deleted oldest first in
+  batches. For rows with `raw_mime_key`, the `EMAIL_BLOBS` R2 blob is deleted
+  before the row; if the binding is missing or the blob delete fails, those rows
+  are skipped and counted as warnings so blobs are never orphaned. Dependent
+  `email_attachments` rows are deleted before their messages, and threads left
+  with no messages are pruned for the affected users.
+- `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.
+- `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
+  raw Analytics Engine usage events follow platform retention.
 - `audit_events`: global hashed auth/security audit events keep 180 days. They
   are not user-owned D1 rows and remain independent of account deletion/export.
 
-`email_messages` and related user inbox tables remain account-deletion scoped;
-the scheduled policy currently bounds delivery/audit metadata, not user message
-history. `usage_rollups` is bounded by `(user_id, metric, month)`, while raw
-Analytics Engine usage events follow platform retention.
-`archived_job_artifacts` is explicitly exempt from the retention manifest
-because job artifact cleanup is driven by each row's `retain_until` value.
+Migration `0055-retention-indexes.sql` adds the global time-column indexes these
+prunes order by (`created_at` / `day` / `month` / `started_at` across users)
+since the older per-user composite indexes cannot serve them.
+
+Documented exemptions: `archived_job_artifacts` is exempt because job artifact
+cleanup is driven by each row's `retain_until` value, and `mcp_memories` is
+exempt because memories are durable user-curated content removed by explicit
+user action or account deletion rather than by time-based retention.

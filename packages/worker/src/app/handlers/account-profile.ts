@@ -1,3 +1,4 @@
+import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
@@ -70,7 +71,7 @@ export function createAccountProfileApiHandler(env: Env) {
 			try {
 				await db.update(usersTable, user.userId, {
 					username,
-					updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+					updated_at: utcSqliteTimestamp(),
 				})
 			} catch (error) {
 				if (getUniqueConstraintField(error) === 'username') {

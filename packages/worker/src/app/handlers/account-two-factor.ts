@@ -21,7 +21,6 @@ import {
 	twoFactorVerificationType,
 	verifyTwoFactorCode,
 } from '#app/two-factor.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 export function createAccountTwoFactorHandler(env: Env) {
 	return {
@@ -51,9 +50,7 @@ const twoFactorActionSchema = object({
 	code: optional(string()),
 })
 
-export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
-	const env = appEnv as unknown as Env
-
+export function createAccountTwoFactorApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url }) {
@@ -63,9 +60,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(
-					await loadTwoFactorStatus(appEnv.APP_DB, user.userId),
-				)
+				return jsonResponse(await loadTwoFactorStatus(env.APP_DB, user.userId))
 			}
 
 			if (request.method !== 'POST') {
@@ -87,7 +82,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 					// A hijacked session must not be able to swap out the active
 					// factor: re-enrollment requires disabling first, which demands
 					// a current code.
-					if (await isTwoFactorEnabled(appEnv.APP_DB, user.userId)) {
+					if (await isTwoFactorEnabled(env.APP_DB, user.userId)) {
 						return jsonResponse(
 							{
 								ok: false,
@@ -98,7 +93,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						)
 					}
 					const { otpUri, secret } = await createTwoFactorSetup({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						userId: user.userId,
 						accountName: user.email,
 						issuer: url.hostname,
@@ -122,7 +117,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 					}
 					// A stale pending row must never replace an already-active
 					// factor (same reasoning as the setup guard).
-					if (await isTwoFactorEnabled(appEnv.APP_DB, user.userId)) {
+					if (await isTwoFactorEnabled(env.APP_DB, user.userId)) {
 						return jsonResponse(
 							{
 								ok: false,
@@ -132,7 +127,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						)
 					}
 					const pendingSetup = await findTwoFactorVerification(
-						appEnv.APP_DB,
+						env.APP_DB,
 						user.userId,
 						twoFactorSetupVerificationType,
 					)
@@ -143,7 +138,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						)
 					}
 					const codeValid = await verifyTwoFactorCode({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						userId: user.userId,
 						code,
 						type: twoFactorSetupVerificationType,
@@ -160,10 +155,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						})
 						return jsonResponse({ ok: false, error: 'Invalid code.' }, 400)
 					}
-					const promoted = await confirmTwoFactorSetup(
-						appEnv.APP_DB,
-						user.userId,
-					)
+					const promoted = await confirmTwoFactorSetup(env.APP_DB, user.userId)
 					if (!promoted) {
 						return jsonResponse(
 							{ ok: false, error: 'No two-factor setup is in progress.' },
@@ -179,13 +171,13 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						path: url.pathname,
 					})
 					return jsonResponse(
-						await loadTwoFactorStatus(appEnv.APP_DB, user.userId),
+						await loadTwoFactorStatus(env.APP_DB, user.userId),
 					)
 				}
 				case 'cancel': {
-					await cancelTwoFactorSetup(appEnv.APP_DB, user.userId)
+					await cancelTwoFactorSetup(env.APP_DB, user.userId)
 					return jsonResponse(
-						await loadTwoFactorStatus(appEnv.APP_DB, user.userId),
+						await loadTwoFactorStatus(env.APP_DB, user.userId),
 					)
 				}
 				case 'disable': {
@@ -199,7 +191,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						)
 					}
 					const codeValid = await verifyTwoFactorCode({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						userId: user.userId,
 						code,
 						type: twoFactorVerificationType,
@@ -216,7 +208,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						})
 						return jsonResponse({ ok: false, error: 'Invalid code.' }, 400)
 					}
-					await disableTwoFactor(appEnv.APP_DB, user.userId)
+					await disableTwoFactor(env.APP_DB, user.userId)
 					void logAuditEvent({
 						category: 'account',
 						action: 'two_factor_disable',
@@ -226,7 +218,7 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						path: url.pathname,
 					})
 					return jsonResponse(
-						await loadTwoFactorStatus(appEnv.APP_DB, user.userId),
+						await loadTwoFactorStatus(env.APP_DB, user.userId),
 					)
 				}
 				default: {

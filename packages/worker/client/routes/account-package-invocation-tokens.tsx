@@ -5,6 +5,7 @@ import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -331,7 +332,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let selectedTokenId: string | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 	let lastNewTokenQueryKey = ''
 	let mutationVersion = 0
 	let revokeConfirm = false
@@ -358,20 +359,19 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	function syncRouterLocation(nextPath: string) {
-		// Do not pre-set `lastLoadedHref` to the destination: `navigate` is
-		// async (preload-then-commit), so until it commits the current href is
+		// Do not pre-mark the destination as loaded: `navigate` is async
+		// (preload-then-commit), so until it commits the current href is
 		// unchanged and a pre-set would make interim renders look like a
 		// location change and fire a spurious fallback fetch for the old URL.
 		// The commit render consumes the navigation's preloaded data (or the
-		// stale marker) and updates `lastLoadedHref` itself.
+		// stale marker) and marks the latch itself.
 		navigate(nextPath)
 	}
 
 	async function loadTokens(signal: AbortSignal) {
 		const loadStartedAtMutationVersion = mutationVersion
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
-			lastLoadedHref = href
 			const response = await fetch(accountPackageInvocationTokensApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -394,6 +394,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			status = 'ready'
 			message = null
 			messageTone = 'info'
+			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -404,6 +405,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 					? error.message
 					: 'Unable to load package invocation tokens.'
 			messageTone = 'error'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -892,7 +894,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		messageTone = 'info'
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		return true
 	}
 
@@ -904,14 +906,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+			status !== 'loading' && !loadLatch.isLoadedFor(currentHref)
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadTokens)
 		}
 		const isMutating = saveState !== 'idle'

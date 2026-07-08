@@ -13,6 +13,7 @@ import {
 	spawnProcess,
 	stopProcess,
 } from '#mcp/test-process.ts'
+import { buildRoleAssignmentSql } from './seed-sql.ts'
 
 const projectRoot = process.cwd()
 const primaryUserEmail = 'kody@example.com'
@@ -22,6 +23,7 @@ const primaryUserEmail = 'kody@example.com'
 const testUserPassword = 'ilikecode'
 const localhost = '127.0.0.1'
 const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
+const perAttemptFetchTimeoutMs = 5_000
 const maxPortBindRetries = 5
 
 type TestUser = {
@@ -97,12 +99,14 @@ export async function startDevServer(persistDir: string) {
 		const getMockCloudflareStderr = captureOutput(mockCloudflareProc.stderr)
 
 		try {
-			await waitForUrlReady(
-				new URL('/__mocks/meta', mockCloudflareOrigin),
-				mockCloudflareProc.exited,
-				getMockCloudflareStdout,
-				getMockCloudflareStderr,
-			)
+			await waitForHttpReady({
+				label: 'Mock Cloudflare worker',
+				url: new URL('/__mocks/meta', mockCloudflareOrigin),
+				isReady: (response) => response.ok,
+				exited: mockCloudflareProc.exited,
+				getStdout: getMockCloudflareStdout,
+				getStderr: getMockCloudflareStderr,
+			})
 		} catch (error) {
 			await stopProcess(mockCloudflareProc).catch(() => undefined)
 			if (isPortAlreadyInUseError(error) && attempt < maxPortBindRetries) {
@@ -148,7 +152,14 @@ export async function startDevServer(persistDir: string) {
 		const getStderr = captureOutput(proc.stderr)
 
 		try {
-			await waitForServerReady(origin, proc.exited, getStdout, getStderr)
+			await waitForHttpReady({
+				label: 'Test worker',
+				url: new URL('/mcp', origin),
+				isReady: (response) => response.status === 401 || response.ok,
+				exited: proc.exited,
+				getStdout,
+				getStderr,
+			})
 			return {
 				origin,
 				async [Symbol.asyncDispose]() {
@@ -222,11 +233,7 @@ export async function assignRoleInMcpTestDatabase(input: {
 	email: string
 	role: string
 }) {
-	const sql = `
-INSERT OR IGNORE INTO user_roles (user_id, role_id)
-SELECT u.id, r.id
-FROM users u, roles r
-WHERE u.email = ${quoteSqlString(input.email)} AND r.name = ${quoteSqlString(input.role)};`.trim()
+	const sql = buildRoleAssignmentSql({ email: input.email, role: input.role })
 	const proc = spawnProcess({
 		cmd: [
 			nodeBin,
@@ -442,21 +449,27 @@ async function applyMigrations(persistDir: string) {
 	)
 }
 
-async function waitForServerReady(
-	origin: string,
-	exited: Promise<number | null>,
-	getStdout: () => string,
-	getStderr: () => string,
-) {
+async function waitForHttpReady(input: {
+	/** Which process this readiness poll belongs to, for error messages. */
+	label: string
+	url: URL
+	isReady: (response: Response) => boolean
+	exited: Promise<number | null>
+	getStdout: () => string
+	getStderr: () => string
+}) {
 	const deadline = Date.now() + defaultWaitTimeoutMs
 	while (Date.now() < deadline) {
-		const exitCode = await Promise.race([exited, delay(200).then(() => null)])
+		const exitCode = await Promise.race([
+			input.exited,
+			delay(200).then(() => null),
+		])
 		if (typeof exitCode === 'number') {
 			throw new Error(
 				[
-					`Test worker exited before becoming ready (exit ${exitCode}).`,
-					getStdout(),
-					getStderr(),
+					`${input.label} exited before becoming ready (exit ${exitCode}).`,
+					input.getStdout(),
+					input.getStderr(),
 				]
 					.filter(Boolean)
 					.join('\n\n'),
@@ -464,66 +477,24 @@ async function waitForServerReady(
 		}
 
 		try {
-			const response = await fetch(new URL('/mcp', origin))
-			if (response.status === 401 || response.ok) {
-				await response.body?.cancel()
-				return
-			}
+			// Bound each attempt so a stalled response cannot hang the poll
+			// past the overall deadline (checked only between attempts).
+			const response = await fetch(input.url, {
+				signal: AbortSignal.timeout(perAttemptFetchTimeoutMs),
+			})
+			const ready = input.isReady(response)
 			await response.body?.cancel()
+			if (ready) return
 		} catch {
-			// Retry until the worker starts accepting connections.
+			// Retry until the process starts accepting connections.
 		}
 	}
 
 	throw new Error(
 		[
-			`Timed out waiting for test worker at ${origin}.`,
-			getStdout(),
-			getStderr(),
-		]
-			.filter(Boolean)
-			.join('\n\n'),
-	)
-}
-
-async function waitForUrlReady(
-	url: URL,
-	exited: Promise<number | null>,
-	getStdout: () => string,
-	getStderr: () => string,
-) {
-	const deadline = Date.now() + defaultWaitTimeoutMs
-	while (Date.now() < deadline) {
-		const exitCode = await Promise.race([exited, delay(200).then(() => null)])
-		if (typeof exitCode === 'number') {
-			throw new Error(
-				[
-					`Test worker exited before becoming ready (exit ${exitCode}).`,
-					getStdout(),
-					getStderr(),
-				]
-					.filter(Boolean)
-					.join('\n\n'),
-			)
-		}
-
-		try {
-			const response = await fetch(url)
-			if (response.ok) {
-				await response.body?.cancel()
-				return
-			}
-			await response.body?.cancel()
-		} catch {
-			// Retry until the worker starts accepting connections.
-		}
-	}
-
-	throw new Error(
-		[
-			`Timed out waiting for test worker at ${url.toString()}.`,
-			getStdout(),
-			getStderr(),
+			`Timed out waiting for ${input.label} at ${input.url.toString()}.`,
+			input.getStdout(),
+			input.getStderr(),
 		]
 			.filter(Boolean)
 			.join('\n\n'),

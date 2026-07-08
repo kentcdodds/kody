@@ -152,6 +152,10 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 			'X-Kody-Email-Message-Id': result.message.messageIdHeader,
 		},
 	})
+	// Outbound sends store parsed bodies only: nothing to offload to the
+	// EMAIL_BLOBS bucket even though the binding is available.
+	expect(stored?.rawMime).toBeNull()
+	expect(stored?.rawMimeKey).toBeNull()
 	// The send auto-provisioned (and referenced) the platform sender
 	// identity — no self-service verify step exists.
 	expect(stored?.senderIdentityId).toBeTruthy()

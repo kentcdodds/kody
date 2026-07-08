@@ -15,6 +15,14 @@ import { type JobManagerDebugState } from './manager-client.ts'
 
 const userIdStorageKey = 'user-id'
 
+/**
+ * When more due jobs remain after an alarm run (each run processes at most
+ * `maxDueJobsPerAlarm` jobs), the resync arms a near-immediate follow-up
+ * alarm instead of one at the (already past) next_run_at so backlogs drain
+ * across multiple short invocations.
+ */
+const jobBacklogRearmDelayMs = 1_000
+
 export class JobManagerBase extends DurableObject<Env> {
 	async purgeUser(input: { userId: string }) {
 		const userId = input.userId.trim()
@@ -70,7 +78,12 @@ export class JobManagerBase extends DurableObject<Env> {
 					nextRunAt: null,
 				}
 			}
-			await this.ctx.storage.setAlarm(new Date(nextJob.nextRunAt))
+			const nextRunAtMs = new Date(nextJob.nextRunAt).valueOf()
+			const backlogRemains = nextRunAtMs <= Date.now()
+			const alarmAtMs = backlogRemains
+				? Date.now() + jobBacklogRearmDelayMs
+				: nextRunAtMs
+			await this.ctx.storage.setAlarm(alarmAtMs)
 			logJobSchedulerEvent({
 				event: 'sync_alarm',
 				userId,
@@ -80,8 +93,9 @@ export class JobManagerBase extends DurableObject<Env> {
 						: new Date(currentAlarmAt).toISOString(),
 				nextJobId: nextJob.id,
 				nextRunAt: nextJob.nextRunAt,
-				reason:
-					currentAlarmAt === new Date(nextJob.nextRunAt).valueOf()
+				reason: backlogRemains
+					? 'backlog_rearmed'
+					: currentAlarmAt === nextRunAtMs
 						? 'alarm_unchanged'
 						: 'alarm_armed',
 			})

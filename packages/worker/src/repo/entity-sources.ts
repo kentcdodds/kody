@@ -179,22 +179,53 @@ export async function upsertEntitySource(
 	await insertEntitySource(db, row)
 }
 
+/**
+ * Keyset cursor over the stale ordering used by
+ * {@link listEntitySourcesForExternalReconcile}: the coalesced
+ * `last_external_check_at`/`created_at` value of the last row in the previous
+ * batch, with the row id as a tie-breaker.
+ */
+export type ExternalReconcileCursor = {
+	staleOrderedAt: string
+	id: string
+}
+
 export async function listEntitySourcesForExternalReconcile(
 	db: D1Database,
 	input: {
 		before: string
 		limit: number
+		after?: ExternalReconcileCursor
 	},
 ): Promise<Array<EntitySourceRow>> {
+	// The `after` keyset lets callers page strictly forward within one pass
+	// even when a row's `last_external_check_at` write fails and the row would
+	// otherwise stay at the head of the stale ordering.
+	const afterClause = input.after
+		? `AND (
+				COALESCE(last_external_check_at, created_at) > ?
+				OR (COALESCE(last_external_check_at, created_at) = ? AND id > ?)
+			)`
+		: ''
+	const bindings: Array<string | number> = [input.before]
+	if (input.after) {
+		bindings.push(
+			input.after.staleOrderedAt,
+			input.after.staleOrderedAt,
+			input.after.id,
+		)
+	}
+	bindings.push(input.limit)
 	const { results } = await db
 		.prepare(
 			`SELECT * FROM entity_sources
 			WHERE entity_kind = 'package'
 				AND (last_external_check_at IS NULL OR last_external_check_at < ?)
-			ORDER BY COALESCE(last_external_check_at, created_at) ASC
+				${afterClause}
+			ORDER BY COALESCE(last_external_check_at, created_at) ASC, id ASC
 			LIMIT ?`,
 		)
-		.bind(input.before, input.limit)
+		.bind(...bindings)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapEntitySourceRow)
 }

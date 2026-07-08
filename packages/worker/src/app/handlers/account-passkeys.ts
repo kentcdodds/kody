@@ -11,7 +11,6 @@ import {
 import { deletePasskeyForUser, listPasskeysForUser } from '#app/passkeys.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 export function createAccountPasskeysHandler(env: Env) {
 	return {
@@ -41,9 +40,7 @@ const deletePasskeySchema = object({
 	passkeyId: string(),
 })
 
-export function createAccountPasskeysApiHandler(appEnv: AppEnv) {
-	const env = appEnv as unknown as Env
-
+export function createAccountPasskeysApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url }) {
@@ -53,9 +50,7 @@ export function createAccountPasskeysApiHandler(appEnv: AppEnv) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(
-					await loadPasskeysPayload(appEnv.APP_DB, user.userId),
-				)
+				return jsonResponse(await loadPasskeysPayload(env.APP_DB, user.userId))
 			}
 
 			if (request.method !== 'POST') {
@@ -70,7 +65,7 @@ export function createAccountPasskeysApiHandler(appEnv: AppEnv) {
 
 			const requestIp = getRequestIp(request) ?? undefined
 			const deleted = await deletePasskeyForUser(
-				appEnv.APP_DB,
+				env.APP_DB,
 				parsed.value.passkeyId,
 				user.userId,
 			)
@@ -86,7 +81,7 @@ export function createAccountPasskeysApiHandler(appEnv: AppEnv) {
 				ip: requestIp,
 				path: url.pathname,
 			})
-			return jsonResponse(await loadPasskeysPayload(appEnv.APP_DB, user.userId))
+			return jsonResponse(await loadPasskeysPayload(env.APP_DB, user.userId))
 		},
 	} satisfies Action<typeof routes.accountPasskeysApi>
 }
