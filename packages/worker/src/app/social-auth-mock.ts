@@ -1,4 +1,4 @@
-import  {
+import {
 	type GitHubAuthProfile,
 	type GoogleAuthProfile,
 	type XAuthProfile,

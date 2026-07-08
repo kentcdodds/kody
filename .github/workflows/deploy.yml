@@ -132,9 +132,8 @@ jobs:
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
           --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
           CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
-          --set-from-env-optional GITHUB_CLIENT_SECRET
-          --set-from-env-optional GOOGLE_CLIENT_ID
-          --set-from-env-optional GOOGLE_CLIENT_SECRET
+          --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
+          GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
           --set-from-env-optional X_CLIENT_ID --set-from-env-optional
           X_CLIENT_SECRET
 
