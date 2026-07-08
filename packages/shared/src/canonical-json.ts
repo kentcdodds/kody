@@ -8,9 +8,11 @@ export function canonicalizeJsonValue(value: unknown): unknown {
 	}
 	if (value && typeof value === 'object') {
 		const record = value as Record<string, unknown>
+		// Codepoint (default) sort, not localeCompare: the output feeds hashes
+		// and idempotency keys, so ordering must not vary across runtimes.
 		return Object.fromEntries(
 			Object.keys(record)
-				.sort((left, right) => left.localeCompare(right))
+				.sort()
 				.map((key) => [key, canonicalizeJsonValue(record[key])]),
 		)
 	}

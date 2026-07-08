@@ -1,4 +1,4 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { type Handle, css } from 'remix/ui'
@@ -101,11 +101,6 @@ function createEmptyEditorState(): EditorState {
 		sourcesText: '',
 	}
 }
-
-function formatNullableTimestamp(value: string | null) {
-	return value ? formatTimestamp(value) : 'Never'
-}
-
 function createEditorStateFromNewTokenQuery(href: string): EditorState {
 	const params = new URL(href, 'http://localhost').searchParams
 	const state = createEmptyEditorState()

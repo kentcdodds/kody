@@ -10,3 +10,10 @@ export function formatTimestamp(value: string) {
 	)
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+
+export function formatNullableTimestamp(
+	value: string | null,
+	fallback = 'Never',
+) {
+	return value ? formatTimestamp(value) : fallback
+}

@@ -1,4 +1,4 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
@@ -30,11 +30,6 @@ const adminSystemEmailApiPath = '/admin/system-email.json'
 function isAdminSystemEmailPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/system-email'
 }
-
-function formatNullableTimestamp(value: string | null) {
-	return value ? formatTimestamp(value) : 'Unknown'
-}
-
 function formatByteCount(value: number) {
 	return new Intl.NumberFormat().format(value)
 }
@@ -231,6 +226,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 													{formatNullableTimestamp(
 														systemMessage.received_at ??
 															systemMessage.created_at,
+														'Unknown',
 													)}
 												</td>
 											</tr>
@@ -274,6 +270,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 											value: formatNullableTimestamp(
 												selectedMessage.received_at ??
 													selectedMessage.created_at,
+												'Unknown',
 											),
 										},
 										{

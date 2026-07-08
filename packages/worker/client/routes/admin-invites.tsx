@@ -1,4 +1,4 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -40,11 +40,6 @@ const adminInvitesApiPath = '/admin/invites.json'
 function isAdminInvitesPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/invites'
 }
-
-function formatNullableTimestamp(value: string | null) {
-	return value ? formatTimestamp(value) : 'Never'
-}
-
 function getInviteStatus(invite: AdminInviteListItem) {
 	if (invite.revokedAt) return 'Revoked'
 	if (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now()) {
