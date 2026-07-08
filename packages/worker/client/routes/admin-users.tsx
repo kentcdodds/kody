@@ -100,6 +100,13 @@ export function AdminUsersRoute(handle: Handle) {
 		return users.find((user) => user.id === selectedUserId) ?? null
 	}
 
+	// Any refresh of `users` may carry a newer stored plan, so drop the
+	// unsaved draft and let the render pass reseed the select from the
+	// refreshed record.
+	function resetPlanDraft() {
+		planDraftUserId = null
+	}
+
 	async function loadAdminUsers() {
 		const href = readCurrentRouterHref(handle)
 		loadingForHref = href
@@ -131,6 +138,7 @@ export function AdminUsersRoute(handle: Handle) {
 			page = payload.page
 			pageSize = payload.pageSize
 			total = payload.total
+			resetPlanDraft()
 			lastLoadedHref = href
 			if (
 				selectedUserId != null &&
@@ -197,6 +205,7 @@ export function AdminUsersRoute(handle: Handle) {
 			page = payload.page
 			pageSize = payload.pageSize
 			total = payload.total
+			resetPlanDraft()
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
 			message =
@@ -255,6 +264,7 @@ export function AdminUsersRoute(handle: Handle) {
 			page = payload.page
 			pageSize = payload.pageSize
 			total = payload.total
+			resetPlanDraft()
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
 			message = `Updated plan to ${plan ?? 'legacy/unlimited'}.`
@@ -282,6 +292,7 @@ export function AdminUsersRoute(handle: Handle) {
 		page = routeData.page
 		pageSize = routeData.pageSize
 		total = routeData.total
+		resetPlanDraft()
 		lastLoadedHref = href
 		if (
 			selectedUserId != null &&
