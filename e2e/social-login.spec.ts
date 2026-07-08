@@ -11,7 +11,7 @@ test('social login signs in through the mock GitHub provider', async ({
 	page,
 }) => {
 	executeE2eD1Command(
-		`DELETE FROM oauth_connections WHERE provider_name = 'github' AND provider_user_id = 'mock-github-user-1'; DELETE FROM users WHERE email = 'mock-github-user@example.com';`,
+		`DELETE FROM oauth_connections WHERE provider_name = 'github' AND provider_id = 'mock-github-user-1'; DELETE FROM users WHERE email = 'mock-github-user@example.com';`,
 	)
 	clearAuthRateLimitsInE2eDatabase()
 	await page.context().clearCookies()
@@ -28,6 +28,10 @@ test('social login signs in through the mock GitHub provider', async ({
 
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(
-		page.getByRole('link', { name: 'mock-github-user' }),
+		page.getByRole('heading', { name: 'mock-github-user account' }),
+	).toBeVisible()
+	// The provider-verified email skips the verification-email flow entirely.
+	await expect(
+		page.getByText('Email: mock-github-user@example.com (verified)'),
 	).toBeVisible()
 })

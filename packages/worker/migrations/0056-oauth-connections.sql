@@ -4,12 +4,12 @@
 CREATE TABLE IF NOT EXISTS oauth_connections (
 	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 	provider_name TEXT NOT NULL,
-	provider_user_id TEXT NOT NULL,
+	provider_id TEXT NOT NULL,
 	user_id INTEGER NOT NULL,
 	provider_display_name TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-	UNIQUE (provider_name, provider_user_id),
+	UNIQUE (provider_name, provider_id),
 	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 

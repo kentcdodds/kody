@@ -74,7 +74,7 @@ export const oauthConnectionsTable = table({
 	columns: {
 		id: c.integer(),
 		provider_name: c.text(),
-		provider_user_id: c.text(),
+		provider_id: c.text(),
 		user_id: c.integer(),
 		provider_display_name: c.text(),
 		created_at: c.text(),

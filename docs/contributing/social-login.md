@@ -7,8 +7,8 @@ This is a third OAuth subsystem, deliberately separate from the other two:
 - Outbound integration OAuth for connecting third-party APIs (`/connect/oauth`)
 
 Provider identities are stored in the `oauth_connections` D1 table
-(`provider_name` + `provider_user_id` → `user_id`). No provider access tokens
-are persisted; the token is used once per login to fetch the profile.
+(`provider_name` + `provider_id` → `user_id`). No provider access tokens are
+persisted; the token is used once per login to fetch the profile.
 
 ## How the flow behaves
 

@@ -296,7 +296,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	expect(roleCount.count).toBe(1)
 	const connection = sqlite
 		.prepare(
-			`SELECT * FROM oauth_connections WHERE provider_name = 'github' AND provider_user_id = '99001'`,
+			`SELECT * FROM oauth_connections WHERE provider_name = 'github' AND provider_id = '99001'`,
 		)
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(user.id)
@@ -384,7 +384,7 @@ test('google sign-in links a matching verified email to the existing account', a
 
 	const connection = sqlite
 		.prepare(
-			`SELECT * FROM oauth_connections WHERE provider_name = 'google' AND provider_user_id = 'google-sub-123'`,
+			`SELECT * FROM oauth_connections WHERE provider_name = 'google' AND provider_id = 'google-sub-123'`,
 		)
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(7)

@@ -126,7 +126,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 	}) {
 		await db.create(oauthConnectionsTable, {
 			provider_name: input.provider,
-			provider_user_id: input.profile.providerUserId,
+			provider_id: input.profile.providerUserId,
 			user_id: input.userId,
 			provider_display_name:
 				input.profile.username ?? input.profile.displayName ?? undefined,
@@ -246,7 +246,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			const connection = await db.findOne(oauthConnectionsTable, {
 				where: {
 					provider_name: provider,
-					provider_user_id: profile.providerUserId,
+					provider_id: profile.providerUserId,
 				},
 			})
 			if (connection) {

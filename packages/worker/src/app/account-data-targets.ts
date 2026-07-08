@@ -141,6 +141,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'db_user_id', table: 'password_resets' },
 	{ kind: 'db_user_id', table: 'user_roles' },
 	{ kind: 'db_user_id', table: 'passkeys' },
+	{ kind: 'db_user_id', table: 'oauth_connections' },
 	// Two-factor verification rows are keyed by `target` = stringified db user
 	// id rather than a user_id column, so they need the dedicated kind.
 	{ kind: 'db_user_target', table: 'verifications' },

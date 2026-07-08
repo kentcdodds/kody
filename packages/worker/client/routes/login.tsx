@@ -122,26 +122,29 @@ export function LoginRoute(handle: Handle) {
 		}
 	})
 
-	if (typeof document !== 'undefined') {
-		handle.queueTask(async (signal) => {
-			if (sessionStatus !== 'idle') return
-			sessionStatus = 'loading'
+	async function loadSessionAndProviders(signal: AbortSignal) {
+		if (sessionStatus !== 'idle') return
+		sessionStatus = 'loading'
 
-			const [session, providers] = await Promise.all([
-				fetchSessionInfo(signal),
-				fetchEnabledAuthProviders(signal),
-			])
-			if (signal.aborted) return
-			sessionEmail = session?.email ?? ''
-			authProviders = providers
+		const [session, providers] = await Promise.all([
+			fetchSessionInfo(signal),
+			fetchEnabledAuthProviders(signal),
+		])
+		if (signal.aborted) {
+			// Hydration re-renders abort in-flight queued tasks; reset so the
+			// next render re-queues the load instead of stalling on 'loading'.
+			sessionStatus = 'idle'
+			return
+		}
+		sessionEmail = session?.email ?? ''
+		authProviders = providers
 
-			sessionStatus = 'ready'
-			if (sessionEmail) {
-				window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
-				return
-			}
-			handle.update()
-		})
+		sessionStatus = 'ready'
+		if (sessionEmail) {
+			window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
+			return
+		}
+		handle.update()
 	}
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -269,6 +272,9 @@ export function LoginRoute(handle: Handle) {
 	}
 
 	return () => {
+		if (typeof document !== 'undefined' && sessionStatus === 'idle') {
+			handle.queueTask(loadSessionAndProviders)
+		}
 		const mode = getCurrentAuthMode(handle)
 		if (!routePath) {
 			routePath = getPathname(handle)
