@@ -7,6 +7,7 @@ import {
 	assertStorageRunnerWriteWithinEntitlement,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
+import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
 import { storageIdSchema } from './shared.ts'
 
 const outputSchema = z.object({
@@ -56,7 +57,10 @@ export const storageQueryCapability = defineDomainCapability(
 					userId: user.userId,
 					email: user.email,
 					storageId: args.storage_id,
-					requested: 1,
+					requested: estimateEntitlementStorageSqlWriteBytes({
+						query: args.query,
+						params: args.params,
+					}),
 				})
 			}
 			const result = await storageRunnerRpc({

@@ -13,6 +13,8 @@ import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	estimateEntitlementStorageEntryByteDelta,
+	estimateEntitlementStorageEntryBytes,
 	getUserPlan,
 	incrementDailyEntitlementCounter,
 } from './service.ts'
@@ -147,6 +149,50 @@ function createEntitlementsTestDb(
 }
 
 const plannedEmail = 'planned@example.com'
+
+test('storage byte entry estimates support net-positive upsert deltas', () => {
+	const existing = {
+		key: 'workspace',
+		value: {
+			description: 'Workspace slug',
+			value: 'kent-main-site',
+		},
+	}
+	expect(
+		estimateEntitlementStorageEntryByteDelta({
+			next: existing,
+			existing,
+		}),
+	).toBe(0)
+	expect(
+		estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: 'workspace',
+				value: {
+					description: 'Workspace slug',
+					value: 'kent',
+				},
+			},
+			existing,
+		}),
+	).toBe(0)
+	const growing = {
+		key: 'workspace',
+		value: {
+			description: 'Workspace slug',
+			value: 'kent-main-site-production',
+		},
+	}
+	expect(
+		estimateEntitlementStorageEntryByteDelta({
+			next: growing,
+			existing,
+		}),
+	).toBe(
+		estimateEntitlementStorageEntryBytes(growing) -
+			estimateEntitlementStorageEntryBytes(existing),
+	)
+})
 
 test('getUserPlan resolves plans through hashed email and short-circuits invalid lookups', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)

@@ -15,7 +15,7 @@ import {
 import { type ValueMetadata, type ValueScope } from './types.ts'
 import {
 	assertWithinStorageBytesEntitlement,
-	estimateEntitlementStorageEntryBytes,
+	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
 
 type ValueOwnerContext = {
@@ -78,9 +78,20 @@ export async function saveValue(input: SaveValueInput): Promise<ValueMetadata> {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.userEmail,
-		requested: estimateEntitlementStorageEntryBytes({
-			key: name,
-			value: { description, value },
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: { description, value },
+			},
+			existing: existingEntry
+				? {
+						key: existingEntry.name,
+						value: {
+							description: existingEntry.description,
+							value: existingEntry.value,
+						},
+					}
+				: null,
 		}),
 	})
 	const now = new Date().toISOString()

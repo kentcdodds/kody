@@ -19,7 +19,7 @@ import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
 import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'
 import {
 	assertWithinStorageBytesEntitlement,
-	estimateEntitlementStorageEntryBytes,
+	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
 import {
 	type McpMemoryRow,
@@ -181,18 +181,35 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.userEmail,
-		requested: estimateEntitlementStorageEntryBytes({
-			key: row.id,
-			value: {
-				category: row.category,
-				status: row.status,
-				subject: row.subject,
-				summary: row.summary,
-				details: row.details,
-				tagsJson: row.tags_json,
-				sourceUrisJson: row.source_uris_json,
-				dedupeKey: row.dedupe_key,
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: row.id,
+				value: {
+					category: row.category,
+					status: row.status,
+					subject: row.subject,
+					summary: row.summary,
+					details: row.details,
+					tagsJson: row.tags_json,
+					sourceUrisJson: row.source_uris_json,
+					dedupeKey: row.dedupe_key,
+				},
 			},
+			existing: existing
+				? {
+						key: existing.id,
+						value: {
+							category: existing.category,
+							status: existing.status,
+							subject: existing.subject,
+							summary: existing.summary,
+							details: existing.details,
+							tagsJson: existing.tags_json,
+							sourceUrisJson: existing.source_uris_json,
+							dedupeKey: existing.dedupe_key,
+						},
+					}
+				: null,
 		}),
 	})
 

@@ -38,7 +38,7 @@ import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
-	estimateEntitlementStorageEntryBytes,
+	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
 
 function logPackageRetrieverProjectionError(input: {
@@ -125,16 +125,31 @@ export async function refreshSavedPackageProjection(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.userEmail,
-		requested: estimateEntitlementStorageEntryBytes({
-			key: row.id,
-			value: {
-				name: row.name,
-				kodyId: row.kody_id,
-				description: row.description,
-				tagsJson: row.tags_json,
-				searchText: row.search_text,
-				sourceId: row.source_id,
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: row.id,
+				value: {
+					name: row.name,
+					kodyId: row.kody_id,
+					description: row.description,
+					tagsJson: row.tags_json,
+					searchText: row.search_text,
+					sourceId: row.source_id,
+				},
 			},
+			existing: existing
+				? {
+						key: existing.id,
+						value: {
+							name: existing.name,
+							kodyId: existing.kodyId,
+							description: existing.description,
+							tagsJson: JSON.stringify(existing.tags),
+							searchText: existing.searchText,
+							sourceId: existing.sourceId,
+						},
+					}
+				: null,
 		}),
 	})
 	if (existing) {

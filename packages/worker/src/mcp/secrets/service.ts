@@ -35,7 +35,7 @@ import {
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
-	estimateEntitlementStorageEntryBytes,
+	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
 
@@ -126,15 +126,29 @@ export async function saveSecret(
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.userEmail,
-		requested: estimateEntitlementStorageEntryBytes({
-			key: name,
-			value: {
-				description,
-				encryptedValue,
-				allowedHosts: existingEntry?.allowed_hosts ?? '[]',
-				allowedCapabilities: existingEntry?.allowed_capabilities ?? '[]',
-				allowedPackages: existingEntry?.allowed_packages ?? '[]',
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: {
+					description,
+					encryptedValue,
+					allowedHosts: existingEntry?.allowed_hosts ?? '[]',
+					allowedCapabilities: existingEntry?.allowed_capabilities ?? '[]',
+					allowedPackages: existingEntry?.allowed_packages ?? '[]',
+				},
 			},
+			existing: existingEntry
+				? {
+						key: existingEntry.name,
+						value: {
+							description: existingEntry.description,
+							encryptedValue: existingEntry.encrypted_value,
+							allowedHosts: existingEntry.allowed_hosts,
+							allowedCapabilities: existingEntry.allowed_capabilities,
+							allowedPackages: existingEntry.allowed_packages,
+						},
+					}
+				: null,
 		}),
 	})
 	const now = new Date().toISOString()

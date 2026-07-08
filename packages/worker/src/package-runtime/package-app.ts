@@ -32,7 +32,10 @@ import {
 	assertStorageRunnerWriteWithinEntitlement,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
-import { estimateEntitlementStorageEntryBytes } from '#worker/entitlements/service.ts'
+import {
+	estimateEntitlementStorageEntryByteDelta,
+	estimateEntitlementStorageSqlWriteBytes,
+} from '#worker/entitlements/service.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
 import {
 	createDynamicCallableWorkflow,
@@ -900,7 +903,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		if (writable) {
 			await this.assertStorageWriteAllowed({
 				storageId: input.storageId,
-				requested: 1,
+				requested: estimateEntitlementStorageSqlWriteBytes({
+					query: input.query,
+					params: input.params,
+				}),
 			})
 		}
 		return await this.getStorageRunner(input.storageId).sqlQuery({
@@ -911,11 +917,23 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async storageSet(input: { storageId: string; key: string; value: unknown }) {
+		const existing = await this.getStorageRunner(input.storageId).getValue({
+			key: input.key,
+		})
 		await this.assertStorageWriteAllowed({
 			storageId: input.storageId,
-			requested: estimateEntitlementStorageEntryBytes({
-				key: input.key,
-				value: input.value,
+			requested: estimateEntitlementStorageEntryByteDelta({
+				next: {
+					key: input.key,
+					value: input.value,
+				},
+				existing:
+					existing.value === null
+						? null
+						: {
+								key: input.key,
+								value: existing.value,
+							},
 			}),
 		})
 		return await this.getStorageRunner(input.storageId).setValue({

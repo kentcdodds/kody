@@ -247,6 +247,37 @@ export function estimateEntitlementStorageEntryBytes(input: {
 	)
 }
 
+export function estimateEntitlementStorageByteDelta(input: {
+	nextBytes: number
+	existingBytes?: number | null
+}) {
+	return Math.max(0, input.nextBytes - (input.existingBytes ?? 0))
+}
+
+export function estimateEntitlementStorageEntryByteDelta(input: {
+	next: { key?: string | null; value: unknown }
+	existing?: { key?: string | null; value: unknown } | null
+}) {
+	return estimateEntitlementStorageByteDelta({
+		nextBytes: estimateEntitlementStorageEntryBytes(input.next),
+		existingBytes: input.existing
+			? estimateEntitlementStorageEntryBytes(input.existing)
+			: 0,
+	})
+}
+
+export function estimateEntitlementStorageSqlWriteBytes(input: {
+	query: string
+	params?: Array<unknown>
+}) {
+	return estimateEntitlementStorageEntryBytes({
+		value: {
+			query: input.query,
+			params: input.params ?? [],
+		},
+	})
+}
+
 function textBytesExpression(columns: ReadonlyArray<string>) {
 	return columns
 		.map((column) => `length(CAST(COALESCE(${column}, '') AS BLOB))`)

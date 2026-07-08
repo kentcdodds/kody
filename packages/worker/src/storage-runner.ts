@@ -3,7 +3,8 @@ import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	assertWithinStorageBytesEntitlement,
-	estimateEntitlementStorageEntryBytes,
+	estimateEntitlementStorageEntryByteDelta,
+	estimateEntitlementStorageSqlWriteBytes,
 	readUserD1StorageBytes,
 } from '#worker/entitlements/service.ts'
 
@@ -504,18 +505,23 @@ export function createStorageKodyTools(input: {
 					? true
 					: Boolean(payload.writable)
 				: false
+			const query = typeof payload.query === 'string' ? payload.query : ''
+			const params = Array.isArray(payload.params) ? payload.params : undefined
 			if (writable) {
 				await assertStorageRunnerWriteWithinEntitlement({
 					env: input.env,
 					userId: input.userId,
 					email: input.email,
 					storageId: input.storageId,
-					requested: 1,
+					requested: estimateEntitlementStorageSqlWriteBytes({
+						query,
+						params,
+					}),
 				})
 			}
 			return await runner.sqlQuery({
-				query: typeof payload.query === 'string' ? payload.query : '',
-				params: Array.isArray(payload.params) ? payload.params : undefined,
+				query,
+				params,
 				writable,
 			})
 		},
@@ -527,14 +533,24 @@ export function createStorageKodyTools(input: {
 								? (args as { key?: unknown; value?: unknown })
 								: {}
 						const key = typeof payload.key === 'string' ? payload.key : ''
+						const existing = await runner.getValue({ key })
 						await assertStorageRunnerWriteWithinEntitlement({
 							env: input.env,
 							userId: input.userId,
 							email: input.email,
 							storageId: input.storageId,
-							requested: estimateEntitlementStorageEntryBytes({
-								key,
-								value: payload.value,
+							requested: estimateEntitlementStorageEntryByteDelta({
+								next: {
+									key,
+									value: payload.value,
+								},
+								existing:
+									existing.value === null
+										? null
+										: {
+												key,
+												value: existing.value,
+											},
 							}),
 						})
 						return await runner.setValue({
