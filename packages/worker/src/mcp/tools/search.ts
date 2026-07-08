@@ -8,12 +8,17 @@ import {
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
+	CAPABILITY_SEARCH_RRF_K,
 	blendLexicalAndVectorScore,
 	cosineSimilarity,
 	deterministicEmbedding,
+	embedTextForVectorize,
+	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 	lexicalScore,
+	reciprocalRankFusion,
 	searchCapabilities,
+	sortIdsByScore,
 } from '#mcp/capabilities/capability-search.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
@@ -29,6 +34,7 @@ import { type ValueMetadata } from '#mcp/values/types.ts'
 import {
 	getSavedPackageByKodyId,
 	listSavedPackagesByUserId,
+	savedPackageVectorId,
 } from '#worker/package-registry/repo.ts'
 import {
 	buildPackageSearchDocument,
@@ -87,11 +93,22 @@ const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
+/** Upper bound on package candidates kept after lexical/vector rank fusion. */
+const maxFusedPackageCandidates = 100
 
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
 	projection: PackageSearchProjection
 	readmeSnippet?: PackageReadmeSnippet | null
+	/**
+	 * Lazily loads full package source detail (export metadata + README).
+	 * Only invoked for the bounded set of top-ranked package matches so broad
+	 * searches never load every package's published source.
+	 */
+	hydrate?: () => Promise<{
+		projection: PackageSearchProjection
+		readmeSnippet: PackageReadmeSnippet | null
+	}>
 }
 
 export type OptionalSearchRowsResult = {
@@ -188,30 +205,70 @@ export type BuildSavedPackageSearchRowsResult = {
 	warnings: Array<string>
 }
 
+/**
+ * Cheap projection built entirely from the `saved_packages` D1 row. Heavier
+ * fields (exports, jobs, README) stay empty until a row is hydrated for a
+ * top-ranked match.
+ */
+// Ranking works on this lean D1 projection so broad searches never load
+// full package source per package. Export/job/action recall is preserved
+// online by the package vectors (built from the full document at publish)
+// and by hydrating the top matches; the offline lexical path ranks on
+// name/description/tags/searchText only.
+function buildLeanPackageSearchProjection(
+	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number],
+): PackageSearchProjection {
+	return {
+		name: record.name,
+		kodyId: record.kodyId,
+		description: record.description,
+		tags: record.tags,
+		searchText: record.searchText,
+		hasApp: record.hasApp,
+		appEntry: null,
+		exports: [],
+		jobs: [],
+		services: [],
+		subscriptions: [],
+		retrievers: [],
+	}
+}
+
 export async function buildSavedPackageSearchRows(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	records: Array<Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]>
 }): Promise<BuildSavedPackageSearchRowsResult> {
-	const rows = await Promise.all(
-		input.records.map(async (record) => {
-			const loaded = await loadPackageSourceBySourceId({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: record.sourceId,
-			})
-			return {
-				record,
-				projection: buildPackageSearchProjection(loaded.manifest, loaded.files),
-				readmeSnippet: buildPackageReadmeSnippet({
-					files: loaded.files,
-					maxChars: 1_000,
-				}),
-			}
-		}),
-	)
+	const rows = input.records.map((record) => {
+		let hydration: Promise<{
+			projection: PackageSearchProjection
+			readmeSnippet: PackageReadmeSnippet | null
+		}> | null = null
+		return {
+			record,
+			projection: buildLeanPackageSearchProjection(record),
+			readmeSnippet: null,
+			hydrate: () => {
+				hydration ??= loadPackageSourceBySourceId({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceId: record.sourceId,
+				}).then((loaded) => ({
+					projection: buildPackageSearchProjection(
+						loaded.manifest,
+						loaded.files,
+					),
+					readmeSnippet: buildPackageReadmeSnippet({
+						files: loaded.files,
+						maxChars: 1_000,
+					}),
+				}))
+				return hydration
+			},
+		} satisfies PackageSearchRow
+	})
 	return { rows, warnings: [] }
 }
 
@@ -874,13 +931,79 @@ async function buildCapabilityCandidates(input: {
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
 
-function buildPackageCandidates(input: {
+/**
+ * Queries Vectorize for this user's `package_{id}` vectors (written at publish
+ * time) and returns similarity scores keyed by saved package record id.
+ * Returns null when the vector index is unavailable so callers fall back to
+ * deterministic offline scoring.
+ */
+async function queryPackageVectorScores(input: {
+	env: Env
+	query: string
+	rows: Array<PackageSearchRow>
+	limit: number
+}): Promise<Map<string, number> | null> {
+	const index = getCapabilityVectorIndex(input.env)
+	if (!index) return null
+	const userIds = Array.from(
+		new Set(input.rows.map((row) => row.record.userId).filter(Boolean)),
+	)
+	const recordIdByVectorId = new Map(
+		input.rows.map(
+			(row) => [savedPackageVectorId(row.record.id), row.record.id] as const,
+		),
+	)
+	const queryVector = await embedTextForVectorize(input.env, input.query)
+	const topK = Math.min(Math.max(input.rows.length, input.limit * 5), 100)
+	const vectorMatches = await index.query(queryVector, {
+		topK,
+		returnMetadata: 'none',
+		filter: {
+			kind: { $eq: 'package' },
+			...(userIds.length === 1 ? { userId: { $eq: userIds[0] } } : {}),
+		},
+	})
+	const scores = new Map<string, number>()
+	for (const match of vectorMatches.matches) {
+		if (typeof match.id !== 'string') continue
+		const recordId = recordIdByVectorId.get(match.id)
+		if (!recordId || scores.has(recordId)) continue
+		scores.set(recordId, match.score)
+	}
+	return scores
+}
+
+async function buildPackageCandidates(input: {
+	env: Env
 	query: string
 	rows: Array<PackageSearchRow>
 	queryEmbedding: ReadonlyArray<number>
-}): Array<SearchCandidate> {
+	limit: number
+	offline: boolean
+}): Promise<Array<SearchCandidate>> {
+	if (input.rows.length === 0) return []
 	const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
-	return input.rows
+	let vectorScoresByRecordId: Map<string, number> | null = null
+	if (!input.offline) {
+		try {
+			vectorScoresByRecordId = await queryPackageVectorScores({
+				env: input.env,
+				query: input.query,
+				rows: input.rows,
+				limit: input.limit,
+			})
+		} catch (error) {
+			// Degrade to lexical/deterministic ranking rather than failing the
+			// whole search when the vector index is unreachable.
+			console.warn(
+				JSON.stringify({
+					message: 'package vector query failed, using lexical ranking',
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			)
+		}
+	}
+	const candidates = input.rows
 		.map((entry) => {
 			const exports = Array.isArray(entry.projection.exports)
 				? entry.projection.exports
@@ -910,10 +1033,14 @@ function buildPackageCandidates(input: {
 				.filter((value) => value.trim().length > 0)
 				.join('\n')
 			const lexical = lexicalScore(input.query, document)
-			const vector = cosineSimilarity(
-				input.queryEmbedding,
-				deterministicEmbedding(document),
-			)
+			// Online, Vectorize similarity replaces the per-package deterministic
+			// embedding so broad searches never embed every package document.
+			const vector = vectorScoresByRecordId
+				? (vectorScoresByRecordId.get(entry.record.id) ?? 0)
+				: cosineSimilarity(
+						input.queryEmbedding,
+						deterministicEmbedding(document),
+					)
 			return {
 				match: {
 					type: 'package' as const,
@@ -973,6 +1100,42 @@ function buildPackageCandidates(input: {
 			}
 		})
 		.filter((candidate) => candidate.scoreComponents.base > 0)
+	if (!vectorScoresByRecordId) {
+		return candidates
+	}
+	// Online: fuse lexical and vector rankings (RRF, mirroring
+	// capability-search) to bound the package candidate set.
+	const candidateIds = candidates.map((candidate) => candidate.match.packageId)
+	const lexicalById = new Map(
+		candidates.map(
+			(candidate) =>
+				[candidate.match.packageId, candidate.scoreComponents.lexical] as const,
+		),
+	)
+	const lexicalOrder = sortIdsByScore(
+		candidateIds,
+		(id) => lexicalById.get(id) ?? 0,
+	)
+	const vectorOrder = sortIdsByScore(
+		candidateIds,
+		(id) => vectorScoresByRecordId.get(id) ?? 0,
+	)
+	const fused = reciprocalRankFusion(
+		[lexicalOrder, vectorOrder],
+		CAPABILITY_SEARCH_RRF_K,
+	)
+	const keptIds = new Set(
+		sortIdsByScore(candidateIds, (id) => fused.get(id) ?? 0).slice(
+			0,
+			Math.min(
+				maxFusedPackageCandidates,
+				Math.max(input.limit * 5, input.limit),
+			),
+		),
+	)
+	return candidates.filter((candidate) =>
+		keptIds.has(candidate.match.packageId),
+	)
 }
 
 function buildRetrieverResultCandidates(input: {
@@ -1182,6 +1345,49 @@ function capabilityMatchToCandidate(
 	}
 }
 
+/**
+ * Loads README snippets and export metadata for the bounded set of package
+ * matches actually being returned (at most `limit` rows), instead of loading
+ * every saved package's full source up front.
+ */
+async function hydrateTopPackageMatches(input: {
+	query: string
+	matches: Array<SearchMatch>
+	rows: Array<PackageSearchRow>
+}): Promise<void> {
+	const rowsByRecordId = new Map(
+		input.rows.map((row) => [row.record.id, row] as const),
+	)
+	const packageMatches = input.matches.flatMap((match) =>
+		match.type === 'package' ? [match] : [],
+	)
+	if (packageMatches.length === 0) return
+	const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
+	await Promise.all(
+		packageMatches.map(async (match) => {
+			const row = rowsByRecordId.get(match.packageId)
+			if (!row?.hydrate) return
+			try {
+				const hydrated = await row.hydrate()
+				match.readmeSnippet = hydrated.readmeSnippet
+				match.actionMatches = buildPackageActionMatches({
+					query: input.query,
+					meaningfulTokens,
+					exports: hydrated.projection.exports,
+				})
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						message: 'package search match hydration failed',
+						packageId: match.packageId,
+						error: error instanceof Error ? error.message : String(error),
+					}),
+				)
+			}
+		}),
+	)
+}
+
 export async function searchUnified(input: {
 	env: Env
 	query: string
@@ -1244,11 +1450,14 @@ export async function searchUnified(input: {
 			env: input.env,
 			registry: input.registry,
 		})),
-		...buildPackageCandidates({
+		...(await buildPackageCandidates({
+			env: input.env,
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.packageRows,
 			queryEmbedding,
-		}),
+			limit,
+			offline,
+		})),
 		...buildValueCandidates({
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.userValueRows,
@@ -1278,6 +1487,11 @@ export async function searchUnified(input: {
 		limit,
 	})
 	const matches = reranked.map((candidate) => candidate.match)
+	await hydrateTopPackageMatches({
+		query: intent.normalizedQuery,
+		matches,
+		rows: input.optionalRows.packageRows,
+	})
 	const rerankingMs = Math.max(
 		0,
 		Math.round(performance.now() - rerankingStart),

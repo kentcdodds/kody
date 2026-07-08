@@ -17,6 +17,73 @@ function nowIso() {
 	return new Date().toISOString()
 }
 
+/**
+ * R2 object key for a message's raw MIME payload in the EMAIL_BLOBS
+ * bucket. The userId prefix is part of the per-user isolation contract:
+ * account deletion enumerates and deletes a user's blobs by these stored
+ * keys, and the key can never be forged to point at another user's mail.
+ */
+export function emailRawMimeKey(userId: string, messageId: string) {
+	return `email-raw:v1:${userId}/${messageId}`
+}
+
+/**
+ * Best-effort raw-MIME offload to R2. Returns the stored object key, or
+ * null when the payload must stay inline in D1 (binding unavailable or
+ * the put failed). Never throws: falling back to the legacy inline
+ * raw_mime column must not lose mail.
+ */
+async function offloadRawMimeToBlobs(input: {
+	blobs: R2Bucket | null | undefined
+	userId: string
+	messageId: string
+	rawMime: string
+}): Promise<string | null> {
+	if (!input.blobs) {
+		console.debug(
+			'email-raw-mime-inline-fallback',
+			'EMAIL_BLOBS binding unavailable',
+			input.messageId,
+		)
+		return null
+	}
+	const key = emailRawMimeKey(input.userId, input.messageId)
+	try {
+		await input.blobs.put(key, input.rawMime)
+		return key
+	} catch (error) {
+		console.debug(
+			'email-raw-mime-inline-fallback',
+			'R2 put failed',
+			input.messageId,
+			error,
+		)
+		return null
+	}
+}
+
+/**
+ * Resolve a message's raw MIME regardless of where it is stored: legacy
+ * rows keep the payload inline in raw_mime, offloaded rows store an R2
+ * key in raw_mime_key. Returns null when the message has no raw MIME or
+ * the blob is unreachable.
+ */
+export async function loadRawMime(input: {
+	blobs?: R2Bucket | null
+	message: Pick<EmailMessageRecord, 'rawMime' | 'rawMimeKey'>
+}): Promise<string | null> {
+	if (input.message.rawMime != null) return input.message.rawMime
+	const key = input.message.rawMimeKey
+	if (!key) return null
+	if (!input.blobs) {
+		console.debug('email-raw-mime-blob-unavailable', key)
+		return null
+	}
+	const object = await input.blobs.get(key)
+	if (!object) return null
+	return await object.text()
+}
+
 function parseJsonArray(value: string | null) {
 	if (!value) return []
 	const parsed = JSON.parse(value) as unknown
@@ -127,6 +194,8 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 		textBody: row['text_body'] == null ? null : String(row['text_body']),
 		htmlBody: row['html_body'] == null ? null : String(row['html_body']),
 		rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
+		rawMimeKey:
+			row['raw_mime_key'] == null ? null : String(row['raw_mime_key']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']),
 		processingStatus: String(row['processing_status']) as EmailProcessingStatus,
 		providerMessageId:
@@ -504,6 +573,12 @@ export async function touchEmailThread(input: {
 
 export async function insertEmailMessage(input: {
 	db: D1Database
+	/**
+	 * EMAIL_BLOBS bucket. When present, raw MIME is offloaded to R2 and
+	 * only raw_mime_key is persisted; when absent, raw MIME stays inline
+	 * in the legacy raw_mime column.
+	 */
+	blobs?: R2Bucket | null
 	message: {
 		id?: string
 		direction: EmailDirection
@@ -535,8 +610,20 @@ export async function insertEmailMessage(input: {
 	}
 }) {
 	const timestamp = nowIso()
+	const messageId = input.message.id ?? crypto.randomUUID()
+	let rawMime = input.message.rawMime ?? null
+	let rawMimeKey: string | null = null
+	if (rawMime != null) {
+		rawMimeKey = await offloadRawMimeToBlobs({
+			blobs: input.blobs,
+			userId: input.message.userId,
+			messageId,
+			rawMime,
+		})
+		if (rawMimeKey != null) rawMime = null
+	}
 	const row = {
-		id: input.message.id ?? crypto.randomUUID(),
+		id: messageId,
 		direction: input.message.direction,
 		user_id: input.message.userId,
 		inbox_id: input.message.inboxId ?? null,
@@ -560,7 +647,8 @@ export async function insertEmailMessage(input: {
 		auth_results: input.message.authResults ?? null,
 		text_body: input.message.textBody ?? null,
 		html_body: input.message.htmlBody ?? null,
-		raw_mime: input.message.rawMime ?? null,
+		raw_mime: rawMime,
+		raw_mime_key: rawMimeKey,
 		raw_size: input.message.rawSize ?? 0,
 		processing_status: input.message.processingStatus,
 		provider_message_id: input.message.providerMessageId ?? null,
@@ -570,50 +658,59 @@ export async function insertEmailMessage(input: {
 		created_at: timestamp,
 		updated_at: timestamp,
 	}
-	await input.db
-		.prepare(
-			`INSERT INTO email_messages (
+	try {
+		await input.db
+			.prepare(
+				`INSERT INTO email_messages (
 				id, direction, user_id, inbox_id, thread_id, sender_identity_id,
 				from_address, envelope_from, to_addresses_json, cc_addresses_json,
 				bcc_addresses_json, reply_to_addresses_json, subject, message_id_header,
 				in_reply_to_header, references_json, headers_json, auth_results,
-				text_body, html_body, raw_mime, raw_size, processing_status,
+				text_body, html_body, raw_mime, raw_mime_key, raw_size, processing_status,
 				provider_message_id, error, received_at, sent_at,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			row.id,
-			row.direction,
-			row.user_id,
-			row.inbox_id,
-			row.thread_id,
-			row.sender_identity_id,
-			row.from_address,
-			row.envelope_from,
-			row.to_addresses_json,
-			row.cc_addresses_json,
-			row.bcc_addresses_json,
-			row.reply_to_addresses_json,
-			row.subject,
-			row.message_id_header,
-			row.in_reply_to_header,
-			row.references_json,
-			row.headers_json,
-			row.auth_results,
-			row.text_body,
-			row.html_body,
-			row.raw_mime,
-			row.raw_size,
-			row.processing_status,
-			row.provider_message_id,
-			row.error,
-			row.received_at,
-			row.sent_at,
-			row.created_at,
-			row.updated_at,
-		)
-		.run()
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.bind(
+				row.id,
+				row.direction,
+				row.user_id,
+				row.inbox_id,
+				row.thread_id,
+				row.sender_identity_id,
+				row.from_address,
+				row.envelope_from,
+				row.to_addresses_json,
+				row.cc_addresses_json,
+				row.bcc_addresses_json,
+				row.reply_to_addresses_json,
+				row.subject,
+				row.message_id_header,
+				row.in_reply_to_header,
+				row.references_json,
+				row.headers_json,
+				row.auth_results,
+				row.text_body,
+				row.html_body,
+				row.raw_mime,
+				row.raw_mime_key,
+				row.raw_size,
+				row.processing_status,
+				row.provider_message_id,
+				row.error,
+				row.received_at,
+				row.sent_at,
+				row.created_at,
+				row.updated_at,
+			)
+			.run()
+	} catch (error) {
+		// Best-effort orphan cleanup: the blob was written before the row.
+		if (rawMimeKey != null && input.blobs) {
+			await input.blobs.delete(rawMimeKey).catch(() => undefined)
+		}
+		throw error
+	}
 	return mapMessageRow(row)
 }
 
@@ -791,12 +888,30 @@ export async function searchEmailMessages(input: {
 
 export async function deleteEmailMessageById(input: {
 	db: D1Database
+	/** EMAIL_BLOBS bucket; when present the raw-MIME blob is also deleted. */
+	blobs?: R2Bucket | null
 	messageId: string
 }) {
+	// Capture the blob key before the row disappears. Blob cleanup is
+	// best-effort and must never block the D1 delete.
+	let rawMimeKey: string | null = null
+	if (input.blobs) {
+		const row = await input.db
+			.prepare(`SELECT raw_mime_key FROM email_messages WHERE id = ?`)
+			.bind(input.messageId)
+			.first<{ raw_mime_key: string | null }>()
+			.catch(() => null)
+		rawMimeKey = row?.raw_mime_key ?? null
+	}
 	await input.db
 		.prepare(`DELETE FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
 		.run()
+	if (rawMimeKey != null && input.blobs) {
+		await input.blobs.delete(rawMimeKey).catch((error: unknown) => {
+			console.warn('email-raw-mime-blob-delete-failed', rawMimeKey, error)
+		})
+	}
 }
 
 export async function insertEmailAttachments(input: {
@@ -852,6 +967,7 @@ export async function insertEmailMessageWithAttachments(
 	} catch (error) {
 		await deleteEmailMessageById({
 			db: input.db,
+			blobs: input.blobs,
 			messageId: message.id,
 		}).catch(() => undefined)
 		throw error
@@ -876,6 +992,8 @@ export async function listEmailAttachmentsForMessage(input: {
 
 export async function getEmailAttachmentById(input: {
 	db: D1Database
+	/** EMAIL_BLOBS bucket for messages whose raw MIME lives in R2. */
+	blobs?: R2Bucket | null
 	userId: string
 	attachmentId: string
 }) {
@@ -897,14 +1015,17 @@ export async function getEmailAttachmentById(input: {
 		userId: input.userId,
 		messageId: attachment.messageId,
 	})
-	if (!message?.rawMime) {
+	const rawMime = message
+		? await loadRawMime({ blobs: input.blobs, message })
+		: null
+	if (!rawMime) {
 		return {
 			...attachment,
 			content: null,
 			contentBase64: null,
 		}
 	}
-	const parsed = await PostalMime.parse(message.rawMime, {
+	const parsed = await PostalMime.parse(rawMime, {
 		attachmentEncoding: 'arraybuffer',
 	})
 	const matched = parsed.attachments.find((candidate) => {

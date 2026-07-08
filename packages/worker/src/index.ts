@@ -38,6 +38,7 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
+import { handleStableUserIdBackfillRequest } from './maintenance-handler.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -54,6 +55,10 @@ import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
+import {
+	aggregateUsageRollups,
+	shouldRunUsageAggregationCron,
+} from '#worker/usage/aggregate-rollups.ts'
 
 export {
 	RepoSession,
@@ -199,6 +204,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-jobs') {
 			return handleJobReindexRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/backfill-stable-user-ids') {
+			return handleStableUserIdBackfillRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/__maintenance/')) {
@@ -462,33 +471,50 @@ const workerHandler = {
 	) {
 		const baseUrl = env.APP_BASE_URL ?? 'https://kody.local'
 		const scheduledAt = new Date(controller.scheduledTime)
-		const retentionPromise = shouldRunRetentionCron(scheduledAt)
-			? pruneRetention({
-					env,
-					now: scheduledAt,
-				})
-			: Promise.resolve(null)
-		const [pushesResult, cleanupResult, systemEmailResult, retentionResult] =
-			await Promise.allSettled([
-				reconcileArtifactsPushes({
-					env,
-					baseUrl,
-					now: scheduledAt,
-				}),
-				cleanupRepoSessionBranches({
-					env,
-					now: scheduledAt,
-				}),
-				pruneSystemEmailRetention({
-					db: env.APP_DB,
-					now: scheduledAt,
-				}),
-				retentionPromise,
-			])
-		if (pushesResult.status === 'rejected') throw pushesResult.reason
-		if (cleanupResult.status === 'rejected') throw cleanupResult.reason
-		if (systemEmailResult.status === 'rejected') throw systemEmailResult.reason
-		if (retentionResult.status === 'rejected') throw retentionResult.reason
+		const lanes: Array<{ name: string; run: () => Promise<unknown> }> = [
+			{
+				name: 'reconcile_artifacts_pushes',
+				run: () => reconcileArtifactsPushes({ env, baseUrl, now: scheduledAt }),
+			},
+			{
+				name: 'repo_session_cleanup',
+				run: () => cleanupRepoSessionBranches({ env, now: scheduledAt }),
+			},
+			{
+				name: 'system_email_retention',
+				run: () =>
+					pruneSystemEmailRetention({
+						db: env.APP_DB,
+						blobs: env.EMAIL_BLOBS,
+						now: scheduledAt,
+					}),
+			},
+		]
+		if (shouldRunRetentionCron(scheduledAt)) {
+			lanes.push({
+				name: 'retention',
+				run: () => pruneRetention({ env, now: scheduledAt }),
+			})
+		}
+		if (shouldRunUsageAggregationCron(scheduledAt)) {
+			lanes.push({
+				name: 'usage_aggregation',
+				run: () => aggregateUsageRollups(env, scheduledAt),
+			})
+		}
+		// Lane failures are isolated: each rejection is logged and reported to
+		// Sentry explicitly (the withSentry wrapper flushes captured events via
+		// waitUntil), but the handler never throws, so one broken lane cannot
+		// fail the cron invocation or hide sibling lane failures.
+		const results = await Promise.allSettled(lanes.map((lane) => lane.run()))
+		for (const [index, result] of results.entries()) {
+			if (result.status !== 'rejected') continue
+			console.error(
+				`scheduled_lane_failed lane=${lanes[index]?.name ?? 'unknown'}`,
+				result.reason,
+			)
+			Sentry.captureException(result.reason)
+		}
 	},
 } satisfies ExportedHandler<Env>
 

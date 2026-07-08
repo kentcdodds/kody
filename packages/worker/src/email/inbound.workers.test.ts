@@ -4,12 +4,16 @@ import { handleInboundEmail } from './inbound.ts'
 import { defaultEmailInboxName } from './default-inbox.ts'
 import {
 	createEmailThread,
+	deleteEmailMessageById,
+	emailRawMimeKey,
+	getEmailMessageById,
 	insertEmailMessageWithAttachments,
 	getEmailAttachmentById,
 	listEmailInboxesForUser,
 	listEmailInboxAddressesForUser,
 	listEmailMessages,
 	listEmailAttachmentsForMessage,
+	loadRawMime,
 } from './repo.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
@@ -624,6 +628,145 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 	expect(loaded?.contentBase64).toBeTruthy()
 	expect(loaded?.contentBase64 ? atob(loaded.contentBase64) : null).toBe(
 		'Attachment without filename\n',
+	)
+})
+
+test('inbound email offloads raw MIME to R2 and readers and deletes follow the blob', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `blob-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `blob-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+
+	const raw = [
+		'From: Sender <sender@example.net>',
+		`To: ${address}`,
+		'Subject: Blob stored mail',
+		'Message-ID: <blob-stored@example.net>',
+		'Content-Type: multipart/mixed; boundary="mail-boundary"',
+		'',
+		'--mail-boundary',
+		'Content-Type: text/plain; charset="utf-8"',
+		'',
+		'Blob body.',
+		'--mail-boundary',
+		'Content-Type: text/plain; name="note.txt"',
+		'Content-Disposition: attachment; filename="note.txt"',
+		'',
+		'Attachment text',
+		'--mail-boundary--',
+	].join('\r\n')
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+	await handleInboundEmail(message, createInboundEnv())
+	expect(message.rejectedReason).toBeNull()
+
+	const [stored] = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		limit: 1,
+	})
+	expect(stored).toBeDefined()
+	if (!stored) throw new Error('Expected stored inbound message')
+
+	// The raw MIME left D1 and lives at the per-user R2 key.
+	expect(stored.rawMime).toBeNull()
+	expect(stored.rawMimeKey).toBe(emailRawMimeKey(userId, stored.id))
+	const blob = await env.EMAIL_BLOBS.get(stored.rawMimeKey!)
+	expect(await blob?.text()).toBe(raw)
+
+	// The shared read helper resolves the blob for offloaded rows.
+	expect(await loadRawMime({ blobs: env.EMAIL_BLOBS, message: stored })).toBe(
+		raw,
+	)
+
+	// Attachment content is reconstructed from the R2-stored MIME.
+	const attachments = await listEmailAttachmentsForMessage({
+		db: env.APP_DB,
+		messageId: stored.id,
+	})
+	expect(attachments).toHaveLength(1)
+	const loaded = await getEmailAttachmentById({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		userId,
+		attachmentId: attachments[0]!.id,
+	})
+	expect(loaded?.contentBase64 ? atob(loaded.contentBase64) : null).toBe(
+		'Attachment text\n',
+	)
+
+	// Deleting the message also removes its blob.
+	await deleteEmailMessageById({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		messageId: stored.id,
+	})
+	expect(
+		await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId: stored.id,
+		}),
+	).toBeNull()
+	expect(await env.EMAIL_BLOBS.get(stored.rawMimeKey!)).toBeNull()
+})
+
+test('raw MIME stays inline when the EMAIL_BLOBS binding is unavailable', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `inline-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `inline-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+
+	const raw = [
+		'From: Sender <sender@example.net>',
+		`To: ${address}`,
+		'Subject: Inline fallback mail',
+		'Message-ID: <inline-fallback@example.net>',
+		'',
+		'Inline body.',
+	].join('\r\n')
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+	const envWithoutBlobs = {
+		...createInboundEnv(),
+		EMAIL_BLOBS: undefined,
+	} as unknown as Parameters<typeof handleInboundEmail>[1]
+	await handleInboundEmail(message, envWithoutBlobs)
+	expect(message.rejectedReason).toBeNull()
+
+	const [stored] = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		limit: 1,
+	})
+	expect(stored).toBeDefined()
+	if (!stored) throw new Error('Expected stored inbound message')
+
+	// Legacy inline behavior: the fallback never throws and keeps mail.
+	expect(stored.rawMime).toBe(raw)
+	expect(stored.rawMimeKey).toBeNull()
+	// The read helper prefers the inline payload and needs no bucket.
+	expect(await loadRawMime({ message: stored })).toBe(raw)
+	expect(await loadRawMime({ blobs: env.EMAIL_BLOBS, message: stored })).toBe(
+		raw,
 	)
 })
 

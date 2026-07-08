@@ -81,11 +81,14 @@ export type StableUserAccount = {
 
 /**
  * Reverse-resolve a stable MCP userId back to the account email, plan, and
- * verified-email state. Stored stable ids are queried directly; legacy rows
- * without one still fall back to the normalized-email hash.
- * Only call this on paths that genuinely have no caller context email
- * (for example inbound email routing); interactive surfaces already carry
- * the email.
+ * verified-email state. Stored stable ids are one indexed point read; legacy
+ * rows without one fall back to the scan in `findUserRowByStableUserId`,
+ * which hashes each email and writes the computed id back so the scan is
+ * paid at most once per row.
+ * Only call this on paths that genuinely have no caller context email (for
+ * example package-runtime contexts acting with only the hashed userId);
+ * inbound email routing resolves accounts via the indexed username lookup
+ * and interactive surfaces already carry the email.
  */
 export async function findUserAccountByStableUserId(
 	db: D1Database,

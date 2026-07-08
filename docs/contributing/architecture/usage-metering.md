@@ -70,12 +70,14 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
 
 ## Sinks
 
-`recordUsage()` writes each event to two sinks, and each sink degrades
-independently:
+`recordUsage()` picks its sink by environment:
 
-1. **Workers Analytics Engine** (`USAGE_EVENTS` dataset binding, configured for
-   the `production` and `preview` environments in
-   `packages/worker/wrangler.jsonc`). Data point layout:
+1. **Workers Analytics Engine is the write path in production and preview**
+   (`USAGE_EVENTS` dataset binding, configured for the `production` and
+   `preview` environments in `packages/worker/wrangler.jsonc`). When the binding
+   is present, each event is one non-blocking `writeDataPoint` call and nothing
+   else — a per-event D1 upsert would serialize every metered request (execute,
+   fetch, email, jobs, ...) on D1's single writer. Data point layout:
    - `indexes`: `[userId]`
    - `blobs`: `[userId, eventType, entityId ?? '', outcome, timestamp]`
    - `doubles`: `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0]`
@@ -83,13 +85,29 @@ independently:
    Analytics Engine is the analysis store (sampling-tolerant, high cardinality).
    Do not build enforcement on it.
 
-2. **D1 `usage_rollups`** (migration
+2. **D1 `usage_rollups` is a derived aggregate** (migration
    `packages/worker/migrations/0047-usage-rollups.sql`): per-user, per-metric,
-   per-month counters, upserted on every event:
+   per-month counters:
    - key: `(user_id, metric, month)` where `metric` is the `eventType` and
      `month` is the UTC `YYYY-MM` prefix of the event timestamp
    - counters: `event_count`, `error_count`, `total_duration_ms`,
      `total_cpu_ms`, `total_bytes`
+
+   In production/preview the rows are recomputed hourly by
+   `aggregateUsageRollups` in `packages/worker/src/usage/aggregate-rollups.ts`
+   (gated by `shouldRunUsageAggregationCron` in the scheduled handler): it
+   queries the Analytics Engine SQL API for the current UTC month grouped by
+   user and metric (weighting by `_sample_interval`, since Analytics Engine
+   samples under load) and batch-upserts absolute values — an idempotent
+   recompute, not increments. Analytics Engine retention (~90 days) always
+   covers a full month, so month-to-date recompute is complete; prior months
+   already in D1 stay untouched. The aggregation needs `CLOUDFLARE_ACCOUNT_ID`
+   and `CLOUDFLARE_API_TOKEN` and no-ops with a debug log when either (or the
+   `USAGE_EVENTS` binding) is missing.
+
+   **Local-dev direct fallback:** when `USAGE_EVENTS` is absent (local dev,
+   tests), `recordUsage` upserts `usage_rollups` directly per event, so local
+   admin pages and workers-unit tests work without Analytics Engine access.
 
    The rollup is the cheap read path a future quota/entitlements layer will
    consume: one point lookup per user, metric, and month.
@@ -116,15 +134,15 @@ Guarantees and rules:
 - It accepts any object with optional `USAGE_EVENTS` / `APP_DB` bindings
   (`UsageEnv`), so the full `Env` can be passed directly.
 - **Graceful degradation:** in local dev and tests where the Analytics Engine
-  binding is not present, the event is logged via `console.debug` instead; when
-  `APP_DB` is missing (or the table does not exist), the rollup write is skipped
-  with a debug log.
+  binding is not present, the event is logged via `console.debug` and upserted
+  into `usage_rollups` directly; when `APP_DB` is missing (or the table does not
+  exist), the rollup write is skipped with a debug log.
 - If `userId` is empty, the event is skipped entirely. Callers on paths that can
   run without a user (for example anonymous gateway fetches) must guard with
   `if (userId)` and not invent placeholder ids.
-- The returned promise resolves quickly (one `writeDataPoint`, one D1 upsert).
-  `await` it inline, or pass it to `ctx.waitUntil(...)` inside Durable Objects
-  when the caller must not block.
+- The returned promise resolves quickly (one `writeDataPoint`, or one D1 upsert
+  in local dev). `await` it inline, or pass it to `ctx.waitUntil(...)` inside
+  Durable Objects when the caller must not block.
 
 ## Recipe: instrumenting a new chokepoint
 
@@ -188,6 +206,13 @@ Guarantees and rules:
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by
-  the `index1` user id; blob/double positions are listed above.
+  the `index1` user id; blob/double positions are listed above. Remember that
+  Analytics Engine samples: count with `sum(_sample_interval)` and sum values
+  with `sum(doubleN * _sample_interval)`.
 - D1: `SELECT * FROM usage_rollups WHERE user_id = ?1 AND month = ?2` gives
   every metric for a user's month in one small scan.
+- Admin usage page: `packages/worker/src/app/admin-usage-data.ts` caches its
+  per-page rollup read model for ~5 minutes in `BUNDLE_ARTIFACTS_KV` via the
+  `@epic-web/cachified` adapter in `packages/worker/src/kv-cachified.ts` (key
+  prefix `derived-cache:v1:`), keyed by user ids + month, falling through to
+  direct D1 queries when KV is unavailable.

@@ -1,10 +1,12 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { isCapabilitySearchOffline } from '#mcp/capabilities/capability-search.ts'
 import {
 	deleteMemory as deleteMemoryRow,
 	getConversationSuppressions,
 	getMemoryById,
 	insertMemory,
+	listMemoriesByIds,
 	listMemoriesByUserId,
 	pruneExpiredConversationSuppressions,
 	touchMemoryAccessedAt,
@@ -14,7 +16,7 @@ import {
 import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedText } from './memory-embed.ts'
 import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
-import { searchMemories } from './memory-search.ts'
+import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'
 import {
 	type McpMemoryRow,
 	type MemoryRecord,
@@ -31,6 +33,11 @@ const maxTagCount = 16
 const maxSourceUriLength = 2_048
 const maxSourceUriCount = 12
 const defaultSuppressionTtlMs = 30 * 24 * 60 * 60 * 1_000
+/** Offline (no Vectorize): lexical + deterministic ranking over recent rows. */
+const memoryOfflineCandidateLimit = 200
+/** Online: bounded recent-row set fused with Vectorize top hits via RRF. */
+const memoryLexicalCandidateLimit = 50
+const memoryVectorTopKCap = 100
 export const memorySearchMutationGuidance =
 	'This result is mutable for the signed-in user. Use this exact id as memory_id with meta_memory_upsert or meta_memory_delete after meta_memory_verify.'
 
@@ -331,26 +338,65 @@ export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 	if (!query) {
 		return { query: '', matches: [], suppressedCount: 0 }
 	}
-	const rows = await listMemoriesByUserId(input.env.APP_DB, input.userId, {
-		statuses: input.includeDeleted
-			? ['active', 'archived', 'deleted']
-			: ['active', 'archived'],
-		limit: 200,
-	})
-	const filteredRows = rows.filter((row) => {
-		if (!input.category) return true
-		return (
-			row.category ===
-			normalizeOptionalString(input.category, maxCategoryLength)
-		)
-	})
+	const statuses: Array<McpMemoryRow['status']> = input.includeDeleted
+		? ['active', 'archived', 'deleted']
+		: ['active', 'archived']
 	const targetLimit = normalizeLimit(input.limit)
+	const category = normalizeOptionalString(input.category, maxCategoryLength)
+	const offline = isCapabilitySearchOffline(input.env as Env)
+
+	let rows: Array<McpMemoryRow>
+	let vectorRankedIds: Array<string> | undefined
+	if (offline) {
+		rows = await listMemoriesByUserId(input.env.APP_DB, input.userId, {
+			statuses,
+			limit: memoryOfflineCandidateLimit,
+		})
+	} else {
+		// Vectorize-first: query the index with metadata filters, hydrate only
+		// the top-hit rows from D1 by id, and merge with a bounded set of
+		// recent rows as the lexical candidate list.
+		const [recentRows, rankedIds] = await Promise.all([
+			listMemoriesByUserId(input.env.APP_DB, input.userId, {
+				statuses,
+				limit: memoryLexicalCandidateLimit,
+			}),
+			queryMemoryVectorIds({
+				env: input.env as Env,
+				query,
+				userId: input.userId,
+				statuses,
+				category,
+				topK: Math.min(
+					Math.max(memoryLexicalCandidateLimit, targetLimit * 5),
+					memoryVectorTopKCap,
+				),
+			}),
+		])
+		vectorRankedIds = rankedIds
+		const recentIds = new Set(recentRows.map((row) => row.id))
+		const missingIds = rankedIds.filter((id) => !recentIds.has(id))
+		const hydratedRows = await listMemoriesByIds(
+			input.env.APP_DB,
+			input.userId,
+			{
+				ids: missingIds,
+				statuses,
+			},
+		)
+		rows = [...recentRows, ...hydratedRows]
+	}
+	const filteredRows = rows.filter((row) => {
+		if (!category) return true
+		return row.category === category
+	})
 	const rankedLimit = Math.min(filteredRows.length, targetLimit * 5)
 	const { matches } = await searchMemories({
 		env: input.env as Env,
 		query,
 		limit: rankedLimit,
 		rows: filteredRows,
+		...(vectorRankedIds ? { vectorRankedIds } : {}),
 	})
 	const filtered = await filterSuppressedMatches({
 		db: input.env.APP_DB,

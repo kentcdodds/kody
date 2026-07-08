@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as CommunityRepo from './repo.ts'
 import { type CommunityListingRecord } from './types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -7,7 +8,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityBan: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
 	getCommunityListingById: vi.fn(),
-	listAllCommunityListings: vi.fn(),
+	listCommunityListingCandidates: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
 	countCommunityForksByListingIds: vi.fn(),
 	writeCommunitySnapshot: vi.fn(),
@@ -67,44 +68,50 @@ vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
 		mockModule.cleanupArtifactReposForPackage(...args),
 }))
 
-vi.mock('./repo.ts', () => ({
-	getCommunityBan: (...args: Array<unknown>) =>
-		mockModule.getCommunityBan(...args),
-	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingByOwnerAndPackage(...args),
-	getCommunityListingById: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingById(...args),
-	listAllCommunityListings: (...args: Array<unknown>) =>
-		mockModule.listAllCommunityListings(...args),
-	getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
-		mockModule.getCommunityRatingAggregatesByListingIds(...args),
-	countCommunityForksByListingIds: (...args: Array<unknown>) =>
-		mockModule.countCommunityForksByListingIds(...args),
-	insertCommunityListing: (...args: Array<unknown>) =>
-		mockModule.insertCommunityListing(...args),
-	updateCommunityListing: (...args: Array<unknown>) =>
-		mockModule.updateCommunityListing(...args),
-	getCommunityForkByListingAndUser: (...args: Array<unknown>) =>
-		mockModule.getCommunityForkByListingAndUser(...args),
-	listCommunityForksByListingAndUser: (...args: Array<unknown>) =>
-		mockModule.listCommunityForksByListingAndUser(...args),
-	upsertCommunityRating: (...args: Array<unknown>) =>
-		mockModule.upsertCommunityRating(...args),
-	insertCommunityReport: (...args: Array<unknown>) =>
-		mockModule.insertCommunityReport(...args),
-	getCommunityReportById: (...args: Array<unknown>) =>
-		mockModule.getCommunityReportById(...args),
-	insertCommunityFork: (...args: Array<unknown>) =>
-		mockModule.insertCommunityFork(...args),
-	deleteCommunityListing: (...args: Array<unknown>) =>
-		mockModule.deleteCommunityListing(...args),
-	deleteCommunityRatingsByListingId: (...args: Array<unknown>) =>
-		mockModule.deleteCommunityRatingsByListingId(...args),
-	resolveCommunityReportRow: (...args: Array<unknown>) =>
-		mockModule.resolveCommunityReportRow(...args),
-	setCommunityListingStatus: (...args: Array<unknown>) =>
-		mockModule.setCommunityListingStatus(...args),
-}))
+vi.mock('./repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CommunityRepo>()
+	return {
+		// Pure helper used by the service to decide whether the SQL LIKE
+		// pre-filter was applied; keep the real implementation.
+		extractCommunityListingLikeTokens: actual.extractCommunityListingLikeTokens,
+		getCommunityBan: (...args: Array<unknown>) =>
+			mockModule.getCommunityBan(...args),
+		getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
+			mockModule.getCommunityListingByOwnerAndPackage(...args),
+		getCommunityListingById: (...args: Array<unknown>) =>
+			mockModule.getCommunityListingById(...args),
+		listCommunityListingCandidates: (...args: Array<unknown>) =>
+			mockModule.listCommunityListingCandidates(...args),
+		getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
+			mockModule.getCommunityRatingAggregatesByListingIds(...args),
+		countCommunityForksByListingIds: (...args: Array<unknown>) =>
+			mockModule.countCommunityForksByListingIds(...args),
+		insertCommunityListing: (...args: Array<unknown>) =>
+			mockModule.insertCommunityListing(...args),
+		updateCommunityListing: (...args: Array<unknown>) =>
+			mockModule.updateCommunityListing(...args),
+		getCommunityForkByListingAndUser: (...args: Array<unknown>) =>
+			mockModule.getCommunityForkByListingAndUser(...args),
+		listCommunityForksByListingAndUser: (...args: Array<unknown>) =>
+			mockModule.listCommunityForksByListingAndUser(...args),
+		upsertCommunityRating: (...args: Array<unknown>) =>
+			mockModule.upsertCommunityRating(...args),
+		insertCommunityReport: (...args: Array<unknown>) =>
+			mockModule.insertCommunityReport(...args),
+		getCommunityReportById: (...args: Array<unknown>) =>
+			mockModule.getCommunityReportById(...args),
+		insertCommunityFork: (...args: Array<unknown>) =>
+			mockModule.insertCommunityFork(...args),
+		deleteCommunityListing: (...args: Array<unknown>) =>
+			mockModule.deleteCommunityListing(...args),
+		deleteCommunityRatingsByListingId: (...args: Array<unknown>) =>
+			mockModule.deleteCommunityRatingsByListingId(...args),
+		resolveCommunityReportRow: (...args: Array<unknown>) =>
+			mockModule.resolveCommunityReportRow(...args),
+		setCommunityListingStatus: (...args: Array<unknown>) =>
+			mockModule.setCommunityListingStatus(...args),
+	}
+})
 
 vi.mock('./snapshot.ts', () => ({
 	writeCommunitySnapshot: (...args: Array<unknown>) =>
@@ -385,7 +392,7 @@ test('searchCommunityListings empty query uses publishedAt tiebreaker', async ()
 		id: 'listing-newer',
 		publishedAt: '2026-07-03T00:00:00.000Z',
 	})
-	mockModule.listAllCommunityListings.mockResolvedValue([
+	mockModule.listCommunityListingCandidates.mockResolvedValue([
 		olderListing,
 		newerListing,
 	])
@@ -418,6 +425,56 @@ test('searchCommunityListings empty query uses publishedAt tiebreaker', async ()
 		'listing-newer',
 		'listing-older',
 	])
+})
+
+test('searchCommunityListings falls back to unfiltered candidates when LIKE prefilter rows all fail matching', async () => {
+	// The LIKE prefilter matches on raw columns (e.g. readme_content), so it
+	// can return rows that the in-memory scorer then rejects. The fallback
+	// must still surface matches among other recent listings.
+	const prefilterOnlyListing = sampleListing({
+		id: 'listing-prefilter-only',
+		kodyId: 'meal-planner',
+		name: '@owner/meal-planner',
+		description: 'Plan weekly meals',
+		tags: ['meal'],
+		searchText: 'meal plan grocery',
+		readmeContent: '# Meal Planner\n\n## Intent\n\nPlan meals.',
+	})
+	const fallbackMatchListing = sampleListing({ id: 'listing-fallback-match' })
+	mockModule.listCommunityListingCandidates
+		.mockResolvedValueOnce([prefilterOnlyListing])
+		.mockResolvedValueOnce([prefilterOnlyListing, fallbackMatchListing])
+	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
+		'listing-fallback-match': {
+			listingId: 'listing-fallback-match',
+			ratingCount: 0,
+			averageStars: null,
+			averageAdaptationEffort: null,
+		},
+	})
+	mockModule.countCommunityForksByListingIds.mockResolvedValue({
+		'listing-fallback-match': 0,
+	})
+
+	const results = await searchCommunityListings({
+		env: createEnv(),
+		query: 'discord',
+		limit: 10,
+	})
+
+	expect(results.map((listing) => listing.id)).toEqual([
+		'listing-fallback-match',
+	])
+	expect(mockModule.listCommunityListingCandidates).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		expect.objectContaining({ query: 'discord' }),
+	)
+	expect(mockModule.listCommunityListingCandidates).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		expect.not.objectContaining({ query: expect.anything() }),
+	)
 })
 
 test('publishCommunityListing accepts Intent heading beyond storage truncation', async () => {

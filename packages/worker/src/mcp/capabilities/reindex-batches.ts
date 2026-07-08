@@ -26,6 +26,32 @@ export type VectorReindexResult = {
 const upsertBatchSize = 16
 const maxReportedFailures = 20
 
+// Combines per-page reindex results from keyset-paged drivers into a single
+// result with the same shape and messages as a one-shot reindex run.
+export function mergeVectorReindexResults(
+	kind: string,
+	results: ReadonlyArray<VectorReindexResult>,
+): VectorReindexResult {
+	let upserted = 0
+	let failed = 0
+	const failures: Array<VectorReindexFailure> = []
+	for (const result of results) {
+		upserted += result.upserted
+		failed += result.failed ?? 0
+		for (const failure of result.failures ?? []) {
+			if (failures.length < maxReportedFailures) failures.push(failure)
+		}
+	}
+	if (failed === 0) return { upserted }
+	const message = `${failed} ${kind} vector(s) failed to reindex`
+	return {
+		upserted,
+		failed,
+		failures,
+		...(upserted === 0 ? { error: message } : { warning: message }),
+	}
+}
+
 export async function reindexVectorCandidates(input: {
 	env: Env
 	index: VectorizeIndex

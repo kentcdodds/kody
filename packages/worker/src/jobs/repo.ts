@@ -276,6 +276,31 @@ export async function listJobRowsByUserId(
 	return (results ?? []).map(mapRow)
 }
 
+/**
+ * Caps how many due jobs a single JobManager alarm invocation picks up so a
+ * large backlog cannot exhaust the Durable Object CPU budget in one wake. The
+ * post-run alarm resync schedules a near-immediate follow-up wake whenever
+ * more due jobs remain, so backlogs drain across successive alarms.
+ */
+export const maxDueJobsPerAlarm = 25
+
+// Keyset-paged listing across all users, used by maintenance reindex so a
+// single query never loads the whole table. Pass the last row id of the
+// previous page (or null for the first page).
+export async function listJobRowsPage(
+	db: D1Database,
+	input: {
+		afterId: string | null
+		limit: number
+	},
+): Promise<Array<JobRow>> {
+	const { results } = await db
+		.prepare(`SELECT * FROM jobs WHERE id > ? ORDER BY id LIMIT ?`)
+		.bind(input.afterId ?? '', input.limit)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapRow)
+}
+
 export async function listDueJobRows(
 	db: D1Database,
 	userId: string,
@@ -288,9 +313,10 @@ export async function listDueJobRows(
 				AND enabled = 1
 				AND kill_switch_enabled = 0
 				AND next_run_at <= ?
-			ORDER BY next_run_at ASC, name ASC`,
+			ORDER BY next_run_at ASC, name ASC
+			LIMIT ?`,
 		)
-		.bind(userId, nowIso)
+		.bind(userId, nowIso, maxDueJobsPerAlarm)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }

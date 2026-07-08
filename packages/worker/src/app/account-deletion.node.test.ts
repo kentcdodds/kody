@@ -191,6 +191,18 @@ function createTestDb(initial: RowMap): {
 									.map((row) => ({ storage_id: row['storage_id'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
+							if (
+								lower ===
+								'select raw_mime_key from email_messages where user_id = ? and raw_mime_key is not null'
+							) {
+								results = (rows.email_messages ?? [])
+									.filter(
+										(row) =>
+											row['user_id'] === userId && row['raw_mime_key'] != null,
+									)
+									.map((row) => ({ raw_mime_key: row['raw_mime_key'] }))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							const kvMatch = lower.match(
 								/^select kv_key from (\w+) where user_id = \?/,
 							)
@@ -555,7 +567,19 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		email_inboxes: [{ id: 'in-1', user_id: userAaa }],
 		email_inbox_addresses: [{ id: 'ia-1', user_id: userAaa }],
 		email_threads: [{ id: 'et-1', user_id: userAaa }],
-		email_messages: [{ id: 'em-1', user_id: userAaa }],
+		email_messages: [
+			{
+				id: 'em-1',
+				user_id: userAaa,
+				raw_mime_key: 'email-raw:v1:user-aaa/em-1',
+			},
+			{ id: 'em-2', user_id: userAaa, raw_mime_key: null },
+			{
+				id: 'em-3',
+				user_id: userBbb,
+				raw_mime_key: 'email-raw:v1:user-bbb/em-3',
+			},
+		],
 		email_attachments: [{ id: 'ea-1', message_id: 'em-1' }],
 		email_delivery_events: [{ id: 'ed-1', user_id: userAaa }],
 		email_sender_identities: [{ id: 'ei-1', user_id: userAaa }],
@@ -634,6 +658,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		},
 	} as unknown as KVNamespace
 
+	const deletedEmailBlobKeys: Array<string> = []
+	const emailBlobs = {
+		async delete(key: string) {
+			deletedEmailBlobKeys.push(key)
+		},
+	} as unknown as R2Bucket
+
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
@@ -644,6 +675,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const env = {
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: kv,
+		EMAIL_BLOBS: emailBlobs,
 		CAPABILITY_VECTOR_INDEX: {
 			deleteByIds: deleteVectorsMock,
 		},
@@ -722,7 +754,15 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	])
 	expect(rows.repo_sessions).toEqual([])
 	expect(rows.email_attachments).toEqual([])
-	expect(rows.email_messages).toEqual([])
+	// The other user's message and its R2 raw-MIME blob are untouched.
+	expect(rows.email_messages).toEqual([
+		{
+			id: 'em-3',
+			user_id: userBbb,
+			raw_mime_key: 'email-raw:v1:user-bbb/em-3',
+		},
+	])
+	expect(deletedEmailBlobKeys).toEqual(['email-raw:v1:user-aaa/em-1'])
 	expect(rows.entitlement_daily_counters).toEqual([
 		{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 	])
@@ -819,6 +859,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.community_bans).toBe(1)
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedKvKeys).toBe(11)
+	expect(result.deletedEmailBlobs).toBe(1)
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,
@@ -904,6 +945,13 @@ test('deleteUserAccount handles OAuth grant revocation and warning-only edge cas
 		archived_job_artifacts: [
 			{ id: 'aja-1', user_id: 'user-aaa', kv_key: 'archived:src-1' },
 		],
+		email_messages: [
+			{
+				id: 'em-1',
+				user_id: 'user-aaa',
+				raw_mime_key: 'email-raw:v1:user-aaa/em-1',
+			},
+		],
 	})
 	const kvFailureResult = await deleteUserAccount({
 		env: {
@@ -918,6 +966,13 @@ test('deleteUserAccount handles OAuth grant revocation and warning-only edge cas
 	})
 	expect(kvFailureRows.published_bundle_artifacts).toEqual([])
 	expect(kvFailureRows.archived_job_artifacts).toEqual([])
+	expect(kvFailureRows.email_messages).toEqual([])
 	expect(kvFailureResult.deletedKvKeys).toBe(0)
+	// The D1 rows are still removed when EMAIL_BLOBS is unavailable; the
+	// stranded blobs are reported as a warning instead of aborting.
+	expect(kvFailureResult.deletedEmailBlobs).toBe(0)
+	expect(kvFailureResult.warnings).toContain(
+		'EMAIL_BLOBS binding was unavailable; 1 raw email MIME blob(s) referenced by the deleted user were not removed and must be cleaned up manually.',
+	)
 	expect(kvFailureResult.warnings.length).toBeGreaterThan(0)
 })

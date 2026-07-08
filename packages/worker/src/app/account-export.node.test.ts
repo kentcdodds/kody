@@ -17,7 +17,10 @@ function applyMigrations(db: DatabaseSync) {
 	}
 }
 
-function createD1FromSqlite(db: DatabaseSync) {
+function createD1FromSqlite(
+	db: DatabaseSync,
+	options?: { onQueryRows?: (rowCount: number) => void },
+) {
 	return {
 		prepare(query: string) {
 			return {
@@ -26,6 +29,7 @@ function createD1FromSqlite(db: DatabaseSync) {
 						async all<T>() {
 							const statement = db.prepare(query)
 							const rows = statement.all(...params) as Array<T>
+							options?.onQueryRows?.(rows.length)
 							return { results: rows, meta: { changes: 0 } }
 						},
 						async first<T>() {
@@ -42,6 +46,7 @@ function createD1FromSqlite(db: DatabaseSync) {
 				async all<T>() {
 					const statement = db.prepare(query)
 					const rows = statement.all() as Array<T>
+					options?.onQueryRows?.(rows.length)
 					return { results: rows, meta: { changes: 0 } }
 				},
 				async first<T>() {
@@ -61,12 +66,14 @@ function createD1FromSqlite(db: DatabaseSync) {
 	} as unknown as D1Database
 }
 
-function createMigratedDb() {
+function createMigratedDb(options?: {
+	onQueryRows?: (rowCount: number) => void
+}) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyMigrations(sqlite)
 	return {
 		sqlite,
-		db: createD1FromSqlite(sqlite),
+		db: createD1FromSqlite(sqlite, options),
 	}
 }
 
@@ -370,9 +377,9 @@ test('createAccountExport records partial-failure warnings and section paginatio
 		table: 'value_entries',
 		pageSize: 1,
 	})
-	expect(page.items).toHaveLength(1)
+	expect(page.items).toEqual([expect.objectContaining({ name: 'first' })])
 	expect(page.truncated).toBe(true)
-	expect(page.nextStartAfter).toBe('value-bucket-a:first')
+	expect(page.nextStartAfter).not.toBeNull()
 	const nextPage = await readAccountExportSection({
 		env,
 		dbUserId: 1,
@@ -384,4 +391,64 @@ test('createAccountExport records partial-failure warnings and section paginatio
 	})
 	expect(nextPage.items).toEqual([expect.objectContaining({ name: 'second' })])
 	expect(nextPage.truncated).toBe(false)
+	expect(nextPage.nextStartAfter).toBeNull()
+})
+
+test('D1 export reads large tables in bounded keyset pages', async () => {
+	const rowCounts: Array<number> = []
+	const { sqlite, db } = createMigratedDb({
+		onQueryRows: (rowCount) => rowCounts.push(rowCount),
+	})
+	sqlite.exec(`
+		INSERT INTO users (id, username, email, password_hash, created_at, updated_at, email_verified_at)
+		VALUES (1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05', '2026-07-05');
+	`)
+	const totalMessages = 1201
+	const insert = sqlite.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status, created_at, updated_at
+		) VALUES (?, 'inbound', 'user-aaa', 'sender@example.net', ?, 'stored', '2026-07-05', '2026-07-05')`,
+	)
+	for (let index = 0; index < totalMessages; index += 1) {
+		insert.run(`message-${String(index).padStart(4, '0')}`, `Mail ${index}`)
+	}
+
+	const accountExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+	expect(accountExport.d1.email_messages.rows).toHaveLength(totalMessages)
+	expect(accountExport.manifest.sections['d1.email_messages']?.count).toBe(
+		totalMessages,
+	)
+	// The keyset page size is 500 (+1 lookahead row), so no single query may
+	// return the whole table.
+	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(501)
+
+	rowCounts.length = 0
+	const seenIds = new Set<string>()
+	let startAfter: string | undefined
+	let pages = 0
+	while (true) {
+		const page = await readAccountExportSection({
+			env: { APP_DB: db } as Env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'd1_table',
+			table: 'email_messages',
+			pageSize: 500,
+			startAfter,
+		})
+		pages += 1
+		for (const item of page.items as Array<{ id: string }>) {
+			seenIds.add(item.id)
+		}
+		if (!page.truncated) break
+		startAfter = page.nextStartAfter ?? undefined
+	}
+	expect(pages).toBe(3)
+	expect(seenIds.size).toBe(totalMessages)
+	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(501)
 })

@@ -23,6 +23,12 @@ import { resolveUserStableId } from '#worker/user-id.ts'
 const accountExportSchemaVersion = 1
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
+// Full exports stream each D1 table in keyset-paged batches of this size so
+// memory stays bounded per query even for very large tables (e.g. mailboxes).
+const d1ExportPageSize = 500
+// Internal alias for the SQLite rowid used as the keyset cursor. Stripped from
+// exported rows so the export document schema is unchanged.
+const exportRowidColumn = '__account_export_rowid'
 
 // Secret values and credential-equivalent hashes must never leave Kody through
 // account export. Secret entries are metadata-only; encrypted payloads stay
@@ -245,100 +251,114 @@ function normalizeBoolean(value: unknown) {
 	return value === 1 || value === '1' || value === true
 }
 
-function getTargetTableName(target: UserScopedDataTarget) {
-	return target.kind === 'mcp_memory_suppression'
-		? 'mcp_memory_conversation_suppressions'
-		: target.table
+type D1TableCondition = {
+	condition: string
+	params: Array<unknown>
 }
 
-function buildSelectForTarget(input: {
+function buildConditionForTarget(input: {
 	target: UserScopedDataTarget
 	mcpUserId: string
 	dbUserId: number
-}) {
+}): { table: string; condition: D1TableCondition } {
 	const { target } = input
 	switch (target.kind) {
 		case 'user_id': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table} WHERE user_id = ?`,
-				params: [input.mcpUserId],
+				condition: {
+					condition: `${target.table}.user_id = ?`,
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		case 'db_user_id': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table} WHERE user_id = ?`,
-				params: [input.dbUserId],
+				condition: {
+					condition: `${target.table}.user_id = ?`,
+					params: [input.dbUserId],
+				},
 			}
 		}
 		case 'db_user_target': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table} WHERE target = ?`,
-				params: [String(input.dbUserId)],
+				condition: {
+					condition: `${target.table}.target = ?`,
+					params: [String(input.dbUserId)],
+				},
 			}
 		}
 		case 'user_columns': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table} WHERE ${target.columns
-					.map((column) => `${column} = ?`)
-					.join(' OR ')}`,
-				params: target.columns.map(() => input.mcpUserId),
+				condition: {
+					condition: target.columns
+						.map((column) => `${target.table}.${column} = ?`)
+						.join(' OR '),
+					params: target.columns.map(() => input.mcpUserId),
+				},
 			}
 		}
 		case 'null_user_column': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table} WHERE ${target.matchColumn} = ?`,
-				params: [input.mcpUserId],
+				condition: {
+					condition: `${target.table}.${target.matchColumn} = ?`,
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		case 'replace_user_column': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table} WHERE ${target.matchColumn} = ?`,
-				params: [input.mcpUserId],
+				condition: {
+					condition: `${target.table}.${target.matchColumn} = ?`,
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		case 'bucket_parent': {
 			return {
 				table: target.table,
-				sql: `SELECT ${target.table}.*
-					FROM ${target.table}
-					INNER JOIN ${target.parentTable}
-						ON ${target.parentTable}.id = ${target.table}.bucket_id
-					WHERE ${target.parentTable}.user_id = ?`,
-				params: [input.mcpUserId],
+				condition: {
+					condition: `${target.table}.bucket_id IN (
+						SELECT id FROM ${target.parentTable} WHERE user_id = ?
+					)`,
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		case 'attachment_parent': {
 			return {
 				table: 'email_attachments',
-				sql: `SELECT email_attachments.*
-					FROM email_attachments
-					INNER JOIN email_messages
-						ON email_messages.id = email_attachments.message_id
-					WHERE email_messages.user_id = ?`,
-				params: [input.mcpUserId],
+				condition: {
+					condition: `email_attachments.message_id IN (
+						SELECT id FROM email_messages WHERE user_id = ?
+					)`,
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		case 'community_listing_child': {
 			return {
 				table: target.table,
-				sql: `SELECT * FROM ${target.table}
-					WHERE ${target.listingColumn} IN (
+				condition: {
+					condition: `${target.table}.${target.listingColumn} IN (
 						SELECT id FROM community_listings WHERE owner_user_id = ?
 					)`,
-				params: [input.mcpUserId],
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		case 'mcp_memory_suppression': {
 			return {
 				table: 'mcp_memory_conversation_suppressions',
-				sql: `SELECT * FROM mcp_memory_conversation_suppressions WHERE user_id = ?`,
-				params: [input.mcpUserId],
+				condition: {
+					condition: `mcp_memory_conversation_suppressions.user_id = ?`,
+					params: [input.mcpUserId],
+				},
 			}
 		}
 		default: {
@@ -348,6 +368,31 @@ function buildSelectForTarget(input: {
 			)
 		}
 	}
+}
+
+function buildD1TableConditions(input: {
+	mcpUserId: string
+	dbUserId: number
+}) {
+	const conditionsByTable = new Map<string, Array<D1TableCondition>>()
+	function add(table: string, condition: D1TableCondition) {
+		const existing = conditionsByTable.get(table)
+		if (existing) {
+			existing.push(condition)
+			return
+		}
+		conditionsByTable.set(table, [condition])
+	}
+	add('users', { condition: `users.id = ?`, params: [input.dbUserId] })
+	for (const target of accountUserDataTargets) {
+		const built = buildConditionForTarget({
+			target,
+			mcpUserId: input.mcpUserId,
+			dbUserId: input.dbUserId,
+		})
+		add(built.table, built.condition)
+	}
+	return conditionsByTable
 }
 
 function sanitizeRow(table: string, row: Record<string, unknown>) {
@@ -392,54 +437,82 @@ async function selectRows<T extends Record<string, unknown>>(
 	return result.results ?? []
 }
 
-function createD1ExportCollector(input: {
+// Reads one keyset page of a table: rows are selected by ascending rowid
+// strictly after the cursor, with a SQL LIMIT, so a single query never loads
+// more than one page regardless of table size. Conditions for every export
+// target of the table are OR-combined into one query, which also removes the
+// need for cross-target row deduplication.
+async function selectD1TablePage(input: {
 	env: AccountExportEnv
-	warnings: Array<string>
+	table: string
+	conditions: ReadonlyArray<D1TableCondition>
+	afterRowid: number
+	limit: number
 }) {
-	const tables = new Map<string, AccountExportD1Table>()
-	function getTable(table: string) {
-		const existing = tables.get(table)
-		if (existing) return existing
-		const created: AccountExportD1Table = {
-			table,
-			rows: [],
-			redactedColumns: [],
-			warnings: [],
-		}
-		tables.set(table, created)
-		return created
+	const where = input.conditions
+		.map((condition) => `(${condition.condition})`)
+		.join(' OR ')
+	const sql = `SELECT ${input.table}.rowid AS ${exportRowidColumn}, ${input.table}.*
+		FROM ${input.table}
+		WHERE (${where}) AND ${input.table}.rowid > ?
+		ORDER BY ${input.table}.rowid
+		LIMIT ?`
+	const params = [
+		...input.conditions.flatMap((condition) => condition.params),
+		input.afterRowid,
+		input.limit + 1,
+	]
+	const rawRows = await selectRows(input.env, sql, params)
+	const truncated = rawRows.length > input.limit
+	const pageRows = truncated ? rawRows.slice(0, input.limit) : rawRows
+	let lastRowid = input.afterRowid
+	const rows: Array<ReturnType<typeof sanitizeRow>> = []
+	for (const rawRow of pageRows) {
+		const { [exportRowidColumn]: rowid, ...columns } = rawRow
+		lastRowid = Number(rowid)
+		rows.push(sanitizeRow(input.table, columns))
 	}
-	async function collectQuery(
-		table: string,
-		sql: string,
-		params: Array<unknown>,
-	) {
-		const section = getTable(table)
-		try {
-			const rows = await selectRows(input.env, sql, params)
-			const seen = new Set(section.rows.map(rowDedupeKey))
-			const redacted = new Set(section.redactedColumns)
-			for (const rawRow of rows) {
-				const sanitized = sanitizeRow(table, rawRow)
-				for (const column of sanitized.redactedColumns) redacted.add(column)
-				const key = rowDedupeKey(sanitized.row)
-				if (seen.has(key)) continue
-				seen.add(key)
-				section.rows.push(sanitized.row)
+	return { rows, lastRowid, truncated }
+}
+
+async function collectD1TableRows(input: {
+	env: AccountExportEnv
+	table: string
+	conditions: ReadonlyArray<D1TableCondition>
+	warnings: Array<string>
+}): Promise<AccountExportD1Table> {
+	const section: AccountExportD1Table = {
+		table: input.table,
+		rows: [],
+		redactedColumns: [],
+		warnings: [],
+	}
+	const redacted = new Set<string>()
+	let afterRowid = 0
+	try {
+		while (true) {
+			const page = await selectD1TablePage({
+				env: input.env,
+				table: input.table,
+				conditions: input.conditions,
+				afterRowid,
+				limit: d1ExportPageSize,
+			})
+			for (const entry of page.rows) {
+				for (const column of entry.redactedColumns) redacted.add(column)
+				section.rows.push(entry.row)
 			}
-			section.rows = sortRowsByDedupeKey(section.rows)
-			section.redactedColumns = Array.from(redacted).sort()
-		} catch (error) {
-			const warning = `D1 export failed for ${table}: ${getErrorMessage(error)}`
-			section.warnings.push(warning)
-			input.warnings.push(warning)
+			if (!page.truncated) break
+			afterRowid = page.lastRowid
 		}
+	} catch (error) {
+		const warning = `D1 export failed for ${input.table}: ${getErrorMessage(error)}`
+		section.warnings.push(warning)
+		input.warnings.push(warning)
 	}
-	return {
-		collectQuery,
-		getTable,
-		tables,
-	}
+	section.rows = sortRowsByDedupeKey(section.rows)
+	section.redactedColumns = Array.from(redacted).sort()
+	return section
 }
 
 async function listUserStorageIds(env: Env, userId: string) {
@@ -732,80 +805,72 @@ async function collectD1Tables(input: {
 	mcpUserId: string
 	warnings: Array<string>
 }) {
-	const collector = createD1ExportCollector(input)
-
-	await collector.collectQuery('users', `SELECT * FROM users WHERE id = ?`, [
-		input.dbUserId,
-	])
-	for (const target of accountUserDataTargets) {
-		const query = buildSelectForTarget({
-			target,
-			mcpUserId: input.mcpUserId,
-			dbUserId: input.dbUserId,
-		})
-		await collector.collectQuery(
-			getTargetTableName(target),
-			query.sql,
-			query.params,
-		)
+	const conditionsByTable = buildD1TableConditions({
+		mcpUserId: input.mcpUserId,
+		dbUserId: input.dbUserId,
+	})
+	const tables: Array<[string, AccountExportD1Table]> = []
+	for (const [table, conditions] of conditionsByTable) {
+		tables.push([
+			table,
+			await collectD1TableRows({
+				env: input.env,
+				table,
+				conditions,
+				warnings: input.warnings,
+			}),
+		])
 	}
 	return Object.fromEntries(
-		Array.from(collector.tables.entries()).sort(([left], [right]) =>
-			left.localeCompare(right),
-		),
+		tables.sort(([left], [right]) => left.localeCompare(right)),
 	)
 }
 
-async function collectD1Table(input: {
+function parseRowidCursor(startAfter: string | undefined) {
+	if (!startAfter) return 0
+	const parsed = Number.parseInt(startAfter, 10)
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+async function readD1TableSectionPage(input: {
 	env: AccountExportEnv
 	dbUserId: number
 	mcpUserId: string
 	table: string
-	warnings: Array<string>
-}) {
-	const collector = createD1ExportCollector(input)
-	if (input.table === 'users') {
-		await collector.collectQuery('users', `SELECT * FROM users WHERE id = ?`, [
-			input.dbUserId,
-		])
-		return collector.getTable('users')
-	}
-	const targets = accountUserDataTargets.filter(
-		(target) => getTargetTableName(target) === input.table,
-	)
-	if (targets.length === 0) return null
-	for (const target of targets) {
-		const query = buildSelectForTarget({
-			target,
-			mcpUserId: input.mcpUserId,
-			dbUserId: input.dbUserId,
-		})
-		await collector.collectQuery(input.table, query.sql, query.params)
-	}
-	return collector.getTable(input.table)
-}
-
-function paginateRowsByDedupeKey(input: {
-	rows: ReadonlyArray<Record<string, unknown>>
 	pageSize: number | undefined
 	startAfter: string | undefined
+	warnings: Array<string>
 }) {
+	const conditions = buildD1TableConditions({
+		mcpUserId: input.mcpUserId,
+		dbUserId: input.dbUserId,
+	}).get(input.table)
+	if (!conditions) return null
 	const pageSize = normalizePageSize(input.pageSize)
-	const sortedRows = sortRowsByDedupeKey([...input.rows])
-	const cursor = input.startAfter
-	const startIndex = cursor
-		? sortedRows.findIndex((row) => rowDedupeKey(row) > cursor)
-		: 0
-	const safeStart = startIndex < 0 ? sortedRows.length : startIndex
-	const page = sortedRows.slice(safeStart, safeStart + pageSize)
-	const nextRow = page.at(-1)
-	const nextIndex = safeStart + page.length
-	const truncated = nextIndex < sortedRows.length
-	return {
-		items: page,
-		truncated,
-		nextStartAfter: truncated && nextRow ? rowDedupeKey(nextRow) : null,
-		pageSize,
+	try {
+		const page = await selectD1TablePage({
+			env: input.env,
+			table: input.table,
+			conditions,
+			afterRowid: parseRowidCursor(input.startAfter),
+			limit: pageSize,
+		})
+		return {
+			items: page.rows.map((entry) => entry.row),
+			truncated: page.truncated,
+			nextStartAfter: page.truncated ? String(page.lastRowid) : null,
+			pageSize,
+		}
+	} catch (error) {
+		input.warnings.push(
+			`D1 export failed for ${input.table}: ${getErrorMessage(error)}`,
+		)
+		return {
+			items: [] as Array<Record<string, unknown>>,
+			truncated: false,
+			nextStartAfter: null,
+			pageSize,
+		}
 	}
 }
 
@@ -1256,21 +1321,18 @@ export async function readAccountExportSection(input: {
 			if (!input.table) {
 				throw new Error('table is required when section is d1_table.')
 			}
-			const table = await collectD1Table({
+			const page = await readD1TableSectionPage({
 				env: input.env,
 				dbUserId: input.dbUserId,
 				mcpUserId: input.mcpUserId,
 				table: input.table,
-				warnings,
-			})
-			if (!table) {
-				throw new Error(`Table "${input.table}" is not part of account export.`)
-			}
-			const page = paginateRowsByDedupeKey({
-				rows: table.rows,
 				pageSize: input.pageSize,
 				startAfter: input.startAfter,
+				warnings,
 			})
+			if (!page) {
+				throw new Error(`Table "${input.table}" is not part of account export.`)
+			}
 			return {
 				section: input.section,
 				...page,
