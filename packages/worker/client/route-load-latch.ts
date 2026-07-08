@@ -20,6 +20,12 @@ export function createRouteLoadLatch() {
 		/** Record a failed load so renders stop re-queuing for this `href`. */
 		markFailed(href: string) {
 			lastFailedHref = href
+			// A failure supersedes any earlier success for the same location;
+			// otherwise a failed refresh would leave the route latched as
+			// loaded and never refetch after navigating away and back.
+			if (lastLoadedHref === href) {
+				lastLoadedHref = ''
+			}
 		},
 		/** Whether the last successful load matches `href`. */
 		isLoadedFor(href: string) {

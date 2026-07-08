@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import {
 	defaultExecutionResponseLimitBytes,
@@ -246,24 +247,36 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 										}),
 								)
 							: undefined
-						return await runModuleWithRegistry(
-							env,
-							callerContext,
-							code,
-							params,
-							{
-								executorExports: agent.getLoopbackExports(),
-								capabilityRegistry: registry,
-								storageTools: activeStorageId
-									? {
-											userId: callerContext.user?.userId ?? '',
-											storageId: activeStorageId,
-											writable: writable ?? false,
-										}
-									: undefined,
-								packageInvokeTools,
-							},
-						)
+						try {
+							return await runModuleWithRegistry(
+								env,
+								callerContext,
+								code,
+								params,
+								{
+									executorExports: agent.getLoopbackExports(),
+									capabilityRegistry: registry,
+									storageTools: activeStorageId
+										? {
+												userId: callerContext.user?.userId ?? '',
+												storageId: activeStorageId,
+												writable: writable ?? false,
+											}
+										: undefined,
+									packageInvokeTools,
+								},
+							)
+						} catch (cause) {
+							// Bundling the caller-provided module (syntax errors,
+							// unresolved imports) throws before the sandbox runs;
+							// route it through the sandbox-error result path so it
+							// is not logged as a platform failure.
+							return {
+								result: undefined,
+								error: getErrorMessage(cause),
+								logs: [],
+							}
+						}
 					},
 				)
 				const timing = finishToolTiming(timingStart)

@@ -55,6 +55,18 @@ test('a stale refresh overrides a prior failure for the same href', () => {
 	).toBe(true)
 })
 
+test('a failed refresh invalidates an earlier success for the same href', () => {
+	const latch = createRouteLoadLatch()
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	latch.markLoaded('/a')
+	// A later refresh for the same location fails; leaving and returning must
+	// refetch instead of trusting the stale earlier success.
+	latch.markFailed('/a')
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/b' })).toBe(true)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	expect(latch.isLoadedFor('/a')).toBe(false)
+})
+
 test('applied route loader data suppresses the fallback fetch', () => {
 	const latch = createRouteLoadLatch()
 	expect(

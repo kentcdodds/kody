@@ -23,6 +23,7 @@ const primaryUserEmail = 'kody@example.com'
 const testUserPassword = 'ilikecode'
 const localhost = '127.0.0.1'
 const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
+const perAttemptFetchTimeoutMs = 5_000
 const maxPortBindRetries = 5
 
 type TestUser = {
@@ -476,7 +477,11 @@ async function waitForHttpReady(input: {
 		}
 
 		try {
-			const response = await fetch(input.url)
+			// Bound each attempt so a stalled response cannot hang the poll
+			// past the overall deadline (checked only between attempts).
+			const response = await fetch(input.url, {
+				signal: AbortSignal.timeout(perAttemptFetchTimeoutMs),
+			})
 			const ready = input.isReady(response)
 			await response.body?.cancel()
 			if (ready) return
