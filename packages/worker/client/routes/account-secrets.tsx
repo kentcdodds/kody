@@ -1088,24 +1088,10 @@ export function AccountSecretsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = getCurrentHref()
-		const selection = getSelectionState(currentHref)
-		const filters = readFilterState(currentHref, apps)
-		const filteredSecrets = filterSecrets(secrets, filters)
-		const appOptions = apps.map((app) => ({
-			id: app.id,
-			label: app.title,
-			description: buildAppOptionDescription(app.updatedAt),
-		}))
-		const filterAppOptions = [
-			{
-				id: '',
-				label: 'All apps',
-				description: 'Show secrets across every app',
-			},
-			...appOptions,
-		]
-
 		const currentDataKey = getDataRefreshKey(currentHref)
+		// Consume route-loader data before deriving list state below; deriving
+		// first would render this pass from the stale pre-navigation `secrets`
+		// (an empty list on SPA navigation) with no follow-up refetch queued.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
 		// data-key change; the stale marker forces the fallback refetch.
@@ -1126,6 +1112,23 @@ export function AccountSecretsRoute(handle: Handle) {
 		) {
 			handle.queueTask(loadAccountSecrets)
 		}
+
+		const selection = getSelectionState(currentHref)
+		const filters = readFilterState(currentHref, apps)
+		const filteredSecrets = filterSecrets(secrets, filters)
+		const appOptions = apps.map((app) => ({
+			id: app.id,
+			label: app.title,
+			description: buildAppOptionDescription(app.updatedAt),
+		}))
+		const filterAppOptions = [
+			{
+				id: '',
+				label: 'All apps',
+				description: 'Show secrets across every app',
+			},
+			...appOptions,
+		]
 
 		const activeSecretId =
 			selection.selectedSecretId ?? selectedSecret?.id ?? null
