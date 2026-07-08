@@ -12,7 +12,10 @@ import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { getAvailableUsernameFromBase } from '#app/generated-username.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
-import { type OauthLoginErrorCode } from '#app/oauth-login-errors.ts'
+import {
+	oauthLoginErrorMessages,
+	type OauthLoginErrorCode,
+} from '#app/oauth-login-errors.ts'
 import {
 	createOauthLoginStateCookie,
 	destroyOauthLoginStateCookie,
@@ -75,6 +78,22 @@ function redirectToLoginWithError(
 	return redirect(`/login?oauthError=${code}${redirectToSuffix}`, cookies)
 }
 
+/**
+ * The login and connections UIs start flows via fetch (Accept: json) and
+ * navigate to the returned authorize URL themselves: the CSP locks
+ * `form-action`/`connect-src` to 'self', so neither a form POST redirect nor
+ * a fetch-followed redirect may leave the origin — but a top-level JS
+ * navigation may.
+ */
+function prefersJsonResponse(request: Request) {
+	return (
+		request.headers
+			.get('Accept')
+			?.toLowerCase()
+			.includes('application/json') === true
+	)
+}
+
 export function createAuthProvidersApiHandler(env: Env) {
 	return {
 		middleware: [],
@@ -94,13 +113,25 @@ export function createAuthProviderStartHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url, params }) {
+			const wantsJson = prefersJsonResponse(request)
 			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
+
+			function startError(code: OauthLoginErrorCode) {
+				if (wantsJson) {
+					return jsonResponse(
+						{ ok: false, code, error: oauthLoginErrorMessages[code] },
+						400,
+					)
+				}
+				return redirectToLoginWithError(code, [], redirectTo)
+			}
+
 			const providerParam = params.provider
 			if (!isOauthProviderId(providerParam)) {
-				return redirectToLoginWithError('unknown-provider', [], redirectTo)
+				return startError('unknown-provider')
 			}
 			if (!getOauthClientConfig(env, providerParam)) {
-				return redirectToLoginWithError('not-configured', [], redirectTo)
+				return startError('not-configured')
 			}
 
 			setOauthLoginStateSecret(env.COOKIE_SECRET)
@@ -117,6 +148,16 @@ export function createAuthProviderStartHandler(env: Env) {
 				{ provider: providerParam, state, codeVerifier, redirectTo },
 				isSecureRequest(request),
 			)
+			// JSON mode: the CSP (`form-action`/`connect-src` locked to 'self')
+			// blocks both form-POST redirects and fetch-followed redirects to
+			// the provider, so the client fetches this endpoint and performs a
+			// top-level navigation to the returned authorize URL itself.
+			if (wantsJson) {
+				return jsonResponse(
+					{ ok: true, authorizeUrl },
+					{ headers: { 'Set-Cookie': stateCookie } },
+				)
+			}
 			return redirect(authorizeUrl, [stateCookie])
 		},
 	} satisfies Action<typeof routes.authProviderStart>
@@ -148,6 +189,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			const requestIp = getRequestIp(request) ?? undefined
 			const loginState = await readOauthLoginState(request)
 			const redirectTo = normalizeRedirectTo(loginState?.redirectTo ?? null)
+			const { session } = await readAuthSessionResult(request)
 
 			function fail(code: OauthLoginErrorCode, reason: string) {
 				void logAuditEvent({
@@ -158,6 +200,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason,
 				})
+				// A signed-in user is connecting a provider from their account
+				// page; bouncing them to /login would immediately redirect back
+				// and drop the message.
+				if (session) {
+					return redirect(`/account?oauthError=${code}`, [clearStateCookie])
+				}
 				return redirectToLoginWithError(code, [clearStateCookie], redirectTo)
 			}
 
@@ -248,31 +296,30 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				])
 			}
 
-			// 1. A known connection signs in its user directly.
 			const connection = await db.findOne(oauthConnectionsTable, {
 				where: {
 					provider_name: provider,
 					provider_id: profile.providerUserId,
 				},
 			})
-			if (connection) {
-				const user = await db.findOne(usersTable, {
-					where: { id: connection.user_id },
-				})
-				if (!user) {
-					return fail('account-error', 'connection_user_missing')
-				}
-				return issueLogin(user)
-			}
 
-			// 2. A signed-in user links the provider identity to their account.
-			const { session } = await readAuthSessionResult(request)
+			// 1. A signed-in user links the provider identity to their account
+			// (an existing connection for another user is a conflict, never an
+			// account switch).
 			if (session) {
 				const currentUser = await db.findOne(usersTable, {
 					where: { id: Number(session.id) },
 				})
 				if (!currentUser) {
 					return fail('account-error', 'session_user_missing')
+				}
+				if (connection) {
+					if (connection.user_id === currentUser.id) {
+						return redirect(`/account?oauthLinked=${provider}`, [
+							clearStateCookie,
+						])
+					}
+					return fail('connection-conflict', 'connection_conflict')
 				}
 				try {
 					await createConnection({
@@ -295,7 +342,18 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason: `provider=${provider}`,
 				})
-				return redirect(redirectTo ?? '/account', [clearStateCookie])
+				return redirect(`/account?oauthLinked=${provider}`, [clearStateCookie])
+			}
+
+			// 2. A known connection signs its user in directly.
+			if (connection) {
+				const user = await db.findOne(usersTable, {
+					where: { id: connection.user_id },
+				})
+				if (!user) {
+					return fail('account-error', 'connection_user_missing')
+				}
+				return issueLogin(user)
 			}
 
 			// Without a provider-verified email we can neither match an

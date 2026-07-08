@@ -30,6 +30,8 @@ export const routes = route({
 	accountSecretsApprove: '/account/secrets/approve',
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),
+	accountConnectionsApi: '/account/connections.json',
+	accountConnectionsApiPost: post('/account/connections.json'),
 	accountPasskeys: '/account/passkeys',
 	accountPasskeysApi: '/account/passkeys.json',
 	accountPasskeysApiPost: post('/account/passkeys.json'),

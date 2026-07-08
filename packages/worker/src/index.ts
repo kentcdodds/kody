@@ -183,10 +183,15 @@ const appHandler = withCors({
 				authRateLimitConfig,
 			)
 			if (!result.allowed) {
-				// Social-login starts are native form POSTs (document
-				// navigations), so a JSON 429 body would render as raw text;
-				// bounce back to the login page instead. 303 forces a GET.
-				if (socialLoginStartPaths.has(url.pathname)) {
+				// A non-JSON social-login start is a document navigation, so a
+				// JSON 429 body would render as raw text; bounce back to the
+				// login page instead. 303 forces a GET. (The first-party UI
+				// sends Accept: application/json and gets the JSON 429.)
+				const prefersJson = request.headers
+					.get('Accept')
+					?.toLowerCase()
+					.includes('application/json')
+				if (socialLoginStartPaths.has(url.pathname) && !prefersJson) {
 					const loginUrl = new URL('/login', url)
 					loginUrl.searchParams.set('oauthError', 'rate-limited')
 					const redirectTo = normalizeRedirectTo(

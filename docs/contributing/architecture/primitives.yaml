@@ -98,6 +98,7 @@ primitives:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
       - packages/worker/src/app/handlers/auth-provider.ts
+      - packages/worker/src/app/handlers/account-connections.ts
       - packages/worker/src/app/oauth-providers.ts
       - packages/worker/src/app/oauth-login-state.ts
       - packages/worker/src/app/oauth-login-errors.ts

@@ -1,6 +1,11 @@
 import { type Handle, css } from 'remix/ui'
+import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import {
+	startSocialSignIn,
+	type AuthProviderInfo,
+} from '#client/social-sign-in.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -11,7 +16,9 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
+	getDangerButtonCss,
 	getPrimaryButtonCss,
+	getSecondaryButtonCss,
 	inputCss,
 	layoutMaxWidths,
 	mutedLinkCss,
@@ -41,8 +48,46 @@ type AccountProfilePayload = {
 	displayName: string
 }
 
+type AccountConnection = {
+	provider: string
+	label: string
+	displayName: string | null
+	createdAt: string
+}
+
+type AccountConnectionsPayload = {
+	ok: true
+	connections: Array<AccountConnection>
+	canDisconnect: boolean
+	availableProviders: Array<AuthProviderInfo>
+}
+
 const resendVerificationApiPath = '/account/resend-verification.json'
 const emailChangeApiPath = '/account/email-change.json'
+const connectionsApiPath = '/account/connections.json'
+
+const providerLabels: Record<string, string> = {
+	github: 'GitHub',
+	google: 'Google',
+	x: 'X',
+}
+
+/** One-shot message from the OAuth callback redirect query params. */
+function readConnectionCallbackMessage(href: string) {
+	const searchParams = new URL(href, 'http://localhost').searchParams
+	const linkedProvider = searchParams.get('oauthLinked')
+	if (linkedProvider) {
+		return {
+			text: `${providerLabels[linkedProvider] ?? linkedProvider} connected.`,
+			tone: 'info' as const,
+		}
+	}
+	const errorMessage = getOauthLoginErrorMessage(searchParams.get('oauthError'))
+	if (errorMessage) {
+		return { text: errorMessage, tone: 'error' as const }
+	}
+	return null
+}
 
 function isAccountPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/account'
@@ -84,7 +129,120 @@ export function AccountRoute(handle: Handle) {
 	let messageTone: 'error' | 'info' = 'info'
 	let emailChangeMessage: string | null = null
 	let emailChangeTone: 'error' | 'info' = 'info'
+	let connectionsStatus: 'idle' | 'loading' | 'ready' | 'error' = 'idle'
+	let connectionsBusy = false
+	let connections: Array<AccountConnection> = []
+	let canDisconnect = true
+	let availableProviders: Array<AuthProviderInfo> = []
+	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
+	let consumedCallbackMessage = false
 	const loadLatch = createRouteLoadLatch()
+
+	function applyConnectionsPayload(payload: AccountConnectionsPayload) {
+		connections = payload.connections
+		canDisconnect = payload.canDisconnect
+		availableProviders = payload.availableProviders
+	}
+
+	async function loadConnections(signal: AbortSignal) {
+		try {
+			const response = await fetch(connectionsApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (signal.aborted) {
+				connectionsStatus = 'idle'
+				return
+			}
+			const payload = await readJson<AccountConnectionsPayload>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load connected accounts.')
+			}
+			applyConnectionsPayload(payload)
+			connectionsStatus = 'ready'
+			handle.update()
+		} catch (error) {
+			if (signal.aborted) {
+				connectionsStatus = 'idle'
+				return
+			}
+			connectionsStatus = 'error'
+			connectionsMessage = {
+				text:
+					error instanceof Error
+						? error.message
+						: 'Unable to load connected accounts.',
+				tone: 'error',
+			}
+			handle.update()
+		}
+	}
+
+	async function handleConnectProvider(providerId: string) {
+		connectionsBusy = true
+		connectionsMessage = null
+		handle.update()
+		try {
+			const errorMessage = await startSocialSignIn(providerId, null)
+			if (errorMessage) {
+				connectionsMessage = { text: errorMessage, tone: 'error' }
+				connectionsBusy = false
+			}
+			// On success the browser is navigating to the provider; keep the
+			// busy state until the page unloads.
+		} catch {
+			connectionsMessage = {
+				text: 'Network error. Please try again.',
+				tone: 'error',
+			}
+			connectionsBusy = false
+		}
+		handle.update()
+	}
+
+	async function handleDisconnectProvider(providerId: string) {
+		connectionsBusy = true
+		connectionsMessage = null
+		handle.update()
+		try {
+			const response = await fetch(connectionsApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ intent: 'disconnect', provider: providerId }),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountConnectionsPayload & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to disconnect the account.')
+			}
+			applyConnectionsPayload(payload)
+			connectionsMessage = {
+				text: `${providerLabels[providerId] ?? providerId} disconnected.`,
+				tone: 'info',
+			}
+		} catch (error) {
+			connectionsMessage = {
+				text:
+					error instanceof Error
+						? error.message
+						: 'Unable to disconnect the account.',
+				tone: 'error',
+			}
+		} finally {
+			connectionsBusy = false
+			handle.update()
+		}
+	}
 
 	async function loadAccountProfile(signal: AbortSignal) {
 		const href = readCurrentRouterHref(handle)
@@ -338,6 +496,17 @@ export function AccountRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadAccountProfile)
 		}
+		if (typeof document !== 'undefined') {
+			if (!consumedCallbackMessage) {
+				consumedCallbackMessage = true
+				connectionsMessage =
+					readConnectionCallbackMessage(currentHref) ?? connectionsMessage
+			}
+			if (connectionsStatus === 'idle') {
+				connectionsStatus = 'loading'
+				handle.queueTask(loadConnections)
+			}
+		}
 		const isSaving = saveStatus === 'saving'
 		const isSendingEmailChange = emailChangeStatus === 'sending'
 		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
@@ -542,6 +711,127 @@ export function AccountRoute(handle: Handle) {
 								</a>
 							</div>
 						</section>
+						<section mix={css(cardCss)} aria-label="Connected accounts">
+							<h2 mix={css(cardTitleCss)}>Connected accounts</h2>
+							<p mix={css(descriptionCss)}>
+								Sign in with GitHub, Google, or X by connecting them to this
+								account. Connections with the same verified email also link
+								automatically at sign-in.
+							</p>
+							{connectionsMessage ? (
+								<p
+									role="status"
+									mix={css({
+										color:
+											connectionsMessage.tone === 'error'
+												? colors.error
+												: colors.text,
+										margin: 0,
+									})}
+								>
+									{connectionsMessage.text}
+								</p>
+							) : null}
+							{connectionsStatus === 'loading' ? (
+								<p mix={css({ color: colors.textMuted, margin: 0 })}>
+									Loading connected accounts…
+								</p>
+							) : null}
+							{connectionsStatus === 'ready' ? (
+								<div mix={css({ display: 'grid', gap: spacing.md })}>
+									{connections.length > 0 ? (
+										<ul
+											mix={css({
+												listStyle: 'none',
+												padding: 0,
+												margin: 0,
+												display: 'grid',
+												gap: spacing.md,
+											})}
+										>
+											{connections.map((connection) => (
+												<li
+													key={connection.provider}
+													mix={css({
+														display: 'flex',
+														justifyContent: 'space-between',
+														alignItems: 'center',
+														gap: spacing.md,
+														flexWrap: 'wrap',
+													})}
+												>
+													<span mix={css({ display: 'grid', gap: spacing.xs })}>
+														<span
+															mix={css({
+																fontWeight: typography.fontWeight.medium,
+																color: colors.text,
+															})}
+														>
+															{connection.label}
+														</span>
+														<span
+															mix={css({
+																color: colors.textMuted,
+																fontSize: typography.fontSize.sm,
+															})}
+														>
+															{connection.displayName
+																? `Connected as ${connection.displayName}`
+																: 'Connected'}
+														</span>
+													</span>
+													<button
+														type="button"
+														disabled={connectionsBusy || !canDisconnect}
+														title={
+															canDisconnect
+																? undefined
+																: 'This connection is your only way to sign in. Set a password or register a passkey first.'
+														}
+														mix={[
+															css(dangerButtonCss),
+															on('click', () =>
+																handleDisconnectProvider(connection.provider),
+															),
+														]}
+													>
+														Disconnect
+													</button>
+												</li>
+											))}
+										</ul>
+									) : (
+										<p mix={css({ color: colors.textMuted, margin: 0 })}>
+											No accounts connected yet.
+										</p>
+									)}
+									{availableProviders.length > 0 ? (
+										<div
+											mix={css({
+												display: 'flex',
+												gap: spacing.md,
+												flexWrap: 'wrap',
+											})}
+										>
+											{availableProviders.map((provider) => (
+												<button
+													type="button"
+													disabled={connectionsBusy}
+													mix={[
+														css(secondaryButtonCss),
+														on('click', () =>
+															handleConnectProvider(provider.id),
+														),
+													]}
+												>
+													Connect {provider.label}
+												</button>
+											))}
+										</div>
+									) : null}
+								</div>
+							) : null}
+						</section>
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Secret management</h2>
 							<p mix={css(descriptionCss)}>
@@ -637,3 +927,5 @@ export function AccountRoute(handle: Handle) {
 }
 
 const primaryButtonCss = getPrimaryButtonCss()
+const secondaryButtonCss = getSecondaryButtonCss()
+const dangerButtonCss = getDangerButtonCss()

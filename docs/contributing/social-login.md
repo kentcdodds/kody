@@ -12,19 +12,33 @@ persisted; the token is used once per login to fetch the profile.
 
 ## How the flow behaves
 
-Routes (see `packages/worker/src/app/handlers/auth-provider.ts`):
+Routes (see `packages/worker/src/app/handlers/auth-provider.ts` and
+`packages/worker/src/app/handlers/account-connections.ts`):
 
 - `GET /auth/providers.json` — enabled providers (drives the login buttons; a
   provider only appears when both its client id and secret env vars are set)
 - `POST /auth/:provider` — starts the flow (signed `kody_oauth_login` state
-  cookie with CSRF state + PKCE verifier, then a redirect to the provider)
+  cookie with CSRF state + PKCE verifier). With `Accept: application/json` it
+  returns `{ authorizeUrl }` for client-side navigation; otherwise it 302s.
 - `GET /auth/:provider/callback` — completes the flow
+- `GET/POST /account/connections.json` — signed-in connection management (list,
+  disconnect)
+
+The first-party UI always uses the JSON start mode: the CSP locks `form-action`
+and `connect-src` to `'self'`, so neither a form-POST redirect nor a
+fetch-followed redirect may leave the origin — the client fetches the start
+endpoint and performs a top-level navigation to the returned authorize URL
+itself.
 
 Callback resolution order:
 
-1. A known connection signs in its user (the two-factor gate applies exactly as
+1. A **signed-in** user gets the provider identity linked to their account
+   (`/account` has a "Connected accounts" card for this). A provider identity
+   already linked to a different user is a conflict error, never an account
+   switch; callback errors for signed-in users redirect to
+   `/account?oauthError=<code>`.
+2. A known connection signs in its user (the two-factor gate applies exactly as
    it does for password and passkey logins).
-2. A signed-in user gets the provider identity linked to their account.
 3. A **provider-verified** email matching an existing account links the identity
    and signs that account in (this also marks the account email verified, since
    the provider asserted ownership of the same address).
@@ -35,8 +49,10 @@ Callback resolution order:
 
 X frequently does not share an email (it requires the "Request email from users"
 app permission and a confirmed email), in which case only paths 1 and 2 work:
-sign in another way first, then use the X button while signed in to link the
-account.
+connect X from `/account` while signed in, then the X login button works.
+
+Disconnecting a provider from `/account` is refused when it is the account's
+only sign-in method (no usable password, no passkey, no other connection).
 
 ## Provider app setup
 

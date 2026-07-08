@@ -12,6 +12,11 @@ import {
 } from '#client/router-location.tsx'
 import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
+import {
+	fetchEnabledAuthProviders,
+	startSocialSignIn,
+	type AuthProviderInfo,
+} from '#client/social-sign-in.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -30,36 +35,6 @@ import {
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
-type AuthProviderInfo = { id: string; label: string }
-
-async function fetchEnabledAuthProviders(
-	signal?: AbortSignal,
-): Promise<Array<AuthProviderInfo>> {
-	try {
-		const response = await fetch('/auth/providers.json', {
-			headers: { Accept: 'application/json' },
-			signal,
-		})
-		const payload = await response.json().catch(() => null)
-		if (!response.ok || payload?.ok !== true) return []
-		const providers = Array.isArray(payload.providers) ? payload.providers : []
-		return providers.filter(
-			(provider: unknown): provider is AuthProviderInfo =>
-				typeof provider === 'object' &&
-				provider !== null &&
-				typeof (provider as AuthProviderInfo).id === 'string' &&
-				typeof (provider as AuthProviderInfo).label === 'string',
-		)
-	} catch {
-		return []
-	}
-}
-
-function buildProviderStartPath(providerId: string, redirectTo: string | null) {
-	return redirectTo
-		? `/auth/${providerId}?redirectTo=${encodeURIComponent(redirectTo)}`
-		: `/auth/${providerId}`
-}
 
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
@@ -203,6 +178,23 @@ export function LoginRoute(handle: Handle) {
 				}
 				window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
 			}
+		} catch {
+			setState('error', 'Network error. Please try again.')
+		}
+	}
+
+	async function handleProviderSignIn(providerId: string) {
+		setState('submitting')
+		try {
+			const errorMessage = await startSocialSignIn(
+				providerId,
+				getCurrentRedirectTo(handle),
+			)
+			if (errorMessage) {
+				setState('error', errorMessage)
+			}
+			// On success the browser is navigating to the provider; leave the
+			// submitting state in place.
 		} catch {
 			setState('error', 'Network error. Please try again.')
 		}
@@ -449,19 +441,16 @@ export function LoginRoute(handle: Handle) {
 							or
 						</p>
 						{authProviders.map((provider) => (
-							<form
-								method="post"
-								action={buildProviderStartPath(provider.id, redirectTo)}
-								mix={css({ display: 'grid' })}
+							<button
+								type="button"
+								disabled={isSubmitting}
+								mix={[
+									css(secondaryButtonCss),
+									on('click', () => handleProviderSignIn(provider.id)),
+								]}
 							>
-								<button
-									type="submit"
-									disabled={isSubmitting}
-									mix={css(secondaryButtonCss)}
-								>
-									Continue with {provider.label}
-								</button>
-							</form>
+								Continue with {provider.label}
+							</button>
 						))}
 					</div>
 				) : null}

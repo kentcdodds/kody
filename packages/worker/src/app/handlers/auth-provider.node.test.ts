@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test } from 'vitest'
-import { setAuthSessionSecret } from '#app/auth-session.ts'
+import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
+import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
 import {
 	createAuthProviderCallbackHandler,
 	createAuthProviderStartHandler,
@@ -461,6 +462,239 @@ test('callback rejects a state mismatch', async () => {
 	expect(callbackResponse.headers.get('Location')).toBe(
 		'/login?oauthError=state-mismatch&redirectTo=%2Fcommunity',
 	)
+})
+
+test('JSON start mode returns the authorize URL for client-side navigation', async () => {
+	const { db } = createMigratedDb()
+	const env = createAppEnv(db)
+
+	// The first-party UI fetches the start endpoint (Accept: json) and
+	// navigates itself because the CSP blocks form-POST and fetch-followed
+	// redirects to the provider origin.
+	const response = await runHandler(
+		createAuthProviderStartHandler(env),
+		new Request('http://example.com/auth/github?redirectTo=%2Fcommunity', {
+			method: 'POST',
+			headers: { Accept: 'application/json' },
+		}),
+		{ provider: 'github' },
+	)
+	expect(response.status).toBe(200)
+	const payload = (await response.json()) as {
+		ok: boolean
+		authorizeUrl: string
+	}
+	expect(payload.ok).toBe(true)
+	expect(payload.authorizeUrl).toContain(
+		'https://github.com/login/oauth/authorize',
+	)
+	expect(response.headers.get('Set-Cookie')).toContain('kody_oauth_login=')
+
+	const unknownProviderResponse = await runHandler(
+		createAuthProviderStartHandler(env),
+		new Request('http://example.com/auth/nope', {
+			method: 'POST',
+			headers: { Accept: 'application/json' },
+		}),
+		{ provider: 'nope' },
+	)
+	expect(unknownProviderResponse.status).toBe(400)
+	expect(await unknownProviderResponse.json()).toEqual({
+		ok: false,
+		code: 'unknown-provider',
+		error: 'That sign-in provider is not supported.',
+	})
+})
+
+test('signed-in users link and disconnect providers from their account', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, {
+		GITHUB_CLIENT_ID: 'MOCK_GITHUB_CLIENT_ID',
+		GITHUB_CLIENT_SECRET: 'MOCK_GITHUB_CLIENT_SECRET',
+	})
+	await seedUser(sqlite, {
+		id: 11,
+		email: 'linker@example.com',
+		username: 'linker',
+	})
+	const sessionCookiePair = getCookiePair(
+		await createAuthCookie(
+			{ id: '11', email: 'linker@example.com', rememberMe: false },
+			false,
+		),
+	)
+
+	// Linking: signed-in start + callback attaches the identity to the
+	// current account instead of creating or switching accounts.
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const callbackHandler = createAuthProviderCallbackHandler(env)
+	const linkResponse = await runHandler(
+		callbackHandler,
+		new Request(start.location, {
+			headers: { Cookie: `${start.stateCookie}; ${sessionCookiePair}` },
+		}),
+		{ provider: 'github' },
+	)
+	expect(linkResponse.status).toBe(302)
+	expect(linkResponse.headers.get('Location')).toBe(
+		'/account?oauthLinked=github',
+	)
+	const connection = sqlite
+		.prepare(
+			`SELECT user_id FROM oauth_connections WHERE provider_name = 'github'`,
+		)
+		.get() as { user_id: number }
+	expect(connection.user_id).toBe(11)
+
+	// Re-linking the same identity is a no-op success.
+	const secondStart = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const relinkResponse = await runHandler(
+		callbackHandler,
+		new Request(secondStart.location, {
+			headers: { Cookie: `${secondStart.stateCookie}; ${sessionCookiePair}` },
+		}),
+		{ provider: 'github' },
+	)
+	expect(relinkResponse.headers.get('Location')).toBe(
+		'/account?oauthLinked=github',
+	)
+
+	// The same provider identity linked to a different signed-in user is a
+	// conflict surfaced on the account page, never an account switch.
+	await seedUser(sqlite, {
+		id: 12,
+		email: 'other@example.com',
+		username: 'other-user',
+	})
+	const otherSessionCookiePair = getCookiePair(
+		await createAuthCookie(
+			{ id: '12', email: 'other@example.com', rememberMe: false },
+			false,
+		),
+	)
+	const conflictStart = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const conflictResponse = await runHandler(
+		callbackHandler,
+		new Request(conflictStart.location, {
+			headers: {
+				Cookie: `${conflictStart.stateCookie}; ${otherSessionCookiePair}`,
+			},
+		}),
+		{ provider: 'github' },
+	)
+	expect(conflictResponse.headers.get('Location')).toBe(
+		'/account?oauthError=connection-conflict',
+	)
+
+	// The connections API lists the link; disconnecting the only connection
+	// is allowed here because the seeded user has a usable password.
+	const connectionsHandler = createAccountConnectionsApiHandler(env)
+	const listResponse = await runHandler(
+		connectionsHandler,
+		new Request('http://example.com/account/connections.json', {
+			headers: { Cookie: sessionCookiePair, Accept: 'application/json' },
+		}),
+	)
+	const listPayload = (await listResponse.json()) as {
+		ok: boolean
+		connections: Array<{ provider: string; displayName: string | null }>
+		canDisconnect: boolean
+		availableProviders: Array<{ id: string }>
+	}
+	expect(listPayload.ok).toBe(true)
+	expect(listPayload.connections).toHaveLength(1)
+	expect(listPayload.connections[0]?.provider).toBe('github')
+	expect(listPayload.canDisconnect).toBe(true)
+	expect(listPayload.availableProviders.map((p) => p.id)).toEqual([
+		'google',
+		'x',
+	])
+
+	const disconnectResponse = await runHandler(
+		connectionsHandler,
+		new Request('http://example.com/account/connections.json', {
+			method: 'POST',
+			headers: {
+				Cookie: sessionCookiePair,
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ intent: 'disconnect', provider: 'github' }),
+		}),
+	)
+	const disconnectPayload = (await disconnectResponse.json()) as {
+		ok: boolean
+		connections: Array<unknown>
+	}
+	expect(disconnectPayload.ok).toBe(true)
+	expect(disconnectPayload.connections).toHaveLength(0)
+	expect(
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM oauth_connections`).get(),
+	).toEqual({ count: 0 })
+})
+
+test('disconnect is refused when the connection is the only sign-in method', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, {
+		GITHUB_CLIENT_ID: 'MOCK_GITHUB_CLIENT_ID',
+		GITHUB_CLIENT_SECRET: 'MOCK_GITHUB_CLIENT_SECRET',
+	})
+
+	// Create an account through mock social signup: it has no usable
+	// password, so its single connection must not be removable.
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const signupResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(start.location, { headers: { Cookie: start.stateCookie } }),
+		{ provider: 'github' },
+	)
+	const sessionCookiePair = (signupResponse.headers.getSetCookie() ?? [])
+		.map(getCookiePair)
+		.find((pair) => pair.startsWith('kody_session='))
+	expect(sessionCookiePair).toBeTruthy()
+
+	const connectionsHandler = createAccountConnectionsApiHandler(env)
+	const listResponse = await runHandler(
+		connectionsHandler,
+		new Request('http://example.com/account/connections.json', {
+			headers: { Cookie: sessionCookiePair ?? '', Accept: 'application/json' },
+		}),
+	)
+	const listPayload = (await listResponse.json()) as { canDisconnect: boolean }
+	expect(listPayload.canDisconnect).toBe(false)
+
+	const disconnectResponse = await runHandler(
+		connectionsHandler,
+		new Request('http://example.com/account/connections.json', {
+			method: 'POST',
+			headers: {
+				Cookie: sessionCookiePair ?? '',
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ intent: 'disconnect', provider: 'github' }),
+		}),
+	)
+	expect(disconnectResponse.status).toBe(400)
+	expect(
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM oauth_connections`).get(),
+	).toEqual({ count: 1 })
 })
 
 test('MOCK_ client ids run the whole flow in-worker without network access', async () => {

@@ -45,6 +45,7 @@ import {
 	createAccountPasskeysApiHandler,
 	createAccountPasskeysHandler,
 } from '#app/handlers/account-passkeys.ts'
+import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
 	createAccountTwoFactorApiHandler,
@@ -144,6 +145,8 @@ export function createAppRouter(env: Env) {
 				createAccountPackageInvocationTokensApiHandler(env),
 			accountPackageInvocationTokensApiPost:
 				createAccountPackageInvocationTokensApiHandler(env),
+			accountConnectionsApi: createAccountConnectionsApiHandler(env),
+			accountConnectionsApiPost: createAccountConnectionsApiHandler(env),
 			accountPasskeys: createAccountPasskeysHandler(env),
 			accountPasskeysApi: createAccountPasskeysApiHandler(env),
 			accountPasskeysApiPost: createAccountPasskeysApiHandler(env),
