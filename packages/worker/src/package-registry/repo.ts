@@ -213,16 +213,26 @@ export async function listSavedPackagesByUserId(
 	return (rows.results ?? []).map(mapSavedPackageRow)
 }
 
-export async function listAllSavedPackages(
+// Keyset-paged listing across all users, used by maintenance reindex so a
+// single query never loads the whole table. Pass the last row id of the
+// previous page (or null for the first page).
+export async function listSavedPackagesPage(
 	db: D1Database,
+	input: {
+		afterId: string | null
+		limit: number
+	},
 ): Promise<Array<SavedPackageRecord>> {
 	const rows = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
 				source_id, has_app, created_at, updated_at
 			FROM saved_packages
-			ORDER BY updated_at DESC`,
+			WHERE id > ?
+			ORDER BY id
+			LIMIT ?`,
 		)
+		.bind(input.afterId ?? '', input.limit)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapSavedPackageRow)
 }
