@@ -12,8 +12,7 @@ export function isRetryableD1LockError(error: unknown) {
 	return errorCauseChainIncludes(
 		error,
 		(message) =>
-			message.includes('SQLITE_BUSY') ||
-			message.includes('database is locked'),
+			message.includes('SQLITE_BUSY') || message.includes('database is locked'),
 	)
 }
 
