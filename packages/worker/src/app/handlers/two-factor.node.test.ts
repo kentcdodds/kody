@@ -486,6 +486,51 @@ test('disabling 2fa requires a valid current code', async () => {
 	expect(readVerificationRow(sqlite, '1')).toBeUndefined()
 })
 
+test('disabling 2fa also clears a pending re-setup', async () => {
+	const { sqlite, db } = createMigratedDb()
+	await seedPrimaryUser(sqlite)
+	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
+
+	await runHandler(
+		handler,
+		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
+	)
+	const activeRow = readVerificationRow(sqlite, '1')!
+	await runHandler(
+		handler,
+		await createTwoFactorApiRequest({
+			session,
+			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
+		}),
+	)
+	// Start a second setup while 2fa is active so both a `2fa` and a
+	// `2fa-verify` row exist, then disable.
+	await runHandler(
+		handler,
+		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
+	)
+	const rowCountBefore = sqlite
+		.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
+		.get() as { count: number }
+	expect(rowCountBefore.count).toBe(2)
+
+	const disableResponse = await runHandler(
+		handler,
+		await createTwoFactorApiRequest({
+			session,
+			body: {
+				intent: 'disable',
+				code: await generateCurrentCode(activeRow),
+			},
+		}),
+	)
+	expect(disableResponse.status).toBe(200)
+	const rowCountAfter = sqlite
+		.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
+		.get() as { count: number }
+	expect(rowCountAfter.count).toBe(0)
+})
+
 test('two-factor endpoints require authentication', async () => {
 	const { db } = createMigratedDb()
 	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))

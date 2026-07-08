@@ -135,7 +135,16 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 						})
 						return jsonResponse({ ok: false, error: 'Invalid code.' }, 400)
 					}
-					await confirmTwoFactorSetup(appEnv.APP_DB, user.userId)
+					const promoted = await confirmTwoFactorSetup(
+						appEnv.APP_DB,
+						user.userId,
+					)
+					if (!promoted) {
+						return jsonResponse(
+							{ ok: false, error: 'No two-factor setup is in progress.' },
+							400,
+						)
+					}
 					void logAuditEvent({
 						category: 'account',
 						action: 'two_factor_enable',

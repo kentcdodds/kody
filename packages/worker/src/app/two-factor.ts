@@ -123,11 +123,13 @@ export async function verifyTwoFactorCode(input: {
 
 /**
  * Promotes the pending `2fa-verify` row to the active `2fa` type in place so
- * the exact secret the user scanned stays the active secret.
+ * the exact secret the user scanned stays the active secret. Returns whether
+ * a pending row was actually promoted (false when the setup vanished, e.g.
+ * a concurrent cancel).
  */
 export async function confirmTwoFactorSetup(db: D1Database, userId: number) {
 	const target = getTwoFactorTarget(userId)
-	await db.batch([
+	const [, promotion] = await db.batch([
 		db
 			.prepare(`DELETE FROM verifications WHERE target = ? AND type = ?`)
 			.bind(target, twoFactorVerificationType),
@@ -137,6 +139,7 @@ export async function confirmTwoFactorSetup(db: D1Database, userId: number) {
 			)
 			.bind(twoFactorVerificationType, target, twoFactorSetupVerificationType),
 	])
+	return (promotion?.meta.changes ?? 0) > 0
 }
 
 export async function cancelTwoFactorSetup(db: D1Database, userId: number) {
@@ -147,8 +150,14 @@ export async function cancelTwoFactorSetup(db: D1Database, userId: number) {
 }
 
 export async function disableTwoFactor(db: D1Database, userId: number) {
+	// Also drop any pending setup so a stale scanned secret can't be
+	// re-activated later without going through the full setup flow.
 	await db
-		.prepare(`DELETE FROM verifications WHERE target = ? AND type = ?`)
-		.bind(getTwoFactorTarget(userId), twoFactorVerificationType)
+		.prepare(`DELETE FROM verifications WHERE target = ? AND type IN (?, ?)`)
+		.bind(
+			getTwoFactorTarget(userId),
+			twoFactorVerificationType,
+			twoFactorSetupVerificationType,
+		)
 		.run()
 }
