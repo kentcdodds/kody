@@ -13,7 +13,7 @@ export const valueSetCapability = defineDomainCapability(
 	{
 		name: 'value_set',
 		description:
-			'Create or update a readable persisted value for the signed-in user. Use this for non-sensitive configuration that generated UIs may need to read back later.',
+			'Create or update a readable persisted value for the signed-in user. Use this for non-sensitive configuration that package apps or workflows may need to read back later.',
 		keywords: ['value', 'config', 'persist', 'store', 'non-secret'],
 		readOnly: false,
 		idempotent: false,
@@ -23,7 +23,7 @@ export const valueSetCapability = defineDomainCapability(
 			value: z
 				.string()
 				.min(1)
-				.describe('Readable value to store for later generated UI access.'),
+				.describe('Readable value to store for later read-back.'),
 			description: z
 				.string()
 				.optional()

@@ -45,8 +45,8 @@ primitives:
     name: MCP endpoint (/mcp)
     summary:
       OAuth-protected MCP server with a deliberately compact tool surface
-      (search, execute, open_generated_ui, plus package/job/meta tools) hosted
-      in the MCP Durable Object.
+      (search and execute, plus package/job/meta tools) hosted in the MCP
+      Durable Object.
     code:
       - packages/worker/src/mcp/
     docs:
@@ -204,11 +204,11 @@ primitives:
     group: assistant
     name: Package apps
     summary:
-      Optional package-declared UI surfaces opened through open_generated_ui.
+      Optional package-declared UI surfaces hosted at the package app route.
     code:
       - packages/worker/src/package-runtime/package-app.ts
     docs:
-      - docs/contributing/mcp-apps-spec-notes.md
+      - docs/use/packages.md
 
   - id: package-services
     group: assistant

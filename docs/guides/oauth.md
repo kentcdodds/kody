@@ -92,10 +92,9 @@ routes) are for clients authenticating to Kody itself.
 
 ## When to use another guide
 
-| Need                                                        | Use                  |
-| ----------------------------------------------------------- | -------------------- |
-| API keys or PATs instead of OAuth                           | `connect_secret`     |
-| Custom browser UX or callback on a hosted package app route | `generated_ui_oauth` |
+| Need                              | Use              |
+| --------------------------------- | ---------------- |
+| API keys or PATs instead of OAuth | `connect_secret` |
 
 ## Agent checklist
 
@@ -114,7 +113,4 @@ passing smoke test:
 - build a package app when the integration needs a hosted UI
 - keep provider API calls in package-owned backend code
 - keep reusable automation in package exports
-- use `open_generated_ui({ kody_id })` to reopen a hosted package app
-
-Use `generated_ui_oauth` only when the package app itself must own the OAuth
-browser flow.
+- reopen a hosted package app through its hosted package URL

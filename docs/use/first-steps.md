@@ -1,8 +1,8 @@
 # First steps
 
-Kody exposes **search**, **execute**, and **open generated UI** as the main
-tools. The agent should **search first** to find the right capability, package,
-integration, value, or secret reference, then run work through **execute**.
+Kody exposes **search** and **execute** as the main tools. The agent should
+**search first** to find the right capability, package, integration, value, or
+secret reference, then run work through **execute**.
 
 ## Habits that help
 

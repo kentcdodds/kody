@@ -15,8 +15,6 @@
     "@epic-web/totp": "^4.0.1",
     "@kody-bot/connector-kit": "^2.0.0",
     "@kody-internal/shared": "file:../shared",
-    "@mcp-ui/server": "6.1.0",
-    "@modelcontextprotocol/ext-apps": "^1.2.2",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@remix-run/cookie": "^0.5.1",
     "@resvg/resvg-wasm": "^2.6.2",

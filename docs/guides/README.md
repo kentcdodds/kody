@@ -15,6 +15,5 @@ available `guide` ids).
 | [package-subscriptions.md](./package-subscriptions.md)                                   | Package subscription manifest shape, discovery, and email.message.received payload guidance                 |
 | [platform-friction.md](./platform-friction.md)                                           | Agent self-improvement loop for Kody capability, package, memory, and guide friction                        |
 | [oauth.md](./oauth.md)                                                                   | **Start here** for third-party OAuth (`/connect/oauth`, redirect URI, params)                               |
-| [generated-ui-oauth.md](./generated-ui-oauth.md)                                         | Edge case: OAuth in a hosted package app (`open_generated_ui` on a saved package)                           |
 | [account-secret-setup.md](./account-secret-setup.md)                                     | `/account/secrets/new` URL parameters and policies                                                          |
 | [account-package-invocation-token-setup.md](./account-package-invocation-token-setup.md) | `/account/package-invocation-tokens/new` URL parameters and bearer-token safety policy                      |

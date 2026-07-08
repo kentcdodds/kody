@@ -14,16 +14,15 @@ feature.
 ## Invariants for future agents (do not regress)
 
 Read this list before touching auth, routing, response construction, or the
-generated-UI / package-app surfaces:
+package-app surfaces:
 
 1. **First-party HTML keeps its security headers.** All trusted account/auth
    pages must go through `render()` (`packages/worker/src/app/render.ts`), which
    applies `packages/worker/src/app/security-headers.ts`. Never add
    `'unsafe-inline'` to the CSP `script-src`.
 2. **Untrusted surfaces stay off the strict CSP.** Hosted package apps
-   (`/@username/packages/*`) and the generated-UI runtime (`/mcp-apps/*`,
-   `/dev/generated-ui`) execute author-supplied HTML/JS and intentionally do not
-   use the first-party CSP. Do not "unify" the two.
+   (`/@username/packages/*`) execute author-supplied HTML/JS and intentionally
+   do not use the first-party CSP. Do not "unify" the two.
 3. **Developer-only routes fail closed.** Anything that runs attacker-authored
    content or aids debugging must be gated behind `isNonProductionRuntime`
    (`packages/worker/src/app/deployment-env.ts`) so it is unreachable in
@@ -60,17 +59,8 @@ generated-UI / package-app surfaces:
 - `Strict-Transport-Security` (ignored by browsers over plain HTTP, enforced
   over HTTPS).
 
-These headers are deliberately **not** applied to hosted package apps or the
-generated-UI runtime, which need their own looser policies to run
-author-authored code.
-
-## Generated-UI developer route is non-production only
-
-`GET /dev/generated-ui` serves the generated-UI runtime HTML entry for iframe
-testing. That runtime parses and executes HTML/JS delivered via `postMessage`,
-so exposing it in production would allow any site to frame it and run script on
-Kody's origin. The route in `packages/worker/src/index.ts` is gated behind
-`isNonProductionRuntime(env)` and returns `404` in production.
+These headers are deliberately **not** applied to hosted package apps, which
+need their own looser policies to run author-authored code.
 
 ## Auth rate limiting
 

@@ -11,9 +11,9 @@ import {
  * MCP E2E is intentionally tiny.
  *
  * Do not add cases here unless the thing being tested genuinely requires the
- * real MCP HTTP transport, OAuth flow, and package-app session wiring all at
- * once. Most capability behavior belongs in faster node/workers tests beside
- * the implementation. Keep this file to a couple of smoke journeys.
+ * real MCP HTTP transport and OAuth flow all at once. Most capability behavior
+ * belongs in faster node/workers tests beside the implementation. Keep this
+ * file to a couple of smoke journeys.
  */
 
 test('mcp endpoint requires OAuth bearer auth', async () => {
@@ -29,36 +29,6 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	expect(response.status).toBe(401)
 	const authenticateHeader = response.headers.get('WWW-Authenticate') ?? ''
 	expect(authenticateHeader).toMatch(/^Bearer\s+/)
-})
-
-test('authenticated MCP smoke returns same-origin inline UI sessions', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user, {
-		persistDir: database.persistDir,
-	})
-
-	const inlineUiResult = await mcpClient.client.callTool({
-		name: 'open_generated_ui',
-		arguments: {
-			code: '<main><h1>Storage Context</h1></main>',
-		},
-	})
-	const inlineUiStructured = (inlineUiResult as CallToolResult)
-		.structuredContent as
-		| {
-				renderSource?: string
-				appSession?: {
-					token?: string
-					endpoints?: { execute?: string }
-				} | null
-		  }
-		| undefined
-	const executeEndpoint = inlineUiStructured?.appSession?.endpoints?.execute
-	expect(inlineUiStructured?.appSession?.token).toBeTruthy()
-	expect(executeEndpoint).toBeTruthy()
-	const executeUrl = new URL(String(executeEndpoint), server.origin)
-	expect(executeUrl.origin).toBe(server.origin)
 })
 
 test('authenticated MCP search shows admin capabilities only to admin users', async () => {

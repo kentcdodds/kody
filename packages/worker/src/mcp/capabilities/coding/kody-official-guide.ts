@@ -46,12 +46,6 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'START HERE for third-party OAuth: hosted /connect/oauth, redirect URI, required query params, PKCE vs confidential, vs MCP OAuth.',
 	},
-	generated_ui_oauth: {
-		file: 'generated-ui-oauth.md',
-		title: 'Package app OAuth guide',
-		summary:
-			'Edge case: OAuth inside a hosted package app, kodyWidget callbacks, PKCE/exchange helpers—after reading guide `oauth`.',
-	},
 	connect_secret: {
 		file: 'account-secret-setup.md',
 		title: 'Account secret setup guide',
@@ -151,7 +145,6 @@ const guideFieldSchema = z
 			'`secret_backed_integration`: default non-OAuth recipe after bootstrap when the integration is driven by saved secrets.',
 			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
-			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
 			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
 			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
@@ -196,13 +189,10 @@ const allKeywords = [
 		'package app entry',
 		'worker fetch app',
 		'pkce',
-		'generated ui',
 		'hosted callback',
 		'redirect uri',
 		'provider registration',
 		'package_save',
-		'open_generated_ui',
-		'@kody/ui-utils',
 		'connect oauth',
 		'secret',
 		'api key',

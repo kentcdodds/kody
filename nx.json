@@ -14,9 +14,6 @@
 		"build-client-web": {
 			"cache": true
 		},
-		"build-mcp-apps": {
-			"cache": true
-		},
 		"test": {
 			"cache": true
 		},

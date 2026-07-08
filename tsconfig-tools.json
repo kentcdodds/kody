@@ -31,7 +31,6 @@
 		"./wrangler-env.ts",
 		"./cli.ts",
 		"./packages/worker/src/mcp/execute-modules/**/*.ts",
-		"./packages/worker/src/mcp/apps/claude-widget-domain.ts",
 		"./packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts",
 		"./packages/worker/src/mcp/test-process.ts",
 		"./packages/worker/src/test-support/msw-node-server.ts",

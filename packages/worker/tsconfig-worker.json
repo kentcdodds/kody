@@ -37,8 +37,6 @@
 		"../shared/src/**/*.ts",
 		"../mock-servers/**/*.ts",
 		"../../sentry/**/*.ts",
-		"./client/mcp-apps/**/*.d.ts",
-		"./client/mcp-apps/**/*.ts",
 		"./src/**/*.ts",
 		"./src/**/*.tsx",
 		"./client/styles/tokens.ts",

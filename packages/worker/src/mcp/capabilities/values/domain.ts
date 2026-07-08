@@ -8,8 +8,8 @@ import { valueSetCapability } from './value-set.ts'
 export const valuesDomain = defineDomain({
 	name: capabilityDomainNames.values,
 	description:
-		'Readable persisted values for user, app, or session scoped configuration that generated UIs may store and read back later.',
-	keywords: ['value', 'config', 'storage', 'non-secret', 'generated ui'],
+		'Readable persisted values for user, app, or session scoped configuration that package apps or workflows may store and read back later.',
+	keywords: ['value', 'config', 'storage', 'non-secret'],
 	capabilities: [
 		valueSetCapability,
 		valueGetCapability,
