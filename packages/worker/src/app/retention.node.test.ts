@@ -622,8 +622,14 @@ test('package invocation and workflow retention keeps boundary and active idempo
 			.run(id, id, completedAt, status, completedAt, completedAt, completedAt)
 	}
 
-	expect(await prunePackageInvocationsForRetention({ db, now })).toBe(2)
-	expect(await pruneWorkflowRunsForRetention({ db, now })).toBe(2)
+	expect(await prunePackageInvocationsForRetention({ db, now })).toEqual({
+		selected: 2,
+		deleted: 2,
+	})
+	expect(await pruneWorkflowRunsForRetention({ db, now })).toEqual({
+		selected: 2,
+		deleted: 2,
+	})
 
 	expect(idsForTable(sqlite, 'package_invocations')).toEqual([
 		'inv-boundary',
@@ -685,9 +691,18 @@ test('memory suppression, email delivery, and audit retention respect boundaries
 			.run(timestamp)
 	}
 
-	expect(await pruneMemorySuppressionsForRetention({ db, now })).toBe(1)
-	expect(await pruneEmailDeliveryEventsForRetention({ db, now })).toBe(1)
-	expect(await pruneAuditEventsForRetention({ db, now })).toBe(1)
+	expect(await pruneMemorySuppressionsForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
+	expect(await pruneEmailDeliveryEventsForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
+	expect(await pruneAuditEventsForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
 
 	const memories = sqlite
 		.prepare(
@@ -770,6 +785,7 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 0,
 		hasMore: false,
+		nextCursor: null,
 	})
 	expect(blobDelete).toHaveBeenCalledWith(['raw-mime/user-1/msg-old-blob'])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([
@@ -831,6 +847,153 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([])
 })
 
+test('email message retention cursor advances past skipped blob rows at the head', async () => {
+	const { sqlite, db } = createRetentionDb()
+	// The two oldest expired rows are blob-backed and unpassable without the
+	// EMAIL_BLOBS binding; the two plain expired rows behind them must still be
+	// pruned within the same run.
+	insertEmailMessage(sqlite, {
+		id: 'msg-blocked-a',
+		rawMimeKey: 'raw-mime/user-1/msg-blocked-a',
+		createdAt: daysAgo(emailMessageRetentionDays + 4),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-blocked-b',
+		rawMimeKey: 'raw-mime/user-1/msg-blocked-b',
+		createdAt: daysAgo(emailMessageRetentionDays + 3),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-plain-a',
+		createdAt: daysAgo(emailMessageRetentionDays + 2),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-plain-b',
+		createdAt: daysAgo(emailMessageRetentionDays + 1),
+	})
+
+	const first = await pruneUserEmailMessagesForRetention({
+		db,
+		now,
+		batchSize: 2,
+	})
+	// Full batch selected but nothing deleted: hasMore must stay true and the
+	// cursor must point past the skipped rows.
+	expect(first).toMatchObject({
+		deletedMessages: 0,
+		skippedMissingBlobBinding: 2,
+		hasMore: true,
+	})
+	expect(first.nextCursor).toEqual({
+		createdAt: daysAgo(emailMessageRetentionDays + 3),
+		id: 'msg-blocked-b',
+	})
+
+	const second = await pruneUserEmailMessagesForRetention({
+		db,
+		now,
+		batchSize: 2,
+		cursor: first.nextCursor,
+	})
+	expect(second).toMatchObject({
+		deletedMessages: 2,
+		skippedMissingBlobBinding: 0,
+		hasMore: true,
+	})
+	expect(idsForTable(sqlite, 'email_messages')).toEqual([
+		'msg-blocked-a',
+		'msg-blocked-b',
+	])
+
+	const third = await pruneUserEmailMessagesForRetention({
+		db,
+		now,
+		batchSize: 2,
+		cursor: second.nextCursor,
+	})
+	expect(third).toMatchObject({ deletedMessages: 0, hasMore: false })
+})
+
+test('retention run prunes expired plain emails behind a skipped blob-row head', async () => {
+	const { sqlite, db } = createRetentionDb()
+	// 251 blob-backed rows fill the first default-size batch and spill into the
+	// second; 5 plain expired rows sit behind them.
+	for (let index = 0; index < 251; index += 1) {
+		insertEmailMessage(sqlite, {
+			id: `msg-blob-${String(index).padStart(3, '0')}`,
+			rawMimeKey: `raw-mime/user-1/${index}`,
+			createdAt: new Date(
+				now.getTime() -
+					(emailMessageRetentionDays + 10) * 24 * 60 * 60 * 1000 +
+					index * 1000,
+			).toISOString(),
+		})
+	}
+	for (let index = 0; index < 5; index += 1) {
+		insertEmailMessage(sqlite, {
+			id: `msg-plain-${index}`,
+			createdAt: daysAgo(emailMessageRetentionDays + 1),
+		})
+	}
+	const env = {
+		APP_DB: db,
+		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+
+	// No EMAIL_BLOBS binding: every blob row is skipped, yet the run-level
+	// cursor advances past them so the plain rows in the second batch are
+	// still pruned within the same run.
+	const result = await pruneRetention({ env, now })
+
+	expect(result.emailMessages.deletedMessages).toBe(5)
+	expect(result.emailMessages.skippedMissingBlobBinding).toBe(251)
+	expect(result.batchesPerTable['email_messages']).toBe(2)
+	expect(idsForTable(sqlite, 'email_messages')).toHaveLength(251)
+	expect(idsForTable(sqlite, 'email_messages')).not.toContain('msg-plain-0')
+})
+
+test('retention prune reports selected separately from deleted when rows vanish mid-batch', async () => {
+	const { sqlite } = createRetentionDb()
+	const baseDb = createD1FromSqlite(sqlite)
+	// Simulate a racing writer deleting one selected row before the batch
+	// DELETE runs: selected stays at the full batch size so hasMore-style
+	// decisions keep looping instead of marking the table drained.
+	const dbWithVanishingRow = {
+		prepare(query: string) {
+			const prepared = baseDb.prepare(query)
+			if (!query.includes('DELETE FROM package_invocations')) return prepared
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = prepared.bind(...params)
+					return {
+						async run() {
+							sqlite
+								.prepare(`DELETE FROM package_invocations WHERE id = 'inv-0'`)
+								.run()
+							return bound.run()
+						},
+						all: bound.all,
+						first: bound.first,
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	for (let index = 0; index < 2; index += 1) {
+		insertPackageInvocation(sqlite, {
+			id: `inv-${index}`,
+			createdAt: daysAgo(120),
+		})
+	}
+
+	expect(
+		await prunePackageInvocationsForRetention({
+			db: dbWithVanishingRow,
+			now,
+			batchSize: 2,
+		}),
+	).toEqual({ selected: 2, deleted: 1 })
+})
+
 test('entitlement counter and usage rollup retention respect boundaries', async () => {
 	const { sqlite, db } = createRetentionDb()
 	const cutoffDay = daysAgo(entitlementDailyCounterRetentionDays).slice(0, 10)
@@ -858,8 +1021,14 @@ test('entitlement counter and usage rollup retention respect boundaries', async 
 			.run(month, now.toISOString())
 	}
 
-	expect(await pruneEntitlementDailyCountersForRetention({ db, now })).toBe(1)
-	expect(await pruneUsageRollupsForRetention({ db, now })).toBe(1)
+	expect(await pruneEntitlementDailyCountersForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
+	expect(await pruneUsageRollupsForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
 
 	const days = sqlite
 		.prepare(`SELECT day FROM entitlement_daily_counters ORDER BY day`)
@@ -1075,11 +1244,11 @@ test('retention pruning deletes only one configured batch per table invocation',
 
 	expect(
 		await prunePackageInvocationsForRetention({ db, now, batchSize: 2 }),
-	).toBe(2)
+	).toEqual({ selected: 2, deleted: 2 })
 	expect(idsForTable(sqlite, 'package_invocations')).toEqual(['inv-2'])
 	expect(
 		await prunePackageInvocationsForRetention({ db, now, batchSize: 2 }),
-	).toBe(1)
+	).toEqual({ selected: 1, deleted: 1 })
 	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
 })
 
@@ -1100,7 +1269,7 @@ test('retention row deletes chunk ids to stay within the D1 binding limit', asyn
 
 	expect(
 		await prunePackageInvocationsForRetention({ db, now, batchSize: 101 }),
-	).toBe(101)
+	).toEqual({ selected: 101, deleted: 101 })
 	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
 })
 

@@ -72,7 +72,11 @@ const intentHeadingPattern = /^##\s+intent\b/im
 export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 
 // Community search/browse never scores more than this many listings in
-// memory; candidates are pre-filtered and recency-ordered in SQL.
+// memory; candidates are pre-filtered and recency-ordered in SQL. This is
+// a deliberate bound: browse ranks within the newest candidates, so
+// listings older than the newest 500 are reachable through search (LIKE
+// pre-filter) but not through unfiltered browse pagination. Revisit with
+// a materialized score column if the catalog ever approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
 export function isCommunityListingSearchMatch(input: {

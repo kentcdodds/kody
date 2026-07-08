@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	type ExternalReconcileCursor,
 	listEntitySourcesForExternalReconcile,
 	updateEntitySource,
 } from '#worker/repo/entity-sources.ts'
@@ -73,11 +74,22 @@ export async function reconcileArtifactsPushes(input: {
 	// the next batch query; tracking seen ids prevents re-processing them in a
 	// tight loop within a single tick.
 	const seenSourceIds = new Set<string>()
+	let after: ExternalReconcileCursor | undefined
 	while (!result.budgetExhausted) {
 		const batch = await listEntitySourcesForExternalReconcile(
 			input.env.APP_DB,
-			{ before, limit: batchSize },
+			{ before, limit: batchSize, after },
 		)
+		const lastRow = batch.at(-1)
+		if (lastRow) {
+			// Advance the keyset past every fetched row so a head row whose
+			// `last_external_check_at` write keeps failing cannot pin the front
+			// of the stale ordering and starve the sources behind it.
+			after = {
+				staleOrderedAt: lastRow.last_external_check_at ?? lastRow.created_at,
+				id: lastRow.id,
+			}
+		}
 		const sources = batch.filter((source) => !seenSourceIds.has(source.id))
 		if (sources.length === 0) break
 		result.batches += 1

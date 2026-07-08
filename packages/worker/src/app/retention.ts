@@ -257,6 +257,29 @@ async function selectIds(input: {
 	return (results ?? []).map((row) => row[column] as IdValue)
 }
 
+/**
+ * Runs a batched select-then-delete and reports both counts. `selected` (not
+ * `deleted`) is what callers should feed into hasMore decisions: a full batch
+ * that deletes fewer rows (racing writers) must not mark a table drained.
+ */
+async function selectAndDeleteByIds(input: {
+	db: D1Database
+	sql: string
+	bindings: ReadonlyArray<string | number>
+	column?: string
+	table: string
+	idColumn: string
+}): Promise<{ selected: number; deleted: number }> {
+	const ids = await selectIds(input)
+	const deleted = await deleteByIds({
+		db: input.db,
+		table: input.table,
+		idColumn: input.idColumn,
+		ids,
+	})
+	return { selected: ids.length, deleted }
+}
+
 async function deleteByIds(input: {
 	db: D1Database
 	table: string
@@ -474,7 +497,7 @@ export async function prunePackageInvocationsForRetention(input: {
 		input.now ?? new Date(),
 		packageInvocationRetentionDays,
 	)
-	const ids = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
 		sql: `SELECT id
@@ -483,12 +506,8 @@ export async function prunePackageInvocationsForRetention(input: {
 				AND status != 'in_progress'
 			ORDER BY created_at ASC, id ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'package_invocations',
 		idColumn: 'id',
-		ids,
 	})
 }
 
@@ -499,7 +518,7 @@ export async function pruneMemorySuppressionsForRetention(input: {
 }) {
 	const now = input.now ?? new Date()
 	const cutoff = cutoffIso(now, memorySuppressionRetentionDays)
-	const rowIds = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		column: 'rowid',
 		bindings: [
@@ -513,12 +532,8 @@ export async function pruneMemorySuppressionsForRetention(input: {
 				AND last_seen_at < ?
 			ORDER BY last_seen_at ASC, rowid ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'mcp_memory_conversation_suppressions',
 		idColumn: 'rowid',
-		ids: rowIds,
 	})
 }
 
@@ -528,7 +543,7 @@ export async function pruneWorkflowRunsForRetention(input: {
 	batchSize?: number
 }) {
 	const cutoff = cutoffIso(input.now ?? new Date(), workflowRunRetentionDays)
-	const ids = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
 		sql: `SELECT id
@@ -537,12 +552,8 @@ export async function pruneWorkflowRunsForRetention(input: {
 				AND COALESCE(completed_at, updated_at, created_at) < ?
 			ORDER BY COALESCE(completed_at, updated_at, created_at) ASC, id ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'workflow_runs',
 		idColumn: 'id',
-		ids,
 	})
 }
 
@@ -658,7 +669,7 @@ export async function pruneEmailDeliveryEventsForRetention(input: {
 		input.now ?? new Date(),
 		emailDeliveryEventRetentionDays,
 	)
-	const ids = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		bindings: [
 			systemEmailOwnerId,
@@ -671,13 +682,21 @@ export async function pruneEmailDeliveryEventsForRetention(input: {
 				AND created_at < ?
 			ORDER BY created_at ASC, id ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'email_delivery_events',
 		idColumn: 'id',
-		ids,
 	})
+}
+
+/**
+ * Keyset cursor over (created_at, id) marking the last email message row
+ * examined (selected, not necessarily deleted). Threading it through batches
+ * within one run advances past rows skipped for blob reasons, so a blocked
+ * head cannot wedge the prune. Cross-run persistence is unnecessary: the next
+ * hourly run starts from the head and retries the skipped rows.
+ */
+export type EmailMessageRetentionCursor = {
+	createdAt: string
+	id: string
 }
 
 export type EmailMessageRetentionResult = {
@@ -688,6 +707,7 @@ export type EmailMessageRetentionResult = {
 	skippedMissingBlobBinding: number
 	blobDeleteErrors: number
 	hasMore: boolean
+	nextCursor: EmailMessageRetentionCursor | null
 }
 
 export async function pruneUserEmailMessagesForRetention(input: {
@@ -695,20 +715,34 @@ export async function pruneUserEmailMessagesForRetention(input: {
 	blobs?: Pick<R2Bucket, 'delete'> | undefined
 	now?: Date
 	batchSize?: number
+	cursor?: EmailMessageRetentionCursor | null
 }): Promise<EmailMessageRetentionResult> {
 	const cutoff = cutoffIso(input.now ?? new Date(), emailMessageRetentionDays)
 	const batchSize = input.batchSize ?? retentionDefaultBatchSize
+	const cursor = input.cursor ?? null
+	const cursorClause = cursor
+		? `AND (created_at > ? OR (created_at = ? AND id > ?))`
+		: ''
+	const cursorBindings = cursor
+		? [cursor.createdAt, cursor.createdAt, cursor.id]
+		: []
 	const { results } = await input.db
 		.prepare(
-			`SELECT id, user_id, raw_mime_key
+			`SELECT id, user_id, raw_mime_key, created_at
 			FROM email_messages
 			WHERE user_id != ?
 				AND created_at < ?
+				${cursorClause}
 			ORDER BY created_at ASC, id ASC
 			LIMIT ?`,
 		)
-		.bind(systemEmailOwnerId, cutoff, batchSize)
-		.all<{ id: string; user_id: string; raw_mime_key: string | null }>()
+		.bind(systemEmailOwnerId, cutoff, ...cursorBindings, batchSize)
+		.all<{
+			id: string
+			user_id: string
+			raw_mime_key: string | null
+			created_at: string
+		}>()
 	const rows = results ?? []
 	const result: EmailMessageRetentionResult = {
 		deletedMessages: 0,
@@ -718,6 +752,7 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 0,
 		hasMore: false,
+		nextCursor: null,
 	}
 	const rowsWithBlob = rows.filter((row) => row.raw_mime_key !== null)
 	let deletableRows = rows
@@ -782,12 +817,16 @@ export async function pruneUserEmailMessagesForRetention(input: {
 			.run()
 		result.deletedThreads += threadDelete.meta.changes ?? 0
 	}
-	// Skipped rows sit at the head of the oldest-first queue, so looping again
-	// in the same run would reselect them; wait for the next run instead.
-	result.hasMore =
-		rows.length >= batchSize &&
-		result.skippedMissingBlobBinding === 0 &&
-		result.blobDeleteErrors === 0
+	// hasMore is based on the selected count: a full batch means more eligible
+	// rows may follow even when some rows were skipped rather than deleted.
+	// nextCursor points past every examined row so the next batch in this run
+	// moves forward instead of reselecting the skipped head.
+	const lastRow = rows.at(-1)
+	result.hasMore = rows.length >= batchSize
+	result.nextCursor =
+		result.hasMore && lastRow
+			? { createdAt: lastRow.created_at, id: lastRow.id }
+			: null
 	return result
 }
 
@@ -800,7 +839,7 @@ export async function pruneEntitlementDailyCountersForRetention(input: {
 		input.now ?? new Date(),
 		entitlementDailyCounterRetentionDays,
 	).slice(0, 'YYYY-MM-DD'.length)
-	const rowIds = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		column: 'rowid',
 		bindings: [cutoffDay, input.batchSize ?? retentionDefaultBatchSize],
@@ -809,12 +848,8 @@ export async function pruneEntitlementDailyCountersForRetention(input: {
 			WHERE day < ?
 			ORDER BY day ASC, rowid ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'entitlement_daily_counters',
 		idColumn: 'rowid',
-		ids: rowIds,
 	})
 }
 
@@ -827,7 +862,7 @@ export async function pruneUsageRollupsForRetention(input: {
 		input.now ?? new Date(),
 		usageRollupRetentionMonths,
 	)
-	const rowIds = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		column: 'rowid',
 		bindings: [oldestKeptMonth, input.batchSize ?? retentionDefaultBatchSize],
@@ -836,12 +871,8 @@ export async function pruneUsageRollupsForRetention(input: {
 			WHERE month < ?
 			ORDER BY month ASC, rowid ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'usage_rollups',
 		idColumn: 'rowid',
-		ids: rowIds,
 	})
 }
 
@@ -851,7 +882,7 @@ export async function pruneAuditEventsForRetention(input: {
 	batchSize?: number
 }) {
 	const cutoff = cutoffIso(input.now ?? new Date(), auditEventRetentionDays)
-	const ids = await selectIds({
+	return selectAndDeleteByIds({
 		db: input.db,
 		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
 		sql: `SELECT id
@@ -859,12 +890,8 @@ export async function pruneAuditEventsForRetention(input: {
 			WHERE timestamp < ?
 			ORDER BY timestamp ASC, id ASC
 			LIMIT ?`,
-	})
-	return deleteByIds({
-		db: input.db,
 		table: 'audit_events',
 		idColumn: 'id',
-		ids,
 	})
 }
 
@@ -882,6 +909,9 @@ export async function pruneRetention(input: {
 	const startedAtMs = Date.now()
 	const db = input.env.APP_DB
 	const emailBlobs = input.env.EMAIL_BLOBS
+	// Per-run keyset cursor for the email prune; advances past rows skipped
+	// for blob reasons so a blocked head cannot wedge later batches.
+	let emailMessagesCursor: EmailMessageRetentionCursor | null = null
 	const result: RetentionPruneResult = {
 		runtimeRuns: { deletedRuns: 0, deletedLogs: 0, deletedOrphanLogs: 0 },
 		packageInvocations: 0,
@@ -910,15 +940,17 @@ export async function pruneRetention(input: {
 	}
 	const countTask = (
 		table: string,
-		prune: () => Promise<number>,
-		assign: (count: number) => void,
+		prune: () => Promise<{ selected: number; deleted: number }>,
+		assign: (deleted: number) => void,
 	) => ({
 		table,
 		done: false,
 		run: async () => {
-			const count = await prune()
-			assign(count)
-			return count >= retentionDefaultBatchSize
+			const batch = await prune()
+			assign(batch.deleted)
+			// hasMore keys off the selected count so a full batch that deleted
+			// fewer rows (racing writers) does not mark the table drained early.
+			return batch.selected >= retentionDefaultBatchSize
 		},
 	})
 	const tasks: Array<{
@@ -989,6 +1021,7 @@ export async function pruneRetention(input: {
 					db,
 					blobs: emailBlobs,
 					now,
+					cursor: emailMessagesCursor,
 				})
 				result.emailMessages.deletedMessages += batch.deletedMessages
 				result.emailMessages.deletedAttachments += batch.deletedAttachments
@@ -997,6 +1030,7 @@ export async function pruneRetention(input: {
 				result.emailMessages.skippedMissingBlobBinding +=
 					batch.skippedMissingBlobBinding
 				result.emailMessages.blobDeleteErrors += batch.blobDeleteErrors
+				emailMessagesCursor = batch.nextCursor
 				return batch.hasMore
 			},
 		},

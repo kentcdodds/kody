@@ -448,6 +448,85 @@ test('system email retention skips blob-backed rows when the blobs binding is mi
 	expect(cleanup.deletedMessages).toBe(1)
 })
 
+test('system email retention advances past skipped blob rows at the head of a batch', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-07-06T12:00:00.000Z')
+	const oldMs =
+		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000
+	// A full batch of blob-backed rows sits at the head of the newest-first
+	// expired ordering; the plain rows behind it are even older.
+	const blockedCount = systemEmailLimits.pruneBatchSize
+	const plainCount = 5
+	const rows: Array<{
+		id: string
+		rawMimeKey: string | null
+		createdAt: string
+	}> = []
+	for (let index = 0; index < blockedCount; index += 1) {
+		rows.push({
+			id: `head-blob-${String(index).padStart(3, '0')}`,
+			rawMimeKey: `email-raw:v1:${systemEmailOwnerId}/head-blob-${index}`,
+			createdAt: new Date(oldMs + index * 1000).toISOString(),
+		})
+	}
+	for (let index = 0; index < plainCount; index += 1) {
+		rows.push({
+			id: `head-plain-${index}`,
+			rawMimeKey: null,
+			createdAt: new Date(oldMs - 24 * 60 * 60 * 1000).toISOString(),
+		})
+	}
+	// 5 bindings per row must stay under D1's 100-variable statement limit.
+	const insertChunkSize = 18
+	for (let start = 0; start < rows.length; start += insertChunkSize) {
+		const chunk = rows.slice(start, start + insertChunkSize)
+		const values = chunk
+			.map(
+				() => `(?, 'inbound', ?, 'a@example.net', 'Head', 'stored', ?, ?, ?)`,
+			)
+			.join(', ')
+		const bindings = chunk.flatMap((row) => [
+			row.id,
+			systemEmailOwnerId,
+			row.rawMimeKey,
+			row.createdAt,
+			row.createdAt,
+		])
+		await env.APP_DB.prepare(
+			`INSERT INTO email_messages (
+				id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
+			) VALUES ${values}`,
+		)
+			.bind(...bindings)
+			.run()
+	}
+
+	// No blobs binding: the whole first batch is skipped, but the keyset
+	// cursor advances so the plain rows in the next batch are still pruned
+	// within the same run.
+	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
+
+	expect(result.skippedMissingBlobBinding).toBe(blockedCount)
+	expect(result.deletedMessages).toBe(plainCount)
+	const remainingPlain = await env.APP_DB.prepare(
+		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-plain-%'`,
+	).first<{ count: number }>()
+	expect(Number(remainingPlain?.count ?? -1)).toBe(0)
+	const remainingBlob = await env.APP_DB.prepare(
+		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-blob-%'`,
+	).first<{ count: number }>()
+	expect(Number(remainingBlob?.count ?? -1)).toBe(blockedCount)
+
+	// Clean up the skipped rows with a working binding (deleting absent R2
+	// keys is a no-op) so they do not leak into other tests.
+	const cleanup = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		now,
+	})
+	expect(cleanup.deletedMessages).toBe(blockedCount)
+})
+
 test('system email retention drains delivery-event backlogs larger than one batch', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')

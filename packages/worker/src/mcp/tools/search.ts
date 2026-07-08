@@ -210,6 +210,11 @@ export type BuildSavedPackageSearchRowsResult = {
  * fields (exports, jobs, README) stay empty until a row is hydrated for a
  * top-ranked match.
  */
+// Ranking works on this lean D1 projection so broad searches never load
+// full package source per package. Export/job/action recall is preserved
+// online by the package vectors (built from the full document at publish)
+// and by hydrating the top matches; the offline lexical path ranks on
+// name/description/tags/searchText only.
 function buildLeanPackageSearchProjection(
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number],
 ): PackageSearchProjection {

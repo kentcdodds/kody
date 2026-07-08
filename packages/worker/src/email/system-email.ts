@@ -185,9 +185,20 @@ export async function countStoredSystemEmailMessages(input: {
 	return Number(row?.count ?? 0)
 }
 
-async function listSystemEmailMessageIds(input: {
+type SystemEmailMessageCursor = {
+	createdAt: string
+	id: string
+}
+
+async function listSystemEmailMessages(input: {
 	db: D1Database
 	before?: string
+	/**
+	 * Keyset cursor (last row examined in the newest-first ordering) so batches
+	 * within one prune run advance past rows skipped for blob reasons instead
+	 * of reselecting the same blocked head.
+	 */
+	cursor?: SystemEmailMessageCursor | null
 	offset?: number
 	limit: number
 }) {
@@ -197,18 +208,26 @@ async function listSystemEmailMessageIds(input: {
 		where.push(`created_at < ?`)
 		bindings.push(input.before)
 	}
+	if (input.cursor) {
+		where.push(`(created_at < ? OR (created_at = ? AND id < ?))`)
+		bindings.push(
+			input.cursor.createdAt,
+			input.cursor.createdAt,
+			input.cursor.id,
+		)
+	}
 	const offset = input.offset ?? 0
 	const result = await input.db
 		.prepare(
-			`SELECT id
+			`SELECT id, created_at
 			FROM email_messages
 			WHERE ${where.join(' AND ')}
 			ORDER BY created_at DESC, id DESC
 			LIMIT ? OFFSET ?`,
 		)
 		.bind(...bindings, input.limit, offset)
-		.all<{ id: string }>()
-	return (result.results ?? []).map((row) => row.id)
+		.all<{ id: string; created_at: string }>()
+	return result.results ?? []
 }
 
 async function deleteSystemEmailMessagesByIds(input: {
@@ -341,20 +360,36 @@ export async function pruneSystemEmailRetention(input: {
 		result.blobDeleteErrors += batch.blobDeleteErrors
 	}
 
-	const oldMessageIds = await listSystemEmailMessageIds({
-		db: input.db,
-		before: cutoffIso,
-		limit: systemEmailLimits.pruneBatchSize,
-	})
-	addMessageDelete(
-		await deleteSystemEmailMessagesByIds({
+	// Age prune loops batches within the time budget. The keyset cursor marks
+	// the last row examined (not the last deleted), so rows skipped because
+	// their blob could not be deleted never block later expired rows in the
+	// same run; the next run retries the skipped rows from the head.
+	let ageCursor: SystemEmailMessageCursor | null = null
+	let selectedInBatch = 0
+	do {
+		const oldMessages = await listSystemEmailMessages({
 			db: input.db,
-			blobs: input.blobs,
-			messageIds: oldMessageIds,
-		}),
+			before: cutoffIso,
+			cursor: ageCursor,
+			limit: systemEmailLimits.pruneBatchSize,
+		})
+		selectedInBatch = oldMessages.length
+		const lastMessage = oldMessages.at(-1)
+		if (!lastMessage) break
+		ageCursor = { createdAt: lastMessage.created_at, id: lastMessage.id }
+		addMessageDelete(
+			await deleteSystemEmailMessagesByIds({
+				db: input.db,
+				blobs: input.blobs,
+				messageIds: oldMessages.map((message) => message.id),
+			}),
+		)
+	} while (
+		selectedInBatch >= systemEmailLimits.pruneBatchSize &&
+		Date.now() < deadlineMs
 	)
 
-	const overCapMessageIds = await listSystemEmailMessageIds({
+	const overCapMessages = await listSystemEmailMessages({
 		db: input.db,
 		offset: systemEmailLimits.maxStoredMessages,
 		limit: systemEmailLimits.pruneBatchSize,
@@ -363,7 +398,7 @@ export async function pruneSystemEmailRetention(input: {
 		await deleteSystemEmailMessagesByIds({
 			db: input.db,
 			blobs: input.blobs,
-			messageIds: overCapMessageIds,
+			messageIds: overCapMessages.map((message) => message.id),
 		}),
 	)
 

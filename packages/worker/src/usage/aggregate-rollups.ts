@@ -6,9 +6,13 @@
  * derived aggregate. `aggregateUsageRollups` recomputes the current UTC
  * month's rows from Analytics Engine via the SQL API and upserts them with
  * absolute values — an idempotent recompute, not an increment — so the hourly
- * cron can run any number of times without drift. Analytics Engine retention
- * (~90 days) always covers a full month, so a month-to-date recompute is
- * complete; rows for prior months already in D1 stay untouched.
+ * cron can run any number of times without drift. The recompute is
+ * authoritative for the current month: rows whose (user, metric) pair is
+ * absent from the Analytics Engine result are deleted, so stragglers from
+ * direct D1 upserts (pre-cutover writes, local-dev rows) cannot linger.
+ * Analytics Engine retention (~90 days) always covers a full month, so a
+ * month-to-date recompute is complete; rows for prior months already in D1
+ * stay untouched.
  *
  * In local dev and tests (no `USAGE_EVENTS` binding or Cloudflare REST
  * credentials) this is a no-op: `recordUsage` upserts `usage_rollups`
@@ -40,7 +44,13 @@ export type UsageAggregationEnv = {
 
 export type UsageAggregationResult =
 	| { skipped: true; reason: string }
-	| { skipped: false; month: string; upsertedRows: number; users: number }
+	| {
+			skipped: false
+			month: string
+			upsertedRows: number
+			deletedRows: number
+			users: number
+	  }
 
 /**
  * The Analytics Engine SQL API dataset (= table name) written by the
@@ -55,6 +65,13 @@ export function resolveUsageEventsDataset(env: {
 }
 
 const upsertBatchSize = 50
+
+/**
+ * Pairs per DELETE statement. Each pair binds two parameters plus one for
+ * the month, so 49 pairs keeps every statement under D1's ~100
+ * bind-parameter cap.
+ */
+const deleteStatementPairLimit = 49
 
 /**
  * Upper bound for one Analytics Engine SQL API round trip so a hung API can
@@ -167,11 +184,62 @@ function toCount(value: number | string) {
 	return Number.isFinite(parsed) ? Math.round(parsed) : 0
 }
 
+function rollupPairKey(row: { user_id: string; metric: string }) {
+	return `${row.user_id}\n${row.metric}`
+}
+
+/**
+ * Delete current-month rollup rows whose (user_id, metric) pair is absent
+ * from the Analytics Engine result, making the recompute authoritative for
+ * the month (stragglers from direct D1 upserts — a pre-cutover write, a row
+ * whose Analytics Engine data point was lost — would otherwise linger
+ * forever). A NOT IN over the full pair set cannot be chunked without
+ * deleting everything, so stale pairs are computed in memory from one SELECT
+ * and deleted in parameter-capped chunks. Rows for other months are never
+ * touched.
+ */
+async function deleteStaleCurrentMonthRollups(input: {
+	db: D1Database
+	month: string
+	presentPairs: ReadonlySet<string>
+}) {
+	const { results } = await input.db
+		.prepare(`SELECT user_id, metric FROM usage_rollups WHERE month = ?`)
+		.bind(input.month)
+		.all<{ user_id: string; metric: string }>()
+	const stalePairs = (results ?? []).filter(
+		(row) => !input.presentPairs.has(rollupPairKey(row)),
+	)
+	let deleted = 0
+	for (
+		let index = 0;
+		index < stalePairs.length;
+		index += deleteStatementPairLimit
+	) {
+		const chunk = stalePairs.slice(index, index + deleteStatementPairLimit)
+		const pairPredicates = chunk
+			.map(() => '(user_id = ? AND metric = ?)')
+			.join(' OR ')
+		const result = await input.db
+			.prepare(
+				`DELETE FROM usage_rollups WHERE month = ? AND (${pairPredicates})`,
+			)
+			.bind(
+				input.month,
+				...chunk.flatMap((pair) => [pair.user_id, pair.metric]),
+			)
+			.run()
+		deleted += result.meta.changes ?? 0
+	}
+	return deleted
+}
+
 /**
  * Recompute the current UTC month's `usage_rollups` rows from Analytics
- * Engine and upsert them into D1 with absolute values. No-op (with a debug
- * log) when the Analytics Engine binding or the Cloudflare REST credentials
- * are unavailable.
+ * Engine: upsert absolute values for every (user, metric) pair in the result
+ * and delete current-month rows absent from it. No-op (with a debug log)
+ * when the Analytics Engine binding or the Cloudflare REST credentials are
+ * unavailable.
  */
 export async function aggregateUsageRollups(
 	env: UsageAggregationEnv,
@@ -200,32 +268,35 @@ export async function aggregateUsageRollups(
 	})
 
 	const updatedAt = now.toISOString()
-	const statements = rows
-		.filter((row) => row.user_id && row.metric)
-		.map((row) =>
-			env.APP_DB.prepare(usageRollupAbsoluteUpsertStatement).bind(
-				row.user_id,
-				row.metric,
-				month,
-				toCount(row.event_count),
-				toCount(row.error_count),
-				toCount(row.total_duration_ms),
-				toCount(row.total_cpu_ms),
-				toCount(row.total_bytes),
-				updatedAt,
-			),
-		)
-	const users = new Set(
-		rows.filter((row) => row.user_id && row.metric).map((row) => row.user_id),
-	).size
+	const presentRows = rows.filter((row) => row.user_id && row.metric)
+	const statements = presentRows.map((row) =>
+		env.APP_DB.prepare(usageRollupAbsoluteUpsertStatement).bind(
+			row.user_id,
+			row.metric,
+			month,
+			toCount(row.event_count),
+			toCount(row.error_count),
+			toCount(row.total_duration_ms),
+			toCount(row.total_cpu_ms),
+			toCount(row.total_bytes),
+			updatedAt,
+		),
+	)
+	const users = new Set(presentRows.map((row) => row.user_id)).size
 	for (let index = 0; index < statements.length; index += upsertBatchSize) {
 		await env.APP_DB.batch(statements.slice(index, index + upsertBatchSize))
 	}
+	const deletedRows = await deleteStaleCurrentMonthRollups({
+		db: env.APP_DB,
+		month,
+		presentPairs: new Set(presentRows.map(rollupPairKey)),
+	})
 
 	const result = {
 		skipped: false as const,
 		month,
 		upsertedRows: statements.length,
+		deletedRows,
 		users,
 	}
 	console.info('usage-rollup-aggregation', JSON.stringify(result))
