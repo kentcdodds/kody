@@ -58,9 +58,19 @@ export async function getUserPlan(
 /**
  * Per-isolate cache of stable user id → account email. Cache hits are
  * validated against the stored stable id and deleted entries fall back to a
- * fresh scan.
+ * fresh scan. Bounded so long-lived isolates cannot grow it without limit;
+ * the oldest insertion is evicted first.
  */
 const stableUserIdEmailCache = new Map<string, string>()
+const stableUserIdEmailCacheMaxEntries = 256
+
+function cacheStableUserIdEmail(stableUserId: string, email: string) {
+	if (stableUserIdEmailCache.size >= stableUserIdEmailCacheMaxEntries) {
+		const oldestKey = stableUserIdEmailCache.keys().next().value
+		if (oldestKey !== undefined) stableUserIdEmailCache.delete(oldestKey)
+	}
+	stableUserIdEmailCache.set(stableUserId, email)
+}
 
 export type StableUserAccount = {
 	email: string
@@ -71,11 +81,14 @@ export type StableUserAccount = {
 
 /**
  * Reverse-resolve a stable MCP userId back to the account email, plan, and
- * verified-email state. Stored stable ids are queried directly; legacy rows
- * without one still fall back to the normalized-email hash.
- * Only call this on paths that genuinely have no caller context email
- * (for example inbound email routing); interactive surfaces already carry
- * the email.
+ * verified-email state. Stored stable ids are one indexed point read; legacy
+ * rows without one fall back to the scan in `findUserRowByStableUserId`,
+ * which hashes each email and writes the computed id back so the scan is
+ * paid at most once per row.
+ * Only call this on paths that genuinely have no caller context email (for
+ * example package-runtime contexts acting with only the hashed userId);
+ * inbound email routing resolves accounts via the indexed username lookup
+ * and interactive surfaces already carry the email.
  */
 export async function findUserAccountByStableUserId(
 	db: D1Database,
@@ -98,7 +111,11 @@ export async function findUserAccountByStableUserId(
 				plan: string | null
 				email_verified_at: string | null
 			}>()
-			.catch(async () => {
+			.catch(async (error: unknown) => {
+				// Only a schema missing the stable_user_id column downgrades to the
+				// legacy query; transient D1 failures must propagate, not silently
+				// change which lookup ran.
+				if (!isMissingStableUserIdColumnError(error)) throw error
 				const legacyRow = await db
 					.prepare(
 						`SELECT email, plan, email_verified_at
@@ -137,7 +154,7 @@ export async function findUserAccountByStableUserId(
 		select: `SELECT id, email, stable_user_id, plan, email_verified_at FROM users`,
 	})
 	if (!row) return null
-	stableUserIdEmailCache.set(trimmed, row.email)
+	cacheStableUserIdEmail(trimmed, row.email)
 	return {
 		email: row.email,
 		plan: parsePlanName(row.plan),

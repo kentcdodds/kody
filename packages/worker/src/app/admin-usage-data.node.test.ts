@@ -369,6 +369,80 @@ test('loadAdminUsageData shows email fallback limits for plan-less users', async
 	).toEqual(['email_receives_per_day'])
 })
 
+function createFakeKv() {
+	const store = new Map<string, string>()
+	const kv = {
+		async get(key: string, _type: 'json') {
+			const raw = store.get(key)
+			return raw === undefined ? null : JSON.parse(raw)
+		},
+		async put(key: string, value: string, _options?: unknown) {
+			store.set(key, value)
+		},
+		async delete(key: string) {
+			store.delete(key)
+		},
+	} as unknown as KVNamespace
+	return { kv, store }
+}
+
+test('loadAdminUsageData caches rollup reads in KV and serves repeat loads from cache', async () => {
+	const email = 'cached-usage@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	let rollupQueryCount = 0
+	const db = createAdminUsageTestDb({
+		users: [{ id: 1, username: 'cached', email, plan: null }],
+		usageRollups: [
+			usageRow({
+				user_id: usageUserId,
+				metric: 'execute',
+				month: '2026-07',
+				event_count: 7,
+			}),
+		],
+		resourceCounts: { [usageUserId]: {} },
+	})
+	const countingDb = new Proxy(db, {
+		get(target, property, receiver) {
+			if (property === 'prepare') {
+				return (query: string) => {
+					if (normalizeQuery(query).includes('from usage_rollups')) {
+						rollupQueryCount += 1
+					}
+					return target.prepare(query)
+				}
+			}
+			return Reflect.get(target, property, receiver)
+		},
+	})
+	const { kv, store } = createFakeKv()
+	const env = { APP_DB: countingDb, BUNDLE_ARTIFACTS_KV: kv } as Env
+	const now = new Date('2026-07-05T12:00:00.000Z')
+
+	const first = await loadAdminUsageData(
+		env,
+		'https://kody.local/admin/usage.json',
+		now,
+	)
+	expect(getEventCount(first.users[0], 'execute')).toBe(7)
+	const queriesAfterFirstLoad = rollupQueryCount
+	expect(queriesAfterFirstLoad).toBeGreaterThan(0)
+	expect(store.size).toBeGreaterThan(0)
+	for (const key of store.keys()) {
+		expect(key.startsWith('derived-cache:v1:usage-rollups:')).toBe(true)
+	}
+
+	const second = await loadAdminUsageData(
+		env,
+		'https://kody.local/admin/usage.json',
+		now,
+	)
+	expect(getEventCount(second.users[0], 'execute')).toBe(7)
+	expect(second.selectedUser?.monthUsage[0]?.month).toBe('2026-07')
+	// The repeat load is served from KV: no additional rollup queries.
+	expect(rollupQueryCount).toBe(queriesAfterFirstLoad)
+})
+
 test('loadAdminUsageData keeps current-month and month-over-month rollups on UTC month boundaries', async () => {
 	const email = 'month-boundary@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)

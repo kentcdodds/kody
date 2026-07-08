@@ -27,7 +27,11 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 		mockModule.buildKodyModuleBundle(...args),
 }))
 
-import { runRepoChecks } from './checks.ts'
+import {
+	repoChecksSourceMaxFiles,
+	repoChecksSourceMaxTotalBytes,
+	runRepoChecks,
+} from './checks.ts'
 
 type MockSnapshot = {
 	read: ReturnType<typeof vi.fn>
@@ -185,6 +189,71 @@ async function runPackageJobTypecheckChecks(
 
 	return { result, typeScriptFileSystem, getSemanticDiagnostics }
 }
+
+test('runRepoChecks fails with an actionable check result when the source root exceeds the file-count cap', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/too-many-files',
+				kodyId: 'too-many-files',
+				description: 'Exceeds the publish check file cap',
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+	])
+	for (let index = 0; index < repoChecksSourceMaxFiles; index += 1) {
+		files.set(`generated/file-${index}.txt`, 'x')
+	}
+
+	const result = await runChecksOnWorkspaceFiles(files)
+
+	expect(result.ok).toBe(false)
+	expect(result.sourceFiles).toEqual({})
+	expect(result.results).toEqual([
+		expect.objectContaining({ kind: 'manifest', ok: true }),
+		expect.objectContaining({
+			kind: 'bundle',
+			ok: false,
+			message: expect.stringContaining(
+				`${repoChecksSourceMaxFiles}-file publish check limit`,
+			),
+		}),
+	])
+})
+
+test('runRepoChecks fails with an actionable check result when the source root exceeds the total-byte cap', async () => {
+	const halfCapChunk = 'x'.repeat(repoChecksSourceMaxTotalBytes / 2)
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/too-many-bytes',
+				kodyId: 'too-many-bytes',
+				description: 'Exceeds the publish check byte cap',
+			}),
+		],
+		['src/index.ts', 'export const ready = true\n'],
+		['assets/blob-1.bin', halfCapChunk],
+		['assets/blob-2.bin', halfCapChunk],
+		['assets/blob-3.bin', halfCapChunk],
+	])
+
+	const result = await runChecksOnWorkspaceFiles(files)
+
+	expect(result.ok).toBe(false)
+	expect(result.sourceFiles).toEqual({})
+	expect(result.results).toEqual([
+		expect.objectContaining({ kind: 'manifest', ok: true }),
+		expect.objectContaining({
+			kind: 'bundle',
+			ok: false,
+			message: expect.stringContaining(
+				`${repoChecksSourceMaxTotalBytes}-byte (15 MiB) publish check limit`,
+			),
+		}),
+	])
+})
 
 test('runRepoChecks keeps non-code source files for publish snapshots while excluding git internals', async () => {
 	setupDefaultBundleMocks()

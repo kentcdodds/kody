@@ -4,11 +4,18 @@
  * One event schema covers every metered chokepoint (execute runs, package
  * export invocations, job runs, workflow runs, package service runtime,
  * realtime websocket sessions, gateway fetches, email sends and receives).
- * Events are written to two sinks:
  *
- * - Workers Analytics Engine (`USAGE_EVENTS`) for high-cardinality analysis.
- * - The D1 `usage_rollups` table (per-user, per-metric, per-month counters)
- *   which future quota enforcement can read cheaply.
+ * The write path depends on the environment:
+ *
+ * - When the Workers Analytics Engine binding (`USAGE_EVENTS`) is present
+ *   (production/preview), the event is written **only** to Analytics Engine.
+ *   The D1 `usage_rollups` table is then a derived aggregate, recomputed
+ *   hourly from Analytics Engine by
+ *   `packages/worker/src/usage/aggregate-rollups.ts` — a per-event D1 upsert
+ *   would serialize every metered request on D1's single writer.
+ * - When `USAGE_EVENTS` is absent (local dev, tests), the event is upserted
+ *   directly into `usage_rollups` so local admin pages and tests keep working
+ *   without Analytics Engine access.
  *
  * `recordUsage` never throws and never rejects; metering must not break the
  * paths it observes. In local dev and tests where a binding is missing it
@@ -71,14 +78,20 @@ ON CONFLICT (user_id, metric, month) DO UPDATE SET
 `.trim()
 
 /**
- * Record one usage event to Analytics Engine and the D1 rollup table.
+ * Record one usage event.
+ *
+ * With `USAGE_EVENTS` bound this is a single non-blocking `writeDataPoint`
+ * call; the D1 rollup is derived later by the hourly aggregation cron.
+ * Without it (local dev, tests) the event is upserted into `usage_rollups`
+ * directly.
  *
  * Guarantees:
  * - Never throws and never rejects: failures are logged at debug level.
  * - Each sink degrades independently when its binding is unavailable.
  *
- * Callers should `await` it (cheap: one `writeDataPoint` plus one D1 upsert)
- * or hand the promise to `ctx.waitUntil(...)` inside Durable Objects.
+ * Callers should `await` it (cheap: one `writeDataPoint`, or one D1 upsert in
+ * local dev) or hand the promise to `ctx.waitUntil(...)` inside Durable
+ * Objects.
  */
 export async function recordUsage(
 	env: UsageEnv,
@@ -90,7 +103,11 @@ export async function recordUsage(
 			return
 		}
 		const timestamp = event.timestamp ?? new Date().toISOString()
-		writeUsageDataPoint(env, event, timestamp)
+		if (env.USAGE_EVENTS) {
+			writeUsageDataPoint(env, event, timestamp)
+			return
+		}
+		console.debug('usage-event-local', JSON.stringify({ ...event, timestamp }))
 		await writeUsageRollup(env, event, timestamp)
 	} catch (error) {
 		console.warn('usage-event-record-failed', error)
@@ -102,10 +119,7 @@ function writeUsageDataPoint(
 	event: UsageEvent,
 	timestamp: string,
 ) {
-	if (!env.USAGE_EVENTS) {
-		console.debug('usage-event-local', JSON.stringify({ ...event, timestamp }))
-		return
-	}
+	if (!env.USAGE_EVENTS) return
 	try {
 		env.USAGE_EVENTS.writeDataPoint({
 			indexes: [event.userId],

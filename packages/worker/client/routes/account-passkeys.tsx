@@ -3,6 +3,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -80,12 +81,11 @@ export function AccountPasskeysRoute(handle: Handle) {
 	let passkeys: Array<PasskeyListItem> = []
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 
 	async function loadPasskeys(signal: AbortSignal) {
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
-			lastLoadedHref = href
 			const response = await fetch(passkeysApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -104,6 +104,7 @@ export function AccountPasskeysRoute(handle: Handle) {
 			status = 'ready'
 			message = null
 			messageTone = 'info'
+			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -111,6 +112,7 @@ export function AccountPasskeysRoute(handle: Handle) {
 			message =
 				error instanceof Error ? error.message : 'Unable to load passkeys.'
 			messageTone = 'error'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -157,6 +159,10 @@ export function AccountPasskeysRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({ response: registrationResponse }),
 			})
+			if (verificationResponse.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const verificationPayload = await readJson<{
 				ok?: boolean
 				error?: string
@@ -241,7 +247,7 @@ export function AccountPasskeysRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		messageTone = 'info'
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		return true
 	}
 
@@ -250,15 +256,13 @@ export function AccountPasskeysRoute(handle: Handle) {
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadPasskeys)
 		}
 		const isBusy = actionStatus === 'busy'

@@ -9,7 +9,6 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#app/routes.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
 export const emailChangeRateLimitConfig = {
@@ -31,9 +30,8 @@ function getEmailValidationError(email: string) {
 	return null
 }
 
-export function createAccountEmailChangeHandler(appEnv: AppEnv) {
-	const env = appEnv as unknown as Env
-	const db = createDb(appEnv.APP_DB)
+export function createAccountEmailChangeHandler(env: Env) {
+	const db = createDb(env.APP_DB)
 
 	return {
 		middleware: [],
@@ -86,7 +84,7 @@ export function createAccountEmailChangeHandler(appEnv: AppEnv) {
 
 			const rateLimitKey = `email-change:user:${user.userId}`
 			const rateLimit = await checkRateLimit(
-				appEnv.APP_DB,
+				env.APP_DB,
 				rateLimitKey,
 				emailChangeRateLimitConfig,
 			)
@@ -158,16 +156,14 @@ export function createAccountEmailChangeHandler(appEnv: AppEnv) {
 
 			try {
 				await createEmailChangeVerification({
-					appEnv,
+					env,
 					userId: user.userId,
 					currentEmail: user.email,
 					newEmail,
 					requestUrl: url,
 				})
 			} catch (error) {
-				await releaseRateLimit(appEnv.APP_DB, rateLimitKey).catch(
-					() => undefined,
-				)
+				await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
 				const uniqueField = getUniqueConstraintField(error)
 				if (uniqueField === 'new_email') {
 					return jsonResponse(

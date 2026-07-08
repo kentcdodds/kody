@@ -35,6 +35,11 @@ export function usernameFromEmail(email: string) {
 	return truncated.length >= 3 ? truncated : `user-${truncated || 'new'}`
 }
 
+/** Human-facing fallback display name for accounts without a username. */
+export function displayNameFromEmail(email: string) {
+	return email.split('@')[0] || 'user'
+}
+
 export function getUsernameValidationError(username: string) {
 	const formatError = getUsernameFormatValidationError(username)
 	if (formatError) {

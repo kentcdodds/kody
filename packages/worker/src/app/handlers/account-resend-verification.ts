@@ -5,16 +5,13 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#app/routes.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 export const resendVerificationRateLimitConfig = {
 	maxRequests: 3,
 	windowSeconds: 15 * 60,
 }
 
-export function createAccountResendVerificationHandler(appEnv: AppEnv) {
-	const env = appEnv as unknown as Env
-
+export function createAccountResendVerificationHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url }) {
@@ -33,7 +30,7 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 
 			const rateLimitKey = `verification-resend:user:${user.userId}`
 			const rateLimit = await checkRateLimit(
-				appEnv.APP_DB,
+				env.APP_DB,
 				rateLimitKey,
 				resendVerificationRateLimitConfig,
 			)
@@ -63,7 +60,7 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 
 			try {
 				await createEmailVerification({
-					appEnv,
+					env,
 					userId: user.userId,
 					email: user.email,
 					requestUrl: url,
@@ -72,9 +69,7 @@ export function createAccountResendVerificationHandler(appEnv: AppEnv) {
 				console.error('Failed to resend verification email:', error)
 				// A failed send should not eat into the user's resend
 				// allowance; refund the slot so they can retry promptly.
-				await releaseRateLimit(appEnv.APP_DB, rateLimitKey).catch(
-					() => undefined,
-				)
+				await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
 				void logAuditEvent({
 					category: 'auth',
 					action: 'email_verification_resend',

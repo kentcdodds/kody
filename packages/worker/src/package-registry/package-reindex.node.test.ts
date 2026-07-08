@@ -5,7 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	embedTextsForVectorize: vi.fn(),
 	getCapabilityVectorIndex: vi.fn(),
 	isCapabilitySearchOffline: vi.fn(),
-	listAllSavedPackages: vi.fn(),
+	listSavedPackagesPage: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 }))
 
@@ -24,8 +24,8 @@ vi.mock('./embed.ts', () => ({
 }))
 
 vi.mock('./repo.ts', () => ({
-	listAllSavedPackages: (...args: Array<unknown>) =>
-		mockModule.listAllSavedPackages(...args),
+	listSavedPackagesPage: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesPage(...args),
 	savedPackageVectorId: (packageId: string) => `package_${packageId}`,
 }))
 
@@ -41,8 +41,24 @@ function resetMocks() {
 	mockModule.embedTextsForVectorize.mockReset()
 	mockModule.getCapabilityVectorIndex.mockReset()
 	mockModule.isCapabilitySearchOffline.mockReset()
-	mockModule.listAllSavedPackages.mockReset()
+	mockModule.listSavedPackagesPage.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
+}
+
+function buildSavedPackage(id: string) {
+	return {
+		id,
+		userId: 'user-1',
+		name: `@user/${id}`,
+		kodyId: id,
+		description: `Package ${id}`,
+		tags: [],
+		searchText: null,
+		sourceId: `source-${id}`,
+		hasApp: false,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
 }
 
 test('saved package reindex embeds full manifests with user-scoped metadata', async () => {
@@ -63,7 +79,7 @@ test('saved package reindex embeds full manifests with user-scoped metadata', as
 	}
 	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listAllSavedPackages.mockResolvedValue([
+	mockModule.listSavedPackagesPage.mockResolvedValue([
 		{
 			id: 'pkg-1',
 			userId: 'user-1',
@@ -129,7 +145,7 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 	}
 	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listAllSavedPackages.mockResolvedValue([
+	mockModule.listSavedPackagesPage.mockResolvedValue([
 		{
 			id: 'pkg-bad',
 			userId: 'user-1',
@@ -202,4 +218,51 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 	} finally {
 		consoleError.mockRestore()
 	}
+})
+
+test('saved package reindex walks keyset pages and merges the page results', async () => {
+	resetMocks()
+	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: { name: '@user/pkg' },
+	})
+	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
+	mockModule.embedTextsForVectorize.mockImplementation(
+		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
+	)
+	// The first page fills the requested limit, forcing a second page fetch.
+	mockModule.listSavedPackagesPage.mockImplementationOnce(
+		async (_db: unknown, input: { afterId: string | null; limit: number }) =>
+			Array.from({ length: input.limit }, (_, index) =>
+				buildSavedPackage(`pkg-${String(index).padStart(4, '0')}`),
+			),
+	)
+	mockModule.listSavedPackagesPage.mockImplementationOnce(async () => [
+		buildSavedPackage('pkg-last'),
+	])
+
+	await expect(
+		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
+			baseUrl: 'https://kody.example.com',
+		}),
+	).resolves.toEqual({ upserted: 201 })
+
+	expect(mockModule.listSavedPackagesPage).toHaveBeenCalledTimes(2)
+	expect(mockModule.listSavedPackagesPage).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		{ afterId: null, limit: 200 },
+	)
+	expect(mockModule.listSavedPackagesPage).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		{ afterId: 'pkg-0199', limit: 200 },
+	)
+	const upsertedIds = upsert.mock.calls.flatMap(([vectors]) =>
+		vectors.map((vector) => vector.id),
+	)
+	expect(upsertedIds).toHaveLength(201)
+	expect(new Set(upsertedIds).size).toBe(201)
 })

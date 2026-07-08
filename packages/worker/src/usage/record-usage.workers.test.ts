@@ -16,7 +16,7 @@ async function listRollups(db: D1Database, userId: string) {
 	return results
 }
 
-test('recordUsage accumulates per-user monthly rollups and writes analytics data points', async () => {
+test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is bound', async () => {
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const userA = `usage-user-a-${crypto.randomUUID()}`
 	const userB = `usage-user-b-${crypto.randomUUID()}`
@@ -29,6 +29,55 @@ test('recordUsage accumulates per-user monthly rollups and writes analytics data
 			},
 		},
 	}
+
+	await recordUsage(usageEnv, {
+		userId: userA,
+		eventType: 'execute',
+		durationMs: 120,
+		outcome: 'success',
+		timestamp: '2026-07-05T10:00:00.000Z',
+	})
+	await recordUsage(usageEnv, {
+		userId: userA,
+		eventType: 'execute',
+		entityId: 'pkg-1',
+		durationMs: 80,
+		bytes: 512,
+		outcome: 'error',
+		timestamp: '2026-07-05T11:00:00.000Z',
+	})
+	await recordUsage(usageEnv, {
+		userId: userB,
+		eventType: 'execute',
+		durationMs: 40,
+		outcome: 'success',
+		timestamp: '2026-07-05T12:00:00.000Z',
+	})
+
+	expect(dataPoints).toHaveLength(3)
+	expect(dataPoints[0]).toEqual({
+		indexes: [userA],
+		blobs: [userA, 'execute', '', 'success', '2026-07-05T10:00:00.000Z'],
+		doubles: [120, 0, 0],
+	})
+	expect(dataPoints[1]).toEqual({
+		indexes: [userA],
+		blobs: [userA, 'execute', 'pkg-1', 'error', '2026-07-05T11:00:00.000Z'],
+		doubles: [80, 0, 512],
+	})
+	expect(dataPoints[2]?.indexes).toEqual([userB])
+
+	// Production path: usage_rollups is a derived aggregate recomputed by the
+	// hourly aggregation cron, never written per event.
+	expect(await listRollups(env.APP_DB, userA)).toEqual([])
+	expect(await listRollups(env.APP_DB, userB)).toEqual([])
+})
+
+test('recordUsage accumulates per-user monthly rollups without USAGE_EVENTS (local dev)', async () => {
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const userA = `usage-user-a-${crypto.randomUUID()}`
+	const userB = `usage-user-b-${crypto.randomUUID()}`
+	const usageEnv = { APP_DB: env.APP_DB }
 
 	await recordUsage(usageEnv, {
 		userId: userA,
@@ -97,19 +146,6 @@ test('recordUsage accumulates per-user monthly rollups and writes analytics data
 			total_bytes: 0,
 		},
 	])
-
-	expect(dataPoints).toHaveLength(4)
-	expect(dataPoints[0]).toEqual({
-		indexes: [userA],
-		blobs: [userA, 'execute', '', 'success', '2026-07-05T10:00:00.000Z'],
-		doubles: [120, 0, 0],
-	})
-	expect(dataPoints[1]).toEqual({
-		indexes: [userA],
-		blobs: [userA, 'execute', 'pkg-1', 'error', '2026-07-05T11:00:00.000Z'],
-		doubles: [80, 0, 512],
-	})
-	expect(dataPoints[3]?.indexes).toEqual([userB])
 })
 
 test('recordUsage never throws when bindings are missing, sinks fail, or userId is empty', async () => {
@@ -121,7 +157,8 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 		recordUsage({}, { userId, eventType: 'execute', outcome: 'success' }),
 	).resolves.toBeUndefined()
 
-	// Analytics Engine sink throws; rollup must still be written.
+	// Analytics Engine sink throws: degrade, don't throw, and never fall back
+	// to the per-event D1 upsert (production must not write rollups inline).
 	await expect(
 		recordUsage(
 			{
@@ -142,18 +179,7 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 			},
 		),
 	).resolves.toBeUndefined()
-	expect(await listRollups(env.APP_DB, userId)).toEqual([
-		{
-			user_id: userId,
-			metric: 'job_run',
-			month: '2026-07',
-			event_count: 1,
-			error_count: 0,
-			total_duration_ms: 10,
-			total_cpu_ms: 0,
-			total_bytes: 0,
-		},
-	])
+	expect(await listRollups(env.APP_DB, userId)).toEqual([])
 
 	// Missing userId: skipped entirely, no row written.
 	await expect(

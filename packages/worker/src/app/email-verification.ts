@@ -4,7 +4,6 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
 import { findUserRowByStableUserId } from '#worker/user-id.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 const verificationTokenBytes = 32
 const verificationTokenExpiryMs = 24 * 60 * 60 * 1000
@@ -22,10 +21,10 @@ export async function hashVerificationToken(token: string) {
 }
 
 function getVerificationEmailConfig(input: {
-	appEnv: Pick<AppEnv, 'APP_BASE_URL'>
+	env: Pick<Env, 'APP_BASE_URL'>
 	requestUrl: string | URL
 }) {
-	const configuredBaseUrl = input.appEnv.APP_BASE_URL?.trim()
+	const configuredBaseUrl = input.env.APP_BASE_URL?.trim()
 	const appBaseUrl = new URL(configuredBaseUrl || input.requestUrl).origin
 	const fromEmail = `kody@${new URL(appBaseUrl).hostname}`
 	return { appBaseUrl, fromEmail }
@@ -55,12 +54,12 @@ function buildVerificationEmail(verificationUrl: string) {
 }
 
 export async function createEmailVerification(input: {
-	appEnv: AppEnv
+	env: Env
 	userId: number
 	email: string
 	requestUrl: string | URL
 }) {
-	const db = createDb(input.appEnv.APP_DB)
+	const db = createDb(input.env.APP_DB)
 	const token = generateVerificationToken()
 	const tokenHash = await hashVerificationToken(token)
 	const expiresAt = Date.now() + verificationTokenExpiryMs
@@ -75,7 +74,7 @@ export async function createEmailVerification(input: {
 		expires_at: expiresAt,
 	})
 	async function discardNewToken() {
-		await input.appEnv.APP_DB.prepare(
+		await input.env.APP_DB.prepare(
 			`DELETE FROM email_verifications WHERE token_hash = ?`,
 		)
 			.bind(tokenHash)
@@ -84,7 +83,7 @@ export async function createEmailVerification(input: {
 	}
 
 	const emailConfig = getVerificationEmailConfig({
-		appEnv: input.appEnv,
+		env: input.env,
 		requestUrl: input.requestUrl,
 	})
 	const verificationUrl = new URL('/verify-email', emailConfig.appBaseUrl)
@@ -95,9 +94,9 @@ export async function createEmailVerification(input: {
 	try {
 		sendResult = await sendCloudflareEmail(
 			{
-				accountId: input.appEnv.CLOUDFLARE_ACCOUNT_ID,
-				apiBaseUrl: input.appEnv.CLOUDFLARE_API_BASE_URL,
-				apiToken: input.appEnv.CLOUDFLARE_API_TOKEN,
+				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
+				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
+				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
 			{
 				to: input.email,
@@ -117,7 +116,7 @@ export async function createEmailVerification(input: {
 		// instead. Anywhere else an unsent verification email would strand
 		// the account with no way to verify, so fail hard and let callers
 		// roll back.
-		if (!(sendResult.skipped && isNonProductionRuntime(input.appEnv))) {
+		if (!(sendResult.skipped && isNonProductionRuntime(input.env))) {
 			await discardNewToken()
 			throw new Error(
 				sendResult.error ?? 'Verification email could not be sent.',
@@ -132,7 +131,7 @@ export async function createEmailVerification(input: {
 	// up and make callers (signup rollback) treat the send as failed —
 	// stale tokens expire on their own and are purged when any token
 	// verifies.
-	await input.appEnv.APP_DB.prepare(
+	await input.env.APP_DB.prepare(
 		`DELETE FROM email_verifications WHERE user_id = ? AND token_hash != ?`,
 	)
 		.bind(input.userId, tokenHash)

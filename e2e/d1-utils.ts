@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { hashVerificationToken } from '../packages/worker/src/app/email-verification.ts'
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
+import { buildRoleAssignmentSql, buildSeedUserSql } from '../tools/seed-sql.ts'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
@@ -56,25 +57,6 @@ export function executeE2eD1Command(sql: string) {
 	throw new Error(`Failed to execute E2E D1 command:\n${lastFailure}`)
 }
 
-function buildSeedUserSql(input: {
-	email: string
-	username: string
-	passwordHash: string
-}) {
-	return `
-INSERT INTO users (username, email, password_hash, email_verified_at)
-VALUES (${quoteSqlString(input.username)}, ${quoteSqlString(input.email)}, ${quoteSqlString(input.passwordHash)}, CURRENT_TIMESTAMP)
-ON CONFLICT(email) DO UPDATE SET
-  username = excluded.username,
-  password_hash = excluded.password_hash,
-  email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
-  updated_at = CURRENT_TIMESTAMP;
-INSERT OR IGNORE INTO user_roles (user_id, role_id)
-SELECT u.id, r.id
-FROM users u, roles r
-WHERE u.email = ${quoteSqlString(input.email)} AND r.name = 'user';`.trim()
-}
-
 export async function seedUserInE2eDatabase(input: {
 	email: string
 	username: string
@@ -91,12 +73,7 @@ export async function seedUserInE2eDatabase(input: {
 }
 
 export function assignRoleInE2eDatabase(email: string, role: string) {
-	const sql = `
-INSERT OR IGNORE INTO user_roles (user_id, role_id)
-SELECT u.id, r.id
-FROM users u, roles r
-WHERE u.email = ${quoteSqlString(email)} AND r.name = ${quoteSqlString(role)};`.trim()
-	executeE2eD1Command(sql)
+	executeE2eD1Command(buildRoleAssignmentSql({ email, role }))
 }
 
 export function clearAuthRateLimitsInE2eDatabase() {

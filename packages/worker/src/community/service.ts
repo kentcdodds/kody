@@ -35,7 +35,8 @@ import {
 	insertCommunityListing,
 	insertCommunityBan,
 	insertCommunityReport,
-	listAllCommunityListings,
+	extractCommunityListingLikeTokens,
+	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
 	resolveCommunityReportRow,
 	setCommunityListingStatus,
@@ -69,6 +70,14 @@ const intentHeadingPattern = /^##\s+intent\b/im
 // unrelated text (~0.10). Related lexical hits use lexical > 0; vector-only
 // semantic matches on listing documents tend to land above ~0.12.
 export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
+
+// Community search/browse never scores more than this many listings in
+// memory; candidates are pre-filtered and recency-ordered in SQL. This is
+// a deliberate bound: browse ranks within the newest candidates, so
+// listings older than the newest 500 are reachable through search (LIKE
+// pre-filter) but not through unfiltered browse pagination. Revisit with
+// a materialized score column if the catalog ever approaches this size.
+export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
 export function isCommunityListingSearchMatch(input: {
 	query: string
@@ -471,8 +480,9 @@ export async function listCommunityListingsWithAggregates(input: {
 	limit: number
 	offset: number
 }): Promise<Array<CommunityListingWithAggregates>> {
-	const listings = await listAllCommunityListings(input.env.APP_DB, {
+	const listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: input.includeDelisted,
+		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
 	})
 	const withAggregates = await attachListingAggregatesBatch(
 		input.env.APP_DB,
@@ -488,48 +498,63 @@ export async function searchCommunityListings(input: {
 	query: string
 	limit: number
 }): Promise<Array<CommunityListingWithAggregates>> {
-	const listings = await listAllCommunityListings(input.env.APP_DB, {
-		includeDelisted: false,
-	})
-	const withAggregates = await attachListingAggregatesBatch(
-		input.env.APP_DB,
-		listings,
-	)
 	const trimmedQuery = input.query.trim()
+	let listings = await listCommunityListingCandidates(input.env.APP_DB, {
+		includeDelisted: false,
+		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
+		query: trimmedQuery || null,
+	})
 	if (!trimmedQuery) {
+		const withAggregates = await attachListingAggregatesBatch(
+			input.env.APP_DB,
+			listings,
+		)
 		return withAggregates
 			.sort(compareCommunityListingsByBayesianAndPublishedAt)
 			.slice(0, input.limit)
 	}
-
-	const queryEmbedding = deterministicEmbedding(trimmedQuery)
-	const scored = withAggregates
-		.map((listing) => {
-			const document = buildListingSearchDocument(listing)
-			if (
-				!isCommunityListingSearchMatch({
-					query: trimmedQuery,
-					document,
-				})
-			) {
-				return null
-			}
-			const lexical = lexicalScore(trimmedQuery, document)
-			const vector = cosineSimilarity(
-				queryEmbedding,
-				deterministicEmbedding(document),
-			)
-			const blended = blendLexicalAndVectorScore(lexical, vector)
-			const bayesian = computeCommunityBayesianScore({
-				averageStars: listing.averageStars,
-				ratingCount: listing.ratingCount,
-			})
-			return {
-				listing,
-				score: blended * bayesian,
-			}
+	const matchesQuery = (listing: CommunityListingRecord) =>
+		isCommunityListingSearchMatch({
+			query: trimmedQuery,
+			document: buildListingSearchDocument(listing),
 		})
-		.filter((entry): entry is NonNullable<typeof entry> => entry != null)
+	let matched = listings.filter(matchesQuery)
+	const prefilterApplied =
+		extractCommunityListingLikeTokens(trimmedQuery).length > 0
+	if (matched.length === 0 && prefilterApplied) {
+		// The SQL LIKE pre-filter produced no scoring matches; fall back to a
+		// bounded recent candidate set so vector-threshold matches among other
+		// recent listings keep working. Skipped when the first query was
+		// already unfiltered (no LIKE tokens), since it would return the same
+		// candidates.
+		listings = await listCommunityListingCandidates(input.env.APP_DB, {
+			includeDelisted: false,
+			limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
+		})
+		matched = listings.filter(matchesQuery)
+	}
+	const withAggregates = await attachListingAggregatesBatch(
+		input.env.APP_DB,
+		matched,
+	)
+	const queryEmbedding = deterministicEmbedding(trimmedQuery)
+	const scored = withAggregates.map((listing) => {
+		const document = buildListingSearchDocument(listing)
+		const lexical = lexicalScore(trimmedQuery, document)
+		const vector = cosineSimilarity(
+			queryEmbedding,
+			deterministicEmbedding(document),
+		)
+		const blended = blendLexicalAndVectorScore(lexical, vector)
+		const bayesian = computeCommunityBayesianScore({
+			averageStars: listing.averageStars,
+			ratingCount: listing.ratingCount,
+		})
+		return {
+			listing,
+			score: blended * bayesian,
+		}
+	})
 
 	return scored
 		.sort((left, right) => right.score - left.score)

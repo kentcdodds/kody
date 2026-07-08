@@ -48,8 +48,18 @@ type ParsedInboundEmail = Awaited<
 	ReturnType<typeof parseForwardableEmailMessage>
 >
 
+/**
+ * Rejection audit writes are best-effort (the SMTP reject already happened),
+ * but a failure must still be visible to operators — silently losing the
+ * rejection trail weakens abuse detection on attacker-controlled paths.
+ */
+function warnRejectionAuditWriteFailed(error: unknown) {
+	console.warn('email-rejection-audit-write-failed', error)
+}
+
 async function parseAndStoreInboundEmail(input: {
 	db: D1Database
+	blobs?: R2Bucket | null
 	message: ForwardableEmailMessage
 	recipient: string
 	userId: string
@@ -90,6 +100,7 @@ async function parseAndStoreInboundEmail(input: {
 		}))
 	const stored = await insertEmailMessageWithAttachments({
 		db: input.db,
+		blobs: input.blobs,
 		message: {
 			direction: 'inbound',
 			userId: input.userId,
@@ -154,6 +165,7 @@ export async function handleInboundEmail(
 	env: Pick<
 		Env,
 		| 'APP_DB'
+		| 'EMAIL_BLOBS'
 		| 'BUNDLE_ARTIFACTS_KV'
 		| 'APP_BASE_URL'
 		| 'USER_EMAIL_DOMAIN'
@@ -283,7 +295,7 @@ export async function handleInboundEmail(
 			recipient,
 			reason,
 			phase: 'account-verification',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -343,13 +355,14 @@ export async function handleInboundEmail(
 				error.details.resource === 'email_message_bytes'
 					? 'size'
 					: 'entitlement',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
 
 	const stored = await parseAndStoreInboundEmail({
 		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
 		message,
 		recipient,
 		userId,
@@ -371,7 +384,7 @@ export async function handleInboundEmail(
 					reason,
 					phase: 'parse',
 				},
-			}).catch(() => undefined)
+			}).catch(warnRejectionAuditWriteFailed)
 			await recordReceiveUsage({ outcome: 'error' })
 		},
 	})
@@ -395,7 +408,11 @@ async function handleSystemInboundEmail(input: {
 	message: ForwardableEmailMessage
 	env: Pick<
 		Env,
-		'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'USAGE_EVENTS'
+		| 'APP_DB'
+		| 'EMAIL_BLOBS'
+		| 'BUNDLE_ARTIFACTS_KV'
+		| 'APP_BASE_URL'
+		| 'USAGE_EVENTS'
 	>
 	recipient: string
 	localPart: SystemEmailLocal
@@ -435,7 +452,7 @@ async function handleSystemInboundEmail(input: {
 			recipient: input.recipient,
 			reason: `Message size ${input.message.rawSize} exceeds system inbox cap ${systemEmailLimits.maxMessageBytes}.`,
 			phase: 'size',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -453,7 +470,7 @@ async function handleSystemInboundEmail(input: {
 			recipient: input.recipient,
 			reason: `System inbox daily receive cap ${systemEmailLimits.maxReceivesPerDay} reached for ${input.localPart}.`,
 			phase: 'system-limit',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -470,13 +487,14 @@ async function handleSystemInboundEmail(input: {
 			recipient: input.recipient,
 			reason: `System inbox stored-message cap ${systemEmailLimits.maxStoredMessages} reached.`,
 			phase: 'system-limit',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
 
 	const stored = await parseAndStoreInboundEmail({
 		db: input.env.APP_DB,
+		blobs: input.env.EMAIL_BLOBS,
 		message: input.message,
 		recipient: input.recipient,
 		userId: systemEmailOwnerId,
@@ -494,7 +512,7 @@ async function handleSystemInboundEmail(input: {
 					reason,
 					phase: 'parse',
 				},
-			}).catch(() => undefined)
+			}).catch(warnRejectionAuditWriteFailed)
 			await recordReceiveUsage({ outcome: 'error' })
 		},
 	})

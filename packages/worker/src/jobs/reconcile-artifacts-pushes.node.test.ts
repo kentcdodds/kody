@@ -98,6 +98,8 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 		errors: 0,
 		tokenCleanupErrors: 0,
 		tokensRevoked: 0,
+		batches: 1,
+		budgetExhausted: false,
 	})
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -182,6 +184,8 @@ test('reconcile records source checks and continues the batch when a source or i
 		errors: 1,
 		tokenCleanupErrors: 0,
 		tokensRevoked: 0,
+		batches: 1,
+		budgetExhausted: false,
 	})
 	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(2)
 })
@@ -240,4 +244,240 @@ test('reconcile runs token cleanup in the 03:00 UTC window without blocking publ
 		}),
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+})
+
+test('reconcile drains multiple batches in one tick without DO work for unchanged heads', async () => {
+	mockModule.listEntitySourcesForExternalReconcile.mockReset()
+	mockModule.listEntitySourcesForExternalReconcile
+		.mockResolvedValueOnce([
+			source({ id: 'source-1', published_commit: 'commit-current' }),
+			source({
+				id: 'source-2',
+				repo_id: 'repo-2',
+				published_commit: 'commit-current',
+			}),
+		])
+		.mockResolvedValueOnce([
+			source({
+				id: 'source-3',
+				repo_id: 'repo-3',
+				published_commit: 'commit-current',
+			}),
+		])
+	mockModule.resolveArtifactSourceHead.mockReset()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-current',
+	})
+	mockModule.updateEntitySource.mockClear()
+	mockModule.repoSessionRpc.mockClear()
+
+	const result = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+		batchSize: 2,
+	})
+
+	expect(result).toEqual(
+		expect.objectContaining({
+			checked: 3,
+			alreadyPublished: 3,
+			batches: 2,
+			budgetExhausted: false,
+		}),
+	)
+	expect(
+		mockModule.listEntitySourcesForExternalReconcile,
+	).toHaveBeenCalledTimes(2)
+	// Unchanged HEADs must only advance the cursor, never touch the DO.
+	expect(mockModule.repoSessionRpc).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(3)
+})
+
+test('reconcile stops between items once the time budget is exhausted', async () => {
+	mockModule.listEntitySourcesForExternalReconcile.mockReset()
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
+		source({ id: 'source-1', published_commit: 'commit-current' }),
+		source({
+			id: 'source-2',
+			repo_id: 'repo-2',
+			published_commit: 'commit-current',
+		}),
+	])
+	mockModule.resolveArtifactSourceHead.mockReset()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-current',
+	})
+
+	const result = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+		timeBudgetMs: 0,
+	})
+
+	expect(result).toEqual(
+		expect.objectContaining({
+			checked: 1,
+			batches: 1,
+			budgetExhausted: true,
+		}),
+	)
+	expect(
+		mockModule.listEntitySourcesForExternalReconcile,
+	).toHaveBeenCalledTimes(1)
+})
+
+test('reconcile does not reprocess a source whose cursor write keeps failing', async () => {
+	mockModule.listEntitySourcesForExternalReconcile.mockReset()
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
+		source({ id: 'source-1', published_commit: 'commit-current' }),
+	])
+	mockModule.resolveArtifactSourceHead.mockReset()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-current',
+	})
+	mockModule.updateEntitySource.mockReset()
+	mockModule.updateEntitySource.mockRejectedValue(new Error('d1 unavailable'))
+
+	const result = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+		batchSize: 1,
+	})
+
+	// The stale source stays selectable (its cursor write failed) but must be
+	// processed at most once per tick instead of spinning until the budget.
+	expect(result).toEqual(
+		expect.objectContaining({
+			checked: 1,
+			errors: 1,
+			batches: 1,
+			budgetExhausted: false,
+		}),
+	)
+	expect(
+		mockModule.listEntitySourcesForExternalReconcile,
+	).toHaveBeenCalledTimes(2)
+
+	mockModule.updateEntitySource.mockReset()
+	mockModule.updateEntitySource.mockResolvedValue(true)
+})
+
+test('head sources with failing cursor writes do not starve sources behind them within a tick', async () => {
+	// Simulated table: two head-of-queue sources whose cursor writes keep
+	// failing, plus one healthy source ordered behind them.
+	const rows = [
+		source({
+			id: 'source-a',
+			published_commit: 'commit-current',
+			created_at: '2026-05-04T00:00:00.000Z',
+		}),
+		source({
+			id: 'source-b',
+			repo_id: 'repo-2',
+			published_commit: 'commit-current',
+			created_at: '2026-05-04T00:01:00.000Z',
+		}),
+		source({
+			id: 'source-c',
+			repo_id: 'repo-3',
+			published_commit: 'commit-current',
+			created_at: '2026-05-04T00:02:00.000Z',
+		}),
+	]
+	const checkedAt = new Map<string, string>()
+	mockModule.listEntitySourcesForExternalReconcile.mockReset()
+	// Emulate the real query: staleness filter, keyset `after` cursor, and the
+	// stale ordering with id tie-break.
+	mockModule.listEntitySourcesForExternalReconcile.mockImplementation(
+		async (...args: Array<unknown>) => {
+			const query = args[1] as {
+				before: string
+				limit: number
+				after?: { staleOrderedAt: string; id: string }
+			}
+			return rows
+				.map((row) => ({
+					...row,
+					last_external_check_at:
+						checkedAt.get(row.id) ?? row.last_external_check_at,
+				}))
+				.filter(
+					(row) =>
+						row.last_external_check_at === null ||
+						row.last_external_check_at < query.before,
+				)
+				.map((row) => ({
+					row,
+					key: row.last_external_check_at ?? row.created_at,
+				}))
+				.filter(
+					({ row, key }) =>
+						!query.after ||
+						key > query.after.staleOrderedAt ||
+						(key === query.after.staleOrderedAt && row.id > query.after.id),
+				)
+				.sort((a, b) =>
+					a.key === b.key
+						? a.row.id.localeCompare(b.row.id)
+						: a.key.localeCompare(b.key),
+				)
+				.slice(0, query.limit)
+				.map(({ row }) => row)
+		},
+	)
+	mockModule.resolveArtifactSourceHead.mockReset()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-current',
+	})
+	mockModule.updateEntitySource.mockReset()
+	mockModule.updateEntitySource.mockImplementation(
+		async (...args: Array<unknown>) => {
+			const update = args[1] as { id: string; lastExternalCheckAt: string }
+			if (update.id !== 'source-c') throw new Error('d1 unavailable')
+			checkedAt.set(update.id, update.lastExternalCheckAt)
+			return true
+		},
+	)
+
+	const result = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+		batchSize: 2,
+	})
+
+	// All three sources are reconciled in a single tick even though the first
+	// batch's rows never leave the stale window.
+	expect(result).toEqual(
+		expect.objectContaining({
+			checked: 3,
+			alreadyPublished: 3,
+			errors: 2,
+			batches: 2,
+			budgetExhausted: false,
+		}),
+	)
+	expect(
+		mockModule.listEntitySourcesForExternalReconcile,
+	).toHaveBeenCalledTimes(2)
+	// The second batch query pages past the failing head rows via the keyset.
+	expect(
+		mockModule.listEntitySourcesForExternalReconcile,
+	).toHaveBeenNthCalledWith(2, expect.anything(), {
+		before: '2026-05-04T01:55:00.000Z',
+		limit: 2,
+		after: { staleOrderedAt: '2026-05-04T00:01:00.000Z', id: 'source-b' },
+	})
+	// The healthy source's reconcile cursor is persisted.
+	expect(checkedAt.get('source-c')).toBe('2026-05-04T02:00:00.000Z')
+
+	mockModule.updateEntitySource.mockReset()
+	mockModule.updateEntitySource.mockResolvedValue(true)
 })

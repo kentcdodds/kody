@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
@@ -149,7 +150,7 @@ export async function refreshSavedPackageProjection(input: {
 		name: row.name,
 		kodyId: row.kody_id,
 		description: row.description,
-		tags: JSON.parse(row.tags_json) as Array<string>,
+		tags: parseTagsJson(row.tags_json),
 		searchText: row.search_text ?? null,
 		sourceId: row.source_id,
 		hasApp: row.has_app === 1,
@@ -259,7 +260,7 @@ export async function refreshSavedPackageProjection(input: {
 				name: row.name,
 				kodyId: row.kody_id,
 				description: row.description,
-				tags: JSON.parse(row.tags_json) as Array<string>,
+				tags: parseTagsJson(row.tags_json),
 				searchText: row.search_text ?? null,
 				sourceId: row.source_id,
 				hasApp: row.has_app === 1,

@@ -225,6 +225,12 @@ async function listManifestCacheKeys(input: {
 	return keys
 }
 
+/**
+ * The combined per-user scope index blob is legacy: it is no longer written
+ * (per-entry keys are the source of truth) and is deleted best-effort on
+ * refresh/removal. Reading it remains only as the fallback for environments
+ * whose KV binding does not support list().
+ */
 async function readLegacyScopeIndex(input: {
 	env: Env
 	userId: string
@@ -377,15 +383,16 @@ export async function refreshPackageRetrieverManifestCache(input: {
 		manifestKey,
 		JSON.stringify(manifestCache),
 	)
+	await deleteStaleManifestCacheKeys({
+		env: input.env,
+		userId: input.userId,
+		packageId: input.savedPackage.id,
+		currentManifestKey: manifestKey,
+	})
 	for (const scope of [
 		'search',
 		'context',
 	] satisfies Array<PackageRetrieverScope>) {
-		const existingEntries = await readScopeEntries({
-			env: input.env,
-			userId: input.userId,
-			scope,
-		})
 		const existingScopeEntryKeys = await listScopeEntryKeys({
 			env: input.env,
 			userId: input.userId,
@@ -395,9 +402,6 @@ export async function refreshPackageRetrieverManifestCache(input: {
 		const nextEntries = registeredRetrievers
 			.filter((retriever) => retriever.scopes.includes(scope))
 			.map(toScopeIndexEntry)
-		const preservedEntries = existingEntries.filter(
-			(entry) => entry.packageId !== input.savedPackage.id,
-		)
 		const nextEntryKeys = new Set(
 			nextEntries.map((entry) =>
 				buildPackageRetrieverScopeEntryKey({
@@ -422,14 +426,56 @@ export async function refreshPackageRetrieverManifestCache(input: {
 				}),
 			),
 		])
-		await writeLegacyScopeIndex({
+		await deleteLegacyScopeIndex({
 			env: input.env,
 			userId: input.userId,
 			scope,
-			entries: [...preservedEntries, ...nextEntries],
 		})
 	}
 	return manifestCache
+}
+
+async function deleteStaleManifestCacheKeys(input: {
+	env: Env
+	userId: string
+	packageId: string
+	currentManifestKey: string
+}) {
+	try {
+		const manifestCacheKeys = await listManifestCacheKeys(input)
+		await Promise.all(
+			manifestCacheKeys
+				.filter((key) => key !== input.currentManifestKey)
+				.map(async (key) => await getRetrieverKv(input.env).delete(key)),
+		)
+	} catch (error) {
+		console.warn('package-retriever-stale-manifest-cleanup-failed', {
+			userId: input.userId,
+			packageId: input.packageId,
+			error,
+		})
+	}
+}
+
+async function deleteLegacyScopeIndex(input: {
+	env: Env
+	userId: string
+	scope: PackageRetrieverScope
+}) {
+	try {
+		await getRetrieverKv(input.env).delete(
+			buildPackageRetrieverScopeIndexKey({
+				userId: input.userId,
+				scope: input.scope,
+			}),
+		)
+	} catch (error) {
+		console.warn('package-retriever-legacy-index-delete-failed', {
+			userId: input.userId,
+			scope: input.scope,
+			error,
+		})
+	}
 }
 
 export async function removePackageRetrieverManifestCacheEntries(input: {
@@ -443,11 +489,6 @@ export async function removePackageRetrieverManifestCacheEntries(input: {
 		'search',
 		'context',
 	] satisfies Array<PackageRetrieverScope>) {
-		const existingEntries = await readScopeEntries({
-			env: input.env,
-			userId: input.userId,
-			scope,
-		})
 		const existingScopeEntryKeys = await listScopeEntryKeys({
 			env: input.env,
 			userId: input.userId,
@@ -459,13 +500,10 @@ export async function removePackageRetrieverManifestCacheEntries(input: {
 				async (key) => await getRetrieverKv(input.env).delete(key),
 			),
 		)
-		await writeLegacyScopeIndex({
+		await deleteLegacyScopeIndex({
 			env: input.env,
 			userId: input.userId,
 			scope,
-			entries: existingEntries.filter(
-				(entry) => entry.packageId !== input.packageId,
-			),
 		})
 	}
 	await Promise.all(
@@ -518,34 +556,6 @@ export async function deleteAllPackageRetrieverCacheEntriesForUser(input: {
 	const kv = getRetrieverKv(input.env)
 	await Promise.all(Array.from(keys).map(async (key) => await kv.delete(key)))
 	return keys.size
-}
-
-async function writeLegacyScopeIndex(input: {
-	env: Env
-	userId: string
-	scope: PackageRetrieverScope
-	entries?: Array<PackageRetrieverIndexEntry>
-}) {
-	const entries =
-		input.entries ??
-		(await readScopeEntries({
-			env: input.env,
-			userId: input.userId,
-			scope: input.scope,
-		}))
-	await getRetrieverKv(input.env).put(
-		buildPackageRetrieverScopeIndexKey({
-			userId: input.userId,
-			scope: input.scope,
-		}),
-		JSON.stringify({
-			version: retrieverScopeIndexVersion,
-			userId: input.userId,
-			scope: input.scope,
-			retrievers: entries,
-			updatedAt: new Date().toISOString(),
-		} satisfies PackageRetrieverScopeIndex),
-	)
 }
 
 export async function listPackageRetrieversForScope(input: {

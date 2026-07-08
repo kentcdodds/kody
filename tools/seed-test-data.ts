@@ -1,9 +1,9 @@
-import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
+import { buildSeedUserSql } from './seed-sql.ts'
 import { usernameFromEmail } from '../packages/worker/src/app/username.ts'
 import {
 	getDefaultWranglerConfigPath,
@@ -179,38 +179,8 @@ type SeedAccount = {
 	admin: boolean
 }
 
-function buildAccountSeedSql({
-	email,
-	username,
-	passwordHash,
-	admin,
-}: SeedAccount) {
-	const userRoleSql = `
-INSERT OR IGNORE INTO user_roles (user_id, role_id)
-SELECT u.id, r.id
-FROM users u, roles r
-WHERE u.email = ${quoteSqlString(email)} AND r.name = 'user';`
-	const adminRoleSql = admin
-		? `
-INSERT OR IGNORE INTO user_roles (user_id, role_id)
-SELECT u.id, r.id
-FROM users u, roles r
-WHERE u.email = ${quoteSqlString(email)} AND r.name = 'admin';`
-		: ''
-
-	return `
-INSERT INTO users (username, email, password_hash, email_verified_at)
-VALUES (${quoteSqlString(username)}, ${quoteSqlString(email)}, ${quoteSqlString(passwordHash)}, CURRENT_TIMESTAMP)
-ON CONFLICT(email) DO UPDATE SET
-  username = excluded.username,
-  password_hash = excluded.password_hash,
-  email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
-  updated_at = CURRENT_TIMESTAMP;
-${userRoleSql}${adminRoleSql}`.trim()
-}
-
 export function buildSeedSql(accounts: Array<SeedAccount>) {
-	return accounts.map(buildAccountSeedSql).join('\n')
+	return accounts.map(buildSeedUserSql).join('\n')
 }
 
 /**

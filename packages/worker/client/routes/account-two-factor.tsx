@@ -2,6 +2,7 @@ import { toDataURL } from 'qrcode'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -78,12 +79,11 @@ export function AccountTwoFactorRoute(handle: Handle) {
 	let disableCode = ''
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 
 	async function loadStatus(signal: AbortSignal) {
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
-			lastLoadedHref = href
 			const response = await fetch(twoFactorApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -102,6 +102,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 			status = 'ready'
 			message = null
 			messageTone = 'info'
+			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -111,6 +112,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 					? error.message
 					: 'Unable to load two-factor status.'
 			messageTone = 'error'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -149,7 +151,13 @@ export function AccountTwoFactorRoute(handle: Handle) {
 
 		try {
 			const payload = await postTwoFactorAction({ intent: 'setup' })
-			if (!payload?.otpUri || !payload.secret) return
+			// A null payload means a 401 redirect is already in flight.
+			if (!payload) return
+			if (!payload.otpUri || !payload.secret) {
+				message = 'The server returned an incomplete two-factor setup.'
+				messageTone = 'error'
+				return
+			}
 			let qrCodeDataUrl: string | null = null
 			try {
 				qrCodeDataUrl = await toDataURL(payload.otpUri, { width: 240 })
@@ -210,7 +218,9 @@ export function AccountTwoFactorRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			await postTwoFactorAction({ intent: 'cancel' })
+			const payload = await postTwoFactorAction({ intent: 'cancel' })
+			// A null payload means a 401 redirect is already in flight.
+			if (!payload) return
 			setup = null
 			confirmCode = ''
 		} catch (error) {
@@ -282,7 +292,7 @@ export function AccountTwoFactorRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		messageTone = 'info'
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		return true
 	}
 
@@ -291,15 +301,13 @@ export function AccountTwoFactorRoute(handle: Handle) {
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadStatus)
 		}
 		const isBusy = actionStatus === 'busy'

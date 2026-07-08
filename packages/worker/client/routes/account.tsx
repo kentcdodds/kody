@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
@@ -83,13 +84,12 @@ export function AccountRoute(handle: Handle) {
 	let messageTone: 'error' | 'info' = 'info'
 	let emailChangeMessage: string | null = null
 	let emailChangeTone: 'error' | 'info' = 'info'
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 
 	async function loadAccountProfile(signal: AbortSignal) {
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
 			const search = new URL(href, 'http://localhost').search
-			lastLoadedHref = href
 			const response = await fetch(`${accountProfileApiPath}${search}`, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -112,6 +112,7 @@ export function AccountRoute(handle: Handle) {
 			status = 'ready'
 			message = null
 			messageTone = 'info'
+			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -119,6 +120,7 @@ export function AccountRoute(handle: Handle) {
 			message =
 				error instanceof Error ? error.message : 'Unable to load your account.'
 			messageTone = 'error'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -316,7 +318,7 @@ export function AccountRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		messageTone = 'info'
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		return true
 	}
 
@@ -327,15 +329,13 @@ export function AccountRoute(handle: Handle) {
 		// href change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadAccountProfile)
 		}
 		const isSaving = saveStatus === 'saving'

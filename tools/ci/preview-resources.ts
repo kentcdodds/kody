@@ -1,4 +1,6 @@
 import {
+	deleteR2Bucket,
+	ensureR2Bucket,
 	fail,
 	listD1Databases,
 	listKvNamespaces,
@@ -88,6 +90,7 @@ function buildPreviewResourceNames(workerName: string) {
 	const d1Suffix = '-db'
 	const oauthKvSuffix = '-oauth-kv'
 	const bundleKvSuffix = '-bundle-artifacts-kv'
+	const emailBlobsSuffix = '-email-blobs'
 
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
 	const oauthKvTitle = truncateWithSuffix(workerName, oauthKvSuffix, maxLen)
@@ -96,11 +99,17 @@ function buildPreviewResourceNames(workerName: string) {
 		bundleKvSuffix,
 		maxLen,
 	)
+	const emailBlobsBucketName = truncateWithSuffix(
+		workerName,
+		emailBlobsSuffix,
+		maxLen,
+	)
 
 	return {
 		d1DatabaseName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
+		emailBlobsBucketName,
 	}
 }
 
@@ -234,8 +243,12 @@ function deleteKvNamespace({
 }
 
 async function ensurePreviewResources(options: CliOptions) {
-	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
-		buildPreviewResourceNames(options.workerName)
+	const {
+		d1DatabaseName,
+		oauthKvTitle,
+		bundleArtifactsKvTitle,
+		emailBlobsBucketName,
+	} = buildPreviewResourceNames(options.workerName)
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
 		location: options.d1Location,
@@ -249,6 +262,10 @@ async function ensurePreviewResources(options: CliOptions) {
 		title: bundleArtifactsKvTitle,
 		dryRun: options.dryRun,
 	})
+	const emailBlobs = ensureR2Bucket({
+		name: emailBlobsBucketName,
+		dryRun: options.dryRun,
+	})
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
@@ -259,6 +276,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		d1DatabaseId: d1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
+		emailBlobsBucketName: emailBlobs.available ? emailBlobs.name : null,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
@@ -272,11 +290,19 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
+	console.log(
+		`email_blobs_bucket_name=${emailBlobs.available ? emailBlobs.name : ''}`,
+	)
 }
 
 async function cleanupPreviewResources(options: CliOptions) {
-	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
-		buildPreviewResourceNames(options.workerName)
+	const {
+		d1DatabaseName,
+		oauthKvTitle,
+		bundleArtifactsKvTitle,
+		emailBlobsBucketName,
+	} = buildPreviewResourceNames(options.workerName)
+	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
 	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
 	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
 	deleteD1Database({ name: d1DatabaseName, dryRun: options.dryRun })

@@ -1,6 +1,7 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -132,12 +133,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	let email = ''
 	let integrations: Array<AccountIntegrationListItem> = []
 	let message: string | null = null
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 
 	async function loadIntegrations(signal: AbortSignal) {
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
-			lastLoadedHref = href
 			const response = await fetch(accountIntegrationsApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -156,12 +156,14 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			integrations = payload.integrations
 			status = 'ready'
 			message = null
+			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load integrations.'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -178,7 +180,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		integrations = routeData.integrations
 		status = 'ready'
 		message = null
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		return true
 	}
 
@@ -189,15 +191,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		// href change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadIntegrations)
 		}
 

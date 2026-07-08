@@ -1,3 +1,4 @@
+import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
 import { type SavedPackageRecord, type SavedPackageRow } from './types.ts'
 
@@ -22,18 +23,6 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 		updatedAt: String(row['updated_at']),
 	}
 }
-
-function parseTagsJson(raw: unknown) {
-	if (raw == null) return []
-	const parsed = JSON.parse(String(raw)) as unknown
-	return Array.isArray(parsed)
-		? parsed
-				.filter((value): value is string => typeof value === 'string')
-				.map((value) => value.trim())
-				.filter((value) => value.length > 0)
-		: []
-}
-
 export async function insertSavedPackage(
 	db: D1Database,
 	row: Omit<SavedPackageRow, 'created_at' | 'updated_at'> & {
@@ -213,16 +202,26 @@ export async function listSavedPackagesByUserId(
 	return (rows.results ?? []).map(mapSavedPackageRow)
 }
 
-export async function listAllSavedPackages(
+// Keyset-paged listing across all users, used by maintenance reindex so a
+// single query never loads the whole table. Pass the last row id of the
+// previous page (or null for the first page).
+export async function listSavedPackagesPage(
 	db: D1Database,
+	input: {
+		afterId: string | null
+		limit: number
+	},
 ): Promise<Array<SavedPackageRecord>> {
 	const rows = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
 				source_id, has_app, created_at, updated_at
 			FROM saved_packages
-			ORDER BY updated_at DESC`,
+			WHERE id > ?
+			ORDER BY id
+			LIMIT ?`,
 		)
+		.bind(input.afterId ?? '', input.limit)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapSavedPackageRow)
 }

@@ -1,12 +1,6 @@
+import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-
-function normalizeRedirectTo(value: string | null) {
-	if (!value) return null
-	if (!value.startsWith('/')) return null
-	if (value.startsWith('//')) return null
-	return value
-}
 
 export function createAuthPageHandler(env: Env) {
 	return {

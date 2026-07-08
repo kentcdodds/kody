@@ -660,7 +660,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 	})
 })
 
-test('buildSavedPackageSearchRows hydrates README and export JSDoc search signals', async () => {
+test('buildSavedPackageSearchRows defers source loading and hydrates only top matches', async () => {
 	const readmeBody =
 		'Package-first trace and debug workflow for failed processor service storage automation.'
 	const exportDescription = 'Trace failed processor service storage writes.'
@@ -689,6 +689,7 @@ test('buildSavedPackageSearchRows hydrates README and export JSDoc search signal
 export declare function traceProcessorFailure(messageId: string): Promise<void>
 `,
 	}
+	sourceMocks.loadPackageSourceBySourceId.mockClear()
 	sourceMocks.loadPackageSourceBySourceId.mockResolvedValueOnce({
 		source: { id: 'source-trace' },
 		manifest,
@@ -716,49 +717,22 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		],
 	})
 
+	// Building rows only projects cheap D1 fields; no source snapshots load.
 	expect(rows.warnings).toEqual([])
+	expect(sourceMocks.loadPackageSourceBySourceId).not.toHaveBeenCalled()
 	expect(rows.rows[0]).toMatchObject({
-		readmeSnippet: {
-			path: 'README.md',
-			snippet: expect.stringContaining(readmeBody),
-			truncated: false,
-		},
-		projection: {
-			exports: [
-				expect.objectContaining({
-					description: exportDescription,
-				}),
-			],
-		},
+		readmeSnippet: null,
+		projection: expect.objectContaining({
+			kodyId: 'trace-package',
+			exports: [],
+		}),
 	})
 
-	const registry = buildCapabilityRegistry([
-		{
-			name: 'storage',
-			description: 'Storage primitives',
-			capabilities: [
-				{
-					name: 'storage_query',
-					domain: 'storage',
-					description: 'Low-level storage query for processor records.',
-					keywords: ['storage', 'service', 'processor', 'failed'],
-					readOnly: true,
-					idempotent: true,
-					destructive: false,
-					inputSchema: {
-						type: 'object',
-						properties: {},
-					},
-					handler: async () => null,
-				},
-			],
-		},
-	])
 	const result = await searchUnified({
 		env: {} as Env,
-		query: 'trace failed processor service storage',
+		query: 'trace package',
 		limit: 3,
-		registry,
+		registry: buildCapabilityRegistry([]),
 		optionalRows: {
 			packageRows: rows.rows,
 			userSecretRows: [],
@@ -766,40 +740,234 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		},
 	})
 
-	expect(result.matches).toEqual(
+	// The returned top match is hydrated with README and export metadata.
+	const packageMatch = result.matches.find((match) => match.type === 'package')
+	expect(packageMatch).toMatchObject({
+		type: 'package',
+		kodyId: 'trace-package',
+		readmeSnippet: {
+			path: 'README.md',
+			snippet: expect.stringContaining(readmeBody),
+			truncated: false,
+		},
+	})
+	expect(packageMatch?.actionMatches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
-				type: 'package',
-				kodyId: 'trace-package',
+				subpath: './trace-processor',
+				functions: [
+					expect.objectContaining({
+						name: 'traceProcessorFailure',
+					}),
+				],
 			}),
 		]),
 	)
+	expect(sourceMocks.loadPackageSourceBySourceId).toHaveBeenCalledTimes(1)
 
+	// Hydration failures degrade to the lean match instead of failing search.
 	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
 		new Error('missing-source'),
 	)
-	await expect(
-		buildSavedPackageSearchRows({
-			env: {} as Env,
-			baseUrl: 'http://localhost',
-			userId: 'user-123',
-			records: [
-				{
-					id: 'package-123',
-					userId: 'user-123',
-					name: '@kody/observed',
-					kodyId: 'observed',
-					description: 'Observed package',
-					tags: ['observed'],
-					searchText: 'search text',
-					sourceId: 'missing-source',
-					hasApp: true,
-					createdAt: '2026-03-24T00:00:00.000Z',
-					updatedAt: '2026-03-24T00:00:00.000Z',
-				},
+	const failedHydration = await buildSavedPackageSearchRows({
+		env: {} as Env,
+		baseUrl: 'http://localhost',
+		userId: 'user-123',
+		records: [
+			{
+				id: 'package-123',
+				userId: 'user-123',
+				name: '@kody/observed',
+				kodyId: 'observed',
+				description: 'Observed package',
+				tags: ['observed'],
+				searchText: 'search text',
+				sourceId: 'missing-source',
+				hasApp: true,
+				createdAt: '2026-03-24T00:00:00.000Z',
+				updatedAt: '2026-03-24T00:00:00.000Z',
+			},
+		],
+	})
+	const degraded = await searchUnified({
+		env: {} as Env,
+		query: 'observed package',
+		limit: 3,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: failedHydration.rows,
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+	expect(degraded.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'package',
+				kodyId: 'observed',
+				readmeSnippet: null,
+			}),
+		]),
+	)
+})
+
+test('searchUnified ranks packages via user-filtered package vectors when Vectorize is online', async () => {
+	const capturedFilters: Array<Record<string, unknown> | undefined> = []
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
+		CAPABILITY_VECTOR_INDEX: {
+			async query(
+				_values: Array<number>,
+				options: { filter?: Record<string, unknown> },
+			) {
+				capturedFilters.push(options.filter)
+				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
+					?.kind?.$eq
+				if (kind === 'package') {
+					return { matches: [{ id: 'package_pkg-vector', score: 0.91 }] }
+				}
+				return { matches: [] }
+			},
+		},
+	} as unknown as Env
+	function leanPackageRow(id: string, name: string): PackageSearchRow {
+		return {
+			record: {
+				id,
+				userId: 'user-1',
+				name,
+				kodyId: name,
+				description: 'automation helpers',
+				tags: [],
+				searchText: null,
+				sourceId: `source-${id}`,
+				hasApp: false,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+			projection: {
+				name,
+				kodyId: name,
+				description: 'automation helpers',
+				tags: [],
+				searchText: null,
+				hasApp: false,
+				appEntry: null,
+				exports: [],
+				jobs: [],
+				services: [],
+				subscriptions: [],
+				retrievers: [],
+			},
+			readmeSnippet: null,
+		}
+	}
+
+	const result = await searchUnified({
+		env,
+		query: 'summarize inbox threads',
+		limit: 5,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: [
+				leanPackageRow('pkg-vector', 'semantic-match'),
+				leanPackageRow('pkg-other', 'unrelated-package'),
 			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.offline).toBe(false)
+	expect(capturedFilters).toContainEqual(
+		expect.objectContaining({
+			kind: { $eq: 'package' },
+			userId: { $eq: 'user-1' },
 		}),
-	).rejects.toThrow('missing-source')
+	)
+	expect(
+		result.matches.some(
+			(match) => match.type === 'package' && match.packageId === 'pkg-vector',
+		),
+	).toBe(true)
+	expect(
+		result.matches.some(
+			(match) => match.type === 'package' && match.packageId === 'pkg-other',
+		),
+	).toBe(false)
+})
+
+test('searchUnified degrades to lexical package ranking when the vector query throws', async () => {
+	let packageVectorQueryAttempts = 0
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
+		CAPABILITY_VECTOR_INDEX: {
+			async query(
+				_values: Array<number>,
+				options: { filter?: Record<string, unknown> },
+			) {
+				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
+					?.kind?.$eq
+				if (kind === 'package') {
+					packageVectorQueryAttempts += 1
+					throw new Error('vectorize unavailable')
+				}
+				return { matches: [] }
+			},
+		},
+	} as unknown as Env
+	const packageRow: PackageSearchRow = {
+		record: {
+			id: 'pkg-inbox',
+			userId: 'user-1',
+			name: 'inbox-summarizer',
+			kodyId: 'inbox-summarizer',
+			description: 'summarize inbox threads',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-pkg-inbox',
+			hasApp: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		projection: {
+			name: 'inbox-summarizer',
+			kodyId: 'inbox-summarizer',
+			description: 'summarize inbox threads',
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			appEntry: null,
+			exports: [],
+			jobs: [],
+			services: [],
+			subscriptions: [],
+			retrievers: [],
+		},
+		readmeSnippet: null,
+	}
+
+	const result = await searchUnified({
+		env,
+		query: 'summarize inbox threads',
+		limit: 5,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: [packageRow],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.offline).toBe(false)
+	expect(packageVectorQueryAttempts).toBe(1)
+	expect(
+		result.matches.some(
+			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
+		),
+	).toBe(true)
 })
 
 test('down remote connector statuses surface only disconnected connectors for signed-in users', async () => {

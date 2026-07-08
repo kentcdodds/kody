@@ -33,18 +33,12 @@ import {
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
 
-function isInviteRequiredForSignup(appEnv: AppEnv) {
-	return !isNonProductionRuntime(
-		appEnv as unknown as {
-			WRANGLER_IS_LOCAL_DEV?: string
-			SENTRY_ENVIRONMENT?: string
-		},
-	)
+function isInviteRequiredForSignup(env: Env) {
+	return !isNonProductionRuntime(env)
 }
 
 const authRequestSchema = object({
@@ -56,8 +50,8 @@ const authRequestSchema = object({
 const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
 
-export function createAuthHandler(appEnv: AppEnv) {
-	const db = createDb(appEnv.APP_DB)
+export function createAuthHandler(env: Env) {
+	const db = createDb(env.APP_DB)
 
 	return {
 		middleware: [],
@@ -196,16 +190,16 @@ export function createAuthHandler(appEnv: AppEnv) {
 				async function releaseConsumedInvite() {
 					if (!consumedInviteCode) return
 					await releaseInviteUse({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						code: consumedInviteCode,
 					})
 					consumedInviteCode = null
 				}
 
-				const inviteRequired = isInviteRequiredForSignup(appEnv)
+				const inviteRequired = isInviteRequiredForSignup(env)
 				if (inviteRequired || normalizeInviteCode(inviteCode)) {
 					const inviteResult = await consumeInviteCode({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						code: inviteCode,
 					})
 					if (!inviteResult.ok) {
@@ -297,7 +291,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 				let assigned = false
 				try {
 					;({ assigned } = await assignUserRole({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						userId: record.id,
 						roleName: 'user',
 					}))
@@ -309,7 +303,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 					// otherwise the email/username would be stuck as "already
 					// registered" on an account that has no roles.
 					try {
-						await appEnv.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
 							.bind(record.id)
 							.run()
 					} catch (error) {
@@ -336,7 +330,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 
 				try {
 					await createEmailVerification({
-						appEnv,
+						env,
 						userId: record.id,
 						email: normalizedEmail,
 						requestUrl: url,
@@ -344,7 +338,7 @@ export function createAuthHandler(appEnv: AppEnv) {
 				} catch (error) {
 					console.error('Failed to create email verification at signup:', error)
 					try {
-						await appEnv.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
 							.bind(record.id)
 							.run()
 					} catch (deleteError) {
@@ -375,11 +369,11 @@ export function createAuthHandler(appEnv: AppEnv) {
 				// Best-effort: the automatic {username}@<platform domain> inbox is
 				// also provisioned on first inbound mail, so a failure here must
 				// not fail the signup.
-				const platformEmailDomain = getPlatformEmailDomain(appEnv)
+				const platformEmailDomain = getPlatformEmailDomain(env)
 				if (platformEmailDomain) {
 					try {
 						await ensureDefaultEmailInbox({
-							db: appEnv.APP_DB,
+							db: env.APP_DB,
 							userId: await createStableUserIdFromEmail(normalizedEmail),
 							username: normalizedUsername,
 							domain: platformEmailDomain,
@@ -465,8 +459,8 @@ export function createAuthHandler(appEnv: AppEnv) {
 			// Two-factor accounts get a short-lived pending cookie instead of a
 			// session; the real session cookie is only issued once the TOTP code
 			// passes at POST /verify/2fa.json.
-			if (await isTwoFactorEnabled(appEnv.APP_DB, userRecord.id)) {
-				setVerifySessionSecret(appEnv.COOKIE_SECRET)
+			if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
+				setVerifySessionSecret(env.COOKIE_SECRET)
 				const secure = isSecureRequest(request)
 				const verifyCookie = await createVerifySessionCookie(
 					{

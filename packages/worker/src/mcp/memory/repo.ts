@@ -1,4 +1,8 @@
 import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
+import {
 	type McpMemoryConversationSuppressionRow,
 	type McpMemoryRow,
 } from './types.ts'
@@ -181,16 +185,64 @@ export async function listMemoriesByUserId(
 	return (results ?? []).map(mapMemoryRow)
 }
 
-export async function listAllMemories(input: {
+export async function listMemoriesByIds(
+	db: D1Database,
+	userId: string,
+	options: {
+		ids: Array<string>
+		statuses?: Array<McpMemoryRow['status']>
+	},
+): Promise<Array<McpMemoryRow>> {
+	if (options.ids.length === 0) return []
+	const statuses =
+		options.statuses && options.statuses.length > 0 ? options.statuses : null
+	const statusClause = statuses
+		? `AND status IN (${statuses.map(() => '?').join(', ')})`
+		: ''
+	// The id list can be a full vector top-k page (100 ids); with the userId
+	// and status bindings on top that exceeds D1's per-statement parameter
+	// cap, so the IN list must be chunked.
+	const fixedBindings = 1 + (statuses?.length ?? 0)
+	const rows: Array<McpMemoryRow> = []
+	for (const chunk of chunkArray(
+		options.ids,
+		maxD1BoundParameters - fixedBindings,
+	)) {
+		const idPlaceholders = chunk.map(() => '?').join(', ')
+		const { results } = await db
+			.prepare(
+				`SELECT id, user_id, category, status, subject, summary, details, tags_json,
+					source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
+				FROM mcp_memories
+				WHERE user_id = ?
+					AND id IN (${idPlaceholders})
+					${statusClause}`,
+			)
+			.bind(userId, ...chunk, ...(statuses ?? []))
+			.all<Record<string, unknown>>()
+		rows.push(...(results ?? []).map(mapMemoryRow))
+	}
+	return rows
+}
+
+// Keyset-paged listing across all users, used by maintenance reindex so a
+// single query never loads the whole table. Pass the last row id of the
+// previous page (or null for the first page).
+export async function listMemoriesPage(input: {
 	db: D1Database
+	afterId: string | null
+	limit: number
 }): Promise<Array<McpMemoryRow>> {
 	const { results } = await input.db
 		.prepare(
 			`SELECT id, user_id, category, status, subject, summary, details, tags_json,
 				source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
 			FROM mcp_memories
-			ORDER BY updated_at DESC`,
+			WHERE id > ?
+			ORDER BY id
+			LIMIT ?`,
 		)
+		.bind(input.afterId ?? '', input.limit)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapMemoryRow)
 }

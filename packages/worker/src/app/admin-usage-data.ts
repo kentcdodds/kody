@@ -1,4 +1,10 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { cachified, type Cache } from '@epic-web/cachified'
+import { toHex } from '@kody-internal/shared/hex.ts'
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
+import { readPagination, readPositiveInt } from '#app/query-params.ts'
 import {
 	entitlementResourceLabels,
 	isEmailFallbackResource,
@@ -10,6 +16,7 @@ import {
 } from '#worker/entitlements/plans.ts'
 import { readEntitlementResourceUsage } from '#worker/entitlements/service.ts'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AdminUsageDailyCounter,
@@ -63,6 +70,12 @@ const adminUsageDailyCounterResources = [
 const defaultPageSize = 20
 const maxPageSize = 100
 const warningThreshold = 0.8
+/**
+ * Rollup rows are derived hourly from Analytics Engine in production, so a
+ * short KV cache on the per-page read model adds no meaningful staleness
+ * while keeping repeated admin page loads off D1.
+ */
+const rollupCacheTtlMs = 5 * 60 * 1000
 
 type AdminUsageUserRow = {
 	id: number
@@ -97,15 +110,18 @@ export async function loadAdminUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUsageLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
-	const page = readPositiveInt(url.searchParams.get('page'), 1)
-	const pageSize = Math.min(
-		readPositiveInt(url.searchParams.get('pageSize'), defaultPageSize),
+	const { page, pageSize, offset } = readPagination(url, {
+		defaultPageSize,
 		maxPageSize,
-	)
-	const offset = (page - 1) * pageSize
+	})
 	const selectedUserId = readPositiveInt(url.searchParams.get('userId'), 0)
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)
+	// Fall through to direct D1 queries when KV is unavailable (some tests
+	// construct a partial Env without the binding).
+	const rollupCache = env.BUNDLE_ARTIFACTS_KV
+		? createKvCachifiedCache(env.BUNDLE_ARTIFACTS_KV)
+		: null
 
 	const [totalResult, userRows] = await Promise.all([
 		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users`).first<{
@@ -130,6 +146,7 @@ export async function loadAdminUsageData(
 
 	const usageRows = await loadCurrentMonthRollups({
 		db: env.APP_DB,
+		cache: rollupCache,
 		userIds: users.map((user) => user.usageUserId),
 		month: currentMonth,
 	})
@@ -152,6 +169,7 @@ export async function loadAdminUsageData(
 		selectedUser: selectedUser
 			? await buildSelectedUser({
 					db: env.APP_DB,
+					cache: rollupCache,
 					user: selectedUser,
 					currentMonth,
 					now,
@@ -225,6 +243,7 @@ async function buildUserSummary(input: {
 
 async function buildSelectedUser(input: {
 	db: D1Database
+	cache: Cache | null
 	user: UserWithUsageId
 	currentMonth: string
 	now: Date
@@ -235,6 +254,7 @@ async function buildSelectedUser(input: {
 			user: input.user,
 			usage: await loadCurrentMonthRollups({
 				db: input.db,
+				cache: input.cache,
 				userIds: [input.user.usageUserId],
 				month: input.currentMonth,
 			}),
@@ -242,7 +262,9 @@ async function buildSelectedUser(input: {
 		}),
 		loadUserMonthRollups({
 			db: input.db,
+			cache: input.cache,
 			userId: input.user.usageUserId,
+			currentMonth: input.currentMonth,
 		}),
 		readEntitlementConsumption({
 			db: input.db,
@@ -334,26 +356,79 @@ async function readEntitlementConsumption(input: {
 	)
 }
 
+async function hashCacheKeyPart(value: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(value),
+	)
+	return toHex(new Uint8Array(digest))
+}
+
 async function loadCurrentMonthRollups(input: {
 	db: D1Database
+	cache: Cache | null
 	userIds: Array<string>
 	month: string
 }) {
 	if (input.userIds.length === 0) return []
-	const placeholders = input.userIds.map(() => '?').join(', ')
-	const result = await input.db
-		.prepare(
-			`SELECT user_id, metric, month, event_count, error_count,
-				total_duration_ms, total_cpu_ms, total_bytes
-			 FROM usage_rollups
-			 WHERE user_id IN (${placeholders}) AND month = ?`,
-		)
-		.bind(...input.userIds, input.month)
-		.all<AdminUsageRollupRow>()
-	return result.results ?? []
+	if (!input.cache) return await queryCurrentMonthRollups(input)
+	// The user id list can be a full admin page (up to 100 ids), so the key
+	// carries a digest of the ids rather than the ids themselves.
+	const usersKey = await hashCacheKeyPart(input.userIds.join('\n'))
+	return await cachified({
+		key: `usage-rollups:month:${input.month}:users:${usersKey}`,
+		cache: input.cache,
+		ttl: rollupCacheTtlMs,
+		getFreshValue: () => queryCurrentMonthRollups(input),
+	})
 }
 
-async function loadUserMonthRollups(input: { db: D1Database; userId: string }) {
+async function queryCurrentMonthRollups(input: {
+	db: D1Database
+	userIds: Array<string>
+	month: string
+}) {
+	// The month binding takes one of D1's per-statement parameter slots, so
+	// a full 100-user admin page must split the IN list across statements.
+	const chunks = chunkArray(input.userIds, maxD1BoundParameters - 1)
+	const rows: Array<AdminUsageRollupRow> = []
+	for (const chunk of chunks) {
+		const placeholders = chunk.map(() => '?').join(', ')
+		const result = await input.db
+			.prepare(
+				`SELECT user_id, metric, month, event_count, error_count,
+					total_duration_ms, total_cpu_ms, total_bytes
+				 FROM usage_rollups
+				 WHERE user_id IN (${placeholders}) AND month = ?`,
+			)
+			.bind(...chunk, input.month)
+			.all<AdminUsageRollupRow>()
+		rows.push(...(result.results ?? []))
+	}
+	return rows
+}
+
+async function loadUserMonthRollups(input: {
+	db: D1Database
+	cache: Cache | null
+	userId: string
+	currentMonth: string
+}) {
+	if (!input.cache) return await queryUserMonthRollups(input)
+	return await cachified({
+		// Keyed by the current month so cached history rolls over on UTC
+		// month boundaries without waiting for the TTL.
+		key: `usage-rollups:user:${input.userId}:asof:${input.currentMonth}`,
+		cache: input.cache,
+		ttl: rollupCacheTtlMs,
+		getFreshValue: () => queryUserMonthRollups(input),
+	})
+}
+
+async function queryUserMonthRollups(input: {
+	db: D1Database
+	userId: string
+}) {
 	const result = await input.db
 		.prepare(
 			`SELECT user_id, metric, month, event_count, error_count,

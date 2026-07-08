@@ -56,19 +56,25 @@ documented fail-open gaps, acceptable because they are only reachable after a
 user action that is itself gated.
 
 One path cannot fail open: inbound email routing has no caller context but must
-enforce receive quotas. `findUserAccountByStableUserId` in `service.ts`
-reverse-resolves the stable user id to the account email (and plan) by scanning
-the users table and hashing each email — the same pattern
-`isAccountEmailVerified` uses. Positive matches are cached per isolate (the
-mapping is a content hash, so hits can never go stale) and re-verified with one
-point read. Only use it on contextless paths; interactive surfaces already carry
-the email.
+enforce receive quotas. It resolves the owning account via the indexed username
+lookup (`findPublicUserIdentityByUsername`) — it does not reverse-resolve stable
+user ids. `findUserAccountByStableUserId` in `service.ts` remains the
+reverse-resolution helper for other contextless paths (package-runtime contexts
+that act with only the hashed userId, mirroring `findUserAccount` in
+`email/platform-address.ts`): stored `stable_user_id` values are one indexed
+point read (unique partial index from migration 0052, persisted at signup),
+positive matches are cached per isolate (the mapping is a content hash, so hits
+can never go stale) and re-verified with one point read. Only use it on
+contextless paths; interactive surfaces already carry the email.
 
-The cold-path scan is O(users) per isolate on an attacker-reachable path, which
-is acceptable for the current single-digit user count only. **A persisted
-`users.stable_user_id` column (indexed, with an app-level backfill — SQLite
-cannot compute SHA-256 in a migration) is required before onboarding external
-users / design partners**; the scan must not ship into multi-tenant use.
+Legacy rows with a NULL `stable_user_id` still fall back to a scan that hashes
+each email, but the scan is now self-healing: a match writes the computed id
+back (`UPDATE ... WHERE stable_user_id IS NULL`), so each legacy row pays the
+scan at most once. The authenticated
+`POST /__maintenance/backfill-stable-user-ids` endpoint (`backfillStableUserIds`
+in `packages/worker/src/maintenance-handler.ts`) backfills all remaining legacy
+rows in keyset-paged batches, eliminating the scan entirely for existing
+deployments.
 
 ## The error shape
 

@@ -359,6 +359,16 @@ export function ConnectOauthRoute(handle: Handle) {
 		return url.toString()
 	}
 
+	/**
+	 * An expired session must land the user on the login page instead of a
+	 * generic "Unable to save ..." error mid-flow.
+	 */
+	const redirectToLoginOn401 = (response: Response) => {
+		if (response.status !== 401) return false
+		window.location.assign('/login')
+		return true
+	}
+
 	const readValue = async (name: string) => {
 		const response = await fetch('/account/secrets.json', {
 			method: 'POST',
@@ -369,6 +379,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			credentials: 'include',
 			body: JSON.stringify({ action: 'value_get', name }),
 		})
+		if (redirectToLoginOn401(response)) return null
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true) return null
 		return typeof payload.value?.value === 'string' ? payload.value.value : null
@@ -382,6 +393,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			},
 			credentials: 'include',
 		})
+		if (redirectToLoginOn401(response)) return null
 		const payload = (await response
 			.json()
 			.catch(() => null)) as AccountSecretsListPayload | null
@@ -477,6 +489,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				description,
 			}),
 		})
+		if (redirectToLoginOn401(response)) {
+			return { ok: false, error: 'Session expired.' }
+		}
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true || !payload.value?.value) {
 			return { ok: false, error: payload?.error || 'Unable to save value.' }
@@ -507,6 +522,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				allowedCapabilities: [],
 			}),
 		})
+		if (redirectToLoginOn401(response)) {
+			return { ok: false, error: 'Session expired.' }
+		}
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true) {
 			return { ok: false, error: payload?.error || 'Unable to save secret.' }
@@ -552,6 +570,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				allowedHosts: nextConfig.allowedHosts,
 			}),
 		})
+		if (redirectToLoginOn401(response)) {
+			return { ok: false, status: 401, error: 'Session expired.' }
+		}
 		const text = await response.text()
 		let data: Record<string, unknown> | null = null
 		try {
@@ -705,6 +726,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				tokenPayload: exchange.data,
 			}),
 		})
+		if (redirectToLoginOn401(response)) return
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true) {
 			setStatus(payload?.error || 'Unable to save OAuth tokens.', 'error')

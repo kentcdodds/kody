@@ -176,6 +176,10 @@ export function CommunityDetailRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({ reason: reportReason }),
 			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const payload = await readJson<{ ok: boolean; error?: string }>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error ?? 'Unable to submit report.')

@@ -168,6 +168,12 @@
 					"binding": "BUNDLE_ARTIFACTS_KV",
 				},
 			],
+			"r2_buckets": [
+				{
+					"binding": "EMAIL_BLOBS",
+					"bucket_name": "kody-email-blobs",
+				},
+			],
 			"vectorize": [
 				{
 					"binding": "CAPABILITY_VECTOR_INDEX",
@@ -273,6 +279,12 @@
 					"binding": "BUNDLE_ARTIFACTS_KV",
 				},
 			],
+			"r2_buckets": [
+				{
+					"binding": "EMAIL_BLOBS",
+					"bucket_name": "kody-preview-email-blobs",
+				},
+			],
 			"vectorize": [
 				{
 					"binding": "CAPABILITY_VECTOR_INDEX",
@@ -376,6 +388,14 @@
 				},
 				{
 					"binding": "BUNDLE_ARTIFACTS_KV",
+				},
+			],
+			// Like the D1 database above, the test env reuses the preview
+			// bucket name; local runs and vitest-pool-workers simulate it.
+			"r2_buckets": [
+				{
+					"binding": "EMAIL_BLOBS",
+					"bucket_name": "kody-preview-email-blobs",
 				},
 			],
 			"vars": {

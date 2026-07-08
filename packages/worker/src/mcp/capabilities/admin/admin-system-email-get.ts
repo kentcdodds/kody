@@ -62,6 +62,7 @@ export const adminSystemEmailGetCapability = defineDomainCapability(
 					const message = await loadAdminSystemEmailMessageById(
 						ctx.env.APP_DB,
 						args.id,
+						ctx.env.EMAIL_BLOBS,
 					)
 					return { message }
 				},
