@@ -191,9 +191,12 @@ Both are opt-in and adapted from the Epic Stack.
 - Passkeys are stored per user in the `passkeys` table and managed at
   `/account/passkeys`. Passkey sign-in is an alternative first factor: accounts
   with TOTP enabled still get the `/verify` challenge.
-- `POST /verify/2fa.json` and `POST /webauthn/authentication` share the per-IP
-  auth rate-limit bucket with the other credential-accepting endpoints
-  (`packages/worker/src/index.ts`).
+- `POST /verify/2fa.json`, `POST /account/two-factor.json`, and
+  `POST /webauthn/authentication` share the per-IP auth rate-limit bucket with
+  the other credential-accepting endpoints (`packages/worker/src/index.ts`).
+- Re-enrolling a new authenticator while two-factor is active is rejected; users
+  must disable first (which requires a current code), so a hijacked session
+  cannot silently swap the second factor.
 
 ## Account deletion
 

@@ -68,7 +68,11 @@ export async function accountPasskeysRouteLoader(
 }
 
 function formatTimestamp(value: string) {
-	const date = new Date(value.includes('T') ? value : `${value}Z`)
+	// SQLite CURRENT_TIMESTAMP is `YYYY-MM-DD HH:MM:SS` (UTC); the space
+	// separator is not valid ISO 8601 so Safari rejects it without the `T`.
+	const date = new Date(
+		value.includes('T') ? value : `${value.replace(' ', 'T')}Z`,
+	)
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 

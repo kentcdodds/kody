@@ -503,12 +503,13 @@ test('disabling 2fa also clears a pending re-setup', async () => {
 			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
 		}),
 	)
-	// Start a second setup while 2fa is active so both a `2fa` and a
-	// `2fa-verify` row exist, then disable.
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
+	// Re-setup via the API is blocked while 2fa is active, so simulate a
+	// stale pending row (e.g. left over from before enabling) directly.
+	sqlite.exec(`
+		INSERT INTO verifications (
+			type, target, secret, algorithm, digits, period, char_set, expires_at
+		) VALUES ('2fa-verify', '1', 'STALESECRET', 'SHA-1', 6, 30, '0123456789', NULL);
+	`)
 	const rowCountBefore = sqlite
 		.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
 		.get() as { count: number }
@@ -529,6 +530,46 @@ test('disabling 2fa also clears a pending re-setup', async () => {
 		.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
 		.get() as { count: number }
 	expect(rowCountAfter.count).toBe(0)
+})
+
+test('setup and confirm are rejected while 2fa is already enabled', async () => {
+	const { sqlite, db } = createMigratedDb()
+	await seedPrimaryUser(sqlite)
+	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
+
+	await runHandler(
+		handler,
+		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
+	)
+	const activeRow = readVerificationRow(sqlite, '1')!
+	await runHandler(
+		handler,
+		await createTwoFactorApiRequest({
+			session,
+			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
+		}),
+	)
+
+	// A hijacked session must not be able to swap out the active factor.
+	const setupResponse = await runHandler(
+		handler,
+		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
+	)
+	expect(setupResponse.status).toBe(400)
+
+	const confirmResponse = await runHandler(
+		handler,
+		await createTwoFactorApiRequest({
+			session,
+			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
+		}),
+	)
+	expect(confirmResponse.status).toBe(400)
+	// The active secret is untouched.
+	expect(readVerificationRow(sqlite, '1')).toMatchObject({
+		type: '2fa',
+		secret: activeRow.secret,
+	})
 })
 
 test('two-factor endpoints require authentication', async () => {

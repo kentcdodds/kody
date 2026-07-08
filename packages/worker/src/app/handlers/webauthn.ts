@@ -67,9 +67,12 @@ export function createWebauthnRegistrationHandler(appEnv: AppEnv) {
 					excludeCredentials: existingPasskeys.map((passkey) => ({
 						id: passkey.id,
 					})),
+					// Passkeys act as a full first factor here, so user verification
+					// is required end-to-end (matching requireUserVerification below;
+					// `preferred` could register credentials the server then rejects).
 					authenticatorSelection: {
 						residentKey: 'preferred',
-						userVerification: 'preferred',
+						userVerification: 'required',
 					},
 				})
 
@@ -203,7 +206,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 			if (request.method === 'GET') {
 				const options = await generateAuthenticationOptions({
 					rpID: config.rpID,
-					userVerification: 'preferred',
+					userVerification: 'required',
 				})
 				return jsonResponse({ ok: true, options }, 200, {
 					'Set-Cookie': await createWebAuthnChallengeCookie(
@@ -270,6 +273,7 @@ export function createWebauthnAuthenticationHandler(appEnv: AppEnv) {
 						publicKey: isoBase64URL.toBuffer(passkey.public_key),
 						counter: passkey.counter,
 					},
+					requireUserVerification: true,
 				})
 			} catch (error) {
 				void logAuditEvent({

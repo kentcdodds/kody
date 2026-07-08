@@ -83,6 +83,19 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 
 			switch (intent) {
 				case 'setup': {
+					// A hijacked session must not be able to swap out the active
+					// factor: re-enrollment requires disabling first, which demands
+					// a current code.
+					if (await isTwoFactorEnabled(appEnv.APP_DB, user.userId)) {
+						return jsonResponse(
+							{
+								ok: false,
+								error:
+									'Two-factor authentication is already enabled. Disable it first to set up a new authenticator.',
+							},
+							400,
+						)
+					}
 					const { otpUri, secret } = await createTwoFactorSetup({
 						db: appEnv.APP_DB,
 						userId: user.userId,
@@ -103,6 +116,17 @@ export function createAccountTwoFactorApiHandler(appEnv: AppEnv) {
 					if (!code) {
 						return jsonResponse(
 							{ ok: false, error: 'Verification code is required.' },
+							400,
+						)
+					}
+					// A stale pending row must never replace an already-active
+					// factor (same reasoning as the setup guard).
+					if (await isTwoFactorEnabled(appEnv.APP_DB, user.userId)) {
+						return jsonResponse(
+							{
+								ok: false,
+								error: 'Two-factor authentication is already enabled.',
+							},
 							400,
 						)
 					}
