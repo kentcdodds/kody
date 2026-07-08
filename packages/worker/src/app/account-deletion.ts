@@ -78,6 +78,10 @@ type UserRemoteConnectorSnapshot = {
 	instanceId: string
 }
 
+type UserMcpServerSnapshot = {
+	id: string
+}
+
 type UserPackageServiceSnapshot = {
 	packageId: string
 	kodyId: string
@@ -93,6 +97,7 @@ type UserDeletionInventory = {
 	savedPackages: Array<UserSavedPackageSnapshot>
 	repoSessions: Array<UserRepoSessionSnapshot>
 	remoteConnectors: Array<UserRemoteConnectorSnapshot>
+	mcpServers: Array<UserMcpServerSnapshot>
 	packageServices: Array<UserPackageServiceSnapshot>
 	communityListingIds: Array<string>
 }
@@ -235,6 +240,17 @@ async function listUserRemoteConnectors(env: Env, userId: string) {
 	}))
 }
 
+async function listUserMcpServers(env: Env, userId: string) {
+	const rows = await env.APP_DB.prepare(
+		`SELECT id
+		FROM mcp_server_settings
+		WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.all<{ id: string }>()
+	return (rows.results ?? []).map((row) => ({ id: row.id }))
+}
+
 async function listUserPackageServices(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT DISTINCT
@@ -316,6 +332,7 @@ async function collectUserDeletionInventory(input: {
 		savedPackages,
 		repoSessions,
 		remoteConnectors,
+		mcpServers,
 		packageServices,
 		communityListingIds,
 	] = await Promise.all([
@@ -349,6 +366,11 @@ async function collectUserDeletionInventory(input: {
 			input.warnings.push(`Failed to enumerate remote connectors: ${message}`)
 			return [] as Array<UserRemoteConnectorSnapshot>
 		}),
+		listUserMcpServers(input.env, input.userId).catch((error) => {
+			const message = error instanceof Error ? error.message : String(error)
+			input.warnings.push(`Failed to enumerate MCP servers: ${message}`)
+			return [] as Array<UserMcpServerSnapshot>
+		}),
 		listUserPackageServices(input.env, input.userId).catch((error) => {
 			const message = error instanceof Error ? error.message : String(error)
 			input.warnings.push(`Failed to enumerate package services: ${message}`)
@@ -378,6 +400,7 @@ async function collectUserDeletionInventory(input: {
 		savedPackages,
 		repoSessions,
 		remoteConnectors,
+		mcpServers,
 		packageServices,
 		communityListingIds,
 	}
@@ -537,6 +560,35 @@ async function purgeRemoteConnectorSessions(input: {
 		}
 	}
 	return purged
+}
+
+async function purgeMcpClientHub(input: {
+	env: Env
+	userId: string
+	mcpServers: ReadonlyArray<UserMcpServerSnapshot>
+	warnings: Array<string>
+}): Promise<number> {
+	if (input.mcpServers.length === 0) return 0
+	const namespace = input.env.MCP_CLIENT_HUB
+	if (!namespace) {
+		input.warnings.push(
+			`MCP_CLIENT_HUB binding was unavailable; the MCP client hub with ${input.mcpServers.length} server(s) was not purged.`,
+		)
+		return 0
+	}
+	try {
+		const stub = namespace.get(
+			namespace.idFromName(input.userId.trim()),
+		) as unknown as {
+			purgeForAccountDeletion: () => Promise<void>
+		}
+		await stub.purgeForAccountDeletion()
+		return 1
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		input.warnings.push(`MCP client hub purge failed: ${message}`)
+		return 0
+	}
 }
 
 async function purgePackageRealtimeSessions(input: {
@@ -907,6 +959,12 @@ export async function deleteUserAccount(input: {
 			connectors: inventory.remoteConnectors,
 			warnings,
 		})
+	result.clearedDurableObjects.mcpClientHubs = await purgeMcpClientHub({
+		env: input.env,
+		userId: input.mcpUserId,
+		mcpServers: inventory.mcpServers,
+		warnings,
+	})
 	result.clearedDurableObjects.packageRealtimeSessions =
 		await purgePackageRealtimeSessions({
 			env: input.env,

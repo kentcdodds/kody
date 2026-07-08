@@ -66,6 +66,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'secret_buckets' },
 	{ kind: 'user_id', table: 'remote_connector_settings' },
+	{ kind: 'user_id', table: 'mcp_server_settings' },
 	{ kind: 'user_id', table: 'archived_job_artifacts' },
 	{ kind: 'user_id', table: 'published_bundle_artifacts' },
 	{ kind: 'user_id', table: 'jobs' },

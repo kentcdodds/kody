@@ -127,6 +127,22 @@ function filterRegistryForContext(input: {
 	return filterCapabilityRegistryForCaller(input.registry, input.callerContext)
 }
 
+async function loadEnabledMcpServerRefs(input: {
+	env: Env
+	userId: string
+}): Promise<Array<McpServerRef>> {
+	try {
+		return await listEnabledMcpServerRefs({
+			env: input.env,
+			userId: input.userId,
+		})
+	} catch {
+		// A missing/unavailable settings table must not break builtin
+		// capabilities; the caller just sees no MCP server domains.
+		return []
+	}
+}
+
 async function loadMcpServerSnapshots(input: {
 	env: Env
 	userId: string
@@ -162,7 +178,7 @@ export async function getCapabilityRegistryForContext(input: {
 			callerContext: input.callerContext,
 		})
 	}
-	const mcpServerRefs = await listEnabledMcpServerRefs({
+	const mcpServerRefs = await loadEnabledMcpServerRefs({
 		env: input.env,
 		userId,
 	})
