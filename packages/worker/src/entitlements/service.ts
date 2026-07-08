@@ -108,7 +108,11 @@ export async function findUserAccountByStableUserId(
 				plan: string | null
 				email_verified_at: string | null
 			}>()
-			.catch(async () => {
+			.catch(async (error: unknown) => {
+				// Only a schema missing the stable_user_id column downgrades to the
+				// legacy query; transient D1 failures must propagate, not silently
+				// change which lookup ran.
+				if (!isMissingStableUserIdColumnError(error)) throw error
 				const legacyRow = await db
 					.prepare(
 						`SELECT email, plan, email_verified_at

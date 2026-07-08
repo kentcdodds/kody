@@ -19,7 +19,6 @@ import {
 	readVerifySession,
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 export function createVerifyHandler(env: Env) {
 	return {
@@ -51,12 +50,12 @@ const verifyRequestSchema = object({
 	code: string(),
 })
 
-export function createTwoFactorVerifyApiHandler(appEnv: AppEnv) {
+export function createTwoFactorVerifyApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url }) {
-			setVerifySessionSecret(appEnv.COOKIE_SECRET)
-			setAuthSessionSecret(appEnv.COOKIE_SECRET)
+			setVerifySessionSecret(env.COOKIE_SECRET)
+			setAuthSessionSecret(env.COOKIE_SECRET)
 
 			const requestIp = getRequestIp(request) ?? undefined
 			const pendingSession = await readVerifySession(request)
@@ -85,7 +84,7 @@ export function createTwoFactorVerifyApiHandler(appEnv: AppEnv) {
 			const codeValid =
 				Number.isInteger(userId) &&
 				(await verifyTwoFactorCode({
-					db: appEnv.APP_DB,
+					db: env.APP_DB,
 					userId,
 					code,
 					type: twoFactorVerificationType,

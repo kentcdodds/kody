@@ -1,19 +1,27 @@
 import { parseSafe } from 'remix/data-schema'
-import { EnvSchema, type AppEnv } from '#worker/env-schema.ts'
+import { EnvSchema } from '#worker/env-schema.ts'
 
-// Env binding objects are stable per isolate; parse them once per identity
+// Env binding objects are stable per isolate; validate them once per identity
 // instead of running schema validation on every call.
-const parsedEnvCache = new WeakMap<Env, AppEnv>()
+const validatedEnvs = new WeakSet<Env>()
 
-export function getEnv(env: Env): AppEnv {
-	const cached = parsedEnvCache.get(env)
-	if (cached) return cached
-	const parsed = parseEnv(env)
-	parsedEnvCache.set(env, parsed)
-	return parsed
+/**
+ * Validate required bindings and config once, then hand back the original env
+ * object. Returning the schema's parsed output here would silently drop every
+ * binding the schema does not model (REPO_SESSION, OAUTH_PROVIDER, ASSETS,
+ * ...), which is why this returns `env` itself: the schema is a gate, not a
+ * transform. Consumers normalize scalar values (trim etc.) at the point of
+ * use.
+ */
+export function getEnv(env: Env): Env {
+	if (!validatedEnvs.has(env)) {
+		validateEnv(env)
+		validatedEnvs.add(env)
+	}
+	return env
 }
 
-function parseEnv(env: Env): AppEnv {
+function validateEnv(env: Env) {
 	const result = parseSafe(EnvSchema, env)
 
 	if (!result.success) {
@@ -31,6 +39,4 @@ function parseEnv(env: Env): AppEnv {
 			`Invalid environment variables: ${message}.\n\n💡 Tip: Check \`docs/contributing/environment-variables.md\` for details.`,
 		)
 	}
-
-	return result.value
 }

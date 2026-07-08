@@ -48,6 +48,15 @@ type ParsedInboundEmail = Awaited<
 	ReturnType<typeof parseForwardableEmailMessage>
 >
 
+/**
+ * Rejection audit writes are best-effort (the SMTP reject already happened),
+ * but a failure must still be visible to operators — silently losing the
+ * rejection trail weakens abuse detection on attacker-controlled paths.
+ */
+function warnRejectionAuditWriteFailed(error: unknown) {
+	console.warn('email-rejection-audit-write-failed', error)
+}
+
 async function parseAndStoreInboundEmail(input: {
 	db: D1Database
 	message: ForwardableEmailMessage
@@ -283,7 +292,7 @@ export async function handleInboundEmail(
 			recipient,
 			reason,
 			phase: 'account-verification',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -343,7 +352,7 @@ export async function handleInboundEmail(
 				error.details.resource === 'email_message_bytes'
 					? 'size'
 					: 'entitlement',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -371,7 +380,7 @@ export async function handleInboundEmail(
 					reason,
 					phase: 'parse',
 				},
-			}).catch(() => undefined)
+			}).catch(warnRejectionAuditWriteFailed)
 			await recordReceiveUsage({ outcome: 'error' })
 		},
 	})
@@ -435,7 +444,7 @@ async function handleSystemInboundEmail(input: {
 			recipient: input.recipient,
 			reason: `Message size ${input.message.rawSize} exceeds system inbox cap ${systemEmailLimits.maxMessageBytes}.`,
 			phase: 'size',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -453,7 +462,7 @@ async function handleSystemInboundEmail(input: {
 			recipient: input.recipient,
 			reason: `System inbox daily receive cap ${systemEmailLimits.maxReceivesPerDay} reached for ${input.localPart}.`,
 			phase: 'system-limit',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -470,7 +479,7 @@ async function handleSystemInboundEmail(input: {
 			recipient: input.recipient,
 			reason: `System inbox stored-message cap ${systemEmailLimits.maxStoredMessages} reached.`,
 			phase: 'system-limit',
-		}).catch(() => undefined)
+		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -494,7 +503,7 @@ async function handleSystemInboundEmail(input: {
 					reason,
 					phase: 'parse',
 				},
-			}).catch(() => undefined)
+			}).catch(warnRejectionAuditWriteFailed)
 			await recordReceiveUsage({ outcome: 'error' })
 		},
 	})

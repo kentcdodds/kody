@@ -17,7 +17,6 @@ import { type routes } from '#app/routes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 const resetRequestSchema = object({
 	email: string(),
@@ -61,8 +60,8 @@ function logMissingEmailConfig(payload: { to: string; subject: string }) {
 	)
 }
 
-function getPasswordResetEmailConfig(appEnv: Pick<AppEnv, 'APP_BASE_URL'>) {
-	const configuredBaseUrl = appEnv.APP_BASE_URL?.trim()
+function getPasswordResetEmailConfig(env: Pick<Env, 'APP_BASE_URL'>) {
+	const configuredBaseUrl = env.APP_BASE_URL?.trim()
 	if (!configuredBaseUrl) return null
 
 	const appBaseUrl = new URL(configuredBaseUrl).origin
@@ -70,8 +69,8 @@ function getPasswordResetEmailConfig(appEnv: Pick<AppEnv, 'APP_BASE_URL'>) {
 	return { appBaseUrl, fromEmail }
 }
 
-export function createPasswordResetRequestHandler(appEnv: AppEnv) {
-	const db = createDb(appEnv.APP_DB)
+export function createPasswordResetRequestHandler(env: Env) {
+	const db = createDb(env.APP_DB)
 
 	return {
 		middleware: [],
@@ -107,14 +106,12 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 			const userRecord = await db.findOne(usersTable, {
 				where: { email: normalizedEmail },
 			})
-			const emailConfig = userRecord
-				? getPasswordResetEmailConfig(appEnv)
-				: null
+			const emailConfig = userRecord ? getPasswordResetEmailConfig(env) : null
 
 			const expiresAt = Date.now() + passwordResetTokenExpiryMs
 			const resetToken = userRecord
 				? await createPasswordResetToken({
-						db: appEnv.APP_DB,
+						db: env.APP_DB,
 						userId: userRecord.id,
 						expiresAt,
 					})
@@ -139,9 +136,9 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 					try {
 						await sendCloudflareEmail(
 							{
-								accountId: appEnv.CLOUDFLARE_ACCOUNT_ID,
-								apiBaseUrl: appEnv.CLOUDFLARE_API_BASE_URL,
-								apiToken: appEnv.CLOUDFLARE_API_TOKEN,
+								accountId: env.CLOUDFLARE_ACCOUNT_ID,
+								apiBaseUrl: env.CLOUDFLARE_API_BASE_URL,
+								apiToken: env.CLOUDFLARE_API_TOKEN,
 							},
 							{
 								to: normalizedEmail,
@@ -184,8 +181,8 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 	} satisfies Action<typeof routes.passwordResetRequest>
 }
 
-export function createPasswordResetConfirmHandler(appEnv: AppEnv) {
-	const db = createDb(appEnv.APP_DB)
+export function createPasswordResetConfirmHandler(env: Env) {
+	const db = createDb(env.APP_DB)
 
 	return {
 		middleware: [],

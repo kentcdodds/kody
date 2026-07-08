@@ -1,10 +1,9 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
 import { createAppRouter } from '#app/router.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 
 type AppRouterBundle = {
-	appEnv: AppEnv
+	appEnv: Env
 	router: ReturnType<typeof createAppRouter>
 }
 

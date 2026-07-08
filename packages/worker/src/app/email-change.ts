@@ -4,7 +4,6 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
-import { type AppEnv } from '#worker/env-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -18,10 +17,10 @@ function generateEmailChangeToken() {
 }
 
 function getEmailChangeConfig(input: {
-	appEnv: Pick<AppEnv, 'APP_BASE_URL'>
+	env: Pick<Env, 'APP_BASE_URL'>
 	requestUrl: string | URL
 }) {
-	const configuredBaseUrl = input.appEnv.APP_BASE_URL?.trim()
+	const configuredBaseUrl = input.env.APP_BASE_URL?.trim()
 	const appBaseUrl = new URL(configuredBaseUrl || input.requestUrl).origin
 	const fromEmail = `kody@${new URL(appBaseUrl).hostname}`
 	return { appBaseUrl, fromEmail }
@@ -58,18 +57,18 @@ function buildEmailChangeEmail(input: {
 }
 
 export async function createEmailChangeVerification(input: {
-	appEnv: AppEnv
+	env: Env
 	userId: number
 	currentEmail: string
 	newEmail: string
 	requestUrl: string | URL
 }) {
-	const db = createDb(input.appEnv.APP_DB)
+	const db = createDb(input.env.APP_DB)
 	const token = generateEmailChangeToken()
 	const tokenHash = await hashVerificationToken(token)
 	const expiresAt = Date.now() + emailChangeTokenExpiryMs
 
-	await input.appEnv.APP_DB.prepare(
+	await input.env.APP_DB.prepare(
 		`DELETE FROM pending_email_changes WHERE user_id = ?`,
 	)
 		.bind(input.userId)
@@ -83,7 +82,7 @@ export async function createEmailChangeVerification(input: {
 	})
 
 	async function discardNewToken() {
-		await input.appEnv.APP_DB.prepare(
+		await input.env.APP_DB.prepare(
 			`DELETE FROM pending_email_changes WHERE token_hash = ?`,
 		)
 			.bind(tokenHash)
@@ -92,7 +91,7 @@ export async function createEmailChangeVerification(input: {
 	}
 
 	const emailConfig = getEmailChangeConfig({
-		appEnv: input.appEnv,
+		env: input.env,
 		requestUrl: input.requestUrl,
 	})
 	const verificationUrl = new URL(
@@ -110,9 +109,9 @@ export async function createEmailChangeVerification(input: {
 	try {
 		sendResult = await sendCloudflareEmail(
 			{
-				accountId: input.appEnv.CLOUDFLARE_ACCOUNT_ID,
-				apiBaseUrl: input.appEnv.CLOUDFLARE_API_BASE_URL,
-				apiToken: input.appEnv.CLOUDFLARE_API_TOKEN,
+				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
+				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
+				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
 			{
 				to: input.newEmail,
@@ -127,14 +126,14 @@ export async function createEmailChangeVerification(input: {
 		throw error
 	}
 	if (!sendResult.ok) {
-		if (!(sendResult.skipped && isNonProductionRuntime(input.appEnv))) {
+		if (!(sendResult.skipped && isNonProductionRuntime(input.env))) {
 			await discardNewToken()
 			throw new Error(sendResult.error ?? 'Email change could not be sent.')
 		}
 		console.warn('email-change-send-skipped', input.userId)
 	}
 
-	await input.appEnv.APP_DB.prepare(
+	await input.env.APP_DB.prepare(
 		`DELETE FROM pending_email_changes WHERE user_id = ? AND token_hash != ?`,
 	)
 		.bind(input.userId, tokenHash)
