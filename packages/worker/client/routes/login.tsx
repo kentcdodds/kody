@@ -1,7 +1,6 @@
 import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { buildAuthLink } from '#client/auth-links.ts'
 import {
 	getPathname,
 	listenToRouterNavigation,
@@ -39,9 +38,17 @@ function normalizeRedirectTo(value: string | null) {
 	return value
 }
 
-function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
+function buildAuthPath(
+	mode: AuthMode,
+	redirectTo: string | null,
+	inviteCode: string | null = null,
+) {
 	const path = mode === 'signup' ? '/signup' : '/login'
-	return buildAuthLink(path, redirectTo)
+	const params = new URLSearchParams()
+	if (redirectTo) params.set('redirectTo', redirectTo)
+	if (inviteCode) params.set('inviteCode', inviteCode)
+	const query = params.toString()
+	return query ? `${path}?${query}` : path
 }
 
 function buildVerifyPath(redirectTo: string | null) {
@@ -90,6 +97,7 @@ export function LoginRoute(handle: Handle) {
 	let routePath: string | null = null
 	let cachedSocialProviders: LoginAuthLoaderData['providers'] | null = null
 	let socialProvidersStatus: 'idle' | 'loading' | 'ready' = 'idle'
+	let inviteCodeDraft = getSearchParams(handle).get('inviteCode') ?? ''
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
 		status = nextStatus
@@ -100,6 +108,12 @@ export function LoginRoute(handle: Handle) {
 	function resetAuthState() {
 		status = 'idle'
 		message = null
+	}
+
+	function updateInviteCodeDraft(event: InputEvent) {
+		if (!(event.currentTarget instanceof HTMLInputElement)) return
+		inviteCodeDraft = event.currentTarget.value
+		handle.update()
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -159,6 +173,9 @@ export function LoginRoute(handle: Handle) {
 			mode === 'signup' ? String(formData.get('username') ?? '').trim() : ''
 		const inviteCode =
 			mode === 'signup' ? String(formData.get('inviteCode') ?? '').trim() : ''
+		if (mode === 'signup') {
+			inviteCodeDraft = inviteCode
+		}
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
 
 		if (!email || !password) {
@@ -293,6 +310,10 @@ export function LoginRoute(handle: Handle) {
 		}
 		const socialProviders = cachedSocialProviders ?? []
 		const inviteCodeFromQuery = getSearchParams(handle).get('inviteCode') ?? ''
+		if (!inviteCodeDraft && inviteCodeFromQuery) {
+			inviteCodeDraft = inviteCodeFromQuery
+		}
+		const inviteCodeForSocial = inviteCodeDraft.trim() || null
 		const errorFromQuery = getSearchParams(handle).get('error')
 		const title = isSignup ? 'Create your account' : 'Welcome back'
 		const description = isSignup
@@ -358,7 +379,8 @@ export function LoginRoute(handle: Handle) {
 								name="inviteCode"
 								autoComplete="one-time-code"
 								placeholder="Required for production launch cohorts"
-								mix={css(inputCss)}
+								value={inviteCodeDraft}
+								mix={[css(inputCss), on('input', updateInviteCodeDraft)]}
 							/>
 						</label>
 					) : null}
@@ -456,7 +478,7 @@ export function LoginRoute(handle: Handle) {
 								href={buildSocialAuthHref(
 									provider.startPath,
 									redirectTo,
-									isSignup ? inviteCodeFromQuery : null,
+									isSignup ? inviteCodeForSocial : null,
 								)}
 								aria-disabled={isSubmitting}
 								mix={[
@@ -476,7 +498,11 @@ export function LoginRoute(handle: Handle) {
 				) : null}
 				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<a
-						href={buildAuthPath(isSignup ? 'login' : 'signup', redirectTo)}
+						href={buildAuthPath(
+							isSignup ? 'login' : 'signup',
+							redirectTo,
+							inviteCodeForSocial,
+						)}
 						aria-pressed={isSignup}
 						mix={css(actionLinkCss)}
 					>
