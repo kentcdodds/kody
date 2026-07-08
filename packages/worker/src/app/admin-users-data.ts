@@ -1,6 +1,10 @@
 import { readPagination } from '#app/query-params.ts'
 import { type AdminUsersLoaderData } from '#app/loader-data.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
 
 export const adminUserListItemFieldNames = [
 	'id',
@@ -130,23 +134,27 @@ export async function loadRolesByUserIds(
 		return rolesByUserId
 	}
 
-	const placeholders = userIds.map(() => '?').join(', ')
-	const result = await db
-		.prepare(
-			`SELECT ur.user_id, r.name AS role_name
-			 FROM user_roles ur
-			 INNER JOIN roles r ON r.id = ur.role_id
-			 WHERE ur.user_id IN (${placeholders})
-			 ORDER BY ur.user_id ASC, r.name ASC`,
-		)
-		.bind(...userIds)
-		.all<{ user_id: number; role_name: string }>()
+	// A 100-user admin page hits D1's per-statement bound parameter cap, so
+	// split the IN list across statements.
+	for (const chunk of chunkArray(userIds, maxD1BoundParameters)) {
+		const placeholders = chunk.map(() => '?').join(', ')
+		const result = await db
+			.prepare(
+				`SELECT ur.user_id, r.name AS role_name
+				 FROM user_roles ur
+				 INNER JOIN roles r ON r.id = ur.role_id
+				 WHERE ur.user_id IN (${placeholders})
+				 ORDER BY ur.user_id ASC, r.name ASC`,
+			)
+			.bind(...chunk)
+			.all<{ user_id: number; role_name: string }>()
 
-	for (const row of result.results ?? []) {
-		if (!isRoleName(row.role_name)) continue
-		const current = rolesByUserId.get(row.user_id) ?? []
-		current.push(row.role_name)
-		rolesByUserId.set(row.user_id, current)
+		for (const row of result.results ?? []) {
+			if (!isRoleName(row.role_name)) continue
+			const current = rolesByUserId.get(row.user_id) ?? []
+			current.push(row.role_name)
+			rolesByUserId.set(row.user_id, current)
+		}
 	}
 
 	return rolesByUserId

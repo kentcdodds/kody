@@ -1,5 +1,9 @@
 import { readPagination, readPositiveInt } from '#app/query-params.ts'
 import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
+import {
 	entitlementResourceLabels,
 	isEmailFallbackResource,
 	parsePlanName,
@@ -338,17 +342,24 @@ async function loadCurrentMonthRollups(input: {
 	month: string
 }) {
 	if (input.userIds.length === 0) return []
-	const placeholders = input.userIds.map(() => '?').join(', ')
-	const result = await input.db
-		.prepare(
-			`SELECT user_id, metric, month, event_count, error_count,
-				total_duration_ms, total_cpu_ms, total_bytes
-			 FROM usage_rollups
-			 WHERE user_id IN (${placeholders}) AND month = ?`,
-		)
-		.bind(...input.userIds, input.month)
-		.all<AdminUsageRollupRow>()
-	return result.results ?? []
+	// The month binding takes one of D1's per-statement parameter slots, so
+	// a full 100-user admin page must split the IN list across statements.
+	const chunks = chunkArray(input.userIds, maxD1BoundParameters - 1)
+	const rows: Array<AdminUsageRollupRow> = []
+	for (const chunk of chunks) {
+		const placeholders = chunk.map(() => '?').join(', ')
+		const result = await input.db
+			.prepare(
+				`SELECT user_id, metric, month, event_count, error_count,
+					total_duration_ms, total_cpu_ms, total_bytes
+				 FROM usage_rollups
+				 WHERE user_id IN (${placeholders}) AND month = ?`,
+			)
+			.bind(...chunk, input.month)
+			.all<AdminUsageRollupRow>()
+		rows.push(...(result.results ?? []))
+	}
+	return rows
 }
 
 async function loadUserMonthRollups(input: { db: D1Database; userId: string }) {
