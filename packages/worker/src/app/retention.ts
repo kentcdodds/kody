@@ -1,4 +1,5 @@
 import { systemEmailOwnerId } from '#worker/email/system-email.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -249,10 +250,12 @@ async function selectIds(input: {
 	column?: string
 }): Promise<Array<IdValue>> {
 	const column = input.column ?? 'id'
-	const { results } = await input.db
-		.prepare(input.sql)
-		.bind(...input.bindings)
-		.all<Record<string, unknown>>()
+	const { results } = await runD1WithRetry(() =>
+		input.db
+			.prepare(input.sql)
+			.bind(...input.bindings)
+			.all<Record<string, unknown>>(),
+	)
 	return (results ?? []).map((row) => row[column] as IdValue)
 }
 
@@ -293,13 +296,15 @@ async function deleteByIds(input: {
 		index += retentionDeleteIdsMaxParameters
 	) {
 		const ids = input.ids.slice(index, index + retentionDeleteIdsMaxParameters)
-		const result = await input.db
-			.prepare(
-				`DELETE FROM ${input.table}
+		const result = await runD1WithRetry(() =>
+			input.db
+				.prepare(
+					`DELETE FROM ${input.table}
 				WHERE ${input.idColumn} IN (${placeholders(ids)})`,
-			)
-			.bind(...ids)
-			.run()
+				)
+				.bind(...ids)
+				.run(),
+		)
 		deleted += result.meta.changes ?? 0
 	}
 	return deleted
@@ -311,9 +316,10 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 	kvKey: string
 	cutoff: string
 }) {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM published_bundle_artifacts
+	const result = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`DELETE FROM published_bundle_artifacts
 			WHERE id = ?
 				AND kv_key = ?
 				AND created_at < ?
@@ -331,9 +337,10 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 						AND session.source_id = published_bundle_artifacts.source_id
 						AND session.status = 'active'
 				)`,
-		)
-		.bind(input.id, input.kvKey, input.cutoff)
-		.run()
+			)
+			.bind(input.id, input.kvKey, input.cutoff)
+			.run(),
+	)
 	return result.meta.changes ?? 0
 }
 
@@ -401,17 +408,19 @@ export async function prunePackageRuntimeRetention(input: {
 	let capPairCount = 0
 	let capDeletedCandidates = 0
 	if (runIds.size < batchSize) {
-		const { results: pairs } = await input.db
-			.prepare(
-				`SELECT user_id, package_id, COUNT(*) AS run_count
+		const { results: pairs } = await runD1WithRetry(() =>
+			input.db
+				.prepare(
+					`SELECT user_id, package_id, COUNT(*) AS run_count
 				FROM package_runtime_runs
 				GROUP BY user_id, package_id
 				HAVING COUNT(*) > ?
 				ORDER BY run_count DESC
 				LIMIT ?`,
-			)
-			.bind(packageRuntimeMaxRunsPerPackage, maxCapPairs)
-			.all<{ user_id: string; package_id: string; run_count: number }>()
+				)
+				.bind(packageRuntimeMaxRunsPerPackage, maxCapPairs)
+				.all<{ user_id: string; package_id: string; run_count: number }>(),
+		)
 		capPairCount = (pairs ?? []).length
 		for (const pair of pairs ?? []) {
 			if (runIds.size >= batchSize) break
@@ -566,8 +575,9 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 		publishedBundleArtifactRetentionDays,
 	)
 	const batchSize = input.batchSize ?? publishedBundleArtifactRetentionBatchSize
-	const { results } = await input.env.APP_DB.prepare(
-		`SELECT artifact.id, artifact.kv_key, artifact.source_id, artifact.published_commit
+	const { results } = await runD1WithRetry(() =>
+		input.env.APP_DB.prepare(
+			`SELECT artifact.id, artifact.kv_key, artifact.source_id, artifact.published_commit
 		FROM published_bundle_artifacts AS artifact
 		WHERE artifact.created_at < ?
 			AND NOT EXISTS (
@@ -586,14 +596,15 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 			)
 		ORDER BY artifact.created_at ASC, artifact.id ASC
 		LIMIT ?`,
+		)
+			.bind(cutoff, batchSize)
+			.all<{
+				id: string
+				kv_key: string
+				source_id: string
+				published_commit: string
+			}>(),
 	)
-		.bind(cutoff, batchSize)
-		.all<{
-			id: string
-			kv_key: string
-			source_id: string
-			published_commit: string
-		}>()
 	const rows = results ?? []
 	let deletedRows = 0
 	let deletedKvKeys = 0
@@ -724,23 +735,25 @@ export async function pruneUserEmailMessagesForRetention(input: {
 	const cursorBindings = cursor
 		? [cursor.createdAt, cursor.createdAt, cursor.id]
 		: []
-	const { results } = await input.db
-		.prepare(
-			`SELECT id, user_id, raw_mime_key, created_at
+	const { results } = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`SELECT id, user_id, raw_mime_key, created_at
 			FROM email_messages
 			WHERE user_id != ?
 				AND created_at < ?
 				${cursorClause}
 			ORDER BY created_at ASC, id ASC
 			LIMIT ?`,
-		)
-		.bind(systemEmailOwnerId, cutoff, ...cursorBindings, batchSize)
-		.all<{
-			id: string
-			user_id: string
-			raw_mime_key: string | null
-			created_at: string
-		}>()
+			)
+			.bind(systemEmailOwnerId, cutoff, ...cursorBindings, batchSize)
+			.all<{
+				id: string
+				user_id: string
+				raw_mime_key: string | null
+				created_at: string
+			}>(),
+	)
 	const rows = results ?? []
 	const result: EmailMessageRetentionResult = {
 		deletedMessages: 0,
@@ -793,18 +806,20 @@ export async function pruneUserEmailMessagesForRetention(input: {
 			index,
 			index + retentionDeleteIdsMaxParameters,
 		)
-		const threadDelete = await input.db
-			.prepare(
-				`DELETE FROM email_threads
+		const threadDelete = await runD1WithRetry(() =>
+			input.db
+				.prepare(
+					`DELETE FROM email_threads
 				WHERE user_id IN (${placeholders(userIds)})
 					AND NOT EXISTS (
 						SELECT 1
 						FROM email_messages
 						WHERE email_messages.thread_id = email_threads.id
 					)`,
-			)
-			.bind(...userIds)
-			.run()
+				)
+				.bind(...userIds)
+				.run(),
+		)
 		result.deletedThreads += threadDelete.meta.changes ?? 0
 	}
 	// hasMore is based on the selected count: a full batch means more eligible

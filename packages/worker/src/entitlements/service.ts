@@ -217,6 +217,333 @@ async function countRows(db: D1Database, sql: string, params: Array<unknown>) {
 	return Number(row?.count ?? 0)
 }
 
+const entitlementByteEncoder = new TextEncoder()
+
+function utf8ByteLength(value: string) {
+	return entitlementByteEncoder.encode(value).byteLength
+}
+
+function serializeByteEstimateValue(value: unknown): string {
+	if (typeof value === 'string') return value
+	if (value === undefined) return 'undefined'
+	try {
+		return JSON.stringify(value) ?? 'null'
+	} catch {
+		return String(value)
+	}
+}
+
+export function estimateEntitlementStorageBytes(value: unknown): number {
+	return utf8ByteLength(serializeByteEstimateValue(value))
+}
+
+export function estimateEntitlementStorageEntryBytes(input: {
+	key?: string | null
+	value: unknown
+}) {
+	return (
+		(input.key ? estimateEntitlementStorageBytes(input.key) : 0) +
+		estimateEntitlementStorageBytes(input.value)
+	)
+}
+
+export function estimateEntitlementStorageByteDelta(input: {
+	nextBytes: number
+	existingBytes?: number | null
+}) {
+	return Math.max(0, input.nextBytes - (input.existingBytes ?? 0))
+}
+
+export function estimateEntitlementStorageEntryByteDelta(input: {
+	next: { key?: string | null; value: unknown }
+	existing?: { key?: string | null; value: unknown } | null
+}) {
+	return estimateEntitlementStorageByteDelta({
+		nextBytes: estimateEntitlementStorageEntryBytes(input.next),
+		existingBytes: input.existing
+			? estimateEntitlementStorageEntryBytes(input.existing)
+			: 0,
+	})
+}
+
+export function estimateEntitlementStorageSqlWriteBytes(input: {
+	query: string
+	params?: Array<unknown>
+}) {
+	return estimateEntitlementStorageEntryBytes({
+		value: {
+			query: input.query,
+			params: input.params ?? [],
+		},
+	})
+}
+
+function textBytesExpression(columns: ReadonlyArray<string>) {
+	return columns
+		.map((column) => `length(CAST(COALESCE(${column}, '') AS BLOB))`)
+		.join(' + ')
+}
+
+function isMissingStorageByteSurfaceError(error: unknown) {
+	return (
+		error instanceof Error && /\bno such (table|column)\b/i.test(error.message)
+	)
+}
+
+async function sumStorageBytes(
+	db: D1Database,
+	sql: string,
+	params: Array<unknown>,
+) {
+	const row = await db
+		.prepare(sql)
+		.bind(...params)
+		.first<{ count: number }>()
+		.catch((error: unknown) => {
+			if (isMissingStorageByteSurfaceError(error)) return null
+			throw error
+		})
+	return Number(row?.count ?? 0)
+}
+
+export async function readUserD1StorageBytes(input: {
+	db: D1Database
+	userId: string
+}) {
+	const { db, userId } = input
+	const sums = await Promise.all([
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				COALESCE(raw_size, 0)
+				+ ${textBytesExpression([
+					'from_address',
+					'envelope_from',
+					'to_addresses_json',
+					'cc_addresses_json',
+					'bcc_addresses_json',
+					'reply_to_addresses_json',
+					'subject',
+					'message_id_header',
+					'in_reply_to_header',
+					'references_json',
+					'headers_json',
+					'auth_results',
+					'text_body',
+					'html_body',
+					'provider_message_id',
+					'error',
+				])}
+			), 0) AS count
+			FROM email_messages
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(size), 0) AS count
+			FROM email_attachments ea
+			JOIN email_messages em ON em.id = ea.message_id
+			WHERE em.user_id = ? AND ea.storage_kind = 'external'`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression(['ve.name', 've.description', 've.value'])}
+			), 0) AS count
+			FROM value_entries ve
+			JOIN value_buckets vb ON vb.id = ve.bucket_id
+			WHERE vb.user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'se.name',
+					'se.description',
+					'se.encrypted_value',
+					'se.allowed_hosts',
+					'se.allowed_capabilities',
+					'se.allowed_packages',
+				])}
+			), 0) AS count
+			FROM secret_entries se
+			JOIN secret_buckets sb ON sb.id = se.bucket_id
+			WHERE sb.user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'category',
+					'subject',
+					'summary',
+					'details',
+					'tags_json',
+					'source_uris_json',
+					'dedupe_key',
+				])}
+			), 0) AS count
+			FROM mcp_memories
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'name',
+					'kody_id',
+					'description',
+					'tags_json',
+					'search_text',
+					'source_id',
+				])}
+			), 0) AS count
+			FROM saved_packages
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'name',
+					'params_json',
+					'schedule_json',
+					'timezone',
+					'caller_context_json',
+					'last_run_status',
+					'last_run_error',
+					'run_history_json',
+					'source_id',
+					'published_commit',
+					'storage_id',
+				])}
+			), 0) AS count
+			FROM jobs
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'entity_kind',
+					'entity_id',
+					'repo_id',
+					'published_commit',
+					'indexed_commit',
+					'manifest_path',
+					'source_root',
+				])}
+			), 0) AS count
+			FROM entity_sources
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'source_id',
+					'source_repo_id',
+					'session_branch',
+					'source_branch',
+					'base_commit',
+					'source_root',
+					'conversation_id',
+					'last_checkpoint_commit',
+					'last_check_run_id',
+					'last_check_tree_hash',
+				])}
+			), 0) AS count
+			FROM repo_sessions
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'token_id',
+					'package_id',
+					'package_kody_id',
+					'export_name',
+					'idempotency_key',
+					'request_hash',
+					'source',
+					'topic',
+					'response_json',
+				])}
+			), 0) AS count
+			FROM package_invocations
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'package_id',
+					'package_kody_id',
+					'source_id',
+					'published_commit',
+					'name',
+					'error_name',
+					'error_message',
+					'storage_id',
+					'job_id',
+					'workflow_id',
+					'invocation_id',
+					'session_id',
+					'idempotency_key',
+					'parent_run_id',
+					'metadata_json',
+				])}
+			), 0) AS count
+			FROM package_runtime_runs
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'package_id',
+					'level',
+					'message',
+					'fields_json',
+				])}
+			), 0) AS count
+			FROM package_runtime_logs
+			WHERE user_id = ?`,
+			[userId],
+		),
+		sumStorageBytes(
+			db,
+			`SELECT COALESCE(SUM(
+				${textBytesExpression([
+					'source_id',
+					'artifact_kind',
+					'artifact_name',
+					'entry_point',
+					'published_commit',
+					'kv_key',
+					'dependencies_json',
+				])}
+			), 0) AS count
+			FROM published_bundle_artifacts
+			WHERE user_id = ?`,
+			[userId],
+		),
+	])
+	return sums.reduce((total, value) => total + value, 0)
+}
+
 /**
  * Recency window for counting running package services. Service runs are
  * tracked in package_runtime_runs; rows can be left in 'running' after a
@@ -335,9 +662,7 @@ export async function readEntitlementResourceUsage(input: {
 			)
 		}
 		case 'storage_bytes':
-			throw new Error(
-				'storage_bytes has no built-in counter; pass getCurrent to assertWithinEntitlement.',
-			)
+			return await readUserD1StorageBytes({ db, userId })
 		case 'email_message_bytes':
 			// Per-message limit, not an accumulating counter: enforcement
 			// passes the candidate message size via getCurrent.
@@ -349,6 +674,23 @@ export async function readEntitlementResourceUsage(input: {
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)
 		}
 	}
+}
+
+export async function assertWithinStorageBytesEntitlement(input: {
+	db: D1Database
+	userId: string
+	email: string | null | undefined
+	requested?: number
+	getCurrent?: () => Promise<number>
+}) {
+	await assertWithinEntitlement({
+		db: input.db,
+		userId: input.userId,
+		email: input.email,
+		resource: 'storage_bytes',
+		requested: input.requested,
+		getCurrent: input.getCurrent,
+	})
 }
 
 export type AssertWithinEntitlementInput = {

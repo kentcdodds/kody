@@ -440,6 +440,7 @@ async function buildKodyToolContext(
 		? await createStorageKodyTools({
 				env,
 				userId: callerContext.user?.userId ?? '',
+				email: callerContext.user?.email,
 				storageId: storageTools.storageId,
 				writable: storageTools.writable,
 			})

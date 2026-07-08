@@ -32,7 +32,11 @@ import {
 	upsertSecretBucket,
 	upsertSecretEntry,
 } from './repo.ts'
-import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import {
+	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
+	estimateEntitlementStorageEntryByteDelta,
+} from '#worker/entitlements/service.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
 
 type SecretOwnerContext = {
@@ -117,6 +121,36 @@ export async function saveSecret(
 			resource: 'secrets',
 		})
 	}
+	const encryptedValue = await encryptSecretValue(input.env, value)
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: {
+					description,
+					encryptedValue,
+					allowedHosts: existingEntry?.allowed_hosts ?? '[]',
+					allowedCapabilities: existingEntry?.allowed_capabilities ?? '[]',
+					allowedPackages: existingEntry?.allowed_packages ?? '[]',
+				},
+			},
+			existing: existingEntry
+				? {
+						key: existingEntry.name,
+						value: {
+							description: existingEntry.description,
+							encryptedValue: existingEntry.encrypted_value,
+							allowedHosts: existingEntry.allowed_hosts,
+							allowedCapabilities: existingEntry.allowed_capabilities,
+							allowedPackages: existingEntry.allowed_packages,
+						},
+					}
+				: null,
+		}),
+	})
 	const now = new Date().toISOString()
 	await upsertSecretEntry({
 		db: input.env.APP_DB,
@@ -124,7 +158,7 @@ export async function saveSecret(
 			bucket_id: bucket.id,
 			name,
 			description,
-			encrypted_value: await encryptSecretValue(input.env, value),
+			encrypted_value: encryptedValue,
 			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
 			allowed_capabilities: existingEntry?.allowed_capabilities ?? '[]',
 			allowed_packages: existingEntry?.allowed_packages ?? '[]',

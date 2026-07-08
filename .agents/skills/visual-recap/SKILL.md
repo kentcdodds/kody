@@ -78,12 +78,19 @@ existing primitives together.
 
 ### System map
 
+_One sentence: what this diagram shows and the main path through the change._
+
+**Legend:** green = composes (wiring only) · amber = extended by this PR · red =
+new primitive · gray = context (unchanged, included only when an edge crosses
+it).
+
 ```mermaid
 flowchart LR
-	mcpServer["mcp-server"]:::touched
-	capabilityRegistry["capability-registry"]:::untouched
-	d1AppDb["d1-app-db"]:::extended
-	mcpServer --> capabilityRegistry --> d1AppDb
+	mcpServer["mcp-server<br/>MCP endpoint"]:::touched
+	capabilityRegistry["capability-registry<br/>Capability registry"]:::untouched
+	d1AppDb["d1-app-db<br/>D1 app database"]:::extended
+	mcpServer -->|"search/execute"| capabilityRegistry
+	capabilityRegistry -->|"jobs.retry_count column"| d1AppDb
 	classDef touched fill:#1a7f37,color:#fff
 	classDef extended fill:#9a6700,color:#fff
 	classDef added fill:#cf222e,color:#fff
@@ -119,10 +126,30 @@ Format rules:
   bold so reviewers see it without expanding.
 - Blank line after `<summary>` and around every fenced block, or GitHub will not
   render the markdown/mermaid inside `<details>`.
-- **System map**: show touched primitives plus their immediate neighbors from
-  the map — not all ~25 nodes. Color with the four `classDef` styles above
-  (`touched` = composes, `extended`, `added`, `untouched` for context nodes).
-  Quote node labels containing spaces or special characters.
+- **System map**: a PR-scoped **change map** — how touched primitives interact
+  _because of this diff_, not the full architecture. Rules:
+  - Open with one sentence naming the main flow (e.g. "Social login flows from
+    the login UI through session auth into D1.").
+  - Include the **legend** line (colors and what they mean) directly above the
+    diagram, using the fixed wording from the template.
+  - Include only primitives the diff touches plus neighbors needed to show a
+    crossing edge — not all ~25 nodes, and no gray context nodes unless this PR
+    actually calls through them.
+  - **Label every edge** with what this PR does across that boundary: route,
+    handler, table/column, guard, capability, env var, etc. Unlabeled arrows are
+    forbidden; they read as meaningless topology and are the main failure mode
+    reviewers report.
+  - Node labels: primitive `id` plus the `name` from `primitives.yaml` on a
+    second line via `<br/>` (e.g.
+    `appSessions["app-sessions<br/>Browser sessions"]`).
+  - Color nodes with the four `classDef` styles (`touched` = composes,
+    `extended`, `added`, `untouched` for context-only nodes).
+  - Prefer fewer, labeled edges over chaining unlabeled `A --> B --> C` hops.
+    Split long chains only when each hop has its own label.
+  - Quote node labels containing spaces or special characters.
+  - When a sequence diagram already in **Change flow** covers the same path, the
+    system map may omit duplicate edges — but still include storage or
+    cross-cutting hops (DB, RBAC, export) that the sequence diagram skips.
 - Keep the whole block scannable: prefer tables and diagrams over prose, and
   keep it well under ~120 lines.
 
@@ -156,3 +183,47 @@ touched" describes intended impact, and add a one-line note when the plan
 requires **no** change to any primitive — that is the lowest-risk outcome and
 worth stating explicitly. When implementation later diverges from the plan, the
 recap's "Plan vs actual" section records the drift.
+
+## System map example (weak vs strong)
+
+The diagram must explain **this PR's** crossings, not restate static
+architecture. Compare:
+
+**Weak** (unlabeled topology — reviewers cannot tell what the arrows mean):
+
+```mermaid
+flowchart LR
+	appUi["app-ui"]:::touched
+	appSessions["app-sessions"]:::extended
+	d1AppDb["d1-app-db"]:::extended
+	appUi --> appSessions --> d1AppDb
+```
+
+**Strong** (intro, legend, human names, labeled edges):
+
+Social login flows from the login UI through session auth into D1; account
+export picks up the new table.
+
+**Legend:** green = composes · amber = extended by this PR · red = new primitive
+· gray = context.
+
+```mermaid
+flowchart LR
+	appUi["app-ui<br/>Browser app"]:::touched
+	appSessions["app-sessions<br/>Browser sessions"]:::extended
+	d1AppDb["d1-app-db<br/>D1 app database"]:::extended
+	accountExport["account-export<br/>Account data export"]:::extended
+	rbac["rbac<br/>Role-based access control"]:::untouched
+	appUi -->|"POST /auth/:provider buttons"| appSessions
+	appSessions -->|"oauth_connections table"| d1AppDb
+	appSessions -->|"2FA gate on sign-in"| rbac
+	accountExport -->|"export + deletion targets"| d1AppDb
+	classDef touched fill:#1a7f37,color:#fff
+	classDef extended fill:#9a6700,color:#fff
+	classDef added fill:#cf222e,color:#fff
+	classDef untouched fill:#57606a,color:#fff
+```
+
+Derive edge labels from the diff (routes, migrations, guards, capabilities). The
+**Change flow** sequence diagram can stay for request timing; the system map
+answers "which primitives does this PR connect, and how?"

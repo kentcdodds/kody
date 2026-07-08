@@ -27,7 +27,8 @@ to become.
 - [Primitives map](./primitives.yaml): machine-readable map of system primitives
   and invariants, used by the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`) to classify PR risk. Update it in the
-  same PR whenever a primitive is added, removed, or reshaped.
+  same PR whenever a primitive is added, removed, or reshaped. PR recaps use the
+  map's `name` and `summary` fields for system-map node labels and edge text.
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers

@@ -13,6 +13,10 @@ import {
 	upsertValueEntry,
 } from './repo.ts'
 import { type ValueMetadata, type ValueScope } from './types.ts'
+import {
+	assertWithinStorageBytesEntitlement,
+	estimateEntitlementStorageEntryByteDelta,
+} from '#worker/entitlements/service.ts'
 
 type ValueOwnerContext = {
 	userId: string
@@ -26,6 +30,7 @@ type SaveValueInput = ValueOwnerContext & {
 	value: string
 	description?: string | null
 	sessionExpiresAt?: string | null
+	userEmail?: string | null
 }
 
 type ListValuesInput = ValueOwnerContext & {
@@ -68,6 +73,26 @@ export async function saveValue(input: SaveValueInput): Promise<ValueMetadata> {
 		db: input.env.APP_DB,
 		bucketId: bucket.id,
 		name,
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: { description, value },
+			},
+			existing: existingEntry
+				? {
+						key: existingEntry.name,
+						value: {
+							description: existingEntry.description,
+							value: existingEntry.value,
+						},
+					}
+				: null,
+		}),
 	})
 	const now = new Date().toISOString()
 	await upsertValueEntry({

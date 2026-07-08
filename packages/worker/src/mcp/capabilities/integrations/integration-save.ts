@@ -67,6 +67,7 @@ export const integrationSaveCapability = defineDomainCapability(
 			const value = await saveValue({
 				env: ctx.env,
 				userId: user.userId,
+				userEmail: user.email,
 				name: buildIntegrationValueName(integration.name),
 				value: JSON.stringify(integration),
 				scope: 'user',

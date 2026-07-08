@@ -8,7 +8,9 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
@@ -55,6 +57,23 @@ type ParsedInboundEmail = Awaited<
  */
 function warnRejectionAuditWriteFailed(error: unknown) {
 	console.warn('email-rejection-audit-write-failed', error)
+}
+
+function estimateInboundEmailStorageBytes(input: {
+	message: ForwardableEmailMessage
+	recipient: string
+}) {
+	return (
+		input.message.rawSize * 2 +
+		estimateEntitlementStorageEntryBytes({
+			value: {
+				from: input.message.from,
+				to: input.message.to,
+				recipient: input.recipient,
+				headers: Object.fromEntries(input.message.headers.entries()),
+			},
+		})
+	)
 }
 
 async function parseAndStoreInboundEmail(input: {
@@ -277,8 +296,8 @@ export async function handleInboundEmail(
 	// Inbound volume is attacker-controlled (anyone can send to a
 	// {username}@<platform domain> address), so every fail-closed gate runs
 	// before any parsing work, cheapest rejection first: verified account,
-	// per-message size cap, per-day receive rate, and stored-message cap
-	// (entitlements with NULL-plan fallbacks).
+	// per-message size cap, storage bytes, per-day receive rate, and
+	// stored-message cap (entitlements with NULL-plan fallbacks).
 
 	// Verified-account gate first: an unverified account can never receive
 	// mail, so the attempt must not consume any of the daily receive quota
@@ -319,6 +338,12 @@ export async function handleInboundEmail(
 			requested: 0,
 			getCurrent: async () => message.rawSize,
 			fallbackLimit: nullPlanEmailFallbackLimits.email_message_bytes,
+		})
+		await assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			userId,
+			email: account.email,
+			requested: estimateInboundEmailStorageBytes({ message, recipient }),
 		})
 		await consumeDailyEntitlement({
 			db: env.APP_DB,

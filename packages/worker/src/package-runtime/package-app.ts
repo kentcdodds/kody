@@ -28,7 +28,14 @@ import {
 } from './published-bundle-artifacts.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { storageRunnerRpc } from '#worker/storage-runner.ts'
+import {
+	assertStorageRunnerWriteWithinEntitlement,
+	storageRunnerRpc,
+} from '#worker/storage-runner.ts'
+import {
+	estimateEntitlementStorageEntryByteDelta,
+	estimateEntitlementStorageSqlWriteBytes,
+} from '#worker/entitlements/service.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
 import {
 	createDynamicCallableWorkflow,
@@ -710,6 +717,19 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
+	private async assertStorageWriteAllowed(input: {
+		storageId: string
+		requested?: number
+	}) {
+		await assertStorageRunnerWriteWithinEntitlement({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			email: this.ctx.props.email,
+			storageId: input.storageId,
+			requested: input.requested,
+		})
+	}
+
 	private getRealtimeSessionRpc() {
 		return packageRealtimeSessionRpc({
 			env: this.env,
@@ -879,14 +899,43 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		params?: Array<unknown>
 		writable?: boolean
 	}) {
+		const writable = input.writable ?? false
+		if (writable) {
+			await this.assertStorageWriteAllowed({
+				storageId: input.storageId,
+				requested: estimateEntitlementStorageSqlWriteBytes({
+					query: input.query,
+					params: input.params,
+				}),
+			})
+		}
 		return await this.getStorageRunner(input.storageId).sqlQuery({
 			query: input.query,
 			params: input.params,
-			writable: input.writable ?? false,
+			writable,
 		})
 	}
 
 	async storageSet(input: { storageId: string; key: string; value: unknown }) {
+		const existing = await this.getStorageRunner(input.storageId).getValue({
+			key: input.key,
+		})
+		await this.assertStorageWriteAllowed({
+			storageId: input.storageId,
+			requested: estimateEntitlementStorageEntryByteDelta({
+				next: {
+					key: input.key,
+					value: input.value,
+				},
+				existing:
+					existing.value === null
+						? null
+						: {
+								key: input.key,
+								value: existing.value,
+							},
+			}),
+		})
 		return await this.getStorageRunner(input.storageId).setValue({
 			key: input.key,
 			value: input.value,

@@ -3,7 +3,11 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
-import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import {
+	assertWithinStorageBytesEntitlement,
+	consumeDailyEntitlement,
+	estimateEntitlementStorageEntryBytes,
+} from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
@@ -301,6 +305,29 @@ export async function sendOutboundEmail(
 	const text = input.text?.trim() || null
 	const html = input.html?.trim() || null
 	if (!text && !html) throw new Error('Email text or HTML body is required.')
+	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
+	const storedHeaders = buildStoredHeaders({
+		messageId: messageIdHeader,
+		inReplyTo: input.inReplyToHeader ?? null,
+		references: input.references ?? [],
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: sender.accountEmail,
+		requested: estimateEntitlementStorageEntryBytes({
+			key: messageIdHeader,
+			value: {
+				from,
+				to,
+				subject,
+				replyTo: input.replyTo,
+				text,
+				html,
+				headers: storedHeaders,
+			},
+		}),
+	})
 
 	// Atomic check-and-increment: the counter tracks attempts for every user
 	// and denies the send when a plan's daily limit is reached. Users
@@ -326,12 +353,6 @@ export async function sendOutboundEmail(
 				lastMessageAt: new Date().toISOString(),
 			})
 	const threadId = existingThreadId ?? thread?.id ?? null
-	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
-	const storedHeaders = buildStoredHeaders({
-		messageId: messageIdHeader,
-		inReplyTo: input.inReplyToHeader ?? null,
-		references: input.references ?? [],
-	})
 	const providerHeaders = buildProviderHeaders(storedHeaders)
 	const message = await insertEmailMessage({
 		db: input.env.APP_DB,

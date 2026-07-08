@@ -3,7 +3,11 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { storageRunnerRpc } from '#worker/storage-runner.ts'
+import {
+	assertStorageRunnerWriteWithinEntitlement,
+	storageRunnerRpc,
+} from '#worker/storage-runner.ts'
+import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
 import { storageIdSchema } from './shared.ts'
 
 const outputSchema = z.object({
@@ -46,6 +50,19 @@ export const storageQueryCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const writable = args.writable ?? false
+			if (writable) {
+				await assertStorageRunnerWriteWithinEntitlement({
+					env: ctx.env,
+					userId: user.userId,
+					email: user.email,
+					storageId: args.storage_id,
+					requested: estimateEntitlementStorageSqlWriteBytes({
+						query: args.query,
+						params: args.params,
+					}),
+				})
+			}
 			const result = await storageRunnerRpc({
 				env: ctx.env,
 				userId: user.userId,
@@ -53,7 +70,7 @@ export const storageQueryCapability = defineDomainCapability(
 			}).sqlQuery({
 				query: args.query,
 				params: args.params,
-				writable: args.writable ?? false,
+				writable,
 			})
 			return {
 				ok: true as const,
@@ -64,7 +81,7 @@ export const storageQueryCapability = defineDomainCapability(
 				row_count: result.rowCount,
 				rows_read: result.rowsRead,
 				rows_written: result.rowsWritten,
-				writable: args.writable ?? false,
+				writable,
 			}
 		},
 	},

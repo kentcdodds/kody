@@ -13,7 +13,10 @@ import {
 } from './plans.ts'
 import {
 	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	estimateEntitlementStorageEntryByteDelta,
+	estimateEntitlementStorageEntryBytes,
 	getUserPlan,
 	incrementDailyEntitlementCounter,
 } from './service.ts'
@@ -35,7 +38,16 @@ function createEntitlementsTestDb(
 				| 'jobs'
 				| 'repo_sessions'
 				| 'package_runtime_runs'
+				| 'package_runtime_logs'
+				| 'package_invocations'
+				| 'published_bundle_artifacts'
 				| 'secret_entries'
+				| 'value_entries'
+				| 'mcp_memories'
+				| 'saved_packages'
+				| 'entity_sources'
+				| 'email_messages'
+				| 'email_attachments'
 				| 'workflow_runs',
 				number
 			>
@@ -50,11 +62,19 @@ function createEntitlementsTestDb(
 
 	function countFor(query: string) {
 		const tableNames = [
+			'email_attachments',
+			'email_messages',
+			'value_entries',
+			'secret_entries',
+			'mcp_memories',
 			'saved_packages',
+			'entity_sources',
 			'jobs',
 			'repo_sessions',
+			'package_invocations',
 			'package_runtime_runs',
-			'secret_entries',
+			'package_runtime_logs',
+			'published_bundle_artifacts',
 			'workflow_runs',
 		] as const
 		for (const table of tableNames) {
@@ -142,6 +162,50 @@ test('parsePlanName accepts registered plan names and treats everything else as 
 	expect(parsePlanName(null)).toBeNull()
 	expect(parsePlanName(undefined)).toBeNull()
 	expect(parsePlanName(1)).toBeNull()
+})
+
+test('storage byte entry estimates support net-positive upsert deltas', () => {
+	const existing = {
+		key: 'workspace',
+		value: {
+			description: 'Workspace slug',
+			value: 'kent-main-site',
+		},
+	}
+	expect(
+		estimateEntitlementStorageEntryByteDelta({
+			next: existing,
+			existing,
+		}),
+	).toBe(0)
+	expect(
+		estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: 'workspace',
+				value: {
+					description: 'Workspace slug',
+					value: 'kent',
+				},
+			},
+			existing,
+		}),
+	).toBe(0)
+	const growing = {
+		key: 'workspace',
+		value: {
+			description: 'Workspace slug',
+			value: 'kent-main-site-production',
+		},
+	}
+	expect(
+		estimateEntitlementStorageEntryByteDelta({
+			next: growing,
+			existing,
+		}),
+	).toBe(
+		estimateEntitlementStorageEntryBytes(growing) -
+			estimateEntitlementStorageEntryBytes(existing),
+	)
 })
 
 test('getUserPlan resolves plans through hashed email and short-circuits invalid lookups', async () => {
@@ -474,14 +538,6 @@ test('requested units and getCurrent overrides are honored', async () => {
 			resource: 'email_message_bytes',
 		}),
 	).rejects.toThrow('pass getCurrent')
-	await expect(
-		assertWithinEntitlement({
-			db,
-			userId,
-			email: plannedEmail,
-			resource: 'storage_bytes',
-		}),
-	).rejects.toThrow('pass getCurrent')
 
 	const overSavedPackages = await assertWithinEntitlement({
 		db,
@@ -509,5 +565,60 @@ test('requested units and getCurrent overrides are honored', async () => {
 		resource: 'saved_packages',
 		requested: 3,
 		getCurrent: async () => 17,
+	})
+})
+
+test('storage bytes enforce for planned users and skip NULL-plan users', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const limit = planLimits.personal.maxStorageBytes
+	if (limit === null)
+		throw new Error('Expected a numeric personal storage cap.')
+
+	const noPlan = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: null }],
+		counts: { email_messages: limit + 1 },
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: noPlan.db,
+		userId,
+		email: plannedEmail,
+		requested: 1,
+	})
+	expect(noPlan.queries).toHaveLength(1)
+	expect(noPlan.queries[0]).toContain('SELECT plan FROM users')
+
+	const atLimit = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'personal' }],
+		counts: { email_messages: limit },
+	})
+	const denied = await assertWithinStorageBytesEntitlement({
+		db: atLimit.db,
+		userId,
+		email: plannedEmail,
+		requested: 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(denied.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'storage_bytes',
+		plan: 'personal',
+		limit,
+		current: limit,
+	})
+
+	const underLimit = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'personal' }],
+		counts: { email_messages: limit - 1 },
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: underLimit.db,
+		userId,
+		email: plannedEmail,
+		requested: 1,
 	})
 })
