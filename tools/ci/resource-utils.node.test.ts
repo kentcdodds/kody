@@ -106,40 +106,6 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 	}
 })
 
-test('writeGeneratedWranglerConfig drops the EMAIL_BLOBS binding when the bucket is unavailable', async () => {
-	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
-
-	try {
-		const outPath = path.join(tempDir, 'wrangler-production.generated.json')
-		await writeGeneratedWranglerConfig({
-			baseConfigPath: workerWranglerConfigPath,
-			outConfigPath: outPath,
-			envName: 'production',
-			d1DatabaseName: 'kody',
-			d1DatabaseId: 'dry-run-kody',
-			oauthKvId: 'dry-run-kody-oauth',
-			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
-			emailBlobsBucketName: null,
-		})
-
-		const config = parseJsonc<{
-			env?: {
-				production?: {
-					r2_buckets?: Array<{ binding: string; bucket_name: string }>
-				}
-			}
-		}>(await readFile(outPath, 'utf8'))
-		// EMAIL_BLOBS is the only R2 binding, so the r2_buckets key must be
-		// removed entirely rather than left as an empty array.
-		expect(config.env?.production?.r2_buckets).toBeUndefined()
-		expect(
-			Object.keys(config.env?.production ?? {}).includes('r2_buckets'),
-		).toBe(false)
-	} finally {
-		await rm(tempDir, { force: true, recursive: true })
-	}
-})
-
 test('parseR2BucketListOutput reads bucket names from labelled wrangler output', () => {
 	const output = [
 		'Listing buckets...',

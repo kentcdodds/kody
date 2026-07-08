@@ -131,74 +131,43 @@ export function parseR2BucketListOutput(output: string): Array<string> {
 	return names
 }
 
-/**
- * Returns `null` when the listing fails (for example when the API token
- * lacks R2 permissions) so callers can degrade gracefully instead of
- * aborting the whole provisioning run.
- */
-export function listR2BucketNames(): Array<string> | null {
+export function listR2BucketNames(): Array<string> {
 	const result = runWrangler(['r2', 'bucket', 'list'], { quiet: true })
 	if (result.status !== 0) {
-		console.error('Failed to list R2 buckets (wrangler r2 bucket list).')
-		return null
+		fail('Failed to list R2 buckets (wrangler r2 bucket list).')
 	}
 	return parseR2BucketListOutput(result.stdout)
 }
 
-const r2ProvisioningWarning =
-	"Warning: R2 bucket provisioning failed (the API token may lack R2 permissions). Deploying without the EMAIL_BLOBS binding; raw email MIME will be stored inline in D1. Grant the token 'Workers R2 Storage: Edit' and re-run to enable blob offload."
-
-export type EnsureR2BucketResult = {
-	name: string
-	available: boolean
-}
-
-/**
- * The worker degrades gracefully when EMAIL_BLOBS is absent (raw MIME
- * stays inline in D1), so R2 provisioning failures are non-fatal: the
- * caller gets `available: false` and must drop the binding from the
- * generated config instead of failing the deploy.
- */
 export function ensureR2Bucket({
 	name,
 	dryRun,
 }: {
 	name: string
 	dryRun: boolean
-}): EnsureR2BucketResult {
+}): { name: string } {
 	if (dryRun) {
 		console.error(`[dry-run] ensure R2 bucket: ${name}`)
-		return { name, available: true }
+		return { name }
 	}
 
-	const bucketNames = listR2BucketNames()
-	if (bucketNames === null) {
-		console.error(r2ProvisioningWarning)
-		return { name, available: false }
-	}
-
-	if (bucketNames.includes(name)) {
+	if (listR2BucketNames().includes(name)) {
 		console.error(`R2 bucket exists: ${name}`)
-		return { name, available: true }
+		return { name }
 	}
 
 	const createResult = runWrangler(['r2', 'bucket', 'create', name], {
 		quiet: true,
 	})
 	if (createResult.status !== 0) {
-		console.error(`Failed to create R2 bucket: ${name}`)
-		console.error(r2ProvisioningWarning)
-		return { name, available: false }
+		fail(`Failed to create R2 bucket: ${name}`)
 	}
 
-	const namesAfterCreate = listR2BucketNames()
-	if (namesAfterCreate === null || !namesAfterCreate.includes(name)) {
-		console.error(`Created R2 bucket "${name}" but could not find it via list.`)
-		console.error(r2ProvisioningWarning)
-		return { name, available: false }
+	if (!listR2BucketNames().includes(name)) {
+		fail(`Created R2 bucket "${name}" but could not find it via list.`)
 	}
 	console.error(`Created R2 bucket: ${name}`)
-	return { name, available: true }
+	return { name }
 }
 
 export function deleteR2Bucket({
@@ -213,15 +182,7 @@ export function deleteR2Bucket({
 		return
 	}
 
-	const bucketNames = listR2BucketNames()
-	if (bucketNames === null) {
-		console.error(
-			`Warning: could not list R2 buckets while deleting ${name} (the API token may lack R2 permissions); skipping R2 cleanup.`,
-		)
-		return
-	}
-
-	if (!bucketNames.includes(name)) {
+	if (!listR2BucketNames().includes(name)) {
 		console.error(`R2 bucket already deleted: ${name}`)
 		return
 	}
@@ -426,7 +387,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId: string
 	oauthKvId: string
 	bundleArtifactsKvId: string
-	emailBlobsBucketName: string | null
+	emailBlobsBucketName: string
 	workerVars?: Record<string, string | undefined>
 	extraMigrations?: Array<WranglerMigration>
 }) {
@@ -546,24 +507,13 @@ export async function writeGeneratedWranglerConfig({
 		)
 	}
 
-	if (emailBlobsBucketName === null) {
-		// R2 provisioning was unavailable (for example, the API token lacks
-		// R2 permissions). Drop the binding so `wrangler deploy` does not
-		// reference a nonexistent bucket; the worker falls back to inline
-		// raw MIME storage in D1 when EMAIL_BLOBS is absent.
-		r2Buckets.splice(emailBlobsEntryIndex, 1)
-		if (r2Buckets.length === 0) {
-			delete (targetEnv as Record<string, unknown>).r2_buckets
-		}
-	} else {
-		const emailBlobsEntry = r2Buckets[emailBlobsEntryIndex] as Record<
-			string,
-			unknown
-		>
-		r2Buckets[emailBlobsEntryIndex] = {
-			...emailBlobsEntry,
-			bucket_name: emailBlobsBucketName,
-		}
+	const emailBlobsEntry = r2Buckets[emailBlobsEntryIndex] as Record<
+		string,
+		unknown
+	>
+	r2Buckets[emailBlobsEntryIndex] = {
+		...emailBlobsEntry,
+		bucket_name: emailBlobsBucketName,
 	}
 
 	const existingVars = (targetEnv as Record<string, unknown>).vars

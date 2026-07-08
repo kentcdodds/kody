@@ -276,7 +276,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		d1DatabaseId: d1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
-		emailBlobsBucketName: emailBlobs.available ? emailBlobs.name : null,
+		emailBlobsBucketName: emailBlobs.name,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
@@ -290,9 +290,7 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
-	console.log(
-		`email_blobs_bucket_name=${emailBlobs.available ? emailBlobs.name : ''}`,
-	)
+	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
 }
 
 async function cleanupPreviewResources(options: CliOptions) {
