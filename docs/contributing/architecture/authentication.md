@@ -119,11 +119,11 @@ a "Resend verification email" button on `/account`. The endpoint reuses
 `createEmailVerification` (invalidating older tokens) and is rate-limited per
 user (3 requests per 15 minutes).
 
-Existing accounts are marked verified by the migration that introduces
-`email_verified_at` so shipped users are not silently blocked by the new gate.
-Seeded/test fixture accounts are also created verified. New accounts created via
-normal signup start unverified, can still sign in, and see the unverified state
-on `/account`.
+`users.email_verified_at` records whether an account's email is verified.
+Accounts with a non-null value are treated as verified; normal signup leaves it
+null until `GET /verify-email?token=...` succeeds. Seeded and test fixture
+accounts are created verified. Unverified accounts can sign in and see their
+status on `/account`.
 
 Unverified accounts can still use browser sessions and complete OAuth flows
 (authorize + token exchange keep working so clients can finish login), but

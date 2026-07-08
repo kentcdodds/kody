@@ -590,8 +590,8 @@ Current retention policies:
   are not user-owned D1 rows and remain independent of account deletion/export.
 
 `email_messages` and related user inbox tables remain account-deletion scoped;
-the scheduled policy currently bounds delivery/audit metadata, not user message
-history. `usage_rollups` is bounded by `(user_id, metric, month)`, while raw
-Analytics Engine usage events follow platform retention.
-`archived_job_artifacts` is explicitly exempt from the retention manifest
-because job artifact cleanup is driven by each row's `retain_until` value.
+the scheduled policy bounds delivery/audit metadata, not user message history.
+`usage_rollups` is bounded by `(user_id, metric, month)`, while raw Analytics
+Engine usage events follow platform retention. `archived_job_artifacts` is
+explicitly exempt from the retention manifest because job artifact cleanup is
+driven by each row's `retain_until` value.
