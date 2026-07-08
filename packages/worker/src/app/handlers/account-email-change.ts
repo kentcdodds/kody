@@ -1,6 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { object, parseSafe, string } from 'remix/data-schema'
+import { object, optional, parseSafe, string } from 'remix/data-schema'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
@@ -9,7 +9,10 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#app/routes.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
+import {
+	hasUsablePasswordHash,
+	verifyPassword,
+} from '@kody-internal/shared/password-hash.ts'
 
 export const emailChangeRateLimitConfig = {
 	maxRequests: 3,
@@ -18,7 +21,7 @@ export const emailChangeRateLimitConfig = {
 
 const emailChangeRequestSchema = object({
 	email: string(),
-	password: string(),
+	password: optional(string()),
 })
 
 function getEmailValidationError(email: string) {
@@ -51,7 +54,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 			const parsed = parseSafe(emailChangeRequestSchema, body)
 			const requestIp = getRequestIp(request) ?? undefined
 			const newEmail = parsed.success ? normalizeEmail(parsed.value.email) : ''
-			const password = parsed.success ? parsed.value.password : ''
+			const password = parsed.success ? (parsed.value.password ?? '') : ''
 			const validationError = parsed.success
 				? getEmailValidationError(newEmail)
 				: 'Invalid request body.'
@@ -111,28 +114,46 @@ export function createAccountEmailChangeHandler(env: Env) {
 				)
 			}
 
-			const passwordValid = await verifyPassword(
-				password,
-				userRecord.password_hash,
-			)
-			if (!passwordValid) {
-				void logAuditEvent({
-					category: 'account',
-					action: 'email_change_request',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'invalid_password',
-				})
-				return jsonResponse(
-					{
-						ok: false,
-						code: 'invalid_password',
-						error: 'Password is incorrect.',
-					},
-					401,
+			const requiresPassword = hasUsablePasswordHash(userRecord.password_hash)
+			if (requiresPassword) {
+				if (!password) {
+					void logAuditEvent({
+						category: 'account',
+						action: 'email_change_request',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'missing_password',
+					})
+					return jsonResponse(
+						{ ok: false, error: 'Current password is required.' },
+						400,
+					)
+				}
+				const passwordValid = await verifyPassword(
+					password,
+					userRecord.password_hash,
 				)
+				if (!passwordValid) {
+					void logAuditEvent({
+						category: 'account',
+						action: 'email_change_request',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'invalid_password',
+					})
+					return jsonResponse(
+						{
+							ok: false,
+							code: 'invalid_password',
+							error: 'Password is incorrect.',
+						},
+						401,
+					)
+				}
 			}
 
 			const existingUser = await db.findOne(usersTable, {

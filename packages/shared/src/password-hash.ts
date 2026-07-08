@@ -92,6 +92,11 @@ export async function createPasswordHash(password: string) {
 	)}`
 }
 
+/** True when the stored hash is a real PBKDF2 credential (not an OAuth/admin sentinel). */
+export function hasUsablePasswordHash(storedHash: string): boolean {
+	return storedHash.trim().startsWith(`${passwordHashPrefix}$`)
+}
+
 export async function verifyPassword(
 	password: string,
 	storedHash: string,
@@ -100,6 +105,9 @@ export async function verifyPassword(
 		return false
 	}
 	const normalizedHash = storedHash.trim()
+	if (!hasUsablePasswordHash(normalizedHash)) {
+		return false
+	}
 	if (normalizedHash.startsWith(`${passwordHashPrefix}$`)) {
 		const [prefix, iterationsRaw, saltHex, hashHex, ...extra] =
 			normalizedHash.split('$')

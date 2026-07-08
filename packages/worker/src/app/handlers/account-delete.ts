@@ -5,7 +5,10 @@ import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
 import { deleteUserAccount } from '#app/account-deletion.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
+import {
+	hasUsablePasswordHash,
+	verifyPassword,
+} from '@kody-internal/shared/password-hash.ts'
 
 export function createAccountDeleteHandler(env: Env) {
 	return {
@@ -34,15 +37,6 @@ export function createAccountDeleteHandler(env: Env) {
 				body && typeof body === 'object'
 					? (body as Record<string, unknown>).password
 					: undefined
-			if (typeof password !== 'string' || password.length === 0) {
-				return Response.json(
-					{
-						error:
-							'Account deletion requires re-entering the current password.',
-					},
-					{ status: 400 },
-				)
-			}
 
 			const db = createDb(env.APP_DB)
 			const userRow = await db.findOne(usersTable, {
@@ -51,24 +45,37 @@ export function createAccountDeleteHandler(env: Env) {
 			if (!userRow) {
 				return Response.json({ error: 'User not found.' }, { status: 404 })
 			}
-			const passwordValid = await verifyPassword(
-				password,
-				userRow.password_hash,
-			)
-			if (!passwordValid) {
-				void logAuditEvent({
-					category: 'auth',
-					action: 'account_delete',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'invalid_password',
-				})
-				return Response.json(
-					{ error: 'Current password did not match.' },
-					{ status: 401 },
+
+			const requiresPassword = hasUsablePasswordHash(userRow.password_hash)
+			if (requiresPassword) {
+				if (typeof password !== 'string' || password.length === 0) {
+					return Response.json(
+						{
+							error:
+								'Account deletion requires re-entering the current password.',
+						},
+						{ status: 400 },
+					)
+				}
+				const passwordValid = await verifyPassword(
+					password,
+					userRow.password_hash,
 				)
+				if (!passwordValid) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'account_delete',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'invalid_password',
+					})
+					return Response.json(
+						{ error: 'Current password did not match.' },
+						{ status: 401 },
+					)
+				}
 			}
 
 			const result = await deleteUserAccount({
@@ -84,6 +91,7 @@ export function createAccountDeleteHandler(env: Env) {
 				email: user.email,
 				ip: requestIp,
 				path: url.pathname,
+				reason: requiresPassword ? undefined : 'oauth_only_no_password',
 			})
 
 			const headers = new Headers({ 'Content-Type': 'application/json' })

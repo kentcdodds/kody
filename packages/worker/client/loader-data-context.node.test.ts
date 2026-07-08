@@ -78,6 +78,7 @@ test('consuming route loader data schedules a corrective re-render exactly once'
 			emailVerified: true,
 			username: 'kody',
 			displayName: 'Kody',
+			hasUsablePassword: true,
 		},
 	})
 	const { handle, queuedTasks, getUpdateCount } = createStubHandle()

@@ -194,6 +194,7 @@ test('account profile API returns email and username for the signed-in user', as
 		emailVerified: false,
 		username: 'current-user',
 		displayName: 'current-user',
+		hasUsablePassword: false,
 	})
 })
 

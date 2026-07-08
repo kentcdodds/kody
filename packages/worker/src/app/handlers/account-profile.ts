@@ -2,10 +2,7 @@ import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import {
-	buildAccountProfilePayload,
-	loadAccountProfileData,
-} from '#app/account-profile-data.ts'
+import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { type routes } from '#app/routes.ts'
@@ -28,7 +25,7 @@ export function createAccountProfileApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(await loadAccountProfileData(user))
+				return jsonResponse(await loadAccountProfileData(user, env))
 			}
 
 			if (request.method !== 'POST') {
@@ -101,14 +98,13 @@ export function createAccountProfileApiHandler(env: Env) {
 				path: url.pathname,
 			})
 
-			return jsonResponse(
-				buildAccountProfilePayload({
-					...user,
-					username,
-					displayName: username,
-					mcpUser: { ...user.mcpUser, displayName: username },
-				} satisfies AuthenticatedUser),
-			)
+			const updatedUser = {
+				...user,
+				username,
+				displayName: username,
+				mcpUser: { ...user.mcpUser, displayName: username },
+			} satisfies AuthenticatedUser
+			return jsonResponse(await loadAccountProfileData(updatedUser, env))
 		},
 	} satisfies Action<typeof routes.accountProfileApi>
 }

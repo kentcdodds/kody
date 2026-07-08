@@ -24,7 +24,7 @@ export function createAccountHandler(env: Env) {
 				return redirectToLoginWhenUnauthenticated(request, env)
 			}
 
-			const accountProfile = await loadAccountProfileData(user)
+			const accountProfile = await loadAccountProfileData(user, env)
 			return renderAppPage({
 				request,
 				env,

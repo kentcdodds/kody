@@ -16,7 +16,7 @@ import {
 	SocialAuthResolutionError,
 } from '#app/resolve-social-auth.ts'
 import { createSocialAuthProvider } from '#app/social-auth-provider-factory.ts'
-import  { type AnySocialAuthProvider } from '#app/social-auth-provider-factory.ts'
+import { type AnySocialAuthProvider } from '#app/social-auth-provider-factory.ts'
 import { finishSocialAuth, startSocialAuth } from '#app/social-auth-flow.ts'
 import {
 	listConfiguredSocialAuthProviders,

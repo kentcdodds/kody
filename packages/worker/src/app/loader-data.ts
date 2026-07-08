@@ -247,6 +247,7 @@ export type AccountProfileLoaderData = {
 	emailVerified: boolean
 	username: string
 	displayName: string
+	hasUsablePassword: boolean
 }
 
 export type AccountTwoFactorLoaderData = {

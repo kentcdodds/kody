@@ -116,11 +116,14 @@ async function seedUser(
 		id: number
 		email: string
 		username: string
-		password: string
+		password?: string
+		oauthOnly?: boolean
 		verified?: boolean
 	},
 ) {
-	const passwordHash = await createPasswordHash(input.password)
+	const passwordHash = input.oauthOnly
+		? 'oauth_only_no_usable_password'
+		: await createPasswordHash(input.password ?? 'password123')
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	sqlite.exec(`
 		INSERT INTO users (
@@ -154,7 +157,7 @@ function createAppEnv(db: D1Database) {
 async function createRequest(input: {
 	session: AuthSession
 	email: string
-	password: string
+	password?: string
 }) {
 	const cookie = await createAuthCookie(input.session, false)
 	return new Request('http://example.com/account/email-change.json', {
@@ -165,7 +168,7 @@ async function createRequest(input: {
 		},
 		body: JSON.stringify({
 			email: input.email,
-			password: input.password,
+			...(input.password !== undefined ? { password: input.password } : {}),
 		}),
 	})
 }
@@ -268,6 +271,42 @@ test('email change requests require the current password and create a pending ve
 		token_hash: expect.any(String),
 	})
 	expect(pendingRows[0]?.token_hash).not.toBe(firstPendingToken)
+})
+
+test('email change allows OAuth-only accounts without a password', async () => {
+	const { sqlite, db } = createMigratedDb()
+	await seedUser(sqlite, {
+		id: 1,
+		email: 'oauth+1@oauth.kody.invalid',
+		username: 'oauth-user',
+		oauthOnly: true,
+	})
+	const handler = createAccountEmailChangeHandler(createAppEnv(db))
+
+	const response = await runHandler(
+		handler,
+		await createRequest({
+			session: {
+				id: '1',
+				email: 'oauth+1@oauth.kody.invalid',
+				rememberMe: false,
+			},
+			email: 'real@example.com',
+		}),
+	)
+	expect(response.status).toBe(200)
+	expect(await response.json()).toEqual({
+		ok: true,
+		message: 'Verification email sent to your new address.',
+	})
+	expect(
+		sqlite
+			.prepare(`SELECT user_id, new_email FROM pending_email_changes`)
+			.get(),
+	).toMatchObject({
+		user_id: 1,
+		new_email: 'real@example.com',
+	})
 })
 
 test('email change requests reject emails already owned by another account', async () => {

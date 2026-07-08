@@ -39,6 +39,7 @@ type AccountProfilePayload = {
 	emailVerified: boolean
 	username: string
 	displayName: string
+	hasUsablePassword: boolean
 }
 
 const resendVerificationApiPath = '/account/resend-verification.json'
@@ -77,6 +78,7 @@ export function AccountRoute(handle: Handle) {
 	let email = ''
 	let emailVerified = false
 	let username = ''
+	let hasUsablePassword = true
 	let draftUsername = ''
 	let draftEmail = ''
 	let emailChangePassword = ''
@@ -85,6 +87,15 @@ export function AccountRoute(handle: Handle) {
 	let emailChangeMessage: string | null = null
 	let emailChangeTone: 'error' | 'info' = 'info'
 	const loadLatch = createRouteLoadLatch()
+
+	function applyAccountProfile(payload: AccountProfilePayload) {
+		email = payload.email
+		emailVerified = payload.emailVerified
+		username = payload.username
+		hasUsablePassword = payload.hasUsablePassword
+		draftUsername = payload.username
+		draftEmail = payload.email
+	}
 
 	async function loadAccountProfile(signal: AbortSignal) {
 		const href = readCurrentRouterHref(handle)
@@ -104,11 +115,7 @@ export function AccountRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load your account.')
 			}
-			email = payload.email
-			emailVerified = payload.emailVerified
-			username = payload.username
-			draftUsername = payload.username
-			draftEmail = payload.email
+			applyAccountProfile(payload)
 			status = 'ready'
 			message = null
 			messageTone = 'info'
@@ -187,8 +194,10 @@ export function AccountRoute(handle: Handle) {
 	async function handleEmailChangeSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		const nextEmail = draftEmail.trim().toLowerCase()
-		if (!nextEmail || !emailChangePassword) {
-			emailChangeMessage = 'New email and current password are required.'
+		if (!nextEmail || (hasUsablePassword && !emailChangePassword)) {
+			emailChangeMessage = hasUsablePassword
+				? 'New email and current password are required.'
+				: 'New email is required.'
 			emailChangeTone = 'error'
 			handle.update()
 			return
@@ -215,7 +224,7 @@ export function AccountRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					email: nextEmail,
-					password: emailChangePassword,
+					...(hasUsablePassword ? { password: emailChangePassword } : {}),
 				}),
 			})
 			if (response.status === 401) {
@@ -289,10 +298,7 @@ export function AccountRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save username.')
 			}
-			email = payload.email
-			emailVerified = payload.emailVerified
-			username = payload.username
-			draftUsername = payload.username
+			applyAccountProfile(payload)
 			message = 'Username saved.'
 			messageTone = 'info'
 			queueSessionRefresh()
@@ -310,11 +316,7 @@ export function AccountRoute(handle: Handle) {
 		if (!isAccountPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'accountProfile', href)
 		if (!routeData) return false
-		email = routeData.email
-		emailVerified = routeData.emailVerified
-		username = routeData.username
-		draftUsername = routeData.username
-		draftEmail = routeData.email
+		applyAccountProfile(routeData)
 		status = 'ready'
 		message = null
 		messageTone = 'info'
@@ -468,8 +470,9 @@ export function AccountRoute(handle: Handle) {
 										Change email
 									</h3>
 									<p mix={css(descriptionCss)}>
-										Enter your current password. We will send a verification
-										link to the new address before changing your account email.
+										{hasUsablePassword
+											? 'Enter your current password. We will send a verification link to the new address before changing your account email.'
+											: 'We will send a verification link to the new address before changing your account email.'}
 									</p>
 								</div>
 								<label mix={css(fieldCss)}>
@@ -483,20 +486,22 @@ export function AccountRoute(handle: Handle) {
 										mix={[css(inputCss), on('input', updateDraftEmail)]}
 									/>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Current password</span>
-									<input
-										type="password"
-										name="password"
-										required
-										autoComplete="current-password"
-										value={emailChangePassword}
-										mix={[
-											css(inputCss),
-											on('input', updateEmailChangePassword),
-										]}
-									/>
-								</label>
+								{hasUsablePassword ? (
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Current password</span>
+										<input
+											type="password"
+											name="password"
+											required
+											autoComplete="current-password"
+											value={emailChangePassword}
+											mix={[
+												css(inputCss),
+												on('input', updateEmailChangePassword),
+											]}
+										/>
+									</label>
+								) : null}
 								<div>
 									<button
 										type="submit"

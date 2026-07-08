@@ -17,6 +17,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			emailVerified: true,
 			username: 'kody',
 			displayName: 'Kody',
+			hasUsablePassword: true,
 		},
 	})
 
@@ -26,6 +27,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 		emailVerified: true,
 		username: 'kody',
 		displayName: 'Kody',
+		hasUsablePassword: true,
 	})
 	expect(
 		tryConsumePreloadedLoaderData('accountProfile', '/account'),
@@ -39,6 +41,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			emailVerified: true,
 			username: 'kody',
 			displayName: 'Kody',
+			hasUsablePassword: true,
 		},
 	})
 	expect(
@@ -50,6 +53,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 		emailVerified: true,
 		username: 'kody',
 		displayName: 'Kody',
+		hasUsablePassword: true,
 	})
 
 	clearPreloadedNavigationData()
@@ -60,6 +64,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			emailVerified: true,
 			username: 'kody',
 			displayName: 'Kody',
+			hasUsablePassword: true,
 		},
 	})
 	expect(
@@ -70,6 +75,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 		emailVerified: true,
 		username: 'kody',
 		displayName: 'Kody',
+		hasUsablePassword: true,
 	})
 
 	clearPreloadedNavigationData()
@@ -80,6 +86,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			emailVerified: true,
 			username: 'first',
 			displayName: 'First',
+			hasUsablePassword: true,
 		},
 	})
 	setPreloadedNavigationData('/account', {
@@ -89,6 +96,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			emailVerified: true,
 			username: 'second',
 			displayName: 'Second',
+			hasUsablePassword: true,
 		},
 	})
 	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual({
@@ -97,6 +105,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 		emailVerified: true,
 		username: 'second',
 		displayName: 'Second',
+		hasUsablePassword: true,
 	})
 
 	clearPreloadedNavigationData()
@@ -107,6 +116,7 @@ test('preloaded navigation data is consumed once for matching hrefs and replaced
 			emailVerified: true,
 			username: 'kody',
 			displayName: 'Kody',
+			hasUsablePassword: true,
 		},
 		adminUsers: {
 			ok: true,
