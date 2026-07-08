@@ -13,7 +13,7 @@ Those policies must not be created, widened, or modified by:
 
 - MCP tools
 - execute-time sandboxed code
-- generated UI code
+- package app code
 - capability handlers that serve agent-driven secret creation or update flows
 
 Allowed outbound hosts and allowed capabilities may only be changed through the
@@ -41,7 +41,7 @@ target host is not already approved for that secret, the correct behavior is:
 
 ## What agents must not do
 
-Do not design or document any MCP capability, generated UI helper, or client
+Do not design or document any MCP capability, package app helper, or client
 library that allows agent-controlled writes to a secret's allowed hosts or
 allowed kody.
 
@@ -51,7 +51,7 @@ Specifically, do not:
   inputs
 - add `allowed_capabilities` or equivalent fields to MCP-facing secret
   create/update inputs
-- imply that a generated UI can self-authorize a host just because it can save a
+- imply that a package app can self-authorize a host just because it can save a
   secret
 - imply that execute-time capability calls can widen which capabilities may
   consume a secret
@@ -82,7 +82,7 @@ This policy is especially important in:
 - secret create/update/list capabilities
 - capability input fields annotated with `x-kody-secret: true`
 - execute-time fetch documentation
-- generated UI runtime documentation
+- package app documentation
 - OAuth and other hosted callback examples
 
 ## Capability input placeholders
@@ -113,9 +113,9 @@ If a workflow's real security boundary is outbound network use, keep that flow
 on the fetch placeholder path so host approval applies before the request is
 sent.
 
-## Guidance for generated UI flows
+## Guidance for package app flows
 
-Generated UIs may:
+Package apps may:
 
 - collect secret values from the user
 - save those values as secrets
@@ -124,20 +124,17 @@ Generated UIs may:
 - inspect secret metadata, including current allowed capabilities
 - present approval links returned from blocked requests
 
-Generated UIs may not:
+Package apps may not:
 
 - set allowed hosts directly
 - set allowed capabilities directly
 - bypass the admin approval route
 - silently retry secret-bearing requests after a deny
-- use `executeCode(...)` as a general string interpolation mechanism for
-  `{{secret:...}}` placeholders
 
-When a generated UI hits a recoverable runtime problem, it should:
+When a package app hits a recoverable runtime problem, it should:
 
 1. Show the problem in the UI.
-2. Call `sendMessage(...)` when available so the parent chat can help the user.
-3. Include the next action the user should take, such as approving a host,
+2. Include the next action the user should take, such as approving a host,
    providing a missing non-secret value, or retrying after a fix.
 
 For OAuth and similar flows, prefer this sequence:

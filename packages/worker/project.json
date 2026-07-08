@@ -32,19 +32,11 @@
 				"command": "npm run build:client:web"
 			}
 		},
-		"build-mcp-apps": {
-			"executor": "nx:run-commands",
-			"outputs": ["{workspaceRoot}/packages/worker/public/mcp-apps"],
-			"options": {
-				"command": "npm run build:mcp-apps"
-			}
-		},
 		"build-client": {
 			"executor": "nx:run-commands",
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
-				"{workspaceRoot}/packages/worker/public/assets",
-				"{workspaceRoot}/packages/worker/public/mcp-apps"
+				"{workspaceRoot}/packages/worker/public/assets"
 			],
 			"options": {
 				"command": "npm run build:client"
@@ -90,7 +82,7 @@
 		},
 		"test-mcp": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-mcp-apps", "prepare-e2e-env"],
+			"dependsOn": ["prepare-e2e-env"],
 			"options": {
 				"command": "vitest run --project mcp-e2e"
 			}

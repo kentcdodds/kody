@@ -6,7 +6,6 @@ import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validatio
 import { McpAgent } from 'agents/mcp'
 import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
-import { registerResources } from './register-resources.ts'
 import {
 	buildMcpServerInstructions,
 	conversationIdGuidance,
@@ -85,7 +84,6 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 		})
-		await registerResources(this)
 		await registerTools(this)
 	}
 	getCallerContext() {

@@ -6,7 +6,7 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { escapeHtmlAttribute } from '@kody-internal/shared/generated-ui-utils.ts'
+import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 const emailChangeTokenBytes = 32
@@ -32,9 +32,9 @@ function buildEmailChangeEmail(input: {
 	newEmail: string
 	verificationUrl: string
 }) {
-	const currentEmail = escapeHtmlAttribute(input.currentEmail)
-	const newEmail = escapeHtmlAttribute(input.newEmail)
-	const verificationUrl = escapeHtmlAttribute(input.verificationUrl)
+	const currentEmail = escapeHtml(input.currentEmail)
+	const newEmail = escapeHtml(input.newEmail)
+	const verificationUrl = escapeHtml(input.verificationUrl)
 	return {
 		subject: 'Verify your new kody email',
 		text: [

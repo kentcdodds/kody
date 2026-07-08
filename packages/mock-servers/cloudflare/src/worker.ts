@@ -2,7 +2,7 @@
  * Minimal Cloudflare API v4 mock for local dev and tests.
  * Mirrors Cloudflare API v4 routes used by tests and internal clients.
  */
-import { escapeHtmlAttribute } from '@kody-internal/shared/generated-ui-utils.ts'
+import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { parseSafe } from 'remix/data-schema'
 import {
@@ -393,13 +393,13 @@ async function handleDashboard(
 			)
 			const pathCell =
 				endpoint.method === 'GET'
-					? `<a href="${escapeHtmlAttribute(endpointHref)}"><code>${escapeHtmlAttribute(endpoint.path)}</code></a>`
-					: `<code>${escapeHtmlAttribute(endpoint.path)}</code>`
+					? `<a href="${escapeHtml(endpointHref)}"><code>${escapeHtml(endpoint.path)}</code></a>`
+					: `<code>${escapeHtml(endpoint.path)}</code>`
 			return `<tr>
-				<td><code>${escapeHtmlAttribute(endpoint.method)}</code></td>
+				<td><code>${escapeHtml(endpoint.method)}</code></td>
 				<td>${pathCell}</td>
 				<td>${authBadge}</td>
-				<td>${escapeHtmlAttribute(endpoint.description)}</td>
+				<td>${escapeHtml(endpoint.description)}</td>
 			</tr>`
 		})
 		.join('')
@@ -493,7 +493,7 @@ async function handleDashboard(
 	<body>
 		<div class="container">
 			<h1>Mock: Cloudflare API</h1>
-			<p class="subtitle">${escapeHtmlAttribute(tokenHint)}</p>
+			<p class="subtitle">${escapeHtml(tokenHint)}</p>
 			<div class="grid">
 				<div class="card">
 					<div class="stat-label">Auth</div>
@@ -524,8 +524,8 @@ async function handleDashboard(
 					</tbody>
 				</table>
 				<p class="footer">
-					Meta: <a href="${escapeHtmlAttribute(withTokenQueryParam(url, '/__mocks/meta', dashboardToken))}">/__mocks/meta</a>
-					· Messages: <a href="${escapeHtmlAttribute(withTokenQueryParam(url, '/__mocks/messages', dashboardToken))}">/__mocks/messages</a>
+					Meta: <a href="${escapeHtml(withTokenQueryParam(url, '/__mocks/meta', dashboardToken))}">/__mocks/meta</a>
+					· Messages: <a href="${escapeHtml(withTokenQueryParam(url, '/__mocks/messages', dashboardToken))}">/__mocks/messages</a>
 				</p>
 			</div>
 		</div>

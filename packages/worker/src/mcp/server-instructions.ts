@@ -54,10 +54,9 @@ export function buildBaseMcpServerInstructions(
 End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use
 
-Three-step flow:
+Two-step flow:
 1. \`search\` — built-in kody, saved packages, persisted values, saved integrations, and secret references (metadata).
 2. \`execute\` — run one ephemeral module with imports/exports and runtime access through \`kody:runtime\`.
-3. \`open_generated_ui\` — open saved package apps or inline MCP App workflows.
 
 Conventions
 - ${conversationIdGuidance}
@@ -102,9 +101,6 @@ execute
 - Cross-package imports use specifiers such as \`kody:@scope/my-package/export-name\`. For dynamic current-version calls inside package runtime code or authenticated execute calls, prefer \`packages.invokeChecked({ kodyId, exportName, params })\` or \`packages.check(...)\` followed by \`packages.invoke(check.invoke)\`; use static imports for library-like bundled snapshots. Saved package names must be scoped (\`@scope/<leaf>\`) and the leaf segment must match \`kody.id\`. Package jobs are owned by packages, ad hoc jobs can be scheduled with \`job_schedule\`, and package apps are optional package surfaces.
 - Official how-to guides from the Kody repo: when creating or materially changing a package, call \`coding_guide_get\` with \`guide: "package_authoring"\`. If the package, package app, or workflow depends on a third-party integration, secrets, or OAuth, call \`guide: "integration_bootstrap"\` before building the dependent package. If unsure, \`search\` for this capability and load the right guide before implementing.
 - Do not save or present an auth-dependent package as complete until \`search\` shows the required integration or secret reference exists and a minimal authenticated \`execute\` smoke test succeeds.
-
-open_generated_ui
-- Opens saved package apps and inline MCP App workflows. Details: \`open_generated_ui\` tool description.
 	`.trim()
 }
 

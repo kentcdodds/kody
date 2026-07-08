@@ -226,8 +226,8 @@ explicit `idempotencyKey` when available.
 
 A package app is optional.
 
-When `package.json#kody.app` is present, the package can be opened through
-`open_generated_ui` and hosted under the package app route.
+When `package.json#kody.app` is present, the package is hosted under the package
+app route.
 
 Use the package app model when the package needs:
 

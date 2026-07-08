@@ -124,7 +124,6 @@ export type SlimSearchMatch =
 			description: string
 			usage: string
 			rootImportUsage: string
-			openGeneratedUiUsage: string | null
 			tags: Array<string>
 			hasApp: boolean
 			hostedUrl: string | null
@@ -532,10 +531,6 @@ function formatInlineTypeDefinition(typeDefinition: string) {
 	return typeDefinition.replace(/\s+/g, ' ').trim()
 }
 
-function buildPackageAppUsage(kodyId: string) {
-	return `open_generated_ui({ kody_id: ${JSON.stringify(kodyId)} })`
-}
-
 function buildValueUsage(name: string, scope: string) {
 	return `kody.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
 }
@@ -702,9 +697,6 @@ export function toSlimStructuredMatches(input: {
 		}
 		if (match.type === 'package') {
 			const rootImportUsage = buildPackageRootImportUsage(match.name)
-			const openGeneratedUiUsage = match.hasApp
-				? buildPackageAppUsage(match.kodyId)
-				: null
 			const actionMatches = (match.actionMatches ?? []).map((actionMatch) => {
 				const importSpecifier = buildPackageImportSpecifier(
 					match.name,
@@ -737,7 +729,7 @@ export function toSlimStructuredMatches(input: {
 				primaryAction && primaryActionFunction
 					? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.`
 					: match.hasApp
-						? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
+						? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.`
 						: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
 			return {
 				type: 'package',
@@ -747,12 +739,8 @@ export function toSlimStructuredMatches(input: {
 				kodyId: match.kodyId,
 				title: match.title,
 				description: match.description,
-				usage:
-					primaryActionFunction?.usage ??
-					openGeneratedUiUsage ??
-					rootImportUsage,
+				usage: primaryActionFunction?.usage ?? rootImportUsage,
 				rootImportUsage,
-				openGeneratedUiUsage,
 				tags: match.tags,
 				hasApp: match.hasApp,
 				hostedUrl:
@@ -960,7 +948,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				'## App',
 				'',
 				`- Entry: \`${appEntry}\``,
-				`- Open: \`${buildPackageAppUsage(detail.record.kodyId)}\``,
+				...(detail.hostedUrl ? [`- Open: \`${detail.hostedUrl}\``] : []),
 			)
 		}
 		if (exportDetails.length > 0) {
@@ -1039,9 +1027,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				entityRef: buildEntityRef(detail.record.kodyId, 'package'),
 				title: detail.title,
 				description: detail.description,
-				usage: detail.record.hasApp
-					? buildPackageAppUsage(detail.record.kodyId)
-					: buildPackageRootImportUsage(detail.record.name),
+				usage: buildPackageRootImportUsage(detail.record.name),
 				packageId: detail.record.id,
 				kodyId: detail.record.kodyId,
 				name: detail.record.name,

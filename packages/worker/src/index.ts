@@ -28,15 +28,10 @@ import {
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
 import {
-	handleGeneratedUiApiRequest,
-	isGeneratedUiApiRequest,
-} from './mcp/generated-ui-api.ts'
-import {
 	handlePackageInvocationApiRequest,
 	isPackageInvocationApiRequest,
 } from './package-invocations/http.ts'
 import { withCors } from './utils.ts'
-import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
 import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
@@ -73,8 +68,6 @@ export {
 	PackageAppRuntimeBridge,
 	StorageRunner,
 }
-
-const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
 
 // Immutable caching is only safe when asset URLs are versioned by a real
 // commit sha. In local dev the build id falls back to a constant ('dev'), so
@@ -151,33 +144,9 @@ async function handleUserScopedConnectorRequest(request: Request, env: Env) {
 	return stub.fetch(forwardRequest)
 }
 
-function isAllowedGeneratedUiOrigin(origin: string, requestOrigin: string) {
-	if (origin === requestOrigin) {
-		return true
-	}
-	try {
-		const parsedOrigin = new URL(origin)
-		return parsedOrigin.hostname.endsWith(claudeWidgetDomainSuffix)
-	} catch {
-		return false
-	}
-}
-
 const appHandler = withCors({
 	getCorsHeaders(request) {
 		const url = new URL(request.url)
-		if (isGeneratedUiApiRequest(url.pathname)) {
-			const origin = request.headers.get('Origin')
-			if (!origin || !isAllowedGeneratedUiOrigin(origin, url.origin)) {
-				return null
-			}
-			return {
-				'Access-Control-Allow-Origin': origin,
-				'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-				'Access-Control-Allow-Headers': 'content-type, authorization',
-				Vary: 'Origin',
-			}
-		}
 		const origin = request.headers.get('Origin')
 		if (!origin) return null
 		const requestOrigin = url.origin
@@ -280,10 +249,6 @@ const appHandler = withCors({
 			})
 		}
 
-		if (isGeneratedUiApiRequest(url.pathname)) {
-			return handleGeneratedUiApiRequest(request, env)
-		}
-
 		if (isPackageAppRequestPath(url.pathname)) {
 			return handlePackageAppRequest(request, env)
 		}
@@ -297,51 +262,6 @@ const appHandler = withCors({
 
 		if (url.pathname.startsWith('/connectors/')) {
 			return new Response('Not Found', { status: 404 })
-		}
-
-		// Sandboxed widget iframes have an opaque origin, so JS/CSS loads become CORS fetches.
-		// ChatGPT/MCP Jam can render with sandbox="allow-scripts", which requires these headers.
-		if (
-			env.ASSETS &&
-			(request.method === 'GET' || request.method === 'HEAD') &&
-			(url.pathname.startsWith('/mcp-apps/') || url.pathname === '/styles.css')
-		) {
-			const assetResponse = await env.ASSETS.fetch(request)
-			if (assetResponse.status !== 404) {
-				const headers = new Headers(assetResponse.headers)
-				headers.set('Access-Control-Allow-Origin', '*')
-				if (shouldApplyLongLivedAssetCaching(url.pathname, env)) {
-					headers.set('Cache-Control', 'public, max-age=31536000, immutable')
-				}
-				return new Response(assetResponse.body, {
-					status: assetResponse.status,
-					statusText: assetResponse.statusText,
-					headers,
-				})
-			}
-		}
-
-		// Dev route: serve generated UI runtime HTML entry for iframe testing.
-		// This runtime executes attacker-authored HTML/JS delivered via
-		// postMessage, so it must never be reachable in production. Return 404
-		// immediately outside non-production so the path can never fall through
-		// to assets or the app router.
-		if (url.pathname === '/dev/generated-ui') {
-			if (
-				!isNonProductionRuntime(env) ||
-				(request.method !== 'GET' && request.method !== 'HEAD')
-			) {
-				return new Response('Not Found', { status: 404 })
-			}
-			const { renderGeneratedUiRuntimeHtmlEntry } =
-				await import('./mcp/apps/generated-ui-runtime-html-entry.ts')
-			const baseUrl = new URL('/', url.origin)
-			const html = renderGeneratedUiRuntimeHtmlEntry(baseUrl)
-			return new Response(html, {
-				headers: {
-					'Content-Type': 'text/html; charset=utf-8',
-				},
-			})
 		}
 
 		// Try to serve static assets for safe methods only. Any non-404 status

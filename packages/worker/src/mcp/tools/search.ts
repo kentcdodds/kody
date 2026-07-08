@@ -280,7 +280,7 @@ function buildRecommendedNextStep(
 			return `Use \`${importStatement}\` for the matched package action. Inspect \`search({ entity: "${topMatch.kodyId}:package" })\` only if you need more exports or full package detail.`
 		}
 		return topMatch.hasApp
-			? `Open the saved app with \`open_generated_ui({ kody_id: "${topMatch.kodyId}" })\` or inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports and jobs.`
+			? `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, jobs, and the hosted app URL.`
 			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`${buildPackageImportSpecifier(topMatch.name, '.')}\` or a subpath export.`
 	}
 	if (topMatch?.type === 'integration') {
@@ -1391,7 +1391,7 @@ const searchTool = {
 	description: `
 Find **built-in capabilities**, **saved packages**, **persisted values**,
 **saved integrations**, and **user secret references** (metadata only)
-before \`execute\` or \`open_generated_ui\`.
+before \`execute\`.
 
 **query** — compact ranked markdown + structured matches (order matters). Query
 markdown is summary-only: type, title/name, one-line description, and entity ref.
@@ -1406,7 +1406,7 @@ default.
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
 For package creation or material updates, load \`coding_guide_get\` with
 \`guide: "package_authoring"\` and maintain a root README.md Intent section.
-Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
+Open package apps through their hosted package URLs.
 Secrets: results expose metadata; use \`kody.secret_list\` during execute,
 \`/account/secrets/new\` for API key/PAT entry and rotation, and
 \`/connect/oauth\` for OAuth integrations.
@@ -1431,7 +1431,6 @@ Example arguments:
 - \`{ "entity": "coding_guide_get:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:integration" }\`
-- To open a saved package app: \`open_generated_ui({ "kody_id": "<kody-id>" })\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),
