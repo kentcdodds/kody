@@ -295,6 +295,14 @@ function buildRecommendedNextStep(
 				: `kody.remote[${JSON.stringify(connectorName)}][${JSON.stringify(toolName)}]`
 			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
 		}
+		if (topMatch.source === 'mcp-server' && topMatch.mcpServer) {
+			const serverName = topMatch.mcpServer.kodyName
+			const toolName = topMatch.mcpServer.toolName
+			const accessor = /^[A-Za-z_$][\w$]*$/.test(toolName)
+				? `kody.mcp[${JSON.stringify(serverName)}].${toolName}`
+				: `kody.mcp[${JSON.stringify(serverName)}][${JSON.stringify(toolName)}]`
+			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
+		}
 		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`kody.${topMatch.name}(args)\`.`
 	}
 	return undefined
@@ -1154,6 +1162,7 @@ function capabilityMatchToCandidate(
 			...(spec.remoteConnector
 				? { remoteConnector: spec.remoteConnector }
 				: {}),
+			...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
 		},
 		type: 'capability',
 		id: spec.name,

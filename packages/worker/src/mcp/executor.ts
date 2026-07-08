@@ -26,6 +26,7 @@ import {
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import {
+	type KodyMcpServerMetadata,
 	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
@@ -124,9 +125,17 @@ type DynamicWorkerEntrypoint = {
 }
 
 export function createKodyRemoteProxy(input: {
-	remoteConnectors: Array<KodyRemoteConnectorMetadata>
+	remoteConnectors: Array<
+		Pick<KodyRemoteConnectorMetadata, 'name' | 'status' | 'capabilities'>
+	>
 	callTool: (dispatchName: string, args: unknown) => Promise<unknown>
+	entityLabel?: string
+	shortEntityLabel?: string
+	capabilityLabel?: string
 }) {
+	const entityLabel = input.entityLabel ?? 'remote connector'
+	const shortEntityLabel = input.shortEntityLabel ?? 'connector'
+	const capabilityLabel = input.capabilityLabel ?? 'remote capability'
 	const connectors = Object.fromEntries(
 		input.remoteConnectors.map((connector) => [
 			connector.name,
@@ -157,7 +166,7 @@ export function createKodyRemoteProxy(input: {
 				const connector = connectors[normalizedConnectorName]
 				if (!connector) {
 					throw new Error(
-						`Unknown remote connector "${normalizedConnectorName}". Available remote connectors: ${formatNames(Object.keys(connectors))}.`,
+						`Unknown ${entityLabel} "${normalizedConnectorName}". Available ${entityLabel}s: ${formatNames(Object.keys(connectors))}.`,
 					)
 				}
 				return new Proxy(
@@ -181,7 +190,7 @@ export function createKodyRemoteProxy(input: {
 								connector.capabilitiesByName[normalizedCapabilityName]
 							if (!capability) {
 								throw new Error(
-									`Unknown remote capability "${normalizedCapabilityName}" for connector "${normalizedConnectorName}". Available capabilities: ${formatNames(connector.capabilities.map((entry) => entry.name))}.`,
+									`Unknown ${capabilityLabel} "${normalizedCapabilityName}" for ${shortEntityLabel} "${normalizedConnectorName}". Available capabilities: ${formatNames(connector.capabilities.map((entry) => entry.name))}.`,
 								)
 							}
 							return async (args: unknown) =>
@@ -398,10 +407,14 @@ export function createExecutorModuleSource(input: {
 
 function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as KodyResolvedProvider
-	if (provider.name === 'kody' && kodyProvider.kodyRemoteConnectors) {
+	if (
+		provider.name === 'kody' &&
+		(kodyProvider.kodyRemoteConnectors || kodyProvider.kodyMcpServers)
+	) {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
-			remoteConnectors: kodyProvider.kodyRemoteConnectors,
+			remoteConnectors: kodyProvider.kodyRemoteConnectors ?? [],
+			mcpServers: kodyProvider.kodyMcpServers ?? [],
 		})
 	}
 	return provider.positionalArgs
@@ -412,32 +425,41 @@ function createProviderProxySource(provider: ResolvedProvider) {
 export function createKodyProviderProxySource(input: {
 	providerName: string
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
+	mcpServers?: Array<KodyMcpServerMetadata>
 }) {
 	const metadataJson = JSON.stringify(input.remoteConnectors)
+	const mcpMetadataJson = JSON.stringify(input.mcpServers ?? [])
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
+    const __kodyCallDispatcher = async (dispatchName, args) => {
+      const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
+      const data = JSON.parse(resJson);
+      if (data.error) throw new Error(data.error);
+      return data.result;
+    };
     const __kodyRemote = __kodyCreateRemoteProxy({
       remoteConnectors: ${metadataJson},
-      callTool: async (dispatchName, args) => {
-        const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
-        const data = JSON.parse(resJson);
-        if (data.error) throw new Error(data.error);
-        return data.result;
-      },
+      callTool: __kodyCallDispatcher,
+    });
+    const __kodyMcp = __kodyCreateRemoteProxy({
+      remoteConnectors: ${mcpMetadataJson},
+      entityLabel: "MCP server",
+      shortEntityLabel: "MCP server",
+      capabilityLabel: "MCP tool",
+      callTool: __kodyCallDispatcher,
     });
     const ${input.providerName} = new Proxy({}, {
       get: (_, toolName) => {
         if (typeof toolName === 'symbol' || toolName === 'then') return undefined;
         if (toolName === 'remote') return __kodyRemote;
+        if (toolName === 'mcp') return __kodyMcp;
         const normalizedToolName = String(toolName);
         if (normalizedToolName.startsWith('remote:')) {
           throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat kody function. Use kody.remote[connectorName].capabilityName(input) instead.\`);
         }
-        return async (args) => {
-          const resJson = await __dispatchers.${input.providerName}.call(normalizedToolName, JSON.stringify(args ?? {}));
-          const data = JSON.parse(resJson);
-          if (data.error) throw new Error(data.error);
-          return data.result;
-        };
+        if (normalizedToolName.startsWith('mcp:')) {
+          throw new Error(\`MCP server tool "\${normalizedToolName}" is not available as a flat kody function. Use kody.mcp[serverName].toolName(input) instead.\`);
+        }
+        return async (args) => await __kodyCallDispatcher(normalizedToolName, args);
       }
     });`
 	assertGeneratedExecutorSourceIsBundleSafe(source)

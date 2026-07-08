@@ -4,6 +4,9 @@
 // exist inside dynamically loaded worker modules.
 export const kodyRemoteProxyFactorySource = [
 	'function createKodyRemoteProxy(input) {',
+	'  const entityLabel = input.entityLabel || "remote connector";',
+	'  const shortEntityLabel = input.shortEntityLabel || "connector";',
+	'  const capabilityLabel = input.capabilityLabel || "remote capability";',
 	'  const connectors = Object.fromEntries(',
 	'    input.remoteConnectors.map((connector) => [',
 	'      connector.name,',
@@ -34,7 +37,7 @@ export const kodyRemoteProxyFactorySource = [
 	'        const connector = connectors[normalizedConnectorName];',
 	'        if (!connector) {',
 	'          throw new Error(',
-	'            "Unknown remote connector \\"" + normalizedConnectorName + "\\". Available remote connectors: " + formatNames(Object.keys(connectors)) + ".",',
+	'            "Unknown " + entityLabel + " \\"" + normalizedConnectorName + "\\". Available " + entityLabel + "s: " + formatNames(Object.keys(connectors)) + ".",',
 	'          );',
 	'        }',
 	'        return new Proxy(',
@@ -58,7 +61,7 @@ export const kodyRemoteProxyFactorySource = [
 	'                connector.capabilitiesByName[normalizedCapabilityName];',
 	'              if (!capability) {',
 	'                throw new Error(',
-	'                  "Unknown remote capability \\"" + normalizedCapabilityName + "\\" for connector \\"" + normalizedConnectorName + "\\". Available capabilities: " + formatNames(connector.capabilities.map((entry) => entry.name)) + ".",',
+	'                  "Unknown " + capabilityLabel + " \\"" + normalizedCapabilityName + "\\" for " + shortEntityLabel + " \\"" + normalizedConnectorName + "\\". Available capabilities: " + formatNames(connector.capabilities.map((entry) => entry.name)) + ".",',
 	'                );',
 	'              }',
 	'              return async (args) =>',

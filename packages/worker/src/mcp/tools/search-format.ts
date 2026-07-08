@@ -112,6 +112,7 @@ export type SlimSearchMatch =
 			usage: string
 			source?: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
+			mcpServer?: CapabilitySpec['mcpServer']
 	  }
 	| {
 			type: 'package'
@@ -217,6 +218,7 @@ export type SearchEntityDetailStructured =
 			destructive: boolean
 			source: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
+			mcpServer?: CapabilitySpec['mcpServer']
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 	  }
@@ -379,6 +381,7 @@ export type SearchMatch =
 			description: string
 			source?: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
+			mcpServer?: CapabilitySpec['mcpServer']
 	  }
 	| {
 			type: 'package'
@@ -444,22 +447,42 @@ function buildCapabilityUsage(spec: {
 	name: string
 	source?: CapabilitySpec['source']
 	remoteConnector?: CapabilitySpec['remoteConnector']
+	mcpServer?: CapabilitySpec['mcpServer']
 }) {
 	return `execute with ${buildKodyCapabilityAccessor(spec)}(args)`
+}
+
+function buildNamespacedKodyAccessor(input: {
+	namespace: string
+	entryName: string
+	toolName: string
+}) {
+	const entryAccessor = `kody.${input.namespace}[${JSON.stringify(input.entryName)}]`
+	if (/^[A-Za-z_$][\w$]*$/.test(input.toolName)) {
+		return `${entryAccessor}.${input.toolName}`
+	}
+	return `${entryAccessor}[${JSON.stringify(input.toolName)}]`
 }
 
 function buildKodyCapabilityAccessor(spec: {
 	name: string
 	source?: CapabilitySpec['source']
 	remoteConnector?: CapabilitySpec['remoteConnector']
+	mcpServer?: CapabilitySpec['mcpServer']
 }) {
 	if (spec.source === 'remote-connector' && spec.remoteConnector) {
-		const connectorAccessor = `kody.remote[${JSON.stringify(spec.remoteConnector.connectorName)}]`
-		const toolName = spec.remoteConnector.toolName
-		if (/^[A-Za-z_$][\w$]*$/.test(toolName)) {
-			return `${connectorAccessor}.${toolName}`
-		}
-		return `${connectorAccessor}[${JSON.stringify(toolName)}]`
+		return buildNamespacedKodyAccessor({
+			namespace: 'remote',
+			entryName: spec.remoteConnector.connectorName,
+			toolName: spec.remoteConnector.toolName,
+		})
+	}
+	if (spec.source === 'mcp-server' && spec.mcpServer) {
+		return buildNamespacedKodyAccessor({
+			namespace: 'mcp',
+			entryName: spec.mcpServer.kodyName,
+			toolName: spec.mcpServer.toolName,
+		})
 	}
 	const { name } = spec
 	if (/^[A-Za-z_$][\w$]*$/.test(name)) {
@@ -674,6 +697,7 @@ export function toSlimStructuredMatches(input: {
 				...(match.remoteConnector
 					? { remoteConnector: match.remoteConnector }
 					: {}),
+				...(match.mcpServer ? { mcpServer: match.mcpServer } : {}),
 			}
 		}
 		if (match.type === 'package') {
@@ -862,6 +886,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				...(detail.spec.remoteConnector
 					? { remoteConnector: detail.spec.remoteConnector }
 					: {}),
+				...(detail.spec.mcpServer ? { mcpServer: detail.spec.mcpServer } : {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,
 				...(detail.spec.outputTypeDefinition
 					? { outputTypeDefinition: detail.spec.outputTypeDefinition }

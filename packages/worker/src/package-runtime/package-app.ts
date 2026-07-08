@@ -117,13 +117,38 @@ function createKodyProxy(runtimeBridge) {
 			});
 		},
 	});
+	const mcp = new Proxy({}, {
+		get(_target, serverName) {
+			if (typeof serverName !== 'string' || serverName === 'then') {
+				return undefined;
+			}
+			return new Proxy({}, {
+				get(_serverTarget, toolName) {
+					if (typeof toolName !== 'string' || toolName === 'then') {
+						return undefined;
+					}
+					return async (args = {}) =>
+						await runtimeBridge.callCapability({
+							name: \`mcp:\${serverName}:\${toolName}\`,
+							args,
+						});
+				},
+			});
+		},
+	});
 	return new Proxy({}, {
 		get(_target, property) {
 			if (typeof property !== 'string' || property === 'then') return undefined;
 			if (property === 'remote') return remote;
+			if (property === 'mcp') return mcp;
 			if (property.startsWith('remote:')) {
 				throw new Error(
 					\`Remote connector capability "\${property}" is not available as a flat kody function. Use kody.remote[connectorName].capabilityName(input) instead.\`,
+				);
+			}
+			if (property.startsWith('mcp:')) {
+				throw new Error(
+					\`MCP server tool "\${property}" is not available as a flat kody function. Use kody.mcp[serverName].toolName(input) instead.\`,
 				);
 			}
 			return async (args = {}) =>

@@ -34,6 +34,7 @@ import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-contro
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
 import {
+	type KodyMcpServerMetadata,
 	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
@@ -66,6 +67,12 @@ import {
 	getRemoteConnectorStatus,
 } from '#worker/remote-connector/status.ts'
 import { remoteConnectorKodyName } from '#worker/remote-connector/remote-domain-id.ts'
+import {
+	formatMcpServerUnavailableMessage,
+	getMcpServerStatus,
+} from '#worker/mcp-client/status.ts'
+import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
+import { listEnabledMcpServerRefs } from '#worker/mcp-client/settings-service.ts'
 
 type AdditionalKodyTools = Record<string, (args: unknown) => Promise<unknown>>
 
@@ -371,6 +378,7 @@ async function buildKodyToolContext(
 ): Promise<{
 	tools: AdditionalKodyTools
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
+	mcpServers: Array<KodyMcpServerMetadata>
 }> {
 	const capabilityMap = options?.skipCapabilityRegistry
 		? {}
@@ -382,11 +390,18 @@ async function buildKodyToolContext(
 						callerContext,
 					})
 				).capabilityMap
-	const remoteConnectors = await buildKodyRemoteConnectorMetadata({
-		env,
-		callerContext,
-		capabilityMap,
-	})
+	const [remoteConnectors, mcpServers] = await Promise.all([
+		buildKodyRemoteConnectorMetadata({
+			env,
+			callerContext,
+			capabilityMap,
+		}),
+		buildKodyMcpServerMetadata({
+			env,
+			callerContext,
+			capabilityMap,
+		}),
+	])
 	const additionalTools = options?.additionalTools ?? {}
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
@@ -537,6 +552,7 @@ async function buildKodyToolContext(
 			...additionalTools,
 		},
 		remoteConnectors,
+		mcpServers,
 	}
 }
 
@@ -627,6 +643,76 @@ async function buildKodyRemoteConnectorMetadata(input: {
 	)
 }
 
+async function buildKodyMcpServerMetadata(input: {
+	env: Env
+	callerContext: McpCallerContext
+	capabilityMap: Record<string, Capability>
+}): Promise<Array<KodyMcpServerMetadata>> {
+	const userId = input.callerContext.user?.userId ?? null
+	const servers = new Map<string, KodyMcpServerMetadata>()
+
+	if (userId) {
+		const refs = await listEnabledMcpServerRefs({
+			env: input.env,
+			userId,
+		}).catch(() => [])
+		for (const ref of refs) {
+			const name = mcpServerKodyName(ref)
+			const status = await getMcpServerStatus({
+				env: input.env,
+				userId,
+				ref,
+			})
+			servers.set(name, {
+				name,
+				serverId: ref.serverId,
+				status: {
+					state: status.state,
+					connected: status.ready,
+					toolCount: status.toolCount,
+					message: status.message,
+					unavailableMessage: formatMcpServerUnavailableMessage(status),
+				},
+				capabilities: [],
+			})
+		}
+	}
+
+	for (const capability of Object.values(input.capabilityMap)) {
+		if (capability.source !== 'mcp-server') continue
+		const mcpServer = capability.mcpServer
+		if (!mcpServer) continue
+		const existing =
+			servers.get(mcpServer.kodyName) ??
+			({
+				name: mcpServer.kodyName,
+				serverId: mcpServer.serverId,
+				status: {
+					state: 'ready',
+					connected: true,
+					toolCount: 0,
+					message: `The MCP server "${mcpServer.serverName}" is connected.`,
+					unavailableMessage: `The MCP server "${mcpServer.serverName}" is connected.`,
+				},
+				capabilities: [],
+			} satisfies KodyMcpServerMetadata)
+		existing.capabilities.push({
+			name: mcpServer.toolName,
+			dispatchName: sanitizeToolName(capability.name),
+		})
+		existing.capabilities.sort((a, b) => a.name.localeCompare(b.name, 'en'))
+		existing.status.toolCount = Math.max(
+			existing.status.toolCount,
+			existing.capabilities.length,
+		)
+		servers.set(mcpServer.kodyName, existing)
+	}
+
+	return [...servers.values()].sort((a, b) =>
+		a.name.localeCompare(b.name, 'en'),
+	)
+}
+
 export async function buildKodyProvider(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -642,7 +728,7 @@ export async function buildKodyProvider(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ResolvedProvider> {
-	const { tools, remoteConnectors } = await buildKodyToolContext(
+	const { tools, remoteConnectors, mcpServers } = await buildKodyToolContext(
 		env,
 		callerContext,
 		options,
@@ -660,6 +746,7 @@ export async function buildKodyProvider(
 	}
 	return Object.assign(resolveProvider(provider), {
 		kodyRemoteConnectors: remoteConnectors,
+		kodyMcpServers: mcpServers,
 	}) satisfies KodyResolvedProvider
 }
 

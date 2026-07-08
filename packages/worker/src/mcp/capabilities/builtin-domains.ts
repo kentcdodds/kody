@@ -6,6 +6,7 @@ import { codingDomain } from './coding/domain.ts'
 import { emailDomain } from './email/domain.ts'
 import { integrationsDomain } from './integrations/domain.ts'
 import { jobsDomain } from './jobs/domain.ts'
+import { mcpServersDomain } from './mcp-servers/domain.ts'
 import { metaDomain } from './meta/domain.ts'
 import { packagesDomain } from './packages/domain.ts'
 import { repoDomain } from './repo/domain.ts'
@@ -31,6 +32,7 @@ export const builtinDomains = [
 	emailDomain,
 	integrationsDomain,
 	jobsDomain,
+	mcpServersDomain,
 	metaDomain,
 	packagesDomain,
 	repoDomain,
