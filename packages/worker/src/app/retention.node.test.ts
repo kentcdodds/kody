@@ -4,16 +4,22 @@ import { expect, test, vi } from 'vitest'
 import {
 	auditEventRetentionDays,
 	emailDeliveryEventRetentionDays,
+	emailMessageRetentionDays,
+	entitlementDailyCounterRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	packageInvocationRetentionDays,
 	packageRuntimeRunRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
+	pruneEntitlementDailyCountersForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePackageInvocationsForRetention,
 	prunePackageRuntimeRetention,
 	prunePublishedBundleArtifactsForRetention,
+	pruneRetention,
+	pruneUsageRollupsForRetention,
+	pruneUserEmailMessagesForRetention,
 	pruneWorkflowRunsForRetention,
 	publishedBundleArtifactRetentionDays,
 	retentionPolicies,
@@ -214,6 +220,59 @@ function createRetentionDb() {
 			detail_json TEXT,
 			created_at TEXT NOT NULL
 		);
+		CREATE TABLE email_threads (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			inbox_id TEXT,
+			subject_normalized TEXT NOT NULL DEFAULT '',
+			root_message_id_header TEXT,
+			last_message_at TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE email_messages (
+			id TEXT PRIMARY KEY,
+			direction TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			inbox_id TEXT,
+			thread_id TEXT,
+			from_address TEXT NOT NULL,
+			subject TEXT NOT NULL DEFAULT '',
+			processing_status TEXT NOT NULL,
+			raw_mime_key TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE email_attachments (
+			id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
+			filename TEXT,
+			content_type TEXT NOT NULL,
+			size INTEGER NOT NULL DEFAULT 0,
+			storage_kind TEXT NOT NULL,
+			storage_key TEXT,
+			created_at TEXT NOT NULL
+		);
+		CREATE TABLE entitlement_daily_counters (
+			user_id TEXT NOT NULL,
+			resource TEXT NOT NULL,
+			day TEXT NOT NULL,
+			count INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, resource, day)
+		);
+		CREATE TABLE usage_rollups (
+			user_id TEXT NOT NULL,
+			metric TEXT NOT NULL,
+			month TEXT NOT NULL,
+			event_count INTEGER NOT NULL DEFAULT 0,
+			error_count INTEGER NOT NULL DEFAULT 0,
+			total_duration_ms INTEGER NOT NULL DEFAULT 0,
+			total_cpu_ms INTEGER NOT NULL DEFAULT 0,
+			total_bytes INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, metric, month)
+		);
 		CREATE TABLE audit_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 			category TEXT NOT NULL,
@@ -283,6 +342,66 @@ function insertRuntimeRun(
 	)
 }
 
+function insertEmailMessage(
+	db: DatabaseSync,
+	input: {
+		id: string
+		userId?: string
+		threadId?: string | null
+		rawMimeKey?: string | null
+		createdAt: string
+	},
+) {
+	db.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, thread_id, from_address, subject,
+			processing_status, raw_mime_key, created_at, updated_at
+		) VALUES (?, 'inbound', ?, ?, 'sender@example.net', 'Subject', 'stored', ?, ?, ?)`,
+	).run(
+		input.id,
+		input.userId ?? 'user-1',
+		input.threadId ?? null,
+		input.rawMimeKey ?? null,
+		input.createdAt,
+		input.createdAt,
+	)
+}
+
+function insertEmailThread(
+	db: DatabaseSync,
+	input: { id: string; userId?: string; createdAt: string },
+) {
+	db.prepare(
+		`INSERT INTO email_threads (
+			id, user_id, last_message_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?)`,
+	).run(
+		input.id,
+		input.userId ?? 'user-1',
+		input.createdAt,
+		input.createdAt,
+		input.createdAt,
+	)
+}
+
+function insertPackageInvocation(
+	db: DatabaseSync,
+	input: { id: string; status?: string; createdAt: string },
+) {
+	db.prepare(
+		`INSERT INTO package_invocations (
+			id, user_id, token_id, package_id, package_kody_id, export_name,
+			idempotency_key, request_hash, status, created_at, updated_at
+		) VALUES (?, 'user-1', 'token', 'pkg-1', 'pkg-1', '.', ?, 'hash', ?, ?, ?)`,
+	).run(
+		input.id,
+		`key-${input.id}`,
+		input.status ?? 'completed',
+		input.createdAt,
+		input.createdAt,
+	)
+}
+
 function idsForTable(db: DatabaseSync, table: string) {
 	return (
 		db.prepare(`SELECT id FROM ${table} ORDER BY id ASC`).all() as Array<{
@@ -294,12 +413,17 @@ function idsForTable(db: DatabaseSync, table: string) {
 test('retention manifest covers the requested growth tables and cron is hourly gated', () => {
 	expect(retentionPolicies.map((policy) => policy.table).sort()).toEqual([
 		'audit_events',
+		'email_attachments',
 		'email_delivery_events',
+		'email_messages',
+		'email_threads',
+		'entitlement_daily_counters',
 		'mcp_memory_conversation_suppressions',
 		'package_invocations',
 		'package_runtime_logs',
 		'package_runtime_runs',
 		'published_bundle_artifacts',
+		'usage_rollups',
 		'workflow_runs',
 	])
 	expect(shouldRunRetentionCron(new Date('2026-07-07T03:00:00.000Z'))).toBe(
@@ -386,6 +510,7 @@ test('runtime retention prunes old runs, caps per package, and keeps active refe
 		deletedRuns: 3,
 		deletedLogs: 3,
 		deletedOrphanLogs: 1,
+		hasMore: false,
 	})
 	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('boundary-keep')
 	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('running-keep')
@@ -403,6 +528,55 @@ test('runtime retention prunes old runs, caps per package, and keeps active refe
 	expect(idsForTable(sqlite, 'package_runtime_logs')).not.toContain(
 		'orphan-log',
 	)
+})
+
+test('runtime cap retention ranks bounded candidate pairs largest first', async () => {
+	const { sqlite, db } = createRetentionDb()
+	for (const [packageId, runCount] of [
+		['pkg-large', 503],
+		['pkg-small', 502],
+	] as const) {
+		for (let index = 0; index < runCount; index += 1) {
+			insertRuntimeRun(sqlite, {
+				id: `${packageId}-${String(index).padStart(3, '0')}`,
+				packageId,
+				startedAt: new Date(now.getTime() - index * 1000).toISOString(),
+			})
+		}
+	}
+
+	const first = await prunePackageRuntimeRetention({
+		db,
+		now,
+		batchSize: 50,
+		maxCapPairs: 1,
+	})
+	expect(first.deletedRuns).toBe(3)
+	expect(first.hasMore).toBe(true)
+	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain(
+		'pkg-large-502',
+	)
+	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('pkg-small-501')
+
+	const second = await prunePackageRuntimeRetention({
+		db,
+		now,
+		batchSize: 50,
+		maxCapPairs: 1,
+	})
+	expect(second.deletedRuns).toBe(2)
+	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain(
+		'pkg-small-501',
+	)
+
+	const third = await prunePackageRuntimeRetention({
+		db,
+		now,
+		batchSize: 50,
+		maxCapPairs: 1,
+	})
+	expect(third.deletedRuns).toBe(0)
+	expect(third.hasMore).toBe(false)
 })
 
 test('package invocation and workflow retention keeps boundary and active idempotency rows', async () => {
@@ -541,7 +715,169 @@ test('memory suppression, email delivery, and audit retention respect boundaries
 	])
 })
 
-test('published bundle artifact retention deletes only stale unreferenced rows and KV blobs', async () => {
+test('email message retention deletes old user rows, R2 blobs, attachments, and orphan threads', async () => {
+	const { sqlite, db } = createRetentionDb()
+	insertEmailThread(sqlite, {
+		id: 'thread-orphan',
+		createdAt: daysAgo(emailMessageRetentionDays + 2),
+	})
+	insertEmailThread(sqlite, {
+		id: 'thread-mixed',
+		createdAt: daysAgo(emailMessageRetentionDays + 2),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-old-blob',
+		threadId: 'thread-orphan',
+		rawMimeKey: 'raw-mime/user-1/msg-old-blob',
+		createdAt: daysAgo(emailMessageRetentionDays + 1),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-old-plain',
+		threadId: 'thread-mixed',
+		createdAt: daysAgo(emailMessageRetentionDays + 1),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-fresh',
+		threadId: 'thread-mixed',
+		createdAt: daysAgo(1),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-boundary',
+		createdAt: daysAgo(emailMessageRetentionDays),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-old-system',
+		userId: systemEmailOwnerId,
+		createdAt: daysAgo(emailMessageRetentionDays + 1),
+	})
+	sqlite
+		.prepare(
+			`INSERT INTO email_attachments (
+			id, message_id, content_type, size, storage_kind, created_at
+		) VALUES ('att-old', 'msg-old-blob', 'text/plain', 1, 'raw-mime', ?)`,
+		)
+		.run(daysAgo(emailMessageRetentionDays + 1))
+	const blobDelete = vi.fn(async () => undefined)
+
+	const result = await pruneUserEmailMessagesForRetention({
+		db,
+		blobs: { delete: blobDelete } as unknown as Pick<R2Bucket, 'delete'>,
+		now,
+	})
+
+	expect(result).toEqual({
+		deletedMessages: 2,
+		deletedAttachments: 1,
+		deletedThreads: 1,
+		deletedRawMimeBlobs: 1,
+		skippedMissingBlobBinding: 0,
+		blobDeleteErrors: 0,
+		hasMore: false,
+	})
+	expect(blobDelete).toHaveBeenCalledWith(['raw-mime/user-1/msg-old-blob'])
+	expect(idsForTable(sqlite, 'email_messages')).toEqual([
+		'msg-boundary',
+		'msg-fresh',
+		'msg-old-system',
+	])
+	expect(idsForTable(sqlite, 'email_attachments')).toEqual([])
+	expect(idsForTable(sqlite, 'email_threads')).toEqual(['thread-mixed'])
+})
+
+test('email message retention never deletes rows whose blob cannot be deleted first', async () => {
+	const { sqlite, db } = createRetentionDb()
+	insertEmailMessage(sqlite, {
+		id: 'msg-old-blob',
+		rawMimeKey: 'raw-mime/user-1/msg-old-blob',
+		createdAt: daysAgo(emailMessageRetentionDays + 1),
+	})
+	insertEmailMessage(sqlite, {
+		id: 'msg-old-plain',
+		createdAt: daysAgo(emailMessageRetentionDays + 1),
+	})
+
+	const missingBinding = await pruneUserEmailMessagesForRetention({ db, now })
+	expect(missingBinding).toMatchObject({
+		deletedMessages: 1,
+		deletedRawMimeBlobs: 0,
+		skippedMissingBlobBinding: 1,
+		blobDeleteErrors: 0,
+	})
+	expect(idsForTable(sqlite, 'email_messages')).toEqual(['msg-old-blob'])
+
+	const failingDelete = vi.fn(async () => {
+		throw new Error('r2 unavailable')
+	})
+	const failedDelete = await pruneUserEmailMessagesForRetention({
+		db,
+		blobs: { delete: failingDelete } as unknown as Pick<R2Bucket, 'delete'>,
+		now,
+	})
+	expect(failedDelete).toMatchObject({
+		deletedMessages: 0,
+		deletedRawMimeBlobs: 0,
+		skippedMissingBlobBinding: 0,
+		blobDeleteErrors: 1,
+	})
+	expect(idsForTable(sqlite, 'email_messages')).toEqual(['msg-old-blob'])
+
+	const workingDelete = vi.fn(async () => undefined)
+	const succeeded = await pruneUserEmailMessagesForRetention({
+		db,
+		blobs: { delete: workingDelete } as unknown as Pick<R2Bucket, 'delete'>,
+		now,
+	})
+	expect(succeeded).toMatchObject({
+		deletedMessages: 1,
+		deletedRawMimeBlobs: 1,
+	})
+	expect(idsForTable(sqlite, 'email_messages')).toEqual([])
+})
+
+test('entitlement counter and usage rollup retention respect boundaries', async () => {
+	const { sqlite, db } = createRetentionDb()
+	const cutoffDay = daysAgo(entitlementDailyCounterRetentionDays).slice(0, 10)
+	for (const day of [
+		daysAgo(entitlementDailyCounterRetentionDays + 1).slice(0, 10),
+		cutoffDay,
+		daysAgo(1).slice(0, 10),
+	]) {
+		sqlite
+			.prepare(
+				`INSERT INTO entitlement_daily_counters (
+				user_id, resource, day, count, updated_at
+			) VALUES ('user-1', 'email_sends_per_day', ?, 1, ?)`,
+			)
+			.run(day, now.toISOString())
+	}
+	// 24 months before 2026-07 keeps 2024-07 and later.
+	for (const month of ['2024-06', '2024-07', '2026-06']) {
+		sqlite
+			.prepare(
+				`INSERT INTO usage_rollups (
+				user_id, metric, month, event_count, updated_at
+			) VALUES ('user-1', 'mcp_tool_call', ?, 1, ?)`,
+			)
+			.run(month, now.toISOString())
+	}
+
+	expect(await pruneEntitlementDailyCountersForRetention({ db, now })).toBe(1)
+	expect(await pruneUsageRollupsForRetention({ db, now })).toBe(1)
+
+	const days = sqlite
+		.prepare(`SELECT day FROM entitlement_daily_counters ORDER BY day`)
+		.all() as Array<{ day: string }>
+	expect(days.map((row) => row.day)).toEqual([
+		cutoffDay,
+		daysAgo(1).slice(0, 10),
+	])
+	const months = sqlite
+		.prepare(`SELECT month FROM usage_rollups ORDER BY month`)
+		.all() as Array<{ month: string }>
+	expect(months.map((row) => row.month)).toEqual(['2024-07', '2026-06'])
+})
+
+test('published bundle artifact retention deletes stale rows, KV blobs, and source snapshots', async () => {
 	const { sqlite, db } = createRetentionDb()
 	const kvDelete = vi.fn(async () => undefined)
 	const env = {
@@ -623,9 +959,17 @@ test('published bundle artifact retention deletes only stale unreferenced rows a
 	expect(result).toEqual({
 		deletedRows: 1,
 		deletedKvKeys: 1,
+		deletedSnapshotKvKeys: 2,
 		kvDeleteErrors: 0,
+		hasMore: false,
 	})
 	expect(kvDelete).toHaveBeenCalledWith('kv:artifact-delete')
+	expect(kvDelete).toHaveBeenCalledWith(
+		'source-snapshot:v1:source-stale:commit-old',
+	)
+	expect(kvDelete).toHaveBeenCalledWith(
+		'source-manifest-snapshot:v1:source-stale:commit-old',
+	)
 	expect(idsForTable(sqlite, 'published_bundle_artifacts')).toEqual([
 		'artifact-current',
 		'artifact-fresh',
@@ -709,7 +1053,9 @@ test('published bundle artifact retention rechecks staleness before deleting sel
 	expect(result).toEqual({
 		deletedRows: 0,
 		deletedKvKeys: 0,
+		deletedSnapshotKvKeys: 0,
 		kvDeleteErrors: 0,
+		hasMore: false,
 	})
 	expect(kvDelete).not.toHaveBeenCalled()
 	expect(idsForTable(sqlite, 'published_bundle_artifacts')).toEqual([
@@ -761,6 +1107,69 @@ test('retention row deletes chunk ids to stay within the D1 binding limit', asyn
 	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
 })
 
+test('retention run loops batches per table until backlogs are drained', async () => {
+	const { sqlite, db } = createRetentionDb()
+	for (let index = 0; index < 501; index += 1) {
+		insertPackageInvocation(sqlite, {
+			id: `inv-${String(index).padStart(3, '0')}`,
+			createdAt: daysAgo(120),
+		})
+	}
+	for (let index = 0; index < 300; index += 1) {
+		sqlite
+			.prepare(
+				`INSERT INTO audit_events (
+				category, action, result, timestamp
+			) VALUES ('auth', 'login', 'success', ?)`,
+			)
+			.run(daysAgo(auditEventRetentionDays + 1))
+	}
+	const env = {
+		APP_DB: db,
+		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+
+	const result = await pruneRetention({ env, now })
+
+	expect(result.packageInvocations).toBe(501)
+	expect(result.auditEvents).toBe(300)
+	expect(result.batchesPerTable['package_invocations']).toBe(3)
+	expect(result.batchesPerTable['audit_events']).toBe(2)
+	expect(result.timeBudgetExhausted).toBe(false)
+	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
+})
+
+test('retention run gives every table one batch and stops when the budget is exhausted', async () => {
+	const { sqlite, db } = createRetentionDb()
+	for (let index = 0; index < 300; index += 1) {
+		insertPackageInvocation(sqlite, {
+			id: `inv-${String(index).padStart(3, '0')}`,
+			createdAt: daysAgo(120),
+		})
+	}
+	sqlite
+		.prepare(
+			`INSERT INTO audit_events (
+			category, action, result, timestamp
+		) VALUES ('auth', 'login', 'success', ?)`,
+		)
+		.run(daysAgo(auditEventRetentionDays + 1))
+	const env = {
+		APP_DB: db,
+		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+
+	const result = await pruneRetention({ env, now, timeBudgetMs: 0 })
+
+	// The first round-robin pass always completes so a hot table cannot starve
+	// the others, then the exhausted budget stops further passes.
+	expect(result.packageInvocations).toBe(250)
+	expect(result.auditEvents).toBe(1)
+	expect(result.batchesPerTable['package_invocations']).toBe(1)
+	expect(result.timeBudgetExhausted).toBe(true)
+	expect(idsForTable(sqlite, 'package_invocations')).toHaveLength(50)
+})
+
 test('retention coverage includes every live growth-pattern table or documented exemption', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrations(db)
@@ -775,7 +1184,8 @@ test('retention coverage includes every live growth-pattern table or documented 
 		.all() as Array<{ name: string }>
 	const candidateTables = new Set<string>()
 	const growthPattern =
-		/(?:_runs|_logs|_events|_invocations|_suppressions|_artifacts)$/u
+		/(?:_runs|_logs|_events|_invocations|_suppressions|_artifacts|_messages|_threads|_attachments|_rollups|_counters|_memories)$/u
+	const growthTimeColumns = ['created_at', 'day', 'month']
 	for (const table of tables) {
 		const columns = db
 			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table.name)})`)
@@ -783,7 +1193,7 @@ test('retention coverage includes every live growth-pattern table or documented 
 		const columnNames = new Set(columns.map((column) => column.name))
 		const hasUserCreatedGrowthShape =
 			columnNames.has('user_id') &&
-			columnNames.has('created_at') &&
+			growthTimeColumns.some((column) => columnNames.has(column)) &&
 			growthPattern.test(table.name)
 		const hasGlobalAuditShape =
 			table.name === 'audit_events' && columnNames.has('timestamp')

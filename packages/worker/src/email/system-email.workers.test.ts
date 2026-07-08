@@ -260,14 +260,24 @@ test('system email retention prunes old operator-owned messages and counters', a
 		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000,
 	).toISOString()
 	const fresh = now.toISOString()
+	const oldRawMimeKey = `email-raw:v1:${systemEmailOwnerId}/old-system-message`
+	await env.EMAIL_BLOBS.put(oldRawMimeKey, 'old raw mime')
 	await env.APP_DB.prepare(
 		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status, created_at, updated_at
+			id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
 		) VALUES
-			('old-system-message', 'inbound', ?, 'old@example.net', 'Old', 'stored', ?, ?),
-			('fresh-system-message', 'inbound', ?, 'fresh@example.net', 'Fresh', 'stored', ?, ?)`,
+			('old-system-message', 'inbound', ?, 'old@example.net', 'Old', 'stored', ?, ?, ?),
+			('fresh-system-message', 'inbound', ?, 'fresh@example.net', 'Fresh', 'stored', NULL, ?, ?)`,
 	)
-		.bind(systemEmailOwnerId, old, old, systemEmailOwnerId, fresh, fresh)
+		.bind(
+			systemEmailOwnerId,
+			oldRawMimeKey,
+			old,
+			old,
+			systemEmailOwnerId,
+			fresh,
+			fresh,
+		)
 		.run()
 	await env.APP_DB.prepare(
 		`INSERT INTO email_attachments (
@@ -292,10 +302,16 @@ test('system email retention prunes old operator-owned messages and counters', a
 		.bind(old)
 		.run()
 
-	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
+	const result = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		now,
+	})
 
 	expect(result.deletedMessages).toBe(1)
 	expect(result.deletedCounters).toBe(1)
+	expect(result.deletedRawMimeBlobs).toBe(1)
+	expect(await env.EMAIL_BLOBS.get(oldRawMimeKey)).toBeNull()
 	expect(
 		await listEmailMessages({
 			db: env.APP_DB,
@@ -318,4 +334,44 @@ test('system email retention prunes old operator-owned messages and counters', a
 			`SELECT id FROM email_delivery_events ORDER BY id ASC`,
 		).all(),
 	).toMatchObject({ results: [{ id: 'fresh-event' }] })
+})
+
+test('system email retention drains delivery-event backlogs larger than one batch', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-07-06T12:00:00.000Z')
+	const old = new Date(
+		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	const backlog = systemEmailLimits.pruneBatchSize + 5
+	// 3 bindings per row must stay under D1's 100-variable statement limit.
+	const insertChunkSize = 30
+	for (let start = 0; start < backlog; start += insertChunkSize) {
+		const count = Math.min(insertChunkSize, backlog - start)
+		const values = Array.from({ length: count })
+			.map(() => `(?, NULL, ?, NULL, 'received', 'test', '{}', ?)`)
+			.join(', ')
+		const bindings = Array.from({ length: count }).flatMap((_, index) => [
+			`backlog-event-${start + index}`,
+			systemEmailOwnerId,
+			old,
+		])
+		await env.APP_DB.prepare(
+			`INSERT INTO email_delivery_events (
+				id, message_id, user_id, inbox_id, event_type, provider, detail_json, created_at
+			) VALUES ${values}`,
+		)
+			.bind(...bindings)
+			.run()
+	}
+
+	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
+
+	expect(result.deletedDeliveryEvents).toBeGreaterThanOrEqual(backlog)
+	const remaining = await env.APP_DB.prepare(
+		`SELECT COUNT(*) AS count FROM email_delivery_events
+		WHERE user_id = ? AND id LIKE 'backlog-event-%'`,
+	)
+		.bind(systemEmailOwnerId)
+		.first<{ count: number }>()
+	expect(Number(remaining?.count ?? -1)).toBe(0)
 })

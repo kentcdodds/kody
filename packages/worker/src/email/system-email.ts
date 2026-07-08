@@ -3,7 +3,6 @@ import {
 	createEmailInbox,
 	createEmailInboxAddress,
 	deleteEmailInboxAddressById,
-	deleteEmailMessageById,
 	getEmailInboxAddressByAddress,
 	getEmailInboxById,
 	getEmailInboxByName,
@@ -31,6 +30,16 @@ export const systemEmailLimits = {
 	retentionDays: 90,
 	pruneBatchSize: 500,
 } as const
+
+/**
+ * Wall-clock budget for one system-email retention run. Deletes keep looping
+ * in pruneBatchSize batches until the backlog is drained or the budget is
+ * exhausted, so a large backlog never turns into one unbounded DELETE.
+ */
+export const systemEmailPruneTimeBudgetMs = 10_000
+
+/** D1 caps bound parameters per statement, so IN (...) deletes are chunked. */
+const systemEmailDeleteIdsMaxParameters = 100
 
 const systemEmailLocalSet = new Set<string>(systemEmailLocals)
 
@@ -203,28 +212,66 @@ async function listSystemEmailMessageIds(input: {
 
 async function deleteSystemEmailMessagesByIds(input: {
 	db: D1Database
+	blobs?: R2Bucket | null
 	messageIds: ReadonlyArray<string>
 }) {
-	if (input.messageIds.length === 0) return 0
-	const placeholders = input.messageIds.map(() => '?').join(', ')
-	await input.db
-		.prepare(
-			`DELETE FROM email_attachments
-			WHERE message_id IN (${placeholders})`,
+	let deletedRawMimeBlobs = 0
+	for (
+		let index = 0;
+		index < input.messageIds.length;
+		index += systemEmailDeleteIdsMaxParameters
+	) {
+		const messageIds = input.messageIds.slice(
+			index,
+			index + systemEmailDeleteIdsMaxParameters,
 		)
-		.bind(...input.messageIds)
-		.run()
-	await input.db
-		.prepare(
-			`DELETE FROM email_delivery_events
-			WHERE message_id IN (${placeholders})`,
-		)
-		.bind(...input.messageIds)
-		.run()
-	for (const messageId of input.messageIds) {
-		await deleteEmailMessageById({ db: input.db, messageId })
+		const placeholders = messageIds.map(() => '?').join(', ')
+		// Capture blob keys before the rows disappear. Blob cleanup is
+		// best-effort and must never block the D1 delete.
+		let rawMimeKeys: Array<string> = []
+		if (input.blobs) {
+			const { results } = await input.db
+				.prepare(
+					`SELECT raw_mime_key
+					FROM email_messages
+					WHERE id IN (${placeholders})
+						AND raw_mime_key IS NOT NULL`,
+				)
+				.bind(...messageIds)
+				.all<{ raw_mime_key: string }>()
+			rawMimeKeys = (results ?? []).map((row) => row.raw_mime_key)
+		}
+		await input.db
+			.prepare(
+				`DELETE FROM email_attachments
+				WHERE message_id IN (${placeholders})`,
+			)
+			.bind(...messageIds)
+			.run()
+		await input.db
+			.prepare(
+				`DELETE FROM email_delivery_events
+				WHERE message_id IN (${placeholders})`,
+			)
+			.bind(...messageIds)
+			.run()
+		await input.db
+			.prepare(
+				`DELETE FROM email_messages
+				WHERE id IN (${placeholders})`,
+			)
+			.bind(...messageIds)
+			.run()
+		if (input.blobs && rawMimeKeys.length > 0) {
+			try {
+				await input.blobs.delete(rawMimeKeys)
+				deletedRawMimeBlobs += rawMimeKeys.length
+			} catch (error) {
+				console.warn('system-email-raw-mime-blob-delete-failed', error)
+			}
+		}
 	}
-	return input.messageIds.length
+	return { deletedMessages: input.messageIds.length, deletedRawMimeBlobs }
 }
 
 export type SystemEmailRetentionResult = {
@@ -232,13 +279,19 @@ export type SystemEmailRetentionResult = {
 	deletedDeliveryEvents: number
 	deletedCounters: number
 	deletedThreads: number
+	deletedRawMimeBlobs: number
 }
 
 export async function pruneSystemEmailRetention(input: {
 	db: D1Database
+	/** EMAIL_BLOBS bucket; when present raw-MIME blobs are also deleted. */
+	blobs?: R2Bucket | null
 	now?: Date
+	timeBudgetMs?: number
 }) {
 	const now = input.now ?? new Date()
+	const timeBudgetMs = input.timeBudgetMs ?? systemEmailPruneTimeBudgetMs
+	const deadlineMs = Date.now() + timeBudgetMs
 	const cutoff = new Date(
 		now.getTime() - systemEmailLimits.retentionDays * 24 * 60 * 60 * 1000,
 	)
@@ -249,6 +302,7 @@ export async function pruneSystemEmailRetention(input: {
 		deletedDeliveryEvents: 0,
 		deletedCounters: 0,
 		deletedThreads: 0,
+		deletedRawMimeBlobs: 0,
 	}
 
 	const oldMessageIds = await listSystemEmailMessageIds({
@@ -256,30 +310,49 @@ export async function pruneSystemEmailRetention(input: {
 		before: cutoffIso,
 		limit: systemEmailLimits.pruneBatchSize,
 	})
-	result.deletedMessages += await deleteSystemEmailMessagesByIds({
+	const oldDelete = await deleteSystemEmailMessagesByIds({
 		db: input.db,
+		blobs: input.blobs,
 		messageIds: oldMessageIds,
 	})
+	result.deletedMessages += oldDelete.deletedMessages
+	result.deletedRawMimeBlobs += oldDelete.deletedRawMimeBlobs
 
 	const overCapMessageIds = await listSystemEmailMessageIds({
 		db: input.db,
 		offset: systemEmailLimits.maxStoredMessages,
 		limit: systemEmailLimits.pruneBatchSize,
 	})
-	result.deletedMessages += await deleteSystemEmailMessagesByIds({
+	const overCapDelete = await deleteSystemEmailMessagesByIds({
 		db: input.db,
+		blobs: input.blobs,
 		messageIds: overCapMessageIds,
 	})
+	result.deletedMessages += overCapDelete.deletedMessages
+	result.deletedRawMimeBlobs += overCapDelete.deletedRawMimeBlobs
 
-	const eventDelete = await input.db
-		.prepare(
-			`DELETE FROM email_delivery_events
-			WHERE user_id = ?
-				AND created_at < ?`,
-		)
-		.bind(systemEmailOwnerId, cutoffIso)
-		.run()
-	result.deletedDeliveryEvents = eventDelete.meta.changes ?? 0
+	let deletedEventsInBatch = 0
+	do {
+		const eventDelete = await input.db
+			.prepare(
+				`DELETE FROM email_delivery_events
+				WHERE id IN (
+					SELECT id
+					FROM email_delivery_events
+					WHERE user_id = ?
+						AND created_at < ?
+					ORDER BY created_at ASC, id ASC
+					LIMIT ?
+				)`,
+			)
+			.bind(systemEmailOwnerId, cutoffIso, systemEmailLimits.pruneBatchSize)
+			.run()
+		deletedEventsInBatch = eventDelete.meta.changes ?? 0
+		result.deletedDeliveryEvents += deletedEventsInBatch
+	} while (
+		deletedEventsInBatch >= systemEmailLimits.pruneBatchSize &&
+		Date.now() < deadlineMs
+	)
 
 	const counterDelete = await input.db
 		.prepare(`DELETE FROM system_email_daily_counters WHERE day < ?`)
