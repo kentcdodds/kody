@@ -1,4 +1,5 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
+import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -167,21 +168,6 @@ function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {
 		allowedCapabilities: [''],
 		allowedPackages: [createAllowedPackageRow()],
 	}
-}
-
-function readTrimmedParam(params: URLSearchParams, key: string) {
-	const value = params.get(key)
-	return value?.trim() ? value.trim() : null
-}
-
-function readCommaListParams(params: URLSearchParams, keys: Array<string>) {
-	return keys.flatMap((key) =>
-		params
-			.getAll(key)
-			.flatMap((value) => value.split(','))
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.length > 0),
-	)
 }
 
 function readNewSecretScope(value: string | null): SecretScope | null {

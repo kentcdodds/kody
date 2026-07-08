@@ -1,3 +1,4 @@
+import { readPositiveInt } from '#app/query-params.ts'
 import {
 	buildForkPrompt,
 	toPublicCommunityListing,
@@ -43,26 +44,17 @@ async function loadWithCommunityCache<T>(
 	return value
 }
 
-function readPositiveInt(
-	value: string | null,
-	input: { defaultValue: number; max: number },
-) {
-	if (!value) return input.defaultValue
-	const parsed = Number(value)
-	if (!Number.isInteger(parsed) || parsed <= 0) return input.defaultValue
-	return Math.min(parsed, input.max)
-}
-
 export async function loadCommunityIndexData(
 	env: Env,
 	request: Request,
 ): Promise<CommunityIndexLoaderData> {
 	const url = new URL(request.url)
 	const query = url.searchParams.get('q')?.trim() ?? ''
-	const limit = readPositiveInt(url.searchParams.get('limit'), {
-		defaultValue: defaultCommunityListLimit,
-		max: 100,
-	})
+	const limit = readPositiveInt(
+		url.searchParams.get('limit'),
+		defaultCommunityListLimit,
+		100,
+	)
 
 	const cacheKey = buildCommunityIndexCacheKey({ query, limit })
 	const listings = await loadWithCommunityCache(

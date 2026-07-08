@@ -6,6 +6,7 @@ import {
 	seedUserInE2eDatabase,
 } from './d1-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
+import { usernameFromEmail } from '../packages/worker/src/app/username.ts'
 
 export * from '@playwright/test'
 
@@ -164,18 +165,6 @@ export const test = base.extend<{
 		})
 	},
 })
-
-function usernameFromEmail(email: string) {
-	const localPart = email.split('@')[0] ?? 'user'
-	const normalized = localPart
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/g, '-')
-		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
-	const truncated = normalized
-		.slice(0, 32)
-		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
-	return truncated.length >= 3 ? truncated : `user-${truncated || 'test'}`
-}
 
 async function readResponseDetail(response: { json(): Promise<unknown> }) {
 	const payload = await response.json().catch(() => null)

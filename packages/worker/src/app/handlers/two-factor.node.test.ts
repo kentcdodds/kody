@@ -1,3 +1,4 @@
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { generateTOTP } from '@epic-web/totp'
@@ -112,10 +113,6 @@ function createMigratedDb() {
 	}
 }
 
-function quoteSql(value: string) {
-	return `'${value.replace(/'/g, "''")}'`
-}
-
 async function seedUser(
 	sqlite: DatabaseSync,
 	input: {
@@ -137,10 +134,10 @@ async function seedUser(
 			email_verified_at
 		) VALUES (
 			${input.id},
-			${quoteSql(input.username)},
-			${quoteSql(input.email)},
-			${quoteSql(stableUserId)},
-			${quoteSql(passwordHash)},
+			${quoteSqlString(input.username)},
+			${quoteSqlString(input.email)},
+			${quoteSqlString(stableUserId)},
+			${quoteSqlString(passwordHash)},
 			CURRENT_TIMESTAMP
 		);
 	`)

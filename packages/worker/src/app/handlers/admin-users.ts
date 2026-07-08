@@ -1,3 +1,4 @@
+import { readPositiveInt } from '#app/query-params.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
@@ -274,13 +275,4 @@ function readString(body: object, key: string) {
 		return String(value)
 	}
 	return null
-}
-
-function readPositiveInt(value: string | null, fallback: number) {
-	if (!value) return fallback
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1) {
-		return fallback
-	}
-	return parsed
 }

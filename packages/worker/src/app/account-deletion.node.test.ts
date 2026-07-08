@@ -1,3 +1,4 @@
+import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -331,10 +332,6 @@ function createTestDb(initial: RowMap): {
 	} as unknown as D1Database
 
 	return { db, rows }
-}
-
-function quoteSqlIdentifier(identifier: string) {
-	return `"${identifier.replaceAll('"', '""')}"`
 }
 
 test('account deletion D1 coverage includes every live user-owned schema column', () => {

@@ -1107,7 +1107,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			payload.params,
 		)
 		if (result.error) {
-			throw new Error(String(result.error))
+			throw new Error(result.error)
 		}
 		return toJsonSafeValue(result.result) as JsonValue
 	}

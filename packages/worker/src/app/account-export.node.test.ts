@@ -1,3 +1,4 @@
+import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -6,10 +7,6 @@ import {
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './account-export.ts'
-
-function quoteSqlIdentifier(identifier: string) {
-	return `"${identifier.replaceAll('"', '""')}"`
-}
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)

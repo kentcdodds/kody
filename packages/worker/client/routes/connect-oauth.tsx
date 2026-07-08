@@ -2,6 +2,10 @@ import {
 	base64UrlToBytes,
 	bytesToBase64Url,
 } from '@kody-internal/shared/base64.ts'
+import {
+	normalizeProviderKey,
+	safeParseHost,
+} from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
@@ -1468,19 +1472,6 @@ function isSafeExternalUrl(raw: string) {
 	} catch {
 		return false
 	}
-}
-
-function safeParseHost(raw: string) {
-	try {
-		return new URL(raw).hostname
-	} catch {
-		return null
-	}
-}
-
-function normalizeProviderKey(value: string) {
-	const normalized = value.trim().toLowerCase()
-	return normalized.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 function parseProviderSetupInstructions(raw: string | null) {

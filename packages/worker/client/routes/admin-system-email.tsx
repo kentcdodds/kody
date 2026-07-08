@@ -35,7 +35,7 @@ function formatNullableTimestamp(value: string | null) {
 	return value ? formatTimestamp(value) : 'Unknown'
 }
 
-function formatBytes(value: number) {
+function formatByteCount(value: number) {
 	return new Intl.NumberFormat().format(value)
 }
 
@@ -225,7 +225,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 													{systemMessage.subject || '(no subject)'}
 												</td>
 												<td mix={css(numericCellCss)}>
-													{formatBytes(systemMessage.raw_size)}
+													{formatByteCount(systemMessage.raw_size)}
 												</td>
 												<td mix={css(cellCss)}>
 													{formatNullableTimestamp(

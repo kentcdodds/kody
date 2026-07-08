@@ -1,3 +1,4 @@
+import { readPositiveInt } from '#app/query-params.ts'
 import {
 	entitlementResourceLabels,
 	isEmailFallbackResource,
@@ -421,13 +422,4 @@ function toUsageRollup(
 
 function isAdminUsageMetric(metric: string): metric is AdminUsageMetric {
 	return (adminUsageMetrics as ReadonlyArray<string>).includes(metric)
-}
-
-function readPositiveInt(value: string | null, fallback: number) {
-	if (!value) return fallback
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1) {
-		return fallback
-	}
-	return parsed
 }

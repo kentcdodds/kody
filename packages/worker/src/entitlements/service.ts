@@ -2,6 +2,7 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	createStableUserIdFromEmail,
 	findUserRowByStableUserId,
+	isMissingStableUserIdColumnError,
 	resolveUserStableId,
 } from '#worker/user-id.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
@@ -33,11 +34,17 @@ export async function getUserPlan(
 	if (!email || !input.userId) return null
 	if ((await createStableUserIdFromEmail(email)) !== input.userId) {
 		if (!/^[a-f0-9]{64}$/i.test(input.userId)) return null
+		// Only the missing-column case (pre-migration databases and legacy
+		// test fixtures) may be treated as "no stored plan"; any other D1
+		// failure must propagate instead of silently disabling enforcement.
 		const storedMatch = await db
 			.prepare(`SELECT plan FROM users WHERE email = ? AND stable_user_id = ?`)
 			.bind(email, input.userId)
 			.first<{ plan: string | null }>()
-			.catch(() => null)
+			.catch((error: unknown) => {
+				if (isMissingStableUserIdColumnError(error)) return null
+				throw error
+			})
 		return storedMatch ? parsePlanName(storedMatch.plan) : null
 	}
 	const row = await db

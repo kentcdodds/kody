@@ -1,3 +1,4 @@
+import { readPositiveInt } from '#app/query-params.ts'
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
 import {
 	systemEmailLimits,
@@ -57,13 +58,6 @@ export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
 
 const defaultPageSize = 25
 const maxPageSize = 100
-
-function readPositiveInt(value: string | null, fallback: number) {
-	if (!value) return fallback
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1) return fallback
-	return parsed
-}
 
 function parseStringArray(value: string | null) {
 	if (!value) return []

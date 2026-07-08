@@ -1,4 +1,8 @@
 import { jsonResponse } from '#worker/json-response.ts'
+import {
+	normalizeProviderKey,
+	safeParseHost,
+} from '@kody-internal/shared/url-hosts.ts'
 import { type Action } from 'remix/router'
 import {
 	buildAccountSecretId,
@@ -603,11 +607,6 @@ function readTokenField(
 	return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-function normalizeProviderKey(value: string) {
-	const normalized = value.trim().toLowerCase()
-	return normalized.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
 function readApprovalHost(url: URL) {
 	const value = url.searchParams.get('allowed-host')
 	return value?.trim() ? value.trim() : null
@@ -935,14 +934,6 @@ function readOptionalString(body: object, key: string) {
 function readRawOptionalString(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'string' ? value : null
-}
-
-function safeParseHost(raw: string) {
-	try {
-		return new URL(raw).hostname
-	} catch {
-		return null
-	}
 }
 
 function readStringArray(body: object, key: string) {
