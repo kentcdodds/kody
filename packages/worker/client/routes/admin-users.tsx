@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -42,10 +43,6 @@ const adminUsersApiPath = '/admin/users.json'
 function isAdminUsersPath(href: string) {
 	const path = new URL(href, 'http://localhost').pathname
 	return path === '/admin/users' || path === '/admin'
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function buildUsersHref(handle: Handle, page: number) {

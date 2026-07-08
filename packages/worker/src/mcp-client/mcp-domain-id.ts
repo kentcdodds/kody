@@ -1,31 +1,5 @@
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
-
-function fnv1a32(input: string) {
-	let hash = 2_166_136_261
-	for (let index = 0; index < input.length; index += 1) {
-		hash ^= input.charCodeAt(index)
-		hash = Math.imul(hash, 16_777_619)
-	}
-	return (hash >>> 0).toString(16).padStart(8, '0')
-}
-
-function slugWithStableDisambiguator(input: {
-	value: string
-	fallback: string
-	allowedPattern: RegExp
-	replacementPattern: RegExp
-}) {
-	const trimmed = input.value.trim()
-	const slug =
-		trimmed
-			.replaceAll(input.replacementPattern, '_')
-			.replaceAll(/_+/g, '_')
-			.replace(/^_|_$/g, '') || input.fallback
-	if (trimmed && input.allowedPattern.test(trimmed) && slug === trimmed) {
-		return slug
-	}
-	return `${slug}_${fnv1a32(trimmed)}`
-}
+import { slugWithStableDisambiguator } from '@kody-internal/shared/stable-slug.ts'
 
 export function mcpServerKodyName(ref: Pick<McpServerRef, 'name'>): string {
 	return slugWithStableDisambiguator({

@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -51,10 +52,6 @@ function isAdminCommunityReportsPath(href: string) {
 	return (
 		new URL(href, 'http://localhost').pathname === '/admin/community-reports'
 	)
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function buildReportsHref(handle: Handle, status: string) {

@@ -4,6 +4,8 @@ import { toHex } from '@kody-internal/shared/hex.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	runBundledModuleWithRegistry,
@@ -232,14 +234,6 @@ function createRepoContext(source: EntitySourceRow) {
 	}
 }
 
-function toJsonSafeValue(value: unknown): unknown {
-	try {
-		return JSON.parse(JSON.stringify(value)) as unknown
-	} catch {
-		return getErrorMessage(value)
-	}
-}
-
 function markStoredResponseAsReplayed(
 	response: PackageInvocationStoredResponse,
 ) {
@@ -273,25 +267,6 @@ async function createRequestHash(input: {
 		new TextEncoder().encode(canonical),
 	)
 	return toHex(new Uint8Array(digest))
-}
-
-function canonicalJsonStringify(value: unknown): string {
-	return JSON.stringify(canonicalizeJsonValue(value))
-}
-
-function canonicalizeJsonValue(value: unknown): unknown {
-	if (Array.isArray(value)) {
-		return value.map((entry) => canonicalizeJsonValue(entry))
-	}
-	if (value && typeof value === 'object') {
-		const record = value as Record<string, unknown>
-		return Object.fromEntries(
-			Object.keys(record)
-				.sort((left, right) => left.localeCompare(right))
-				.map((key) => [key, canonicalizeJsonValue(record[key])]),
-		)
-	}
-	return value
 }
 
 async function createAutoPackageInvokeIdempotencyKey(input: {

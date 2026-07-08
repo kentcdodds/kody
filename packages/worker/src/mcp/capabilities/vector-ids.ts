@@ -1,3 +1,5 @@
+import { toHex } from '@kody-internal/shared/hex.ts'
+
 const textEncoder = new TextEncoder()
 
 export const vectorizeMaxIdBytes = 64
@@ -124,14 +126,8 @@ function sha256Bytes(input: Uint8Array) {
 	return output
 }
 
-function bytesToHex(bytes: Uint8Array) {
-	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
-		'',
-	)
-}
-
 function sha256Hex(value: string) {
-	return bytesToHex(sha256Bytes(textEncoder.encode(value)))
+	return toHex(sha256Bytes(textEncoder.encode(value)))
 }
 
 export function buildLengthSafeVectorId(input: {

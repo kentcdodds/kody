@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { startRegistration } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
@@ -65,15 +66,6 @@ export async function accountPasskeysRouteLoader(
 		throw new Error('Unable to load passkeys.')
 	}
 	return { accountPasskeys: payload }
-}
-
-function formatTimestamp(value: string) {
-	// SQLite CURRENT_TIMESTAMP is `YYYY-MM-DD HH:MM:SS` (UTC); the space
-	// separator is not valid ISO 8601 so Safari rejects it without the `T`.
-	const date = new Date(
-		value.includes('T') ? value : `${value.replace(' ', 'T')}Z`,
-	)
-	return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 function describeDeviceType(deviceType: string) {

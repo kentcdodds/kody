@@ -1,4 +1,9 @@
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
+import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import {
+	toJsonSafeValue,
+	type JsonValue,
+} from '@kody-internal/shared/json-safe-value.ts'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import * as Sentry from '@sentry/cloudflare'
@@ -108,14 +113,6 @@ export type WorkflowRunInspection = {
 	lastError: string | null
 }
 
-type JsonValue =
-	| null
-	| boolean
-	| number
-	| string
-	| Array<JsonValue>
-	| { [key: string]: JsonValue }
-
 type WorkflowStepDoConfig = {
 	retries?: {
 		limit: number
@@ -153,33 +150,6 @@ const knownWorkflowStatusValues = [
 const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
 const terminalWorkflowStatuses = new Set<string>(terminalWorkflowStatusValues)
 const knownWorkflowStatuses = new Set<string>(knownWorkflowStatusValues)
-
-function canonicalizeJsonValue(value: unknown): unknown {
-	if (Array.isArray(value)) {
-		return value.map((entry) => canonicalizeJsonValue(entry))
-	}
-	if (value && typeof value === 'object') {
-		const record = value as Record<string, unknown>
-		return Object.fromEntries(
-			Object.keys(record)
-				.sort((left, right) => left.localeCompare(right))
-				.map((key) => [key, canonicalizeJsonValue(record[key])]),
-		)
-	}
-	return value
-}
-
-function canonicalJsonStringify(value: unknown) {
-	return JSON.stringify(canonicalizeJsonValue(value))
-}
-
-function toSerializableJson(value: unknown): JsonValue {
-	try {
-		return JSON.parse(JSON.stringify(value)) as JsonValue
-	} catch {
-		return getErrorMessage(value)
-	}
-}
 
 function getWorkflowInvocationErrorMessage(response: {
 	status: number
@@ -1103,7 +1073,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		}
 		return {
 			status: response.status,
-			body: toSerializableJson(response.body),
+			body: toJsonSafeValue(response.body),
 		}
 	}
 
@@ -1139,7 +1109,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		if (result.error) {
 			throw new Error(String(result.error))
 		}
-		return toSerializableJson(result.result) as JsonValue
+		return toJsonSafeValue(result.result) as JsonValue
 	}
 }
 

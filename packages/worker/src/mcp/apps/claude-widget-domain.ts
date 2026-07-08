@@ -1,8 +1,4 @@
-function toHex(bytes: Uint8Array) {
-	return Array.from(bytes)
-		.map((value) => value.toString(16).padStart(2, '0'))
-		.join('')
-}
+import { toHex } from '@kody-internal/shared/hex.ts'
 
 export async function computeClaudeWidgetDomain(mcpServerUrl: string) {
 	const digest = await crypto.subtle.digest(

@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
@@ -100,8 +101,8 @@ function createEmptyEditorState(): EditorState {
 	}
 }
 
-function formatTimestamp(value: string | null) {
-	return value ? new Date(value).toLocaleString() : 'Never'
+function formatNullableTimestamp(value: string | null) {
+	return value ? formatTimestamp(value) : 'Never'
 }
 
 function readTrimmedParam(params: URLSearchParams, key: string) {
@@ -1593,19 +1594,21 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											},
 											{
 												label: 'Last used',
-												value: formatTimestamp(selectedToken.lastUsedAt),
+												value: formatNullableTimestamp(
+													selectedToken.lastUsedAt,
+												),
 											},
 											{
 												label: 'Created',
-												value: formatTimestamp(selectedToken.createdAt),
+												value: formatNullableTimestamp(selectedToken.createdAt),
 											},
 											{
 												label: 'Updated',
-												value: formatTimestamp(selectedToken.updatedAt),
+												value: formatNullableTimestamp(selectedToken.updatedAt),
 											},
 											{
 												label: 'Revoked',
-												value: formatTimestamp(selectedToken.revokedAt),
+												value: formatNullableTimestamp(selectedToken.revokedAt),
 											},
 										]}
 									/>

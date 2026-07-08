@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -40,9 +41,8 @@ function isAdminInvitesPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/invites'
 }
 
-function formatTimestamp(value: string | null) {
-	if (!value) return 'Never'
-	return new Date(value).toLocaleString()
+function formatNullableTimestamp(value: string | null) {
+	return value ? formatTimestamp(value) : 'Never'
 }
 
 function getInviteStatus(invite: AdminInviteListItem) {
@@ -323,7 +323,7 @@ export function AdminInvitesRoute(handle: Handle) {
 							</a>
 							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								Expires{' '}
-								{formatTimestamp(
+								{formatNullableTimestamp(
 									new Date(createdUser.setupTokenExpiresAt).toISOString(),
 								)}
 								.
@@ -474,11 +474,11 @@ export function AdminInvitesRoute(handle: Handle) {
 										},
 										{
 											label: 'Expires',
-											value: formatTimestamp(invite.expiresAt),
+											value: formatNullableTimestamp(invite.expiresAt),
 										},
 										{
 											label: 'Created',
-											value: formatTimestamp(invite.createdAt),
+											value: formatNullableTimestamp(invite.createdAt),
 										},
 										{
 											label: 'Created by',
@@ -490,7 +490,7 @@ export function AdminInvitesRoute(handle: Handle) {
 										},
 										{
 											label: 'Revoked',
-											value: formatTimestamp(invite.revokedAt),
+											value: formatNullableTimestamp(invite.revokedAt),
 										},
 									]}
 								/>

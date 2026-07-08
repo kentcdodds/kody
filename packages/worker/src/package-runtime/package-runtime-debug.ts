@@ -1,4 +1,4 @@
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 export const packageRuntimeSurfaceValues = [
 	'export',
 	'subscription',
@@ -127,14 +127,6 @@ function truncateUtf8(value: string, maxBytes: number) {
 		}
 	}
 	return best
-}
-
-function toJsonSafeValue(value: unknown): unknown {
-	try {
-		return JSON.parse(JSON.stringify(value)) as unknown
-	} catch {
-		return getErrorMessage(value)
-	}
 }
 
 function serializeJson(value: unknown, maxBytes = maxPersistedJsonBytes) {

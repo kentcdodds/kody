@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -117,10 +118,6 @@ function createEditorStateFromConnector(
 		sharedSecret: connector.sharedSecret,
 		hasSharedSecret: connector.hasSharedSecret,
 	}
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function connectorLabel(

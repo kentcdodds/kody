@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -152,10 +153,6 @@ function formatRelativeTtl(ttlMs: number | null) {
 	if (totalHours < 48) return `Expires in ${totalHours} hr`
 	const totalDays = Math.round(totalHours / 24)
 	return `Expires in ${totalDays} day${totalDays === 1 ? '' : 's'}`
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {

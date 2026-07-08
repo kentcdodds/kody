@@ -1,3 +1,4 @@
+import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -116,10 +117,6 @@ function stateColor(server: Pick<McpServerListItem, 'state' | 'enabled'>) {
 		default:
 			return colors.textMuted
 	}
-}
-
-function formatTimestamp(value: string) {
-	return new Date(value).toLocaleString()
 }
 
 function readOAuthResultFromHref(href: string): {
