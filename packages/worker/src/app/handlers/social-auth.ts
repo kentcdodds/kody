@@ -16,6 +16,7 @@ import {
 	SocialAuthResolutionError,
 } from '#app/resolve-social-auth.ts'
 import { createSocialAuthProvider } from '#app/social-auth-provider-factory.ts'
+import  { type AnySocialAuthProvider } from '#app/social-auth-provider-factory.ts'
 import { finishSocialAuth, startSocialAuth } from '#app/social-auth-flow.ts'
 import {
 	listConfiguredSocialAuthProviders,
@@ -24,17 +25,61 @@ import {
 	type SocialAuthProviderName,
 } from '#app/social-auth-providers.ts'
 import { type routes } from '#app/routes.ts'
-import { createDb, usersTable } from '#worker/db.ts'
+import {
+	destroyOAuthTransactionCookie,
+	setOAuthTransactionSecret,
+} from '#app/oauth-transaction.ts'
 
-function buildLoginErrorRedirect(request: Request, message: string) {
+function buildLoginErrorRedirect(
+	request: Request,
+	message: string,
+	extraCookies: Array<string> = [],
+) {
 	const url = new URL('/login', request.url)
 	url.searchParams.set('error', message)
-	return Response.redirect(url, 302)
+	const headers = new Headers({ Location: url.toString() })
+	for (const cookie of extraCookies) {
+		headers.append('Set-Cookie', cookie)
+	}
+	return new Response(null, { status: 302, headers })
 }
 
 function buildPostAuthRedirect(request: Request, returnTo: string | undefined) {
 	const target = normalizeRedirectTo(returnTo ?? null) ?? '/account'
 	return Response.redirect(new URL(target, request.url), 302)
+}
+
+function resolveSocialAuthProvider(
+	env: Env,
+	providerName: string,
+	request: Request,
+):
+	| { error: Response }
+	| {
+			authProvider: AnySocialAuthProvider
+			providerName: SocialAuthProviderName
+	  } {
+	if (!isSocialAuthProviderName(providerName)) {
+		return { error: new Response('Not found', { status: 404 }) }
+	}
+	if (!isSocialAuthProviderConfigured(env, providerName)) {
+		return {
+			error: buildLoginErrorRedirect(
+				request,
+				`${providerName} sign-in is not configured.`,
+			),
+		}
+	}
+	const authProvider = createSocialAuthProvider(env, providerName, request.url)
+	if (!authProvider) {
+		return {
+			error: buildLoginErrorRedirect(
+				request,
+				`${providerName} sign-in is not configured.`,
+			),
+		}
+	}
+	return { authProvider, providerName }
 }
 
 async function issueSessionForSocialAuth(input: {
@@ -47,24 +92,16 @@ async function issueSessionForSocialAuth(input: {
 	destroyTransactionCookie: string
 	returnTo?: string
 }) {
-	const db = createDb(input.env.APP_DB)
-	const userRecord = await db.findOne(usersTable, {
-		where: { id: input.userId },
-	})
-	if (!userRecord) {
-		return buildLoginErrorRedirect(input.request, 'Unable to sign in.')
-	}
-
 	const requestIp = getRequestIp(input.request) ?? undefined
 	const path = new URL(input.request.url).pathname
 
-	if (await isTwoFactorEnabled(input.env.APP_DB, userRecord.id)) {
+	if (await isTwoFactorEnabled(input.env.APP_DB, input.userId)) {
 		setVerifySessionSecret(input.env.COOKIE_SECRET)
 		const secure = isSecureRequest(input.request)
 		const verifyCookie = await createVerifySessionCookie(
 			{
-				id: String(userRecord.id),
-				email: userRecord.email,
+				id: String(input.userId),
+				email: input.email,
 				rememberMe: false,
 			},
 			secure,
@@ -73,7 +110,7 @@ async function issueSessionForSocialAuth(input: {
 			category: 'auth',
 			action: 'social_login_2fa_challenge',
 			result: 'success',
-			email: userRecord.email,
+			email: input.email,
 			ip: requestIp,
 			path,
 			reason: `provider=${input.provider}`,
@@ -97,8 +134,8 @@ async function issueSessionForSocialAuth(input: {
 	const secure = isSecureRequest(input.request)
 	const sessionCookie = await createAuthCookie(
 		{
-			id: String(userRecord.id),
-			email: userRecord.email,
+			id: String(input.userId),
+			email: input.email,
 			rememberMe: false,
 		},
 		secure,
@@ -108,7 +145,7 @@ async function issueSessionForSocialAuth(input: {
 		category: 'auth',
 		action: input.isNewUser ? 'social_signup' : 'social_login',
 		result: 'success',
-		email: userRecord.email,
+		email: input.email,
 		ip: requestIp,
 		path,
 		reason: `provider=${input.provider}`,
@@ -133,30 +170,10 @@ export function createSocialAuthStartHandler(env: Env) {
 		}: {
 			request: Request
 			params: { provider: string }
-		}) {
-			const providerName = params.provider
-			if (!isSocialAuthProviderName(providerName)) {
-				return new Response('Not found', { status: 404 })
-			}
-
-			if (!isSocialAuthProviderConfigured(env, providerName)) {
-				return buildLoginErrorRedirect(
-					request,
-					`${providerName} sign-in is not configured.`,
-				)
-			}
-
-			const authProvider = createSocialAuthProvider(
-				env,
-				providerName,
-				request.url,
-			)
-			if (!authProvider) {
-				return buildLoginErrorRedirect(
-					request,
-					`${providerName} sign-in is not configured.`,
-				)
-			}
+		}): Promise<Response> {
+			const resolved = resolveSocialAuthProvider(env, params.provider, request)
+			if ('error' in resolved) return resolved.error
+			const { authProvider, providerName } = resolved
 
 			const url = new URL(request.url)
 			const returnTo = url.searchParams.get('redirectTo')
@@ -187,57 +204,42 @@ export function createSocialAuthCallbackHandler(env: Env) {
 		}: {
 			request: Request
 			params: { provider: string }
-		}) {
-			const providerName = params.provider
-			if (!isSocialAuthProviderName(providerName)) {
-				return new Response('Not found', { status: 404 })
-			}
-
-			if (!isSocialAuthProviderConfigured(env, providerName)) {
-				return buildLoginErrorRedirect(
-					request,
-					`${providerName} sign-in is not configured.`,
-				)
-			}
-
-			const authProvider = createSocialAuthProvider(
-				env,
-				providerName,
-				request.url,
-			)
-			if (!authProvider) {
-				return buildLoginErrorRedirect(
-					request,
-					`${providerName} sign-in is not configured.`,
-				)
-			}
+		}): Promise<Response> {
+			const resolved = resolveSocialAuthProvider(env, params.provider, request)
+			if ('error' in resolved) return resolved.error
+			const { authProvider, providerName } = resolved
 
 			const requestIp = getRequestIp(request) ?? undefined
 			const path = new URL(request.url).pathname
+			let destroyTransactionCookie: string | undefined
 
 			try {
-				const { result, returnTo, inviteCode, destroyTransactionCookie } =
-					await finishSocialAuth(authProvider, request, env)
+				const finished = await finishSocialAuth(authProvider, request, env)
 
-				const resolved = await resolveSocialAuthUser({
+				const resolvedUser = await resolveSocialAuthUser({
 					env,
-					result: result as Parameters<
-						typeof resolveSocialAuthUser
-					>[0]['result'],
-					inviteCode,
+					result: finished.result,
+					inviteCode: finished.inviteCode,
 				})
 
 				return await issueSessionForSocialAuth({
 					request,
 					env,
-					userId: resolved.userId,
-					email: resolved.email,
-					provider: resolved.provider,
-					isNewUser: resolved.isNewUser,
-					destroyTransactionCookie,
-					returnTo,
+					userId: resolvedUser.userId,
+					email: resolvedUser.email,
+					provider: resolvedUser.provider,
+					isNewUser: resolvedUser.isNewUser,
+					destroyTransactionCookie: finished.destroyTransactionCookie,
+					returnTo: finished.returnTo,
 				})
 			} catch (error) {
+				if (!destroyTransactionCookie) {
+					setOAuthTransactionSecret(env.COOKIE_SECRET)
+					destroyTransactionCookie =
+						await destroyOAuthTransactionCookie(request)
+				}
+				const clearTransactionCookie = destroyTransactionCookie
+
 				if (error instanceof SocialAuthResolutionError) {
 					void logAuditEvent({
 						category: 'auth',
@@ -247,7 +249,9 @@ export function createSocialAuthCallbackHandler(env: Env) {
 						path,
 						reason: error.message,
 					})
-					return buildLoginErrorRedirect(request, error.message)
+					return buildLoginErrorRedirect(request, error.message, [
+						clearTransactionCookie,
+					])
 				}
 
 				console.error(`Failed to finish ${providerName} OAuth:`, error)
@@ -262,6 +266,7 @@ export function createSocialAuthCallbackHandler(env: Env) {
 				return buildLoginErrorRedirect(
 					request,
 					`Unable to complete ${providerName} sign-in.`,
+					[clearTransactionCookie],
 				)
 			}
 		},

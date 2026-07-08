@@ -1,5 +1,6 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
+import { ensureSocialAuthMockFetch } from '#app/social-auth-mock.ts'
 import { createAppRouter } from '#app/router.ts'
 
 type AppRouterBundle = {
@@ -17,6 +18,7 @@ function getAppRouterBundle(env: Env): AppRouterBundle {
 	let bundle = appRouterCache.get(env)
 	if (!bundle) {
 		const appEnv = getEnv(env)
+		ensureSocialAuthMockFetch(appEnv)
 		bundle = { appEnv, router: createAppRouter(appEnv) }
 		appRouterCache.set(env, bundle)
 	}

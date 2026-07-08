@@ -10,5 +10,3 @@ CREATE TABLE IF NOT EXISTS auth_connections (
 );
 
 CREATE INDEX IF NOT EXISTS idx_auth_connections_user_id ON auth_connections(user_id);
-CREATE INDEX IF NOT EXISTS idx_auth_connections_provider
-	ON auth_connections(provider_name, provider_id);

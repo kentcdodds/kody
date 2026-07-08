@@ -1,5 +1,6 @@
 import { type PublicCommunityListing } from '#app/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import { type SocialAuthProviderName } from '#app/social-auth-provider-names.ts'
 
 export type CommunityIndexLoaderData = {
 	ok: true
@@ -433,7 +434,7 @@ export type OAuthAuthorizeLoaderData =
 
 export type LoginAuthLoaderData = {
 	providers: Array<{
-		id: 'github' | 'google' | 'x'
+		id: SocialAuthProviderName
 		label: string
 		startPath: string
 	}>

@@ -4,6 +4,7 @@ import {
 	finishExternalAuth,
 	startExternalAuth,
 	type OAuthProvider,
+	type OAuthResult,
 } from 'remix/auth'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
@@ -14,8 +15,15 @@ import {
 	type StoredOAuthTransaction,
 } from '#app/oauth-transaction.ts'
 import { normalizeInviteCode } from '#app/invites.ts'
+import { type SocialAuthProfile } from '#app/resolve-social-auth.ts'
+import { type SocialAuthProviderName } from '#app/social-auth-providers.ts'
 
 const oauthSessionKey = '__auth'
+
+export type SocialAuthOAuthResult = OAuthResult<
+	SocialAuthProfile,
+	SocialAuthProviderName
+>
 
 export type StartSocialAuthOptions = {
 	returnTo?: string | null
@@ -23,7 +31,7 @@ export type StartSocialAuthOptions = {
 }
 
 export async function startSocialAuth(
-	provider: OAuthProvider<unknown, string>,
+	provider: OAuthProvider<SocialAuthProfile, SocialAuthProviderName>,
 	request: Request,
 	env: Env,
 	options: StartSocialAuthOptions = {},
@@ -67,7 +75,7 @@ export async function startSocialAuth(
 }
 
 export async function finishSocialAuth(
-	provider: OAuthProvider<unknown, string>,
+	provider: OAuthProvider<SocialAuthProfile, SocialAuthProviderName>,
 	request: Request,
 	env: Env,
 ) {
@@ -89,7 +97,7 @@ export async function finishSocialAuth(
 	const destroyTransactionCookie = await destroyOAuthTransactionCookie(request)
 
 	return {
-		result,
+		result: result as SocialAuthOAuthResult,
 		returnTo: returnTo ?? storedTransaction.returnTo,
 		inviteCode: storedTransaction.inviteCode,
 		destroyTransactionCookie,

@@ -3,6 +3,7 @@ import {
 	type GoogleAuthProfile,
 	type XAuthProfile,
 } from 'remix/auth'
+import { isSocialAuthMockEnabled } from '#app/social-auth-providers.ts'
 
 export const mockSocialAuthAccessToken = 'mock-social-auth-access-token'
 export const mockSocialAuthAuthorizationCode = 'mock-social-auth-code'
@@ -136,4 +137,13 @@ export function installSocialAuthMockFetch(): () => void {
 	return () => {
 		globalThis.fetch = originalFetch
 	}
+}
+
+let socialAuthMockFetchInstalled = false
+
+/** Installs the OAuth fetch mock once per isolate when mock mode is enabled. */
+export function ensureSocialAuthMockFetch(env: Env): void {
+	if (!isSocialAuthMockEnabled(env) || socialAuthMockFetchInstalled) return
+	installSocialAuthMockFetch()
+	socialAuthMockFetchInstalled = true
 }

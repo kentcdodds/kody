@@ -39,7 +39,10 @@ export type ResolvedSocialAuthUser = {
 	providerId: string
 }
 
-type SocialAuthProfile = GitHubAuthProfile | GoogleAuthProfile | XAuthProfile
+export type SocialAuthProfile =
+	| GitHubAuthProfile
+	| GoogleAuthProfile
+	| XAuthProfile
 
 function isInviteRequiredForSignup(env: Env) {
 	return !isNonProductionRuntime(env)
@@ -95,6 +98,10 @@ function isProviderEmailVerified(
 ) {
 	if (provider === 'google') {
 		return (profile as GoogleAuthProfile).email_verified === true
+	}
+	if (provider === 'github') {
+		// remix/auth resolves the verified primary email from GitHub /user/emails.
+		return Boolean(readProfileEmail(provider, profile))
 	}
 	return false
 }

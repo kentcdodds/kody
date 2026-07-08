@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { resolveSocialAuthUser } from '#app/resolve-social-auth.ts'
+import {
+	resolveSocialAuthUser,
+	SocialAuthResolutionError,
+} from '#app/resolve-social-auth.ts'
 import { mockGitHubProfile } from '#app/social-auth-mock.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 
@@ -248,4 +251,111 @@ test('resolveSocialAuthUser links a verified Google email to an existing account
 	expect(resolved.userId).toBe(9)
 	expect(resolved.isNewUser).toBe(false)
 	expect(connections.get('google:google-subject')?.user_id).toBe(9)
+})
+
+test('resolveSocialAuthUser links GitHub email to an existing account', async () => {
+	const { env, users, usersById, connections } =
+		createResolveSocialAuthTestEnv()
+	const passwordHash = await createPasswordHash('password123')
+	const email = mockGitHubProfile.email!.toLowerCase()
+	const user: TestUser = {
+		id: 11,
+		email,
+		username: 'github-match',
+		password_hash: passwordHash,
+		email_verified_at: new Date().toISOString(),
+		stable_user_id: 'stable-github-match',
+	}
+	users.set(user.email, user)
+	usersById.set(user.id, user)
+
+	const resolved = await resolveSocialAuthUser({
+		env,
+		result: {
+			provider: 'github',
+			account: {
+				provider: 'github',
+				providerAccountId: String(mockGitHubProfile.id),
+			},
+			profile: mockGitHubProfile,
+			tokens: {
+				accessToken: 'token',
+			},
+		},
+	})
+
+	expect(resolved.userId).toBe(11)
+	expect(resolved.isNewUser).toBe(false)
+	expect(connections.get(`github:${mockGitHubProfile.id}`)?.user_id).toBe(11)
+})
+
+test('resolveSocialAuthUser does not auto-link unverified Google email', async () => {
+	const { env, users, usersById, connections } =
+		createResolveSocialAuthTestEnv()
+	const passwordHash = await createPasswordHash('password123')
+	const email = 'unverified-google@example.com'
+	const user: TestUser = {
+		id: 12,
+		email,
+		username: 'unverified-match',
+		password_hash: passwordHash,
+		email_verified_at: new Date().toISOString(),
+		stable_user_id: 'stable-unverified-match',
+	}
+	users.set(user.email, user)
+	usersById.set(user.id, user)
+
+	await resolveSocialAuthUser({
+		env,
+		result: {
+			provider: 'google',
+			account: {
+				provider: 'google',
+				providerAccountId: 'unverified-google-subject',
+			},
+			profile: {
+				sub: 'unverified-google-subject',
+				email,
+				email_verified: false,
+				name: 'Unverified Google User',
+			},
+			tokens: {
+				accessToken: 'token',
+			},
+		},
+	}).catch(() => undefined)
+
+	expect(connections.get('google:unverified-google-subject')).toBeUndefined()
+})
+
+test('resolveSocialAuthUser requires an invite for production OAuth signup', async () => {
+	const { env } = createResolveSocialAuthTestEnv()
+
+	await expect(
+		resolveSocialAuthUser({
+			env: {
+				...env,
+				SENTRY_ENVIRONMENT: 'production',
+			},
+			result: {
+				provider: 'google',
+				account: {
+					provider: 'google',
+					providerAccountId: 'new-google-subject',
+				},
+				profile: {
+					sub: 'new-google-subject',
+					email: 'new-google-user@example.com',
+					email_verified: true,
+					name: 'New Google User',
+				},
+				tokens: {
+					accessToken: 'token',
+				},
+			},
+		}),
+	).rejects.toMatchObject({
+		message: 'Invite code is required.',
+		status: 400,
+	})
 })

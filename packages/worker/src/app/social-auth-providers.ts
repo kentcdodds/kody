@@ -1,10 +1,9 @@
-export type SocialAuthProviderName = 'github' | 'google' | 'x'
+import {
+	socialAuthProviderNames,
+	type SocialAuthProviderName,
+} from '#app/social-auth-provider-names.ts'
 
-export const socialAuthProviderNames = [
-	'github',
-	'google',
-	'x',
-] as const satisfies ReadonlyArray<SocialAuthProviderName>
+export { type SocialAuthProviderName, socialAuthProviderNames }
 
 export type SocialAuthProviderListItem = {
 	id: SocialAuthProviderName

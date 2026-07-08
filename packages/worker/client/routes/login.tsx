@@ -12,6 +12,7 @@ import {
 	readRouterSearch,
 } from '#client/router-location.tsx'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
+import { type LoginAuthLoaderData } from '#app/loader-data.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -87,6 +88,8 @@ export function LoginRoute(handle: Handle) {
 	let sessionEmail = ''
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
+	let cachedSocialProviders: LoginAuthLoaderData['providers'] | null = null
+	let socialProvidersStatus: 'idle' | 'loading' | 'ready' = 'idle'
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
 		status = nextStatus
@@ -121,6 +124,26 @@ export function LoginRoute(handle: Handle) {
 				return
 			}
 			handle.update()
+		})
+
+		handle.queueTask(async (signal) => {
+			if (cachedSocialProviders || socialProvidersStatus !== 'idle') return
+			socialProvidersStatus = 'loading'
+
+			try {
+				const response = await fetch('/auth/providers.json', { signal })
+				if (!response.ok) return
+				const payload = await response.json().catch(() => null)
+				if (!Array.isArray(payload?.providers)) return
+				cachedSocialProviders = payload.providers
+			} catch {
+				if (signal.aborted) return
+			} finally {
+				if (!signal.aborted) {
+					socialProvidersStatus = 'ready'
+					handle.update()
+				}
+			}
 		})
 	}
 
@@ -265,7 +288,10 @@ export function LoginRoute(handle: Handle) {
 			'loginAuth',
 			getPathname(handle),
 		)
-		const socialProviders = loginAuth?.providers ?? []
+		if (loginAuth?.providers) {
+			cachedSocialProviders = loginAuth.providers
+		}
+		const socialProviders = cachedSocialProviders ?? []
 		const inviteCodeFromQuery = getSearchParams(handle).get('inviteCode') ?? ''
 		const errorFromQuery = getSearchParams(handle).get('error')
 		const title = isSignup ? 'Create your account' : 'Welcome back'
