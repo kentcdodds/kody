@@ -1,4 +1,5 @@
 import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
+import type { ErrorEvent } from '@sentry/core'
 
 export const d1LockRetryMaxAttempts = 6
 
@@ -8,11 +9,24 @@ function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+export function isRetryableD1LockMessage(message: string) {
+	return (
+		message.includes('SQLITE_BUSY') || message.includes('database is locked')
+	)
+}
+
 export function isRetryableD1LockError(error: unknown) {
-	return errorCauseChainIncludes(
-		error,
+	return errorCauseChainIncludes(error, isRetryableD1LockMessage)
+}
+
+export function isRetryableD1LockSentryEvent(event: ErrorEvent) {
+	const messages = [
+		event.message,
+		...(event.exception?.values?.map((value) => value.value) ?? []),
+	]
+	return messages.some(
 		(message) =>
-			message.includes('SQLITE_BUSY') || message.includes('database is locked'),
+			typeof message === 'string' && isRetryableD1LockMessage(message),
 	)
 }
 

@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import * as Sentry from '@sentry/cloudflare'
 import { createExecutionContext, env } from 'cloudflare:test'
 
 const mocks = vi.hoisted(() => ({
@@ -93,5 +94,36 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 		)
 	} finally {
 		consoleErrorSpy.mockRestore()
+	}
+})
+
+test('scheduled logs D1 lock contention as a warning without reporting to Sentry', async () => {
+	const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	const captureException = vi
+		.spyOn(Sentry, 'captureException')
+		.mockImplementation(() => '')
+	mocks.reconcileArtifactsPushes.mockRejectedValueOnce(
+		new Error('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
+	)
+	const scheduledTime = Date.parse('2026-07-05T10:20:00.000Z')
+
+	try {
+		await worker.scheduled?.(
+			createController(scheduledTime),
+			env,
+			createExecutionContext(),
+		)
+
+		expect(consoleWarnSpy).toHaveBeenCalledWith(
+			'scheduled_lane_d1_lock_contention lane=reconcile_artifacts_pushes',
+			expect.objectContaining({
+				message: 'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
+			}),
+		)
+		expect(captureException).not.toHaveBeenCalled()
+		expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalled()
+	} finally {
+		consoleWarnSpy.mockRestore()
+		captureException.mockRestore()
 	}
 })

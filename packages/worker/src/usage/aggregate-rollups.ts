@@ -19,6 +19,8 @@
  * directly there.
  */
 
+import { runD1WithRetry } from '#worker/d1-retry.ts'
+
 export const usageAggregationCronGateMinutes = 5
 export const usageAggregationCronIntervalMinutes = 60
 
@@ -203,10 +205,12 @@ async function deleteStaleCurrentMonthRollups(input: {
 	month: string
 	presentPairs: ReadonlySet<string>
 }) {
-	const { results } = await input.db
-		.prepare(`SELECT user_id, metric FROM usage_rollups WHERE month = ?`)
-		.bind(input.month)
-		.all<{ user_id: string; metric: string }>()
+	const { results } = await runD1WithRetry(() =>
+		input.db
+			.prepare(`SELECT user_id, metric FROM usage_rollups WHERE month = ?`)
+			.bind(input.month)
+			.all<{ user_id: string; metric: string }>(),
+	)
 	const stalePairs = (results ?? []).filter(
 		(row) => !input.presentPairs.has(rollupPairKey(row)),
 	)
@@ -220,15 +224,17 @@ async function deleteStaleCurrentMonthRollups(input: {
 		const pairPredicates = chunk
 			.map(() => '(user_id = ? AND metric = ?)')
 			.join(' OR ')
-		const result = await input.db
-			.prepare(
-				`DELETE FROM usage_rollups WHERE month = ? AND (${pairPredicates})`,
-			)
-			.bind(
-				input.month,
-				...chunk.flatMap((pair) => [pair.user_id, pair.metric]),
-			)
-			.run()
+		const result = await runD1WithRetry(() =>
+			input.db
+				.prepare(
+					`DELETE FROM usage_rollups WHERE month = ? AND (${pairPredicates})`,
+				)
+				.bind(
+					input.month,
+					...chunk.flatMap((pair) => [pair.user_id, pair.metric]),
+				)
+				.run(),
+		)
 		deleted += result.meta.changes ?? 0
 	}
 	return deleted
@@ -284,7 +290,9 @@ export async function aggregateUsageRollups(
 	)
 	const users = new Set(presentRows.map((row) => row.user_id)).size
 	for (let index = 0; index < statements.length; index += upsertBatchSize) {
-		await env.APP_DB.batch(statements.slice(index, index + upsertBatchSize))
+		await runD1WithRetry(() =>
+			env.APP_DB.batch(statements.slice(index, index + upsertBatchSize)),
+		)
 	}
 	// An entirely empty result is more likely Analytics Engine ingestion
 	// lag (or a dataset misconfiguration) than a genuinely event-free

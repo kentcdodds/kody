@@ -1,3 +1,4 @@
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
 	type EntityKind,
 	type EntitySourceRow,
@@ -144,14 +145,16 @@ export async function updateEntitySource(
 		add('last_external_check_at', input.lastExternalCheckAt)
 	}
 	add('updated_at', new Date().toISOString())
-	const result = await db
-		.prepare(
-			`UPDATE entity_sources
+	const result = await runD1WithRetry(() =>
+		db
+			.prepare(
+				`UPDATE entity_sources
 			SET ${assignments.join(', ')}
 			WHERE id = ? AND user_id = ?`,
-		)
-		.bind(...values, input.id, input.userId)
-		.run()
+			)
+			.bind(...values, input.id, input.userId)
+			.run(),
+	)
 	return (result.meta.changes ?? 0) > 0
 }
 
