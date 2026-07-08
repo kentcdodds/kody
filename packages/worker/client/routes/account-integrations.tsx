@@ -238,7 +238,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					<section
 						mix={css({
 							display: 'grid',
-							gridTemplateColumns: 'repeat(auto-fit, minmax(22rem, 1fr))',
+							gridTemplateColumns:
+								'repeat(auto-fit, minmax(min(22rem, 100%), 1fr))',
 							gap: spacing.lg,
 						})}
 					>

@@ -124,7 +124,7 @@ const searchFormCss = {
 const searchFieldCss = {
 	...fieldCss,
 	flex: 1,
-	minWidth: '20rem',
+	minWidth: 'min(20rem, 100%)',
 	maxWidth: '40rem',
 }
 

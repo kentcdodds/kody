@@ -210,7 +210,7 @@ export const listCss = {
 
 export const detailGridCss = {
 	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(min(14rem, 100%), 1fr))',
 	gap: spacing.md,
 }
 

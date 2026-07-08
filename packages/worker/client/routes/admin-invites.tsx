@@ -4,7 +4,7 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
@@ -269,6 +269,10 @@ export function AdminInvitesRoute(handle: Handle) {
 							gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
 							gap: spacing.md,
 							alignItems: 'end',
+							[mq.mobile]: {
+								gridTemplateColumns: 'minmax(0, 1fr)',
+								alignItems: 'stretch',
+							},
 						})}
 					>
 						<label mix={css(fieldCss)}>
@@ -339,6 +343,13 @@ export function AdminInvitesRoute(handle: Handle) {
 							gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto',
 							gap: spacing.md,
 							alignItems: 'end',
+							[mq.tablet]: {
+								gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+							},
+							[mq.mobile]: {
+								gridTemplateColumns: 'minmax(0, 1fr)',
+								alignItems: 'stretch',
+							},
 						})}
 					>
 						<label mix={css(fieldCss)}>

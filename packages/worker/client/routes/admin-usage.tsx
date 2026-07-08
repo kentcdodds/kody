@@ -395,7 +395,8 @@ export function AdminUsageRoute(handle: Handle) {
 									mix={css({
 										display: 'grid',
 										gap: spacing.lg,
-										gridTemplateColumns: 'repeat(auto-fit, minmax(24rem, 1fr))',
+										gridTemplateColumns:
+											'repeat(auto-fit, minmax(min(24rem, 100%), 1fr))',
 									})}
 								>
 									<section mix={css(cardCss)}>
@@ -407,34 +408,36 @@ export function AdminUsageRoute(handle: Handle) {
 										>
 											Entitlements
 										</h3>
-										<table mix={css(tableCss)}>
-											<thead>
-												<tr>
-													<th mix={css(cellCss)}>Resource</th>
-													<th mix={css(numericCellCss)}>Current</th>
-													<th mix={css(numericCellCss)}>Limit</th>
-													<th mix={css(numericCellCss)}>Used</th>
-												</tr>
-											</thead>
-											<tbody>
-												{selectedUser.entitlementConsumption.map((item) => (
-													<tr key={item.resource}>
-														<td mix={css(cellCss)}>{item.label}</td>
-														<td mix={css(numericCellCss)}>
-															{item.current === null
-																? 'Not measured'
-																: formatInteger(item.current)}
-														</td>
-														<td mix={css(numericCellCss)}>
-															{formatLimit(item.limit)}
-														</td>
-														<td mix={css(numericCellCss)}>
-															{formatPercent(item.percentOfLimit)}
-														</td>
+										<div mix={css({ overflowX: 'auto' })}>
+											<table mix={css(tableCss)}>
+												<thead>
+													<tr>
+														<th mix={css(cellCss)}>Resource</th>
+														<th mix={css(numericCellCss)}>Current</th>
+														<th mix={css(numericCellCss)}>Limit</th>
+														<th mix={css(numericCellCss)}>Used</th>
 													</tr>
-												))}
-											</tbody>
-										</table>
+												</thead>
+												<tbody>
+													{selectedUser.entitlementConsumption.map((item) => (
+														<tr key={item.resource}>
+															<td mix={css(cellCss)}>{item.label}</td>
+															<td mix={css(numericCellCss)}>
+																{item.current === null
+																	? 'Not measured'
+																	: formatInteger(item.current)}
+															</td>
+															<td mix={css(numericCellCss)}>
+																{formatLimit(item.limit)}
+															</td>
+															<td mix={css(numericCellCss)}>
+																{formatPercent(item.percentOfLimit)}
+															</td>
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
 									</section>
 									<section mix={css(cardCss)}>
 										<h3
