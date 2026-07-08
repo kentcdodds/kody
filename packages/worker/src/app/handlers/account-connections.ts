@@ -110,21 +110,37 @@ export function createAccountConnectionsApiHandler(env: Env) {
 			}
 			const provider = parsed.value.provider
 
-			// Removing this provider must leave at least one working sign-in
-			// method: a usable password, a passkey, or another connection.
-			const [connections, usablePassword, passkeys] = await Promise.all([
-				listConnections(env.APP_DB, user.userId),
-				hasUsablePassword(env.APP_DB, user.userId),
-				listPasskeysForUser(env.APP_DB, user.userId),
-			])
-			const remainingConnections = connections.filter(
-				(connection) => connection.provider_name !== provider,
+			const existing = await env.APP_DB.prepare(
+				`SELECT id FROM oauth_connections WHERE user_id = ? AND provider_name = ?`,
 			)
-			if (
-				!usablePassword &&
-				passkeys.length === 0 &&
-				remainingConnections.length === 0
-			) {
+				.bind(user.userId, provider)
+				.first<{ id: number }>()
+			if (!existing) {
+				return jsonResponse({ ok: false, error: 'Connection not found.' }, 404)
+			}
+
+			// Removing this provider must leave at least one working sign-in
+			// method: a usable password, a passkey, or another connection. The
+			// guard lives inside the DELETE itself so concurrent disconnects
+			// cannot both pass a separate pre-check and remove every method.
+			const result = await env.APP_DB.prepare(
+				`DELETE FROM oauth_connections
+				 WHERE user_id = ?1 AND provider_name = ?2
+				 AND (
+					EXISTS (
+						SELECT 1 FROM users
+						WHERE id = ?1 AND password_hash LIKE 'pbkdf2_sha256$%'
+					)
+					OR EXISTS (SELECT 1 FROM passkeys WHERE user_id = ?1)
+					OR EXISTS (
+						SELECT 1 FROM oauth_connections
+						WHERE user_id = ?1 AND provider_name != ?2
+					)
+				 )`,
+			)
+				.bind(user.userId, provider)
+				.run()
+			if ((result.meta?.changes ?? 0) === 0) {
 				return jsonResponse(
 					{
 						ok: false,
@@ -133,15 +149,6 @@ export function createAccountConnectionsApiHandler(env: Env) {
 					},
 					400,
 				)
-			}
-
-			const result = await env.APP_DB.prepare(
-				`DELETE FROM oauth_connections WHERE user_id = ? AND provider_name = ?`,
-			)
-				.bind(user.userId, provider)
-				.run()
-			if ((result.meta?.changes ?? 0) === 0) {
-				return jsonResponse({ ok: false, error: 'Connection not found.' }, 404)
 			}
 
 			void logAuditEvent({
