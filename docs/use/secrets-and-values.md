@@ -70,11 +70,26 @@ specific token exchange with ordinary **`fetch`**. For service-account JSON
 secrets, pass **`private_key_json_field: "private_key"`** to sign with that
 field.
 
-Do **not** place literal placeholder tokens into user-visible or
-third-party-visible content such as issue bodies, comments, prompts, logs, or
-returned strings. If you need to describe a placeholder as text, obfuscate it
-instead of embedding the exact **`{{secret:...}}`** form into content that may
-later be sent over **`fetch`**.
+## Mentioning placeholders without resolving them
+
+Resolution runs on the **final serialized request** (URL, headers, body), so a
+literal placeholder assembled by any means — including string concatenation —
+will resolve. Do **not** place resolvable placeholder tokens into user-visible
+or third-party-visible content such as issue bodies, comments, prompts, logs, or
+returned strings.
+
+- To **mention** the syntax in prose or docs, write **`{{secret:<name>}}`**.
+  Angle brackets are outside the placeholder name charset (`[a-zA-Z0-9._-]`), so
+  this form is inert everywhere — it cannot resolve in this request or any later
+  one.
+- To deliberately send a **resolvable** literal placeholder to a third party
+  (for example, config text that Kody itself will resolve later), set the
+  **`x-kody-secret-resolution: off`** header on that **`fetch`**. The gateway
+  strips the header and skips all placeholder resolution for that one request.
+  Only the calling code can set headers, so data flowing through a URL or body
+  can never disable resolution. Use this sparingly: the delivered text is still
+  one resolution step away from the real secret if it later flows back through a
+  secret-aware **`fetch`**.
 
 ## Host approval
 

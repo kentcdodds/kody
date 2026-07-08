@@ -30,6 +30,19 @@ type FetchGatewayProps = {
 }
 export type { FetchGatewayProps }
 
+/**
+ * Request header that disables secret placeholder resolution for one gateway
+ * fetch: `x-kody-secret-resolution: off`. The header is stripped before the
+ * request leaves the gateway, and any `{{secret:...}}` text passes through
+ * literally. Out-of-band by design — only calling code can set a header, so
+ * attacker-controlled *data* in a URL or body can never disable resolution.
+ * Use it when a third party must receive literal placeholder text (for
+ * example, writing config that Kody itself resolves later). For merely
+ * mentioning the syntax in prose, prefer the inert `{{secret:<name>}}` form
+ * instead, which never resolves anywhere.
+ */
+export const secretResolutionHeaderName = 'x-kody-secret-resolution'
+
 export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
@@ -136,17 +149,34 @@ export async function expandSecretPlaceholders(input: {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 }) {
 	const headers = new Headers(input.request.headers)
+	const baseUrl = input.props.baseUrl.trim()
+	if (!baseUrl) {
+		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
+	}
 	const requestBody = await readRequestBody(input.request)
+	if (readSecretResolutionMode(headers) === 'off') {
+		return new Request(
+			resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
+			{
+				method: input.request.method,
+				headers,
+				body: requestBody ?? undefined,
+				redirect: input.request.redirect,
+				credentials: input.request.credentials,
+				mode: input.request.mode,
+				cache: input.request.cache,
+				integrity: input.request.integrity,
+				keepalive: input.request.keepalive,
+				signal: input.request.signal,
+			},
+		)
+	}
 	const resolvedSecrets: Array<{
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
 	}> = []
 	const replacements = new Map<string, string>()
 	const resolvedValues = new Map<string, string>()
-	const baseUrl = input.props.baseUrl.trim()
-	if (!baseUrl) {
-		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
-	}
 	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders([
 		...collectReferencedBasicAuthSecretPlaceholders([
 			input.request.url,
@@ -336,6 +366,23 @@ function ensureFetchAllowed(props: FetchGatewayProps) {
 	if (!props.userId) {
 		throw new Error(fetchSecretAuthRequiredMessage)
 	}
+}
+
+/**
+ * Read and strip the resolution opt-out header. Unknown values fail loudly:
+ * a typo like "of" silently resolving placeholders would defeat the point of
+ * opting out.
+ */
+function readSecretResolutionMode(headers: Headers): 'on' | 'off' {
+	const raw = headers.get(secretResolutionHeaderName)
+	if (raw == null) return 'on'
+	headers.delete(secretResolutionHeaderName)
+	const value = raw.trim().toLowerCase()
+	if (value === 'off') return 'off'
+	if (value === 'on') return 'on'
+	throw new Error(
+		`Invalid ${secretResolutionHeaderName} header value "${raw}". Use "off" to send secret placeholders literally without resolution, or omit the header for normal resolution.`,
+	)
 }
 
 function collectReferencedSecrets(values: Array<string | null | undefined>) {

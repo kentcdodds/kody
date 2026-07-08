@@ -98,8 +98,12 @@ Rules:
   to find the right secret name, then reference that name in a placeholder.
 - Placeholders only resolve in secret-aware `fetch` paths and capability inputs
   marked `x-kody-secret`; they are not general string interpolation.
-- Never echo the literal `{{secret:...}}` form into chat, logs, issue bodies, or
-  any content that may later be sent over `fetch`.
+- Never echo a resolvable literal placeholder into chat, logs, issue bodies, or
+  any content that may later be sent over `fetch`. To mention the syntax in
+  prose, use the inert `{{secret:<name>}}` form — angle brackets are outside the
+  name charset, so it never resolves. To deliberately deliver a resolvable
+  placeholder to a third party, set the `x-kody-secret-resolution: off` header
+  on that `fetch` (the gateway strips it and skips resolution for that request).
 - For Basic Auth derived from two secrets, use `secretHeaders.basic(...)` from
   `kody:runtime` (see the secrets usage docs).
 

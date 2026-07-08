@@ -319,9 +319,19 @@ placeholders, host approval, and **`kody.secret_list`** / **`secret_set`**.
 
 Treat placeholder syntax as operational wiring, not prose. Do not place the
 exact **`{{secret:...}}`** token into issue bodies, comments, prompts, logs, or
-other content that may be shown to users or sent to third parties. If you need
-to mention a placeholder literally, obfuscate it instead of embedding the exact
-token.
+other content that may be shown to users or sent to third parties — resolution
+runs on the final serialized request, so even string concatenation cannot keep a
+literal placeholder out of it.
+
+To **mention** the syntax in prose, use the inert form **`{{secret:<name>}}`** —
+angle brackets are outside the placeholder name charset, so it never resolves
+anywhere, now or downstream.
+
+To deliberately deliver a **resolvable** literal placeholder to a third party
+(for example, config that Kody itself resolves later), set the
+**`x-kody-secret-resolution: off`** header on that fetch. The gateway strips the
+header and skips resolution for that request only. The delivered text remains
+one resolution step from the real secret, so use this sparingly.
 
 ## Values
 
