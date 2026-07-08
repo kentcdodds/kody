@@ -149,6 +149,10 @@ export function AdminInvitesRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify(body),
 			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const payload = await readJson<
 				AdminInvitesLoaderData & {
 					ok?: boolean

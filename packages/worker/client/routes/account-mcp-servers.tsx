@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -156,7 +157,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let addUrl = ''
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
-	let lastLoadedHref = ''
+	const loadLatch = createRouteLoadLatch()
 	let deleteConfirm = false
 	let oauthResultConsumed = false
 
@@ -194,9 +195,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 	}
 
 	async function loadServers(signal: AbortSignal) {
+		const href = readCurrentRouterHref(handle)
 		try {
-			const href = readCurrentRouterHref(handle)
-			lastLoadedHref = href
 			const response = await fetch(accountMcpServersApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
@@ -213,6 +213,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			}
 			applyPayload(payload)
 			status = 'ready'
+			loadLatch.markLoaded(href)
 			consumeOAuthResult()
 			handle.update()
 		} catch (error) {
@@ -224,6 +225,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'Unable to load MCP server settings.',
 				'error',
 			)
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -332,7 +334,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 		if (!routeData) return false
 		applyPayload(routeData)
 		status = 'ready'
-		lastLoadedHref = href
+		loadLatch.markLoaded(href)
 		consumeOAuthResult()
 		return true
 	}
@@ -342,15 +344,13 @@ export function AccountMcpServersRoute(handle: Handle) {
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' && currentHref !== lastLoadedHref
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			typeof document !== 'undefined'
-		) {
+		const needsLoad = loadLatch.needsLoad({
+			currentHref,
+			isLoading: status === 'loading',
+			appliedRouteData,
+			needsStaleRefresh,
+		})
+		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadServers)
 		}
 		const isMutating = actionState !== 'idle'
