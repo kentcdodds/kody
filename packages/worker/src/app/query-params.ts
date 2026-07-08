@@ -14,3 +14,17 @@ export function readPositiveInt(
 	}
 	return max === undefined ? parsed : Math.min(parsed, max)
 }
+
+/** Parse `?page=` and `?pageSize=` with clamping plus the derived offset. */
+export function readPagination(
+	url: URL,
+	input: { defaultPageSize: number; maxPageSize: number },
+) {
+	const page = readPositiveInt(url.searchParams.get('page'), 1)
+	const pageSize = readPositiveInt(
+		url.searchParams.get('pageSize'),
+		input.defaultPageSize,
+		input.maxPageSize,
+	)
+	return { page, pageSize, offset: (page - 1) * pageSize }
+}

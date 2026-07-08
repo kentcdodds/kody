@@ -1,4 +1,4 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { readPagination, readPositiveInt } from '#app/query-params.ts'
 import {
 	entitlementResourceLabels,
 	isEmailFallbackResource,
@@ -97,12 +97,10 @@ export async function loadAdminUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUsageLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
-	const page = readPositiveInt(url.searchParams.get('page'), 1)
-	const pageSize = Math.min(
-		readPositiveInt(url.searchParams.get('pageSize'), defaultPageSize),
+	const { page, pageSize, offset } = readPagination(url, {
+		defaultPageSize,
 		maxPageSize,
-	)
-	const offset = (page - 1) * pageSize
+	})
 	const selectedUserId = readPositiveInt(url.searchParams.get('userId'), 0)
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)

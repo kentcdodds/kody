@@ -58,9 +58,19 @@ export async function getUserPlan(
 /**
  * Per-isolate cache of stable user id → account email. Cache hits are
  * validated against the stored stable id and deleted entries fall back to a
- * fresh scan.
+ * fresh scan. Bounded so long-lived isolates cannot grow it without limit;
+ * the oldest insertion is evicted first.
  */
 const stableUserIdEmailCache = new Map<string, string>()
+const stableUserIdEmailCacheMaxEntries = 256
+
+function cacheStableUserIdEmail(stableUserId: string, email: string) {
+	if (stableUserIdEmailCache.size >= stableUserIdEmailCacheMaxEntries) {
+		const oldestKey = stableUserIdEmailCache.keys().next().value
+		if (oldestKey !== undefined) stableUserIdEmailCache.delete(oldestKey)
+	}
+	stableUserIdEmailCache.set(stableUserId, email)
+}
 
 export type StableUserAccount = {
 	email: string
@@ -137,7 +147,7 @@ export async function findUserAccountByStableUserId(
 		select: `SELECT id, email, stable_user_id, plan, email_verified_at FROM users`,
 	})
 	if (!row) return null
-	stableUserIdEmailCache.set(trimmed, row.email)
+	cacheStableUserIdEmail(trimmed, row.email)
 	return {
 		email: row.email,
 		plan: parsePlanName(row.plan),

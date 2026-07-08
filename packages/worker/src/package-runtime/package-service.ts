@@ -360,9 +360,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	}
 
 	private async clearAlarm() {
-		await this.ctx.storage.deleteAlarm().catch(() => {
-			// Best effort cleanup.
-		})
+		// Let deleteAlarm failures propagate: clearing the in-memory snapshot
+		// while a platform alarm is still scheduled would cause stale runs.
+		await this.ctx.storage.deleteAlarm()
 		this.stateSnapshot.nextAlarmAt = null
 		this.stateSnapshot.nextAlarmSource = null
 		await this.persistState()

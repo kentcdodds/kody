@@ -1,4 +1,5 @@
 import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
+import { displayNameFromEmail } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
@@ -8,10 +9,6 @@ type McpOAuthGrantProps = {
 	username?: unknown
 	displayName?: unknown
 } | null
-
-function buildDisplayNameFromEmail(email: string) {
-	return email.split('@')[0] || 'user'
-}
 
 export async function buildMcpUserContextFromGrantProps(
 	env: Env,
@@ -27,7 +24,7 @@ export async function buildMcpUserContextFromGrantProps(
 		typeof grantProps.displayName === 'string'
 			? grantProps.displayName
 			: email
-				? buildDisplayNameFromEmail(email)
+				? displayNameFromEmail(email)
 				: 'user'
 
 	const user: McpUserContext = {

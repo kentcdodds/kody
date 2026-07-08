@@ -1,4 +1,4 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { readPagination } from '#app/query-params.ts'
 import { type AdminUsersLoaderData } from '#app/loader-data.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
 
@@ -35,12 +35,10 @@ export async function loadAdminUsersData(
 	requestUrl: string,
 ): Promise<AdminUsersLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
-	const page = readPositiveInt(url.searchParams.get('page'), 1)
-	const pageSize = Math.min(
-		readPositiveInt(url.searchParams.get('pageSize'), defaultPageSize),
+	const { page, pageSize, offset } = readPagination(url, {
+		defaultPageSize,
 		maxPageSize,
-	)
-	const offset = (page - 1) * pageSize
+	})
 
 	const [totalResult, userRows] = await Promise.all([
 		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users`).first<{

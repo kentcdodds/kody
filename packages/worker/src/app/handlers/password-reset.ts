@@ -14,6 +14,7 @@ import {
 	passwordResetTokenExpiryMs,
 } from '#app/password-reset-tokens.ts'
 import { type routes } from '#app/routes.ts'
+import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
@@ -258,7 +259,7 @@ export function createPasswordResetConfirmHandler(appEnv: AppEnv) {
 			const passwordHash = await createPasswordHash(password)
 			await db.update(usersTable, resetRecord.user_id, {
 				password_hash: passwordHash,
-				updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+				updated_at: utcSqliteTimestamp(),
 			})
 			await db.deleteMany(passwordResetsTable, {
 				where: { user_id: resetRecord.user_id },

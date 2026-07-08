@@ -2,6 +2,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,
@@ -30,7 +31,9 @@ export function createVerifyHandler(env: Env) {
 				// Preserve the destination so a re-login still lands the user
 				// where they were originally headed.
 				const loginUrl = new URL('/login', request.url)
-				const redirectTo = new URL(request.url).searchParams.get('redirectTo')
+				const redirectTo = normalizeRedirectTo(
+					new URL(request.url).searchParams.get('redirectTo'),
+				)
 				if (redirectTo) loginUrl.searchParams.set('redirectTo', redirectTo)
 				return Response.redirect(loginUrl, 302)
 			}

@@ -1,4 +1,4 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { readPagination } from '#app/query-params.ts'
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
 import {
 	systemEmailLimits,
@@ -59,9 +59,19 @@ export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
 const defaultPageSize = 25
 const maxPageSize = 100
 
+// Corrupt stored JSON degrades to empty values instead of crashing the
+// admin mail views.
+function parseJsonSafe(value: string): unknown {
+	try {
+		return JSON.parse(value)
+	} catch {
+		return null
+	}
+}
+
 function parseStringArray(value: string | null) {
 	if (!value) return []
-	const parsed = JSON.parse(value) as unknown
+	const parsed = parseJsonSafe(value)
 	return Array.isArray(parsed)
 		? parsed.filter((entry): entry is string => typeof entry === 'string')
 		: []
@@ -69,7 +79,7 @@ function parseStringArray(value: string | null) {
 
 function parseHeaders(value: string | null): Record<string, Array<string>> {
 	if (!value) return {}
-	const parsed = JSON.parse(value) as unknown
+	const parsed = parseJsonSafe(value)
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
 	const headers: Record<string, Array<string>> = {}
 	for (const [key, headerValue] of Object.entries(parsed)) {
@@ -170,13 +180,11 @@ export async function loadAdminSystemEmailData(
 	requestUrl: string,
 ): Promise<AdminSystemEmailLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
-	const page = readPositiveInt(url.searchParams.get('page'), 1)
-	const pageSize = Math.min(
-		readPositiveInt(url.searchParams.get('pageSize'), defaultPageSize),
+	const { page, pageSize, offset } = readPagination(url, {
+		defaultPageSize,
 		maxPageSize,
-	)
+	})
 	const selectedMessageId = url.searchParams.get('messageId')?.trim() || null
-	const offset = (page - 1) * pageSize
 	const [totalResult, messageRows, selectedMessage] = await Promise.all([
 		env.APP_DB.prepare(
 			`SELECT COUNT(*) AS total

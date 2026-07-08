@@ -1,3 +1,4 @@
+import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
 import { type SavedPackageRecord, type SavedPackageRow } from './types.ts'
 
@@ -22,18 +23,6 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 		updatedAt: String(row['updated_at']),
 	}
 }
-
-function parseTagsJson(raw: unknown) {
-	if (raw == null) return []
-	const parsed = JSON.parse(String(raw)) as unknown
-	return Array.isArray(parsed)
-		? parsed
-				.filter((value): value is string => typeof value === 'string')
-				.map((value) => value.trim())
-				.filter((value) => value.length > 0)
-		: []
-}
-
 export async function insertSavedPackage(
 	db: D1Database,
 	row: Omit<SavedPackageRow, 'created_at' | 'updated_at'> & {
