@@ -421,6 +421,11 @@ export type AccountSecretsLoaderData = {
 	approvalError: string | null
 }
 
+export type AuthProvidersLoaderData = {
+	ok: true
+	providers: Array<{ id: string; label: string }>
+}
+
 export type OAuthAuthorizeLoaderData =
 	| {
 			ok: true
@@ -449,6 +454,7 @@ export type AppLoaderData = {
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
 	accountSecrets?: AccountSecretsLoaderData
+	authProviders?: AuthProvidersLoaderData
 	emailVerification?: EmailVerificationLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 }

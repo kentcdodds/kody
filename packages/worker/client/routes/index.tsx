@@ -47,7 +47,7 @@ import {
 import { CommunityRoute, communityRouteLoader } from './community.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute } from './home.tsx'
-import { LoginRoute } from './login.tsx'
+import { LoginRoute, authProvidersRouteLoader } from './login.tsx'
 import { PrivacyRoute } from './privacy.tsx'
 import {
 	OAuthAuthorizeRoute,
@@ -87,6 +87,8 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/admin/system-email': adminSystemEmailRouteLoader,
 	'/community': communityRouteLoader,
 	'/community/:listingId': communityDetailRouteLoader,
+	'/login': authProvidersRouteLoader,
+	'/signup': authProvidersRouteLoader,
 	'/oauth/authorize': oauthAuthorizeRouteLoader,
 }
 
