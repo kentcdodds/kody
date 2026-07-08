@@ -311,6 +311,8 @@ jobs:
           fi
           base="${DEPLOY_URL%/}"
           echo "POST ${base}/__maintenance/reindex-capabilities"
+          rm -f reindex-response.json
+          set +e
           status="$(curl --silent --show-error --location --max-time 120 \
             -X POST \
             -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
@@ -318,9 +320,19 @@ jobs:
             --output reindex-response.json \
             --write-out "%{http_code}" \
             "${base}/__maintenance/reindex-capabilities")"
-          cat reindex-response.json
+          curl_exit=$?
+          set -e
+          if [ -s reindex-response.json ]; then
+            cat reindex-response.json
+          else
+            echo "No reindex response body."
+          fi
           echo
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "::warning::Capability reindex request failed with curl exit ${curl_exit}."
+            exit 0
+          fi
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "Capability reindex failed with HTTP ${status}." >&2
-            exit 1
+            echo "::warning::Capability reindex returned HTTP ${status}."
+            exit 0
           fi
