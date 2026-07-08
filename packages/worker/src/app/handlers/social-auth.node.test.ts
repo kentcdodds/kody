@@ -97,4 +97,6 @@ test('social auth start redirects to GitHub and stores an OAuth transaction cook
 	)
 	expect(transaction?.provider).toBe('github')
 	expect(transaction?.returnTo).toBe('/account')
+	expect(transaction?.state).toBeTruthy()
+	expect(transaction?.codeVerifier).toBeTruthy()
 })

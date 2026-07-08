@@ -96,7 +96,18 @@ function isProviderEmailVerified(
 	if (provider === 'google') {
 		return (profile as GoogleAuthProfile).email_verified === true
 	}
-	return provider !== 'x'
+	return false
+}
+
+function readTrustedProfileEmail(
+	provider: SocialAuthProviderName,
+	profile: SocialAuthProfile,
+) {
+	const profileEmail = readProfileEmail(provider, profile)
+	if (!profileEmail || !isProviderEmailVerified(provider, profile)) {
+		return ''
+	}
+	return profileEmail
 }
 
 async function userExistsByUsername(db: AppDatabase, username: string) {
@@ -190,7 +201,7 @@ async function createOAuthUser(input: {
 	inviteCode?: string
 }) {
 	const email =
-		readProfileEmail(input.provider, input.profile) ||
+		readTrustedProfileEmail(input.provider, input.profile) ||
 		syntheticEmailForProvider(input.provider, input.providerId)
 	const username = await getAvailableUsername(
 		input.db,
@@ -374,7 +385,7 @@ export async function resolveSocialAuthUser(input: {
 		}
 	}
 
-	const profileEmail = readProfileEmail(provider, input.result.profile)
+	const profileEmail = readTrustedProfileEmail(provider, input.result.profile)
 	if (profileEmail) {
 		const existingUser = await db.findOne(usersTable, {
 			where: { email: profileEmail },

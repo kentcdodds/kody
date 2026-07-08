@@ -209,13 +209,14 @@ test('resolveSocialAuthUser returns an existing linked provider account', async 
 	})
 })
 
-test('resolveSocialAuthUser links a provider to an existing email match', async () => {
+test('resolveSocialAuthUser links a verified Google email to an existing account', async () => {
 	const { env, users, usersById, connections } =
 		createResolveSocialAuthTestEnv()
 	const passwordHash = await createPasswordHash('password123')
+	const email = 'verified-google@example.com'
 	const user: TestUser = {
 		id: 9,
-		email: mockGitHubProfile.email!.toLowerCase(),
+		email,
 		username: 'email-match',
 		password_hash: passwordHash,
 		email_verified_at: new Date().toISOString(),
@@ -227,12 +228,17 @@ test('resolveSocialAuthUser links a provider to an existing email match', async 
 	const resolved = await resolveSocialAuthUser({
 		env,
 		result: {
-			provider: 'github',
+			provider: 'google',
 			account: {
-				provider: 'github',
-				providerAccountId: String(mockGitHubProfile.id),
+				provider: 'google',
+				providerAccountId: 'google-subject',
 			},
-			profile: mockGitHubProfile,
+			profile: {
+				sub: 'google-subject',
+				email,
+				email_verified: true,
+				name: 'Verified Google User',
+			},
 			tokens: {
 				accessToken: 'token',
 			},
@@ -241,5 +247,5 @@ test('resolveSocialAuthUser links a provider to an existing email match', async 
 
 	expect(resolved.userId).toBe(9)
 	expect(resolved.isNewUser).toBe(false)
-	expect(connections.get(`github:${mockGitHubProfile.id}`)?.user_id).toBe(9)
+	expect(connections.get('google:google-subject')?.user_id).toBe(9)
 })
