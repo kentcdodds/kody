@@ -68,6 +68,8 @@ export const routes = route({
 	health: '/health',
 	login: '/login',
 	privacy: '/privacy',
+	onboarding: '/onboarding',
+	onboardingApi: '/onboarding.json',
 	resetPassword: '/reset-password',
 	verify: '/verify',
 	verifyTwoFactorApi: post('/verify/2fa.json'),

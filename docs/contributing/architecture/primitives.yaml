@@ -33,8 +33,8 @@ primitives:
     group: surfaces
     name: Browser app (Remix 3)
     summary:
-      Server-first Remix 3 UI and app routes (home, auth, account, session,
-      admin, community, privacy, health) served by the Worker.
+      Server-first Remix 3 UI and app routes (home, auth, account, onboarding,
+      session, admin, community, privacy, health) served by the Worker.
     code:
       - packages/worker/src/app/
     docs:

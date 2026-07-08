@@ -35,6 +35,11 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
+import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
+import {
+	fetchOnboardingPayload,
+	type OnboardingPayload,
+} from '#client/routes/onboarding.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -97,19 +102,25 @@ export async function accountRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(`${accountProfileApiPath}${url.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
+	const [profileResponse, onboarding] = await Promise.all([
+		fetch(`${accountProfileApiPath}${url.search}`, {
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		}),
+		fetchOnboardingPayload(signal),
+	])
+	if (profileResponse.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
-	const payload = await readJson<AccountProfilePayload>(response)
-	if (!response.ok || !payload?.ok) {
+	const payload = await readJson<AccountProfilePayload>(profileResponse)
+	if (!profileResponse.ok || !payload?.ok) {
 		throw new Error('Unable to load your account.')
 	}
-	return { accountProfile: payload }
+	return {
+		accountProfile: payload,
+		...(onboarding ? { onboarding } : {}),
+	}
 }
 
 export function AccountRoute(handle: Handle) {
@@ -136,6 +147,7 @@ export function AccountRoute(handle: Handle) {
 	let availableProviders: Array<AuthProviderInfo> = []
 	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
 	let consumedCallbackMessage = false
+	let needsOnboarding = false
 	const loadLatch = createRouteLoadLatch()
 
 	function applyConnectionsPayload(payload: AccountConnectionsPayload) {
@@ -244,15 +256,22 @@ export function AccountRoute(handle: Handle) {
 		}
 	}
 
+	function applyOnboardingPayload(payload: OnboardingPayload | null) {
+		needsOnboarding = payload?.needsOnboarding === true
+	}
+
 	async function loadAccountProfile(signal: AbortSignal) {
 		const href = readCurrentRouterHref(handle)
 		try {
 			const search = new URL(href, 'http://localhost').search
-			const response = await fetch(`${accountProfileApiPath}${search}`, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
+			const [response, onboarding] = await Promise.all([
+				fetch(`${accountProfileApiPath}${search}`, {
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+					signal,
+				}),
+				fetchOnboardingPayload(signal),
+			])
 			if (signal.aborted) return
 			if (response.status === 401) {
 				window.location.assign('/login')
@@ -262,6 +281,7 @@ export function AccountRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load your account.')
 			}
+			applyOnboardingPayload(onboarding)
 			email = payload.email
 			emailVerified = payload.emailVerified
 			username = payload.username
@@ -473,6 +493,10 @@ export function AccountRoute(handle: Handle) {
 		username = routeData.username
 		draftUsername = routeData.username
 		draftEmail = routeData.email
+		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
+		if (onboardingData) {
+			applyOnboardingPayload(onboardingData)
+		}
 		status = 'ready'
 		message = null
 		messageTone = 'info'
@@ -532,6 +556,7 @@ export function AccountRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
+						{needsOnboarding ? renderOnboardingBanner() : null}
 						{!emailVerified ? (
 							<section
 								aria-label="Email verification status"

@@ -46,8 +46,9 @@ import {
 } from './community-detail.tsx'
 import { CommunityRoute, communityRouteLoader } from './community.tsx'
 import { ConnectOauthRoute } from './connect-oauth.tsx'
-import { HomeRoute } from './home.tsx'
+import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { LoginRoute } from './login.tsx'
+import { OnboardingRoute, onboardingRouteLoader } from './onboarding.tsx'
 import { PrivacyRoute } from './privacy.tsx'
 import {
 	OAuthAuthorizeRoute,
@@ -59,6 +60,7 @@ import { VerifyEmailRoute } from './verify-email.tsx'
 import { VerifyRoute } from './verify.tsx'
 
 export const clientRouteLoaders: Record<string, RouteLoader> = {
+	'/': homeRouteLoader,
 	'/account': accountRouteLoader,
 	'/account/integrations': accountIntegrationsRouteLoader,
 	'/account/mcp-servers': accountMcpServersRouteLoader,
@@ -88,6 +90,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/community': communityRouteLoader,
 	'/community/:listingId': communityDetailRouteLoader,
 	'/oauth/authorize': oauthAuthorizeRouteLoader,
+	'/onboarding': onboardingRouteLoader,
 }
 
 export const clientRoutes = {
@@ -122,6 +125,7 @@ export const clientRoutes = {
 	'/community': <CommunityRoute />,
 	'/community/:listingId': <CommunityDetailRoute />,
 	'/login': <LoginRoute />,
+	'/onboarding': <OnboardingRoute />,
 	'/privacy': <PrivacyRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,

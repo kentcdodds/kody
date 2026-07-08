@@ -1,13 +1,16 @@
 # Using Kody
 
-Documentation for people who already connect their agent to Kody over MCP. Setup
-and repository development live elsewhere
-([contributing docs](../contributing/index.md)).
+Documentation for people who connect their agent to Kody over MCP. Setup and
+repository development live elsewhere
+([contributing docs](../contributing/index.md)). The in-app Get started page
+(`/onboarding`) walks through connecting a host for the first time.
 
 Read in order for a full tour, or jump to a topic.
 
 ## Guides
 
+- [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
+  OAuth, and use the setup prompt
 - [First steps — what to ask Kody to do](./first-steps.md)
 - [Search](./search.md)
 - [Execute and workflows](./execute.md) — includes per-user MCP instruction

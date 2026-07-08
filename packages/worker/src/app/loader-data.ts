@@ -250,6 +250,14 @@ export type AccountProfileLoaderData = {
 	displayName: string
 }
 
+export type OnboardingLoaderData = {
+	ok: true
+	mcpServerUrl: string
+	setupPrompt: string
+	hasMcpClient: boolean
+	needsOnboarding: boolean
+}
+
 export type AccountTwoFactorLoaderData = {
 	ok: true
 	enabled: boolean
@@ -442,6 +450,7 @@ export type AppLoaderData = {
 	adminUsage?: AdminUsageLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
+	onboarding?: OnboardingLoaderData
 	accountTwoFactor?: AccountTwoFactorLoaderData
 	accountPasskeys?: AccountPasskeysLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData

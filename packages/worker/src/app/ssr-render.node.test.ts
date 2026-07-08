@@ -8,7 +8,9 @@ import {
 } from '#app/auth-session.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
+import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
+import { buildOnboardingSetupPrompt } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 
@@ -246,6 +248,44 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		username: 'account-user',
 		displayName: 'account-user',
 	})
+	expect(accountProps.loaderData?.onboarding).toEqual({
+		ok: true,
+		mcpServerUrl: 'https://example.com/mcp',
+		setupPrompt: buildOnboardingSetupPrompt(),
+		hasMcpClient: false,
+		needsOnboarding: true,
+	})
+	expect(accountHtml).toContain('Connect your AI agent')
+	expect(accountHtml).toContain('/onboarding')
+
+	const onboardingResponse = await runHtmlHandler(
+		createOnboardingHandler(env),
+		new Request('https://example.com/onboarding', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(onboardingResponse.status).toBe(200)
+	const onboardingHtml = await readResponseText(onboardingResponse)
+	expect(onboardingHtml).toContain('Get started with Kody')
+	expect(onboardingHtml).toContain('https://example.com/mcp')
+	expect(onboardingHtml).toContain(buildOnboardingSetupPrompt())
+	const onboardingProps = readAppRootProps(onboardingHtml)
+	expect(onboardingProps.loaderData?.onboarding).toEqual({
+		ok: true,
+		mcpServerUrl: 'https://example.com/mcp',
+		setupPrompt: buildOnboardingSetupPrompt(),
+		hasMcpClient: false,
+		needsOnboarding: true,
+	})
+
+	const anonymousOnboardingResponse = await runHtmlHandler(
+		createOnboardingHandler(env),
+		new Request('https://example.com/onboarding'),
+	)
+	expect(anonymousOnboardingResponse.status).toBe(302)
+	expect(anonymousOnboardingResponse.headers.get('Location')).toBe(
+		'https://example.com/login?redirectTo=%2Fonboarding',
+	)
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),

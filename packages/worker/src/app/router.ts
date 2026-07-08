@@ -80,6 +80,10 @@ import {
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
+import {
+	createOnboardingApiHandler,
+	createOnboardingHandler,
+} from '#app/handlers/onboarding.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import {
@@ -121,6 +125,8 @@ export function createAppRouter(env: Env) {
 			health: createHealthHandler(env),
 			login: createLoginHandler(env),
 			privacy: createPrivacyHandler(env),
+			onboarding: createOnboardingHandler(env),
+			onboardingApi: createOnboardingApiHandler(env),
 			resetPassword: createResetPasswordHandler(env),
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),
