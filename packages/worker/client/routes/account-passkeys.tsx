@@ -159,6 +159,10 @@ export function AccountPasskeysRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({ response: registrationResponse }),
 			})
+			if (verificationResponse.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const verificationPayload = await readJson<{
 				ok?: boolean
 				error?: string

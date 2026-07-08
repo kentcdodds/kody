@@ -218,7 +218,9 @@ export function AccountTwoFactorRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			await postTwoFactorAction({ intent: 'cancel' })
+			const payload = await postTwoFactorAction({ intent: 'cancel' })
+			// A null payload means a 401 redirect is already in flight.
+			if (!payload) return
 			setup = null
 			confirmCode = ''
 		} catch (error) {
