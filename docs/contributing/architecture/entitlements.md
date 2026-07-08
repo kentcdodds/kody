@@ -132,11 +132,19 @@ Rules:
   against the limit instead of an accumulating count: the enforcement point
   passes the candidate size via `getCurrent` with `requested: 0`. There is no
   built-in counter for these.
-- `maxStorageBytes` is defined in the limits config but **still not enforced**;
-  it has no built-in counter and requires `getCurrent` when it gains an
-  enforcement point. The per-message `email_message_bytes` cap bounds each
-  stored email's size but is deliberately **not** full storage-bytes accounting
-  — that remains a separate effort.
+- **Storage-byte limits** (`storage_bytes`) use a built-in D1 byte estimate for
+  user-owned rows with durable payloads (`email_messages.raw_size` plus
+  extracted message bodies/metadata, externally stored attachments, values,
+  encrypted secrets, memories, saved-package projections, jobs, repo/session
+  metadata, package invocation results, package runtime debug rows, and
+  published artifact metadata). StorageRunner Durable Object buckets expose
+  their own `estimatedBytes`; write chokepoints that target a specific bucket
+  pass `getCurrent` as `D1 estimate + target bucket estimate` and `requested` as
+  the candidate payload size when known. The counter intentionally does **not**
+  attempt to scan Cloudflare Artifacts repository contents, KV snapshot/bundle
+  bodies, R2 object listings beyond `email_messages.raw_size`, or Vectorize:
+  those stores either lack reliable byte metadata or are derived from D1 and are
+  documented in `data-storage.md`.
 
 Because the plan check happens before any counting, enforcement adds zero
 counting overhead for NULL-plan users.
@@ -198,20 +206,20 @@ The exemplar is job scheduling: `createJob` in
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                    |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                         |
-| `package_services`            | `service_start` capability path                                                    |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                         |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                  |
-| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan backstop)         |
-| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback)        |
-| `stored_email_messages`       | `handleInboundEmail` before storage (NULL-plan fallback)                           |
-| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size, NULL-plan fallback) |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`   |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)       |
-| `storage_bytes`               | not yet enforced                                                                   |
+| Resource                      | Enforcement point                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                |
+| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                     |
+| `package_services`            | `service_start` capability path                                                                                                |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                     |
+| `repo_sessions`               | `repo_open_session` before creating a new session                                                                              |
+| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan backstop)                                                     |
+| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback)                                                    |
+| `stored_email_messages`       | `handleInboundEmail` before storage (NULL-plan fallback)                                                                       |
+| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size, NULL-plan fallback)                                             |
+| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                               |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for NULL plan)                                                   |
+| `storage_bytes`               | D1 payload writes (values, secrets, memories, saved-package projections, email storage) and StorageRunner write tools/app RPCs |
 
 ## Related tables and coordination
 

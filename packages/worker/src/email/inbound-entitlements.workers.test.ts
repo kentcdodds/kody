@@ -97,6 +97,18 @@ async function bulkInsertStoredMessages(userId: string, count: number) {
 		.run()
 }
 
+async function insertStoredMessageBytes(userId: string, rawSize: number) {
+	const now = new Date().toISOString()
+	await env.APP_DB.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, raw_size,
+			processing_status, created_at, updated_at
+		) VALUES (?, 'inbound', ?, 'bulk@example.com', 'Bulk', ?, 'stored', ?, ?)`,
+	)
+		.bind(`storage-bytes-${crypto.randomUUID()}`, userId, rawSize, now, now)
+		.run()
+}
+
 async function readRejectionEvents(userId: string) {
 	const { results } = await env.APP_DB.prepare(
 		`SELECT id, detail_json FROM email_delivery_events
@@ -189,6 +201,30 @@ test('inbound email enforces personal-plan receive, storage, and size limits the
 	expect(await readDailyReceiveCounter(storageCapUserId)).toBe(1)
 	expect(
 		(await readRejectionEvents(storageCapUserId)).detailed[0]?.detail,
+	).toMatchObject({
+		phase: 'entitlement',
+	})
+
+	const storageBytesEmail = `storage-bytes-${crypto.randomUUID()}@example.com`
+	const storageBytesUserId =
+		await createStableUserIdFromEmail(storageBytesEmail)
+	const storageBytesLimit = planLimits.personal.maxStorageBytes
+	if (storageBytesLimit === null)
+		throw new Error('Expected a numeric personal storage byte cap.')
+	const { address: storageBytesAddress } = await seedAccountWithPlan({
+		email: storageBytesEmail,
+		plan: 'personal',
+	})
+	await insertStoredMessageBytes(storageBytesUserId, storageBytesLimit)
+
+	const storageBytesMessage = buildInboundMessage(storageBytesAddress)
+	await handleInboundEmail(storageBytesMessage, createInboundEnv())
+	expect(storageBytesMessage.rejectedReason).toBe(
+		'Recipient mailbox is over quota.',
+	)
+	expect(await readDailyReceiveCounter(storageBytesUserId)).toBe(0)
+	expect(
+		(await readRejectionEvents(storageBytesUserId)).detailed[0]?.detail,
 	).toMatchObject({
 		phase: 'entitlement',
 	})

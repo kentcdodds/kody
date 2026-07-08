@@ -41,6 +41,7 @@ export const valueSetCapability = defineDomainCapability(
 			const value = await saveValue({
 				env: ctx.env,
 				userId: user.userId,
+				userEmail: user.email,
 				name,
 				value: args.value,
 				scope: args.scope,

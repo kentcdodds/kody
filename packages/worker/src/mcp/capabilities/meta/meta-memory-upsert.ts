@@ -106,6 +106,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 			const result = await upsertMemory({
 				env: ctx.env,
 				userId: user.userId,
+				userEmail: user.email,
 				memoryId: args.memory_id ?? null,
 				category: args.category ?? null,
 				subject: args.subject,

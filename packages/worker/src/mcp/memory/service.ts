@@ -18,6 +18,10 @@ import { buildMemoryEmbedText } from './memory-embed.ts'
 import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
 import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'
 import {
+	assertWithinStorageBytesEntitlement,
+	estimateEntitlementStorageEntryBytes,
+} from '#worker/entitlements/service.ts'
+import {
 	type McpMemoryRow,
 	type MemoryRecord,
 	type MemorySearchMatch,
@@ -63,6 +67,7 @@ function logMemoryVectorSyncError(input: {
 
 type MemoryOwnerContext = {
 	userId: string
+	userEmail?: string | null
 	storageContext?: StorageContext | null
 }
 
@@ -171,6 +176,25 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 				last_accessed_at: null,
 				deleted_at: null,
 			}
+
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: estimateEntitlementStorageEntryBytes({
+			key: row.id,
+			value: {
+				category: row.category,
+				status: row.status,
+				subject: row.subject,
+				summary: row.summary,
+				details: row.details,
+				tagsJson: row.tags_json,
+				sourceUrisJson: row.source_uris_json,
+				dedupeKey: row.dedupe_key,
+			},
+		}),
+	})
 
 	if (existing) {
 		const updated = await updateMemory(input.env.APP_DB, input.userId, row.id, {

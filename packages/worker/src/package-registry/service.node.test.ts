@@ -639,6 +639,28 @@ function createEntitlementsDatabase(input: {
 							) {
 								return { count: savedPackageCount } as T
 							}
+							const storageByteTables = [
+								'email_attachments',
+								'email_messages',
+								'value_entries',
+								'secret_entries',
+								'mcp_memories',
+								'saved_packages',
+								'entity_sources',
+								'jobs',
+								'repo_sessions',
+								'package_invocations',
+								'package_runtime_runs',
+								'package_runtime_logs',
+								'published_bundle_artifacts',
+							]
+							if (
+								storageByteTables.some((table) =>
+									query.includes(`FROM ${table}`),
+								)
+							) {
+								return { count: 0 } as T
+							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 					}

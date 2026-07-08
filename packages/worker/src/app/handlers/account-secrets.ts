@@ -221,6 +221,7 @@ async function handleValueSetAction(input: {
 	const saved = await saveValue({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
+		userEmail: input.user.mcpUser.email,
 		name,
 		value,
 		scope: 'user',
@@ -348,6 +349,7 @@ async function handleConnectOauthAction(input: {
 	const integrationName = await saveIntegrationConfig({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
+		userEmail: input.user.mcpUser.email,
 		provider,
 		tokenUrl,
 		apiBaseUrl,
@@ -545,6 +547,7 @@ async function handleOAuthExchangeAction(input: {
 async function saveIntegrationConfig(input: {
 	env: Env
 	userId: string
+	userEmail: string
 	provider: string
 	tokenUrl: string
 	apiBaseUrl: string | null
@@ -590,6 +593,7 @@ async function saveIntegrationConfig(input: {
 	await saveValue({
 		env: input.env,
 		userId: input.userId,
+		userEmail: input.userEmail,
 		name: buildIntegrationValueName(integration.name),
 		value: JSON.stringify(integration),
 		scope: 'user',

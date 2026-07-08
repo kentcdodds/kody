@@ -35,7 +35,11 @@ import {
 } from '#worker/package-retrievers/manifest-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
-import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import {
+	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
+	estimateEntitlementStorageEntryBytes,
+} from '#worker/entitlements/service.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -116,6 +120,22 @@ export async function refreshSavedPackageProjection(input: {
 	const existing = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
 		packageId: input.packageId,
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: estimateEntitlementStorageEntryBytes({
+			key: row.id,
+			value: {
+				name: row.name,
+				kodyId: row.kody_id,
+				description: row.description,
+				tagsJson: row.tags_json,
+				searchText: row.search_text,
+				sourceId: row.source_id,
+			},
+		}),
 	})
 	if (existing) {
 		await updateSavedPackage(input.env.APP_DB, {

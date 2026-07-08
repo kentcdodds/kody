@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	assertWithinStorageBytesEntitlement,
+	estimateEntitlementStorageEntryBytes,
+	readUserD1StorageBytes,
+} from '#worker/entitlements/service.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
@@ -43,6 +48,10 @@ type StorageDeleteResult = {
 
 type StorageClearResult = {
 	ok: true
+}
+
+type StorageEstimateResult = {
+	estimatedBytes: number
 }
 
 function buildStorageRunnerName(userId: string, storageId: string) {
@@ -312,6 +321,10 @@ class StorageRunnerBase extends DurableObject<Env> {
 		return { ok: true }
 	}
 
+	async getEstimatedBytes(): Promise<StorageEstimateResult> {
+		return { estimatedBytes: this.ctx.storage.sql.databaseSize }
+	}
+
 	async listValues(input: {
 		prefix?: string | null
 		pageSize?: number
@@ -395,6 +408,7 @@ export function storageRunnerRpc(input: {
 		}) => Promise<StorageSetResult>
 		deleteValue: (payload: { key: string }) => Promise<StorageDeleteResult>
 		clearStorage: () => Promise<StorageClearResult>
+		getEstimatedBytes: () => Promise<StorageEstimateResult>
 		listValues: (payload: {
 			prefix?: string | null
 			pageSize?: number
@@ -412,9 +426,35 @@ export function storageRunnerRpc(input: {
 	}
 }
 
+export async function assertStorageRunnerWriteWithinEntitlement(input: {
+	env: Env
+	userId: string
+	email: string | null | undefined
+	storageId: string
+	requested?: number
+}) {
+	const runner = storageRunnerRpc({
+		env: input.env,
+		userId: input.userId,
+		storageId: input.storageId,
+	})
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.email,
+		requested: input.requested,
+		getCurrent: async () =>
+			(await readUserD1StorageBytes({
+				db: input.env.APP_DB,
+				userId: input.userId,
+			})) + (await runner.getEstimatedBytes()).estimatedBytes,
+	})
+}
+
 export function createStorageKodyTools(input: {
 	env: Env
 	userId: string
+	email?: string | null
 	storageId: string
 	writable: boolean
 }) {
@@ -459,14 +499,24 @@ export function createStorageKodyTools(input: {
 							writable?: unknown
 						})
 					: {}
+			const writable = input.writable
+				? payload.writable === undefined
+					? true
+					: Boolean(payload.writable)
+				: false
+			if (writable) {
+				await assertStorageRunnerWriteWithinEntitlement({
+					env: input.env,
+					userId: input.userId,
+					email: input.email,
+					storageId: input.storageId,
+					requested: 1,
+				})
+			}
 			return await runner.sqlQuery({
 				query: typeof payload.query === 'string' ? payload.query : '',
 				params: Array.isArray(payload.params) ? payload.params : undefined,
-				writable: input.writable
-					? payload.writable === undefined
-						? true
-						: Boolean(payload.writable)
-					: false,
+				writable,
 			})
 		},
 		...(input.writable
@@ -476,8 +526,19 @@ export function createStorageKodyTools(input: {
 							typeof args === 'object' && args !== null
 								? (args as { key?: unknown; value?: unknown })
 								: {}
+						const key = typeof payload.key === 'string' ? payload.key : ''
+						await assertStorageRunnerWriteWithinEntitlement({
+							env: input.env,
+							userId: input.userId,
+							email: input.email,
+							storageId: input.storageId,
+							requested: estimateEntitlementStorageEntryBytes({
+								key,
+								value: payload.value,
+							}),
+						})
 						return await runner.setValue({
-							key: typeof payload.key === 'string' ? payload.key : '',
+							key,
 							value: payload.value,
 						})
 					},

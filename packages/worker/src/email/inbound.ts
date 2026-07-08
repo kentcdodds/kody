@@ -8,6 +8,7 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
+	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -319,6 +320,12 @@ export async function handleInboundEmail(
 			requested: 0,
 			getCurrent: async () => message.rawSize,
 			fallbackLimit: nullPlanEmailFallbackLimits.email_message_bytes,
+		})
+		await assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			userId,
+			email: account.email,
+			requested: message.rawSize,
 		})
 		await consumeDailyEntitlement({
 			db: env.APP_DB,
