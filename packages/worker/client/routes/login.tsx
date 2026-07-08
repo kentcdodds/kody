@@ -10,6 +10,7 @@ import {
 	readRouterPathname,
 	readRouterSearch,
 } from '#client/router-location.tsx'
+import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -29,6 +30,36 @@ import {
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
+type AuthProviderInfo = { id: string; label: string }
+
+async function fetchEnabledAuthProviders(
+	signal?: AbortSignal,
+): Promise<Array<AuthProviderInfo>> {
+	try {
+		const response = await fetch('/auth/providers.json', {
+			headers: { Accept: 'application/json' },
+			signal,
+		})
+		const payload = await response.json().catch(() => null)
+		if (!response.ok || payload?.ok !== true) return []
+		const providers = Array.isArray(payload.providers) ? payload.providers : []
+		return providers.filter(
+			(provider: unknown): provider is AuthProviderInfo =>
+				typeof provider === 'object' &&
+				provider !== null &&
+				typeof (provider as AuthProviderInfo).id === 'string' &&
+				typeof (provider as AuthProviderInfo).label === 'string',
+		)
+	} catch {
+		return []
+	}
+}
+
+function buildProviderStartPath(providerId: string, redirectTo: string | null) {
+	return redirectTo
+		? `/auth/${providerId}?redirectTo=${encodeURIComponent(redirectTo)}`
+		: `/auth/${providerId}`
+}
 
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
@@ -69,6 +100,7 @@ export function LoginRoute(handle: Handle) {
 	let message: string | null = null
 	let sessionStatus: SessionStatus = 'idle'
 	let sessionEmail = ''
+	let authProviders: Array<AuthProviderInfo> = []
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
 
@@ -95,9 +127,13 @@ export function LoginRoute(handle: Handle) {
 			if (sessionStatus !== 'idle') return
 			sessionStatus = 'loading'
 
-			const session = await fetchSessionInfo(signal)
+			const [session, providers] = await Promise.all([
+				fetchSessionInfo(signal),
+				fetchEnabledAuthProviders(signal),
+			])
 			if (signal.aborted) return
 			sessionEmail = session?.email ?? ''
+			authProviders = providers
 
 			sessionStatus = 'ready'
 			if (sessionEmail) {
@@ -242,6 +278,10 @@ export function LoginRoute(handle: Handle) {
 			resetAuthState()
 		}
 		const redirectTo = getCurrentRedirectTo(handle)
+		const oauthErrorMessage =
+			!message && status === 'idle'
+				? getOauthLoginErrorMessage(getSearchParams(handle).get('oauthError'))
+				: null
 		const isSignup = mode === 'signup'
 		const isSubmitting = status === 'submitting'
 		const title = isSignup ? 'Create your account' : 'Welcome back'
@@ -260,6 +300,18 @@ export function LoginRoute(handle: Handle) {
 					<h2 mix={css(pageTitleCss)}>{title}</h2>
 					<p mix={css(pageDescriptionCss)}>{description}</p>
 				</header>
+				{oauthErrorMessage ? (
+					<p
+						aria-live="polite"
+						mix={css({
+							color: colors.error,
+							fontSize: typography.fontSize.sm,
+							margin: 0,
+						})}
+					>
+						{oauthErrorMessage}
+					</p>
+				) : null}
 				<form mix={[css(cardCss), on('submit', handleSubmit)]}>
 					{isSignup ? (
 						<label mix={css(fieldCss)}>
@@ -378,6 +430,35 @@ export function LoginRoute(handle: Handle) {
 						</p>
 					) : null}
 				</form>
+				{authProviders.length > 0 ? (
+					<div mix={css({ display: 'grid', gap: spacing.sm })}>
+						<p
+							mix={css({
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+								margin: 0,
+								textAlign: 'center' as const,
+							})}
+						>
+							or
+						</p>
+						{authProviders.map((provider) => (
+							<form
+								method="post"
+								action={buildProviderStartPath(provider.id, redirectTo)}
+								mix={css({ display: 'grid' })}
+							>
+								<button
+									type="submit"
+									disabled={isSubmitting}
+									mix={css(secondaryButtonCss)}
+								>
+									Continue with {provider.label}
+								</button>
+							</form>
+						))}
+					</div>
+				) : null}
 				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<a
 						href={buildAuthPath(isSignup ? 'login' : 'signup', redirectTo)}

@@ -89,10 +89,13 @@ function shouldApplyLongLivedAssetCaching(pathname: string, env: Env) {
 
 // Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
 // so brute-force attempts cannot fan out across parallel paths (password login,
-// OAuth inline login, password-reset request/confirm, two-factor code
-// verification and management, and passkey sign-in).
+// OAuth inline login, social-login starts, password-reset request/confirm,
+// two-factor code verification and management, and passkey sign-in).
 const rateLimitedAuthPaths = new Set([
 	'/auth',
+	'/auth/github',
+	'/auth/google',
+	'/auth/x',
 	'/oauth/authorize',
 	'/password-reset',
 	'/password-reset/confirm',

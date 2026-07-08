@@ -108,6 +108,11 @@ automatically:
   `POST /__maintenance/reindex-capabilities` to refresh all capability-search
   vectors in Vectorize: built-in kody, memories, jobs, and saved packages. Saved
   package projections also refresh when packages are saved or published.)
+- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` /
+  `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET` (optional Worker
+  secrets; enable the "Sign in with GitHub / Google / X" login buttons. A
+  `MOCK_`-prefixed client id activates the in-worker mock flow on non-production
+  runtimes. See `docs/contributing/social-login.md`.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.
@@ -134,6 +139,13 @@ Configure these GitHub Actions secrets and variables for workflows:
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
   when set; synced like other optional secrets)
+- `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET`,
+  `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_X_CLIENT_ID` /
+  `OAUTH_X_CLIENT_SECRET` (optional; social login provider app credentials. The
+  production deploy workflow syncs them to the Worker as the unprefixed
+  `GITHUB_CLIENT_ID`-style secrets — the `OAUTH_` prefix exists because GitHub
+  Actions reserves the `GITHUB_*` secret namespace. See
+  `docs/contributing/social-login.md` for provider app setup.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)

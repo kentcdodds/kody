@@ -6,10 +6,10 @@ import {
 } from '#app/password-reset-tokens.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
 import {
-	getUsernameValidationError,
-	normalizeUsername,
-	usernameFromEmail,
-} from '#app/username.ts'
+	getAvailableGeneratedUsername,
+	userExistsByUsername,
+} from '#app/generated-username.ts'
+import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'
@@ -39,42 +39,6 @@ export type AdminCreatedUser = {
 	username: string
 	setupLink: string
 	setupTokenExpiresAt: number
-}
-
-async function userExistsByUsername(db: D1Database, username: string) {
-	const row = await db
-		.prepare(`SELECT id FROM users WHERE username = ?`)
-		.bind(username)
-		.first<{ id: number }>()
-	return Boolean(row)
-}
-
-async function getAvailableGeneratedUsername(db: D1Database, email: string) {
-	const base = usernameFromEmail(email)
-	if (
-		!getUsernameValidationError(base) &&
-		!(await userExistsByUsername(db, base))
-	) {
-		return base
-	}
-
-	const prefix = base.slice(0, 27).replace(/[-_]+$/g, '') || 'user'
-	for (let suffix = 2; suffix <= 100; suffix += 1) {
-		const candidate = `${prefix}-${suffix}`
-		if (
-			!getUsernameValidationError(candidate) &&
-			!(await userExistsByUsername(db, candidate))
-		) {
-			return candidate
-		}
-	}
-
-	const bytes = new Uint8Array(3)
-	crypto.getRandomValues(bytes)
-	const random = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'))
-		.join('')
-		.toLowerCase()
-	return `user-${random}`
 }
 
 async function resolveUsername(input: {

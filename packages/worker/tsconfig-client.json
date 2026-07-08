@@ -18,6 +18,7 @@
 		"./client/**/*.ts",
 		"./client/**/*.tsx",
 		"./client/**/*.d.ts",
+		"./src/app/oauth-login-errors.ts",
 		"./src/app/permissions.ts",
 		"./src/app/routes.ts",
 		"./src/app/frame-constants.ts",

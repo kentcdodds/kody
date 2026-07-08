@@ -287,6 +287,28 @@ control, the recommended approach is a password-reauthenticated reveal endpoint
 combined with server-side session invalidation. Do not silently reintroduce
 plaintext reveal without also considering that hardening.
 
+## Social login (GitHub / Google / X)
+
+Kody can act as an OAuth 2.0 client of GitHub, Google, and X for browser
+sign-in. Provider identities live in the `oauth_connections` table; handlers
+live in `packages/worker/src/app/handlers/auth-provider.ts` with the provider
+definitions in `packages/worker/src/app/oauth-providers.ts`.
+
+- `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier in the
+  signed `kody_oauth_login` cookie); `GET /auth/:provider/callback` completes it
+  and issues the normal `kody_session` cookie
+- Existing connections sign in directly; the two-factor gate applies exactly as
+  for password and passkey logins
+- A signed-in user hitting the callback links the provider identity to their
+  account; a provider-verified email matching an existing account auto-links and
+  signs in; otherwise account creation follows the signup posture (production
+  stays invite-gated, so OAuth signup is non-production only)
+- Buttons only render for providers whose client id/secret env vars are set;
+  `MOCK_`-prefixed client ids activate an in-worker mock flow on non-production
+  runtimes for dev and E2E tests
+
+Setup and operational details: `docs/contributing/social-login.md`.
+
 ## OAuth for MCP
 
 OAuth endpoints are implemented in `packages/worker/src/oauth-handlers.ts` and

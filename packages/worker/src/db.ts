@@ -69,6 +69,20 @@ export const invitesTable = table({
 	primaryKey: 'code',
 })
 
+export const oauthConnectionsTable = table({
+	name: 'oauth_connections',
+	columns: {
+		id: c.integer(),
+		provider_name: c.text(),
+		provider_user_id: c.text(),
+		user_id: c.integer(),
+		provider_display_name: c.text(),
+		created_at: c.text(),
+		updated_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
 export function createDb(db: D1Database) {
 	return createDatabase(createD1DataTableAdapter(db), {
 		now: () => new Date().toISOString(),

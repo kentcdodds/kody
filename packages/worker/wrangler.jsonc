@@ -404,6 +404,15 @@
 				"WORKFLOW_CONCURRENT_LIMIT": "100",
 				"COOKIE_SECRET": "LOCAL_AND_PREVIEW_COOKIE_SECRET_32_CHARS_MINIMUM",
 				"SECRET_STORE_KEY": "LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM_OK",
+				// MOCK_ client ids activate the in-worker social-login mock
+				// flow (non-production runtimes only) so E2E tests can cover
+				// the full redirect round-trip without provider apps.
+				"GITHUB_CLIENT_ID": "MOCK_GITHUB_CLIENT_ID",
+				"GITHUB_CLIENT_SECRET": "MOCK_GITHUB_CLIENT_SECRET",
+				"GOOGLE_CLIENT_ID": "MOCK_GOOGLE_CLIENT_ID",
+				"GOOGLE_CLIENT_SECRET": "MOCK_GOOGLE_CLIENT_SECRET",
+				"X_CLIENT_ID": "MOCK_X_CLIENT_ID",
+				"X_CLIENT_SECRET": "MOCK_X_CLIENT_SECRET",
 			},
 		},
 	},

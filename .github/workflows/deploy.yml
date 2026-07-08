@@ -119,13 +119,23 @@ jobs:
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.OAUTH_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.OAUTH_GOOGLE_CLIENT_SECRET }}
+          X_CLIENT_ID: ${{ secrets.OAUTH_X_CLIENT_ID }}
+          X_CLIENT_SECRET: ${{ secrets.OAUTH_X_CLIENT_SECRET }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
           --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
-          CAPABILITY_REINDEX_SECRET
+          CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
+          --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
+          GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
+          --set-from-env-optional X_CLIENT_ID --set-from-env-optional
+          X_CLIENT_SECRET
 
       - name: 🗄️ Apply D1 Migrations
         env:

@@ -70,6 +70,21 @@ URLs and headers where the MCP runtime supports them. Host allowlists and
 capability policies apply per secret. There are no GitHub-specific Worker
 environment variables.
 
+## Social login (GitHub / Google / X)
+
+Optional Worker secrets (see `packages/worker/src/app/oauth-providers.ts` and
+[`social-login.md`](./social-login.md)):
+
+- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+- `X_CLIENT_ID` / `X_CLIENT_SECRET`
+
+A provider's login button only renders when both of its values are set. A
+`MOCK_`-prefixed client id activates the in-worker mock provider flow on
+non-production runtimes (used by local dev and E2E tests). In GitHub Actions the
+values live under `OAUTH_`-prefixed secret names because Actions reserves
+`GITHUB_*`; the deploy workflow maps them to the unprefixed Worker secrets.
+
 ## Saved-secret encryption (`SECRET_STORE_KEY`)
 
 Required Worker secret used to derive the AES-GCM key for encrypting saved
