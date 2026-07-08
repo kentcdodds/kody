@@ -978,14 +978,26 @@ async function buildPackageCandidates(input: {
 }): Promise<Array<SearchCandidate>> {
 	if (input.rows.length === 0) return []
 	const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
-	const vectorScoresByRecordId = input.offline
-		? null
-		: await queryPackageVectorScores({
+	let vectorScoresByRecordId: Map<string, number> | null = null
+	if (!input.offline) {
+		try {
+			vectorScoresByRecordId = await queryPackageVectorScores({
 				env: input.env,
 				query: input.query,
 				rows: input.rows,
 				limit: input.limit,
 			})
+		} catch (error) {
+			// Degrade to lexical/deterministic ranking rather than failing the
+			// whole search when the vector index is unreachable.
+			console.warn(
+				JSON.stringify({
+					message: 'package vector query failed, using lexical ranking',
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			)
+		}
+	}
 	const candidates = input.rows
 		.map((entry) => {
 			const exports = Array.isArray(entry.projection.exports)

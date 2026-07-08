@@ -336,6 +336,118 @@ test('system email retention prunes old operator-owned messages and counters', a
 	).toMatchObject({ results: [{ id: 'fresh-event' }] })
 })
 
+test('system email retention deletes blobs before rows and keeps rows when the blob delete fails', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-07-06T12:00:00.000Z')
+	const old = new Date(
+		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	const rawMimeKey = `email-raw:v1:${systemEmailOwnerId}/blob-ordering-message`
+	await env.EMAIL_BLOBS.put(rawMimeKey, 'raw mime payload')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
+		) VALUES
+			('blob-ordering-message', 'inbound', ?, 'a@example.net', 'Blob', 'stored', ?, ?, ?),
+			('plain-old-message', 'inbound', ?, 'b@example.net', 'Plain', 'stored', NULL, ?, ?)`,
+	)
+		.bind(
+			systemEmailOwnerId,
+			rawMimeKey,
+			old,
+			old,
+			systemEmailOwnerId,
+			old,
+			old,
+		)
+		.run()
+	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
+		get(target, property, receiver) {
+			if (property === 'delete') {
+				return async () => {
+					throw new Error('simulated R2 outage')
+				}
+			}
+			return Reflect.get(target, property, receiver)
+		},
+	})
+
+	const failed = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: failingBlobs,
+		now,
+	})
+
+	// The blob-backed row survives the failed blob delete; only the plain row
+	// is pruned, and the blob is still readable for the retry.
+	expect(failed.deletedMessages).toBe(1)
+	expect(failed.deletedRawMimeBlobs).toBe(0)
+	expect(failed.blobDeleteErrors).toBe(1)
+	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).not.toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_messages WHERE id = 'blob-ordering-message'`,
+		).first(),
+	).toMatchObject({ id: 'blob-ordering-message' })
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_messages WHERE id = 'plain-old-message'`,
+		).first(),
+	).toBeNull()
+
+	const retried = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		now,
+	})
+
+	expect(retried.deletedMessages).toBe(1)
+	expect(retried.deletedRawMimeBlobs).toBe(1)
+	expect(retried.blobDeleteErrors).toBe(0)
+	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_messages WHERE id = 'blob-ordering-message'`,
+		).first(),
+	).toBeNull()
+})
+
+test('system email retention skips blob-backed rows when the blobs binding is missing', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-07-06T12:00:00.000Z')
+	const old = new Date(
+		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	const rawMimeKey = `email-raw:v1:${systemEmailOwnerId}/binding-missing-message`
+	await env.EMAIL_BLOBS.put(rawMimeKey, 'raw mime payload')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
+		) VALUES ('binding-missing-message', 'inbound', ?, 'a@example.net', 'Blob', 'stored', ?, ?, ?)`,
+	)
+		.bind(systemEmailOwnerId, rawMimeKey, old, old)
+		.run()
+
+	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
+
+	expect(result.deletedMessages).toBe(0)
+	expect(result.skippedMissingBlobBinding).toBe(1)
+	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).not.toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_messages WHERE id = 'binding-missing-message'`,
+		).first(),
+	).toMatchObject({ id: 'binding-missing-message' })
+
+	// Clean up so the skipped row does not leak into other tests.
+	const cleanup = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		now,
+	})
+	expect(cleanup.deletedMessages).toBe(1)
+})
+
 test('system email retention drains delivery-event backlogs larger than one batch', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')

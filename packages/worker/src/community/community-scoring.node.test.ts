@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as CommunityRepo from './repo.ts'
 import { type CommunityListingRecord } from './types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -7,14 +8,20 @@ const mockModule = vi.hoisted(() => ({
 	countCommunityForksByListingIds: vi.fn(),
 }))
 
-vi.mock('./repo.ts', () => ({
-	listCommunityListingCandidates: (...args: Array<unknown>) =>
-		mockModule.listCommunityListingCandidates(...args),
-	getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
-		mockModule.getCommunityRatingAggregatesByListingIds(...args),
-	countCommunityForksByListingIds: (...args: Array<unknown>) =>
-		mockModule.countCommunityForksByListingIds(...args),
-}))
+vi.mock('./repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CommunityRepo>()
+	return {
+		// Pure helper used by the service to decide whether the SQL LIKE
+		// pre-filter was applied; keep the real implementation.
+		extractCommunityListingLikeTokens: actual.extractCommunityListingLikeTokens,
+		listCommunityListingCandidates: (...args: Array<unknown>) =>
+			mockModule.listCommunityListingCandidates(...args),
+		getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
+			mockModule.getCommunityRatingAggregatesByListingIds(...args),
+		countCommunityForksByListingIds: (...args: Array<unknown>) =>
+			mockModule.countCommunityForksByListingIds(...args),
+	}
+})
 
 const {
 	COMMUNITY_SEARCH_CANDIDATE_LIMIT,

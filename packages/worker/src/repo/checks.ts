@@ -914,7 +914,7 @@ export async function runRepoChecks(input: {
 			if (totalBytes > repoChecksSourceMaxTotalBytes) {
 				return {
 					ok: false as const,
-					message: `Repo checks aborted: source root "${sourceRoot || '/'}" exceeds the ${repoChecksSourceMaxTotalBytes}-byte (15 MiB) publish check limit. Remove or shrink large files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
+					message: `Repo checks aborted: source root "${sourceRoot || '/'}" exceeds the ${repoChecksSourceMaxTotalBytes}-byte (${Math.round(repoChecksSourceMaxTotalBytes / (1024 * 1024))} MiB) publish check limit. Remove or shrink large files that should not be published (for example build output, vendored dependencies, or data files) and run the checks again.`,
 				}
 			}
 			collected[path] = content

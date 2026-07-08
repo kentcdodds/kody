@@ -123,7 +123,9 @@ const communityListingSearchTextColumns = [
 
 const maxCommunityListingLikeTokens = 8
 
-function extractCommunityListingLikeTokens(query: string): Array<string> {
+export function extractCommunityListingLikeTokens(
+	query: string,
+): Array<string> {
 	// Tokens are restricted to [a-z0-9]+ so they are safe to embed inside
 	// LIKE patterns without wildcard escaping.
 	return Array.from(

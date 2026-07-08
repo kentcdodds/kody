@@ -56,6 +56,13 @@ export function resolveUsageEventsDataset(env: {
 
 const upsertBatchSize = 50
 
+/**
+ * Upper bound for one Analytics Engine SQL API round trip so a hung API can
+ * never stall the scheduled lane; a timeout aborts the fetch and surfaces
+ * through the same error path as a failed query.
+ */
+export const analyticsEngineSqlTimeoutMs = 30_000
+
 const usageRollupAbsoluteUpsertStatement = `
 INSERT INTO usage_rollups (
 	user_id, metric, month,
@@ -73,12 +80,34 @@ ON CONFLICT (user_id, metric, month) DO UPDATE SET
 `.trim()
 
 /**
+ * Half-open [current month start, next month start) UTC bounds for the SQL
+ * time filter, formatted for `toDateTime`. The explicit upper bound keeps
+ * events stamped into a later month (clock skew, backdated writes) from
+ * inflating the current month's rollups.
+ */
+function utcMonthBounds(now: Date) {
+	const toDateTimeArgument = (date: Date) =>
+		`${date.toISOString().slice(0, 'YYYY-MM-DD'.length)} 00:00:00`
+	return {
+		monthStart: toDateTimeArgument(
+			new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+		),
+		nextMonthStart: toDateTimeArgument(
+			new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+		),
+	}
+}
+
+/**
  * Analytics Engine samples data under load, so every aggregate must weight
  * by `_sample_interval`: counts are `sum(_sample_interval)` and value sums
  * are `sum(doubleN * _sample_interval)`. Blob/double positions match the
  * data point layout in `record-usage.ts`.
  */
-function buildMonthToDateAggregateQuery(dataset: string, monthStart: string) {
+function buildMonthToDateAggregateQuery(
+	dataset: string,
+	bounds: { monthStart: string; nextMonthStart: string },
+) {
 	return `
 SELECT
 	blob1 AS user_id,
@@ -89,7 +118,8 @@ SELECT
 	sum(double2 * _sample_interval) AS total_cpu_ms,
 	sum(double3 * _sample_interval) AS total_bytes
 FROM ${dataset}
-WHERE timestamp >= toDateTime('${monthStart}')
+WHERE timestamp >= toDateTime('${bounds.monthStart}')
+	AND timestamp < toDateTime('${bounds.nextMonthStart}')
 GROUP BY blob1, blob2
 FORMAT JSON
 `.trim()
@@ -118,6 +148,7 @@ async function queryAnalyticsEngineSql(input: {
 			authorization: `Bearer ${input.apiToken}`,
 		},
 		body: input.query,
+		signal: AbortSignal.timeout(analyticsEngineSqlTimeoutMs),
 	})
 	const text = await response.text()
 	if (!response.ok) {
@@ -164,7 +195,7 @@ export async function aggregateUsageRollups(
 			env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com',
 		query: buildMonthToDateAggregateQuery(
 			resolveUsageEventsDataset(env),
-			`${month}-01 00:00:00`,
+			utcMonthBounds(now),
 		),
 	})
 

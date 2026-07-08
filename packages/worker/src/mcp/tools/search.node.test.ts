@@ -898,6 +898,78 @@ test('searchUnified ranks packages via user-filtered package vectors when Vector
 	).toBe(false)
 })
 
+test('searchUnified degrades to lexical package ranking when the vector query throws', async () => {
+	let packageVectorQueryAttempts = 0
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
+		CAPABILITY_VECTOR_INDEX: {
+			async query(
+				_values: Array<number>,
+				options: { filter?: Record<string, unknown> },
+			) {
+				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
+					?.kind?.$eq
+				if (kind === 'package') {
+					packageVectorQueryAttempts += 1
+					throw new Error('vectorize unavailable')
+				}
+				return { matches: [] }
+			},
+		},
+	} as unknown as Env
+	const packageRow: PackageSearchRow = {
+		record: {
+			id: 'pkg-inbox',
+			userId: 'user-1',
+			name: 'inbox-summarizer',
+			kodyId: 'inbox-summarizer',
+			description: 'summarize inbox threads',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-pkg-inbox',
+			hasApp: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		projection: {
+			name: 'inbox-summarizer',
+			kodyId: 'inbox-summarizer',
+			description: 'summarize inbox threads',
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			appEntry: null,
+			exports: [],
+			jobs: [],
+			services: [],
+			subscriptions: [],
+			retrievers: [],
+		},
+		readmeSnippet: null,
+	}
+
+	const result = await searchUnified({
+		env,
+		query: 'summarize inbox threads',
+		limit: 5,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: [packageRow],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.offline).toBe(false)
+	expect(packageVectorQueryAttempts).toBe(1)
+	expect(
+		result.matches.some(
+			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
+		),
+	).toBe(true)
+})
+
 test('down remote connector statuses surface only disconnected connectors for signed-in users', async () => {
 	const signedInContext = {
 		user: {

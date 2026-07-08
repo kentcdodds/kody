@@ -35,6 +35,7 @@ import {
 	insertCommunityListing,
 	insertCommunityBan,
 	insertCommunityReport,
+	extractCommunityListingLikeTokens,
 	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
 	resolveCommunityReportRow,
@@ -508,21 +509,26 @@ export async function searchCommunityListings(input: {
 			.sort(compareCommunityListingsByBayesianAndPublishedAt)
 			.slice(0, input.limit)
 	}
-	if (listings.length === 0) {
-		// The SQL LIKE pre-filter found nothing; fall back to a bounded recent
-		// candidate set so vector-threshold matches keep working.
+	const matchesQuery = (listing: CommunityListingRecord) =>
+		isCommunityListingSearchMatch({
+			query: trimmedQuery,
+			document: buildListingSearchDocument(listing),
+		})
+	let matched = listings.filter(matchesQuery)
+	const prefilterApplied =
+		extractCommunityListingLikeTokens(trimmedQuery).length > 0
+	if (matched.length === 0 && prefilterApplied) {
+		// The SQL LIKE pre-filter produced no scoring matches; fall back to a
+		// bounded recent candidate set so vector-threshold matches among other
+		// recent listings keep working. Skipped when the first query was
+		// already unfiltered (no LIKE tokens), since it would return the same
+		// candidates.
 		listings = await listCommunityListingCandidates(input.env.APP_DB, {
 			includeDelisted: false,
 			limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
 		})
+		matched = listings.filter(matchesQuery)
 	}
-
-	const matched = listings.filter((listing) =>
-		isCommunityListingSearchMatch({
-			query: trimmedQuery,
-			document: buildListingSearchDocument(listing),
-		}),
-	)
 	const withAggregates = await attachListingAggregatesBatch(
 		input.env.APP_DB,
 		matched,

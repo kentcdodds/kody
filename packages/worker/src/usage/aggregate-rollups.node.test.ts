@@ -158,9 +158,14 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 	expect((init.headers as Record<string, string>)['authorization']).toBe(
 		'Bearer token-1',
 	)
+	// A hung SQL API must abort instead of stalling the scheduled lane.
+	expect(init.signal).toBeInstanceOf(AbortSignal)
 	const query = String(init.body)
 	expect(query).toContain('FROM kody_usage_events')
-	expect(query).toContain(`toDateTime('2026-07-01 00:00:00')`)
+	// Half-open month bounds: a lower bound alone would let events stamped
+	// into a later month (clock skew, backdated writes) inflate this month.
+	expect(query).toContain(`timestamp >= toDateTime('2026-07-01 00:00:00')`)
+	expect(query).toContain(`timestamp < toDateTime('2026-08-01 00:00:00')`)
 	// Sampling-correct aggregates: counts and sums weight by _sample_interval.
 	expect(query).toContain('sum(_sample_interval) AS event_count')
 	expect(query).toContain(
@@ -211,12 +216,12 @@ test('aggregateUsageRollups honors CLOUDFLARE_API_BASE_URL and the preview datas
 			CLOUDFLARE_API_BASE_URL: 'https://cloudflare-mock.local/',
 			SENTRY_ENVIRONMENT: 'preview',
 		},
-		new Date('2026-07-15T10:00:00.000Z'),
+		new Date('2026-12-15T10:00:00.000Z'),
 	)
 
 	expect(result).toEqual({
 		skipped: false,
-		month: '2026-07',
+		month: '2026-12',
 		upsertedRows: 0,
 		users: 0,
 	})
@@ -227,7 +232,11 @@ test('aggregateUsageRollups honors CLOUDFLARE_API_BASE_URL and the preview datas
 	expect(url).toBe(
 		'https://cloudflare-mock.local/client/v4/accounts/account-1/analytics_engine/sql',
 	)
-	expect(String(init.body)).toContain('FROM kody_usage_events_preview')
+	const query = String(init.body)
+	expect(query).toContain('FROM kody_usage_events_preview')
+	// The upper bound rolls over the UTC year boundary.
+	expect(query).toContain(`timestamp >= toDateTime('2026-12-01 00:00:00')`)
+	expect(query).toContain(`timestamp < toDateTime('2027-01-01 00:00:00')`)
 	expect(batches).toHaveLength(0)
 })
 
@@ -261,4 +270,27 @@ test('aggregateUsageRollups batches large result sets and throws on SQL API erro
 			new Date('2026-07-15T10:00:00.000Z'),
 		),
 	).rejects.toThrow('Analytics Engine SQL query failed (400)')
+})
+
+test('aggregateUsageRollups surfaces a timed-out Analytics Engine fetch as an error', async () => {
+	// AbortSignal.timeout rejects the fetch with a TimeoutError DOMException;
+	// it must propagate through the same error path as a failed query.
+	const fetchMock = vi.fn(async () => {
+		throw new DOMException('The operation timed out.', 'TimeoutError')
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	using _restoreFetch = {
+		[Symbol.dispose]() {
+			vi.unstubAllGlobals()
+		},
+	}
+	const { db, batches } = createFakeDb()
+
+	await expect(
+		aggregateUsageRollups(
+			createAggregationEnv(db),
+			new Date('2026-07-15T10:00:00.000Z'),
+		),
+	).rejects.toThrow('timed out')
+	expect(batches).toHaveLength(0)
 })
