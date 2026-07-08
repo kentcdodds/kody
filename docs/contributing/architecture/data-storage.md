@@ -674,9 +674,9 @@ Current retention policies:
   (excluding the `system:email` owner) keep 365 days, deleted oldest first in
   batches. For rows with `raw_mime_key`, the `EMAIL_BLOBS` R2 blob is deleted
   before the row; if the blob delete fails, those rows are skipped and retried
-  on a later run so blobs are never orphaned. Dependent
-  `email_attachments` rows are deleted before their messages, and threads left
-  with no messages are pruned for the affected users.
+  on a later run so blobs are never orphaned. Dependent `email_attachments` rows
+  are deleted before their messages, and threads left with no messages are
+  pruned for the affected users.
 - `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
