@@ -1066,17 +1066,11 @@ export async function deleteUserAccount(input: {
 		)
 	}
 
-	if (input.env.EMAIL_BLOBS) {
-		result.deletedEmailBlobs = await deleteEmailBlobs({
-			blobs: input.env.EMAIL_BLOBS,
-			keys: inventory.emailRawMimeKeys,
-			warnings,
-		})
-	} else if (inventory.emailRawMimeKeys.length > 0) {
-		warnings.push(
-			`EMAIL_BLOBS binding was unavailable; ${inventory.emailRawMimeKeys.length} raw email MIME blob(s) referenced by the deleted user were not removed and must be cleaned up manually.`,
-		)
-	}
+	result.deletedEmailBlobs = await deleteEmailBlobs({
+		blobs: input.env.EMAIL_BLOBS,
+		keys: inventory.emailRawMimeKeys,
+		warnings,
+	})
 
 	const d1Cleanup = await deleteUserScopedRows({
 		env: input.env,

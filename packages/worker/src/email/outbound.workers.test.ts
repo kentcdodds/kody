@@ -412,6 +412,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	})
 	const inbound = await insertEmailMessage({
 		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
 		message: {
 			direction: 'inbound',
 			userId,

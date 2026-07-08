@@ -412,42 +412,6 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 	).toBeNull()
 })
 
-test('system email retention skips blob-backed rows when the blobs binding is missing', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const now = new Date('2026-07-06T12:00:00.000Z')
-	const old = new Date(
-		now.getTime() - (systemEmailLimits.retentionDays + 1) * 24 * 60 * 60 * 1000,
-	).toISOString()
-	const rawMimeKey = `email-raw:v1:${systemEmailOwnerId}/binding-missing-message`
-	await env.EMAIL_BLOBS.put(rawMimeKey, 'raw mime payload')
-	await env.APP_DB.prepare(
-		`INSERT INTO email_messages (
-			id, direction, user_id, from_address, subject, processing_status, raw_mime_key, created_at, updated_at
-		) VALUES ('binding-missing-message', 'inbound', ?, 'a@example.net', 'Blob', 'stored', ?, ?, ?)`,
-	)
-		.bind(systemEmailOwnerId, rawMimeKey, old, old)
-		.run()
-
-	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
-
-	expect(result.deletedMessages).toBe(0)
-	expect(result.skippedMissingBlobBinding).toBe(1)
-	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).not.toBeNull()
-	expect(
-		await env.APP_DB.prepare(
-			`SELECT id FROM email_messages WHERE id = 'binding-missing-message'`,
-		).first(),
-	).toMatchObject({ id: 'binding-missing-message' })
-
-	// Clean up so the skipped row does not leak into other tests.
-	const cleanup = await pruneSystemEmailRetention({
-		db: env.APP_DB,
-		blobs: env.EMAIL_BLOBS,
-		now,
-	})
-	expect(cleanup.deletedMessages).toBe(1)
-})
-
 test('system email retention advances past skipped blob rows at the head of a batch', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
@@ -501,12 +465,26 @@ test('system email retention advances past skipped blob rows at the head of a ba
 			.run()
 	}
 
-	// No blobs binding: the whole first batch is skipped, but the keyset
-	// cursor advances so the plain rows in the next batch are still pruned
-	// within the same run.
-	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
+	// Every blob delete fails: the whole first batch is skipped, but the
+	// keyset cursor advances so the plain rows in the next batch are still
+	// pruned within the same run.
+	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
+		get(target, property, receiver) {
+			if (property === 'delete') {
+				return async () => {
+					throw new Error('simulated R2 outage')
+				}
+			}
+			return Reflect.get(target, property, receiver)
+		},
+	})
+	const result = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: failingBlobs,
+		now,
+	})
 
-	expect(result.skippedMissingBlobBinding).toBe(blockedCount)
+	expect(result.blobDeleteErrors).toBe(blockedCount)
 	expect(result.deletedMessages).toBe(plainCount)
 	const remainingPlain = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-plain-%'`,
@@ -555,7 +533,11 @@ test('system email retention drains delivery-event backlogs larger than one batc
 			.run()
 	}
 
-	const result = await pruneSystemEmailRetention({ db: env.APP_DB, now })
+	const result = await pruneSystemEmailRetention({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		now,
+	})
 
 	expect(result.deletedDeliveryEvents).toBeGreaterThanOrEqual(backlog)
 	const remaining = await env.APP_DB.prepare(

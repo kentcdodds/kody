@@ -766,7 +766,6 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 		deletedAttachments: 1,
 		deletedThreads: 1,
 		deletedRawMimeBlobs: 1,
-		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 0,
 		hasMore: false,
 		nextCursor: null,
@@ -793,15 +792,6 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 		createdAt: daysAgo(emailMessageRetentionDays + 1),
 	})
 
-	const missingBinding = await pruneUserEmailMessagesForRetention({ db, now })
-	expect(missingBinding).toMatchObject({
-		deletedMessages: 1,
-		deletedRawMimeBlobs: 0,
-		skippedMissingBlobBinding: 1,
-		blobDeleteErrors: 0,
-	})
-	expect(idsForTable(sqlite, 'email_messages')).toEqual(['msg-old-blob'])
-
 	const failingDelete = vi.fn(async () => {
 		throw new Error('r2 unavailable')
 	})
@@ -811,9 +801,8 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 		now,
 	})
 	expect(failedDelete).toMatchObject({
-		deletedMessages: 0,
+		deletedMessages: 1,
 		deletedRawMimeBlobs: 0,
-		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 1,
 	})
 	expect(idsForTable(sqlite, 'email_messages')).toEqual(['msg-old-blob'])
@@ -833,8 +822,8 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 
 test('email message retention cursor advances past skipped blob rows at the head', async () => {
 	const { sqlite, db } = createRetentionDb()
-	// The two oldest expired rows are blob-backed and unpassable without the
-	// EMAIL_BLOBS binding; the two plain expired rows behind them must still be
+	// The two oldest expired rows are blob-backed and unpassable while the
+	// R2 delete fails; the two plain expired rows behind them must still be
 	// pruned within the same run.
 	insertEmailMessage(sqlite, {
 		id: 'msg-blocked-a',
@@ -854,9 +843,15 @@ test('email message retention cursor advances past skipped blob rows at the head
 		id: 'msg-plain-b',
 		createdAt: daysAgo(emailMessageRetentionDays + 1),
 	})
+	const failingBlobs = {
+		delete: vi.fn(async () => {
+			throw new Error('r2 unavailable')
+		}),
+	} as unknown as Pick<R2Bucket, 'delete'>
 
 	const first = await pruneUserEmailMessagesForRetention({
 		db,
+		blobs: failingBlobs,
 		now,
 		batchSize: 2,
 	})
@@ -864,7 +859,7 @@ test('email message retention cursor advances past skipped blob rows at the head
 	// cursor must point past the skipped rows.
 	expect(first).toMatchObject({
 		deletedMessages: 0,
-		skippedMissingBlobBinding: 2,
+		blobDeleteErrors: 2,
 		hasMore: true,
 	})
 	expect(first.nextCursor).toEqual({
@@ -874,13 +869,14 @@ test('email message retention cursor advances past skipped blob rows at the head
 
 	const second = await pruneUserEmailMessagesForRetention({
 		db,
+		blobs: failingBlobs,
 		now,
 		batchSize: 2,
 		cursor: first.nextCursor,
 	})
 	expect(second).toMatchObject({
 		deletedMessages: 2,
-		skippedMissingBlobBinding: 0,
+		blobDeleteErrors: 0,
 		hasMore: true,
 	})
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([
@@ -890,6 +886,7 @@ test('email message retention cursor advances past skipped blob rows at the head
 
 	const third = await pruneUserEmailMessagesForRetention({
 		db,
+		blobs: failingBlobs,
 		now,
 		batchSize: 2,
 		cursor: second.nextCursor,
@@ -921,15 +918,20 @@ test('retention run prunes expired plain emails behind a skipped blob-row head',
 	const env = {
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+		EMAIL_BLOBS: {
+			delete: vi.fn(async () => {
+				throw new Error('r2 unavailable')
+			}),
+		},
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 
-	// No EMAIL_BLOBS binding: every blob row is skipped, yet the run-level
-	// cursor advances past them so the plain rows in the second batch are
-	// still pruned within the same run.
+	// Every blob delete fails, so every blob row is skipped, yet the
+	// run-level cursor advances past them so the plain rows in the second
+	// batch are still pruned within the same run.
 	const result = await pruneRetention({ env, now })
 
 	expect(result.emailMessages.deletedMessages).toBe(5)
-	expect(result.emailMessages.skippedMissingBlobBinding).toBe(251)
+	expect(result.emailMessages.blobDeleteErrors).toBe(251)
 	expect(result.batchesPerTable['email_messages']).toBe(2)
 	expect(idsForTable(sqlite, 'email_messages')).toHaveLength(251)
 	expect(idsForTable(sqlite, 'email_messages')).not.toContain('msg-plain-0')
@@ -1277,7 +1279,8 @@ test('retention run loops batches per table until backlogs are drained', async (
 	const env = {
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 
 	const result = await pruneRetention({ env, now })
 
@@ -1307,7 +1310,8 @@ test('retention run gives every table one batch and stops when the budget is exh
 	const env = {
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 
 	const result = await pruneRetention({ env, now, timeBudgetMs: 0 })
 

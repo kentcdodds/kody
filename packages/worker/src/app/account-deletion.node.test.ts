@@ -956,6 +956,11 @@ test('deleteUserAccount handles OAuth grant revocation and warning-only edge cas
 	const kvFailureResult = await deleteUserAccount({
 		env: {
 			APP_DB: kvFailureDb,
+			EMAIL_BLOBS: {
+				delete: vi.fn(async () => {
+					throw new Error('simulated R2 outage')
+				}),
+			},
 			STORAGE_RUNNER: {
 				idFromName: (name: string) => name as unknown as DurableObjectId,
 				get: () => ({ clearStorage: async () => ({ ok: true as const }) }),
@@ -968,11 +973,11 @@ test('deleteUserAccount handles OAuth grant revocation and warning-only edge cas
 	expect(kvFailureRows.archived_job_artifacts).toEqual([])
 	expect(kvFailureRows.email_messages).toEqual([])
 	expect(kvFailureResult.deletedKvKeys).toBe(0)
-	// The D1 rows are still removed when EMAIL_BLOBS is unavailable; the
-	// stranded blobs are reported as a warning instead of aborting.
+	// The D1 rows are still removed when the blob delete fails; the
+	// stranded blob is reported as a warning instead of aborting.
 	expect(kvFailureResult.deletedEmailBlobs).toBe(0)
 	expect(kvFailureResult.warnings).toContain(
-		'EMAIL_BLOBS binding was unavailable; 1 raw email MIME blob(s) referenced by the deleted user were not removed and must be cleaned up manually.',
+		'Email blob delete failed for email-raw:v1:user-aaa/em-1: simulated R2 outage',
 	)
 	expect(kvFailureResult.warnings.length).toBeGreaterThan(0)
 })

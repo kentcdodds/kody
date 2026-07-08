@@ -29,24 +29,16 @@ export function emailRawMimeKey(userId: string, messageId: string) {
 
 /**
  * Best-effort raw-MIME offload to R2. Returns the stored object key, or
- * null when the payload must stay inline in D1 (binding unavailable or
- * the put failed). Never throws: falling back to the legacy inline
- * raw_mime column must not lose mail.
+ * null when the payload must stay inline in D1 because the put failed
+ * (for example a transient R2 outage). Never throws: falling back to
+ * the legacy inline raw_mime column must not lose mail.
  */
 async function offloadRawMimeToBlobs(input: {
-	blobs: R2Bucket | null | undefined
+	blobs: R2Bucket
 	userId: string
 	messageId: string
 	rawMime: string
 }): Promise<string | null> {
-	if (!input.blobs) {
-		console.debug(
-			'email-raw-mime-inline-fallback',
-			'EMAIL_BLOBS binding unavailable',
-			input.messageId,
-		)
-		return null
-	}
 	const key = emailRawMimeKey(input.userId, input.messageId)
 	try {
 		await input.blobs.put(key, input.rawMime)
@@ -69,16 +61,12 @@ async function offloadRawMimeToBlobs(input: {
  * the blob is unreachable.
  */
 export async function loadRawMime(input: {
-	blobs?: R2Bucket | null
+	blobs: R2Bucket
 	message: Pick<EmailMessageRecord, 'rawMime' | 'rawMimeKey'>
 }): Promise<string | null> {
 	if (input.message.rawMime != null) return input.message.rawMime
 	const key = input.message.rawMimeKey
 	if (!key) return null
-	if (!input.blobs) {
-		console.debug('email-raw-mime-blob-unavailable', key)
-		return null
-	}
 	const object = await input.blobs.get(key)
 	if (!object) return null
 	return await object.text()
@@ -584,11 +572,11 @@ export async function touchEmailThread(input: {
 export async function insertEmailMessage(input: {
 	db: D1Database
 	/**
-	 * EMAIL_BLOBS bucket. When present, raw MIME is offloaded to R2 and
-	 * only raw_mime_key is persisted; when absent, raw MIME stays inline
-	 * in the legacy raw_mime column.
+	 * EMAIL_BLOBS bucket. Raw MIME is offloaded to R2 and only
+	 * raw_mime_key is persisted; if the put fails the payload stays
+	 * inline in the legacy raw_mime column rather than losing mail.
 	 */
-	blobs?: R2Bucket | null
+	blobs: R2Bucket
 	message: {
 		id?: string
 		direction: EmailDirection
@@ -898,26 +886,23 @@ export async function searchEmailMessages(input: {
 
 export async function deleteEmailMessageById(input: {
 	db: D1Database
-	/** EMAIL_BLOBS bucket; when present the raw-MIME blob is also deleted. */
-	blobs?: R2Bucket | null
+	/** EMAIL_BLOBS bucket; the raw-MIME blob is deleted with the row. */
+	blobs: R2Bucket
 	messageId: string
 }) {
 	// Capture the blob key before the row disappears. A failed read must
 	// abort the delete (and be retried) rather than orphan the R2 blob; only
 	// the R2 delete itself is best-effort.
-	let rawMimeKey: string | null = null
-	if (input.blobs) {
-		const row = await input.db
-			.prepare(`SELECT raw_mime_key FROM email_messages WHERE id = ?`)
-			.bind(input.messageId)
-			.first<{ raw_mime_key: string | null }>()
-		rawMimeKey = row?.raw_mime_key ?? null
-	}
+	const row = await input.db
+		.prepare(`SELECT raw_mime_key FROM email_messages WHERE id = ?`)
+		.bind(input.messageId)
+		.first<{ raw_mime_key: string | null }>()
+	const rawMimeKey = row?.raw_mime_key ?? null
 	await input.db
 		.prepare(`DELETE FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
 		.run()
-	if (rawMimeKey != null && input.blobs) {
+	if (rawMimeKey != null) {
 		await input.blobs.delete(rawMimeKey).catch((error: unknown) => {
 			console.warn('email-raw-mime-blob-delete-failed', rawMimeKey, error)
 		})
@@ -1003,7 +988,7 @@ export async function listEmailAttachmentsForMessage(input: {
 export async function getEmailAttachmentById(input: {
 	db: D1Database
 	/** EMAIL_BLOBS bucket for messages whose raw MIME lives in R2. */
-	blobs?: R2Bucket | null
+	blobs: R2Bucket
 	userId: string
 	attachmentId: string
 }) {

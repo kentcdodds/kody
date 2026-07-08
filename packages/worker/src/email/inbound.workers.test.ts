@@ -545,6 +545,7 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 	const userId = `email-attachment-user-${crypto.randomUUID()}`
 	const stored = await insertEmailMessageWithAttachments({
 		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
 		message: {
 			direction: 'inbound',
 			userId,
@@ -615,6 +616,7 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 
 	const loaded = await getEmailAttachmentById({
 		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
 		userId,
 		attachmentId: attachment.id,
 	})
@@ -720,7 +722,7 @@ test('inbound email offloads raw MIME to R2 and readers and deletes follow the b
 	expect(await env.EMAIL_BLOBS.get(stored.rawMimeKey!)).toBeNull()
 })
 
-test('raw MIME stays inline when the EMAIL_BLOBS binding is unavailable', async () => {
+test('raw MIME stays inline when the R2 put fails', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `inline-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `inline-${crypto.randomUUID()}@example.com`
@@ -745,11 +747,21 @@ test('raw MIME stays inline when the EMAIL_BLOBS binding is unavailable', async 
 		to: address,
 		raw,
 	})
-	const envWithoutBlobs = {
+	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
+		get(target, property, receiver) {
+			if (property === 'put') {
+				return async () => {
+					throw new Error('simulated R2 outage')
+				}
+			}
+			return Reflect.get(target, property, receiver)
+		},
+	})
+	const envWithFailingBlobs = {
 		...createInboundEnv(),
-		EMAIL_BLOBS: undefined,
-	} as unknown as Parameters<typeof handleInboundEmail>[1]
-	await handleInboundEmail(message, envWithoutBlobs)
+		EMAIL_BLOBS: failingBlobs,
+	} as Parameters<typeof handleInboundEmail>[1]
+	await handleInboundEmail(message, envWithFailingBlobs)
 	expect(message.rejectedReason).toBeNull()
 
 	const [stored] = await listEmailMessages({
@@ -760,11 +772,10 @@ test('raw MIME stays inline when the EMAIL_BLOBS binding is unavailable', async 
 	expect(stored).toBeDefined()
 	if (!stored) throw new Error('Expected stored inbound message')
 
-	// Legacy inline behavior: the fallback never throws and keeps mail.
+	// Legacy inline behavior: the offload never throws and keeps mail.
 	expect(stored.rawMime).toBe(raw)
 	expect(stored.rawMimeKey).toBeNull()
-	// The read helper prefers the inline payload and needs no bucket.
-	expect(await loadRawMime({ message: stored })).toBe(raw)
+	// The read helper prefers the inline payload over the bucket.
 	expect(await loadRawMime({ blobs: env.EMAIL_BLOBS, message: stored })).toBe(
 		raw,
 	)

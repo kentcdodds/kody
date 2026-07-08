@@ -232,13 +232,12 @@ async function listSystemEmailMessages(input: {
 
 async function deleteSystemEmailMessagesByIds(input: {
 	db: D1Database
-	blobs?: R2Bucket | null
+	blobs: R2Bucket
 	messageIds: ReadonlyArray<string>
 }) {
 	const result = {
 		deletedMessages: 0,
 		deletedRawMimeBlobs: 0,
-		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 0,
 	}
 	for (
@@ -268,21 +267,13 @@ async function deleteSystemEmailMessagesByIds(input: {
 		let deletableIds: ReadonlyArray<string> = messageIds
 		if (blobRows.length > 0) {
 			const blobRowIds = new Set(blobRows.map((row) => row.id))
-			if (!input.blobs) {
-				result.skippedMissingBlobBinding += blobRows.length
+			try {
+				await input.blobs.delete(blobRows.map((row) => row.raw_mime_key))
+				result.deletedRawMimeBlobs += blobRows.length
+			} catch (error) {
+				result.blobDeleteErrors += blobRows.length
 				deletableIds = messageIds.filter((id) => !blobRowIds.has(id))
-				console.warn('system-email-raw-mime-binding-missing', {
-					skipped: blobRows.length,
-				})
-			} else {
-				try {
-					await input.blobs.delete(blobRows.map((row) => row.raw_mime_key))
-					result.deletedRawMimeBlobs += blobRows.length
-				} catch (error) {
-					result.blobDeleteErrors += blobRows.length
-					deletableIds = messageIds.filter((id) => !blobRowIds.has(id))
-					console.warn('system-email-raw-mime-blob-delete-failed', error)
-				}
+				console.warn('system-email-raw-mime-blob-delete-failed', error)
 			}
 		}
 		if (deletableIds.length === 0) continue
@@ -319,14 +310,13 @@ export type SystemEmailRetentionResult = {
 	deletedCounters: number
 	deletedThreads: number
 	deletedRawMimeBlobs: number
-	skippedMissingBlobBinding: number
 	blobDeleteErrors: number
 }
 
 export async function pruneSystemEmailRetention(input: {
 	db: D1Database
-	/** EMAIL_BLOBS bucket; when present raw-MIME blobs are also deleted. */
-	blobs?: R2Bucket | null
+	/** EMAIL_BLOBS bucket; raw-MIME blobs are deleted before their rows. */
+	blobs: R2Bucket
 	now?: Date
 	timeBudgetMs?: number
 }) {
@@ -344,19 +334,16 @@ export async function pruneSystemEmailRetention(input: {
 		deletedCounters: 0,
 		deletedThreads: 0,
 		deletedRawMimeBlobs: 0,
-		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 0,
 	}
 
 	const addMessageDelete = (batch: {
 		deletedMessages: number
 		deletedRawMimeBlobs: number
-		skippedMissingBlobBinding: number
 		blobDeleteErrors: number
 	}) => {
 		result.deletedMessages += batch.deletedMessages
 		result.deletedRawMimeBlobs += batch.deletedRawMimeBlobs
-		result.skippedMissingBlobBinding += batch.skippedMissingBlobBinding
 		result.blobDeleteErrors += batch.blobDeleteErrors
 	}
 

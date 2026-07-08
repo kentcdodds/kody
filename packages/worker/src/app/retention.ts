@@ -125,7 +125,7 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		retentionDays: emailMessageRetentionDays,
 		batchSize: retentionDefaultBatchSize,
 		description:
-			'User email messages keep 365 days, oldest first. R2 raw MIME blobs are deleted before their rows; rows with blobs are skipped when the EMAIL_BLOBS binding is missing so blobs are never orphaned. Operator system:email messages remain governed by system-email retention.',
+			'User email messages keep 365 days, oldest first. R2 raw MIME blobs are deleted before their rows; rows whose blob delete fails are skipped and retried so blobs are never orphaned. Operator system:email messages remain governed by system-email retention.',
 	},
 	{
 		table: 'email_attachments',
@@ -201,7 +201,6 @@ export type RetentionPruneResult = {
 		deletedAttachments: number
 		deletedThreads: number
 		deletedRawMimeBlobs: number
-		skippedMissingBlobBinding: number
 		blobDeleteErrors: number
 	}
 	entitlementDailyCounters: number
@@ -704,7 +703,6 @@ export type EmailMessageRetentionResult = {
 	deletedAttachments: number
 	deletedThreads: number
 	deletedRawMimeBlobs: number
-	skippedMissingBlobBinding: number
 	blobDeleteErrors: number
 	hasMore: boolean
 	nextCursor: EmailMessageRetentionCursor | null
@@ -712,7 +710,7 @@ export type EmailMessageRetentionResult = {
 
 export async function pruneUserEmailMessagesForRetention(input: {
 	db: D1Database
-	blobs?: Pick<R2Bucket, 'delete'> | undefined
+	blobs: Pick<R2Bucket, 'delete'>
 	now?: Date
 	batchSize?: number
 	cursor?: EmailMessageRetentionCursor | null
@@ -749,7 +747,6 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		deletedAttachments: 0,
 		deletedThreads: 0,
 		deletedRawMimeBlobs: 0,
-		skippedMissingBlobBinding: 0,
 		blobDeleteErrors: 0,
 		hasMore: false,
 		nextCursor: null,
@@ -757,25 +754,18 @@ export async function pruneUserEmailMessagesForRetention(input: {
 	const rowsWithBlob = rows.filter((row) => row.raw_mime_key !== null)
 	let deletableRows = rows
 	if (rowsWithBlob.length > 0) {
-		if (!input.blobs) {
-			// Never delete a row whose R2 blob cannot be deleted first; skipping
-			// keeps blobs from being orphaned when the binding is missing.
-			result.skippedMissingBlobBinding = rowsWithBlob.length
+		// Never delete a row whose R2 blob could not be deleted first: once
+		// the row is gone its raw_mime_key is lost and the blob is orphaned
+		// forever. Failed rows are skipped and retried on a later run.
+		try {
+			await input.blobs.delete(
+				rowsWithBlob.map((row) => row.raw_mime_key as string),
+			)
+			result.deletedRawMimeBlobs = rowsWithBlob.length
+		} catch (error) {
+			result.blobDeleteErrors = rowsWithBlob.length
 			deletableRows = rows.filter((row) => row.raw_mime_key === null)
-			console.warn('retention-email-raw-mime-binding-missing', {
-				skipped: rowsWithBlob.length,
-			})
-		} else {
-			try {
-				await input.blobs.delete(
-					rowsWithBlob.map((row) => row.raw_mime_key as string),
-				)
-				result.deletedRawMimeBlobs = rowsWithBlob.length
-			} catch (error) {
-				result.blobDeleteErrors = rowsWithBlob.length
-				deletableRows = rows.filter((row) => row.raw_mime_key === null)
-				console.warn('retention-email-raw-mime-delete-failed', { error })
-			}
+			console.warn('retention-email-raw-mime-delete-failed', { error })
 		}
 	}
 	const messageIds = deletableRows.map((row) => row.id)
@@ -896,11 +886,7 @@ export async function pruneAuditEventsForRetention(input: {
 }
 
 export async function pruneRetention(input: {
-	// EMAIL_BLOBS stays optional so environments without the R2 binding still
-	// prune everything else; blob-backed email rows are then skipped.
-	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'> & {
-		EMAIL_BLOBS?: R2Bucket | undefined
-	}
+	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 	now?: Date
 	timeBudgetMs?: number
 }): Promise<RetentionPruneResult> {
@@ -929,7 +915,6 @@ export async function pruneRetention(input: {
 			deletedAttachments: 0,
 			deletedThreads: 0,
 			deletedRawMimeBlobs: 0,
-			skippedMissingBlobBinding: 0,
 			blobDeleteErrors: 0,
 		},
 		entitlementDailyCounters: 0,
@@ -1027,8 +1012,6 @@ export async function pruneRetention(input: {
 				result.emailMessages.deletedAttachments += batch.deletedAttachments
 				result.emailMessages.deletedThreads += batch.deletedThreads
 				result.emailMessages.deletedRawMimeBlobs += batch.deletedRawMimeBlobs
-				result.emailMessages.skippedMissingBlobBinding +=
-					batch.skippedMissingBlobBinding
 				result.emailMessages.blobDeleteErrors += batch.blobDeleteErrors
 				emailMessagesCursor = batch.nextCursor
 				return batch.hasMore

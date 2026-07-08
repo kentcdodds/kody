@@ -134,7 +134,7 @@ async function listAttachments(db: D1Database, messageId: string) {
 export async function loadAdminSystemEmailMessageById(
 	db: D1Database,
 	messageId: string,
-	blobs?: R2Bucket | null,
+	blobs: R2Bucket,
 ): Promise<AdminSystemEmailDetail | null> {
 	const row = await db
 		.prepare(

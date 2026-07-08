@@ -673,8 +673,8 @@ Current retention policies:
 - `email_messages` / `email_attachments` / `email_threads`: user-owned messages
   (excluding the `system:email` owner) keep 365 days, deleted oldest first in
   batches. For rows with `raw_mime_key`, the `EMAIL_BLOBS` R2 blob is deleted
-  before the row; if the binding is missing or the blob delete fails, those rows
-  are skipped and counted as warnings so blobs are never orphaned. Dependent
+  before the row; if the blob delete fails, those rows are skipped and retried
+  on a later run so blobs are never orphaned. Dependent
   `email_attachments` rows are deleted before their messages, and threads left
   with no messages are pruned for the affected users.
 - `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.

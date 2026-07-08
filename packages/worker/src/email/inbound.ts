@@ -59,7 +59,7 @@ function warnRejectionAuditWriteFailed(error: unknown) {
 
 async function parseAndStoreInboundEmail(input: {
 	db: D1Database
-	blobs?: R2Bucket | null
+	blobs: R2Bucket
 	message: ForwardableEmailMessage
 	recipient: string
 	userId: string
