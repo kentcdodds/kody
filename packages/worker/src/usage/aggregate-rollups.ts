@@ -286,11 +286,18 @@ export async function aggregateUsageRollups(
 	for (let index = 0; index < statements.length; index += upsertBatchSize) {
 		await env.APP_DB.batch(statements.slice(index, index + upsertBatchSize))
 	}
-	const deletedRows = await deleteStaleCurrentMonthRollups({
-		db: env.APP_DB,
-		month,
-		presentPairs: new Set(presentRows.map(rollupPairKey)),
-	})
+	// An entirely empty result is more likely Analytics Engine ingestion
+	// lag (or a dataset misconfiguration) than a genuinely event-free
+	// month; skip the stale-row cleanup rather than wiping real counters.
+	// The next hourly run reconciles once events are visible again.
+	const deletedRows =
+		presentRows.length === 0
+			? 0
+			: await deleteStaleCurrentMonthRollups({
+					db: env.APP_DB,
+					month,
+					presentPairs: new Set(presentRows.map(rollupPairKey)),
+				})
 
 	const result = {
 		skipped: false as const,

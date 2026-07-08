@@ -347,7 +347,21 @@ test('aggregateUsageRollups deletes current-month rows absent from the Analytics
 })
 
 test('aggregateUsageRollups chunks stale-row deletes under the bind-parameter cap', async () => {
-	using _fetchMock = stubFetchResponse({ body: { data: [] } })
+	using _fetchMock = stubFetchResponse({
+		body: {
+			data: [
+				{
+					user_id: 'user-live',
+					metric: 'execute',
+					event_count: 1,
+					error_count: 0,
+					total_duration_ms: 0,
+					total_cpu_ms: 0,
+					total_bytes: 0,
+				},
+			],
+		},
+	})
 	const { db, deletes, rollups } = createFakeDb({
 		existingRollups: Array.from({ length: 120 }, (_, index) => ({
 			user_id: `stale-user-${index}`,
@@ -361,12 +375,39 @@ test('aggregateUsageRollups chunks stale-row deletes under the bind-parameter ca
 		new Date('2026-07-15T10:00:00.000Z'),
 	)
 
-	expect(result).toMatchObject({ upsertedRows: 0, deletedRows: 120 })
+	expect(result).toMatchObject({ upsertedRows: 1, deletedRows: 120 })
 	// 49 pairs per statement: 1 month param + 2 per pair = 99 binds max.
 	expect(deletes.map((statement) => statement.params.length)).toEqual([
 		99, 99, 45,
 	])
 	expect(rollups).toEqual([])
+})
+
+test('aggregateUsageRollups keeps existing rollups when the Analytics Engine result is empty', async () => {
+	// An empty result is more likely ingestion lag or dataset
+	// misconfiguration than a real event-free month; the stale-row
+	// cleanup must not wipe the month's counters.
+	using _fetchMock = stubFetchResponse({ body: { data: [] } })
+	const existingRollups = [
+		{ user_id: 'user-a', metric: 'execute', month: '2026-07' },
+		{ user_id: 'user-b', metric: 'job_run', month: '2026-07' },
+	]
+	const { db, deletes, rollups } = createFakeDb({ existingRollups })
+
+	const result = await aggregateUsageRollups(
+		createAggregationEnv(db),
+		new Date('2026-07-15T10:00:00.000Z'),
+	)
+
+	expect(result).toEqual({
+		skipped: false,
+		month: '2026-07',
+		upsertedRows: 0,
+		deletedRows: 0,
+		users: 0,
+	})
+	expect(deletes).toHaveLength(0)
+	expect(rollups).toEqual(existingRollups)
 })
 
 test('aggregateUsageRollups batches large result sets and throws on SQL API errors', async () => {
