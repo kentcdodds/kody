@@ -89,12 +89,11 @@ primitives:
     summary:
       Signed kody_session cookie auth for browser users; production signup
       invite-gated, non-production signup open, account email verification
-      surfaced in session state, social login (GitHub/Google/X OAuth
-      connections in oauth_connections, mockable via MOCK_ client ids on
-      non-production runtimes), and opt-in second factors — TOTP two-factor
-      (verifications table, pending kody_verify cookie gates login until
-      /verify) and passkeys (WebAuthn sign-in as an alternative first factor
-      that still honors 2FA).
+      surfaced in session state, social login (GitHub/Google/X OAuth connections
+      in oauth_connections, mockable via MOCK_ client ids on non-production
+      runtimes), and opt-in second factors — TOTP two-factor (verifications
+      table, pending kody_verify cookie gates login until /verify) and passkeys
+      (WebAuthn sign-in as an alternative first factor that still honors 2FA).
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
