@@ -18,6 +18,7 @@ export const oauthLoginErrorMessages = {
 	'connection-conflict':
 		'That provider account is already connected to a different user.',
 	'account-error': 'We could not create your account. Please try again.',
+	'rate-limited': 'Too many sign-in attempts. Please try again later.',
 } as const
 
 export type OauthLoginErrorCode = keyof typeof oauthLoginErrorMessages

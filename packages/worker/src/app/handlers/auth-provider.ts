@@ -65,8 +65,14 @@ function redirect(location: string, cookies: Array<string>) {
 function redirectToLoginWithError(
 	code: OauthLoginErrorCode,
 	cookies: Array<string> = [],
+	redirectTo: string | null = null,
 ) {
-	return redirect(`/login?oauthError=${code}`, cookies)
+	// Keep the deep-link target alive across failures so retrying from the
+	// login page still lands the user where they were headed.
+	const redirectToSuffix = redirectTo
+		? `&redirectTo=${encodeURIComponent(redirectTo)}`
+		: ''
+	return redirect(`/login?oauthError=${code}${redirectToSuffix}`, cookies)
 }
 
 export function createAuthProvidersApiHandler(env: Env) {
@@ -88,16 +94,16 @@ export function createAuthProviderStartHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, url, params }) {
+			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
 			const providerParam = params.provider
 			if (!isOauthProviderId(providerParam)) {
-				return redirectToLoginWithError('unknown-provider')
+				return redirectToLoginWithError('unknown-provider', [], redirectTo)
 			}
 			if (!getOauthClientConfig(env, providerParam)) {
-				return redirectToLoginWithError('not-configured')
+				return redirectToLoginWithError('not-configured', [], redirectTo)
 			}
 
 			setOauthLoginStateSecret(env.COOKIE_SECRET)
-			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
 			const state = generateOauthRandomValue()
 			const codeVerifier = generateOauthRandomValue()
 			const authorizeUrl = await buildAuthorizeRedirectUrl({
@@ -140,6 +146,8 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			const secure = isSecureRequest(request)
 			const clearStateCookie = await destroyOauthLoginStateCookie(secure)
 			const requestIp = getRequestIp(request) ?? undefined
+			const loginState = await readOauthLoginState(request)
+			const redirectTo = normalizeRedirectTo(loginState?.redirectTo ?? null)
 
 			function fail(code: OauthLoginErrorCode, reason: string) {
 				void logAuditEvent({
@@ -150,7 +158,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason,
 				})
-				return redirectToLoginWithError(code, [clearStateCookie])
+				return redirectToLoginWithError(code, [clearStateCookie], redirectTo)
 			}
 
 			const providerParam = params.provider
@@ -166,7 +174,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				return fail('denied', 'provider_denied')
 			}
 
-			const loginState = await readOauthLoginState(request)
 			const stateFromQuery = url.searchParams.get('state')
 			const code = url.searchParams.get('code')
 			if (
@@ -178,7 +185,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			) {
 				return fail('state-mismatch', 'state_mismatch')
 			}
-			const redirectTo = normalizeRedirectTo(loginState.redirectTo)
 
 			let profile: OauthProfile
 			try {

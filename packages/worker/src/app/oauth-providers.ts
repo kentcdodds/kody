@@ -231,6 +231,10 @@ export async function buildAuthorizeRedirectUrl(input: {
 	return authorizeUrl.toString()
 }
 
+// A hung provider endpoint must not pin the callback request open for the
+// Worker's full wall-time budget.
+const providerRequestTimeoutMs = 15_000
+
 export class OauthProviderRequestError extends Error {
 	constructor(message: string) {
 		super(message)
@@ -280,6 +284,7 @@ async function exchangeCodeForAccessToken(input: {
 		method: 'POST',
 		headers,
 		body: body.toString(),
+		signal: AbortSignal.timeout(providerRequestTimeoutMs),
 	})
 	const payload = (await response.json().catch(() => null)) as Record<
 		string,
@@ -305,6 +310,7 @@ async function fetchProviderJson(url: string, accessToken: string) {
 			// GitHub's API rejects requests without a User-Agent.
 			'User-Agent': 'kody',
 		},
+		signal: AbortSignal.timeout(providerRequestTimeoutMs),
 	})
 	if (!response.ok) {
 		throw new OauthProviderRequestError(

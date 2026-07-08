@@ -32,6 +32,7 @@ import {
 	isPackageInvocationApiRequest,
 } from './package-invocations/http.ts'
 import { withCors } from './utils.ts'
+import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
 import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
@@ -91,11 +92,15 @@ function shouldApplyLongLivedAssetCaching(pathname: string, env: Env) {
 // so brute-force attempts cannot fan out across parallel paths (password login,
 // OAuth inline login, social-login starts, password-reset request/confirm,
 // two-factor code verification and management, and passkey sign-in).
-const rateLimitedAuthPaths = new Set([
-	'/auth',
+const socialLoginStartPaths = new Set([
 	'/auth/github',
 	'/auth/google',
 	'/auth/x',
+])
+
+const rateLimitedAuthPaths = new Set([
+	'/auth',
+	...socialLoginStartPaths,
 	'/oauth/authorize',
 	'/password-reset',
 	'/password-reset/confirm',
@@ -178,6 +183,26 @@ const appHandler = withCors({
 				authRateLimitConfig,
 			)
 			if (!result.allowed) {
+				// Social-login starts are native form POSTs (document
+				// navigations), so a JSON 429 body would render as raw text;
+				// bounce back to the login page instead. 303 forces a GET.
+				if (socialLoginStartPaths.has(url.pathname)) {
+					const loginUrl = new URL('/login', url)
+					loginUrl.searchParams.set('oauthError', 'rate-limited')
+					const redirectTo = normalizeRedirectTo(
+						url.searchParams.get('redirectTo'),
+					)
+					if (redirectTo) {
+						loginUrl.searchParams.set('redirectTo', redirectTo)
+					}
+					return new Response(null, {
+						status: 303,
+						headers: {
+							Location: loginUrl.toString(),
+							'Retry-After': String(result.retryAfterSeconds ?? 60),
+						},
+					})
+				}
 				return new Response(
 					JSON.stringify({
 						error: 'Too many requests. Please try again later.',

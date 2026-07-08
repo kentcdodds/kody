@@ -445,7 +445,7 @@ test('callback rejects a state mismatch', async () => {
 	const start = await startProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github',
+		'http://example.com/auth/github?redirectTo=%2Fcommunity',
 	)
 	const callbackResponse = await runHandler(
 		createAuthProviderCallbackHandler(env),
@@ -456,8 +456,10 @@ test('callback rejects a state mismatch', async () => {
 		{ provider: 'github' },
 	)
 	expect(callbackResponse.status).toBe(302)
+	// The deep-link target survives the failure so a retry from the login
+	// page still lands where the user was headed.
 	expect(callbackResponse.headers.get('Location')).toBe(
-		'/login?oauthError=state-mismatch',
+		'/login?oauthError=state-mismatch&redirectTo=%2Fcommunity',
 	)
 })
 
