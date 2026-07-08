@@ -3,7 +3,9 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	clearCapabilityRegistryCacheForTests,
 	capabilityMap,
+	capabilitySpecs,
 	getCapabilityRegistryForContext,
+	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
 
 test('getCapabilityRegistryForContext bypasses connector caches when no connectors are attached', async () => {
@@ -33,7 +35,18 @@ test('getCapabilityRegistryForContext bypasses connector caches when no connecto
 	})
 
 	expect(get).not.toHaveBeenCalled()
-	expect(registry.capabilityMap).toBe(capabilityMap)
+	expect(registry.capabilityMap).toBe(getStaticRegistry().capabilityMap)
+})
+
+test('getStaticRegistry memoizes and the lazy constant exports mirror it', () => {
+	expect(getStaticRegistry()).toBe(getStaticRegistry())
+	expect(capabilityMap.email_send).toBe(
+		getStaticRegistry().capabilityMap.email_send,
+	)
+	expect(Object.keys(capabilitySpecs)).toEqual(
+		Object.keys(getStaticRegistry().capabilitySpecs),
+	)
+	expect('email_send' in capabilityMap).toBe(true)
 })
 
 test('getCapabilityRegistryForContext filters admin capabilities by current caller roles', async () => {

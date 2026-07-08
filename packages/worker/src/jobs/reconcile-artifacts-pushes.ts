@@ -2,6 +2,7 @@ import {
 	listEntitySourcesForExternalReconcile,
 	updateEntitySource,
 } from '#worker/repo/entity-sources.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { revokeStaleArtifactsTokens } from '#worker/repo/artifacts-tokens.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
@@ -16,10 +17,19 @@ export type ReconcileArtifactsPushesResult = {
 	errors: number
 	tokenCleanupErrors: number
 	tokensRevoked: number
+	batches: number
+	budgetExhausted: boolean
 }
 
 const defaultBatchSize = 50
 const defaultStaleAfterMinutes = 5
+/**
+ * Wall-clock budget for one cron tick. The reconcile loop keeps pulling
+ * batches of stale sources until it either drains the backlog or exceeds
+ * this budget, so throughput scales with available time instead of being
+ * capped at one batch per five-minute tick.
+ */
+export const reconcileTimeBudgetMs = 60_000
 
 function minutesAgoIso(now: Date, minutes: number) {
 	return new Date(now.getTime() - minutes * 60_000).toISOString()
@@ -34,19 +44,16 @@ export async function reconcileArtifactsPushes(input: {
 	baseUrl: string
 	batchSize?: number
 	staleAfterMinutes?: number
+	timeBudgetMs?: number
 	now?: Date
 }): Promise<ReconcileArtifactsPushesResult> {
 	const now = input.now ?? new Date()
-	const sources = await listEntitySourcesForExternalReconcile(
-		input.env.APP_DB,
-		{
-			before: minutesAgoIso(
-				now,
-				input.staleAfterMinutes ?? defaultStaleAfterMinutes,
-			),
-			limit: input.batchSize ?? defaultBatchSize,
-		},
+	const batchSize = input.batchSize ?? defaultBatchSize
+	const before = minutesAgoIso(
+		now,
+		input.staleAfterMinutes ?? defaultStaleAfterMinutes,
 	)
+	const deadlineMs = Date.now() + (input.timeBudgetMs ?? reconcileTimeBudgetMs)
 	const result: ReconcileArtifactsPushesResult = {
 		checked: 0,
 		published: 0,
@@ -57,107 +64,153 @@ export async function reconcileArtifactsPushes(input: {
 		errors: 0,
 		tokenCleanupErrors: 0,
 		tokensRevoked: 0,
+		batches: 0,
+		budgetExhausted: false,
 	}
 	const shouldCleanupTokens = shouldRunDailyTokenCleanup(now)
-	for (const source of sources) {
-		result.checked += 1
-		try {
-			const head = await resolveArtifactSourceHead(input.env, source.repo_id)
-			if (shouldCleanupTokens) {
-				try {
-					const cleanup = await revokeStaleArtifactsTokens(
-						input.env,
-						source.repo_id,
-						{ keepAfter: now },
-					)
-					result.tokensRevoked += cleanup.revoked
-				} catch (cleanupError) {
-					result.tokenCleanupErrors += 1
-					console.warn('reconcile_artifacts_pushes token cleanup failed', {
-						sourceId: source.id,
-						repoId: source.repo_id,
-						error:
-							cleanupError instanceof Error
-								? cleanupError.message
-								: String(cleanupError),
-					})
-				}
-			}
-			if (!head.commit) {
-				result.missingHead += 1
-				await updateEntitySource(input.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					lastExternalCheckAt: now.toISOString(),
-				})
-				continue
-			}
-			if (head.commit === source.published_commit) {
-				result.alreadyPublished += 1
-				await updateEntitySource(input.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					lastExternalCheckAt: now.toISOString(),
-				})
-				continue
-			}
-			const sessionId = `external-reconcile-${source.id}`
-			const publishResult = await repoSessionRpc(
-				input.env,
-				sessionId,
-			).publishFromExternalRef({
-				sessionId,
-				sourceId: source.id,
-				userId: source.user_id,
-				newCommit: head.commit,
-				expectedHead: head.commit,
-				allowForce: false,
+	// Sources whose cursor write failed stay stale and would be re-selected by
+	// the next batch query; tracking seen ids prevents re-processing them in a
+	// tight loop within a single tick.
+	const seenSourceIds = new Set<string>()
+	while (!result.budgetExhausted) {
+		const batch = await listEntitySourcesForExternalReconcile(
+			input.env.APP_DB,
+			{ before, limit: batchSize },
+		)
+		const sources = batch.filter((source) => !seenSourceIds.has(source.id))
+		if (sources.length === 0) break
+		result.batches += 1
+		for (const source of sources) {
+			seenSourceIds.add(source.id)
+			await reconcileSource({
+				env: input.env,
 				baseUrl: input.baseUrl,
+				source,
+				now,
+				shouldCleanupTokens,
+				result,
 			})
-			switch (publishResult.status) {
-				case 'already_published':
-					result.alreadyPublished += 1
-					break
-				case 'published':
-					result.published += 1
-					break
-				case 'checks_failed':
-					result.checksFailed += 1
-					break
-				case 'not_fast_forward':
-					result.notFastForward += 1
-					break
+			if (Date.now() >= deadlineMs) {
+				result.budgetExhausted = true
+				break
 			}
-			await updateEntitySource(input.env.APP_DB, {
+		}
+		if (batch.length < batchSize) break
+	}
+	console.info('reconcile_artifacts_pushes', result)
+	return result
+}
+
+async function reconcileSource(input: {
+	env: Env
+	baseUrl: string
+	source: EntitySourceRow
+	now: Date
+	shouldCleanupTokens: boolean
+	result: ReconcileArtifactsPushesResult
+}) {
+	const { env, source, now, result } = input
+	result.checked += 1
+	try {
+		const head = await resolveArtifactSourceHead(env, source.repo_id)
+		if (input.shouldCleanupTokens) {
+			try {
+				const cleanup = await revokeStaleArtifactsTokens(env, source.repo_id, {
+					keepAfter: now,
+				})
+				result.tokensRevoked += cleanup.revoked
+			} catch (cleanupError) {
+				result.tokenCleanupErrors += 1
+				console.warn('reconcile_artifacts_pushes token cleanup failed', {
+					sourceId: source.id,
+					repoId: source.repo_id,
+					error:
+						cleanupError instanceof Error
+							? cleanupError.message
+							: String(cleanupError),
+				})
+			}
+		}
+		// Unchanged (or unresolvable) HEADs only advance the reconcile cursor;
+		// the RepoSession Durable Object is spun up solely for changed HEADs.
+		if (!head.commit) {
+			result.missingHead += 1
+			await updateEntitySource(env.APP_DB, {
 				id: source.id,
 				userId: source.user_id,
 				lastExternalCheckAt: now.toISOString(),
 			})
-		} catch (error) {
-			result.errors += 1
-			console.warn('reconcile_artifacts_pushes source failed', {
-				sourceId: source.id,
-				repoId: source.repo_id,
-				error: error instanceof Error ? error.message : String(error),
+			return
+		}
+		if (head.commit === source.published_commit) {
+			result.alreadyPublished += 1
+			await updateEntitySource(env.APP_DB, {
+				id: source.id,
+				userId: source.user_id,
+				lastExternalCheckAt: now.toISOString(),
 			})
-			try {
-				await updateEntitySource(input.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					lastExternalCheckAt: now.toISOString(),
-				})
-			} catch (updateError) {
-				console.warn('reconcile_artifacts_pushes cursor update failed', {
-					sourceId: source.id,
-					repoId: source.repo_id,
-					error:
-						updateError instanceof Error
-							? updateError.message
-							: String(updateError),
-				})
+			return
+		}
+		const sessionId = `external-reconcile-${source.id}`
+		const publishResult = await repoSessionRpc(
+			env,
+			sessionId,
+		).publishFromExternalRef({
+			sessionId,
+			sourceId: source.id,
+			userId: source.user_id,
+			newCommit: head.commit,
+			expectedHead: head.commit,
+			allowForce: false,
+			baseUrl: input.baseUrl,
+		})
+		switch (publishResult.status) {
+			case 'already_published':
+				result.alreadyPublished += 1
+				break
+			case 'published':
+				result.published += 1
+				break
+			case 'checks_failed':
+				result.checksFailed += 1
+				break
+			case 'not_fast_forward':
+				result.notFastForward += 1
+				break
+			default: {
+				const exhaustive: never = publishResult
+				throw new Error(
+					`Unknown external publish status: ${String(exhaustive)}`,
+				)
 			}
 		}
+		await updateEntitySource(env.APP_DB, {
+			id: source.id,
+			userId: source.user_id,
+			lastExternalCheckAt: now.toISOString(),
+		})
+	} catch (error) {
+		result.errors += 1
+		console.warn('reconcile_artifacts_pushes source failed', {
+			sourceId: source.id,
+			repoId: source.repo_id,
+			error: error instanceof Error ? error.message : String(error),
+		})
+		try {
+			await updateEntitySource(env.APP_DB, {
+				id: source.id,
+				userId: source.user_id,
+				lastExternalCheckAt: now.toISOString(),
+			})
+		} catch (updateError) {
+			console.warn('reconcile_artifacts_pushes cursor update failed', {
+				sourceId: source.id,
+				repoId: source.repo_id,
+				error:
+					updateError instanceof Error
+						? updateError.message
+						: String(updateError),
+			})
+		}
 	}
-	console.info('reconcile_artifacts_pushes', result)
-	return result
 }

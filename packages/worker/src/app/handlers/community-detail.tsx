@@ -17,7 +17,6 @@ import { type routes } from '#app/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
-import { renderCommunityOgImage } from '#worker/community/og-image.ts'
 import {
 	getCommunityListingWithAggregates,
 	reportCommunityListing,
@@ -121,6 +120,12 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 			}
 
 			const publicListing = toPublicCommunityListing(listing)
+			// Lazy import (sanctioned exception to the no-inline-imports rule):
+			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
+			// binaries, which would otherwise bloat isolate cold starts for a
+			// route that is only hit by social-media crawlers.
+			const { renderCommunityOgImage } =
+				await import('#worker/community/og-image.ts')
 			const png = await renderCommunityOgImage({
 				name: publicListing.name,
 				description: publicListing.description,
