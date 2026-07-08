@@ -126,13 +126,28 @@ export async function verifyTwoFactorCode(input: {
  * the exact secret the user scanned stays the active secret. Returns whether
  * a pending row was actually promoted (false when the setup vanished, e.g.
  * a concurrent cancel).
+ *
+ * The active-row delete (needed to satisfy the UNIQUE(target, type)
+ * constraint before promoting) is conditional on a pending row existing so
+ * that a concurrent duplicate confirm can never delete the active factor
+ * without promoting a replacement.
  */
 export async function confirmTwoFactorSetup(db: D1Database, userId: number) {
 	const target = getTwoFactorTarget(userId)
 	const [, promotion] = await db.batch([
 		db
-			.prepare(`DELETE FROM verifications WHERE target = ? AND type = ?`)
-			.bind(target, twoFactorVerificationType),
+			.prepare(
+				`DELETE FROM verifications WHERE target = ? AND type = ?
+				 AND EXISTS (
+					SELECT 1 FROM verifications WHERE target = ? AND type = ?
+				 )`,
+			)
+			.bind(
+				target,
+				twoFactorVerificationType,
+				target,
+				twoFactorSetupVerificationType,
+			),
 		db
 			.prepare(
 				`UPDATE verifications SET type = ? WHERE target = ? AND type = ?`,

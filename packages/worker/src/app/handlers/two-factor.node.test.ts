@@ -8,6 +8,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
+import { confirmTwoFactorSetup } from '#app/two-factor.ts'
 import { createAccountTwoFactorApiHandler } from '#app/handlers/account-two-factor.ts'
 import { createTwoFactorVerifyApiHandler } from '#app/handlers/verify.ts'
 import { setVerifySessionSecret } from '#app/verify-session.ts'
@@ -584,6 +585,28 @@ test('setup and confirm are rejected while 2fa is already enabled', async () => 
 	expect(readVerificationRow(sqlite, '1')).toMatchObject({
 		type: '2fa',
 		secret: activeRow.secret,
+	})
+})
+
+test('a duplicate confirm cannot delete the active factor', async () => {
+	const { sqlite, db } = createMigratedDb()
+	await seedPrimaryUser(sqlite)
+	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
+
+	await runHandler(
+		handler,
+		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
+	)
+	const pendingRow = readVerificationRow(sqlite, '1')!
+
+	// Simulates two racing confirm requests that both passed the code check:
+	// the first promotes, the second must be a no-op rather than deleting the
+	// freshly-activated row.
+	expect(await confirmTwoFactorSetup(db, 1)).toBe(true)
+	expect(await confirmTwoFactorSetup(db, 1)).toBe(false)
+	expect(readVerificationRow(sqlite, '1')).toMatchObject({
+		type: '2fa',
+		secret: pendingRow.secret,
 	})
 })
 
