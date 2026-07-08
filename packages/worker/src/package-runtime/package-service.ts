@@ -18,6 +18,7 @@ import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './publishe
 
 const serviceStateStorageKey = 'package-service-state'
 const packageServiceRetryDelayMs = 5_000
+const packageServiceRetryMaxDelayMs = 15 * 60 * 1000
 
 export type PackageServiceBindingState = {
 	userId: string
@@ -43,6 +44,12 @@ type PackageServiceState = {
 	lastError: string | null
 	lastResult: unknown
 	lastRunFinishedAt: string | null
+	/**
+	 * Consecutive failed runs (or failed auto-start attempts) since the last
+	 * successful run. Persisted so Durable Object eviction does not reset the
+	 * crash-loop backoff.
+	 */
+	consecutiveFailureCount: number
 }
 
 type PackageServiceRunResult = {
@@ -101,6 +108,7 @@ function createInitialPackageServiceState(): PackageServiceState {
 		lastError: null,
 		lastResult: null,
 		lastRunFinishedAt: null,
+		consecutiveFailureCount: 0,
 	}
 }
 
@@ -229,8 +237,32 @@ async function readPackageServiceRpcResponse<T>(
 	}
 }
 
-function buildPackageServiceRetryTime() {
-	return new Date(Date.now() + packageServiceRetryDelayMs)
+/**
+ * Auto-start retry delay: the 5-second base doubles per consecutive failure up
+ * to a 15-minute cap, with equal jitter (a retry lands between half and the
+ * full nominal delay) so crash-looping services do not retry in lockstep. A
+ * successful run resets the failure count back to the base delay.
+ */
+export function computePackageServiceRetryDelayMs(input: {
+	consecutiveFailureCount: number
+	random?: () => number
+}) {
+	if (input.consecutiveFailureCount <= 0) {
+		return packageServiceRetryDelayMs
+	}
+	const cappedExponent = Math.min(input.consecutiveFailureCount - 1, 16)
+	const nominalDelayMs = Math.min(
+		packageServiceRetryDelayMs * 2 ** cappedExponent,
+		packageServiceRetryMaxDelayMs,
+	)
+	const random = input.random ?? Math.random
+	return Math.round(nominalDelayMs / 2 + random() * (nominalDelayMs / 2))
+}
+
+function buildPackageServiceRetryTime(consecutiveFailureCount: number) {
+	return new Date(
+		Date.now() + computePackageServiceRetryDelayMs({ consecutiveFailureCount }),
+	)
 }
 
 class PackageServiceInstanceBase extends DurableObject<Env> {
@@ -291,7 +323,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.stateSnapshot.binding
 			) {
 				await this.scheduleAlarm({
-					runAt: buildPackageServiceRetryTime(),
+					runAt: buildPackageServiceRetryTime(
+						this.stateSnapshot.consecutiveFailureCount,
+					),
 					source: 'auto-start',
 				})
 			}
@@ -429,6 +463,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if ('lastError' in input) {
 			this.stateSnapshot.lastError = input.lastError ?? null
 		}
+		this.stateSnapshot.consecutiveFailureCount =
+			input.lastError == null
+				? 0
+				: this.stateSnapshot.consecutiveFailureCount + 1
 		this.stateSnapshot.lastRunFinishedAt = new Date(finishedAtMs).toISOString()
 		this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 		await this.persistState()
@@ -441,7 +479,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			!this.stateSnapshot.nextAlarmAt
 		) {
 			await this.scheduleAlarm({
-				runAt: buildPackageServiceRetryTime(),
+				runAt: buildPackageServiceRetryTime(
+					this.stateSnapshot.consecutiveFailureCount,
+				),
 				source: 'auto-start',
 			})
 		}
@@ -844,6 +884,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.lastError =
 				error instanceof Error ? error.message : String(error)
 			this.stateSnapshot.status = 'error'
+			this.stateSnapshot.consecutiveFailureCount += 1
 			await this.persistState()
 			if (
 				this.stateSnapshot.autoStart &&
@@ -851,7 +892,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.nextAlarmAt
 			) {
 				await this.scheduleAlarm({
-					runAt: buildPackageServiceRetryTime(),
+					runAt: buildPackageServiceRetryTime(
+						this.stateSnapshot.consecutiveFailureCount,
+					),
 					source: alarmSource,
 				})
 			}

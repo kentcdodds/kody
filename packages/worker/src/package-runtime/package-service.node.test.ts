@@ -64,6 +64,7 @@ const {
 	PackageServiceInstance,
 	buildPackageServiceStorageId,
 	buildServiceRuntimeUsageEvent,
+	computePackageServiceRetryDelayMs,
 } = await import('./package-service.ts')
 
 const serviceBinding = {
@@ -81,7 +82,10 @@ const savedPackage = {
 	kodyId: '@scope/package-1',
 }
 
-function createPackageSource(mode: 'bounded' | 'persistent') {
+function createPackageSource(
+	mode: 'bounded' | 'persistent',
+	options?: { autoStart?: boolean },
+) {
 	return {
 		manifest: {
 			kody: {
@@ -91,6 +95,7 @@ function createPackageSource(mode: 'bounded' | 'persistent') {
 						entry: 'services/realtime-supervisor.ts',
 						mode,
 						timeoutMs: mode === 'bounded' ? 30_000 : null,
+						...(options?.autoStart === true ? { autoStart: true } : {}),
 					},
 				},
 			},
@@ -394,5 +399,186 @@ test('durable object restore meters an eviction-orphaned in-flight run without a
 		expect(restoreUsageSpy).not.toHaveBeenCalled()
 	} finally {
 		restoreUsageSpy.mockRestore()
+	}
+})
+
+test('computePackageServiceRetryDelayMs doubles from the base delay to a 15-minute cap with jitter', () => {
+	const atJitterMax = () => 1
+	const atJitterMin = () => 0
+	expect(
+		computePackageServiceRetryDelayMs({ consecutiveFailureCount: 0 }),
+	).toBe(5_000)
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 1,
+			random: atJitterMax,
+		}),
+	).toBe(5_000)
+	// Equal jitter spreads a retry between half and the full nominal delay.
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 1,
+			random: atJitterMin,
+		}),
+	).toBe(2_500)
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 2,
+			random: atJitterMax,
+		}),
+	).toBe(10_000)
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 3,
+			random: atJitterMax,
+		}),
+	).toBe(20_000)
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 8,
+			random: atJitterMax,
+		}),
+	).toBe(640_000)
+	// 5s * 2^8 exceeds the cap, so the ninth consecutive failure pins to 15m.
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 9,
+			random: atJitterMax,
+		}),
+	).toBe(900_000)
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 50,
+			random: atJitterMax,
+		}),
+	).toBe(900_000)
+	expect(
+		computePackageServiceRetryDelayMs({
+			consecutiveFailureCount: 50,
+			random: atJitterMin,
+		}),
+	).toBe(450_000)
+})
+
+test('auto-start crash loops back off exponentially and reset after a successful run', async () => {
+	resetMocks()
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(1)
+	vi.useFakeTimers()
+	try {
+		const startAt = new Date('2026-07-05T12:00:00.000Z')
+		vi.setSystemTime(startAt)
+		mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+		mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+			createPackageSource('bounded', { autoStart: true }),
+		)
+		mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+			artifact: {
+				mainModule: 'main',
+				modules: {},
+			},
+		})
+		mockModule.runBundledModuleWithRegistry.mockRejectedValue(
+			new Error('service crashed'),
+		)
+
+		const created = createPackageServiceState()
+		created.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: true,
+			mode: 'bounded',
+			timeoutMs: 30_000,
+			stopRequested: false,
+			currentRunId: null,
+			nextAlarmAt: startAt.toISOString(),
+			nextAlarmSource: 'auto-start',
+			lastStartedAt: null,
+			lastStoppedAt: null,
+			status: 'stopped',
+			lastError: null,
+			lastResult: null,
+			lastRunFinishedAt: null,
+			consecutiveFailureCount: 0,
+		})
+		const instance = new PackageServiceInstance(created.state, {
+			APP_DB: {},
+		} as Env)
+		await waitForRestoreState(created.state)
+
+		const expectedDelays = [5_000, 10_000, 20_000]
+		for (const [index, expectedDelay] of expectedDelays.entries()) {
+			await instance.alarm()
+			await flushWaitUntilTasks(created.waitUntilTasks)
+			expect(created.getAlarmAt()).toBe(startAt.valueOf() + expectedDelay)
+			const persisted = created.persistedEntries.get(
+				'package-service-state',
+			) as { consecutiveFailureCount: number }
+			expect(persisted.consecutiveFailureCount).toBe(index + 1)
+		}
+
+		mockModule.runBundledModuleWithRegistry.mockResolvedValue({
+			result: { ok: true },
+			error: null,
+		})
+		await instance.alarm()
+		await flushWaitUntilTasks(created.waitUntilTasks)
+		// A successful run resets the crash-loop backoff to the base delay.
+		expect(created.getAlarmAt()).toBe(startAt.valueOf() + 5_000)
+		const persistedAfterSuccess = created.persistedEntries.get(
+			'package-service-state',
+		) as { consecutiveFailureCount: number }
+		expect(persistedAfterSuccess.consecutiveFailureCount).toBe(0)
+	} finally {
+		randomSpy.mockRestore()
+		usageSpy.mockRestore()
+		vi.useRealTimers()
+	}
+})
+
+test('durable object restore keeps the persisted crash-loop backoff after eviction', async () => {
+	resetMocks()
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(1)
+	vi.useFakeTimers()
+	try {
+		const restoredAt = new Date('2026-07-05T13:00:00.000Z')
+		vi.setSystemTime(restoredAt)
+		const restored = createPackageServiceState()
+		restored.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: true,
+			mode: 'bounded',
+			timeoutMs: 30_000,
+			stopRequested: false,
+			currentRunId: 'run-evicted',
+			nextAlarmAt: null,
+			nextAlarmSource: null,
+			lastStartedAt: '2026-07-05T12:59:00.000Z',
+			lastStoppedAt: null,
+			status: 'running',
+			lastError: 'service crashed',
+			lastResult: null,
+			lastRunFinishedAt: null,
+			consecutiveFailureCount: 4,
+		})
+		new PackageServiceInstance(restored.state, { APP_DB: {} } as Env)
+		await waitForRestoreState(restored.state)
+		await flushWaitUntilTasks(restored.waitUntilTasks)
+
+		// The retry after eviction honors the persisted failure count
+		// (5s * 2^3 = 40s) instead of resetting to the base delay.
+		expect(restored.getAlarmAt()).toBe(restoredAt.valueOf() + 40_000)
+		const persisted = restored.persistedEntries.get(
+			'package-service-state',
+		) as { consecutiveFailureCount: number }
+		expect(persisted.consecutiveFailureCount).toBe(4)
+	} finally {
+		randomSpy.mockRestore()
+		usageSpy.mockRestore()
+		vi.useRealTimers()
 	}
 })

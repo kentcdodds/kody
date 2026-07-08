@@ -1,6 +1,7 @@
 import type * as SchedulerLoggingType from './scheduler-logging.ts'
 import { expect, test, vi } from 'vitest'
 import { resolveJobManagerAlarmState } from './manager-state.ts'
+import { maxDueJobsPerAlarm } from './repo.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getNextRunnableJob: vi.fn(),
@@ -136,81 +137,184 @@ test('resolveJobManagerAlarmState covers armed, out-of-sync, and idle states', (
 
 test('syncAlarm arms, clears, and logs scheduler state transitions', async () => {
 	resetMocks()
-	const nextRunAt = '2026-04-20T18:30:00.000Z'
-	mockModule.getNextRunnableJob.mockResolvedValue({
-		id: 'job-123',
-		nextRunAt,
-	})
-	const armedState = createState({
-		currentAlarmAt: Date.parse('2026-04-20T18:00:00.000Z'),
-	})
-	const armedManager = new JobManagerBase(armedState.state, {} as Env)
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-04-20T17:00:00.000Z'))
+		const nextRunAt = '2026-04-20T18:30:00.000Z'
+		mockModule.getNextRunnableJob.mockResolvedValue({
+			id: 'job-123',
+			nextRunAt,
+		})
+		const armedState = createState({
+			currentAlarmAt: Date.parse('2026-04-20T18:00:00.000Z'),
+		})
+		const armedManager = new JobManagerBase(armedState.state, {} as Env)
 
-	await expect(armedManager.syncAlarm({ userId: 'user-123' })).resolves.toEqual(
-		{
+		await expect(
+			armedManager.syncAlarm({ userId: 'user-123' }),
+		).resolves.toEqual({
 			ok: true,
 			userId: 'user-123',
 			nextRunAt,
-		},
-	)
+		})
 
-	expect(armedState.persistedEntries.get('user-id')).toBe('user-123')
-	expect(armedState.getAlarmAt()).toBe(Date.parse(nextRunAt))
-	expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
-		event: 'sync_alarm',
-		userId: 'user-123',
-		currentAlarmAt: '2026-04-20T18:00:00.000Z',
-		nextJobId: 'job-123',
-		nextRunAt,
-		reason: 'alarm_armed',
-	})
-	expect(mockModule.logJobSchedulerError).not.toHaveBeenCalled()
+		expect(armedState.persistedEntries.get('user-id')).toBe('user-123')
+		expect(armedState.getAlarmAt()).toBe(Date.parse(nextRunAt))
+		expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
+			event: 'sync_alarm',
+			userId: 'user-123',
+			currentAlarmAt: '2026-04-20T18:00:00.000Z',
+			nextJobId: 'job-123',
+			nextRunAt,
+			reason: 'alarm_armed',
+		})
+		expect(mockModule.logJobSchedulerError).not.toHaveBeenCalled()
 
+		resetMocks()
+		mockModule.getNextRunnableJob.mockResolvedValue(null)
+		const clearedState = createState({
+			currentAlarmAt: Date.parse('2026-04-20T18:00:00.000Z'),
+		})
+		const clearedManager = new JobManagerBase(clearedState.state, {} as Env)
+
+		await expect(
+			clearedManager.syncAlarm({ userId: 'user-123' }),
+		).resolves.toEqual({
+			ok: true,
+			userId: 'user-123',
+			nextRunAt: null,
+		})
+
+		expect(clearedState.getAlarmAt()).toBeNull()
+		expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
+			event: 'sync_alarm',
+			userId: 'user-123',
+			currentAlarmAt: '2026-04-20T18:00:00.000Z',
+			nextJobId: null,
+			nextRunAt: null,
+			reason: 'no_runnable_job',
+		})
+
+		resetMocks()
+		mockModule.getNextRunnableJob.mockRejectedValue(
+			new Error('next job lookup failed'),
+		)
+		const lookupFailureState = createState()
+		const lookupFailureManager = new JobManagerBase(
+			lookupFailureState.state,
+			{} as Env,
+		)
+
+		await expect(
+			lookupFailureManager.syncAlarm({ userId: 'user-123', source: 'alarm' }),
+		).rejects.toThrow('next job lookup failed')
+		expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
+			event: 'sync_alarm_failed',
+			userId: 'user-123',
+			source: 'alarm',
+			errorName: 'Error',
+			errorMessage: 'next job lookup failed',
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('syncAlarm arms a near-immediate follow-up alarm when a due-job backlog remains', async () => {
 	resetMocks()
-	mockModule.getNextRunnableJob.mockResolvedValue(null)
-	const clearedState = createState({
-		currentAlarmAt: Date.parse('2026-04-20T18:00:00.000Z'),
-	})
-	const clearedManager = new JobManagerBase(clearedState.state, {} as Env)
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-04-20T19:30:00.000Z'))
+		const overdueRunAt = '2026-04-20T18:30:00.000Z'
+		mockModule.getNextRunnableJob.mockResolvedValue({
+			id: 'job-backlog',
+			nextRunAt: overdueRunAt,
+		})
+		const backlogState = createState()
+		const backlogManager = new JobManagerBase(backlogState.state, {} as Env)
 
-	await expect(
-		clearedManager.syncAlarm({ userId: 'user-123' }),
-	).resolves.toEqual({
-		ok: true,
-		userId: 'user-123',
-		nextRunAt: null,
-	})
+		await expect(
+			backlogManager.syncAlarm({ userId: 'user-123', source: 'alarm' }),
+		).resolves.toEqual({
+			ok: true,
+			userId: 'user-123',
+			nextRunAt: overdueRunAt,
+		})
 
-	expect(clearedState.getAlarmAt()).toBeNull()
-	expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
-		event: 'sync_alarm',
-		userId: 'user-123',
-		currentAlarmAt: '2026-04-20T18:00:00.000Z',
-		nextJobId: null,
-		nextRunAt: null,
-		reason: 'no_runnable_job',
-	})
+		expect(backlogState.getAlarmAt()).toBe(
+			Date.parse('2026-04-20T19:30:01.000Z'),
+		)
+		expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
+			event: 'sync_alarm',
+			userId: 'user-123',
+			currentAlarmAt: null,
+			nextJobId: 'job-backlog',
+			nextRunAt: overdueRunAt,
+			reason: 'backlog_rearmed',
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})
 
+test('due-job backlogs drain across successive alarm invocations', async () => {
 	resetMocks()
-	mockModule.getNextRunnableJob.mockRejectedValue(
-		new Error('next job lookup failed'),
-	)
-	const lookupFailureState = createState()
-	const lookupFailureManager = new JobManagerBase(
-		lookupFailureState.state,
-		{} as Env,
-	)
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-04-20T19:30:00.000Z'))
+		const overdueRunAt = '2026-04-20T18:00:00.000Z'
+		const futureRunAt = '2026-04-21T09:00:00.000Z'
+		// First alarm processes a full batch (the per-alarm limit) and leaves an
+		// overdue job behind; the second alarm drains the remainder.
+		mockModule.runDueJobsForUser
+			.mockResolvedValueOnce({
+				dueJobCount: maxDueJobsPerAlarm,
+				successCount: maxDueJobsPerAlarm,
+				errorCount: 0,
+				jobOutcomes: [],
+			})
+			.mockResolvedValueOnce({
+				dueJobCount: 5,
+				successCount: 5,
+				errorCount: 0,
+				jobOutcomes: [],
+			})
+		mockModule.getNextRunnableJob
+			.mockResolvedValueOnce({
+				id: 'job-still-due',
+				nextRunAt: overdueRunAt,
+			})
+			.mockResolvedValueOnce({
+				id: 'job-future',
+				nextRunAt: futureRunAt,
+			})
+		const { state, getAlarmAt } = createState()
+		const manager = new JobManagerBase(state, {} as Env)
 
-	await expect(
-		lookupFailureManager.syncAlarm({ userId: 'user-123', source: 'alarm' }),
-	).rejects.toThrow('next job lookup failed')
-	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
-		event: 'sync_alarm_failed',
-		userId: 'user-123',
-		source: 'alarm',
-		errorName: 'Error',
-		errorMessage: 'next job lookup failed',
-	})
+		await expect(manager.alarm()).resolves.toBeUndefined()
+		expect(getAlarmAt()).toBe(Date.parse('2026-04-20T19:30:01.000Z'))
+
+		vi.setSystemTime(new Date('2026-04-20T19:30:01.000Z'))
+		await expect(manager.alarm()).resolves.toBeUndefined()
+		expect(getAlarmAt()).toBe(Date.parse(futureRunAt))
+
+		expect(mockModule.runDueJobsForUser).toHaveBeenCalledTimes(2)
+		expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				event: 'sync_alarm',
+				reason: 'backlog_rearmed',
+			}),
+		)
+		expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				event: 'sync_alarm',
+				nextJobId: 'job-future',
+				reason: 'alarm_armed',
+			}),
+		)
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('exportUser returns the scheduler state for account export', async () => {
@@ -238,6 +342,8 @@ test('exportUser returns the scheduler state for account export', async () => {
 
 test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async () => {
 	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
 	mockModule.runDueJobsForUser.mockResolvedValue({
 		dueJobCount: 2,
 		successCount: 1,
@@ -355,4 +461,5 @@ test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async ()
 		errorName: 'Error',
 		errorMessage: 'run due jobs failed',
 	})
+	vi.useRealTimers()
 })
