@@ -22,6 +22,12 @@ function normalizeRedirectTo(value: string | null) {
 	return value
 }
 
+function buildLoginHref(redirectTo: string | null) {
+	return redirectTo
+		? `/login?redirectTo=${encodeURIComponent(redirectTo)}`
+		: '/login'
+}
+
 export function VerifyRoute(handle: Handle) {
 	let status: 'idle' | 'submitting' = 'idle'
 	let message: string | null = null
@@ -57,7 +63,7 @@ export function VerifyRoute(handle: Handle) {
 			const payload = await response.json().catch(() => null)
 			if (!response.ok || !payload?.ok) {
 				if (payload?.code === 'expired') {
-					window.location.assign('/login')
+					window.location.assign(buildLoginHref(getRedirectTo()))
 					return
 				}
 				status = 'idle'
@@ -124,7 +130,7 @@ export function VerifyRoute(handle: Handle) {
 					) : null}
 				</form>
 				<div mix={css({ display: 'grid', gap: spacing.sm })}>
-					<a href="/login" mix={css(mutedLinkCss)}>
+					<a href={buildLoginHref(getRedirectTo())} mix={css(mutedLinkCss)}>
 						Back to login
 					</a>
 				</div>

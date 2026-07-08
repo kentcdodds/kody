@@ -26,7 +26,12 @@ export function createVerifyHandler(env: Env) {
 			setVerifySessionSecret(env.COOKIE_SECRET)
 			const pendingSession = await readVerifySession(request)
 			if (!pendingSession) {
-				return Response.redirect(new URL('/login', request.url), 302)
+				// Preserve the destination so a re-login still lands the user
+				// where they were originally headed.
+				const loginUrl = new URL('/login', request.url)
+				const redirectTo = new URL(request.url).searchParams.get('redirectTo')
+				if (redirectTo) loginUrl.searchParams.set('redirectTo', redirectTo)
+				return Response.redirect(loginUrl, 302)
 			}
 
 			return renderAppPage({
