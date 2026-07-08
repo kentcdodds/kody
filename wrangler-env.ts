@@ -134,7 +134,10 @@ function handleSignal(signal: NodeJS.Signals) {
 			sigtermTimeoutMs: 5000,
 			sigkillTimeoutMs: 1000,
 		})
-		process.exit(1)
+		// A signal-initiated shutdown is a normal stop (Ctrl+C, supervisor
+		// stop), not a failure; exiting 1 here fails CI steps that stop the
+		// dev server deliberately.
+		process.exit(0)
 	})()
 }
 

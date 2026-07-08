@@ -3,7 +3,7 @@ import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
 
 test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
-	await ensurePrimaryUserExists(page.request)
+	await ensurePrimaryUserExists()
 	await page.context().clearCookies()
 
 	await page.goto('/')

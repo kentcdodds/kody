@@ -1,4 +1,4 @@
-import { test as base } from '@playwright/test'
+import { test as base, type APIRequestContext } from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
 import {
 	assignRoleInE2eDatabase,
@@ -43,37 +43,12 @@ export const test = base.extend<{
 				email === primaryTestUser.email &&
 				password === primaryTestUser.password
 			) {
-				await ensurePrimaryUserExists(page.request)
+				await ensurePrimaryUserExists()
 				return { email, username: primaryTestUser.username, password }
 			}
 
 			clearAuthRateLimitsInE2eDatabase()
-			const response = await page.request.post('/auth', {
-				data: { email, username, password, mode: 'signup' },
-				headers: { 'Content-Type': 'application/json' },
-			})
-
-			if (response.status() === 409) {
-				const detail = await readResponseDetail(response)
-				if (detail !== 'Email already registered.') {
-					throw new Error(
-						`Failed to seed user (${response.status()}): ${detail}`,
-					)
-				}
-				const loginResponse = await page.request.post('/auth', {
-					data: { email, password, mode: 'login' },
-					headers: { 'Content-Type': 'application/json' },
-				})
-				if (!loginResponse.ok()) {
-					throw new Error(
-						`Failed to seed user (${response.status()}): ${detail}`,
-					)
-				}
-			} else if (!response.ok()) {
-				throw new Error(
-					`Failed to seed user (${response.status()}): ${await readResponseDetail(response)}`,
-				)
-			}
+			await signupOrLoginViaAuth(page.request, { email, username, password })
 
 			return { email, username, password }
 		})
@@ -93,7 +68,7 @@ export const test = base.extend<{
 			return { email, username, password }
 		})
 	},
-	login: async ({ page }, use) => {
+	login: async ({ page, baseURL }, use) => {
 		await use(async (options) => {
 			const email = options?.email ?? primaryTestUser.email
 			const username =
@@ -117,33 +92,11 @@ export const test = base.extend<{
 					)
 				}
 			} else {
-				response = await page.request.post('/auth', {
-					data: { email, username, password, mode: 'signup' },
-					headers: { 'Content-Type': 'application/json' },
+				response = await signupOrLoginViaAuth(page.request, {
+					email,
+					username,
+					password,
 				})
-
-				if (response.status() === 409) {
-					const detail = await readResponseDetail(response)
-					if (detail !== 'Email already registered.') {
-						throw new Error(
-							`Failed to seed user (${response.status()}): ${detail}`,
-						)
-					}
-					response = await page.request.post('/auth', {
-						data: { email, password, mode: 'login' },
-						headers: { 'Content-Type': 'application/json' },
-					})
-
-					if (!response.ok()) {
-						throw new Error(
-							`Failed to login user (${response.status()}): ${await readResponseDetail(response)}`,
-						)
-					}
-				} else if (!response.ok()) {
-					throw new Error(
-						`Failed to seed user (${response.status()}): ${await readResponseDetail(response)}`,
-					)
-				}
 			}
 
 			const setCookieHeader = response.headers()['set-cookie']
@@ -152,7 +105,9 @@ export const test = base.extend<{
 				const cookieConfig = {
 					name: parsed.name,
 					value: parsed.value,
-					domain: 'localhost',
+					// The cookie host must match the browsing host or the
+					// browser will not send it back.
+					domain: baseURL ? new URL(baseURL).hostname : 'localhost',
 					path: parsed.path || '/',
 					httpOnly: parsed.httpOnly,
 					secure: parsed.secure,
@@ -165,6 +120,48 @@ export const test = base.extend<{
 		})
 	},
 })
+
+/**
+ * Sign the user up via `/auth`, falling back to a login when the email is
+ * already registered. Returns the response whose Set-Cookie header carries
+ * the auth session.
+ */
+async function signupOrLoginViaAuth(
+	request: APIRequestContext,
+	credentials: { email: string; username: string; password: string },
+) {
+	const { email, username, password } = credentials
+	const signupResponse = await request.post('/auth', {
+		data: { email, username, password, mode: 'signup' },
+		headers: { 'Content-Type': 'application/json' },
+	})
+
+	if (signupResponse.status() === 409) {
+		const signupDetail = await readResponseDetail(signupResponse)
+		if (signupDetail !== 'Email already registered.') {
+			throw new Error(
+				`Failed to seed user (${signupResponse.status()}): ${signupDetail}`,
+			)
+		}
+		const loginResponse = await request.post('/auth', {
+			data: { email, password, mode: 'login' },
+			headers: { 'Content-Type': 'application/json' },
+		})
+		if (!loginResponse.ok()) {
+			throw new Error(
+				`Failed to login existing user (${loginResponse.status()}): ${await readResponseDetail(loginResponse)}`,
+			)
+		}
+		return loginResponse
+	}
+
+	if (!signupResponse.ok()) {
+		throw new Error(
+			`Failed to seed user (${signupResponse.status()}): ${await readResponseDetail(signupResponse)}`,
+		)
+	}
+	return signupResponse
+}
 
 async function readResponseDetail(response: { json(): Promise<unknown> }) {
 	const payload = await response.json().catch(() => null)

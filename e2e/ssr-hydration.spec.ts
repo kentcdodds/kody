@@ -28,7 +28,7 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	page,
 	request,
 }) => {
-	await ensurePrimaryUserExists(request)
+	await ensurePrimaryUserExists()
 	await seedCommunityListingInE2eDatabase({
 		...alphaListing,
 		ownerEmail: primaryTestUser.email,

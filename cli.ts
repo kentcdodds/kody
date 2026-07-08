@@ -308,14 +308,16 @@ async function restartDev(
 	const workerDidStart = await waitForWorkerReady(workerOrigin, worker)
 	if (!workerDidStart) {
 		console.warn(
-			`Main worker did not become ready within ${workerReadyTimeoutMs}ms.`,
+			`Main worker did not become ready within ${workerReadyTimeoutMs}ms; ` +
+				`check the dev:worker output above before using ${workerOrigin}.`,
 		)
 	}
 	devChildren = [client, worker]
 
 	if (announce) {
 		console.log(dim('\nRestarted dev servers.'))
-		logAppRunning(() => workerOrigin)
+		// Only claim the app is running when /health actually responded.
+		if (workerDidStart) logAppRunning(() => workerOrigin)
 	}
 }
 
@@ -431,13 +433,6 @@ async function attachCloudflareMock(
 	console.log(dim(`Cloudflare mock base URL ${baseUrl}`))
 }
 
-async function attachOptionalMocksInParallel(
-	mockEnv: Record<string, string>,
-	anchorPort: number,
-) {
-	await Promise.all([attachCloudflareMock(mockEnv, anchorPort)])
-}
-
 async function ensureMockServers() {
 	const canReuseCachedCloudflareEnv =
 		isChildRunning(mockCloudflareProcess) &&
@@ -454,7 +449,7 @@ async function ensureMockServers() {
 			cloudflareForAnchor.port || String(defaultMockPort + 240),
 			10,
 		)
-		await attachOptionalMocksInParallel(mockEnvOverrides, anchorFromReuse)
+		await attachCloudflareMock(mockEnvOverrides, anchorFromReuse)
 		return mockEnvOverrides
 	}
 
@@ -473,12 +468,7 @@ async function ensureMockServers() {
 	const mockPort = await getPort({ port: portRange })
 	mockEnvOverrides = {}
 
-	const optionalMocksReady = attachOptionalMocksInParallel(
-		mockEnvOverrides,
-		mockPort,
-	)
-
-	await optionalMocksReady
+	await attachCloudflareMock(mockEnvOverrides, mockPort)
 
 	return mockEnvOverrides
 }

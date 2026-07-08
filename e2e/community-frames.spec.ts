@@ -15,9 +15,8 @@ const staleListing = {
 
 test('community listings frame reloads fresh data on back-navigation', async ({
 	page,
-	request,
 }) => {
-	await ensurePrimaryUserExists(request)
+	await ensurePrimaryUserExists()
 	await seedCommunityListingInE2eDatabase({
 		...staleListing,
 		ownerEmail: primaryTestUser.email,
@@ -67,9 +66,8 @@ test('community listings frame reloads fresh data on back-navigation', async ({
 
 test('community detail frame reloads fresh fork counts on return navigation', async ({
 	page,
-	request,
 }) => {
-	await ensurePrimaryUserExists(request)
+	await ensurePrimaryUserExists()
 	await seedCommunityListingInE2eDatabase({
 		...staleListing,
 		listingId: 'e2e-frame-detail-stale-listing',
