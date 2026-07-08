@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { MCPClientManager } from 'agents/mcp/client'
+import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
@@ -127,11 +128,22 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (existing) {
 			await this.manager.removeServer(input.serverId)
 		}
+		// `registerServer` does not create an OAuth provider on its own (the SDK
+		// Agent class builds one in `addMcpServer`), so build the same
+		// DO-storage-backed provider here or OAuth servers can never surface an
+		// authorization URL. The clientName must match the one passed to
+		// `restoreConnectionsFromStorage` so storage keys line up after restarts.
+		const authProvider = new DurableObjectOAuthClientProvider(
+			this.ctx.storage,
+			mcpClientName,
+			input.callbackUrl,
+		)
+		authProvider.serverId = input.serverId
 		await this.manager.registerServer(input.serverId, {
 			url: input.url,
 			name: input.name,
 			callbackUrl: input.callbackUrl,
-			transport: { type: 'auto' },
+			transport: { type: 'auto', authProvider },
 		})
 		const result = await this.manager.connectToServer(input.serverId)
 		if (result.state === 'connected') {

@@ -170,6 +170,9 @@ export const EnvSchema = object({
 	PACKAGE_SERVICE_INSTANCE: requiredDurableObjectNamespaceSchema(
 		'Missing PACKAGE_SERVICE_INSTANCE binding for package service runtimes.',
 	),
+	MCP_CLIENT_HUB: requiredDurableObjectNamespaceSchema(
+		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
+	),
 	APP_BASE_URL: optionalUrlStringSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,

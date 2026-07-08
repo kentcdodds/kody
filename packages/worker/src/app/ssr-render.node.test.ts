@@ -121,6 +121,7 @@ function createTestEnv(db: D1Database) {
 		STORAGE_RUNNER: {},
 		PACKAGE_REALTIME_SESSION: {},
 		PACKAGE_SERVICE_INSTANCE: {},
+		MCP_CLIENT_HUB: {},
 	} as unknown as Env
 }
 

@@ -670,6 +670,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 										mix={[
 											on('input', (event) => {
 												addName = event.currentTarget.value
+												handle.update()
 											}),
 											css(inputCss),
 										]}
@@ -692,6 +693,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 										mix={[
 											on('input', (event) => {
 												addUrl = event.currentTarget.value
+												handle.update()
 											}),
 											css(inputCss),
 										]}
