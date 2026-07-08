@@ -17,7 +17,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Email').fill(primaryTestUser.email)
 	await page.getByLabel('Password').fill(primaryTestUser.password)
-	await page.getByRole('button', { name: 'Sign in' }).click()
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(

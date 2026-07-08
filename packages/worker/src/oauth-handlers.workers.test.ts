@@ -79,24 +79,30 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 async function createDatabase(password: string) {
 	const passwordHash = await createPasswordHash(password)
 	return {
-		prepare() {
+		prepare(query: string) {
+			// The 2FA gate queries verifications during inline OAuth login; the
+			// mocked user has no verification rows, so those queries are empty.
+			const isVerificationsQuery = query.includes('FROM verifications')
 			return {
 				bind() {
 					return {
 						async all() {
 							return {
-								results: [
-									{
-										id: 1,
-										username: 'test-user',
-										email: 'user@example.com',
-										password_hash: passwordHash,
-									},
-								],
+								results: isVerificationsQuery
+									? []
+									: [
+											{
+												id: 1,
+												username: 'test-user',
+												email: 'user@example.com',
+												password_hash: passwordHash,
+											},
+										],
 								meta: { changes: 0, last_row_id: 0 },
 							}
 						},
 						async first() {
+							if (isVerificationsQuery) return null
 							return {
 								id: 1,
 								username: 'test-user',
@@ -196,6 +202,23 @@ async function seedWorkerUser(email: string, password: string) {
 			password_hash TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+	).run()
+	// The inline OAuth login checks two-factor status, which queries the
+	// verifications table (empty here: no seeded user has 2FA enabled).
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS verifications (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			type TEXT NOT NULL,
+			target TEXT NOT NULL,
+			secret TEXT NOT NULL,
+			algorithm TEXT NOT NULL,
+			digits INTEGER NOT NULL,
+			period INTEGER NOT NULL,
+			char_set TEXT NOT NULL,
+			expires_at INTEGER,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			UNIQUE (target, type)
 		)`,
 	).run()
 	const result = await env.APP_DB.prepare(

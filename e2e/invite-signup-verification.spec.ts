@@ -63,7 +63,7 @@ test('admin invite signup and email verification happy path', async ({
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Email').fill(adminCreatedEmail)
 	await page.getByLabel('Password').fill(adminCreatedPassword)
-	await page.getByRole('button', { name: 'Sign in' }).click()
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(
 		page.getByText(`Email: ${adminCreatedEmail} (verified)`),
