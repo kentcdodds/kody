@@ -10,7 +10,9 @@ import {
 	buildBasicAuthSecretPlaceholder,
 	buildSecretPlaceholder,
 } from '#mcp/secrets/placeholders.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
+import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { resolveSecret, saveSecret } from '#mcp/secrets/service.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 import { getValue } from '#mcp/values/service.ts'
 import {
 	normalizeApiBaseUrl,
@@ -38,6 +40,7 @@ export type OpenApiOperationRequestResult = {
 export async function executeOpenApiOperationRequest(input: {
 	env: Env
 	userId: string
+	storageContext: StorageContext | null
 	binding: OpenApiBinding
 	operation: OpenApiBindingOperation
 	args: OpenApiOperationRequestArgs
@@ -88,7 +91,7 @@ export async function executeOpenApiOperationRequest(input: {
 		props: {
 			baseUrl: input.binding.apiBaseUrl,
 			userId: input.userId,
-			storageContext: null,
+			storageContext: input.storageContext,
 		},
 		request,
 		globalFetch: input.globalFetch,
@@ -104,6 +107,7 @@ export async function executeOpenApiOperationRequest(input: {
 			userId: input.userId,
 			provider: input.binding.auth.provider,
 			integration,
+			storageContext: input.storageContext,
 			globalFetch: input.globalFetch,
 		})
 		if (refreshed.ok) {
@@ -113,7 +117,7 @@ export async function executeOpenApiOperationRequest(input: {
 				props: {
 					baseUrl: input.binding.apiBaseUrl,
 					userId: input.userId,
-					storageContext: null,
+					storageContext: input.storageContext,
 				},
 				request: new Request(url.toString(), requestInit),
 				globalFetch: input.globalFetch,
@@ -348,6 +352,7 @@ async function tryRefreshIntegrationAccessToken(input: {
 	userId: string
 	provider: string
 	integration: IntegrationConfig
+	storageContext: StorageContext | null
 	globalFetch?: typeof fetch
 }): Promise<{ ok: boolean; guidance?: string }> {
 	const refreshTokenSecretName =
@@ -406,7 +411,7 @@ async function tryRefreshIntegrationAccessToken(input: {
 			props: {
 				baseUrl: input.integration.tokenUrl,
 				userId: input.userId,
-				storageContext: null,
+				storageContext: input.storageContext,
 			},
 			request: new Request(input.integration.tokenUrl, {
 				method: 'POST',
@@ -443,6 +448,13 @@ async function tryRefreshIntegrationAccessToken(input: {
 		}
 	}
 
+	await assertPackageCanUpdateUserSecret({
+		env: input.env,
+		userId: input.userId,
+		baseUrl: input.integration.tokenUrl,
+		storageContext: input.storageContext,
+		secretName: input.integration.accessTokenSecretName,
+	})
 	await saveSecret({
 		env: input.env,
 		userId: input.userId,
@@ -450,12 +462,19 @@ async function tryRefreshIntegrationAccessToken(input: {
 		value: payload.access_token,
 		scope: 'user',
 		description: `Access token for integration ${input.provider}`,
-		storageContext: null,
+		storageContext: input.storageContext,
 	})
 	if (
 		typeof payload.refresh_token === 'string' &&
 		payload.refresh_token.length > 0
 	) {
+		await assertPackageCanUpdateUserSecret({
+			env: input.env,
+			userId: input.userId,
+			baseUrl: input.integration.tokenUrl,
+			storageContext: input.storageContext,
+			secretName: refreshTokenSecretName,
+		})
 		await saveSecret({
 			env: input.env,
 			userId: input.userId,
@@ -463,10 +482,40 @@ async function tryRefreshIntegrationAccessToken(input: {
 			value: payload.refresh_token,
 			scope: 'user',
 			description: `Refresh token for integration ${input.provider}`,
-			storageContext: null,
+			storageContext: input.storageContext,
 		})
 	}
 	return { ok: true }
+}
+
+async function assertPackageCanUpdateUserSecret(input: {
+	env: Env
+	userId: string
+	baseUrl: string
+	storageContext: StorageContext | null
+	secretName: string
+}) {
+	if (!input.storageContext?.packageId) return
+	const resolved = await resolveSecret({
+		env: input.env,
+		userId: input.userId,
+		name: input.secretName,
+		scope: 'user',
+		storageContext: input.storageContext,
+	})
+	if (!resolved.found) {
+		throw new Error(
+			`Package runtime cannot create missing user secret "${input.secretName}" during OpenAPI token refresh.`,
+		)
+	}
+	await assertPackageCanAccessResolvedSecret({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		storageContext: input.storageContext,
+		secretName: input.secretName,
+		resolved,
+	})
 }
 
 async function readClientIdValue(input: {
