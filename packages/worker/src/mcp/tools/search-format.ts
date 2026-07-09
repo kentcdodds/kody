@@ -113,6 +113,7 @@ export type SlimSearchMatch =
 			source?: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
+			openApi?: CapabilitySpec['openApi']
 	  }
 	| {
 			type: 'package'
@@ -218,6 +219,7 @@ export type SearchEntityDetailStructured =
 			source: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
+			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 	  }
@@ -381,6 +383,7 @@ export type SearchMatch =
 			source?: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
+			openApi?: CapabilitySpec['openApi']
 	  }
 	| {
 			type: 'package'
@@ -447,6 +450,7 @@ function buildCapabilityUsage(spec: {
 	source?: CapabilitySpec['source']
 	remoteConnector?: CapabilitySpec['remoteConnector']
 	mcpServer?: CapabilitySpec['mcpServer']
+	openApi?: CapabilitySpec['openApi']
 }) {
 	return `execute with ${buildKodyCapabilityAccessor(spec)}(args)`
 }
@@ -468,6 +472,7 @@ function buildKodyCapabilityAccessor(spec: {
 	source?: CapabilitySpec['source']
 	remoteConnector?: CapabilitySpec['remoteConnector']
 	mcpServer?: CapabilitySpec['mcpServer']
+	openApi?: CapabilitySpec['openApi']
 }) {
 	if (spec.source === 'remote-connector' && spec.remoteConnector) {
 		return buildNamespacedKodyAccessor({
@@ -481,6 +486,13 @@ function buildKodyCapabilityAccessor(spec: {
 			namespace: 'mcp',
 			entryName: spec.mcpServer.kodyName,
 			toolName: spec.mcpServer.toolName,
+		})
+	}
+	if (spec.source === 'openapi' && spec.openApi) {
+		return buildNamespacedKodyAccessor({
+			namespace: 'openapi',
+			entryName: spec.openApi.kodyName,
+			toolName: spec.openApi.operationSlug,
 		})
 	}
 	const { name } = spec
@@ -693,6 +705,7 @@ export function toSlimStructuredMatches(input: {
 					? { remoteConnector: match.remoteConnector }
 					: {}),
 				...(match.mcpServer ? { mcpServer: match.mcpServer } : {}),
+				...(match.openApi ? { openApi: match.openApi } : {}),
 			}
 		}
 		if (match.type === 'package') {
@@ -875,6 +888,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 					? { remoteConnector: detail.spec.remoteConnector }
 					: {}),
 				...(detail.spec.mcpServer ? { mcpServer: detail.spec.mcpServer } : {}),
+				...(detail.spec.openApi ? { openApi: detail.spec.openApi } : {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,
 				...(detail.spec.outputTypeDefinition
 					? { outputTypeDefinition: detail.spec.outputTypeDefinition }

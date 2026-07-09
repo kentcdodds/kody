@@ -8,6 +8,7 @@ import { integrationsDomain } from './integrations/domain.ts'
 import { jobsDomain } from './jobs/domain.ts'
 import { mcpServersDomain } from './mcp-servers/domain.ts'
 import { metaDomain } from './meta/domain.ts'
+import { openapiDomain } from './openapi/domain.ts'
 import { packagesDomain } from './packages/domain.ts'
 import { repoDomain } from './repo/domain.ts'
 import { secretsDomain } from './secrets/domain.ts'
@@ -34,6 +35,7 @@ export const builtinDomains = [
 	jobsDomain,
 	mcpServersDomain,
 	metaDomain,
+	openapiDomain,
 	packagesDomain,
 	repoDomain,
 	secretsDomain,

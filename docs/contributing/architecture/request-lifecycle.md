@@ -187,8 +187,11 @@ The remote connector flow adds one more Durable Object:
   those sockets.
 
 The runtime capability registry **merges** synthesized domains from **remote
-connectors** listed in MCP caller context (`remoteConnectors`). See
-[Remote connectors](./remote-connectors.md).
+connectors** listed in MCP caller context (`remoteConnectors`), enabled **MCP
+client servers**, and user **OpenAPI provider bindings**. See
+[Remote connectors](./remote-connectors.md),
+[MCP client servers](./mcp-client-servers.md), and
+[OpenAPI provider bindings](./openapi-bindings.md).
 
 Shared options are built in `packages/worker/src/sentry-options.ts`: **release**
 comes from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and

@@ -9,6 +9,7 @@ available `guide` ids).
 | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | [package-authoring.md](./package-authoring.md)                                           | General package-authoring guidance, including the README Intent section                                     |
 | [integration-bootstrap.md](./integration-bootstrap.md)                                   | **Start here** for third-party integrations that must work before saving a dependent package or package app |
+| [openapi-integrations.md](./openapi-integrations.md)                                     | OpenAPI discover → summarize → scaffold or curated `openapi:<name>` binding                                 |
 | [secret-backed-integration.md](./secret-backed-integration.md)                           | Default recipe for non-OAuth integrations that use one or more saved secrets                                |
 | [integration-backed-app-happy-path.md](./integration-backed-app-happy-path.md)           | Default package app pattern after integration smoke test passes                                             |
 | [package-service-pattern.md](./package-service-pattern.md)                               | General package-service pattern for native long-lived runtimes inside Kody                                  |

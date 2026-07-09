@@ -6,6 +6,7 @@ import { filterCapabilityRegistryForCaller } from './access-control.ts'
 import { builtinDomains } from './builtin-domains.ts'
 import { synthesizeRemoteToolDomain } from './remote-connector/index.ts'
 import { synthesizeMcpServerToolDomain } from './mcp-server/index.ts'
+import { synthesizeOpenApiProviderDomain } from './openapi-provider/index.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import {
@@ -18,6 +19,8 @@ import { listEnabledMcpServerRefs } from '#worker/mcp-client/settings-service.ts
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import { getCachedRemoteConnectorSnapshot } from '#worker/remote-connector/snapshot-cache.ts'
 import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
+import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
+import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
 
 let staticRegistryMemo: BuiltCapabilityRegistry | null = null
 
@@ -103,6 +106,7 @@ function createCapabilityRegistryCacheKey(input: {
 	snapshots: ReadonlyArray<RemoteConnectorSnapshot | null>
 	mcpServerRefs: ReadonlyArray<McpServerRef>
 	mcpServerSnapshots: ReadonlyArray<McpServerSnapshot | null>
+	openApiBindings: ReadonlyArray<OpenApiBinding>
 }) {
 	const connectorParts = input.refs
 		.map((ref, index) => {
@@ -132,7 +136,13 @@ function createCapabilityRegistryCacheKey(input: {
 			return `${refKey}:ready:${toolNames}`
 		})
 		.sort()
-	return `${input.userId}:${connectorParts.join('|')}:mcp:${mcpServerParts.join('|')}`
+	const openApiParts = input.openApiBindings
+		.map(
+			(binding) =>
+				`${binding.name}:${binding.updatedAt}:${binding.operations.length}`,
+		)
+		.sort()
+	return `${input.userId}:${connectorParts.join('|')}:mcp:${mcpServerParts.join('|')}:openapi:${openApiParts.join('|')}`
 }
 
 async function buildCapabilityRegistryForDynamicSources(input: {
@@ -142,6 +152,7 @@ async function buildCapabilityRegistryForDynamicSources(input: {
 	snapshots: ReadonlyArray<RemoteConnectorSnapshot | null>
 	mcpServerRefs: ReadonlyArray<McpServerRef>
 	mcpServerSnapshots: ReadonlyArray<McpServerSnapshot | null>
+	openApiBindings: ReadonlyArray<OpenApiBinding>
 }): Promise<BuiltCapabilityRegistry> {
 	const synthesized = await Promise.all(
 		input.refs.map((ref, index) =>
@@ -159,9 +170,14 @@ async function buildCapabilityRegistryForDynamicSources(input: {
 			snapshot: input.mcpServerSnapshots[index] ?? null,
 		}),
 	)
-	const synthesizedDomains = [...synthesized, ...synthesizedMcpServers].flatMap(
-		(domain) => (domain ? [domain.domain] : []),
+	const synthesizedOpenApiProviders = input.openApiBindings.map((binding) =>
+		synthesizeOpenApiProviderDomain({ binding }),
 	)
+	const synthesizedDomains = [
+		...synthesized,
+		...synthesizedMcpServers,
+		...synthesizedOpenApiProviders,
+	].flatMap((domain) => (domain ? [domain.domain] : []))
 	if (synthesizedDomains.length === 0) {
 		return getStaticRegistry()
 	}
@@ -214,6 +230,22 @@ async function loadMcpServerSnapshots(input: {
 	}
 }
 
+async function loadOpenApiBindingsForRegistry(input: {
+	env: Env
+	userId: string
+}): Promise<Array<OpenApiBinding>> {
+	try {
+		return await listOpenApiBindings({
+			env: input.env,
+			userId: input.userId,
+			storageContext: null,
+		})
+	} catch {
+		// A values-store failure must not break builtin capabilities.
+		return []
+	}
+}
+
 export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -226,11 +258,21 @@ export async function getCapabilityRegistryForContext(input: {
 			callerContext: input.callerContext,
 		})
 	}
-	const mcpServerRefs = await loadEnabledMcpServerRefs({
-		env: input.env,
-		userId,
-	})
-	if (refs.length === 0 && mcpServerRefs.length === 0) {
+	const [mcpServerRefs, openApiBindings] = await Promise.all([
+		loadEnabledMcpServerRefs({
+			env: input.env,
+			userId,
+		}),
+		loadOpenApiBindingsForRegistry({
+			env: input.env,
+			userId,
+		}),
+	])
+	if (
+		refs.length === 0 &&
+		mcpServerRefs.length === 0 &&
+		openApiBindings.length === 0
+	) {
 		return filterRegistryForContext({
 			registry: getStaticRegistry(),
 			callerContext: input.callerContext,
@@ -258,6 +300,7 @@ export async function getCapabilityRegistryForContext(input: {
 		snapshots,
 		mcpServerRefs,
 		mcpServerSnapshots,
+		openApiBindings,
 	})
 	const registry = await capabilityRegistryCache.getOrCreate({
 		cacheKey,
@@ -269,6 +312,7 @@ export async function getCapabilityRegistryForContext(input: {
 				snapshots,
 				mcpServerRefs,
 				mcpServerSnapshots,
+				openApiBindings,
 			}),
 	})
 	return filterRegistryForContext({

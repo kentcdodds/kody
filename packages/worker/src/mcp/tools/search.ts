@@ -360,6 +360,14 @@ function buildRecommendedNextStep(
 				: `kody.mcp[${JSON.stringify(serverName)}][${JSON.stringify(toolName)}]`
 			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
 		}
+		if (topMatch.source === 'openapi' && topMatch.openApi) {
+			const providerName = topMatch.openApi.kodyName
+			const operationSlug = topMatch.openApi.operationSlug
+			const accessor = /^[A-Za-z_$][\w$]*$/.test(operationSlug)
+				? `kody.openapi[${JSON.stringify(providerName)}].${operationSlug}`
+				: `kody.openapi[${JSON.stringify(providerName)}][${JSON.stringify(operationSlug)}]`
+			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
+		}
 		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`kody.${topMatch.name}(args)\`.`
 	}
 	return undefined
@@ -1326,6 +1334,7 @@ function capabilityMatchToCandidate(
 				? { remoteConnector: spec.remoteConnector }
 				: {}),
 			...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
+			...(spec.openApi ? { openApi: spec.openApi } : {}),
 		},
 		type: 'capability',
 		id: spec.name,

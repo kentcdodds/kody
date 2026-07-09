@@ -110,6 +110,7 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 						? { remoteConnector: capability.remoteConnector }
 						: {}),
 					...(capability.mcpServer ? { mcpServer: capability.mcpServer } : {}),
+					...(capability.openApi ? { openApi: capability.openApi } : {}),
 					inputFields: getSchemaPropertyNames(capability.inputSchema),
 					requiredInputFields: getSchemaRequiredFields(capability.inputSchema),
 					outputFields: capability.outputSchema

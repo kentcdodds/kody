@@ -399,6 +399,75 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			args: { owner: 'o', repo: 'r', title: 't' },
 		},
 	])
+
+	const openApiDetail = formatEntityDetailMarkdown({
+		type: 'capability',
+		id: 'openapi:widgets:listwidgets',
+		title: 'openapi:widgets:listwidgets',
+		description: 'List widgets — GET /widgets',
+		spec: {
+			name: 'openapi:widgets:listwidgets',
+			domain: 'openapi:widgets',
+			description: 'List widgets — GET /widgets',
+			keywords: [],
+			readOnly: true,
+			idempotent: false,
+			destructive: false,
+			source: 'openapi',
+			openApi: {
+				bindingName: 'widgets',
+				kodyName: 'widgets',
+				operationSlug: 'listwidgets',
+				method: 'get',
+				path: '/widgets',
+			},
+			inputFields: ['query'],
+			requiredInputFields: [],
+			outputFields: [],
+			inputSchema: { type: 'object', properties: {} },
+			inputTypeDefinition:
+				'type OpenapiWidgetsListwidgetsInput = Record<string, never>',
+		},
+	})
+	expect(openApiDetail.markdown).toContain(
+		'kody.openapi["widgets"].listwidgets(input)',
+	)
+	expect(openApiDetail.structured).toMatchObject({
+		source: 'openapi',
+		openApi: {
+			kodyName: 'widgets',
+			operationSlug: 'listwidgets',
+		},
+		executeExample: expect.stringContaining(
+			'kody.openapi["widgets"].listwidgets(input)',
+		),
+	})
+	const [openApiMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'capability',
+				name: 'openapi:widgets:listwidgets',
+				description: 'List widgets — GET /widgets',
+				source: 'openapi',
+				openApi: {
+					bindingName: 'widgets',
+					kodyName: 'widgets',
+					operationSlug: 'listwidgets',
+					method: 'get',
+					path: '/widgets',
+				},
+			},
+		],
+	})
+	expect(openApiMatch).toMatchObject({
+		type: 'capability',
+		usage: 'execute with kody.openapi["widgets"].listwidgets(args)',
+		openApi: {
+			kodyName: 'widgets',
+			operationSlug: 'listwidgets',
+		},
+	})
 })
 
 test('package entity detail includes exports, jobs, and referenced local types', () => {

@@ -174,9 +174,10 @@ primitives:
     name: Capability registry
     summary:
       Builtin capability domains (account, admin, apps, coding, community,
-      email, integrations, jobs, mcp_servers, meta, packages, repo, secrets,
-      services, storage, values) merged with synthesized remote-connector and
-      MCP server domains behind search/execute.
+      email, integrations, jobs, mcp_servers, meta, openapi, packages, repo,
+      secrets, services, storage, values) merged with synthesized
+      remote-connector, MCP server, and OpenAPI binding domains behind
+      search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
     docs:
@@ -340,6 +341,23 @@ primitives:
       - packages/worker/migrations/0053-mcp-server-settings.sql
     docs:
       - docs/contributing/architecture/mcp-client-servers.md
+
+  - id: openapi-bindings
+    group: assistant
+    name: OpenAPI provider bindings
+    summary:
+      User-scoped curated OpenAPI bindings (spec URL, apiBaseUrl, auth
+      reference, operation selection) stored as non-secret values-store config,
+      with openapi domain management capabilities, runtime-synthesized
+      openapi:<name> domains callable via kody.openapi[...], and host approval
+      never widened by untrusted spec servers.
+    code:
+      - packages/worker/src/openapi/
+      - packages/worker/src/mcp/capabilities/openapi/
+      - packages/worker/src/mcp/capabilities/openapi-provider/
+    docs:
+      - docs/contributing/architecture/openapi-bindings.md
+      - docs/guides/openapi-integrations.md
 
   - id: realtime-sessions
     group: assistant

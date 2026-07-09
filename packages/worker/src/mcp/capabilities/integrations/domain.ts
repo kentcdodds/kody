@@ -6,6 +6,7 @@ import { integrationGetCapability } from './integration-get.ts'
 import { integrationListCapability } from './integration-list.ts'
 import { integrationRegistrySearchCapability } from './integration-registry-search.ts'
 import { integrationSaveCapability } from './integration-save.ts'
+import { openapiClientScaffoldCapability } from './openapi-client-scaffold.ts'
 import { openapiSpecSummarizeCapability } from './openapi-spec-summarize.ts'
 
 export const integrationsDomain = defineDomain({
@@ -24,6 +25,7 @@ export const integrationsDomain = defineDomain({
 		'integrations.sh',
 		'openapi',
 		'spec',
+		'scaffold',
 	],
 	capabilities: [
 		integrationSaveCapability,
@@ -33,5 +35,6 @@ export const integrationsDomain = defineDomain({
 		integrationRegistrySearchCapability,
 		integrationDiscoverCapability,
 		openapiSpecSummarizeCapability,
+		openapiClientScaffoldCapability,
 	],
 })

@@ -11,6 +11,7 @@ export const capabilityDomainNames = {
 	math: 'math',
 	mcpServers: 'mcp_servers',
 	meta: 'meta',
+	openapi: 'openapi',
 	packages: 'packages',
 	repo: 'repo',
 	secrets: 'secrets',

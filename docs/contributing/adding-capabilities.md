@@ -59,6 +59,12 @@ domains from the user's enabled MCP servers (see
 [`architecture/mcp-client-servers.md`](./architecture/mcp-client-servers.md)),
 driven by the `mcp_server_settings` D1 table and per-user hub snapshots.
 
+**OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
+domains from the user's curated OpenAPI provider bindings (see
+[`architecture/openapi-bindings.md`](./architecture/openapi-bindings.md)),
+stored as user-scoped values-store config and invoked as
+`kody.openapi["<name>"].<operation_slug>(input)`.
+
 `defineCapability()` in
 `packages/worker/src/mcp/capabilities/define-capability.ts` normalizes Zod →
 JSON Schema and wraps handlers with logging; domain helpers call it for you.

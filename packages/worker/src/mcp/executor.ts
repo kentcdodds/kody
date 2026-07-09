@@ -30,6 +30,7 @@ import {
 } from '#worker/entitlements/errors.ts'
 import {
 	type KodyMcpServerMetadata,
+	type KodyOpenApiProviderMetadata,
 	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
@@ -412,12 +413,15 @@ function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as KodyResolvedProvider
 	if (
 		provider.name === 'kody' &&
-		(kodyProvider.kodyRemoteConnectors || kodyProvider.kodyMcpServers)
+		(kodyProvider.kodyRemoteConnectors ||
+			kodyProvider.kodyMcpServers ||
+			kodyProvider.kodyOpenApiProviders)
 	) {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
 			remoteConnectors: kodyProvider.kodyRemoteConnectors ?? [],
 			mcpServers: kodyProvider.kodyMcpServers ?? [],
+			openApiProviders: kodyProvider.kodyOpenApiProviders ?? [],
 		})
 	}
 	return provider.positionalArgs
@@ -429,9 +433,11 @@ export function createKodyProviderProxySource(input: {
 	providerName: string
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	mcpServers?: Array<KodyMcpServerMetadata>
+	openApiProviders?: Array<KodyOpenApiProviderMetadata>
 }) {
 	const metadataJson = JSON.stringify(input.remoteConnectors)
 	const mcpMetadataJson = JSON.stringify(input.mcpServers ?? [])
+	const openApiMetadataJson = JSON.stringify(input.openApiProviders ?? [])
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
     const __kodyCallDispatcher = async (dispatchName, args) => {
       const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
@@ -450,17 +456,28 @@ export function createKodyProviderProxySource(input: {
       capabilityLabel: "MCP tool",
       callTool: __kodyCallDispatcher,
     });
+    const __kodyOpenapi = __kodyCreateRemoteProxy({
+      remoteConnectors: ${openApiMetadataJson},
+      entityLabel: "OpenAPI provider",
+      shortEntityLabel: "provider",
+      capabilityLabel: "operation",
+      callTool: __kodyCallDispatcher,
+    });
     const ${input.providerName} = new Proxy({}, {
       get: (_, toolName) => {
         if (typeof toolName === 'symbol' || toolName === 'then') return undefined;
         if (toolName === 'remote') return __kodyRemote;
         if (toolName === 'mcp') return __kodyMcp;
+        if (toolName === 'openapi') return __kodyOpenapi;
         const normalizedToolName = String(toolName);
         if (normalizedToolName.startsWith('remote:')) {
           throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat kody function. Use kody.remote[connectorName].capabilityName(input) instead.\`);
         }
         if (normalizedToolName.startsWith('mcp:')) {
           throw new Error(\`MCP server tool "\${normalizedToolName}" is not available as a flat kody function. Use kody.mcp[serverName].toolName(input) instead.\`);
+        }
+        if (normalizedToolName.startsWith('openapi:')) {
+          throw new Error(\`OpenAPI operation "\${normalizedToolName}" is not available as a flat kody function. Use kody.openapi[providerName].operationSlug(input) instead.\`);
         }
         return async (args) => await __kodyCallDispatcher(normalizedToolName, args);
       }

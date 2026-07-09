@@ -34,6 +34,9 @@ to become.
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers
   Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
   `kody.mcp[...]` capability synthesis).
+- [OpenAPI provider bindings](./openapi-bindings.md): user-scoped curated
+  OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
+  via `kody.openapi[...]` (host approval never widened by untrusted specs).
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.

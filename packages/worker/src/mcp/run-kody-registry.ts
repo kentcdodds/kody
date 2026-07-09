@@ -36,9 +36,11 @@ import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
 import {
 	type KodyMcpServerMetadata,
+	type KodyOpenApiProviderMetadata,
 	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
+import { openApiProviderKodyName } from '#worker/openapi/openapi-domain-id.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import {
 	hasTopLevelModuleSyntax,
@@ -380,6 +382,7 @@ async function buildKodyToolContext(
 	tools: AdditionalKodyTools
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	mcpServers: Array<KodyMcpServerMetadata>
+	openApiProviders: Array<KodyOpenApiProviderMetadata>
 }> {
 	const capabilityMap = options?.skipCapabilityRegistry
 		? {}
@@ -391,7 +394,7 @@ async function buildKodyToolContext(
 						callerContext,
 					})
 				).capabilityMap
-	const [remoteConnectors, mcpServers] = await Promise.all([
+	const [remoteConnectors, mcpServers, openApiProviders] = await Promise.all([
 		buildKodyRemoteConnectorMetadata({
 			env,
 			callerContext,
@@ -400,6 +403,9 @@ async function buildKodyToolContext(
 		buildKodyMcpServerMetadata({
 			env,
 			callerContext,
+			capabilityMap,
+		}),
+		buildKodyOpenApiProviderMetadata({
 			capabilityMap,
 		}),
 	])
@@ -555,6 +561,7 @@ async function buildKodyToolContext(
 		},
 		remoteConnectors,
 		mcpServers,
+		openApiProviders,
 	}
 }
 
@@ -720,6 +727,48 @@ async function buildKodyMcpServerMetadata(input: {
 	)
 }
 
+async function buildKodyOpenApiProviderMetadata(input: {
+	capabilityMap: Record<string, Capability>
+}): Promise<Array<KodyOpenApiProviderMetadata>> {
+	const providers = new Map<string, KodyOpenApiProviderMetadata>()
+
+	for (const capability of Object.values(input.capabilityMap)) {
+		if (capability.source !== 'openapi') continue
+		const openApi = capability.openApi
+		if (!openApi) continue
+		const kodyName =
+			openApi.kodyName || openApiProviderKodyName(openApi.bindingName)
+		const existing =
+			providers.get(kodyName) ??
+			({
+				name: kodyName,
+				bindingName: openApi.bindingName,
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 0,
+					message: `The OpenAPI provider "${openApi.bindingName}" is connected.`,
+					unavailableMessage: `The OpenAPI provider "${openApi.bindingName}" is connected.`,
+				},
+				capabilities: [],
+			} satisfies KodyOpenApiProviderMetadata)
+		existing.capabilities.push({
+			name: openApi.operationSlug,
+			dispatchName: sanitizeToolName(capability.name),
+		})
+		existing.capabilities.sort((a, b) => a.name.localeCompare(b.name, 'en'))
+		existing.status.toolCount = Math.max(
+			existing.status.toolCount,
+			existing.capabilities.length,
+		)
+		providers.set(kodyName, existing)
+	}
+
+	return [...providers.values()].sort((a, b) =>
+		a.name.localeCompare(b.name, 'en'),
+	)
+}
+
 export async function buildKodyProvider(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -735,11 +784,8 @@ export async function buildKodyProvider(
 		capabilityRegistry?: BuiltCapabilityRegistry
 	},
 ): Promise<ResolvedProvider> {
-	const { tools, remoteConnectors, mcpServers } = await buildKodyToolContext(
-		env,
-		callerContext,
-		options,
-	)
+	const { tools, remoteConnectors, mcpServers, openApiProviders } =
+		await buildKodyToolContext(env, callerContext, options)
 	const provider: ToolProvider = {
 		name: 'kody',
 		tools: Object.fromEntries(
@@ -754,6 +800,7 @@ export async function buildKodyProvider(
 	return Object.assign(resolveProvider(provider), {
 		kodyRemoteConnectors: remoteConnectors,
 		kodyMcpServers: mcpServers,
+		kodyOpenApiProviders: openApiProviders,
 	}) satisfies KodyResolvedProvider
 }
 

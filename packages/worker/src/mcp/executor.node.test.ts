@@ -232,6 +232,63 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 	)
 })
 
+test('generated kody provider source wires openapi proxy dispatch', async () => {
+	const calls: Array<{ name: string; argsJson: string }> = []
+	const source = createKodyProviderProxySource({
+		providerName: 'kody',
+		remoteConnectors: [],
+		openApiProviders: [
+			{
+				name: 'widgets',
+				bindingName: 'widgets',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 1,
+					message: 'The OpenAPI provider "widgets" is connected.',
+					unavailableMessage: 'The OpenAPI provider "widgets" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'listwidgets',
+						dispatchName: 'openapiwidgetslistwidgets',
+					},
+				],
+			},
+		],
+	})
+	const kody = new Function('__dispatchers', `${source}; return kody;`)({
+		kody: {
+			async call(name: string, argsJson: string) {
+				calls.push({ name, argsJson })
+				return JSON.stringify({ result: { ok: true } })
+			},
+		},
+	}) as {
+		openapi: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+		[key: string]: unknown
+	}
+
+	await expect(
+		kody.openapi['widgets']?.listwidgets({ query: { limit: 1 } }),
+	).resolves.toEqual({ ok: true })
+	expect(calls).toEqual([
+		{
+			name: 'openapiwidgetslistwidgets',
+			argsJson: JSON.stringify({ query: { limit: 1 } }),
+		},
+	])
+	expect(() => kody.openapi['missing']).toThrow(
+		'Unknown OpenAPI provider "missing". Available OpenAPI providers: "widgets".',
+	)
+	expect(() => kody.openapi['widgets']?.missing_op).toThrow(
+		'Unknown operation "missing_op" for provider "widgets". Available capabilities: "listwidgets".',
+	)
+	expect(() => kody['openapi:widgets:listwidgets']).toThrow(
+		'OpenAPI operation "openapi:widgets:listwidgets" is not available as a flat kody function. Use kody.openapi[providerName].operationSlug(input) instead.',
+	)
+})
+
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	const env = createExecutorTestEnv(fakeLoader.loader)

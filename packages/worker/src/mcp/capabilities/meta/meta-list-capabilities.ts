@@ -11,7 +11,7 @@ const capabilitySummarySchema = z.object({
 	readOnly: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
-	source: z.enum(['builtin', 'remote-connector', 'mcp-server']),
+	source: z.enum(['builtin', 'remote-connector', 'mcp-server', 'openapi']),
 	remoteConnector: z
 		.object({
 			instanceId: z.string(),
@@ -28,6 +28,15 @@ const capabilitySummarySchema = z.object({
 			kodyName: z.string(),
 			mcpToolName: z.string(),
 			toolName: z.string(),
+		})
+		.optional(),
+	openApi: z
+		.object({
+			bindingName: z.string(),
+			kodyName: z.string(),
+			operationSlug: z.string(),
+			method: z.string(),
+			path: z.string(),
 		})
 		.optional(),
 	requiredInputFields: z.array(z.string()),
@@ -130,6 +139,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 									? { remoteConnector: spec.remoteConnector }
 									: {}),
 								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
+								...(spec.openApi ? { openApi: spec.openApi } : {}),
 								requiredInputFields: spec.requiredInputFields,
 								inputTypeDefinition: spec.inputTypeDefinition,
 								...(spec.outputTypeDefinition
@@ -151,6 +161,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 									? { remoteConnector: spec.remoteConnector }
 									: {}),
 								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
+								...(spec.openApi ? { openApi: spec.openApi } : {}),
 								requiredInputFields: spec.requiredInputFields,
 							},
 				)
