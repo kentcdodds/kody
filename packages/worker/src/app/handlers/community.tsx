@@ -1,14 +1,12 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
-import { type RemixNode } from 'remix/ui'
 import { type Action } from 'remix/router'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { OgHead } from '#app/ssr-document.tsx'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
+import { createPageOgHeadNode } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
-import { publicOgPages } from '#worker/og/pages.ts'
 
 export function createCommunityHandler(env: Env) {
 	return {
@@ -22,20 +20,12 @@ export function createCommunityHandler(env: Env) {
 			if (frameResponse) return frameResponse
 
 			const origin = getAppBaseUrl({ env, requestUrl: request.url })
-			const page = publicOgPages.community
 
 			return renderAppPage({
 				request,
 				env,
 				title: 'Community packages',
-				extraHead: (
-					<OgHead
-						title={page.ogTitle}
-						description={page.ogDescription}
-						canonicalUrl={`${origin}${page.path}`}
-						ogImageUrl={`${origin}/og/community.png`}
-					/>
-				) as RemixNode,
+				extraHead: createPageOgHeadNode({ origin, pageId: 'community' }),
 			})
 		},
 	} satisfies Action<typeof routes.community>

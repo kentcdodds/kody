@@ -6,6 +6,7 @@ import {
 	buildClientEntryHref,
 	buildStylesheetHref,
 } from '#app/client-build-id.ts'
+import { publicOgPages, type PublicOgPageId } from '#worker/og/pages.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
 export const STYLESHEET_HREF = '/styles.css'
@@ -95,4 +96,24 @@ export function OgHead(handle: Handle<OgHeadProps>) {
 			<link rel="canonical" href={handle.props.canonicalUrl} />
 		</>
 	)
+}
+
+/**
+ * Build the `extraHead` node for a registered public page (see
+ * `#worker/og/pages.ts`). Kept here so plain `.ts` handlers can attach OG
+ * tags without needing JSX.
+ */
+export function createPageOgHeadNode(input: {
+	origin: string
+	pageId: PublicOgPageId
+}): RemixNode {
+	const page = publicOgPages[input.pageId]
+	return (
+		<OgHead
+			title={page.ogTitle}
+			description={page.ogDescription}
+			canonicalUrl={`${input.origin}${page.path}`}
+			ogImageUrl={`${input.origin}/og/${input.pageId}.png`}
+		/>
+	) as RemixNode
 }
