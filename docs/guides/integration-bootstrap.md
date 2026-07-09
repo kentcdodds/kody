@@ -47,7 +47,12 @@ If those conditions are not met, stop and fix the integration first.
      - `integration_registry_search({ query })` to find the canonical provider
        domain (for example `linear.app`, `stripe.com`).
      - `integration_discover({ domain })` for credential types, setup prose,
-       endpoint candidates, and optional `generateUrl` links.
+       endpoint candidates, and optional `generateUrl` links. It serves the fast
+       cached registry lookup when fresh data exists and only falls back to the
+       slow live rediscovery (up to a minute, rate-limited upstream) when cached
+       data is missing, empty, or stale. Check `provenance`, `discoveredAt`, and
+       `liveDiscoveryError` in the response when freshness matters; do not
+       re-call it in a loop hoping for fresher data.
      - When a discovered surface includes a `spec` URL (OpenAPI), call
        `openapi_spec_summarize({ specUrl })` **before** hand-coding clients or
        guessing auth. Use the summary's `auth[].kodyAuthPath` to choose the
