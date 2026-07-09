@@ -94,7 +94,10 @@ test('package_invocation_token_list returns user-scoped metadata without token h
 		db: expect.anything(),
 		userId: 'user-1',
 	})
-	expect(JSON.stringify(result)).not.toContain('stored-token-hash')
+	const serialized = JSON.stringify(result)
+	expect(serialized).not.toContain('stored-token-hash')
+	expect(serialized).not.toContain('user@example.com')
+	expect(serialized).not.toContain('"display_name"')
 	expect(result).toEqual({
 		tokens: [
 			{
@@ -133,7 +136,10 @@ test('package_invocation_token_get returns one user-scoped metadata record', asy
 		userId: 'user-1',
 		tokenId: 'pit-2',
 	})
-	expect(JSON.stringify(result)).not.toContain('stored-token-hash')
+	const serialized = JSON.stringify(result)
+	expect(serialized).not.toContain('stored-token-hash')
+	expect(serialized).not.toContain('user@example.com')
+	expect(serialized).not.toContain('"display_name"')
 	expect(result).toEqual({
 		token: {
 			token_id: 'pit-2',
