@@ -1,9 +1,9 @@
 import { type SecretScope } from '#mcp/secrets/types.ts'
 
 const secretPlaceholderRegex =
-	/\{\{secret:([a-zA-Z0-9._-]+)(?:\|scope=(session|app|user))?\}\}/g
+	/\{\{secret:([a-zA-Z0-9._-]+)(?:\|scope=(session|package|user))?\}\}/g
 const basicAuthSecretPlaceholderRegex =
-	/\{\{secret-basic:username=([a-zA-Z0-9._-]+),password=([a-zA-Z0-9._-]+)(?:\|scope=(session|app|user))?\}\}/g
+	/\{\{secret-basic:username=([a-zA-Z0-9._-]+),password=([a-zA-Z0-9._-]+)(?:\|scope=(session|package|user))?\}\}/g
 
 export type ReferencedSecret = {
 	name: string
@@ -25,7 +25,7 @@ export function parseSecretPlaceholders(value: string) {
 		secrets.push({
 			name,
 			scope:
-				scope === 'app' || scope === 'session' || scope === 'user'
+				scope === 'package' || scope === 'session' || scope === 'user'
 					? scope
 					: null,
 		})
@@ -131,7 +131,7 @@ export function containsSecretPlaceholder(value: string) {
 }
 
 function parseSecretScope(scope: string | undefined) {
-	return scope === 'app' || scope === 'session' || scope === 'user'
+	return scope === 'package' || scope === 'session' || scope === 'user'
 		? scope
 		: null
 }

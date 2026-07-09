@@ -167,6 +167,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				storageContext: {
 					sessionId: baseCallerContext.storageContext?.sessionId ?? null,
 					appId: baseCallerContext.storageContext?.appId ?? null,
+					packageId: baseCallerContext.storageContext?.packageId ?? null,
 					storageId:
 						resolvedStorageId ??
 						baseCallerContext.storageContext?.storageId ??

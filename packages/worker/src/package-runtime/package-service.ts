@@ -637,6 +637,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			storageContext: {
 				sessionId: null,
 				appId: binding.packageId,
+				packageId: binding.packageId,
 				storageId: runtime.storageId,
 			},
 		})

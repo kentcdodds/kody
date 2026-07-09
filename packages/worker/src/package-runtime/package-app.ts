@@ -704,6 +704,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			storageContext: {
 				sessionId: null,
 				appId: this.ctx.props.packageId,
+				packageId: this.ctx.props.packageId,
 				storageId,
 			},
 		})
@@ -1495,6 +1496,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 						storageContext: {
 							sessionId: null,
 							appId: input.savedPackage.id,
+							packageId: input.savedPackage.id,
 							storageId: input.savedPackage.id,
 						},
 					},
@@ -1586,6 +1588,7 @@ export async function createPackageAppCallerContext(input: {
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
+			packageId: input.packageId,
 			storageId: input.packageId,
 		},
 	})

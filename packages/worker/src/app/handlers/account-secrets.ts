@@ -14,7 +14,7 @@ import {
 	loadAccountSecretsData,
 	readAccountSecretsSelectedSecretId,
 	resolveApprovalRequest,
-	toPackageAppOptions,
+	toPackageOptions,
 } from '#app/account-secrets-data.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
@@ -46,9 +46,9 @@ import {
 	parseIntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 
-type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
+type AccountEditableSecretScope = Extract<SecretScope, 'package' | 'user'>
 
-type SavedPackageAppOption = {
+type SavedPackageOption = {
 	id: string
 	title: string
 	updatedAt: string
@@ -95,9 +95,7 @@ export function createAccountSecretsHandler(env: Env) {
 		| typeof routes.accountSecrets
 		| typeof routes.accountSecretNew
 		| typeof routes.accountSecretsApprove
-		| typeof routes.accountSecretDetail
 		| typeof routes.accountSecretUserDetail
-		| typeof routes.accountSecretAppDetail
 		| typeof routes.accountSecretSessionDetail
 		| typeof routes.accountSecretPackageDetail
 	>
@@ -196,7 +194,7 @@ async function handleValueGetAction(input: {
 		userId: input.user.mcpUser.userId,
 		name,
 		scope: 'user',
-		storageContext: { sessionId: null, appId: null },
+		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
 	return jsonResponse({
 		ok: true,
@@ -226,7 +224,7 @@ async function handleValueSetAction(input: {
 		value,
 		scope: 'user',
 		description,
-		storageContext: { sessionId: null, appId: null },
+		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
 	return jsonResponse({ ok: true, value: { value: saved.value } })
 }
@@ -328,7 +326,7 @@ async function handleConnectOauthAction(input: {
 		value: accessToken,
 		scope: 'user',
 		description: `${provider} OAuth access token`,
-		storageContext: { sessionId: null, appId: null },
+		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
 
 	let refreshSaved = false
@@ -341,7 +339,7 @@ async function handleConnectOauthAction(input: {
 			value: refreshToken,
 			scope: 'user',
 			description: `${provider} OAuth refresh token`,
-			storageContext: { sessionId: null, appId: null },
+			storageContext: { sessionId: null, appId: null, packageId: null },
 		})
 		refreshSaved = true
 	}
@@ -512,7 +510,7 @@ async function handleOAuthExchangeAction(input: {
 			userId: input.user.mcpUser.userId,
 			name: clientSecretSecretName,
 			scope: 'user',
-			storageContext: { sessionId: null, appId: null },
+			storageContext: { sessionId: null, appId: null, packageId: null },
 		})
 		if (!resolved.found || !resolved.value) {
 			return jsonResponse({ ok: false, error: 'Client secret not found.' }, 400)
@@ -598,7 +596,7 @@ async function saveIntegrationConfig(input: {
 		value: JSON.stringify(integration),
 		scope: 'user',
 		description: `OAuth integration config for ${integration.name}`,
-		storageContext: { sessionId: null, appId: null },
+		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
 	return integration.name
 }
@@ -744,6 +742,15 @@ async function handleSaveAction(input: {
 	if (!scope) {
 		return jsonResponse({ ok: false, error: 'Secret scope is required.' }, 400)
 	}
+	if (scope === 'package' && allowedPackages.length > 0) {
+		return jsonResponse(
+			{
+				ok: false,
+				error: 'Package secrets are accessible only to their owning package.',
+			},
+			400,
+		)
+	}
 
 	if (!value && currentId) {
 		const parsed = parseAccountSecretId(currentId)
@@ -768,15 +775,15 @@ async function handleSaveAction(input: {
 	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
 		userId: input.user.mcpUser.userId,
 	})
-	const packageApps = toPackageAppOptions(savedPackages)
-	const appId = readAppIdForScope({
+	const packageOptions = toPackageOptions(savedPackages)
+	const packageId = readPackageIdForScope({
 		body: input.body,
 		scope,
-		packageApps,
+		packageOptions,
 	})
-	if (scope === 'app' && !appId) {
+	if (scope === 'package' && !packageId) {
 		return jsonResponse(
-			{ ok: false, error: 'Choose an app for app secrets.' },
+			{ ok: false, error: 'Choose a package for package secrets.' },
 			400,
 		)
 	}
@@ -784,7 +791,7 @@ async function handleSaveAction(input: {
 	const secrets = await listAccountSecrets({
 		env: input.env,
 		user: input.user,
-		packageApps,
+		packageOptions,
 	})
 	const secretById = new Map(secrets.map((secret) => [secret.id, secret]))
 	const currentSecret = currentId ? (secretById.get(currentId) ?? null) : null
@@ -795,7 +802,7 @@ async function handleSaveAction(input: {
 	const nextId = buildAccountSecretId({
 		name,
 		scope,
-		appId,
+		packageId,
 	})
 	if (currentId !== nextId && secretById.has(nextId)) {
 		return jsonResponse(
@@ -818,7 +825,7 @@ async function handleSaveAction(input: {
 			description,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
-				appId,
+				packageId,
 			}),
 		})
 		await setSecretAllowedHosts({
@@ -829,7 +836,7 @@ async function handleSaveAction(input: {
 			allowedHosts,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
-				appId,
+				packageId,
 			}),
 		})
 		await setSecretAllowedCapabilities({
@@ -840,7 +847,7 @@ async function handleSaveAction(input: {
 			allowedCapabilities,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
-				appId,
+				packageId,
 			}),
 		})
 		await setSecretAllowedPackages({
@@ -851,7 +858,7 @@ async function handleSaveAction(input: {
 			allowedPackages,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
-				appId,
+				packageId,
 			}),
 		})
 
@@ -869,7 +876,7 @@ async function handleSaveAction(input: {
 			request: input.request,
 			env: input.env,
 			user: input.user,
-			packageApps,
+			packageOptions,
 			savedPackages,
 			selectedSecretId: nextId,
 		})
@@ -962,16 +969,20 @@ function readAccountSecretScope(
 	body: object,
 ): AccountEditableSecretScope | null {
 	const raw = readString(body, 'scope')
-	return raw === 'app' || raw === 'user' ? raw : null
+	return raw === 'package' || raw === 'user' ? raw : null
 }
 
-function readAppIdForScope(input: {
+function readPackageIdForScope(input: {
 	body: object
 	scope: AccountEditableSecretScope
-	packageApps: Array<SavedPackageAppOption>
+	packageOptions: Array<SavedPackageOption>
 }) {
-	if (input.scope !== 'app') return null
-	const appId = readString(input.body, 'appId')
-	if (!appId) return null
-	return input.packageApps.some((app) => app.id === appId) ? appId : null
+	if (input.scope !== 'package') return null
+	const packageId = readString(input.body, 'packageId')
+	if (!packageId) return null
+	return input.packageOptions.some(
+		(packageOption) => packageOption.id === packageId,
+	)
+		? packageId
+		: null
 }

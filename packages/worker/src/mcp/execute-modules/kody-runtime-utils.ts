@@ -6,7 +6,7 @@ import {
 export { IntegrationHostNotAllowedError }
 
 type CapabilityResult = unknown
-type SecretScope = 'session' | 'app' | 'user'
+type SecretScope = 'session' | 'package' | 'user'
 
 export type CapabilityArgs = Record<string, unknown>
 
@@ -336,10 +336,7 @@ async function refreshAccessTokenWithIntegration(
 	return payload.access_token
 }
 
-function buildSecretPlaceholder(
-	name: string,
-	scope: 'user' | 'app' | 'session',
-) {
+function buildSecretPlaceholder(name: string, scope: SecretScope) {
 	return `{{secret:${name}|scope=${scope}}}`
 }
 
@@ -396,7 +393,8 @@ function normalizeSecretName(value: string, fieldName: string) {
 
 function normalizeOptionalSecretScope(scope: SecretScope | null | undefined) {
 	if (scope == null) return null
-	if (scope === 'app' || scope === 'session' || scope === 'user') return scope
+	if (scope === 'package' || scope === 'session' || scope === 'user')
+		return scope
 	throw new Error(`Unsupported secret scope "${scope}".`)
 }
 
@@ -562,7 +560,7 @@ const __kodyNormalizeSecretName = (value, fieldName) => {
 };
 const __kodyNormalizeOptionalSecretScope = (scope) => {
   if (scope == null) return null;
-  if (scope === 'app' || scope === 'session' || scope === 'user') return scope;
+  if (scope === 'package' || scope === 'session' || scope === 'user') return scope;
   throw new Error(\`Unsupported secret scope "\${scope}".\`);
 };
 const __kodyBuildBasicAuthSecretPlaceholder = (input) => {

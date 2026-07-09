@@ -21,12 +21,39 @@ vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
 }))
 
-const { buildPackageApprovalErrorForMounts, resolvePackageMountedSecret } =
-	await import('./package-access.ts')
+const {
+	assertPackageCanAccessResolvedSecret,
+	buildPackageApprovalErrorForMounts,
+	resolvePackageMountedSecret,
+} = await import('./package-access.ts')
 
-test('resolvePackageMountedSecret rejects package runtime calls without a matching appId', async () => {
+test('package-owned secrets do not require an allowed-packages grant', async () => {
+	await expect(
+		assertPackageCanAccessResolvedSecret({
+			env: { APP_DB: {} as D1Database },
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+			},
+			secretName: 'packageToken',
+			resolved: {
+				found: true,
+				value: 'secret',
+				scope: 'package',
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			},
+		}),
+	).resolves.toBeUndefined()
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+})
+
+test('resolvePackageMountedSecret rejects package runtime calls without a matching packageId', async () => {
 	const runtimeError =
-		'Package secret access is only available inside server-side package runtime contexts.'
+		'Package secret access requires a matching server-side package runtime context.'
 	const baseInput = {
 		env: {} as Env,
 		packageId: 'pkg-1',
@@ -50,7 +77,7 @@ test('resolvePackageMountedSecret rejects package runtime calls without a matchi
 				...baseInput.callerContext,
 				storageContext: {
 					sessionId: null,
-					appId: null,
+					packageId: null,
 					storageId: 'pkg-1',
 				},
 			},
@@ -64,7 +91,7 @@ test('resolvePackageMountedSecret rejects package runtime calls without a matchi
 				...baseInput.callerContext,
 				storageContext: {
 					sessionId: null,
-					appId: 'pkg-2',
+					packageId: 'pkg-2',
 					storageId: 'pkg-1',
 				},
 			},
@@ -72,7 +99,7 @@ test('resolvePackageMountedSecret rejects package runtime calls without a matchi
 	).rejects.toThrow(runtimeError)
 })
 
-test('resolvePackageMountedSecret resolves mounted secret when package appId matches', async () => {
+test('resolvePackageMountedSecret resolves approved user secret when package id matches', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce({
 		id: 'pkg-1',
 		kodyId: 'discord-gateway',
@@ -120,7 +147,7 @@ test('resolvePackageMountedSecret resolves mounted secret when package appId mat
 				repoContext: null,
 				storageContext: {
 					sessionId: null,
-					appId: 'pkg-1',
+					packageId: 'pkg-1',
 					storageId: 'pkg-1',
 				},
 			},
@@ -141,7 +168,8 @@ test('resolvePackageMountedSecret resolves mounted secret when package appId mat
 			scope: 'user',
 			storageContext: {
 				sessionId: null,
-				appId: 'pkg-1',
+				appId: null,
+				packageId: 'pkg-1',
 				storageId: 'pkg-1',
 			},
 		}),
@@ -194,7 +222,8 @@ test('findMissingPackageApprovals reads saved package metadata without loading m
 		},
 		storageContext: {
 			sessionId: null,
-			appId: 'pkg-1',
+			appId: null,
+			packageId: 'pkg-1',
 			storageId: 'pkg-1',
 		},
 	})

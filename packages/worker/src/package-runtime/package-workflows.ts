@@ -83,9 +83,14 @@ export type DynamicCallableWorkflowPayload =
 			params?: PackageWorkflowParams
 	  }
 	| {
-			version: 2
+			version: 3
 			sourceType: 'inline'
 			userId: string
+			packageContext: {
+				packageId: string
+				kodyId: string
+				sourceId?: string | null
+			} | null
 			workflowName: string
 			code: string
 			idempotencyKey: string
@@ -269,6 +274,11 @@ function normalizeWorkflowIdempotencyKey(idempotencyKey: string | undefined) {
 
 function createInlineWorkflowPayload(input: {
 	userId: string
+	packageContext?: {
+		packageId: string
+		kodyId: string
+		sourceId?: string | null
+	} | null
 	workflowName?: string
 	code: string
 	idempotencyKey?: string
@@ -280,9 +290,10 @@ function createInlineWorkflowPayload(input: {
 	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
 	const params = normalizePackageWorkflowParams(input.params)
 	return {
-		version: 2,
+		version: 3,
 		sourceType: 'inline',
 		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		packageContext: input.packageContext ?? null,
 		workflowName: normalizeOptionalWorkflowName(
 			input.workflowName,
 			'inline-code',
@@ -661,6 +672,7 @@ async function resolveWorkflowPayload(input: {
 	if (code) {
 		return createInlineWorkflowPayload({
 			userId: input.userId,
+			packageContext: input.packageContext,
 			workflowName: input.body.workflowName,
 			code,
 			idempotencyKey: input.body.idempotencyKey,
@@ -1080,6 +1092,11 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 	private async invokeInlineWorkflowCode(
 		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'inline' }>,
 	): Promise<JsonValue> {
+		if (payload.packageContext === undefined) {
+			throw new Error(
+				'Inline workflow payload is missing required package security context.',
+			)
+		}
 		const [{ runModuleWithRegistry }, { createMcpCallerContext }] =
 			await Promise.all([
 				import('#mcp/run-kody-registry.ts'),
@@ -1101,10 +1118,21 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					username: undefined,
 					displayName: `workflow:${payload.workflowName}`,
 				},
+				storageContext: payload.packageContext
+					? {
+							sessionId: null,
+							appId: payload.packageContext.packageId,
+							packageId: payload.packageContext.packageId,
+							storageId: null,
+						}
+					: null,
 				remoteConnectors,
 			}),
 			payload.code,
 			payload.params,
+			{
+				packageContext: payload.packageContext,
+			},
 		)
 		if (result.error) {
 			throw new Error(result.error)

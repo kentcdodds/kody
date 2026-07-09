@@ -20,6 +20,7 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
+import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 
@@ -214,6 +215,14 @@ export async function expandSecretPlaceholders(input: {
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				throw new Error(createMissingSecretMessage(referenced.name))
 			}
+			await assertPackageCanAccessResolvedSecret({
+				env: input.env,
+				baseUrl: input.props.baseUrl,
+				userId: input.props.userId!,
+				storageContext: input.props.storageContext,
+				secretName: referenced.name,
+				resolved,
+			})
 			return { referenced, resolved, value: resolved.value }
 		}),
 	)

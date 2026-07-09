@@ -12,16 +12,16 @@ test('account secret paths encode route segments and round-trip through the pars
 		}),
 	).toBe('/account/secrets/user/github%20token')
 
-	const appPath = buildAccountSecretPath({
-		scope: 'app',
-		appId: 'package/id',
+	const packagePath = buildAccountSecretPath({
+		scope: 'package',
+		packageId: 'package/id',
 		name: 'api/key',
 	})
-	expect(appPath).toBe('/account/secrets/app/package%2Fid/api%2Fkey')
-	expect(parseAccountSecretPath(appPath)).toEqual({
-		id: 'app::package%2Fid::api%2Fkey',
-		scope: 'app',
-		appId: 'package/id',
+	expect(packagePath).toBe('/account/secrets/package/package%2Fid/api%2Fkey')
+	expect(parseAccountSecretPath(packagePath)).toEqual({
+		id: 'package::package%2Fid::api%2Fkey',
+		scope: 'package',
+		packageId: 'package/id',
 		sessionId: null,
 		name: 'api/key',
 	})
@@ -38,10 +38,10 @@ test('account secret paths encode route segments and round-trip through the pars
 test('account secret paths fail fast when scope binding ids are missing', () => {
 	expect(() =>
 		buildAccountSecretPath({
-			scope: 'app',
+			scope: 'package',
 			name: 'api/key',
 		}),
-	).toThrow(/appId is required/)
+	).toThrow(/packageId is required/)
 	expect(() =>
 		buildAccountSecretPath({
 			scope: 'session',

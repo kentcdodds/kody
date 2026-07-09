@@ -183,6 +183,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   and their latest published commit
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source
+- `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
+  `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
+  package runtimes may use their own package secrets, while user secrets require
+  an explicit `allowed_packages` grant on every package read path.
 
 App access pattern:
 
@@ -485,7 +489,8 @@ on write unless a migration backfills existing rows.
   (`packages/worker/migrations/0018-jobs.sql`,
   `0025-jobs-repo-check-policy.sql`, `packages/worker/src/jobs/repo.ts`).
   `run_history_json` is capped in code; the other fields rely on parser and
-  normalizer compatibility.
+  normalizer compatibility. Package jobs persist both `storageContext.appId` for
+  value scope and `storageContext.packageId` for package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`
   (`0027-saved-packages.sql`, `0045-community-listings.sql`) are `string[]`
   projections.
@@ -514,6 +519,8 @@ on write unless a migration backfills existing rows.
   policy inputs (`0009-secret-allowed-hosts.sql`,
   `0010-secret-allowed-capabilities.sql`, `0023-secret-allowed-packages.sql`).
   Tightening parse-error behavior requires explicit compatibility review.
+  `allowed_packages` applies only to user-scoped secrets; package-scoped secrets
+  are owned exclusively by the package id in their bucket binding.
 - `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
   (`0037-package-runtime-debug.sql`) store bounded debug metadata and log
   fields.

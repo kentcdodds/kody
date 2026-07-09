@@ -30,6 +30,8 @@ export const secretListCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const packageId =
+				ctx.callerContext.storageContext?.packageId?.trim() || null
 			const secrets = await listSecrets({
 				env: ctx.env,
 				userId: user.userId,
@@ -37,15 +39,23 @@ export const secretListCapability = defineDomainCapability(
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
 					appId: ctx.callerContext.storageContext?.appId ?? null,
+					packageId: ctx.callerContext.storageContext?.packageId ?? null,
 					storageId: ctx.callerContext.storageContext?.storageId ?? null,
 				},
 			})
+			const accessibleSecrets = packageId
+				? secrets.filter(
+						(secret) =>
+							secret.scope !== 'user' ||
+							secret.allowedPackages.includes(packageId),
+					)
+				: secrets
 			return {
-				secrets: secrets.map((secret) => ({
+				secrets: accessibleSecrets.map((secret) => ({
 					name: secret.name,
 					scope: secret.scope,
 					description: secret.description,
-					app_id: secret.appId,
+					package_id: secret.packageId,
 					allowed_hosts: secret.allowedHosts,
 					allowed_capabilities: secret.allowedCapabilities,
 					allowed_packages: secret.allowedPackages,

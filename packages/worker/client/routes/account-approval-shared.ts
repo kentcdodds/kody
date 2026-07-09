@@ -1,6 +1,6 @@
 export type AccountStatus = 'loading' | 'ready' | 'error'
 export type ApprovalAction = 'approve' | 'reject'
-export type ApprovalScope = 'session' | 'app' | 'user'
+export type ApprovalScope = 'session' | 'package' | 'user'
 
 export type ApprovalView = {
 	name: string
@@ -16,7 +16,7 @@ export const accountSecretsApiPath = '/account/secrets.json'
 export const accountProfileApiPath = '/account/profile.json'
 
 export function getScopeLabel(scope: ApprovalScope) {
-	if (scope === 'app') return 'App'
+	if (scope === 'package') return 'Package'
 	if (scope === 'session') return 'Session'
 	return 'User'
 }

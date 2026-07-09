@@ -13,7 +13,7 @@ export function buildSecretHostApprovalUrl(input: {
 	const secretPath = buildAccountSecretPath({
 		name: input.name,
 		scope: input.scope,
-		appId: input.storageContext?.appId ?? null,
+		packageId: input.storageContext?.packageId ?? null,
 		sessionId: input.storageContext?.sessionId ?? null,
 	})
 	const url = new URL(secretPath, input.baseUrl)

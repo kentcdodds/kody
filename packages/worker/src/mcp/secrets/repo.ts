@@ -174,41 +174,72 @@ export async function listUserScopeSecretMetadata(input: {
 	return (results ?? []).map(mapSecretMetadataRow)
 }
 
-export async function listAppScopeSecretMetadata(input: {
+export async function listPackageScopeSecretMetadata(input: {
 	db: D1Database
 	userId: string
-	appIds: Array<string>
+	packageIds: Array<string>
 	now?: string
 }): Promise<Array<SecretMetadataRow>> {
-	if (input.appIds.length === 0) return []
+	if (input.packageIds.length === 0) return []
 	const now = input.now ?? new Date().toISOString()
-	const placeholders = input.appIds.map(() => '?').join(', ')
+	const placeholders = input.packageIds.map(() => '?').join(', ')
 	const { results } = await input.db
 		.prepare(
 			`SELECT b.scope, b.binding_key, e.name, e.description, e.allowed_hosts, e.allowed_capabilities, e.allowed_packages, e.created_at, e.updated_at, b.expires_at
 			FROM secret_buckets b
 			JOIN secret_entries e ON e.bucket_id = b.id
-			WHERE b.user_id = ? AND b.scope = 'app'
+			WHERE b.user_id = ? AND b.scope = 'package'
 				AND b.binding_key IN (${placeholders})
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
 			ORDER BY e.name ASC`,
 		)
-		.bind(input.userId, ...input.appIds, now)
+		.bind(input.userId, ...input.packageIds, now)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapSecretMetadataRow)
 }
 
-export async function deleteAppScopeSecretBuckets(input: {
+export async function deletePackageScopeSecretBuckets(input: {
 	db: D1Database
 	userId: string
-	appId: string
+	packageId: string
 }) {
 	const result = await input.db
 		.prepare(
 			`DELETE FROM secret_buckets
-			WHERE user_id = ? AND scope = 'app' AND binding_key = ?`,
+			WHERE user_id = ? AND scope = 'package' AND binding_key = ?`,
 		)
-		.bind(input.userId, input.appId)
+		.bind(input.userId, input.packageId)
+		.run()
+	return result.meta.changes ?? 0
+}
+
+export async function removePackageFromSecretApprovals(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE secret_entries AS e
+			SET allowed_packages = (
+				SELECT json_group_array(value)
+				FROM json_each(e.allowed_packages)
+				WHERE value <> ?
+			),
+			updated_at = CURRENT_TIMESTAMP
+			WHERE e.bucket_id IN (
+				SELECT id
+				FROM secret_buckets
+				WHERE user_id = ? AND scope = 'user'
+			)
+			AND json_valid(e.allowed_packages)
+			AND EXISTS (
+				SELECT 1
+				FROM json_each(e.allowed_packages)
+				WHERE value = ?
+			)`,
+		)
+		.bind(input.packageId, input.userId, input.packageId)
 		.run()
 	return result.meta.changes ?? 0
 }

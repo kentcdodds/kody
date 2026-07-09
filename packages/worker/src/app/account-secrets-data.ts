@@ -7,7 +7,7 @@ import { type AccountSecretsLoaderData } from '#app/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
-	listAppSecretsByAppIds,
+	listPackageSecretsByPackageIds,
 	listSecrets,
 	resolveSecret,
 } from '#mcp/secrets/service.ts'
@@ -19,9 +19,9 @@ type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
 
-type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
+type AccountEditableSecretScope = Extract<SecretScope, 'package' | 'user'>
 
-type SavedPackageAppOption = {
+type SavedPackageOption = {
 	id: string
 	title: string
 	updatedAt: string
@@ -31,7 +31,6 @@ type SavedPackageSummary = {
 	id: string
 	kodyId: string
 	name: string
-	hasApp: boolean
 	updatedAt: string
 }
 
@@ -40,8 +39,8 @@ type AccountSecretListItem = {
 	name: string
 	scope: AccountEditableSecretScope
 	description: string
-	appId: string | null
-	appTitle: string | null
+	packageId: string | null
+	packageTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
@@ -79,11 +78,6 @@ function readSelectedSecretIdFromPath(pathname: string) {
 	if (pathname === `${secretsBasePath}/approve`) return null
 	const parsedPath = parseAccountSecretPath(pathname)
 	if (parsedPath) return parsedPath.id
-	if (pathname.startsWith(`${secretsBasePath}/`)) {
-		const legacySecretId = pathname.slice(`${secretsBasePath}/`.length)
-		const parsedLegacyId = parseAccountSecretId(legacySecretId)
-		return parsedLegacyId ? legacySecretId : legacySecretId || null
-	}
 	return null
 }
 
@@ -92,7 +86,7 @@ export async function loadAccountSecretsData(input: {
 	env: Env
 	user: AuthenticatedUser
 	selectedSecretId?: string | null
-	packageApps?: Array<SavedPackageAppOption>
+	packageOptions?: Array<SavedPackageOption>
 	savedPackages?: Array<SavedPackageSummary>
 }): Promise<AccountSecretsLoaderData> {
 	const selectedSecretId =
@@ -110,7 +104,7 @@ async function buildAccountSecretsPayload(input: {
 	env: Env
 	user: AuthenticatedUser
 	selectedSecretId?: string | null
-	packageApps?: Array<SavedPackageAppOption>
+	packageOptions?: Array<SavedPackageOption>
 	savedPackages?: Array<SavedPackageSummary>
 }): Promise<AccountSecretsLoaderData> {
 	const url = new URL(input.request.url)
@@ -122,12 +116,12 @@ async function buildAccountSecretsPayload(input: {
 		(await listSavedPackagesByUserId(input.env.APP_DB, {
 			userId: input.user.mcpUser.userId,
 		}))
-	const packageApps = input.packageApps ?? toPackageAppOptions(savedPackages)
+	const packageOptions = input.packageOptions ?? toPackageOptions(savedPackages)
 	const packageLookup = toAllowedPackageLookup(savedPackages)
 	const secrets = await listAccountSecrets({
 		env: input.env,
 		user: input.user,
-		packageApps,
+		packageOptions,
 	})
 	const selectedSecret = input.selectedSecretId
 		? await resolveAccountSecretDetail({
@@ -161,7 +155,7 @@ async function buildAccountSecretsPayload(input: {
 	return {
 		ok: true,
 		email: input.user.email,
-		apps: packageApps,
+		packageOptions,
 		packages: Array.from(packageLookup.values()).map((packageEntry) => ({
 			id: packageEntry.packageId,
 			kodyId: packageEntry.kodyId,
@@ -177,32 +171,39 @@ async function buildAccountSecretsPayload(input: {
 async function listAccountSecrets(input: {
 	env: Env
 	user: AuthenticatedUser
-	packageApps: Array<SavedPackageAppOption>
+	packageOptions: Array<SavedPackageOption>
 }) {
-	const appTitles = new Map(input.packageApps.map((app) => [app.id, app.title]))
-	const [userSecrets, appSecrets] = await Promise.all([
+	const packageTitles = new Map(
+		input.packageOptions.map((packageOption) => [
+			packageOption.id,
+			packageOption.title,
+		]),
+	)
+	const [userSecrets, packageSecrets] = await Promise.all([
 		listSecrets({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
 			scope: 'user',
 		}),
-		listAppSecretsByAppIds({
+		listPackageSecretsByPackageIds({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
-			appIds: input.packageApps.map((app) => app.id),
+			packageIds: input.packageOptions.map((packageOption) => packageOption.id),
 		}),
 	])
 
 	return [
-		...userSecrets.map((secret) => toAccountSecretListItem(secret, appTitles)),
-		...Array.from(appSecrets.values())
+		...userSecrets.map((secret) =>
+			toAccountSecretListItem(secret, packageTitles),
+		),
+		...Array.from(packageSecrets.values())
 			.flat()
-			.map((secret) => toAccountSecretListItem(secret, appTitles)),
+			.map((secret) => toAccountSecretListItem(secret, packageTitles)),
 	].sort((left, right) => {
 		return (
 			left.name.localeCompare(right.name) ||
 			left.scope.localeCompare(right.scope) ||
-			(left.appTitle ?? '').localeCompare(right.appTitle ?? '')
+			(left.packageTitle ?? '').localeCompare(right.packageTitle ?? '')
 		)
 	})
 }
@@ -237,6 +238,9 @@ function resolveApprovalRequest(input: {
 	}
 	const storageContext = getSecretContextForAccountSecret(parsed)
 	if (input.requestedPackageId) {
+		if (parsed.scope !== 'user') {
+			throw new Error('Only user secrets support package approvals.')
+		}
 		return {
 			kind: 'package',
 			name: parsed.name,
@@ -322,7 +326,7 @@ function toAccountSecretListItem(
 		name: string
 		scope: SecretScope
 		description: string
-		appId: string | null
+		packageId: string | null
 		allowedHosts: Array<string>
 		allowedCapabilities: Array<string>
 		allowedPackages: Array<string>
@@ -330,24 +334,26 @@ function toAccountSecretListItem(
 		updatedAt: string
 		ttlMs: number | null
 	},
-	appTitles: Map<string, string>,
+	packageTitles: Map<string, string>,
 ) {
 	if (secret.scope === 'session') {
 		throw new Error('Session secrets are not editable from the account page.')
 	}
-	const scope = secret.scope === 'app' ? 'app' : 'user'
+	const scope = secret.scope === 'package' ? 'package' : 'user'
 
 	return {
 		id: buildAccountSecretId({
 			name: secret.name,
 			scope,
-			appId: secret.appId,
+			packageId: secret.packageId,
 		}),
 		name: secret.name,
 		scope,
 		description: secret.description,
-		appId: secret.appId,
-		appTitle: secret.appId ? (appTitles.get(secret.appId) ?? null) : null,
+		packageId: secret.packageId,
+		packageTitle: secret.packageId
+			? (packageTitles.get(secret.packageId) ?? null)
+			: null,
 		allowedHosts: secret.allowedHosts,
 		allowedCapabilities: secret.allowedCapabilities,
 		allowedPackages: secret.allowedPackages,
@@ -357,16 +363,14 @@ function toAccountSecretListItem(
 	} satisfies AccountSecretListItem
 }
 
-function toPackageAppOptions(
+function toPackageOptions(
 	savedPackages: Array<{
 		id: string
 		name: string
-		hasApp: boolean
 		updatedAt: string
 	}>,
 ) {
 	return savedPackages
-		.filter((savedPackage) => savedPackage.hasApp)
 		.map((savedPackage) => ({
 			id: savedPackage.id,
 			title: savedPackage.name,
@@ -401,12 +405,13 @@ function toAllowedPackageLookup(
 
 export function getSecretContextForAccountSecret(input: {
 	scope: SecretScope
-	appId: string | null
+	packageId: string | null
 	sessionId?: string | null
 }): StorageContext {
 	return {
 		sessionId: input.scope === 'session' ? (input.sessionId ?? null) : null,
-		appId: input.scope === 'app' ? input.appId : null,
+		appId: null,
+		packageId: input.scope === 'package' ? input.packageId : null,
 	}
 }
 
@@ -425,6 +430,6 @@ function readRequestedCapability(url: URL) {
 	return value?.trim() ? value.trim() : null
 }
 
-export { resolveApprovalRequest, toPackageAppOptions, listAccountSecrets }
+export { resolveApprovalRequest, toPackageOptions, listAccountSecrets }
 
 export { buildAccountSecretsPayload }

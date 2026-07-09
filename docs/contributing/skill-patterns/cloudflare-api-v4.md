@@ -11,12 +11,13 @@ import it from other packages with `kody:@...`.
 - Base URL: `https://api.cloudflare.com` (or your account’s documented API
   hostname).
 - Send `Authorization: Bearer {{secret:yourSecretName}}` (or with `|scope=user`
-  / `app` / `session` as needed).
+  / `package` / `session` as needed).
 - The user must approve **`api.cloudflare.com`** for that secret (host approval
   in the account UI). Saving a secret does not approve hosts automatically.
 
 Capability **allowlists** on secrets apply to **capability inputs** that use
-`x-kody-secret`. Fetch-based access is primarily gated by **allowed hosts**.
+`x-kody-secret`. Package code also needs package approval for user-scoped
+secrets; package-scoped secrets are available only to their owning package.
 
 ## Paths
 

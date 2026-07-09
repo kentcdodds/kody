@@ -132,6 +132,7 @@ async function invokeRetriever(input: {
 		storageContext: {
 			sessionId: null,
 			appId: input.entry.packageId,
+			packageId: input.entry.packageId,
 			storageId: buildPackageRetrieverStorageId(input.entry.packageId),
 		},
 		repoContext: createRepoContext(source),

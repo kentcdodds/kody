@@ -386,10 +386,10 @@ export type AccountPackageInvocationTokensLoaderData = {
 export type AccountSecretListItem = {
 	id: string
 	name: string
-	scope: 'app' | 'user'
+	scope: 'package' | 'user'
 	description: string
-	appId: string | null
-	appTitle: string | null
+	packageId: string | null
+	packageTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
@@ -405,7 +405,7 @@ export type AccountSecretDetail = AccountSecretListItem & {
 export type AccountSecretsLoaderData = {
 	ok: true
 	email: string
-	apps: Array<{
+	packageOptions: Array<{
 		id: string
 		title: string
 		updatedAt: string
@@ -419,7 +419,7 @@ export type AccountSecretsLoaderData = {
 	selectedSecret: AccountSecretDetail | null
 	approval: {
 		name: string
-		scope: 'app' | 'session' | 'user'
+		scope: 'package' | 'session' | 'user'
 		requestedHost: string
 		requestedCapability: string | null
 		requestedPackageId: string | null

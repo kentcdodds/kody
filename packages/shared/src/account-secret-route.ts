@@ -1,22 +1,22 @@
 import { createHref } from 'remix/route-pattern/href'
 
-type AccountSecretRouteScope = 'app' | 'session' | 'user'
+type AccountSecretRouteScope = 'package' | 'session' | 'user'
 const accountSecretsBasePath = '/account/secrets'
 const accountSecretUserPathPattern = `${accountSecretsBasePath}/user/:secretName`
-const accountSecretAppPathPattern = `${accountSecretsBasePath}/app/:appId/:secretName`
+const accountSecretPackagePathPattern = `${accountSecretsBasePath}/package/:packageId/:secretName`
 const accountSecretSessionPathPattern = `${accountSecretsBasePath}/session/:sessionId/:secretName`
 
 export type AccountSecretRouteIdInput = {
 	name: string
 	scope: AccountSecretRouteScope
-	appId?: string | null
+	packageId?: string | null
 	sessionId?: string | null
 }
 
 export type ParsedAccountSecretRouteId = {
 	name: string
 	scope: AccountSecretRouteScope
-	appId: string | null
+	packageId: string | null
 	sessionId: string | null
 }
 
@@ -26,8 +26,8 @@ export type ParsedAccountSecretRoutePath = ParsedAccountSecretRouteId & {
 
 export function buildAccountSecretId(input: AccountSecretRouteIdInput) {
 	const bindingId =
-		input.scope === 'app'
-			? (input.appId ?? '')
+		input.scope === 'package'
+			? (input.packageId ?? '')
 			: input.scope === 'session'
 				? (input.sessionId ?? '')
 				: ''
@@ -41,7 +41,8 @@ export function parseAccountSecretId(
 ): ParsedAccountSecretRouteId | null {
 	const [scope, encodedBindingId, encodedName, ...rest] = secretId.split('::')
 	if (rest.length > 0) return null
-	if (scope !== 'app' && scope !== 'session' && scope !== 'user') return null
+	if (scope !== 'package' && scope !== 'session' && scope !== 'user')
+		return null
 
 	try {
 		const name = decodeURIComponent(encodedName ?? '')
@@ -51,7 +52,7 @@ export function parseAccountSecretId(
 		return {
 			name,
 			scope,
-			appId: scope === 'app' ? bindingId || null : null,
+			packageId: scope === 'package' ? bindingId || null : null,
 			sessionId: scope === 'session' ? bindingId || null : null,
 		}
 	} catch {
@@ -63,12 +64,14 @@ export function buildAccountSecretPath(input: AccountSecretRouteIdInput) {
 	if (input.scope === 'user') {
 		return createHref(accountSecretUserPathPattern, { secretName: input.name })
 	}
-	if (input.scope === 'app') {
-		if (!input.appId) {
-			throw new Error('appId is required for app-scoped account secret paths')
+	if (input.scope === 'package') {
+		if (!input.packageId) {
+			throw new Error(
+				'packageId is required for package-scoped account secret paths',
+			)
 		}
-		return createHref(accountSecretAppPathPattern, {
-			appId: input.appId,
+		return createHref(accountSecretPackagePathPattern, {
+			packageId: input.packageId,
 			secretName: input.name,
 		})
 	}
@@ -99,21 +102,21 @@ export function parseAccountSecretPath(
 			const parsed = {
 				name: decodeURIComponent(rest[1] ?? ''),
 				scope: 'user' as const,
-				appId: null,
+				packageId: null,
 				sessionId: null,
 			}
 			if (!parsed.name.trim()) return null
 			const id = buildAccountSecretId(parsed)
 			return { ...parsed, id }
 		}
-		if (rest.length === 3 && rest[0] === 'app') {
+		if (rest.length === 3 && rest[0] === 'package') {
 			const parsed = {
 				name: decodeURIComponent(rest[2] ?? ''),
-				scope: 'app' as const,
-				appId: decodeURIComponent(rest[1] ?? '') || null,
+				scope: 'package' as const,
+				packageId: decodeURIComponent(rest[1] ?? '') || null,
 				sessionId: null,
 			}
-			if (!parsed.name.trim() || !parsed.appId) return null
+			if (!parsed.name.trim() || !parsed.packageId) return null
 			const id = buildAccountSecretId(parsed)
 			return { ...parsed, id }
 		}
@@ -121,7 +124,7 @@ export function parseAccountSecretPath(
 			const parsed = {
 				name: decodeURIComponent(rest[2] ?? ''),
 				scope: 'session' as const,
-				appId: null,
+				packageId: null,
 				sessionId: decodeURIComponent(rest[1] ?? '') || null,
 			}
 			if (!parsed.name.trim() || !parsed.sessionId) return null

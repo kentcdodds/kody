@@ -10,8 +10,10 @@ export function buildSecretPackageApprovalUrl(input: {
 	kodyId: string | null
 	storageContext: StorageContext | null
 }) {
-	if (input.scope === 'app' && !input.storageContext?.appId) {
-		throw new Error('storageContext.appId is required for app-scope approvals.')
+	if (input.scope === 'package' && !input.storageContext?.packageId) {
+		throw new Error(
+			'storageContext.packageId is required for package-scope approvals.',
+		)
 	}
 	if (input.scope === 'session' && !input.storageContext?.sessionId) {
 		throw new Error(
@@ -21,7 +23,7 @@ export function buildSecretPackageApprovalUrl(input: {
 	const secretPath = buildAccountSecretPath({
 		name: input.name,
 		scope: input.scope,
-		appId: input.storageContext?.appId ?? null,
+		packageId: input.storageContext?.packageId ?? null,
 		sessionId: input.storageContext?.sessionId ?? null,
 	})
 	const url = new URL(secretPath, input.baseUrl)

@@ -25,7 +25,10 @@ import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
-import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
+import {
+	assertPackageCanAccessResolvedSecret,
+	resolvePackageMountedSecret,
+} from '#mcp/secrets/package-access.ts'
 import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approval-url.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
@@ -869,6 +872,14 @@ function createCapabilityInputSecretResolver(
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(createMissingSecretMessage(secret.name))
 		}
+		await assertPackageCanAccessResolvedSecret({
+			env,
+			baseUrl: callerContext.baseUrl,
+			userId,
+			storageContext: callerContext.storageContext,
+			secretName: secret.name,
+			resolved,
+		})
 		if (!resolved.allowedCapabilities.includes(capabilityName)) {
 			const approvalUrl = buildSecretCapabilityApprovalUrl({
 				baseUrl: callerContext.baseUrl,
@@ -1552,6 +1563,7 @@ function normalizeStorageContext(
 	return {
 		sessionId: storageContext.sessionId ?? null,
 		appId: storageContext.appId ?? null,
+		packageId: storageContext.packageId ?? null,
 		storageId: storageContext.storageId ?? null,
 	}
 }

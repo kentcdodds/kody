@@ -99,6 +99,7 @@ export const executeCapability = defineDomainCapability(
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
 					appId: ctx.callerContext.storageContext?.appId ?? null,
+					packageId: ctx.callerContext.storageContext?.packageId ?? null,
 					storageId: resolvedStorageId,
 				},
 			}

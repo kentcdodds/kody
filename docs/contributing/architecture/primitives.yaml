@@ -269,8 +269,9 @@ primitives:
     group: assistant
     name: Secret references
     summary:
-      Server-side secret references resolved through placeholders at the fetch
-      gateway; raw values never enter prompts or results.
+      User- or package-owned server-side secret references resolved through
+      package-aware mounts, fetch placeholders, and capability inputs; raw
+      values never enter prompts or results.
     code:
       - packages/worker/src/mcp/capabilities/secrets/
       - packages/worker/src/security/

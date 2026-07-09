@@ -17,18 +17,19 @@ import {
 import { decryptSecretValue, encryptSecretValue } from './crypto.ts'
 import { assertSecretNameAllowed, isReservedSecretName } from './name-guards.ts'
 import {
-	getStorageBindingKey,
-	resolveStorageScopeOrder,
-} from '#mcp/storage-bindings.ts'
+	getSecretBindingKey,
+	resolveSecretScopeOrder,
+} from './secret-bindings.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
-	deleteAppScopeSecretBuckets,
+	deletePackageScopeSecretBuckets,
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
-	listAppScopeSecretMetadata,
+	listPackageScopeSecretMetadata,
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
+	removePackageFromSecretApprovals,
 	upsertSecretBucket,
 	upsertSecretEntry,
 } from './repo.ts'
@@ -170,7 +171,7 @@ export async function saveSecret(
 		name,
 		scope: input.scope,
 		description,
-		appId: input.scope === 'app' ? bucket.binding_key : null,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
 		allowedHosts: existingEntry
 			? parseAllowedHosts(existingEntry.allowed_hosts)
 			: [],
@@ -211,7 +212,7 @@ export async function listSecrets(
 				name: row.name,
 				scope: row.scope,
 				description: row.description,
-				appId: row.scope === 'app' ? row.binding_key : null,
+				packageId: row.scope === 'package' ? row.binding_key : null,
 				allowedHosts: parseAllowedHosts(row.allowed_hosts),
 				allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
 				allowedPackages: parseAllowedPackages(row.allowed_packages),
@@ -228,7 +229,7 @@ export async function resolveSecret(
 	assertSecretNameAllowed(input.name)
 	const scopes = input.scope
 		? [input.scope]
-		: resolveStorageScopeOrder(input.storageContext ?? null)
+		: resolveSecretScopeOrder(input.storageContext ?? null)
 	const scopeResults = await Promise.allSettled(
 		scopes.map(async (scope) => {
 			const bucket = await getExistingBucketForScope({
@@ -293,15 +294,27 @@ export async function deleteSecret(input: DeleteSecretInput) {
 	})
 }
 
-export async function deleteAllAppScopedSecrets(input: {
+export async function deleteAllPackageScopedSecrets(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	appId: string
+	packageId: string
 }) {
-	return await deleteAppScopeSecretBuckets({
+	return await deletePackageScopeSecretBuckets({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		appId: input.appId,
+		packageId: input.packageId,
+	})
+}
+
+export async function removeAllSecretApprovalsForPackage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	packageId: string
+}) {
+	return await removePackageFromSecretApprovals({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
 	})
 }
 
@@ -363,7 +376,7 @@ export async function updateSecret(
 		name,
 		scope: input.scope,
 		description: nextDescription,
-		appId: input.scope === 'app' ? bucket.binding_key : null,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
 		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
 		allowedCapabilities: parseAllowedCapabilities(
 			existingEntry.allowed_capabilities,
@@ -389,32 +402,32 @@ export async function listUserSecretsForSearch(input: {
 			name: row.name,
 			scope: row.scope,
 			description: row.description,
-			appId: null,
+			packageId: null,
 			updatedAt: row.updated_at,
 		}))
 }
 
-export async function listAppSecretsByAppIds(input: {
+export async function listPackageSecretsByPackageIds(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	appIds: Array<string>
+	packageIds: Array<string>
 }) {
-	const rows = await listAppScopeSecretMetadata({
+	const rows = await listPackageScopeSecretMetadata({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		appIds: input.appIds,
+		packageIds: input.packageIds,
 	})
 	const grouped = new Map<string, Array<SecretMetadata>>()
 	for (const row of rows) {
 		if (isReservedSecretName(row.name)) continue
-		const appId = row.binding_key
-		const current = grouped.get(appId) ?? []
+		const packageId = row.binding_key
+		const current = grouped.get(packageId) ?? []
 		current.push(
 			toSecretMetadata({
 				name: row.name,
 				scope: row.scope,
 				description: row.description,
-				appId,
+				packageId,
 				allowedHosts: parseAllowedHosts(row.allowed_hosts),
 				allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
 				allowedPackages: parseAllowedPackages(row.allowed_packages),
@@ -423,7 +436,7 @@ export async function listAppSecretsByAppIds(input: {
 				expiresAt: row.expires_at,
 			}),
 		)
-		grouped.set(appId, current)
+		grouped.set(packageId, current)
 	}
 	return grouped
 }
@@ -436,7 +449,7 @@ async function getAccessibleBuckets(input: {
 }) {
 	const scopes = input.scope
 		? [input.scope]
-		: resolveStorageScopeOrder(input.storageContext)
+		: resolveSecretScopeOrder(input.storageContext)
 	const buckets = await Promise.all(
 		scopes.map((scope) =>
 			getExistingBucketForScope({
@@ -458,7 +471,7 @@ async function getExistingBucketForScope(input: {
 	scope: SecretScope
 	storageContext: StorageContext | null
 }) {
-	const bindingKey = getStorageBindingKey(input.scope, input.storageContext)
+	const bindingKey = getSecretBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) return null
 	return getSecretBucket({
 		db: input.db,
@@ -475,7 +488,7 @@ async function getOrCreateSecretBucket(input: {
 	storageContext: StorageContext | null
 	sessionExpiresAt: string | null
 }) {
-	const bindingKey = getStorageBindingKey(input.scope, input.storageContext)
+	const bindingKey = getSecretBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) {
 		throw new Error(
 			`Secret scope "${input.scope}" is unavailable in this context.`,
@@ -530,7 +543,7 @@ function toSecretMetadata(input: {
 	name: string
 	scope: SecretScope
 	description: string
-	appId: string | null
+	packageId: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
@@ -542,7 +555,7 @@ function toSecretMetadata(input: {
 		name: input.name,
 		scope: input.scope,
 		description: input.description,
-		appId: input.appId,
+		packageId: input.packageId,
 		allowedHosts: normalizeAllowedHosts(input.allowedHosts),
 		allowedCapabilities: normalizeAllowedCapabilities(
 			input.allowedCapabilities,
@@ -600,7 +613,7 @@ export async function setSecretAllowedHosts(input: {
 		name,
 		scope: input.scope,
 		description: existingEntry.description,
-		appId: input.scope === 'app' ? bucket.binding_key : null,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
 		allowedHosts: input.allowedHosts,
 		allowedCapabilities: parseAllowedCapabilities(
 			existingEntry.allowed_capabilities,
@@ -657,7 +670,7 @@ export async function setSecretAllowedCapabilities(input: {
 		name,
 		scope: input.scope,
 		description: existingEntry.description,
-		appId: input.scope === 'app' ? bucket.binding_key : null,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
 		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
 		allowedCapabilities: input.allowedCapabilities,
 		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
@@ -675,6 +688,9 @@ export async function setSecretAllowedPackages(input: {
 	allowedPackages: Array<string>
 	storageContext?: StorageContext | null
 }) {
+	if (input.scope !== 'user' && input.allowedPackages.length > 0) {
+		throw new Error('Package approvals are only supported for user secrets.')
+	}
 	const name = input.name.trim()
 	if (!name) {
 		throw new Error('Secret name is required.')
@@ -710,7 +726,7 @@ export async function setSecretAllowedPackages(input: {
 		name,
 		scope: input.scope,
 		description: existingEntry.description,
-		appId: input.scope === 'app' ? bucket.binding_key : null,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
 		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
 		allowedCapabilities: parseAllowedCapabilities(
 			existingEntry.allowed_capabilities,

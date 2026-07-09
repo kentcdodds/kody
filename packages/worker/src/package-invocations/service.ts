@@ -1046,6 +1046,7 @@ async function invokeSavedPackageModule(input: {
 			storageContext: {
 				sessionId: null,
 				appId: input.savedPackage.id,
+				packageId: input.savedPackage.id,
 				storageId: buildPackageInvocationStorageId(input.savedPackage.id),
 			},
 			remoteConnectors: input.actor.remoteConnectors ?? null,

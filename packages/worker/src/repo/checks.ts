@@ -310,7 +310,7 @@ type KodyStorageRuntime = {
   delete(key: string): Promise<unknown>;
   clear(): Promise<unknown>;
 };
-type KodySecretScope = 'user' | 'app' | 'session';
+type KodySecretScope = 'user' | 'package' | 'session';
 type KodySecretHeadersRuntime = {
   basic(input: {
     usernameSecret: string;

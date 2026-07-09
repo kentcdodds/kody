@@ -1,12 +1,8 @@
-import {
-	storageScopeValues,
-	type StorageContext,
-	type StorageScope,
-} from '#mcp/storage.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 
-export const secretScopeValues = storageScopeValues
+export const secretScopeValues = ['session', 'package', 'user'] as const
 
-export type SecretScope = StorageScope
+export type SecretScope = (typeof secretScopeValues)[number]
 
 export type SecretBucketRow = {
 	id: string
@@ -34,7 +30,7 @@ export type SecretMetadata = {
 	name: string
 	scope: SecretScope
 	description: string
-	appId: string | null
+	packageId: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
@@ -45,7 +41,7 @@ export type SecretMetadata = {
 
 export type SecretSearchRow = Pick<
 	SecretMetadata,
-	'name' | 'scope' | 'description' | 'appId' | 'updatedAt'
+	'name' | 'scope' | 'description' | 'packageId' | 'updatedAt'
 >
 
 export type { StorageContext }

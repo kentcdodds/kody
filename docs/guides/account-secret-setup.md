@@ -35,8 +35,8 @@ Provide the user a URL like:
 | `allowedHosts`        | no       | Comma-separated hosts to review for approval.                                                                              |
 | `allowedCapabilities` | no       | Comma-separated capability names to review. Use only real Kody capability names from `search` or `meta_list_capabilities`. |
 | `allowedPackages`     | no       | Comma-separated saved package ids to review for approval.                                                                  |
-| `scope`               | no       | `user` (default) or `app`.                                                                                                 |
-| `appId`               | no       | Required when `scope=app`. Use the saved package id that owns the package app secret scope.                                |
+| `scope`               | no       | `user` (default) or `package`.                                                                                             |
+| `packageId`           | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                              |
 
 ## Approval policy reminders
 
@@ -49,7 +49,7 @@ Provide the user a URL like:
 ## Agent instructions
 
 1. Generate the URL with the required `name` and any optional params.
-   - When using `scope=app`, include the saved package id in `appId`.
+   - When using `scope=package`, include the saved package id in `packageId`.
    - Only include `allowedCapabilities` when you have confirmed the capability
      names exist in Kody.
 2. Ask the user to open the URL in their browser.

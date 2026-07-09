@@ -320,6 +320,7 @@ async function resolvePackageAppWorker(input: {
 		storageContext: {
 			sessionId: null,
 			appId: input.binding.packageId,
+			packageId: input.binding.packageId,
 			storageId: input.binding.packageId,
 		},
 		repoContext: null,

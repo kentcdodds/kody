@@ -19,7 +19,7 @@ const mockModule = vi.hoisted(() => ({
 		name: 'githubAccessToken',
 		scope: 'user',
 		description: '',
-		appId: null,
+		packageId: null,
 		allowedHosts: [],
 		allowedCapabilities: [],
 		createdAt: new Date(0).toISOString(),
@@ -34,7 +34,7 @@ const mockModule = vi.hoisted(() => ({
 	),
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listSecrets: vi.fn(async () => []),
-	listAppSecretsByAppIds: vi.fn(async () => []),
+	listPackageSecretsByPackageIds: vi.fn(async () => []),
 	resolveSecret: vi.fn(async () => ({ found: false, value: null })),
 	deleteSecret: vi.fn(async () => false),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
@@ -85,8 +85,8 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 	setSecretAllowedHosts: (...args: Array<unknown>) =>
 		mockModule.setSecretAllowedHosts(...args),
 	listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
-	listAppSecretsByAppIds: (...args: Array<unknown>) =>
-		mockModule.listAppSecretsByAppIds(...args),
+	listPackageSecretsByPackageIds: (...args: Array<unknown>) =>
+		mockModule.listPackageSecretsByPackageIds(...args),
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
 	deleteSecret: (...args: Array<unknown>) => mockModule.deleteSecret(...args),
 	setSecretAllowedCapabilities: (...args: Array<unknown>) =>
@@ -255,7 +255,7 @@ test('connect oauth saves tokens, integration metadata, and host approval links'
 			name: 'teslaAccessToken',
 			scope: 'user',
 			description: '',
-			appId: null,
+			packageId: null,
 			allowedHosts: [
 				'auth.tesla.com',
 				'fleet-api.prd.na.vn.cloud.tesla.com',
@@ -270,7 +270,7 @@ test('connect oauth saves tokens, integration metadata, and host approval links'
 			name: 'teslaRefreshToken',
 			scope: 'user',
 			description: '',
-			appId: null,
+			packageId: null,
 			allowedHosts: [
 				'auth.tesla.com',
 				'fleet-api.prd.na.vn.cloud.tesla.com',
@@ -366,7 +366,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			name: 'cloudflareToken',
 			scope: 'user',
 			description: 'Cloudflare token',
-			appId: null,
+			packageId: null,
 			allowedHosts: [],
 			allowedCapabilities: [],
 			allowedPackages: [],
@@ -380,7 +380,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			name: 'cloudflareToken',
 			scope: 'user',
 			description: 'Cloudflare token',
-			appId: null,
+			packageId: null,
 			allowedHosts: [],
 			allowedCapabilities: [],
 			allowedPackages: [],
@@ -416,7 +416,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			name: 'cloudflareToken',
 			scope: 'user',
 			description: 'Cloudflare token',
-			appId: null,
+			packageId: null,
 			allowedHosts: ['api.github.com'],
 			allowedCapabilities: [],
 			allowedPackages: [],
@@ -427,7 +427,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 	])
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
 	const approveResponse = await handler.handler({
 		request: new Request(
@@ -448,7 +448,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			name: 'cloudflareToken',
 			scope: 'user',
 			allowedHosts: ['api.github.com', 'api.cloudflare.com'],
-			storageContext: { appId: null, sessionId: null },
+			storageContext: { sessionId: null, appId: null, packageId: null },
 		}),
 	)
 })
@@ -476,10 +476,10 @@ test('approval request rejects ambiguous host and package targets', async () => 
 	expect(mockModule.setSecretAllowedPackages).not.toHaveBeenCalled()
 })
 
-test('account secrets payload preserves app titles and allowed packages', async () => {
+test('account secrets payload includes all packages and package titles and allowed packages', async () => {
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
-			id: 'app-123',
+			id: 'package-123',
 			userId: 'stable-user-1',
 			name: '@kentcdodds/discord-gateway',
 			kodyId: 'discord-gateway',
@@ -510,7 +510,7 @@ test('account secrets payload preserves app titles and allowed packages', async 
 			name: 'discordBotToken',
 			scope: 'user',
 			description: 'Discord bot token',
-			appId: null,
+			packageId: null,
 			allowedHosts: [],
 			allowedCapabilities: [],
 			allowedPackages: ['pkg-allowed'],
@@ -519,16 +519,16 @@ test('account secrets payload preserves app titles and allowed packages', async 
 			ttlMs: null,
 		},
 	])
-	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(
 		new Map([
 			[
-				'app-123',
+				'package-123',
 				[
 					{
 						name: 'gatewaySigningSecret',
-						scope: 'app',
+						scope: 'package',
 						description: 'Gateway signing secret',
-						appId: 'app-123',
+						packageId: 'package-123',
 						allowedHosts: [],
 						allowedCapabilities: [],
 						allowedPackages: [],
@@ -560,8 +560,8 @@ test('account secrets payload preserves app titles and allowed packages', async 
 			}),
 			expect.objectContaining({
 				name: 'gatewaySigningSecret',
-				scope: 'app',
-				appTitle: '@kentcdodds/discord-gateway',
+				scope: 'package',
+				packageTitle: '@kentcdodds/discord-gateway',
 			}),
 		]),
 	})
@@ -572,7 +572,7 @@ test('package approval reject and approve handle missing secrets and deduplicate
 
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listSecrets.mockResolvedValueOnce([])
-	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
 	const rejectResponse = await handler.handler({
 		request: new Request(
@@ -599,7 +599,7 @@ test('package approval reject and approve handle missing secrets and deduplicate
 			name: 'discordBotToken',
 			scope: 'user',
 			description: 'Discord bot token',
-			appId: null,
+			packageId: null,
 			allowedHosts: [],
 			allowedCapabilities: [],
 			allowedPackages: ['pkg-allowed', 'pkg-allowed'],
@@ -610,7 +610,7 @@ test('package approval reject and approve handle missing secrets and deduplicate
 	])
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
 	const approveResponse = await handler.handler({
 		request: new Request(
@@ -641,7 +641,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 			name: 'myApiKey',
 			scope: 'user',
 			description: 'API key',
-			appId: null,
+			packageId: null,
 			allowedHosts: [],
 			allowedCapabilities: [],
 			allowedPackages: [],
@@ -651,7 +651,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 		},
 	])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
 		value: 'seeded-secret-value',
@@ -678,14 +678,14 @@ test('account secrets API loads selected secret values and deletes the selected 
 		expect.objectContaining({
 			name: 'myApiKey',
 			scope: 'user',
-			storageContext: { appId: null, sessionId: null },
+			storageContext: { sessionId: null, appId: null, packageId: null },
 		}),
 	)
 
 	mockModule.deleteSecret.mockResolvedValueOnce(true)
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listSecrets.mockResolvedValueOnce([])
-	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
 	const deleteResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -711,7 +711,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 			userId: 'stable-user-1',
 			name: 'myApiKey',
 			scope: 'user',
-			storageContext: { appId: null, sessionId: null },
+			storageContext: { sessionId: null, appId: null, packageId: null },
 		}),
 	)
 })

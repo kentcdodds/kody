@@ -5,12 +5,16 @@ import {
 	expandSecretPlaceholders,
 	secretResolutionHeaderName,
 } from '#mcp/fetch-gateway.ts'
-import { parseHostApprovalRequiredBatchMessage } from '#mcp/secrets/errors.ts'
+import {
+	parseHostApprovalRequiredBatchMessage,
+	parsePackageAccessRequiredMessage,
+} from '#mcp/secrets/errors.ts'
 import {
 	buildBasicAuthSecretPlaceholder,
 	parseBasicAuthSecretPlaceholders,
 } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import * as packageRepo from '#worker/package-registry/repo.ts'
 
 const env = {
 	APP_DB: {} as D1Database,
@@ -87,6 +91,72 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	} finally {
 		allowedResolveSpy.mockRestore()
 	}
+})
+
+test('fetch gateway requires package approval before resolving user secrets', async () => {
+	const request = () =>
+		new Request('https://example.com/api', {
+			headers: {
+				Authorization: 'Bearer {{secret:userToken|scope=user}}',
+			},
+		})
+	const packageProps = {
+		...props,
+		storageContext: {
+			sessionId: null,
+			appId: 'pkg-1',
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	}
+	const packageSpy = vi
+		.spyOn(packageRepo, 'getSavedPackageById')
+		.mockResolvedValue({
+			id: 'pkg-1',
+			userId: 'user-123',
+			kodyId: 'example-package',
+			name: '@user/example-package',
+			description: '',
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			sourceId: 'source-1',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		})
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValueOnce({
+			found: true,
+			value: 'secret-value',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedCapabilities: [],
+			allowedPackages: [],
+		})
+		.mockResolvedValueOnce({
+			found: true,
+			value: 'secret-value',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedCapabilities: [],
+			allowedPackages: ['pkg-1'],
+		})
+
+	await expect(
+		expandSecretPlaceholders({ request: request(), props: packageProps, env }),
+	).rejects.toSatisfy((error: unknown) => {
+		const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
+		return parsed?.packageName === 'example-package'
+	})
+	const transformed = await expandSecretPlaceholders({
+		request: request(),
+		props: packageProps,
+		env,
+	})
+	expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
+	expect(packageSpy).toHaveBeenCalledTimes(1)
+	expect(resolveSpy).toHaveBeenCalledTimes(2)
 })
 
 test('opt-out header sends placeholders literally, strips itself, and never resolves secrets', async () => {

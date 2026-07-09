@@ -5,7 +5,7 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
 } from './errors.ts'
-import { resolveSecret } from './service.ts'
+import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
 import {
 	loadPackageManifestBySourceId,
@@ -27,6 +27,57 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
 		error instanceof PackageSecretMountError ||
 		error instanceof PackageSecretMissingError ||
 		error instanceof PackageSecretAccessDeniedError
+	)
+}
+
+export async function assertPackageCanAccessResolvedSecret(input: {
+	env: Pick<Env, 'APP_DB'>
+	baseUrl: string
+	userId: string
+	storageContext:
+		| {
+				sessionId?: string | null
+				appId?: string | null
+				packageId?: string | null
+				storageId?: string | null
+		  }
+		| null
+		| undefined
+	secretName: string
+	resolved: ResolvedSecret
+}) {
+	const packageId = input.storageContext?.packageId?.trim()
+	if (!packageId || input.resolved.scope !== 'user') return
+	if (input.resolved.allowedPackages.includes(packageId)) return
+
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.userId,
+		packageId,
+	})
+	if (!savedPackage) {
+		throw new PackageSecretAccessDeniedError(
+			`Package "${packageId}" was not found for secret access.`,
+		)
+	}
+	const approvalUrl = buildSecretPackageApprovalUrl({
+		baseUrl: input.baseUrl,
+		name: input.secretName,
+		scope: 'user',
+		packageId: savedPackage.id,
+		kodyId: savedPackage.kodyId,
+		storageContext: {
+			sessionId: input.storageContext?.sessionId ?? null,
+			appId: input.storageContext?.appId ?? null,
+			packageId: input.storageContext?.packageId ?? null,
+			storageId: input.storageContext?.storageId ?? null,
+		},
+	})
+	throw new PackageSecretAccessDeniedError(
+		createPackageSecretAccessDeniedMessage({
+			secretName: input.secretName,
+			packageName: savedPackage.kodyId,
+			approvalUrl,
+		}),
 	)
 }
 
@@ -76,10 +127,10 @@ export async function resolvePackageMountedSecret(input: {
 	packageId: string
 	alias: string
 }) {
-	const packageContext = input.callerContext.storageContext?.appId
+	const packageContext = input.callerContext.storageContext?.packageId
 	if (!packageContext || packageContext !== input.packageId) {
 		throw new Error(
-			'Package secret access is only available inside server-side package runtime contexts.',
+			'Package secret access requires a matching server-side package runtime context.',
 		)
 	}
 	const userId = input.callerContext.user?.userId
@@ -108,33 +159,21 @@ export async function resolvePackageMountedSecret(input: {
 		storageContext: {
 			sessionId: input.callerContext.storageContext?.sessionId ?? null,
 			appId: input.callerContext.storageContext?.appId ?? null,
+			packageId: input.callerContext.storageContext?.packageId ?? null,
 			storageId: input.callerContext.storageContext?.storageId ?? null,
 		},
 	})
 	if (!resolved.found || typeof resolved.value !== 'string') {
 		throw new PackageSecretMissingError(createMissingSecretMessage(mount.name))
 	}
-	if (!resolved.allowedPackages.includes(packageInfo.savedPackage.id)) {
-		const approvalUrl = buildSecretPackageApprovalUrl({
-			baseUrl: input.callerContext.baseUrl,
-			name: mount.name,
-			scope: resolved.scope ?? mount.scope ?? 'user',
-			packageId: packageInfo.savedPackage.id,
-			kodyId: packageInfo.savedPackage.kodyId,
-			storageContext: {
-				sessionId: input.callerContext.storageContext?.sessionId ?? null,
-				appId: input.callerContext.storageContext?.appId ?? null,
-				storageId: input.callerContext.storageContext?.storageId ?? null,
-			},
-		})
-		throw new PackageSecretAccessDeniedError(
-			createPackageSecretAccessDeniedMessage({
-				secretName: mount.name,
-				packageName: packageInfo.savedPackage.kodyId,
-				approvalUrl,
-			}),
-		)
-	}
+	await assertPackageCanAccessResolvedSecret({
+		env: input.env,
+		baseUrl: input.callerContext.baseUrl,
+		userId,
+		storageContext: input.callerContext.storageContext,
+		secretName: mount.name,
+		resolved,
+	})
 	return {
 		alias: input.alias,
 		name: mount.name,
@@ -163,6 +202,7 @@ export async function findMissingPackageApprovals(input: {
 	const storageContext = {
 		sessionId: input.storageContext?.sessionId ?? null,
 		appId: input.storageContext?.appId ?? null,
+		packageId: input.storageContext?.packageId ?? null,
 		storageId: input.storageContext?.storageId ?? null,
 	}
 	const entries = await Promise.all(
@@ -175,6 +215,7 @@ export async function findMissingPackageApprovals(input: {
 				storageContext,
 			})
 			if (!resolved.found) return null
+			if (resolved.scope !== 'user') return null
 			if (resolved.allowedPackages.includes(savedPackage.id)) {
 				return null
 			}

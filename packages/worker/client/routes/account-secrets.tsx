@@ -63,9 +63,9 @@ import {
 	MetadataGrid,
 } from './account-management-components.tsx'
 
-type SecretScope = 'app' | 'user'
+type SecretScope = 'package' | 'user'
 
-type PackageAppOption = {
+type PackageOption = {
 	id: string
 	title: string
 	updatedAt: string
@@ -76,8 +76,8 @@ type SecretListItem = {
 	name: string
 	scope: SecretScope
 	description: string
-	appId: string | null
-	appTitle: string | null
+	packageId: string | null
+	packageTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
@@ -93,7 +93,7 @@ type SecretDetail = SecretListItem & {
 type AccountSecretsPayload = {
 	ok: true
 	email: string
-	apps: Array<PackageAppOption>
+	packageOptions: Array<PackageOption>
 	packages: Array<{
 		id: string
 		kodyId: string
@@ -109,7 +109,7 @@ type EditorState = {
 	currentId: string | null
 	name: string
 	scope: SecretScope
-	appId: string
+	packageId: string
 	description: string
 	value: string
 	allowedHosts: Array<string>
@@ -122,12 +122,12 @@ type SelectionState = {
 	isCreating: boolean
 }
 
-type SecretFilterScope = 'all' | 'user' | 'app'
+type SecretFilterScope = 'all' | 'user' | 'package'
 
 type SecretFilterState = {
 	search: string
 	scope: SecretFilterScope
-	appId: string
+	packageId: string
 }
 
 const secretsBasePath = '/account/secrets'
@@ -156,12 +156,14 @@ function formatRelativeTtl(ttlMs: number | null) {
 	return `Expires in ${totalDays} day${totalDays === 1 ? '' : 's'}`
 }
 
-function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {
+function createEmptyEditorState(
+	packageOptions: Array<PackageOption>,
+): EditorState {
 	return {
 		currentId: null,
 		name: '',
 		scope: 'user',
-		appId: apps[0]?.id ?? '',
+		packageId: packageOptions[0]?.id ?? '',
 		description: '',
 		value: '',
 		allowedHosts: [''],
@@ -171,29 +173,25 @@ function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {
 }
 
 function readNewSecretScope(value: string | null): SecretScope | null {
-	return value === 'app' || value === 'user' ? value : null
+	return value === 'package' || value === 'user' ? value : null
 }
 
 function createEditorStateFromNewSecretQuery(
-	apps: Array<PackageAppOption>,
+	packageOptions: Array<PackageOption>,
 	href: string,
 ): EditorState {
 	const params = new URL(href, 'http://localhost').searchParams
-	const state = createEmptyEditorState(apps)
+	const state = createEmptyEditorState(packageOptions)
 	const requestedScope = readNewSecretScope(readTrimmedParam(params, 'scope'))
-	const requestedAppId = readTrimmedParam(params, 'appId')
-	const appId =
-		apps.find((app) => app.id === requestedAppId)?.id ?? apps[0]?.id ?? ''
+	const requestedPackageId = readTrimmedParam(params, 'packageId')
+	const packageId =
+		packageOptions.find(
+			(packageOption) => packageOption.id === requestedPackageId,
+		)?.id ??
+		packageOptions[0]?.id ??
+		''
 	const scope: SecretScope =
-		requestedScope === 'app'
-			? appId
-				? 'app'
-				: 'user'
-			: requestedScope === 'user'
-				? 'user'
-				: requestedAppId && appId
-					? 'app'
-					: 'user'
+		requestedScope ?? (requestedPackageId ? 'package' : 'user')
 	const allowedHosts = normalizeAllowedHosts(
 		readCommaListParams(params, ['allowedHosts', 'allowed-host']),
 	)
@@ -208,7 +206,7 @@ function createEditorStateFromNewSecretQuery(
 		...state,
 		name: readTrimmedParam(params, 'name') ?? state.name,
 		scope,
-		appId: scope === 'app' ? appId : '',
+		packageId: scope === 'package' ? packageId : '',
 		description: readTrimmedParam(params, 'description') ?? state.description,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : state.allowedHosts,
 		allowedCapabilities:
@@ -216,7 +214,7 @@ function createEditorStateFromNewSecretQuery(
 				? allowedCapabilities
 				: state.allowedCapabilities,
 		allowedPackages:
-			allowedPackages.length > 0
+			scope === 'user' && allowedPackages.length > 0
 				? allowedPackages.map((value) => createAllowedPackageRow(value))
 				: state.allowedPackages,
 	}
@@ -229,7 +227,7 @@ function getNewSecretQueryKey(href: string) {
 		'name',
 		'description',
 		'scope',
-		'appId',
+		'packageId',
 		'allowedHosts',
 		'allowed-host',
 		'allowedCapabilities',
@@ -270,7 +268,7 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		currentId: secret.id,
 		name: secret.name,
 		scope: secret.scope,
-		appId: secret.appId ?? '',
+		packageId: secret.packageId ?? '',
 		description: secret.description,
 		value: secret.value,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
@@ -436,7 +434,7 @@ function buildSecretHref(
 	secret: {
 		name: string
 		scope: SecretScope
-		appId: string | null
+		packageId: string | null
 	},
 	search: string,
 ) {
@@ -444,7 +442,7 @@ function buildSecretHref(
 		buildAccountSecretPath({
 			name: secret.name,
 			scope: secret.scope,
-			appId: secret.appId,
+			packageId: secret.packageId,
 		}),
 		search,
 	)
@@ -513,24 +511,26 @@ export async function accountSecretsRouteLoader(
 
 function readFilterState(
 	href: string,
-	apps: Array<PackageAppOption>,
+	packageOptions: Array<PackageOption>,
 ): SecretFilterState {
 	const url = new URL(href, 'http://localhost')
 	const search = url.searchParams.get('q')?.trim() ?? ''
 	const rawScope = url.searchParams.get('scope')
 	const scope =
-		rawScope === 'user' || rawScope === 'app' ? rawScope : ('all' as const)
-	const rawAppId = url.searchParams.get('app')?.trim() ?? ''
-	const appId =
+		rawScope === 'user' || rawScope === 'package' ? rawScope : ('all' as const)
+	const rawPackageId = url.searchParams.get('package')?.trim() ?? ''
+	const packageId =
 		scope === 'user'
 			? ''
-			: apps.some((app) => app.id === rawAppId)
-				? rawAppId
+			: packageOptions.some(
+						(packageOption) => packageOption.id === rawPackageId,
+				  )
+				? rawPackageId
 				: ''
 	return {
 		search,
 		scope,
-		appId,
+		packageId,
 	}
 }
 
@@ -543,8 +543,8 @@ function filterSecrets(
 		if (filters.scope !== 'all' && secret.scope !== filters.scope) return false
 		if (
 			filters.scope !== 'user' &&
-			filters.appId &&
-			secret.appId !== filters.appId
+			filters.packageId &&
+			secret.packageId !== filters.packageId
 		)
 			return false
 		if (!search) return true
@@ -552,7 +552,7 @@ function filterSecrets(
 		const haystack = [
 			secret.name,
 			secret.description,
-			secret.appTitle ?? '',
+			secret.packageTitle ?? '',
 			secret.scope,
 			...secret.allowedHosts,
 			...secret.allowedCapabilities,
@@ -565,7 +565,7 @@ function filterSecrets(
 	})
 }
 
-function buildAppOptionDescription(updatedAt: string) {
+function buildPackageOptionDescription(updatedAt: string) {
 	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
 }
 
@@ -579,7 +579,7 @@ const truncatedTextCss = {
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
-	let apps: Array<PackageAppOption> = []
+	let packageOptions: Array<PackageOption> = []
 	let packagesById = new Map<string, { kodyId: string; name: string }>()
 	let secrets: Array<SecretListItem> = []
 	let selectedSecret: SecretDetail | null = null
@@ -595,8 +595,8 @@ export function AccountSecretsRoute(handle: Handle) {
 	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
 	const deleteSecretCheck = createDoubleCheck(handle)
-	const filterAppCombobox = TypeaheadCombobox(handle)
-	const editorAppCombobox = TypeaheadCombobox(handle)
+	const filterPackageCombobox = TypeaheadCombobox(handle)
+	const editorPackageCombobox = TypeaheadCombobox(handle)
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -619,7 +619,7 @@ export function AccountSecretsRoute(handle: Handle) {
 	) {
 		const currentUrl = new URL(getCurrentHref(), 'http://localhost')
 		const filters = {
-			...readFilterState(currentUrl.toString(), apps),
+			...readFilterState(currentUrl.toString(), packageOptions),
 			...nextFilters,
 		}
 		const nextUrl = new URL(currentUrl.toString())
@@ -630,8 +630,9 @@ export function AccountSecretsRoute(handle: Handle) {
 		else nextUrl.searchParams.delete('q')
 		if (filters.scope === 'all') nextUrl.searchParams.delete('scope')
 		else nextUrl.searchParams.set('scope', filters.scope)
-		if (filters.appId) nextUrl.searchParams.set('app', filters.appId)
-		else nextUrl.searchParams.delete('app')
+		if (filters.packageId)
+			nextUrl.searchParams.set('package', filters.packageId)
+		else nextUrl.searchParams.delete('package')
 		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
@@ -641,7 +642,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		const capabilityPrefill = readCapabilityPrefill(getCurrentHref())
 		if (selection.isCreating) {
 			editorState = applyCapabilityPrefill(
-				createEditorStateFromNewSecretQuery(apps, getCurrentHref()),
+				createEditorStateFromNewSecretQuery(packageOptions, getCurrentHref()),
 				capabilityPrefill,
 			)
 			return
@@ -654,7 +655,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			return
 		}
 		editorState = applyCapabilityPrefill(
-			createEmptyEditorState(apps),
+			createEmptyEditorState(packageOptions),
 			capabilityPrefill,
 		)
 	}
@@ -665,7 +666,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		nextMessage: string | null,
 	) {
 		email = payload.email
-		apps = payload.apps
+		packageOptions = payload.packageOptions
 		packagesById = new Map(
 			payload.packages.map((pkg) => [
 				pkg.id,
@@ -804,7 +805,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								pathname: buildAccountSecretPath({
 									name: selectedSecret.name,
 									scope: selectedSecret.scope,
-									appId: selectedSecret.appId,
+									packageId: selectedSecret.packageId,
 								}),
 							},
 						)
@@ -847,13 +848,16 @@ export function AccountSecretsRoute(handle: Handle) {
 			const allowedCapabilities = normalizeAllowedCapabilities(
 				collectRepeatedTextRows(form, 'allowed-capabilities'),
 			)
-			const allowedPackages = Array.from(
-				new Set(
-					submittedEditorState.allowedPackages
-						.map((entry) => entry.value.trim())
-						.filter((value) => value.length > 0),
-				),
-			).sort((left, right) => left.localeCompare(right))
+			const allowedPackages =
+				submittedEditorState.scope === 'user'
+					? Array.from(
+							new Set(
+								submittedEditorState.allowedPackages
+									.map((entry) => entry.value.trim())
+									.filter((value) => value.length > 0),
+							),
+						).sort((left, right) => left.localeCompare(right))
+					: []
 			const response = await fetch(accountSecretsApiPath, {
 				method: 'POST',
 				headers: {
@@ -866,9 +870,9 @@ export function AccountSecretsRoute(handle: Handle) {
 					currentId: submittedEditorState.currentId,
 					name: submittedEditorState.name,
 					scope: submittedEditorState.scope,
-					appId:
-						submittedEditorState.scope === 'app'
-							? submittedEditorState.appId
+					packageId:
+						submittedEditorState.scope === 'package'
+							? submittedEditorState.packageId
 							: null,
 					description: submittedEditorState.description,
 					value: submittedEditorState.value,
@@ -1097,26 +1101,26 @@ export function AccountSecretsRoute(handle: Handle) {
 		}
 
 		const selection = getSelectionState(currentHref)
-		const filters = readFilterState(currentHref, apps)
+		const filters = readFilterState(currentHref, packageOptions)
 		const filteredSecrets = filterSecrets(secrets, filters)
-		const appOptions = apps.map((app) => ({
-			id: app.id,
-			label: app.title,
-			description: buildAppOptionDescription(app.updatedAt),
+		const packageSelectOptions = packageOptions.map((packageOption) => ({
+			id: packageOption.id,
+			label: packageOption.title,
+			description: buildPackageOptionDescription(packageOption.updatedAt),
 		}))
-		const filterAppOptions = [
+		const filterPackageOptions = [
 			{
 				id: '',
-				label: 'All apps',
-				description: 'Show secrets across every app',
+				label: 'All packages',
+				description: 'Show secrets across every package',
 			},
-			...appOptions,
+			...packageSelectOptions,
 		]
 
 		const activeSecretId =
 			selection.selectedSecretId ?? selectedSecret?.id ?? null
 		const isMutating = saveState !== 'idle' || submittingApprovalAction != null
-		const canCreateAppSecrets = apps.length > 0
+		const canCreatePackageSecrets = packageOptions.length > 0
 		const showEditor = selection.isCreating || selectedSecret != null
 		const alreadyAddedNotice = getAlreadyAddedNotice({
 			href: currentHref,
@@ -1135,7 +1139,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountManagementHeader
 					title={email ? `${email} secrets` : 'Secrets'}
-					description="Create, update, and delete the secrets available to your account and package apps."
+					description="Create, update, and delete user secrets and package-owned secrets."
 					actions={
 						<>
 							<a
@@ -1361,7 +1365,8 @@ export function AccountSecretsRoute(handle: Handle) {
 													replaceSecretsLocation(
 														buildHrefWithUpdatedFilters({
 															scope: nextScope,
-															appId: nextScope === 'user' ? '' : filters.appId,
+															packageId:
+																nextScope === 'user' ? '' : filters.packageId,
 														}),
 													)
 												},
@@ -1372,21 +1377,21 @@ export function AccountSecretsRoute(handle: Handle) {
 									>
 										<option value="all">All scopes</option>
 										<option value="user">User</option>
-										<option value="app">App</option>
+										<option value="package">Package</option>
 									</select>
 								</label>
-								{apps.length > 0
-									? filterAppCombobox({
-											id: 'secret-app-filter',
-											label: 'App filter',
-											placeholder: 'Filter by app',
-											value: filters.scope === 'user' ? '' : filters.appId,
+								{packageOptions.length > 0
+									? filterPackageCombobox({
+											id: 'secret-package-filter',
+											label: 'Package filter',
+											placeholder: 'Filter by package',
+											value: filters.scope === 'user' ? '' : filters.packageId,
 											disabled: filters.scope === 'user',
-											options: filterAppOptions,
-											onChange: (appId) => {
+											options: filterPackageOptions,
+											onChange: (packageId) => {
 												replaceSecretsLocation(
 													buildHrefWithUpdatedFilters({
-														appId,
+														packageId,
 													}),
 												)
 											},
@@ -1455,7 +1460,9 @@ export function AccountSecretsRoute(handle: Handle) {
 														})}
 													>
 														{getScopeLabel(secret.scope)}
-														{secret.appTitle ? ` - ${secret.appTitle}` : ''}
+														{secret.packageTitle
+															? ` - ${secret.packageTitle}`
+															: ''}
 													</span>
 													{secret.description ? (
 														<span
@@ -1508,7 +1515,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									</h2>
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										{selection.isCreating
-											? 'Create a new user or app secret.'
+											? 'Create a new user or package secret.'
 											: 'Update the secret value and metadata for this entry.'}
 									</p>
 								</div>
@@ -1562,9 +1569,11 @@ export function AccountSecretsRoute(handle: Handle) {
 														editorState = {
 															...editorState,
 															scope,
-															appId:
-																scope === 'app'
-																	? editorState.appId || apps[0]?.id || ''
+															packageId:
+																scope === 'package'
+																	? editorState.packageId ||
+																		packageOptions[0]?.id ||
+																		''
 																	: '',
 														}
 														handle.update()
@@ -1575,24 +1584,24 @@ export function AccountSecretsRoute(handle: Handle) {
 											]}
 										>
 											<option value="user">User</option>
-											{canCreateAppSecrets ? (
-												<option value="app">App</option>
+											{canCreatePackageSecrets ? (
+												<option value="package">Package</option>
 											) : null}
 										</select>
 									</label>
 								</div>
 
-								{editorState.scope === 'app'
-									? editorAppCombobox({
-											id: 'secret-editor-app',
-											label: 'App',
-											placeholder: 'Choose an app',
-											value: editorState.appId,
-											options: appOptions,
-											onChange: (appId) => {
+								{editorState.scope === 'package'
+									? editorPackageCombobox({
+											id: 'secret-editor-package',
+											label: 'Package',
+											placeholder: 'Choose a package',
+											value: editorState.packageId,
+											options: packageSelectOptions,
+											onChange: (packageId) => {
 												editorState = {
 													...editorState,
-													appId,
+													packageId,
 												}
 												handle.update()
 											},
@@ -1636,73 +1645,75 @@ export function AccountSecretsRoute(handle: Handle) {
 									allowedCapabilitiesListName="allowed-capabilities"
 								/>
 
-								<div mix={css({ display: 'grid', gap: spacing.sm })}>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<span mix={css(fieldLabelCss)}>Allowed packages</span>
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											Only listed package ids may read this secret via package
-											secret mounts.
-										</p>
-									</div>
+								{editorState.scope === 'user' ? (
 									<div mix={css({ display: 'grid', gap: spacing.sm })}>
-										{editorState.allowedPackages.map((packageEntry) => (
-											<div
-												key={packageEntry.id}
-												mix={css({
-													display: 'grid',
-													gridTemplateColumns: 'minmax(0, 1fr) auto',
-													gap: spacing.sm,
-												})}
-											>
-												<input
-													type="text"
-													value={packageEntry.value}
-													placeholder="saved package id"
-													mix={[
-														on(
-															'input',
-
-															(event) => {
-																updateAllowedPackage(
-																	packageEntry.id,
-																	event.currentTarget.value,
-																)
-															},
-														),
-
-														css(inputCss),
-													]}
-												/>
-
-												<button
-													type="button"
-													mix={[
-														on(
-															'click',
-
-															() => removeAllowedPackage(packageEntry.id),
-														),
-
-														css(secondaryButtonCss),
-													]}
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<span mix={css(fieldLabelCss)}>Allowed packages</span>
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												Only listed package ids may read this secret via package
+												secret mounts.
+											</p>
+										</div>
+										<div mix={css({ display: 'grid', gap: spacing.sm })}>
+											{editorState.allowedPackages.map((packageEntry) => (
+												<div
+													key={packageEntry.id}
+													mix={css({
+														display: 'grid',
+														gridTemplateColumns: 'minmax(0, 1fr) auto',
+														gap: spacing.sm,
+													})}
 												>
-													Remove
-												</button>
-											</div>
-										))}
+													<input
+														type="text"
+														value={packageEntry.value}
+														placeholder="saved package id"
+														mix={[
+															on(
+																'input',
+
+																(event) => {
+																	updateAllowedPackage(
+																		packageEntry.id,
+																		event.currentTarget.value,
+																	)
+																},
+															),
+
+															css(inputCss),
+														]}
+													/>
+
+													<button
+														type="button"
+														mix={[
+															on(
+																'click',
+
+																() => removeAllowedPackage(packageEntry.id),
+															),
+
+															css(secondaryButtonCss),
+														]}
+													>
+														Remove
+													</button>
+												</div>
+											))}
+										</div>
+										<div>
+											<button
+												type="button"
+												mix={[
+													on('click', () => addAllowedPackage()),
+													css(secondaryButtonCss),
+												]}
+											>
+												Add package
+											</button>
+										</div>
 									</div>
-									<div>
-										<button
-											type="button"
-											mix={[
-												on('click', () => addAllowedPackage()),
-												css(secondaryButtonCss),
-											]}
-										>
-											Add package
-										</button>
-									</div>
-								</div>
+								) : null}
 
 								{selectedSecret ? (
 									<MetadataGrid
@@ -1735,7 +1746,8 @@ export function AccountSecretsRoute(handle: Handle) {
 										type="submit"
 										disabled={
 											isMutating ||
-											(editorState.scope === 'app' && !editorState.appId)
+											(editorState.scope === 'package' &&
+												!editorState.packageId)
 										}
 										mix={css(primaryButtonCss)}
 									>

@@ -37,7 +37,7 @@ export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>
 
 export const packageSecretMountDefinitionSchema = z.object({
 	name: z.string().min(1),
-	scope: z.enum(['user', 'app', 'session']).optional(),
+	scope: z.enum(['user', 'package', 'session']).optional(),
 })
 
 export type PackageSecretMountDefinition = z.infer<

@@ -5,7 +5,7 @@ export const secretMetadataSchema = z.object({
 	name: z.string(),
 	scope: z.enum(secretScopeValues),
 	description: z.string(),
-	app_id: z.string().nullable(),
+	package_id: z.string().nullable(),
 	allowed_hosts: z.array(z.string()),
 	allowed_capabilities: z.array(z.string()),
 	allowed_packages: z.array(z.string()),

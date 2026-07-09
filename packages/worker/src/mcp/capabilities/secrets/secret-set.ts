@@ -4,7 +4,8 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
+import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { resolveSecret, saveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { secretMetadataSchema } from './shared.ts'
 
@@ -45,6 +46,34 @@ export const secretSetCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const parsed = secretSetInputSchema.parse(args)
 			const user = requireMcpUser(ctx.callerContext)
+			const storageContext = {
+				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
+				appId: ctx.callerContext.storageContext?.appId ?? null,
+				packageId: ctx.callerContext.storageContext?.packageId ?? null,
+				storageId: ctx.callerContext.storageContext?.storageId ?? null,
+			}
+			if (parsed.scope === 'user' && storageContext.packageId) {
+				const existing = await resolveSecret({
+					env: ctx.env,
+					userId: user.userId,
+					name: parsed.name,
+					scope: 'user',
+					storageContext,
+				})
+				if (!existing.found) {
+					throw new Error(
+						'Package runtimes cannot create user-scoped secrets. Create the secret from the account page and approve the package first.',
+					)
+				}
+				await assertPackageCanAccessResolvedSecret({
+					env: ctx.env,
+					baseUrl: ctx.callerContext.baseUrl,
+					userId: user.userId,
+					storageContext,
+					secretName: parsed.name,
+					resolved: existing,
+				})
+			}
 			const saved = await saveSecret({
 				env: ctx.env,
 				userId: user.userId,
@@ -53,17 +82,13 @@ export const secretSetCapability = defineDomainCapability(
 				name: parsed.name,
 				value: parsed.value,
 				description: parsed.description ?? '',
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					storageId: ctx.callerContext.storageContext?.storageId ?? null,
-				},
+				storageContext,
 			})
 			return {
 				name: saved.name,
 				scope: saved.scope,
 				description: saved.description,
-				app_id: saved.appId,
+				package_id: saved.packageId,
 				allowed_hosts: saved.allowedHosts,
 				allowed_capabilities: saved.allowedCapabilities,
 				allowed_packages: saved.allowedPackages,

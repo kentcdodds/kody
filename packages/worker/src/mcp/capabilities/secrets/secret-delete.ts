@@ -3,7 +3,8 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { deleteSecret } from '#mcp/secrets/service.ts'
+import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { deleteSecret, resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 
 export const secretDeleteCapability = defineDomainCapability(
@@ -27,17 +28,38 @@ export const secretDeleteCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const storageContext = {
+				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
+				appId: ctx.callerContext.storageContext?.appId ?? null,
+				packageId: ctx.callerContext.storageContext?.packageId ?? null,
+				storageId: ctx.callerContext.storageContext?.storageId ?? null,
+			}
+			if (args.scope === 'user' && storageContext.packageId) {
+				const existing = await resolveSecret({
+					env: ctx.env,
+					userId: user.userId,
+					name: args.name,
+					scope: 'user',
+					storageContext,
+				})
+				if (existing.found) {
+					await assertPackageCanAccessResolvedSecret({
+						env: ctx.env,
+						baseUrl: ctx.callerContext.baseUrl,
+						userId: user.userId,
+						storageContext,
+						secretName: args.name,
+						resolved: existing,
+					})
+				}
+			}
 			return {
 				deleted: await deleteSecret({
 					env: ctx.env,
 					userId: user.userId,
 					name: args.name,
 					scope: args.scope,
-					storageContext: {
-						sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-						appId: ctx.callerContext.storageContext?.appId ?? null,
-						storageId: ctx.callerContext.storageContext?.storageId ?? null,
-					},
+					storageContext,
 				}),
 			}
 		},

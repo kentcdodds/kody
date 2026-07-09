@@ -10,8 +10,13 @@ Use **search** first to discover saved secret references or integrations before
 switching to **execute**.
 
 During **execute**, **`await kody.secret_list({})`** (or a narrowed **`scope`**
-such as **`app`**) returns **metadata only**: names, descriptions, allowed
+such as **`package`**) returns **metadata only**: names, descriptions, allowed
 hosts, allowed capabilities — not plaintext values.
+
+Package-scoped secrets belong to one saved package and are available only while
+that package runs. User-scoped secrets require explicit package approval before
+package code can list, read, update, or delete them through mounts, fetch
+placeholders, or secret-aware capabilities.
 
 **`kody.secret_set(...)`** persists a value that is already available inside
 execution (for example a refreshed OAuth token). It does not return secret

@@ -750,6 +750,7 @@ function createPackageJobCallerContext(input: {
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
+			packageId: input.packageId,
 			storageId: null,
 		},
 		repoContext: null,
@@ -1233,6 +1234,7 @@ export async function executeJobOnce(input: {
 				storageContext: {
 					sessionId: input.callerContext.storageContext?.sessionId ?? null,
 					appId: input.callerContext.storageContext?.appId ?? null,
+					packageId: input.callerContext.storageContext?.packageId ?? null,
 					storageId: input.job.storageId,
 				},
 				repoContext: input.callerContext.repoContext ?? null,

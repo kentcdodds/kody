@@ -7,7 +7,7 @@ import { listSecrets, resolveSecret, saveSecret } from './service.ts'
 type SecretBucketRow = {
 	id: string
 	user_id: string
-	scope: 'session' | 'app' | 'user'
+	scope: 'session' | 'package' | 'user'
 	binding_key: string
 	expires_at: string | null
 	created_at: string
@@ -21,6 +21,7 @@ type SecretEntryRow = {
 	encrypted_value: string
 	allowed_hosts: string
 	allowed_capabilities: string
+	allowed_packages: string
 	created_at: string
 	updated_at: string
 }
@@ -112,7 +113,7 @@ function createSecretTestDb(
 						async all<T>() {
 							if (
 								normalizedQuery.startsWith(
-									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_capabilities, created_at, updated_at, ? as expires_at from secret_entries',
+									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_capabilities, allowed_packages, created_at, updated_at, ? as expires_at from secret_entries',
 								)
 							) {
 								const [scope, bindingKey, expiresAt, bucketId] =
@@ -127,6 +128,7 @@ function createSecretTestDb(
 										description: entry.description,
 										allowed_hosts: entry.allowed_hosts,
 										allowed_capabilities: entry.allowed_capabilities,
+										allowed_packages: entry.allowed_packages,
 										created_at: entry.created_at,
 										updated_at: entry.updated_at,
 										expires_at: expiresAt,
@@ -171,6 +173,7 @@ function createSecretTestDb(
 									encryptedValue,
 									allowedHosts,
 									allowedCapabilities,
+									allowedPackages,
 									createdAt,
 									updatedAt,
 								] = params as Array<string>
@@ -183,6 +186,7 @@ function createSecretTestDb(
 									encrypted_value: encryptedValue,
 									allowed_hosts: allowedHosts,
 									allowed_capabilities: allowedCapabilities,
+									allowed_packages: allowedPackages,
 									created_at: existing?.created_at ?? createdAt,
 									updated_at: updatedAt,
 								})
@@ -218,6 +222,7 @@ function createSecretTestDb(
 			encrypted_value: 'ciphertext',
 			allowed_hosts: '[]',
 			allowed_capabilities: '[]',
+			allowed_packages: '[]',
 			created_at: '2026-01-01T00:00:00.000Z',
 			updated_at: '2026-01-01T00:00:00.000Z',
 		})
@@ -273,8 +278,9 @@ test('resolveSecret returns the first scope hit in precedence order', async () =
 	const secretName = 'shared-secret'
 	const storageContext = {
 		sessionId: 'session-abc',
-		appId: 'app-xyz',
-		storageId: 'app-xyz',
+		appId: null,
+		packageId: 'package-xyz',
+		storageId: 'package-xyz',
 	}
 
 	await saveSecret({
@@ -287,9 +293,9 @@ test('resolveSecret returns the first scope hit in precedence order', async () =
 	await saveSecret({
 		env,
 		userId,
-		scope: 'app',
+		scope: 'package',
 		name: secretName,
-		value: 'app-value',
+		value: 'package-value',
 		storageContext,
 	})
 	await saveSecret({
@@ -330,8 +336,9 @@ test('resolveSecret ignores a corrupted lower-precedence entry when a higher sco
 	const secretName = 'shared-secret'
 	const storageContext = {
 		sessionId: 'session-abc',
-		appId: 'app-xyz',
-		storageId: 'app-xyz',
+		appId: null,
+		packageId: 'package-xyz',
+		storageId: 'package-xyz',
 	}
 
 	await saveSecret({

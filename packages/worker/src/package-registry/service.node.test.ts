@@ -39,6 +39,8 @@ const mockModule = vi.hoisted(() => ({
 	updateSavedPackage: vi.fn(),
 	upsertSavedPackageVector: vi.fn(),
 	cleanupArtifactReposForPackage: vi.fn(),
+	deleteAllPackageScopedSecrets: vi.fn(),
+	removeAllSecretApprovalsForPackage: vi.fn(),
 }))
 
 vi.mock('./manifest.ts', () => ({
@@ -109,6 +111,13 @@ vi.mock('#worker/jobs/repo.ts', () => ({
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	syncJobManagerAlarm: (...args: Array<unknown>) =>
 		mockModule.syncJobManagerAlarm(...args),
+}))
+
+vi.mock('#mcp/secrets/service.ts', () => ({
+	deleteAllPackageScopedSecrets: (...args: Array<unknown>) =>
+		mockModule.deleteAllPackageScopedSecrets(...args),
+	removeAllSecretApprovalsForPackage: (...args: Array<unknown>) =>
+		mockModule.removeAllSecretApprovalsForPackage(...args),
 }))
 
 vi.mock('#worker/jobs/service.ts', () => ({
@@ -489,6 +498,16 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	})
 	expect(mockModule.deleteJobRow).toHaveBeenCalledTimes(1)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({}, 'user-1', 'job-1')
+	expect(mockModule.deleteAllPackageScopedSecrets).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+	expect(mockModule.removeAllSecretApprovalsForPackage).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
 	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
 		{},
 		{
