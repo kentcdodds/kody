@@ -163,7 +163,7 @@ export function createOgFrame(input: {
  */
 export async function renderOgImage(
 	markup: SatoriElement,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
 	await ensureRenderPipelineReady()
 
 	const regularFontData = getInterLatin400FontData()
@@ -203,5 +203,7 @@ export async function renderOgImage(
 	rendered.free()
 	resvg.free()
 
-	return png
+	// asPng returns a fresh ArrayBuffer-backed copy; narrow the generic so
+	// callers can pass the bytes straight to Response as BodyInit.
+	return png as Uint8Array<ArrayBuffer>
 }

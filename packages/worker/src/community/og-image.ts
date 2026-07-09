@@ -194,6 +194,6 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 
 export async function renderCommunityOgImage(
 	input: CommunityOgImageInput,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
 	return renderOgImage(createOgMarkup(input))
 }

@@ -57,6 +57,6 @@ function createPageOgMarkup(input: {
 export async function renderPageOgImage(input: {
 	page: PublicOgPage
 	label: string
-}): Promise<Uint8Array> {
+}): Promise<Uint8Array<ArrayBuffer>> {
 	return renderOgImage(createPageOgMarkup(input))
 }
