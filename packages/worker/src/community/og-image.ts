@@ -1,4 +1,6 @@
+import { ogPalette } from '#worker/og/palette.ts'
 import {
+	createOgFrame,
 	renderOgImage,
 	truncateOgText,
 	type SatoriElement,
@@ -6,17 +8,8 @@ import {
 
 const DESCRIPTION_MAX_LENGTH = 140
 
-const palette = {
-	background: '#0b0b0c',
-	panel: '#141417',
-	border: '#2a2a30',
-	text: '#f3f4f6',
-	muted: '#9ca3af',
-	accent: '#d4a574',
-	starFilled: '#e8b84b',
-	starEmpty: '#3f3f46',
-	wordmark: '#e5e7eb',
-} as const
+/** Amber that reads well on the light surface for filled star icons. */
+const STAR_FILLED = '#d97706'
 
 export type CommunityOgImageInput = {
 	name: string
@@ -59,8 +52,8 @@ function createStarSvg(filled: boolean): SatoriElement {
 						type: 'path',
 						props: {
 							d: STAR_PATH,
-							fill: filled ? palette.starFilled : 'transparent',
-							stroke: filled ? palette.starFilled : palette.starEmpty,
+							fill: filled ? STAR_FILLED : 'transparent',
+							stroke: filled ? STAR_FILLED : ogPalette.border,
 							strokeWidth: 1.5,
 						},
 					},
@@ -93,173 +86,110 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 	const starRow = createStarRow(input)
 	const ratingText = formatStarRating(input)
 
-	return {
-		type: 'div',
-		props: {
-			style: {
-				width: 1200,
-				height: 630,
-				display: 'flex',
-				flexDirection: 'column',
-				backgroundColor: palette.background,
-				padding: '56px 64px',
-				fontFamily: 'Inter',
-				color: palette.text,
+	return createOgFrame({
+		label: 'Community package',
+		children: [
+			{
+				type: 'div',
+				props: {
+					style: {
+						fontSize: 42,
+						fontWeight: 600,
+						lineHeight: 1.2,
+						letterSpacing: '-0.02em',
+						marginBottom: 28,
+						color: ogPalette.text,
+					},
+					children: headline,
+				},
 			},
-			children: [
-				{
-					type: 'div',
-					props: {
-						style: {
-							display: 'flex',
-							alignItems: 'center',
-							justifyContent: 'space-between',
-							marginBottom: 48,
-						},
-						children: [
-							{
-								type: 'div',
-								props: {
-									style: {
-										fontSize: 44,
-										fontWeight: 600,
-										letterSpacing: '-0.03em',
-										color: palette.wordmark,
-									},
-									children: 'kody',
-								},
-							},
-							{
-								type: 'div',
-								props: {
-									style: {
-										fontSize: 22,
-										color: palette.muted,
-									},
-									children: 'Community package',
-								},
-							},
-						],
+			{
+				type: 'div',
+				props: {
+					style: {
+						fontSize: 30,
+						fontWeight: 600,
+						color: ogPalette.primary,
+						marginBottom: 20,
 					},
+					children: input.name,
 				},
-				{
-					type: 'div',
-					props: {
-						style: {
-							display: 'flex',
-							flex: 1,
-							flexDirection: 'column',
-							justifyContent: 'center',
-							backgroundColor: palette.panel,
-							border: `1px solid ${palette.border}`,
-							borderRadius: 24,
-							padding: '40px 48px',
-						},
-						children: [
-							{
-								type: 'div',
-								props: {
-									style: {
-										fontSize: 42,
-										fontWeight: 600,
-										lineHeight: 1.2,
-										letterSpacing: '-0.02em',
-										marginBottom: 28,
-									},
-									children: headline,
-								},
-							},
-							{
-								type: 'div',
-								props: {
-									style: {
-										fontSize: 30,
-										fontWeight: 600,
-										color: palette.accent,
-										marginBottom: 20,
-									},
-									children: input.name,
-								},
-							},
-							{
-								type: 'div',
-								props: {
-									style: {
-										fontSize: 24,
-										color: palette.muted,
-										marginBottom: 28,
-									},
-									children: `by @${input.ownerUsername}`,
-								},
-							},
-							{
-								type: 'div',
-								props: {
-									style: {
-										display: 'flex',
-										alignItems: 'center',
-										justifyContent: 'space-between',
-									},
-									children: [
-										{
-											type: 'div',
-											props: {
-												style: {
-													display: 'flex',
-													alignItems: 'center',
-												},
-												children: [
-													...(starRow.length > 0
-														? starRow
-														: [
-																{
-																	type: 'div',
-																	props: {
-																		style: {
-																			fontSize: 22,
-																			color: palette.muted,
-																		},
-																		children: ratingText,
-																	},
-																},
-															]),
-													...(starRow.length > 0
-														? [
-																{
-																	type: 'div',
-																	props: {
-																		style: {
-																			fontSize: 22,
-																			color: palette.muted,
-																			marginLeft: 12,
-																		},
-																		children: ratingText,
-																	},
-																},
-															]
-														: []),
-												],
-											},
-										},
-										{
-											type: 'div',
-											props: {
-												style: {
-													fontSize: 22,
-													color: palette.muted,
-												},
-												children: `${input.forkCount} forks`,
-											},
-										},
-									],
-								},
-							},
-						],
+			},
+			{
+				type: 'div',
+				props: {
+					style: {
+						fontSize: 24,
+						color: ogPalette.muted,
+						marginBottom: 28,
 					},
+					children: `by @${input.ownerUsername}`,
 				},
-			],
-		},
-	}
+			},
+			{
+				type: 'div',
+				props: {
+					style: {
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'space-between',
+					},
+					children: [
+						{
+							type: 'div',
+							props: {
+								style: {
+									display: 'flex',
+									alignItems: 'center',
+								},
+								children: [
+									...(starRow.length > 0
+										? starRow
+										: [
+												{
+													type: 'div',
+													props: {
+														style: {
+															fontSize: 22,
+															color: ogPalette.muted,
+														},
+														children: ratingText,
+													},
+												},
+											]),
+									...(starRow.length > 0
+										? [
+												{
+													type: 'div',
+													props: {
+														style: {
+															fontSize: 22,
+															color: ogPalette.muted,
+															marginLeft: 12,
+														},
+														children: ratingText,
+													},
+												},
+											]
+										: []),
+								],
+							},
+						},
+						{
+							type: 'div',
+							props: {
+								style: {
+									fontSize: 22,
+									color: ogPalette.muted,
+								},
+								children: `${input.forkCount} forks`,
+							},
+						},
+					],
+				},
+			},
+		],
+	})
 }
 
 export async function renderCommunityOgImage(
