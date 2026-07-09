@@ -73,7 +73,7 @@ Core logic: `packages/worker/src/community/`
 | `repo.ts`      | D1 queries                                                          |
 | `snapshot.ts`  | KV snapshot I/O                                                     |
 | `fork-scan.ts` | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
-| `og-image.ts`  | 1200×630 PNG via satori + resvg                                     |
+| `og-image.ts`  | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
 | `types.ts`     | Shared record types                                                 |
 
 `publishCommunityListing` validates MIT license, README `## Intent`, published
@@ -117,8 +117,13 @@ Client routes: `packages/worker/client/routes/community*`
 - `/community/:listingId` — metadata, ratings, README, fork prompt, report link
   (report requires login)
 
-`og-image.ts` renders a 1200×630 PNG (package name, “Use Kody to …” description,
-star rating, fork count) with satori layout and resvg rasterization.
+Shared OG rendering lives in `packages/worker/src/og/`: a light-mode palette
+mirroring app design tokens, satori layout + resvg rasterization, and the
+`publicOgPages` registry. Static public pages serve generated images from
+`/og/:page.png` (page ids such as `home`, `community`, `login`). Community
+listing cards use `og-image.ts` on that same pipeline and are served at
+`/community/:listingId/og.png` (package name, “Use Kody to …” description, star
+rating, fork count).
 
 ## Admin moderation
 
