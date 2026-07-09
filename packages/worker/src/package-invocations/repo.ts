@@ -212,6 +212,24 @@ export async function listPackageInvocationTokensByUserId(input: {
 	return (rows.results ?? []).map(mapTokenRow)
 }
 
+export async function getPackageInvocationTokenById(input: {
+	db: D1Database
+	userId: string
+	tokenId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM package_invocation_tokens
+			WHERE id = ?
+				AND user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.tokenId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapTokenRow(row) : null
+}
+
 export async function insertPackageInvocationToken(input: {
 	db: D1Database
 	row: {

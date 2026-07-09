@@ -92,3 +92,40 @@ export const packageExportSurfaceSchema = z.object({
 export const packageDetailSchema = packageSummarySchema.extend({
 	exports: z.array(packageExportSurfaceSchema),
 })
+
+export const packageInvocationTokenMetadataSchema = z.object({
+	token_id: z
+		.string()
+		.describe(
+			'Package invocation token record id. This is not a bearer token.',
+		),
+	name: z.string().describe('Human-readable token record name.'),
+	package_ids: z
+		.array(z.string())
+		.describe(
+			'Saved package ids allowed by this token record, including * when wildcard-scoped.',
+		),
+	package_kody_ids: z
+		.array(z.string())
+		.describe(
+			'Saved package kody.id scopes allowed by this token record, including * when wildcard-scoped.',
+		),
+	export_names: z
+		.array(z.string())
+		.describe(
+			'Normalized package export scopes allowed by this token record, including * when wildcard-scoped.',
+		),
+	allowed_sources: z
+		.array(z.string())
+		.describe('Optional exact source labels allowed by this token record.'),
+	created_at: z.string(),
+	updated_at: z.string(),
+	last_used_at: z
+		.string()
+		.nullable()
+		.describe('Most recent successful bearer-token use, when tracked.'),
+	revoked_at: z
+		.string()
+		.nullable()
+		.describe('Revocation timestamp, or null when the token record is active.'),
+})

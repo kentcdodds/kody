@@ -28,6 +28,12 @@ is write-only and optional: leaving it blank keeps the current bearer value,
 while pasting a new raw token replaces the stored hash. The UI never shows the
 existing raw token or token hash.
 
+Agents can inspect existing token record metadata with
+`package_invocation_token_list` and `package_invocation_token_get`. These
+capabilities return record ids, names, package/export/source scopes, timestamps,
+last-used metadata, and revocation status for the signed-in user's own records.
+They never return raw bearer token values or stored token hashes.
+
 In the editor, look for the **Token value** section. The **New raw token value**
 field is where the user pastes or generates a replacement token value before
 saving.
@@ -119,21 +125,26 @@ export.
 1. Identify the saved package and export the external system needs to call.
    - Use package Kody ids when possible because they are human-readable.
    - Use `*` only for highly trusted personal clients.
-2. Generate a `/account/package-invocation-tokens/new` URL with `name`, package
+2. If debugging an existing setup, call `package_invocation_token_list` or
+   `package_invocation_token_get` first to confirm which token record exists and
+   whether its package, export, and allowed-source scopes match the external
+   caller. Do not ask the user to read token metadata out of the browser UI
+   unless the capability response is insufficient.
+3. Generate a `/account/package-invocation-tokens/new` URL with `name`, package
    scope, export scope, and optional `allowedSources`.
-3. Ask the user to open the URL, paste their locally generated raw token into
+4. Ask the user to open the URL, paste their locally generated raw token into
    the Raw token field, or click **Generate** and copy/deliver the generated
    value before creating the token.
    - For rotation, ask the user to open the existing token detail URL and paste
      or generate the new raw token in the **Token value** section.
    - The external service or secret store must receive the exact raw value that
      was pasted/generated.
-4. Instruct the external caller to send:
+5. Instruct the external caller to send:
    - `POST` to the canonical owner-scoped invocation URL from package metadata,
      not to a `/account/package-invocation-tokens/...` setup URL
    - `Authorization: Bearer <raw-token>`
    - JSON `source` matching one of the allowed sources when sources are scoped
-5. Never display, log, store in docs, or send raw token material through chat or
+6. Never display, log, store in docs, or send raw token material through chat or
    query params.
 
 ## Verification notes for agents

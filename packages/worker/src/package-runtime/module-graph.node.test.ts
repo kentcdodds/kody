@@ -1597,6 +1597,26 @@ export default async function launchAgent() {
 			input: { scope: 'user' },
 		},
 	},
+	{
+		name: 'export package invocation token list',
+		entryPoint: 'src/launch-agent.ts',
+		source: `import { kody } from 'kody:runtime'
+
+export default async function launchAgent() {
+	return await kody.package_invocation_token_list({})
+}
+`,
+		kody: {
+			async package_invocation_token_list(input: unknown) {
+				return { ok: true, tool: 'package_invocation_token_list', input }
+			},
+		},
+		expected: {
+			ok: true,
+			tool: 'package_invocation_token_list',
+			input: {},
+		},
+	},
 ])(
 	'buildKodyModuleBundle keeps kody available for a preloaded package $name runtime',
 	async ({ entryPoint, source, kody, expected }) => {

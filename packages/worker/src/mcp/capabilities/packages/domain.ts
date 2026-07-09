@@ -7,6 +7,8 @@ import { listPackagesCapability } from './list-packages.ts'
 import { listPackageSubscriptionsCapability } from './list-package-subscriptions.ts'
 import { packageDebugGetRunCapability } from './package-debug-get-run.ts'
 import { packageDebugListRunsCapability } from './package-debug-list-runs.ts'
+import { packageInvocationTokenGetCapability } from './package-invocation-token-get.ts'
+import { packageInvocationTokenListCapability } from './package-invocation-token-list.ts'
 import { publishExternalPushCapability } from './publish-external-push.ts'
 import { savePackageCapability } from './save-package.ts'
 
@@ -31,6 +33,8 @@ export const packagesDomain = defineDomain({
 		getGitRemoteCapability,
 		listPackagesCapability,
 		listPackageSubscriptionsCapability,
+		packageInvocationTokenListCapability,
+		packageInvocationTokenGetCapability,
 		packageDebugListRunsCapability,
 		packageDebugGetRunCapability,
 		publishExternalPushCapability,
