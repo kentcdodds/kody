@@ -865,6 +865,10 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									mix={[
 										toggle(),
 										on('change', (event) => {
+											if (!editorState.enabled) {
+												event.currentTarget.checked = editorState.attached
+												return
+											}
 											editorState = {
 												...editorState,
 												attached: event.currentTarget.checked,
