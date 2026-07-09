@@ -121,6 +121,45 @@ export async function upsertSecretEntry(input: {
 		.run()
 }
 
+export async function updateApprovedUserSecretEntryForPackage(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	name: string
+	description: string
+	encryptedValue: string
+	updatedAt: string
+}): Promise<boolean> {
+	const result = await input.db
+		.prepare(
+			`UPDATE secret_entries
+			SET description = ?, encrypted_value = ?, updated_at = ?
+			WHERE name = ?
+				AND bucket_id = (
+					SELECT id
+					FROM secret_buckets
+					WHERE user_id = ? AND scope = 'user' AND binding_key = ''
+					LIMIT 1
+				)
+				AND json_valid(allowed_packages)
+				AND EXISTS (
+					SELECT 1
+					FROM json_each(allowed_packages)
+					WHERE value = ?
+				)`,
+		)
+		.bind(
+			input.description,
+			input.encryptedValue,
+			input.updatedAt,
+			input.name,
+			input.userId,
+			input.packageId,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function deleteSecretEntry(input: {
 	db: D1Database
 	bucketId: string

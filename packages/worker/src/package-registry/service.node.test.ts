@@ -635,6 +635,29 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 })
 
+test('deleteSavedPackageProjection cleans secrets when package projection is missing', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'missing-package',
+	})
+
+	expect(mockModule.deleteAllPackageScopedSecrets).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'missing-package',
+	})
+	expect(mockModule.removeAllSecretApprovalsForPackage).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'missing-package',
+	})
+})
+
 function createEntitlementsDatabase(input: {
 	users?: Array<{ email: string; plan: string | null }>
 	savedPackageCount?: number

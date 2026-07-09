@@ -201,6 +201,7 @@ function createCapabilityFromOperation(input: {
 			return executeOpenApiOperationRequest({
 				env: ctx.env,
 				userId,
+				baseUrl: ctx.callerContext.baseUrl,
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
 					appId: ctx.callerContext.storageContext?.appId ?? null,

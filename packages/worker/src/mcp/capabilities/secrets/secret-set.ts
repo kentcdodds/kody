@@ -5,7 +5,11 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
-import { resolveSecret, saveSecret } from '#mcp/secrets/service.ts'
+import {
+	resolveSecret,
+	saveSecret,
+	updateUserSecretForPackage,
+} from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { secretMetadataSchema } from './shared.ts'
 
@@ -52,6 +56,7 @@ export const secretSetCapability = defineDomainCapability(
 				packageId: ctx.callerContext.storageContext?.packageId ?? null,
 				storageId: ctx.callerContext.storageContext?.storageId ?? null,
 			}
+			let saved
 			if (parsed.scope === 'user' && storageContext.packageId) {
 				const existing = await resolveSecret({
 					env: ctx.env,
@@ -73,17 +78,27 @@ export const secretSetCapability = defineDomainCapability(
 					secretName: parsed.name,
 					resolved: existing,
 				})
+				saved = await updateUserSecretForPackage({
+					env: ctx.env,
+					userId: user.userId,
+					userEmail: user.email,
+					packageId: storageContext.packageId,
+					name: parsed.name,
+					value: parsed.value,
+					description: parsed.description,
+				})
+			} else {
+				saved = await saveSecret({
+					env: ctx.env,
+					userId: user.userId,
+					userEmail: user.email,
+					scope: parsed.scope,
+					name: parsed.name,
+					value: parsed.value,
+					description: parsed.description ?? '',
+					storageContext,
+				})
 			}
-			const saved = await saveSecret({
-				env: ctx.env,
-				userId: user.userId,
-				userEmail: user.email,
-				scope: parsed.scope,
-				name: parsed.name,
-				value: parsed.value,
-				description: parsed.description ?? '',
-				storageContext,
-			})
 			return {
 				name: saved.name,
 				scope: saved.scope,

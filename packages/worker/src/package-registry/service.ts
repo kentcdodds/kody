@@ -378,17 +378,17 @@ export async function deleteSavedPackageProjection(input: {
 		for (const row of packageRows) {
 			await deleteJobRow(input.env.APP_DB, input.userId, row.id)
 		}
-		await deleteAllPackageScopedSecrets({
-			env: input.env,
-			userId: input.userId,
-			packageId: input.packageId,
-		})
-		await removeAllSecretApprovalsForPackage({
-			env: input.env,
-			userId: input.userId,
-			packageId: input.packageId,
-		})
 	}
+	await deleteAllPackageScopedSecrets({
+		env: input.env,
+		userId: input.userId,
+		packageId: input.packageId,
+	})
+	await removeAllSecretApprovalsForPackage({
+		env: input.env,
+		userId: input.userId,
+		packageId: input.packageId,
+	})
 	await deleteSavedPackage(input.env.APP_DB, {
 		userId: input.userId,
 		packageId: input.packageId,

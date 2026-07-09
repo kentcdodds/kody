@@ -144,6 +144,7 @@ test('builds URL with path params and query serialization', async () => {
 		const result = await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: bindingBase,
 			operation: getWidget,
@@ -179,6 +180,7 @@ test('preserves apiBaseUrl path segments when building operation URLs', async ()
 		const result = await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: {
 				...bindingBase,
@@ -201,6 +203,7 @@ test('rejects absolute and protocol-relative operation paths', async () => {
 			executeOpenApiOperationRequest({
 				env: createEnv(),
 				userId: 'user-1',
+				baseUrl: 'https://app.example.com',
 				storageContext: null,
 				binding: {
 					...bindingBase,
@@ -244,6 +247,7 @@ test('injects auth headers and overrides caller attempts', async () => {
 		await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: {
 				...bindingBase,
@@ -265,6 +269,7 @@ test('injects auth headers and overrides caller attempts', async () => {
 		await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: {
 				...bindingBase,
@@ -286,6 +291,7 @@ test('injects auth headers and overrides caller attempts', async () => {
 		await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: {
 				...bindingBase,
@@ -339,25 +345,37 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 	const fetchStub = vi.fn()
 
 	try {
-		await expect(
-			executeOpenApiOperationRequest({
-				env: createEnv(),
-				userId: 'user-1',
-				storageContext: {
-					sessionId: null,
-					appId: 'package-1',
-					packageId: 'package-1',
-					storageId: 'package-1',
-				},
-				binding: {
-					...bindingBase,
-					auth: { kind: 'bearerSecret', secretName: 'apiToken' },
-				},
-				operation: getWidget,
-				args: { params: { widgetId: '1' } },
-				globalFetch: fetchStub as unknown as typeof fetch,
-			}),
-		).rejects.toThrow('is not allowed for package "example-package"')
+		const error = await executeOpenApiOperationRequest({
+			env: createEnv(),
+			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
+			storageContext: {
+				sessionId: null,
+				appId: 'package-1',
+				packageId: 'package-1',
+				storageId: 'package-1',
+			},
+			binding: {
+				...bindingBase,
+				auth: { kind: 'bearerSecret', secretName: 'apiToken' },
+			},
+			operation: getWidget,
+			args: { params: { widgetId: '1' } },
+			globalFetch: fetchStub as unknown as typeof fetch,
+		}).then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+		expect(error).toBeInstanceOf(Error)
+		expect((error as Error).message).toContain(
+			'is not allowed for package "example-package"',
+		)
+		expect((error as Error).message).toContain(
+			'https://app.example.com/account/secrets/user/apiToken',
+		)
+		expect((error as Error).message).not.toContain(
+			'https://api.widgets.example/account/secrets',
+		)
 		expect(fetchStub).not.toHaveBeenCalled()
 	} finally {
 		packageSpy.mockRestore()
@@ -375,6 +393,7 @@ test('returns truncated flag for oversized non-json bodies', async () => {
 		const result = await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: bindingBase,
 			operation: getWidget,
@@ -414,7 +433,7 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 			name: 'spotifyAccessToken',
 			scope: 'user',
 			description: '',
-			appId: null,
+			packageId: null,
 			createdAt: '2026-03-29T00:00:00.000Z',
 			updatedAt: '2026-03-29T00:00:00.000Z',
 			ttlMs: null,
@@ -474,6 +493,7 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 		const result = await executeOpenApiOperationRequest({
 			env: createEnv(entries),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: {
 				...bindingBase,
@@ -522,6 +542,7 @@ test('passes application/json-seq request bodies through as strings', async () =
 		const result = await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
 			storageContext: null,
 			binding: bindingBase,
 			operation: {

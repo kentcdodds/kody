@@ -4,7 +4,6 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
 	buildAccountSecretPath,
-	parseAccountSecretId,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
 import {
@@ -299,16 +298,6 @@ function getSelectionState(href: string): SelectionState {
 	if (parsedPath) {
 		return {
 			selectedSecretId: parsedPath.id,
-			isCreating: false,
-		}
-	}
-	if (url.pathname.startsWith(`${secretsBasePath}/`)) {
-		const legacySecretId = url.pathname.slice(`${secretsBasePath}/`.length)
-		const parsedLegacyId = parseAccountSecretId(legacySecretId)
-		return {
-			selectedSecretId: parsedLegacyId
-				? legacySecretId
-				: url.pathname.slice(`${secretsBasePath}/`.length),
 			isCreating: false,
 		}
 	}

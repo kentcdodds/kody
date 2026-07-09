@@ -30,6 +30,7 @@ import {
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
 	removePackageFromSecretApprovals,
+	updateApprovedUserSecretEntryForPackage,
 	upsertSecretBucket,
 	upsertSecretEntry,
 } from './repo.ts'
@@ -182,6 +183,97 @@ export async function saveSecret(
 			? parseAllowedPackages(existingEntry.allowed_packages)
 			: [],
 		createdAt: existingEntry?.created_at ?? now,
+		updatedAt: now,
+		expiresAt: bucket.expires_at,
+	})
+}
+
+export async function updateUserSecretForPackage(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: string
+	userEmail?: string | null
+	packageId: string
+	name: string
+	value: string
+	description?: string | null
+}) {
+	const name = input.name.trim()
+	if (!name) throw new Error('Secret name is required.')
+	assertSecretNameAllowed(name)
+	const value = input.value.trim()
+	if (!value) throw new Error('Secret value is required.')
+	const packageId = input.packageId.trim()
+	if (!packageId) throw new Error('Package id is required.')
+
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: 'user',
+		storageContext: null,
+	})
+	if (!bucket) throw new Error('User secret not found.')
+	const existingEntry = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name,
+	})
+	if (!existingEntry) throw new Error('User secret not found.')
+
+	const description = input.description?.trim() ?? existingEntry.description
+	const encryptedValue = await encryptSecretValue(input.env, value)
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: {
+					description,
+					encryptedValue,
+					allowedHosts: existingEntry.allowed_hosts,
+					allowedCapabilities: existingEntry.allowed_capabilities,
+					allowedPackages: existingEntry.allowed_packages,
+				},
+			},
+			existing: {
+				key: existingEntry.name,
+				value: {
+					description: existingEntry.description,
+					encryptedValue: existingEntry.encrypted_value,
+					allowedHosts: existingEntry.allowed_hosts,
+					allowedCapabilities: existingEntry.allowed_capabilities,
+					allowedPackages: existingEntry.allowed_packages,
+				},
+			},
+		}),
+	})
+	const now = new Date().toISOString()
+	const updated = await updateApprovedUserSecretEntryForPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId,
+		name,
+		description,
+		encryptedValue,
+		updatedAt: now,
+	})
+	if (!updated) {
+		throw new Error(
+			`User secret "${name}" no longer exists or is not approved for package "${packageId}".`,
+		)
+	}
+	return toSecretMetadata({
+		name,
+		scope: 'user',
+		description,
+		packageId: null,
+		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
+		allowedCapabilities: parseAllowedCapabilities(
+			existingEntry.allowed_capabilities,
+		),
+		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
+		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
 	})
