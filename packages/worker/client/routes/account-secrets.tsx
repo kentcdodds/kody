@@ -1650,8 +1650,8 @@ export function AccountSecretsRoute(handle: Handle) {
 										<div mix={css({ display: 'grid', gap: spacing.xs })}>
 											<span mix={css(fieldLabelCss)}>Allowed packages</span>
 											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												Only listed package ids may read this secret via package
-												secret mounts.
+												Only listed package ids may access this user secret from
+												package runtimes.
 											</p>
 										</div>
 										<div mix={css({ display: 'grid', gap: spacing.sm })}>
