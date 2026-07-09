@@ -139,6 +139,42 @@ test('selection resolution uses union semantics and excludes DELETE by default',
 	])
 })
 
+test('selection operationIds match raw OpenAPI operationId values as well as slugs', () => {
+	const operations = [
+		op({
+			slug: 'listwidgets',
+			operationId: 'listWidgets',
+			method: 'get',
+			path: '/widgets',
+		}),
+		op({
+			slug: 'deletewidget',
+			operationId: 'deleteWidget',
+			method: 'delete',
+			path: '/widgets/{id}',
+		}),
+	]
+
+	const byRawOperationId = resolveOpenApiSelection({
+		operations,
+		selection: { operationIds: ['listWidgets'] },
+		includeDestructive: false,
+	})
+	expect(byRawOperationId.operations.map((entry) => entry.slug)).toEqual([
+		'listwidgets',
+	])
+
+	const destructiveByRawId = resolveOpenApiSelection({
+		operations,
+		selection: { operationIds: ['deleteWidget', 'listwidgets'] },
+		includeDestructive: false,
+	})
+	expect(destructiveByRawId.operations.map((entry) => entry.slug)).toEqual([
+		'listwidgets',
+	])
+	expect(destructiveByRawId.warnings[0]).toMatch(/deletewidget/)
+})
+
 test('selection resolution errors on 0 or >100 matches', () => {
 	expect(() =>
 		resolveOpenApiSelection({

@@ -28,7 +28,12 @@ const httpsUrlSchema = z
 
 export const openApiBindingSelectionSchema = z
 	.object({
-		operationIds: z.array(z.string().min(1)).optional(),
+		operationIds: z
+			.array(z.string().min(1))
+			.optional()
+			.describe(
+				'Operation slugs from openapi_spec_summarize or raw OpenAPI operationId values; both match.',
+			),
 		tags: z.array(z.string().min(1)).optional(),
 		pathPrefixes: z.array(z.string().min(1)).optional(),
 	})
@@ -238,11 +243,14 @@ export function resolveOpenApiSelection(input: {
 		matched.set(operation.slug, operation)
 	}
 
-	const explicitSlugs = new Set(selection.operationIds ?? [])
+	const explicitIds = new Set(selection.operationIds ?? [])
+	const isExplicitlySelected = (operation: OpenApiOperation) =>
+		explicitIds.has(operation.slug) ||
+		(operation.operationId != null && explicitIds.has(operation.operationId))
 	const kept: Array<OpenApiBindingOperation> = []
 	for (const operation of matched.values()) {
 		if (operation.method === 'delete' && !input.includeDestructive) {
-			if (explicitSlugs.has(operation.slug)) {
+			if (isExplicitlySelected(operation)) {
 				warnings.push(
 					`Excluded destructive DELETE operation "${operation.slug}" because includeDestructive is false.`,
 				)
@@ -318,7 +326,15 @@ function operationMatchesSelection(
 	operation: OpenApiOperation,
 	selection: OpenApiBindingSelection,
 ) {
-	if (selection.operationIds?.includes(operation.slug)) return true
+	if (selection.operationIds && selection.operationIds.length > 0) {
+		if (selection.operationIds.includes(operation.slug)) return true
+		if (
+			operation.operationId != null &&
+			selection.operationIds.includes(operation.operationId)
+		) {
+			return true
+		}
+	}
 	if (selection.tags && selection.tags.length > 0) {
 		const operationTags = new Set(
 			operation.tags.map((tag) => tag.trim().toLowerCase()),
