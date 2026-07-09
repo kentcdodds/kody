@@ -6,6 +6,7 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import {
 	fetchOnboardingPayload,
+	onboardingPath,
 	type OnboardingPayload,
 } from '#client/routes/onboarding.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
@@ -17,7 +18,46 @@ import {
 	typography,
 	mq,
 } from '#client/styles/tokens.ts'
-import { layoutMaxWidths } from '#client/styles/style-primitives.ts'
+import {
+	getPrimaryButtonCss,
+	layoutMaxWidths,
+} from '#client/styles/style-primitives.ts'
+
+const workflowSteps = [
+	{
+		number: '01',
+		title: 'Search',
+		description: 'Discover capabilities, packages, integrations, and secrets.',
+	},
+	{
+		number: '02',
+		title: 'Execute',
+		description: 'Run sandboxed code that calls into your capability graph.',
+	},
+	{
+		number: '03',
+		title: 'Build',
+		description: 'Save packages, schedule jobs, and automate repeatable work.',
+	},
+] as const
+
+const capabilityHighlights = [
+	{
+		title: 'Packages you can reuse',
+		description:
+			'Save working capabilities once, then keep them ready for future tasks and prompts.',
+	},
+	{
+		title: 'Connectors, secrets, and inboxes',
+		description:
+			'Bring in external systems without losing the clean MCP surface your agent uses.',
+	},
+	{
+		title: 'Memory, sessions, and automation',
+		description:
+			'Keep long-running context, durable workflows, and per-user state behind the same assistant.',
+	},
+] as const
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
@@ -85,22 +125,7 @@ export function HomeRoute(handle: Handle) {
 		}
 
 		return (
-			<section
-				mix={css({
-					display: 'flex',
-					flexDirection: 'column',
-					alignItems: 'center',
-					gap: spacing['2xl'],
-					textAlign: 'center',
-					width: '100%',
-					boxSizing: 'border-box',
-					padding: spacing.md,
-					[mq.mobile]: {
-						padding: spacing.sm,
-						gap: spacing.xl,
-					},
-				})}
-			>
+			<section mix={css(pageCss)}>
 				{needsOnboarding ? (
 					<div
 						mix={css({
@@ -112,166 +137,326 @@ export function HomeRoute(handle: Handle) {
 						{renderOnboardingBanner()}
 					</div>
 				) : null}
-				<div
-					mix={css({
-						display: 'grid',
-						gap: spacing.lg,
-						padding: spacing['2xl'],
-						borderRadius: radius.xl,
-						border: `1px solid ${colors.border}`,
-						background: `linear-gradient(135deg, ${colors.primarySoftStrong}, ${colors.primarySoftest})`,
-						boxShadow: shadows.md,
-						maxWidth: layoutMaxWidths.narrow,
-						width: '100%',
-						[mq.mobile]: {
-							padding: spacing.lg,
-						},
-					})}
-				>
-					<div
-						mix={css({
-							display: 'grid',
-							gap: spacing.lg,
-							justifyItems: 'center',
-						})}
-					>
-						<img
-							src="/logo.png"
-							alt="kody logo"
-							mix={css({
-								width: '220px',
-								maxWidth: '100%',
-								height: 'auto',
-								[mq.mobile]: {
-									width: '160px',
-								},
-							})}
-						/>
-
-						<div mix={css({ display: 'grid', gap: spacing.md })}>
-							<h1
-								mix={css({
-									fontSize: typography.fontSize['2xl'],
-									fontWeight: typography.fontWeight.bold,
-									margin: 0,
-									color: colors.text,
-								})}
-							>
-								Meet <span mix={css({ color: colors.primaryText })}>kody</span>
-							</h1>
-							<p
-								mix={css({
-									margin: 0,
-									color: colors.textMuted,
-									fontSize: typography.fontSize.lg,
-									lineHeight: 1.6,
-									[mq.mobile]: {
-										fontSize: typography.fontSize.base,
-									},
-								})}
-							>
-								Your personal assistant, built to work from any AI agent host
-								that supports MCP.
-							</p>
-						</div>
+				<section mix={css(heroCardCss)}>
+					<img src="/logo.png" alt="kody logo" mix={css(heroLogoCss)} />
+					<div mix={css(heroTextCss)}>
+						<h1 mix={css(heroTitleCss)}>
+							Meet <span mix={css({ color: colors.primaryText })}>kody</span>
+						</h1>
+						<p mix={css(heroSubtitleCss)}>
+							Your personal assistant from any MCP host.
+						</p>
 					</div>
-				</div>
+					<div mix={css(commandPillRowCss)}>
+						{renderCommandPill('search')}
+						{renderCommandPill('execute')}
+					</div>
+					<p mix={css(heroTaglineCss)}>
+						Two tools. A vast capability graph behind them.
+					</p>
+					<div>
+						<a href={onboardingPath} mix={css(heroCtaCss)}>
+							Connect your agent
+						</a>
+					</div>
+				</section>
 
-				<div
-					mix={css({
-						display: 'grid',
-						gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-						gap: spacing.lg,
-						maxWidth: layoutMaxWidths.content,
-						width: '100%',
-						[mq.mobile]: {
-							gridTemplateColumns: '1fr',
-							gap: spacing.md,
-						},
-					})}
-				>
-					{renderFeatureCard({
-						title: 'MCP Powered',
-						description:
-							'Designed to keep the public MCP surface small while exposing a vast graph of capabilities behind the scenes.',
-						icon: '🔌',
-					})}
-					{renderFeatureCard({
-						title: 'Highly Portable',
-						description:
-							'Built to interoperate across MCP-capable hosts, keeping the focus on the assistant rather than host-specific apps.',
-						icon: '🚀',
-					})}
-					{renderFeatureCard({
-						title: 'Personalized',
-						description:
-							'Optimized for personal workflows and fast iteration, not generic multi-tenant administration.',
-						icon: '🧠',
-					})}
-				</div>
+				<section mix={css(sectionCss)}>
+					<div mix={css(sectionHeaderCss)}>
+						<h2 mix={css(sectionTitleCss)}>How it works</h2>
+						<p mix={css(sectionDescriptionCss)}>
+							A small surface area for your agent, with much more behind it.
+						</p>
+					</div>
+					<div mix={css(stepGridCss)}>
+						{workflowSteps.map((step) => renderWorkflowStep(step))}
+					</div>
+				</section>
+
+				<section mix={css(sectionCss)}>
+					<div mix={css(sectionHeaderCss)}>
+						<h2 mix={css(sectionTitleCss)}>Capabilities</h2>
+						<p mix={css(sectionDescriptionCss)}>
+							Kody keeps the interface simple while giving each user a full
+							personal workspace.
+						</p>
+					</div>
+					<div mix={css(capabilityGridCss)}>
+						{capabilityHighlights.map((capability) =>
+							renderCapabilityCard(capability),
+						)}
+					</div>
+				</section>
+
+				<p mix={css(trustLineCss)}>
+					Fully isolated per user. Your packages, secrets, memory, and data stay
+					yours alone.
+				</p>
 			</section>
 		)
 	}
 }
 
-function renderFeatureCard({
+function renderCommandPill(label: string) {
+	return (
+		<div mix={css(commandPillCss)}>
+			<code>{label}</code>
+		</div>
+	)
+}
+
+function renderWorkflowStep({
+	number,
 	title,
 	description,
-	icon,
+}: {
+	number: string
+	title: string
+	description: string
+}) {
+	return (
+		<div mix={css(stepCardCss)}>
+			<p mix={css(stepNumberCss)}>{number}</p>
+			<h3 mix={css(stepTitleCss)}>{title}</h3>
+			<p mix={css(stepDescriptionCss)}>{description}</p>
+		</div>
+	)
+}
+
+function renderCapabilityCard({
+	title,
+	description,
 }: {
 	title: string
 	description: string
-	icon: string
 }) {
 	return (
-		<div
-			mix={css({
-				display: 'grid',
-				gap: spacing.sm,
-				padding: spacing.lg,
-				borderRadius: radius.lg,
-				border: `1px solid ${colors.border}`,
-				background: colors.surface,
-				boxShadow: shadows.sm,
-				textAlign: 'left',
-				transition: 'transform 0.2s ease-in-out',
-				'&:hover': {
-					transform: 'translateY(-2px)',
-					boxShadow: shadows.md,
-				},
-				[mq.mobile]: {
-					padding: spacing.md,
-				},
-			})}
-		>
-			<div mix={css({ fontSize: '2rem', marginBottom: spacing.xs })}>
-				{icon}
-			</div>
-			<h3
-				mix={css({
-					fontSize: typography.fontSize.lg,
-					fontWeight: typography.fontWeight.semibold,
-					margin: 0,
-					color: colors.text,
-					[mq.mobile]: {
-						fontSize: typography.fontSize.base,
-					},
-				})}
-			>
-				{title}
-			</h3>
-			<p
-				mix={css({
-					margin: 0,
-					color: colors.textMuted,
-					lineHeight: 1.5,
-					[mq.mobile]: {
-						fontSize: typography.fontSize.sm,
-					},
-				})}
-			>
-				{description}
-			</p>
+		<div mix={css(capabilityCardCss)}>
+			<h3 mix={css(capabilityTitleCss)}>{title}</h3>
+			<p mix={css(capabilityDescriptionCss)}>{description}</p>
 		</div>
 	)
+}
+
+const pageCss = {
+	display: 'grid',
+	gap: `calc(${spacing['2xl']} * 1.75)`,
+	justifyItems: 'center',
+	width: '100%',
+	boxSizing: 'border-box' as const,
+	padding: spacing.lg,
+	textAlign: 'center' as const,
+	[mq.mobile]: {
+		padding: spacing.sm,
+		gap: `calc(${spacing['2xl']} * 1.1)`,
+	},
+}
+
+const heroCardCss = {
+	display: 'grid',
+	gap: spacing.lg,
+	justifyItems: 'center',
+	width: '100%',
+	maxWidth: layoutMaxWidths.content,
+	padding: `calc(${spacing['2xl']} * 1.5) ${spacing['2xl']}`,
+	borderRadius: radius.xl,
+	border: `1px solid ${colors.border}`,
+	background: `linear-gradient(135deg, ${colors.primarySoftStrong}, ${colors.primarySoftest})`,
+	boxShadow: shadows.md,
+	[mq.mobile]: {
+		padding: spacing.xl,
+		gap: spacing.md,
+	},
+}
+
+const heroLogoCss = {
+	width: '240px',
+	maxWidth: '100%',
+	height: 'auto',
+	[mq.mobile]: {
+		width: '168px',
+	},
+}
+
+const heroTextCss = {
+	display: 'grid',
+	gap: spacing.md,
+	maxWidth: '38rem',
+}
+
+const heroTitleCss = {
+	margin: 0,
+	fontSize: 'clamp(3.25rem, 7vw, 5rem)',
+	lineHeight: 0.95,
+	fontWeight: typography.fontWeight.bold,
+	color: colors.text,
+}
+
+const heroSubtitleCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.xl,
+	lineHeight: 1.6,
+	[mq.mobile]: {
+		fontSize: typography.fontSize.base,
+	},
+}
+
+const commandPillRowCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	justifyContent: 'center',
+	gap: spacing.md,
+}
+
+const commandPillCss = {
+	padding: `${spacing.xs} ${spacing.md}`,
+	borderRadius: radius.full,
+	border: `1px solid ${colors.primary}`,
+	backgroundColor: colors.surface,
+	color: colors.primaryText,
+	fontFamily:
+		'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+	fontSize: typography.fontSize.lg,
+	boxShadow: shadows.sm,
+}
+
+const heroTaglineCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.base,
+}
+
+const heroCtaCss = {
+	...getPrimaryButtonCss({ size: 'lg', weight: 'semibold' }),
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	textDecoration: 'none',
+	minWidth: '14rem',
+}
+
+const sectionCss = {
+	display: 'grid',
+	gap: spacing.xl,
+	width: '100%',
+	maxWidth: layoutMaxWidths.extended,
+}
+
+const sectionHeaderCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	justifyItems: 'center',
+	maxWidth: layoutMaxWidths.narrow,
+	margin: '0 auto',
+}
+
+const sectionTitleCss = {
+	margin: 0,
+	fontSize: typography.fontSize.xl,
+	fontWeight: typography.fontWeight.semibold,
+	color: colors.text,
+}
+
+const sectionDescriptionCss = {
+	margin: 0,
+	color: colors.textMuted,
+	lineHeight: 1.6,
+}
+
+const stepGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+	gap: spacing.xl,
+	width: '100%',
+	[mq.tablet]: {
+		gridTemplateColumns: '1fr',
+	},
+}
+
+const stepCardCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	padding: `${spacing.xl} ${spacing.lg}`,
+	borderRadius: radius.lg,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	boxShadow: shadows.sm,
+	textAlign: 'left' as const,
+	alignContent: 'start',
+	minHeight: '12rem',
+	[mq.mobile]: {
+		padding: spacing.lg,
+		minHeight: 'auto',
+	},
+}
+
+const stepNumberCss = {
+	margin: 0,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	letterSpacing: '0.08em',
+	textTransform: 'uppercase' as const,
+	color: colors.primaryText,
+}
+
+const stepTitleCss = {
+	margin: 0,
+	fontSize: typography.fontSize.lg,
+	fontWeight: typography.fontWeight.semibold,
+	color: colors.text,
+}
+
+const stepDescriptionCss = {
+	margin: 0,
+	color: colors.textMuted,
+	lineHeight: 1.6,
+}
+
+const capabilityGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+	gap: spacing.xl,
+	width: '100%',
+	[mq.tablet]: {
+		gridTemplateColumns: '1fr',
+	},
+}
+
+const capabilityCardCss = {
+	display: 'grid',
+	gap: spacing.md,
+	padding: `${spacing.xl} ${spacing.lg}`,
+	borderRadius: radius.lg,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	boxShadow: shadows.sm,
+	textAlign: 'left' as const,
+	alignContent: 'start',
+	minHeight: '13rem',
+	[mq.mobile]: {
+		padding: spacing.lg,
+		minHeight: 'auto',
+	},
+}
+
+const capabilityTitleCss = {
+	margin: 0,
+	fontSize: typography.fontSize.lg,
+	fontWeight: typography.fontWeight.semibold,
+	color: colors.text,
+}
+
+const capabilityDescriptionCss = {
+	margin: 0,
+	color: colors.textMuted,
+	lineHeight: 1.7,
+}
+
+const trustLineCss = {
+	margin: 0,
+	maxWidth: layoutMaxWidths.narrow,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.base,
+	lineHeight: 1.6,
 }
