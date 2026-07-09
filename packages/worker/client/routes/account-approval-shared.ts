@@ -1,3 +1,5 @@
+import { parseAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
+
 export type AccountStatus = 'loading' | 'ready' | 'error'
 export type ApprovalAction = 'approve' | 'reject'
 export type ApprovalScope = 'session' | 'package' | 'user'
@@ -23,6 +25,21 @@ export function getScopeLabel(scope: ApprovalScope) {
 
 export async function readJson<T>(response: Response) {
 	return (await response.json().catch(() => null)) as T | null
+}
+
+export function buildHostApprovalRequestUrl(
+	approvalUrl: string,
+	baseUrl = 'http://localhost',
+) {
+	const approvalPageUrl = new URL(approvalUrl, baseUrl)
+	const parsedPath = parseAccountSecretPath(approvalPageUrl.pathname)
+	if (!parsedPath) {
+		throw new Error('Invalid approval link.')
+	}
+	const requestUrl = new URL(accountSecretsApiPath, baseUrl)
+	requestUrl.search = approvalPageUrl.search
+	requestUrl.searchParams.set('selected', parsedPath.id)
+	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
 export async function submitApprovalRequest<

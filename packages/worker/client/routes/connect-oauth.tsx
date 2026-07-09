@@ -8,6 +8,10 @@ import {
 } from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import {
+	buildHostApprovalRequestUrl,
+	submitApprovalRequest,
+} from '#client/routes/account-approval-shared.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -132,6 +136,7 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hasConfigError = false
 	let connectOauthHandled = false
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
+	let approvingAllHosts = false
 	let submitting = false
 	let initialLoadStarted = false
 	let clientIdInput = ''
@@ -158,6 +163,36 @@ export function ConnectOauthRoute(handle: Handle) {
 	): void => {
 		hostApprovalLinks = links
 		update()
+	}
+
+	const approveAllHostApprovals = async () => {
+		if (approvingAllHosts || hostApprovalLinks.length === 0) return
+		approvingAllHosts = true
+		update()
+		const remainingLinks = [...hostApprovalLinks]
+		try {
+			for (const link of remainingLinks) {
+				const requestUrl = buildHostApprovalRequestUrl(
+					link.approvalUrl,
+					window.location.origin,
+				)
+				await submitApprovalRequest('approve', requestUrl)
+				hostApprovalLinks = hostApprovalLinks.filter(
+					(entry) =>
+						entry.secretName !== link.secretName || entry.host !== link.host,
+				)
+				update()
+			}
+			setStatus('All hosts approved.', 'info')
+		} catch (error) {
+			setStatus(
+				error instanceof Error ? error.message : 'Unable to approve all hosts.',
+				'error',
+			)
+		} finally {
+			approvingAllHosts = false
+			update()
+		}
 	}
 
 	const readQueryConfig = (): ConnectOauthQueryConfig | null => {
@@ -1143,6 +1178,16 @@ export function ConnectOauthRoute(handle: Handle) {
 								<p mix={css(descriptionCss)}>
 									Approve each token host directly:
 								</p>
+								<button
+									type="button"
+									disabled={approvingAllHosts}
+									mix={[
+										on('click', () => void approveAllHostApprovals()),
+										css(primaryButtonCss),
+									]}
+								>
+									{approvingAllHosts ? 'Approving hosts…' : 'Approve all hosts'}
+								</button>
 								<ul mix={css(listCss)}>
 									{hostApprovalLinks.map((link) => (
 										<li key={`${link.secretName}:${link.host}`}>
