@@ -21,7 +21,7 @@ export function createOgPageImageHandler(env: Env) {
 				.host
 			const png = await renderPageOgImage({ page, label })
 
-			return new Response(png.buffer as ArrayBuffer, {
+			return new Response(png, {
 				status: 200,
 				headers: {
 					'Cache-Control': 'public, max-age=3600',
