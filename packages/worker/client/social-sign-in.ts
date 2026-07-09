@@ -9,16 +9,20 @@ export function buildProviderStartPath(
 		: `/auth/${providerId}`
 }
 
+/**
+ * Returns the enabled providers, or null when the request failed — callers
+ * must not treat a transient failure as "no providers configured".
+ */
 export async function fetchEnabledAuthProviders(
 	signal?: AbortSignal,
-): Promise<Array<AuthProviderInfo>> {
+): Promise<Array<AuthProviderInfo> | null> {
 	try {
 		const response = await fetch('/auth/providers.json', {
 			headers: { Accept: 'application/json' },
 			signal,
 		})
 		const payload = await response.json().catch(() => null)
-		if (!response.ok || payload?.ok !== true) return []
+		if (!response.ok || payload?.ok !== true) return null
 		const providers = Array.isArray(payload.providers) ? payload.providers : []
 		return providers.filter(
 			(provider: unknown): provider is AuthProviderInfo =>
@@ -28,7 +32,7 @@ export async function fetchEnabledAuthProviders(
 				typeof (provider as AuthProviderInfo).label === 'string',
 		)
 	} catch {
-		return []
+		return null
 	}
 }
 

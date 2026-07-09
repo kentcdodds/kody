@@ -83,12 +83,11 @@ export async function authProvidersRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	return {
-		authProviders: {
-			ok: true,
-			providers: await fetchEnabledAuthProviders(signal),
-		},
-	}
+	const providers = await fetchEnabledAuthProviders(signal)
+	// A failed fetch yields no loader data, so the route's fallback fetch
+	// retries instead of rendering a permanently button-less page.
+	if (!providers) return {}
+	return { authProviders: { ok: true, providers } }
 }
 
 export function LoginRoute(handle: Handle) {
