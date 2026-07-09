@@ -1,5 +1,5 @@
 import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
-import  { type ErrorEvent } from '@sentry/core'
+import { type ErrorEvent } from '@sentry/core'
 
 export const d1LockRetryMaxAttempts = 6
 

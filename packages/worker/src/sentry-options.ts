@@ -1,5 +1,5 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
-import  { type ErrorEvent } from '@sentry/core'
+import { type ErrorEvent } from '@sentry/core'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 
 /**
