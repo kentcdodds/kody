@@ -87,11 +87,11 @@ can never go stale) and re-verified with one point read. Only use it on
 contextless paths; interactive surfaces already carry the email.
 
 Legacy rows with a NULL `stable_user_id` still fall back to a scan that hashes
-each email, but the scan is now self-healing: a match writes the computed id
-back (`UPDATE ... WHERE stable_user_id IS NULL`), so each legacy row pays the
-scan at most once. The authenticated
-`POST /__maintenance/backfill-stable-user-ids` endpoint (`backfillStableUserIds`
-in `packages/worker/src/maintenance-handler.ts`) backfills all remaining legacy
+each email, but the scan is self-healing: a match writes the computed id back
+(`UPDATE ... WHERE stable_user_id IS NULL`), so each legacy row pays the scan at
+most once. The authenticated `POST /__maintenance/backfill-stable-user-ids`
+endpoint (`backfillStableUserIds` in
+`packages/worker/src/maintenance-handler.ts`) backfills all remaining legacy
 rows in keyset-paged batches, eliminating the scan entirely for existing
 deployments.
 
