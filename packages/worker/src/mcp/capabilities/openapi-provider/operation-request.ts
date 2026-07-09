@@ -144,7 +144,7 @@ function buildOperationUrl(input: {
 	params: Record<string, string>
 	query: Record<string, unknown>
 }) {
-	const base = `${normalizeApiBaseUrl(input.apiBaseUrl)}/`
+	const base = normalizeApiBaseUrl(input.apiBaseUrl)
 	let path = input.path.trim()
 	path = path.replace(/\{([^}/]+)\}/g, (_match, name: string) => {
 		if (!(name in input.params)) {
@@ -154,9 +154,15 @@ function buildOperationUrl(input: {
 		}
 		return encodeURIComponent(input.params[name] ?? '')
 	})
-	// Resolve against apiBaseUrl so absolute/protocol-relative spec paths are
-	// visible to host pinning (they must never widen outbound hosts).
-	const url = new URL(path, base)
+	// Concatenate onto apiBaseUrl (never resolve as a URL reference) so a base
+	// path segment like /v1 is preserved, and reject absolute or
+	// protocol-relative spec paths — they must never widen outbound hosts.
+	if (!path.startsWith('/') || path.startsWith('//')) {
+		throw new Error(
+			`OpenAPI operation path ${JSON.stringify(input.path)} must be relative to the binding apiBaseUrl (a single leading "/"). Spec paths never override the binding host.`,
+		)
+	}
+	const url = new URL(`${base}${path}`)
 	appendQueryParams(url, input.query)
 	return url
 }

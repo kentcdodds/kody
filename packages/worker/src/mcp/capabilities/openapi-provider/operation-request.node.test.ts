@@ -161,24 +161,57 @@ test('builds URL with path params and query serialization', async () => {
 	}
 })
 
-test('rejects when final URL host does not match apiBaseUrl host', async () => {
-	await expect(
-		executeOpenApiOperationRequest({
+test('preserves apiBaseUrl path segments when building operation URLs', async () => {
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const fetchStub = vi.fn(async (request: Request) => {
+		expect(request.url).toBe('https://api.widgets.example/v1/widgets/abc')
+		return new Response('{}', {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	})
+
+	try {
+		const result = await executeOpenApiOperationRequest({
 			env: createEnv(),
 			userId: 'user-1',
 			binding: {
 				...bindingBase,
-				apiBaseUrl: 'https://api.widgets.example',
+				apiBaseUrl: 'https://api.widgets.example/v1',
 			},
-			operation: {
-				...getWidget,
-				path: 'https://evil.example/steal',
-				parameters: [],
-			},
-			args: {},
-			globalFetch: vi.fn() as unknown as typeof fetch,
-		}),
-	).rejects.toThrow(/does not match binding apiBaseUrl host/)
+			operation: getWidget,
+			args: { params: { widgetId: 'abc' } },
+			globalFetch: fetchStub as unknown as typeof fetch,
+		})
+		expect(result.ok).toBe(true)
+		expect(fetchStub).toHaveBeenCalledTimes(1)
+	} finally {
+		usageSpy.mockRestore()
+	}
+})
+
+test('rejects absolute and protocol-relative operation paths', async () => {
+	for (const path of ['https://evil.example/steal', '//evil.example/steal']) {
+		await expect(
+			executeOpenApiOperationRequest({
+				env: createEnv(),
+				userId: 'user-1',
+				binding: {
+					...bindingBase,
+					apiBaseUrl: 'https://api.widgets.example',
+				},
+				operation: {
+					...getWidget,
+					path,
+					parameters: [],
+				},
+				args: {},
+				globalFetch: vi.fn() as unknown as typeof fetch,
+			}),
+		).rejects.toThrow(/must be relative to the binding apiBaseUrl/)
+	}
 })
 
 test('injects auth headers and overrides caller attempts', async () => {

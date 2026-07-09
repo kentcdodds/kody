@@ -26,11 +26,24 @@ const operationFilterSchema = z
 	})
 	.strict()
 
+const httpsUrlSchema = z
+	.string()
+	.url()
+	.refine(
+		(value) => {
+			try {
+				return new URL(value).protocol === 'https:'
+			} catch {
+				return false
+			}
+		},
+		{ message: 'URL must use https.' },
+	)
+
 const inputSchema = z.object({
-	specUrl: z
-		.string()
-		.url()
-		.describe('HTTPS URL of an OpenAPI 3.x document (JSON or YAML).'),
+	specUrl: httpsUrlSchema.describe(
+		'HTTPS URL of an OpenAPI 3.x document (JSON or YAML).',
+	),
 	maxOperations: z
 		.number()
 		.int()
