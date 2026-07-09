@@ -799,15 +799,13 @@ export async function syncPackageJobsForPackage(input: {
 				db: input.env.APP_DB,
 				userId: input.userId,
 				job: updated,
-				callerContextJson:
-					existing.callerContextJson ||
-					JSON.stringify(
-						createPackageJobCallerContext({
-							baseUrl: input.baseUrl,
-							userId: input.userId,
-							packageId: input.packageId,
-						}),
-					),
+				callerContextJson: serializeCallerContext(
+					createPackageJobCallerContext({
+						baseUrl: input.baseUrl,
+						userId: input.userId,
+						packageId: input.packageId,
+					}),
+				),
 			})
 			continue
 		}
