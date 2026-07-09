@@ -1,5 +1,6 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
+import toggle from 'remix/ui/toggle'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
@@ -828,13 +829,16 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									type="checkbox"
 									checked={editorState.enabled}
 									disabled={isMutating}
-									mix={on('change', (event) => {
-										editorState = {
-											...editorState,
-											enabled: event.currentTarget.checked,
-										}
-										handle.update()
-									})}
+									mix={[
+										toggle(),
+										on('change', (event) => {
+											editorState = {
+												...editorState,
+												enabled: event.currentTarget.checked,
+											}
+											handle.update()
+										}),
+									]}
 								/>
 								<span>
 									<strong>Enabled</strong>
@@ -858,13 +862,16 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 									type="checkbox"
 									checked={editorState.attached}
 									disabled={isMutating || !editorState.enabled}
-									mix={on('change', (event) => {
-										editorState = {
-											...editorState,
-											attached: event.currentTarget.checked,
-										}
-										handle.update()
-									})}
+									mix={[
+										toggle(),
+										on('change', (event) => {
+											editorState = {
+												...editorState,
+												attached: event.currentTarget.checked,
+											}
+											handle.update()
+										}),
+									]}
 								/>
 								<span>
 									<strong>Attach to normal Kody context</strong>

@@ -1,5 +1,6 @@
 import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
+import checkbox from 'remix/ui/checkbox'
 import { on } from '#client/event-mixin.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 import {
@@ -413,9 +414,12 @@ export function LoginRoute(handle: Handle) {
 							<input
 								type="checkbox"
 								name="rememberMe"
-								mix={css({
-									marginTop: '0.15rem',
-								})}
+								mix={[
+									checkbox(),
+									css({
+										marginTop: '0.15rem',
+									}),
+								]}
 							/>
 
 							<span mix={css({ display: 'grid', gap: spacing.xs })}>
