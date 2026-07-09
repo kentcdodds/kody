@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { filterRetryableD1LockSentryEvent } from './sentry-options.ts'
 
-test('filterRetryableD1LockSentryEvent drops transient D1 SQLITE_BUSY events', () => {
+test('filterRetryableD1LockSentryEvent drops transient D1 lock contention and keeps other errors', () => {
 	expect(
 		filterRetryableD1LockSentryEvent({
 			exception: {
@@ -13,13 +13,11 @@ test('filterRetryableD1LockSentryEvent drops transient D1 SQLITE_BUSY events', (
 			},
 		}),
 	).toBeNull()
-})
 
-test('filterRetryableD1LockSentryEvent keeps unrelated errors', () => {
-	const event = {
+	const unrelatedEvent = {
 		exception: {
 			values: [{ value: 'D1_ERROR: syntax error near INSERTZ' }],
 		},
 	}
-	expect(filterRetryableD1LockSentryEvent(event)).toBe(event)
+	expect(filterRetryableD1LockSentryEvent(unrelatedEvent)).toBe(unrelatedEvent)
 })

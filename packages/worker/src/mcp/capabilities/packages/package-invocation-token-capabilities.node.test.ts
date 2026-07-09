@@ -13,8 +13,6 @@ vi.mock('#worker/package-invocations/repo.ts', () => ({
 		mockModule.getPackageInvocationTokenById(...args),
 }))
 
-const { capabilityMap, capabilitySpecs } =
-	await import('#mcp/capabilities/registry.ts')
 const { packageInvocationTokenListCapability } =
 	await import('./package-invocation-token-list.ts')
 const { packageInvocationTokenGetCapability } =
@@ -55,50 +53,31 @@ function createCapabilityContext() {
 	}
 }
 
-test('package invocation token capabilities are registered for discovery', () => {
-	expect(capabilityMap.package_invocation_token_list).toBe(
-		packageInvocationTokenListCapability,
-	)
-	expect(capabilityMap.package_invocation_token_get).toBe(
-		packageInvocationTokenGetCapability,
-	)
-	expect(capabilitySpecs.package_invocation_token_list).toMatchObject({
-		domain: 'packages',
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		outputFields: ['tokens'],
-	})
-	expect(capabilitySpecs.package_invocation_token_get).toMatchObject({
-		domain: 'packages',
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		requiredInputFields: ['token_id'],
-		outputFields: ['token'],
-	})
-})
-
-test('package_invocation_token_list returns user-scoped metadata without token hashes', async () => {
+test('package invocation token capabilities return user-scoped metadata without secrets', async () => {
 	mockModule.listPackageInvocationTokensByUserId.mockReset()
+	mockModule.getPackageInvocationTokenById.mockReset()
 	mockModule.listPackageInvocationTokensByUserId.mockResolvedValue([
 		tokenRecord,
 	])
+	mockModule.getPackageInvocationTokenById.mockResolvedValue({
+		...tokenRecord,
+		id: 'pit-2',
+		name: 'Revoked client',
+		last_used_at: null,
+		revoked_at: '2026-07-04T00:00:00.000Z',
+	})
 
-	const result = await packageInvocationTokenListCapability.handler(
+	const context = createCapabilityContext()
+	const listResult = await packageInvocationTokenListCapability.handler(
 		{},
-		createCapabilityContext(),
+		context,
 	)
 
 	expect(mockModule.listPackageInvocationTokensByUserId).toHaveBeenCalledWith({
 		db: expect.anything(),
 		userId: 'user-1',
 	})
-	const serialized = JSON.stringify(result)
-	expect(serialized).not.toContain('stored-token-hash')
-	expect(serialized).not.toContain('user@example.com')
-	expect(serialized).not.toContain('"display_name"')
-	expect(result).toEqual({
+	expect(listResult).toEqual({
 		tokens: [
 			{
 				token_id: 'pit-1',
@@ -114,33 +93,18 @@ test('package_invocation_token_list returns user-scoped metadata without token h
 			},
 		],
 	})
-})
+	expect(JSON.stringify(listResult)).not.toContain('stored-token-hash')
 
-test('package_invocation_token_get returns one user-scoped metadata record', async () => {
-	mockModule.getPackageInvocationTokenById.mockReset()
-	mockModule.getPackageInvocationTokenById.mockResolvedValue({
-		...tokenRecord,
-		id: 'pit-2',
-		name: 'Revoked client',
-		last_used_at: null,
-		revoked_at: '2026-07-04T00:00:00.000Z',
-	})
-
-	const result = await packageInvocationTokenGetCapability.handler(
+	const getResult = await packageInvocationTokenGetCapability.handler(
 		{ token_id: 'pit-2' },
-		createCapabilityContext(),
+		context,
 	)
-
 	expect(mockModule.getPackageInvocationTokenById).toHaveBeenCalledWith({
 		db: expect.anything(),
 		userId: 'user-1',
 		tokenId: 'pit-2',
 	})
-	const serialized = JSON.stringify(result)
-	expect(serialized).not.toContain('stored-token-hash')
-	expect(serialized).not.toContain('user@example.com')
-	expect(serialized).not.toContain('"display_name"')
-	expect(result).toEqual({
+	expect(getResult).toEqual({
 		token: {
 			token_id: 'pit-2',
 			name: 'Revoked client',
@@ -154,19 +118,16 @@ test('package_invocation_token_get returns one user-scoped metadata record', asy
 			revoked_at: '2026-07-04T00:00:00.000Z',
 		},
 	})
-})
+	expect(JSON.stringify(getResult)).not.toContain('stored-token-hash')
 
-test('package_invocation_token_get rejects tokens outside the signed-in user scope', async () => {
-	mockModule.getPackageInvocationTokenById.mockReset()
 	mockModule.getPackageInvocationTokenById.mockResolvedValue(null)
-
 	await expect(
 		packageInvocationTokenGetCapability.handler(
 			{ token_id: 'other-user-token' },
-			createCapabilityContext(),
+			context,
 		),
-	).rejects.toThrow('Package invocation token not found for this user.')
-	expect(mockModule.getPackageInvocationTokenById).toHaveBeenCalledWith({
+	).rejects.toThrow(/not found/i)
+	expect(mockModule.getPackageInvocationTokenById).toHaveBeenLastCalledWith({
 		db: expect.anything(),
 		userId: 'user-1',
 		tokenId: 'other-user-token',

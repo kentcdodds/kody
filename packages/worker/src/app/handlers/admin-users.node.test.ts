@@ -435,7 +435,7 @@ test('remove role removes admin when another admin remains', async () => {
 	)
 })
 
-test('update plan action sets the plan and logs an audit event', async () => {
+test('update plan action sets, clears, validates, and scopes plan changes', async () => {
 	mockModule.logAuditEvent.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
@@ -453,108 +453,9 @@ test('update plan action sets the plan and logs an audit event', async () => {
 		],
 		userRoles: [{ user_id: 2, role_name: 'user' }],
 	})
-
 	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				action: 'update_plan',
-				userId: 2,
-				plan: 'personal',
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
-
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload.users[0].plan).toBe('personal')
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'update_plan',
-			result: 'success',
-			reason: 'target_user_id=2;plan=personal',
-		}),
-	)
-})
-
-test('update plan action clears the plan with explicit null', async () => {
-	mockModule.logAuditEvent.mockClear()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
-				plan: 'pro',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 2, role_name: 'user' }],
-	})
-
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ action: 'update_plan', userId: 2, plan: null }),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
-
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload.users[0].plan).toBe(null)
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'update_plan',
-			result: 'success',
-			reason: 'target_user_id=2;plan=null',
-		}),
-	)
-})
-
-test('update plan action rejects unknown plan values and missing plan key', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
-				plan: 'pro',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 2, role_name: 'user' }],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-
-	for (const body of [
-		{ action: 'update_plan', userId: 2, plan: 'enterprise' },
-		{ action: 'update_plan', userId: 2 },
-	]) {
-		const response = await handler.handler({
+	const postUpdatePlan = (body: Record<string, unknown>) =>
+		handler.handler({
 			request: new Request('https://example.com/admin/users.json', {
 				method: 'POST',
 				headers: {
@@ -566,29 +467,52 @@ test('update plan action rejects unknown plan values and missing plan key', asyn
 			params: {},
 			url: new URL('https://example.com/admin/users.json'),
 		} as never)
-		expect(response.status).toBe(400)
-	}
-})
 
-test('update plan action returns 404 for an unknown user', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({ users: [], userRoles: [] })
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ action: 'update_plan', userId: 42, plan: 'pro' }),
+	const setPlanResponse = await postUpdatePlan({
+		action: 'update_plan',
+		userId: 2,
+		plan: 'personal',
+	})
+	expect(setPlanResponse.status).toBe(200)
+	expect((await setPlanResponse.json()).users[0].plan).toBe('personal')
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'update_plan',
+			result: 'success',
+			reason: 'target_user_id=2;plan=personal',
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
-	expect(response.status).toBe(404)
+	)
+
+	const clearPlanResponse = await postUpdatePlan({
+		action: 'update_plan',
+		userId: 2,
+		plan: null,
+	})
+	expect(clearPlanResponse.status).toBe(200)
+	expect((await clearPlanResponse.json()).users[0].plan).toBe(null)
+	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'update_plan',
+			result: 'success',
+			reason: 'target_user_id=2;plan=null',
+		}),
+	)
+
+	for (const body of [
+		{ action: 'update_plan', userId: 2, plan: 'enterprise' },
+		{ action: 'update_plan', userId: 2 },
+	]) {
+		expect((await postUpdatePlan(body)).status).toBe(400)
+	}
+
+	const missingUserResponse = await postUpdatePlan({
+		action: 'update_plan',
+		userId: 42,
+		plan: 'pro',
+	})
+	expect(missingUserResponse.status).toBe(404)
 })
 
 test('admin users API returns 403 without read:user:any permission', async () => {

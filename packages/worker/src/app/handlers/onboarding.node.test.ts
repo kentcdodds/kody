@@ -64,40 +64,36 @@ function createStaleSessionTestEnv() {
 	} as Env
 }
 
-test('onboarding handler redirects to login with a session-destroy cookie for stale sessions', async () => {
+test('onboarding routes require a live session and reject anonymous API access', async () => {
 	setAuthSessionSecret(testCookieSecret)
+	const env = createStaleSessionTestEnv()
 	const session: AuthSession = {
 		id: '99',
 		email: 'missing@example.com',
 		rememberMe: false,
 	}
 	const cookie = await createAuthCookie(session, false)
-	const handler = createOnboardingHandler(createStaleSessionTestEnv())
-	const response = await handler.handler(
+
+	const staleSessionResponse = await createOnboardingHandler(env).handler(
 		new RequestContext(
 			new Request('https://example.com/onboarding', {
 				headers: { Cookie: cookie },
 			}),
 		),
 	)
-
-	expect(response.status).toBe(302)
-	expect(response.headers.get('Location')).toBe(
+	expect(staleSessionResponse.status).toBe(302)
+	expect(staleSessionResponse.headers.get('Location')).toBe(
 		'https://example.com/login?redirectTo=%2Fonboarding',
 	)
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
+	const setCookie = staleSessionResponse.headers.get('Set-Cookie') ?? ''
 	expect(setCookie).toContain('kody_session=')
 	expect(setCookie).toContain('Max-Age=0')
-})
 
-test('onboarding API returns 401 for anonymous requests', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const handler = createOnboardingApiHandler(createStaleSessionTestEnv())
-	const response = await handler.handler(
+	const anonymousApiResponse = await createOnboardingApiHandler(env).handler(
 		new RequestContext(new Request('https://example.com/onboarding.json')),
 	)
-	expect(response.status).toBe(401)
-	await expect(response.json()).resolves.toEqual({
+	expect(anonymousApiResponse.status).toBe(401)
+	await expect(anonymousApiResponse.json()).resolves.toEqual({
 		ok: false,
 		error: 'Unauthorized.',
 	})
