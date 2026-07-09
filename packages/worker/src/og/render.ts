@@ -6,6 +6,7 @@ import {
 	ogResvgWasm,
 	ogYogaWasm,
 } from '#worker/og/og-image-assets.ts'
+import { getKodyLogoDataUri } from '#worker/og/logo.ts'
 import { OG_CARD_RADIUS, ogPalette } from '#worker/og/palette.ts'
 
 export const OG_WIDTH = 1200
@@ -17,6 +18,7 @@ export type SatoriElement = {
 	props: {
 		style?: Record<string, string | number>
 		children?: SatoriChild | Array<SatoriChild>
+		src?: string
 		width?: number
 		height?: number
 		viewBox?: string
@@ -89,12 +91,36 @@ export function createOgFrame(input: {
 								type: 'div',
 								props: {
 									style: {
-										fontSize: 44,
-										fontWeight: 600,
-										letterSpacing: '-0.03em',
-										color: ogPalette.primaryText,
+										display: 'flex',
+										alignItems: 'center',
 									},
-									children: 'kody',
+									children: [
+										{
+											type: 'img',
+											props: {
+												src: getKodyLogoDataUri(),
+												width: 64,
+												height: 64,
+												style: {
+													width: 64,
+													height: 64,
+													marginRight: 16,
+												},
+											},
+										},
+										{
+											type: 'div',
+											props: {
+												style: {
+													fontSize: 44,
+													fontWeight: 600,
+													letterSpacing: '-0.03em',
+													color: ogPalette.primaryText,
+												},
+												children: 'kody',
+											},
+										},
+									],
 								},
 							},
 							{
