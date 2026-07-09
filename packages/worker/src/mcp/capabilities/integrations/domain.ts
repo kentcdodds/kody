@@ -6,11 +6,12 @@ import { integrationGetCapability } from './integration-get.ts'
 import { integrationListCapability } from './integration-list.ts'
 import { integrationRegistrySearchCapability } from './integration-registry-search.ts'
 import { integrationSaveCapability } from './integration-save.ts'
+import { openapiSpecSummarizeCapability } from './openapi-spec-summarize.ts'
 
 export const integrationsDomain = defineDomain({
 	name: capabilityDomainNames.integrations,
 	description:
-		'Saved OAuth integration configurations for the signed-in user: save, inspect, list, and delete per-provider integration configs that reference client-id values and token secrets. Integration configs are non-secret; credentials stay in the secret store. Also includes integrations.sh registry-backed discovery capabilities to research provider auth contracts before saving integrations.',
+		'Saved OAuth integration configurations for the signed-in user: save, inspect, list, and delete per-provider integration configs that reference client-id values and token secrets. Integration configs are non-secret; credentials stay in the secret store. Also includes integrations.sh registry-backed discovery and OpenAPI spec summarization to research provider auth contracts and API surfaces before saving integrations.',
 	keywords: [
 		'integration',
 		'oauth',
@@ -21,6 +22,8 @@ export const integrationsDomain = defineDomain({
 		'third-party',
 		'discovery',
 		'integrations.sh',
+		'openapi',
+		'spec',
 	],
 	capabilities: [
 		integrationSaveCapability,
@@ -29,5 +32,6 @@ export const integrationsDomain = defineDomain({
 		integrationDeleteCapability,
 		integrationRegistrySearchCapability,
 		integrationDiscoverCapability,
+		openapiSpecSummarizeCapability,
 	],
 })
