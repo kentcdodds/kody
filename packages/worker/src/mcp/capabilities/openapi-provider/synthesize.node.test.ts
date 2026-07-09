@@ -156,6 +156,78 @@ test('input schema includes params/query/headers/body with required rules', () =
 	})
 })
 
+test('input schema models required header/query params and cookie notes', () => {
+	const schema = buildOpenApiOperationInputSchema({
+		slug: 'search',
+		operationId: 'search',
+		method: 'get',
+		path: '/search',
+		summary: 'Search',
+		description: null,
+		tags: ['widgets'],
+		deprecated: false,
+		parameters: [
+			{
+				name: 'q',
+				location: 'query',
+				required: true,
+				description: 'Query string',
+				schema: { type: 'string' },
+			},
+			{
+				name: 'X-Request-Id',
+				location: 'header',
+				required: true,
+				description: 'Correlation id',
+				schema: { type: 'string' },
+			},
+			{
+				name: 'session',
+				location: 'cookie',
+				required: false,
+				description: null,
+				schema: { type: 'string' },
+			},
+			{
+				name: 'csrf',
+				location: 'cookie',
+				required: true,
+				description: null,
+				schema: { type: 'string' },
+			},
+		],
+		requestBody: null,
+	}) as {
+		required?: Array<string>
+		properties: {
+			query?: {
+				required?: Array<string>
+				properties?: Record<string, unknown>
+			}
+			headers?: {
+				required?: Array<string>
+				properties?: Record<string, unknown>
+				description?: string
+				additionalProperties?: unknown
+			}
+		}
+	}
+
+	expect(schema.required).toEqual(expect.arrayContaining(['query', 'headers']))
+	expect(schema.properties.query).toMatchObject({
+		required: ['q'],
+		properties: { q: { type: 'string' } },
+	})
+	expect(schema.properties.headers).toMatchObject({
+		required: ['X-Request-Id'],
+		properties: { 'X-Request-Id': { type: 'string' } },
+		additionalProperties: { type: 'string' },
+	})
+	expect(schema.properties.headers?.description).toContain(
+		'Cookie parameters from the spec (session, csrf) must be passed manually via a "cookie" header.',
+	)
+})
+
 test('domain description falls back to specTitle then default', () => {
 	const withTitle = synthesizeOpenApiProviderDomain({
 		binding: createBinding({ description: null, specTitle: 'Widgets API' }),

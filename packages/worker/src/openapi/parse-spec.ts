@@ -220,11 +220,18 @@ export function deriveOperationSlug(
 	return slug.length > 0 ? slug : 'operation'
 }
 
-function dedupeSlug(base: string, used: Map<string, number>): string {
-	const count = used.get(base) ?? 0
-	used.set(base, count + 1)
-	if (count === 0) return base
-	return `${base}_${count + 1}`
+function dedupeSlug(base: string, used: Set<string>): string {
+	if (!used.has(base)) {
+		used.add(base)
+		return base
+	}
+	let suffix = 2
+	while (used.has(`${base}_${suffix}`)) {
+		suffix += 1
+	}
+	const slug = `${base}_${suffix}`
+	used.add(slug)
+	return slug
 }
 
 function substituteServerUrl(
@@ -415,7 +422,7 @@ function parseOperations(
 	warnings: Array<string>,
 ): Array<OpenApiOperation> {
 	const operations: Array<OpenApiOperation> = []
-	const usedSlugs = new Map<string, number>()
+	const usedSlugs = new Set<string>()
 	let truncated = false
 
 	for (const [path, pathItemRaw] of Object.entries(paths)) {

@@ -229,6 +229,39 @@ test('deriveOperationSlug and dedupe follow contract rules', () => {
 	expect(slugs).toContain('getwidget_2')
 })
 
+test('dedupeSlug skips already-used numbered suffixes (foo, foo, foo_2)', () => {
+	const parsed = parseOpenApiSpec(
+		JSON.stringify({
+			openapi: '3.0.3',
+			info: { title: 'Collision', version: '1' },
+			paths: {
+				'/a': {
+					get: {
+						operationId: 'foo',
+						responses: { '200': { description: 'ok' } },
+					},
+				},
+				'/b': {
+					get: {
+						operationId: 'foo',
+						responses: { '200': { description: 'ok' } },
+					},
+				},
+				'/c': {
+					get: {
+						operationId: 'foo_2',
+						responses: { '200': { description: 'ok' } },
+					},
+				},
+			},
+		}),
+	)
+	const slugs = parsed.operations.map((op) => op.slug)
+	// Second "foo" claims foo_2; the later base "foo_2" is already taken so becomes foo_2_2.
+	expect(slugs).toEqual(['foo', 'foo_2', 'foo_2_2'])
+	expect(new Set(slugs).size).toBe(3)
+})
+
 test('parseOpenApiSpec warns when operation hard cap is exceeded', () => {
 	const paths: Record<string, unknown> = {}
 	for (let index = 0; index < 2001; index += 1) {

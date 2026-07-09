@@ -376,6 +376,7 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 
 	try {
 		let apiCalls = 0
+		let firstUnauthorizedResponse: Response | null = null
 		const fetchStub = vi.fn(async (request: Request) => {
 			if (request.url.includes('/api/token')) {
 				expect(await request.text()).toContain('grant_type=refresh_token')
@@ -389,10 +390,12 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 			}
 			apiCalls += 1
 			if (apiCalls === 1) {
-				return new Response(JSON.stringify({ error: 'expired' }), {
+				const response = new Response(JSON.stringify({ error: 'expired' }), {
 					status: 401,
 					headers: { 'content-type': 'application/json' },
 				})
+				firstUnauthorizedResponse = response
+				return response
 			}
 			expect(request.headers.get('authorization')).toBe('Bearer token-value')
 			return new Response(JSON.stringify({ ok: true }), {
@@ -422,9 +425,53 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 		expect(result.body).toEqual({ ok: true })
 		expect(apiCalls).toBe(2)
 		expect(saveSecretSpy).toHaveBeenCalled()
+		expect(firstUnauthorizedResponse).not.toBeNull()
+		expect(firstUnauthorizedResponse!.bodyUsed).toBe(true)
 	} finally {
 		resolveSpy.mockRestore()
 		saveSecretSpy.mockRestore()
+		usageSpy.mockRestore()
+	}
+})
+
+test('passes application/json-seq request bodies through as strings', async () => {
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const payload = '{"id":1}\n{"id":2}\n'
+	const fetchStub = vi.fn(async (request: Request) => {
+		// Non-JSON content types are not auto-set; callers supply them via headers.
+		expect(request.headers.get('content-type')).toBe('application/json-seq')
+		// Must not JSON.stringify a string body (which would wrap it in quotes).
+		expect(await request.text()).toBe(payload)
+		return new Response('ok', {
+			status: 200,
+			headers: { 'content-type': 'text/plain' },
+		})
+	})
+
+	try {
+		const result = await executeOpenApiOperationRequest({
+			env: createEnv(),
+			userId: 'user-1',
+			binding: bindingBase,
+			operation: {
+				...createWidget,
+				requestBody: {
+					required: true,
+					contentType: 'application/json-seq',
+					schema: null,
+				},
+			},
+			args: {
+				headers: { 'content-type': 'application/json-seq' },
+				body: payload,
+			},
+			globalFetch: fetchStub as unknown as typeof fetch,
+		})
+		expect(result.ok).toBe(true)
+		expect(fetchStub).toHaveBeenCalledTimes(1)
+	} finally {
 		usageSpy.mockRestore()
 	}
 })

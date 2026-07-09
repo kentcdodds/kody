@@ -64,7 +64,11 @@ export function buildOpenApiOperationInputSchema(
 ): Record<string, unknown> {
 	const pathProperties: Record<string, unknown> = {}
 	const queryProperties: Record<string, unknown> = {}
+	const headerProperties: Record<string, unknown> = {}
 	const requiredPathParams: Array<string> = []
+	const requiredQueryParams: Array<string> = []
+	const requiredHeaderParams: Array<string> = []
+	const cookieParamNames: Array<string> = []
 
 	for (const parameter of operation.parameters) {
 		const propertySchema = {
@@ -76,6 +80,12 @@ export function buildOpenApiOperationInputSchema(
 			if (parameter.required) requiredPathParams.push(parameter.name)
 		} else if (parameter.location === 'query') {
 			queryProperties[parameter.name] = propertySchema
+			if (parameter.required) requiredQueryParams.push(parameter.name)
+		} else if (parameter.location === 'header') {
+			headerProperties[parameter.name] = propertySchema
+			if (parameter.required) requiredHeaderParams.push(parameter.name)
+		} else if (parameter.location === 'cookie') {
+			cookieParamNames.push(parameter.name)
 		}
 	}
 
@@ -98,15 +108,32 @@ export function buildOpenApiOperationInputSchema(
 		properties.query = {
 			type: 'object',
 			properties: queryProperties,
+			...(requiredQueryParams.length > 0
+				? { required: requiredQueryParams }
+				: {}),
 			additionalProperties: true,
 		}
+		if (requiredQueryParams.length > 0) required.push('query')
+	}
+
+	let headersDescription =
+		'Optional extra headers. Auth-controlled headers always win.'
+	if (cookieParamNames.length > 0) {
+		headersDescription += ` Cookie parameters from the spec (${cookieParamNames.join(', ')}) must be passed manually via a "cookie" header.`
 	}
 
 	properties.headers = {
 		type: 'object',
+		...(Object.keys(headerProperties).length > 0
+			? { properties: headerProperties }
+			: {}),
+		...(requiredHeaderParams.length > 0
+			? { required: requiredHeaderParams }
+			: {}),
 		additionalProperties: { type: 'string' },
-		description: 'Optional extra headers. Auth-controlled headers always win.',
+		description: headersDescription,
 	}
+	if (requiredHeaderParams.length > 0) required.push('headers')
 
 	if (operation.requestBody) {
 		properties.body = {

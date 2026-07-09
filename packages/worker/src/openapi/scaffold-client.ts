@@ -308,11 +308,11 @@ function buildOperationFunction(
 }
 
 function isJsonContentType(contentType: string): boolean {
-	const lower = contentType.toLowerCase()
+	const mediaType = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
 	return (
-		lower === 'application/json' ||
-		lower.endsWith('+json') ||
-		lower.includes('json')
+		mediaType === 'application/json' ||
+		mediaType === 'text/json' ||
+		mediaType.endsWith('+json')
 	)
 }
 

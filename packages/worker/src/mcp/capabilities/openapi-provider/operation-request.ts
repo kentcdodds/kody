@@ -107,6 +107,7 @@ export async function executeOpenApiOperationRequest(input: {
 			globalFetch: input.globalFetch,
 		})
 		if (refreshed.ok) {
+			void response.body?.cancel().catch(() => {})
 			response = await executeGatewayFetch({
 				env: input.env,
 				props: {
@@ -236,7 +237,8 @@ function buildRequestHeaders(input: {
 	if (
 		input.hasBody &&
 		input.requestBody &&
-		isJsonContentType(input.requestBody.contentType) &&
+		(input.requestBody.contentType == null ||
+			isJsonContentType(input.requestBody.contentType)) &&
 		!headers.has('content-type')
 	) {
 		headers.set(
@@ -332,9 +334,13 @@ function serializeBody(
 	return JSON.stringify(body)
 }
 
-function isJsonContentType(contentType: string | null) {
-	if (!contentType) return true
-	return contentType.toLowerCase().includes('json')
+function isJsonContentType(contentType: string): boolean {
+	const mediaType = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
+	return (
+		mediaType === 'application/json' ||
+		mediaType === 'text/json' ||
+		mediaType.endsWith('+json')
+	)
 }
 
 async function tryRefreshIntegrationAccessToken(input: {
@@ -490,8 +496,7 @@ async function readOperationResponse(
 		openApiOperationResponseMaxBytes,
 	)
 
-	const isJson =
-		contentType != null && contentType.toLowerCase().includes('json')
+	const isJson = contentType != null && isJsonContentType(contentType)
 	let body: unknown = bodyText
 	if (isJson && !truncated) {
 		try {

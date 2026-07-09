@@ -72,3 +72,116 @@ test('fetchOpenApiSpecText returns body text on success', async () => {
 		payload,
 	)
 })
+
+test('fetchOpenApiSpecText rejects https→http redirects', async () => {
+	using _server = createMswNodeServer([
+		http.get(
+			SPEC_URL,
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'http://specs.example/openapi.json' },
+				}),
+		),
+	])
+
+	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).rejects.toThrow(
+		/must use https/,
+	)
+})
+
+test('fetchOpenApiSpecText follows https→https redirects', async () => {
+	const finalUrl = 'https://specs.example/v2/openapi.json'
+	const payload = JSON.stringify({ openapi: '3.0.3', info: { title: 'ok' } })
+	using _server = createMswNodeServer([
+		http.get(
+			SPEC_URL,
+			() =>
+				new HttpResponse(null, {
+					status: 301,
+					headers: { Location: finalUrl },
+				}),
+		),
+		http.get(finalUrl, () => new HttpResponse(payload)),
+	])
+
+	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).resolves.toBe(
+		payload,
+	)
+})
+
+test('fetchOpenApiSpecText rejects redirects with embedded credentials', async () => {
+	using _server = createMswNodeServer([
+		http.get(
+			SPEC_URL,
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: {
+						Location: 'https://user:pass@specs.example/openapi.json',
+					},
+				}),
+		),
+	])
+
+	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).rejects.toThrow(
+		/embedded credentials/,
+	)
+})
+
+test('fetchOpenApiSpecText rejects redirect chains longer than 5 hops', async () => {
+	using _server = createMswNodeServer([
+		http.get(
+			'https://specs.example/hop-0',
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'https://specs.example/hop-1' },
+				}),
+		),
+		http.get(
+			'https://specs.example/hop-1',
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'https://specs.example/hop-2' },
+				}),
+		),
+		http.get(
+			'https://specs.example/hop-2',
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'https://specs.example/hop-3' },
+				}),
+		),
+		http.get(
+			'https://specs.example/hop-3',
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'https://specs.example/hop-4' },
+				}),
+		),
+		http.get(
+			'https://specs.example/hop-4',
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'https://specs.example/hop-5' },
+				}),
+		),
+		http.get(
+			'https://specs.example/hop-5',
+			() =>
+				new HttpResponse(null, {
+					status: 302,
+					headers: { Location: 'https://specs.example/hop-6' },
+				}),
+		),
+	])
+
+	await expect(
+		fetchOpenApiSpecText({ specUrl: 'https://specs.example/hop-0' }),
+	).rejects.toThrow(/too many redirects/)
+})

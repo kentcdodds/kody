@@ -315,6 +315,33 @@ test('scaffoldOpenApiClient passes non-JSON bodies through with the operation co
 	)
 })
 
+test('scaffoldOpenApiClient treats application/json-seq as non-JSON', async () => {
+	const streamWidget = op({
+		slug: 'stream_widget',
+		method: 'post',
+		path: '/widgets/stream',
+		summary: 'Stream JSON sequence',
+		requestBody: {
+			required: true,
+			contentType: 'application/json-seq',
+			schema: null,
+		},
+	})
+	const scaffold = scaffoldOpenApiClient({
+		spec: baseSpec({ operations: [streamWidget] }),
+		operationSlugs: ['stream_widget'],
+		auth: { kind: 'none' },
+		apiBaseUrl: 'https://api.widgets.example',
+	})
+	expect(scaffold.moduleSource).toContain('Non-JSON request body content type')
+	const mod = await importScaffold(scaffold.moduleSource)
+	const { calls, fetchImpl } = recordingFetch()
+	const payload = '{"id":1}\n{"id":2}\n'
+	await mod.streamWidget({ body: payload }, { fetchImpl })
+	expect(calls[0]?.init?.body).toBe(payload)
+	expect(headersOf(calls[0]?.init)['content-type']).toBe('application/json-seq')
+})
+
 test('scaffoldOpenApiClient escapes hostile path and summary so the module stays importable', async () => {
 	const hostile = op({
 		slug: 'hostile_op',
