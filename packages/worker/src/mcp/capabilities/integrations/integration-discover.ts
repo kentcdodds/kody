@@ -229,10 +229,12 @@ async function fetchRegistryDocument(
 	try {
 		body = await readBoundedBody(response, MAX_DISCOVER_BODY_BYTES)
 	} catch (cause) {
+		// Includes AbortSignal timeouts that fire while the body streams; those
+		// must become failure outcomes so cached/live fallback logic still runs.
 		if (cause instanceof BoundedBodyTooLargeError) {
 			return { outcome: 'failure', message: cause.message }
 		}
-		throw cause
+		return { outcome: 'failure', message: getErrorMessage(cause) }
 	}
 
 	let parsed: unknown

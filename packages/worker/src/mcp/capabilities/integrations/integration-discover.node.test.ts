@@ -263,6 +263,41 @@ test('integration_discover falls back to stale cached data when live discovery t
 	)
 })
 
+test('integration_discover falls back to stale cached data when the live discovery body stream fails mid-read', async () => {
+	const surfaceUrl = buildIntegrationSurfaceUrlForTest('slack.com')
+	const discoverUrl = buildIntegrationDiscoverUrlForTest('slack.com')
+	const staleFixture = {
+		...linearRegistryFixture,
+		domain: 'slack.com',
+		discoveredAt: staleDiscoveredAt,
+	}
+	const failingBody = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode('{"domain":'))
+			controller.error(new Error('body stream aborted'))
+		},
+	})
+	using _server = createMswNodeServer([
+		http.get(surfaceUrl, () => HttpResponse.json(staleFixture)),
+		http.get(discoverUrl, () => new HttpResponse(failingBody)),
+	])
+
+	const result = await integrationDiscoverCapability.handler(
+		{ domain: 'slack.com' },
+		ctx,
+	)
+
+	expect(result).toMatchObject({
+		domain: 'slack.com',
+		source: surfaceUrl,
+		provenance: 'cached',
+	})
+	expect(result).toHaveProperty(
+		'liveDiscoveryError',
+		expect.stringContaining('live discovery failed'),
+	)
+})
+
 test('integration_discover fails with a clear terminal error when neither cached nor live data is usable', async () => {
 	const surfaceUrl = buildIntegrationSurfaceUrlForTest('linear.app')
 	const discoverUrl = buildIntegrationDiscoverUrlForTest('linear.app')
