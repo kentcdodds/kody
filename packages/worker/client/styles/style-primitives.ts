@@ -218,6 +218,7 @@ export const detailItemCss = {
 	display: 'grid',
 	gap: spacing.xs,
 	alignContent: 'start',
+	minWidth: 0,
 }
 
 export const detailLabelCss = {
@@ -227,7 +228,13 @@ export const detailLabelCss = {
 }
 
 export const detailValueCss = {
+	display: 'block',
+	maxWidth: '100%',
+	minWidth: 0,
 	color: colors.text,
+	overflowWrap: 'anywhere',
+	whiteSpace: 'normal',
+	wordBreak: 'break-all',
 }
 
 export const primaryLinkCss = {

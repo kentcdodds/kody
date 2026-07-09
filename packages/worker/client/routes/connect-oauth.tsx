@@ -798,31 +798,39 @@ export function ConnectOauthRoute(handle: Handle) {
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Token URL</span>
-						<code>{existingIntegrationConfig.tokenUrl}</code>
+						<code mix={css(detailValueCss)}>
+							{existingIntegrationConfig.tokenUrl}
+						</code>
 					</div>
 					{existingIntegrationConfig.apiBaseUrl ? (
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>API base URL</span>
-							<code>{existingIntegrationConfig.apiBaseUrl}</code>
+							<code mix={css(detailValueCss)}>
+								{existingIntegrationConfig.apiBaseUrl}
+							</code>
 						</div>
 					) : null}
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Client ID value</span>
-						<code>{existingIntegrationConfig.clientIdValueName}</code>
+						<code mix={css(detailValueCss)}>
+							{existingIntegrationConfig.clientIdValueName}
+						</code>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Client secret secret</span>
-						<code>
+						<code mix={css(detailValueCss)}>
 							{existingIntegrationConfig.clientSecretSecretName ?? 'Not used'}
 						</code>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Access token secret</span>
-						<code>{existingIntegrationConfig.accessTokenSecretName}</code>
+						<code mix={css(detailValueCss)}>
+							{existingIntegrationConfig.accessTokenSecretName}
+						</code>
 					</div>
 					<div mix={css(detailItemCss)}>
 						<span mix={css(detailLabelCss)}>Refresh token secret</span>
-						<code>
+						<code mix={css(detailValueCss)}>
 							{existingIntegrationConfig.refreshTokenSecretName ?? 'Not used'}
 						</code>
 					</div>
@@ -833,7 +841,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<div mix={css(detailGridCss)}>
 							<div mix={css(detailItemCss)}>
 								<span mix={css(detailLabelCss)}>Authorize URL</span>
-								<code>
+								<code mix={css(detailValueCss)}>
 									{existingIntegrationConfig.authorization.authorizeUrl}
 								</code>
 							</div>
@@ -954,11 +962,11 @@ export function ConnectOauthRoute(handle: Handle) {
 					<div mix={css(detailGridCss)}>
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>Authorize URL</span>
-							<code>{config.authorizeUrl}</code>
+							<code mix={css(detailValueCss)}>{config.authorizeUrl}</code>
 						</div>
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>Token URL</span>
-							<code>{config.tokenUrl}</code>
+							<code mix={css(detailValueCss)}>{config.tokenUrl}</code>
 						</div>
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>Flow</span>
