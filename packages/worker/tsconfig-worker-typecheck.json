@@ -16,7 +16,7 @@
 		"**/*.spec.ts",
 		"./src/test-support/**/*.ts",
 		"./src/mcp/test-process.ts",
-		"./src/community/og-image-assets.node.ts",
+		"./src/og/og-image-assets.node.ts",
 		"../**/*.test.ts",
 		"../**/*.spec.ts",
 		"../../**/*.test.ts",
