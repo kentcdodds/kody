@@ -6,6 +6,7 @@ import {
 	redirectToLogin,
 	redirectToLoginWhenUnauthenticated,
 } from '#app/auth-redirect.ts'
+import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 
@@ -24,12 +25,19 @@ export function createAccountHandler(env: Env) {
 				return redirectToLoginWhenUnauthenticated(request, env)
 			}
 
-			const accountProfile = await loadAccountProfileData(user)
+			const [accountProfile, onboarding] = await Promise.all([
+				loadAccountProfileData(user),
+				loadOnboardingData({
+					env,
+					requestUrl: request.url,
+					stableUserId: user.mcpUser.userId,
+				}),
+			])
 			return renderAppPage({
 				request,
 				env,
 				title: 'Account',
-				loaderData: { accountProfile },
+				loaderData: { accountProfile, onboarding },
 			})
 		},
 	} satisfies Action<typeof routes.account>

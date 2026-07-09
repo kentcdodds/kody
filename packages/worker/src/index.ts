@@ -9,6 +9,7 @@ import { RepoSession } from './repo/repo-session-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
+import { isRetryableD1LockError } from './d1-retry.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
 import {
@@ -545,6 +546,13 @@ const workerHandler = {
 			try {
 				await lane.run()
 			} catch (error) {
+				if (isRetryableD1LockError(error)) {
+					console.warn(
+						`scheduled_lane_d1_lock_contention lane=${lane.name}`,
+						error,
+					)
+					continue
+				}
 				console.error(`scheduled_lane_failed lane=${lane.name}`, error)
 				Sentry.captureException(error)
 			}
