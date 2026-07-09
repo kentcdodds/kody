@@ -210,6 +210,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 			storageContext: {
 				sessionId: null,
 				appId: null,
+				packageId: null,
 				storageId: 'job:lights-off',
 			},
 		}),

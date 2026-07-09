@@ -1895,6 +1895,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 			storageContext: {
 				sessionId: null,
 				appId: 'pkg-1',
+				packageId: 'pkg-1',
 				storageId: 'package:pkg-1',
 			},
 			repoContext: expect.objectContaining({

@@ -263,8 +263,10 @@ test('createDynamicCallableWorkflow queues inline code without package context a
 	expect(binding.create).toHaveBeenCalledWith({
 		id: created.id,
 		params: expect.objectContaining({
+			version: 3,
 			sourceType: 'inline',
 			userId: 'user-1',
+			packageContext: null,
 			code: 'export default async function main(p) { return { ok: true, p } }',
 			params: { greeting: 'hello' },
 		}),
@@ -356,6 +358,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			}),
 			'export default async function main(p){ return { ok: true, p }; }',
 			{ greeting: 'hello' },
+			{ packageContext: null },
 		)
 		expect(db.workflowRuns.get(created.id)).toMatchObject({
 			status: 'complete',
@@ -419,6 +422,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		expect.objectContaining({ remoteConnectors }),
 		expect.any(String),
 		undefined,
+		{ packageContext: null },
 	)
 
 	const packageBinding = createStatefulWorkflowBinding()

@@ -2099,7 +2099,7 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 	await saveSecret({
 		env,
 		userId: callerContext.user.userId,
-		scope: 'app',
+		scope: 'user',
 		name: 'apiToken',
 		value: 'very-secret-token',
 		storageContext: callerContext.storageContext,

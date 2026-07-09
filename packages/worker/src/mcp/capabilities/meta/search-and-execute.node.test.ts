@@ -52,6 +52,7 @@ test('execute capability runs modules through the shared execute runtime', async
 			storageContext: {
 				sessionId: null,
 				appId: null,
+				packageId: null,
 				storageId: 'package:agent-turns',
 			},
 		}),
