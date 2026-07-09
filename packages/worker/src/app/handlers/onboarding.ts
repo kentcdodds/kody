@@ -1,5 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import {
 	redirectToLogin,
 	redirectToLoginWhenUnauthenticated,
@@ -7,6 +8,7 @@ import {
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
+import { createPageOgHeadNode } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 
@@ -29,10 +31,12 @@ export function createOnboardingHandler(env: Env) {
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
 			})
+			const origin = getAppBaseUrl({ env, requestUrl: request.url })
 			return renderAppPage({
 				request,
 				env,
 				title: 'Get started',
+				extraHead: createPageOgHeadNode({ origin, pageId: 'onboarding' }),
 				loaderData: { onboarding },
 			})
 		},

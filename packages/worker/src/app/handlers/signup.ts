@@ -3,5 +3,7 @@ import { type routes } from '#app/routes.ts'
 import { createAuthPageHandler } from '#app/handlers/auth-page.ts'
 
 export function createSignupHandler(env: Env) {
-	return createAuthPageHandler(env) satisfies Action<typeof routes.signup>
+	return createAuthPageHandler(env, 'signup') satisfies Action<
+		typeof routes.signup
+	>
 }

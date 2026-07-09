@@ -80,6 +80,7 @@ import {
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
+import { createOgPageImageHandler } from '#app/handlers/og-page-image.ts'
 import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
@@ -124,6 +125,7 @@ export function createAppRouter(env: Env) {
 			home: createHomeHandler(env),
 			health: createHealthHandler(env),
 			login: createLoginHandler(env),
+			ogPageImage: createOgPageImageHandler(env),
 			privacy: createPrivacyHandler(env),
 			onboarding: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),

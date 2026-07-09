@@ -67,6 +67,7 @@ export const routes = route({
 	communityReportApiPost: post('/community/:listingId/report.json'),
 	health: '/health',
 	login: '/login',
+	ogPageImage: '/og/:page.png',
 	privacy: '/privacy',
 	onboarding: '/onboarding',
 	onboardingApi: '/onboarding.json',

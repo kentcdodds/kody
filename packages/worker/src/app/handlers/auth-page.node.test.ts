@@ -63,7 +63,7 @@ test('auth page renders login for a stale session instead of redirecting away', 
 		rememberMe: false,
 	}
 	const cookie = await createAuthCookie(session, false)
-	const handler = createAuthPageHandler(createStaleSessionTestEnv())
+	const handler = createAuthPageHandler(createStaleSessionTestEnv(), 'login')
 	const response = await handler.handler(
 		new RequestContext(
 			new Request('https://example.com/login?redirectTo=%2Faccount', {
