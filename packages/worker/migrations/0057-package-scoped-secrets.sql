@@ -97,15 +97,20 @@ SET caller_context_json = json_set(
 		SELECT p.id
 		FROM saved_packages AS p
 		WHERE p.user_id = jobs.user_id
-			AND p.source_id = jobs.source_id
+			AND p.id = json_extract(
+				jobs.caller_context_json,
+				'$.storageContext.appId'
+			)
 		LIMIT 1
 	)
 )
-WHERE source_id IS NOT NULL
-	AND json_valid(caller_context_json)
+WHERE json_valid(caller_context_json)
 	AND EXISTS (
 		SELECT 1
 		FROM saved_packages AS p
 		WHERE p.user_id = jobs.user_id
-			AND p.source_id = jobs.source_id
+			AND p.id = json_extract(
+				jobs.caller_context_json,
+				'$.storageContext.appId'
+			)
 	);

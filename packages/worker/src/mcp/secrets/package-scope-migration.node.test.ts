@@ -31,11 +31,11 @@ test('package scope migration converts app buckets without retaining package gra
 			source_id TEXT NOT NULL
 		);
 		INSERT INTO saved_packages (id, user_id, source_id)
-		VALUES ('package-1', 'user-1', 'source-1');
+		VALUES ('package-1', 'user-1', 'package-source-1');
 		INSERT INTO jobs (user_id, source_id, caller_context_json)
 		VALUES (
 			'user-1',
-			'source-1',
+			'ad-hoc-job-source-1',
 			'{"storageContext":{"appId":"package-1"}}'
 		);
 		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
