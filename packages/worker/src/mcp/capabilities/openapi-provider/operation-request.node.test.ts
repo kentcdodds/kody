@@ -357,7 +357,7 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 				args: { params: { widgetId: '1' } },
 				globalFetch: fetchStub as unknown as typeof fetch,
 			}),
-		).rejects.toThrow('Secrets require package approval')
+		).rejects.toThrow('is not allowed for package "example-package"')
 		expect(fetchStub).not.toHaveBeenCalled()
 	} finally {
 		packageSpy.mockRestore()
