@@ -483,8 +483,8 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 	})
 })
 
-test('session config parsing backfills usePkce for configs persisted before the orthogonal-PKCE change', () => {
-	const legacyConfig = {
+test('session config parsing is strict: usePkce is required and stale shapes are rejected', () => {
+	const sessionConfig = {
 		provider: 'spotify',
 		providerKey: 'spotify',
 		authorizeHost: 'accounts.spotify.com',
@@ -494,6 +494,7 @@ test('session config parsing backfills usePkce for configs persisted before the 
 		apiBaseUrl: null,
 		scopes: [],
 		flow: 'pkce',
+		usePkce: true,
 		tokenExchangeStyle: 'form',
 		scopeSeparator: ' ',
 		extraAuthorizeParams: {},
@@ -506,41 +507,25 @@ test('session config parsing backfills usePkce for configs persisted before the 
 		allowedHosts: ['accounts.spotify.com'],
 	}
 
-	// Mid-flight configs without usePkce derive the flow default so callbacks
-	// keep working across the deploy boundary.
 	expect(
-		parseSessionConnectOauthConfig(JSON.stringify(legacyConfig)),
+		parseSessionConnectOauthConfig(JSON.stringify(sessionConfig)),
 	).toMatchObject({ provider: 'spotify', flow: 'pkce', usePkce: true })
-
 	expect(
 		parseSessionConnectOauthConfig(
 			JSON.stringify({
-				...legacyConfig,
-				provider: 'github',
+				...sessionConfig,
 				flow: 'confidential',
+				usePkce: false,
 			}),
 		),
 	).toMatchObject({ flow: 'confidential', usePkce: false })
 
-	// Canva host default enables PKCE even for legacy confidential configs.
+	// No back-compat: a snapshot without usePkce (persisted by pre-change code)
+	// is rejected and the user restarts the flow.
+	const { usePkce: _omitted, ...withoutUsePkce } = sessionConfig
 	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({
-				...legacyConfig,
-				provider: 'canva',
-				flow: 'confidential',
-				tokenHost: 'api.canva.com',
-				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-			}),
-		),
-	).toMatchObject({ flow: 'confidential', usePkce: true })
-
-	// An explicit persisted choice is respected as-is.
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({ ...legacyConfig, usePkce: false }),
-		),
-	).toMatchObject({ flow: 'pkce', usePkce: false })
+		parseSessionConnectOauthConfig(JSON.stringify(withoutUsePkce)),
+	).toBeNull()
 
 	expect(parseSessionConnectOauthConfig('not json')).toBeNull()
 	expect(
@@ -548,7 +533,7 @@ test('session config parsing backfills usePkce for configs persisted before the 
 	).toBeNull()
 	expect(
 		parseSessionConnectOauthConfig(
-			JSON.stringify({ ...legacyConfig, flow: 'implicit' }),
+			JSON.stringify({ ...sessionConfig, flow: 'implicit' }),
 		),
 	).toBeNull()
 })

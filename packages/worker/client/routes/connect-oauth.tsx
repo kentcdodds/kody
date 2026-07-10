@@ -1490,9 +1490,10 @@ function resolveConnectOauthExtraAuthorizeParams(input: {
 
 /**
  * Parses the sessionStorage config persisted before redirecting to the
- * provider. Configs written before the orthogonal-PKCE change lack `usePkce`,
- * and the callback leg cannot rebuild settings from the URL alone, so backfill
- * the flow/host default instead of rejecting mid-flight connects.
+ * provider. Validation is deliberately strict with no back-compat for older
+ * shapes: the snapshot lives for a single authorize round trip, so a stale
+ * shape can only exist for a flow in-flight across a deploy, and the recovery
+ * is simply restarting the connect flow from its URL.
  */
 export function parseSessionConnectOauthConfig(
 	raw: string,
@@ -1513,6 +1514,7 @@ export function parseSessionConnectOauthConfig(
 		typeof record.authorizeHost === 'string' &&
 		typeof record.tokenHost === 'string' &&
 		(record.flow === 'pkce' || record.flow === 'confidential') &&
+		typeof record.usePkce === 'boolean' &&
 		typeof record.scopeSeparator === 'string' &&
 		typeof record.clientIdValueName === 'string' &&
 		typeof record.accessTokenSecretName === 'string' &&
@@ -1521,14 +1523,7 @@ export function parseSessionConnectOauthConfig(
 		record.scopes.every((value) => typeof value === 'string') &&
 		record.allowedHosts.every((value) => typeof value === 'string')
 	if (!isValid) return null
-	const config = record as unknown as ConnectOauthConfig
-	if (typeof record.usePkce !== 'boolean') {
-		config.usePkce = defaultConnectOauthUsePkce({
-			flow: config.flow,
-			tokenUrl: config.tokenUrl,
-		})
-	}
-	return config
+	return record as unknown as ConnectOauthConfig
 }
 
 export function summarizeStoredSetupState(input: {
