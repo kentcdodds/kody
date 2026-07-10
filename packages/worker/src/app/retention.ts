@@ -26,6 +26,12 @@ export const retentionCronGateMinutes = 5
 export const retentionCronIntervalMinutes = 60
 export const retentionDefaultBatchSize = 250
 export const retentionDeleteIdsMaxParameters = 100
+/**
+ * R2 bulk deletes accept up to 1000 keys per call. A 250-message batch with
+ * raw MIME plus up to ten external attachment keys each can exceed that, so
+ * blob deletes are chunked below this ceiling.
+ */
+export const retentionBlobDeleteMaxKeys = 1000
 export const publishedBundleArtifactRetentionBatchSize = 100
 /**
  * Total wall-clock budget for one retention cron run. Each hourly run keeps
@@ -802,28 +808,47 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		...(attachmentKeysByMessageId.get(row.id) ?? []),
 	]
 	const rowsWithBlob = rows.filter((row) => blobKeysForRow(row).length > 0)
-	let deletableRows = rows
-	if (rowsWithBlob.length > 0) {
-		// Never delete a row whose R2 blobs could not be deleted first: once
-		// the row is gone its blob keys are lost and the blobs are orphaned
-		// forever. Failed rows are skipped and retried on a later run.
-		const blobKeys = rowsWithBlob.flatMap(blobKeysForRow)
+	// Never delete a row whose R2 blobs could not be deleted first: once
+	// the row is gone its blob keys are lost and the blobs are orphaned
+	// forever. Failed rows are skipped and retried on a later run. Deletes
+	// are chunked below R2's bulk-delete key limit, keeping each message's
+	// keys inside one call so a failure skips whole messages.
+	const failedRowIds = new Set<string>()
+	let chunkRows: Array<(typeof rows)[number]> = []
+	let chunkKeys: Array<string> = []
+	const deleteChunk = async () => {
+		if (chunkKeys.length === 0) return
 		try {
-			await input.blobs.delete(blobKeys)
-			result.deletedRawMimeBlobs = rowsWithBlob.filter(
+			await input.blobs.delete(chunkKeys)
+			result.deletedRawMimeBlobs += chunkRows.filter(
 				(row) => row.raw_mime_key !== null,
 			).length
-			result.deletedAttachmentBlobs = rowsWithBlob.reduce(
+			result.deletedAttachmentBlobs += chunkRows.reduce(
 				(count, row) =>
 					count + (attachmentKeysByMessageId.get(row.id)?.length ?? 0),
 				0,
 			)
 		} catch (error) {
-			result.blobDeleteErrors = blobKeys.length
-			deletableRows = rows.filter((row) => blobKeysForRow(row).length === 0)
+			result.blobDeleteErrors += chunkKeys.length
+			for (const row of chunkRows) failedRowIds.add(row.id)
 			console.warn('retention-email-blob-delete-failed', { error })
 		}
+		chunkRows = []
+		chunkKeys = []
 	}
+	for (const row of rowsWithBlob) {
+		const keys = blobKeysForRow(row)
+		if (
+			chunkKeys.length > 0 &&
+			chunkKeys.length + keys.length > retentionBlobDeleteMaxKeys
+		) {
+			await deleteChunk()
+		}
+		chunkRows.push(row)
+		chunkKeys.push(...keys)
+	}
+	await deleteChunk()
+	const deletableRows = rows.filter((row) => !failedRowIds.has(row.id))
 	const messageIds = deletableRows.map((row) => row.id)
 	// email_attachments rows reference email_messages via FK, so delete the
 	// dependent attachment rows first.

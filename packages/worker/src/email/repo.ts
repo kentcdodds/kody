@@ -943,6 +943,9 @@ export async function deleteEmailMessageById(input: {
 	}
 }
 
+/** Rows per D1 batch when inserting attachment metadata. */
+const emailAttachmentInsertBatchSize = 50
+
 export async function insertEmailAttachments(input: {
 	db: D1Database
 	messageId: string
@@ -963,30 +966,39 @@ export async function insertEmailAttachments(input: {
 }) {
 	if (input.attachments.length === 0) return
 	const timestamp = nowIso()
-	// One atomic batch: a mid-list failure must not leave a partial set of
-	// rows behind (callers clean up blobs assuming all-or-nothing rows).
+	// Batched inserts keep typical attachment sets (outbound caps at ten
+	// files) all-or-nothing, while chunking protects large inbound MIME
+	// from oversized D1 batches. On a mid-chunk failure, callers that need
+	// consistency delete by message_id, which covers earlier chunks too.
 	const statement = input.db.prepare(
 		`INSERT INTO email_attachments (
 			id, message_id, filename, content_type, content_id, disposition,
 			size, storage_kind, storage_key, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
-	await input.db.batch(
-		input.attachments.map((attachment) =>
-			statement.bind(
-				attachment.id ?? crypto.randomUUID(),
-				input.messageId,
-				attachment.filename ?? null,
-				attachment.contentType ?? null,
-				attachment.contentId ?? null,
-				attachment.disposition ?? null,
-				attachment.size ?? null,
-				attachment.storageKind,
-				attachment.storageKey ?? null,
-				timestamp,
-			),
+	const statements = input.attachments.map((attachment) =>
+		statement.bind(
+			attachment.id ?? crypto.randomUUID(),
+			input.messageId,
+			attachment.filename ?? null,
+			attachment.contentType ?? null,
+			attachment.contentId ?? null,
+			attachment.disposition ?? null,
+			attachment.size ?? null,
+			attachment.storageKind,
+			attachment.storageKey ?? null,
+			timestamp,
 		),
 	)
+	for (
+		let index = 0;
+		index < statements.length;
+		index += emailAttachmentInsertBatchSize
+	) {
+		await input.db.batch(
+			statements.slice(index, index + emailAttachmentInsertBatchSize),
+		)
+	}
 }
 export async function insertEmailMessageWithAttachments(
 	input: Parameters<typeof insertEmailMessage>[0] & {
