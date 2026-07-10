@@ -20,8 +20,7 @@ description: >
 
 ## Merge and Deploy if requested or the change is low risk
 
-Squash and merge PR as Kody with
-`kody:@kentcdodds/github/pr/merge` using
+Squash and merge PR as Kody with `kody:@kentcdodds/github/pr/merge` using
 `{ prUrl, mergeMethod: 'squash' }` (or `{ owner, repo, prNumber, ... }`;
 optional `commitTitle`), watch CI deploy. Relevant links for the discord message
 include: agent, PR, CI job, and relevant deployment page(s).
@@ -32,7 +31,8 @@ without `gh`, and `request` / `graphql` (`kody:@kentcdodds/github/request`,
 
 ## Done → Discord
 
-When finished (whether merged or not), send a discord summary with relevant links.
+When finished (whether merged or not), send a discord summary with relevant
+links.
 
 ```javascript
 import postMessage from 'kody:@kentcdodds/discord/post-message'
