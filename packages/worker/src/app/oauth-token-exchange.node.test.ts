@@ -117,6 +117,7 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 		params: new URLSearchParams({
 			grant_type: 'authorization_code',
 			client_id: 'canva-client-id',
+			client_secret: 'stale-body-secret',
 			code: 'canva-code',
 			redirect_uri: 'https://example.com/connect/oauth',
 			code_verifier: 'pkce-verifier',
@@ -137,6 +138,24 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 	expect(canvaBody.get('client_id')).toBeNull()
 	expect(canvaBody.get('client_secret')).toBeNull()
 
+	// Basic-auth credentials are form-urlencoded per RFC 6749 §2.3.1, so
+	// reserved characters like ":" and "%" survive the Basic header.
+	const reservedCharacterRequest = buildOAuthTokenExchangeRequest({
+		params: new URLSearchParams({
+			grant_type: 'authorization_code',
+			client_id: 'client:id',
+			code: 'canva-code',
+		}),
+		flow: 'confidential',
+		clientSecret: 'secret%value',
+		style: 'basic-form',
+	})
+	expect(reservedCharacterRequest.headers.Authorization).toBe(
+		`Basic ${btoa('client%3Aid:secret%25value')}`,
+	)
+
+	// Each validation condition fails independently: PKCE-only flow, missing
+	// secret with confidential flow, and missing client_id.
 	expect(() =>
 		buildOAuthTokenExchangeRequest({
 			params: new URLSearchParams({
@@ -145,6 +164,20 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 				code: 'canva-code',
 			}),
 			flow: 'pkce',
+			clientSecret: 'canva-client-secret',
+			style: 'basic-form',
+		}),
+	).toThrow(
+		'basic-form token exchange requires confidential flow with a client secret.',
+	)
+	expect(() =>
+		buildOAuthTokenExchangeRequest({
+			params: new URLSearchParams({
+				grant_type: 'authorization_code',
+				client_id: 'canva-client-id',
+				code: 'canva-code',
+			}),
+			flow: 'confidential',
 			clientSecret: null,
 			style: 'basic-form',
 		}),

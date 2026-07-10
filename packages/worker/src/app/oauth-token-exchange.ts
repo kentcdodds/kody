@@ -130,8 +130,22 @@ function buildBasicAuthorization(input: {
 	input.params.delete('client_id')
 	input.params.delete('client_secret')
 	return `Basic ${bytesToBase64(
-		new TextEncoder().encode(`${clientId}:${input.clientSecret}`),
+		new TextEncoder().encode(
+			`${formUrlEncodeBasicCredential(clientId)}:${formUrlEncodeBasicCredential(
+				input.clientSecret,
+			)}`,
+		),
 	)}`
+}
+
+/**
+ * RFC 6749 §2.3.1: Basic-auth client credentials are
+ * application/x-www-form-urlencoded before being joined with ":" and
+ * base64-encoded, so ids or secrets containing ":" or "%" survive intact.
+ * A no-op for the alphanumeric credentials real providers issue.
+ */
+function formUrlEncodeBasicCredential(value: string) {
+	return encodeURIComponent(value).replace(/%20/g, '+')
 }
 
 /**
