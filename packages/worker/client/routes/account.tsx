@@ -12,7 +12,6 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	cardCss,
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
@@ -21,7 +20,6 @@ import {
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	inputCss,
-	layoutMaxWidths,
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
@@ -33,8 +31,10 @@ import {
 } from '#client/routes/account-approval-shared.ts'
 import {
 	AccountManagementMessage,
+	AccountManagementPanel,
 	AccountManagementShell,
 	AccountPageHeader,
+	noticeCardCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import {
@@ -538,7 +538,7 @@ export function AccountRoute(handle: Handle) {
 		const normalizedDraftEmail = draftEmail.trim().toLowerCase()
 
 		return (
-			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+			<AccountManagementShell>
 				<AccountPageHeader
 					title="Account"
 					description="Manage your profile, integrations, approval requests, stored secrets, and package invocation tokens."
@@ -562,11 +562,7 @@ export function AccountRoute(handle: Handle) {
 						{!emailVerified ? (
 							<section
 								aria-label="Email verification status"
-								mix={css({
-									...cardCss,
-									borderColor: colors.primary,
-									backgroundColor: colors.primarySoftest,
-								})}
+								mix={css(noticeCardCss)}
 							>
 								<h2 mix={css(cardTitleCss)}>Verify your email</h2>
 								<p mix={css(descriptionCss)}>
@@ -602,12 +598,10 @@ export function AccountRoute(handle: Handle) {
 								) : null}
 							</section>
 						) : null}
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Profile</h2>
-							<p mix={css(descriptionCss)}>
-								Your username is unique and visible anywhere Kody needs a
-								display name. Your email stays on the account for login.
-							</p>
+						<AccountManagementPanel
+							title="Profile"
+							description="Your username is unique and visible anywhere Kody needs a display name. Your email stays on the account for login."
+						>
 							<form
 								mix={[
 									css({ display: 'grid', gap: spacing.md }),
@@ -722,13 +716,11 @@ export function AccountRoute(handle: Handle) {
 									</p>
 								) : null}
 							</form>
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Security</h2>
-							<p mix={css(descriptionCss)}>
-								Protect your account with two-factor authentication, or sign in
-								without a password using passkeys.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Security"
+							description="Protect your account with two-factor authentication, or sign in without a password using passkeys."
+						>
 							<div mix={css({ display: 'flex', gap: spacing.md })}>
 								<a href="/account/two-factor" mix={css(primaryLinkCss)}>
 									Two-factor authentication
@@ -737,14 +729,12 @@ export function AccountRoute(handle: Handle) {
 									Passkeys
 								</a>
 							</div>
-						</section>
-						<section mix={css(cardCss)} aria-label="Connected accounts">
-							<h2 mix={css(cardTitleCss)}>Connected accounts</h2>
-							<p mix={css(descriptionCss)}>
-								Sign in with GitHub, Google, or X by connecting them to this
-								account. Connections with the same verified email also link
-								automatically at sign-in.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Connected accounts"
+							description="Sign in with GitHub, Google, or X by connecting them to this account. Connections with the same verified email also link automatically at sign-in."
+							ariaLabel="Connected accounts"
+						>
 							{connectionsMessage ? (
 								<p
 									role="status"
@@ -863,27 +853,21 @@ export function AccountRoute(handle: Handle) {
 									) : null}
 								</div>
 							) : null}
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Secret management</h2>
-							<p mix={css(descriptionCss)}>
-								Create, edit, and delete secrets from the dedicated management
-								page.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Secret management"
+							description="Create, edit, and delete secrets from the dedicated management page."
+						>
 							<div>
 								<a href="/account/secrets" mix={css(primaryLinkCss)}>
 									Manage secrets
 								</a>
 							</div>
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Your data</h2>
-							<p mix={css(descriptionCss)}>
-								Download a portable JSON export of your Kody account data for
-								backup or migration. Secret values are never included; secret
-								entries export metadata such as names, hosts, and allowlists
-								only.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Your data"
+							description="Download a portable JSON export of your Kody account data for backup or migration. Secret values are never included; secret entries export metadata such as names, hosts, and allowlists only."
+						>
 							<div>
 								<a
 									href="/account/export.json"
@@ -893,25 +877,21 @@ export function AccountRoute(handle: Handle) {
 									Download account export
 								</a>
 							</div>
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Integrations</h2>
-							<p mix={css(descriptionCss)}>
-								Review saved OAuth provider configurations and reconnect
-								integrations when tokens need to be refreshed.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Integrations"
+							description="Review saved OAuth provider configurations and reconnect integrations when tokens need to be refreshed."
+						>
 							<div>
 								<a href="/account/integrations" mix={css(primaryLinkCss)}>
 									Manage integrations
 								</a>
 							</div>
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Package invocation tokens</h2>
-							<p mix={css(descriptionCss)}>
-								Create and revoke bearer tokens for trusted personal clients
-								that call saved package exports.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Package invocation tokens"
+							description="Create and revoke bearer tokens for trusted personal clients that call saved package exports."
+						>
 							<div>
 								<a
 									href="/account/package-invocation-tokens"
@@ -920,31 +900,27 @@ export function AccountRoute(handle: Handle) {
 									Manage package tokens
 								</a>
 							</div>
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>MCP servers</h2>
-							<p mix={css(descriptionCss)}>
-								Connect remote MCP servers so their tools become Kody
-								capabilities, including OAuth-protected servers.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="MCP servers"
+							description="Connect remote MCP servers so their tools become Kody capabilities, including OAuth-protected servers."
+						>
 							<div>
 								<a href="/account/mcp-servers" mix={css(primaryLinkCss)}>
 									Manage MCP servers
 								</a>
 							</div>
-						</section>
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>Remote connectors</h2>
-							<p mix={css(descriptionCss)}>
-								Attach generic remote connector refs to normal Kody sessions and
-								manage their connector hello shared secrets.
-							</p>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Remote connectors"
+							description="Attach generic remote connector refs to normal Kody sessions and manage their connector hello shared secrets."
+						>
 							<div>
 								<a href="/account/remote-connectors" mix={css(primaryLinkCss)}>
 									Manage remote connectors
 								</a>
 							</div>
-						</section>
+						</AccountManagementPanel>
 					</>
 				) : null}
 

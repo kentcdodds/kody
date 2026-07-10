@@ -387,6 +387,7 @@ type AccountManagementPanelProps = {
 	children?: AccountManagementSlot
 	asForm?: boolean
 	onSubmit?: (event: SubmitEvent) => void
+	ariaLabel?: string
 }
 
 export function AccountManagementPanel(
@@ -423,7 +424,12 @@ export function AccountManagementPanel(
 				{content()}
 			</form>
 		) : (
-			<section mix={css(cardCss)}>{content()}</section>
+			<section
+				aria-label={handle.props.ariaLabel}
+				mix={css(cardCss)}
+			>
+				{content()}
+			</section>
 		)
 }
 
