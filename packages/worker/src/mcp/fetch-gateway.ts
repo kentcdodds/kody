@@ -161,7 +161,7 @@ export async function expandSecretPlaceholders(input: {
 			{
 				method: input.request.method,
 				headers,
-				body: requestBody ?? undefined,
+				body: requestBodyInit(requestBody),
 				redirect: input.request.redirect,
 				credentials: input.request.credentials,
 				mode: input.request.mode,
@@ -288,11 +288,13 @@ export async function expandSecretPlaceholders(input: {
 	const nextBody =
 		requestBody == null
 			? undefined
-			: replaceSecretPlaceholdersInRequestBody(
-					headers,
-					requestBody,
-					replacements,
-				)
+			: requestBody.kind === 'binary'
+				? requestBody.bytes
+				: replaceSecretPlaceholdersInRequestBody(
+						headers,
+						requestBody.text,
+						replacements,
+					)
 	const nextRedirect =
 		hasReferencedSecrets && input.request.redirect === 'follow'
 			? 'manual'
@@ -412,26 +414,26 @@ function collectReferencedBasicAuthSecretPlaceholders(
 
 function collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
 	headers: Headers,
-	requestBody: string | null,
+	requestBody: GatewayRequestBody | null,
 ) {
-	if (!requestBody) return []
+	if (requestBody?.kind !== 'text' || !requestBody.text) return []
 	return isFormUrlEncodedRequest(headers)
 		? dedupeBasicAuthSecretPlaceholders(
-				parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(requestBody),
+				parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(requestBody.text),
 			)
-		: collectReferencedBasicAuthSecretPlaceholders([requestBody])
+		: collectReferencedBasicAuthSecretPlaceholders([requestBody.text])
 }
 
 function collectReferencedSecretsFromRequestBody(
 	headers: Headers,
-	requestBody: string | null,
+	requestBody: GatewayRequestBody | null,
 ) {
-	if (!requestBody) return []
+	if (requestBody?.kind !== 'text' || !requestBody.text) return []
 	return isFormUrlEncodedRequest(headers)
 		? dedupeReferencedSecrets(
-				parseSecretPlaceholdersFromFormUrlEncoded(requestBody),
+				parseSecretPlaceholdersFromFormUrlEncoded(requestBody.text),
 			)
-		: collectReferencedSecrets([requestBody])
+		: collectReferencedSecrets([requestBody.text])
 }
 
 function dedupeReferencedSecrets(referencedSecrets: Array<ReferencedSecret>) {
@@ -470,9 +472,34 @@ function isFormUrlEncodedRequest(headers: Headers) {
 	return contentType.startsWith('application/x-www-form-urlencoded')
 }
 
-async function readRequestBody(request: Request) {
+type GatewayRequestBody =
+	| { kind: 'text'; text: string }
+	| { kind: 'binary'; bytes: Uint8Array<ArrayBuffer> }
+
+/**
+ * Read the outbound request body without corrupting binary payloads. Bodies
+ * that decode as valid UTF-8 keep the text pipeline (secret placeholder
+ * scanning and replacement). Anything else — for example multipart uploads
+ * carrying raw file bytes — passes through byte-for-byte, and secret
+ * placeholders inside such a body are intentionally not resolved (URL and
+ * header placeholders still are).
+ */
+async function readRequestBody(
+	request: Request,
+): Promise<GatewayRequestBody | null> {
 	if (!shouldSendBody(request.method)) return null
-	return request.text()
+	const bytes = new Uint8Array(await request.arrayBuffer())
+	try {
+		const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+		return { kind: 'text', text }
+	} catch {
+		return { kind: 'binary', bytes }
+	}
+}
+
+function requestBodyInit(requestBody: GatewayRequestBody | null) {
+	if (requestBody == null) return undefined
+	return requestBody.kind === 'binary' ? requestBody.bytes : requestBody.text
 }
 
 function shouldSendBody(method: string) {

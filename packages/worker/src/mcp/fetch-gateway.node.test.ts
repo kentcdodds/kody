@@ -223,6 +223,88 @@ test('opt-out header value "on" resolves normally and is stripped; unknown value
 	}
 })
 
+test('fetch gateway preserves binary request bodies byte-for-byte', async () => {
+	// PNG-like header bytes: invalid UTF-8, so the body must skip the text
+	// pipeline entirely and pass through unchanged.
+	const binaryBytes = new Uint8Array([
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x01,
+	])
+	const boundary = '----TestBoundary123'
+	const encoder = new TextEncoder()
+	const prefix = encoder.encode(
+		`--${boundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n`,
+	)
+	const suffix = encoder.encode(`\r\n--${boundary}--\r\n`)
+	const multipartBody = new Uint8Array(
+		prefix.length + binaryBytes.length + suffix.length,
+	)
+	multipartBody.set(prefix, 0)
+	multipartBody.set(binaryBytes, prefix.length)
+	multipartBody.set(suffix, prefix.length + binaryBytes.length)
+
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'secret-value',
+			scope: 'user',
+			allowedHosts: ['discord.com'],
+			allowedCapabilities: [],
+		})
+	try {
+		const request = new Request('https://discord.com/api/channels/1/messages', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bot {{secret:discordBotToken|scope=user}}',
+				'Content-Type': `multipart/form-data; boundary=${boundary}`,
+			},
+			body: multipartBody,
+		})
+		const transformed = await expandSecretPlaceholders({ request, props, env })
+		// Header placeholders still resolve for binary-bodied requests.
+		expect(transformed.headers.get('Authorization')).toBe('Bot secret-value')
+		const transformedBytes = new Uint8Array(await transformed.arrayBuffer())
+		expect(transformedBytes).toEqual(multipartBody)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
+test('fetch gateway never resolves secret placeholder text embedded in a binary body', async () => {
+	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
+	const encoder = new TextEncoder()
+	const placeholderText = encoder.encode('{{secret:name|scope=user}}')
+	const body = new Uint8Array(placeholderText.length + 2)
+	// Leading invalid UTF-8 byte marks the body as binary.
+	body[0] = 0xff
+	body.set(placeholderText, 1)
+	body[body.length - 1] = 0xfe
+
+	try {
+		const request = new Request('https://example.com/upload', {
+			method: 'PUT',
+			body,
+		})
+		const transformed = await expandSecretPlaceholders({ request, props, env })
+		expect(resolveSpy).not.toHaveBeenCalled()
+		const transformedBytes = new Uint8Array(await transformed.arrayBuffer())
+		expect(transformedBytes).toEqual(body)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
+
+test('opt-out header passes binary bodies through unchanged', async () => {
+	const binaryBody = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
+	const request = new Request('https://example.com/upload', {
+		method: 'POST',
+		headers: { [secretResolutionHeaderName]: 'off' },
+		body: binaryBody,
+	})
+	const transformed = await expandSecretPlaceholders({ request, props, env })
+	expect(new Uint8Array(await transformed.arrayBuffer())).toEqual(binaryBody)
+})
+
 test('fetch gateway expands placeholders in form-urlencoded bodies', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
