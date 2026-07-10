@@ -179,15 +179,15 @@ test('connect oauth saves tokens, integration metadata, and host approval links'
 					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=github.com',
 			},
 		],
-		integrationName: 'GitHub',
+		integrationName: 'github',
 	})
 	expect(mockModule.buildSecretHostApprovalUrl).toHaveBeenCalledTimes(4)
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 	expect(mockModule.saveValue).toHaveBeenCalledWith(
 		expect.objectContaining({
-			name: '_integration:GitHub',
+			name: '_integration:github',
 			value: JSON.stringify({
-				name: 'GitHub',
+				name: 'github',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
 				flow: 'pkce',
@@ -316,7 +316,7 @@ test('connect oauth saves tokens, integration metadata, and host approval links'
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
 		hostApprovalLinks: [],
-		integrationName: 'Tesla',
+		integrationName: 'tesla',
 	})
 	expect(teslaPayload.allowedHosts).toEqual(
 		expect.arrayContaining([

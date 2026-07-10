@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	buildIntegrationValueName,
 	formatOAuthExchangeFailure,
-	getIntegrationValueCandidates,
 	isOAuthExchangeSessionExpired,
 	mergeConnectOauthConfig,
 	parseSessionConnectOauthConfig,
@@ -45,13 +44,12 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		requiredHosts: ['api.github.com', 'github.com'],
 		authorization: null,
 	})
-	expect(getIntegrationValueCandidates('GitHub', 'github')).toEqual([
-		buildIntegrationValueName('GitHub'),
-		buildIntegrationValueName('github'),
-	])
-	expect(getIntegrationValueCandidates('github', 'github')).toEqual([
-		buildIntegrationValueName('github'),
-	])
+	// One canonical value key regardless of how the caller cases the provider.
+	expect(buildIntegrationValueName('GitHub')).toBe('_integration:github')
+	expect(buildIntegrationValueName('github')).toBe('_integration:github')
+	expect(buildIntegrationValueName('Spotify Family')).toBe(
+		'_integration:spotify-family',
+	)
 
 	const githubConfig = mergeConnectOauthConfig({
 		queryConfig: {

@@ -25,7 +25,7 @@ export const integrationSaveCapability = defineDomainCapability(
 	{
 		name: 'integration_save',
 		description:
-			'Create or update an OAuth integration configuration for the signed-in user. Stored as a user-scoped value with a _integration: prefix.',
+			'Create or update an OAuth integration configuration for the signed-in user. Names are normalized to a canonical lowercase-kebab provider key and stored as a user-scoped value with a _integration: prefix.',
 		keywords: [
 			'integration',
 			'oauth',
