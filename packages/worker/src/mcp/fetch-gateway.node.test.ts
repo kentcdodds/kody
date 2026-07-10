@@ -270,6 +270,23 @@ test('fetch gateway preserves binary request bodies byte-for-byte', async () => 
 	}
 })
 
+test('fetch gateway preserves a leading UTF-8 BOM in text request bodies', async () => {
+	const bomBody = new Uint8Array([
+		0xef,
+		0xbb,
+		0xbf,
+		...new TextEncoder().encode('{"note":"bom-prefixed json"}'),
+	])
+	const request = new Request('https://example.com/api', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: bomBody,
+	})
+	const transformed = await expandSecretPlaceholders({ request, props, env })
+	const transformedBytes = new Uint8Array(await transformed.arrayBuffer())
+	expect(transformedBytes).toEqual(bomBody)
+})
+
 test('fetch gateway never resolves secret placeholder text embedded in a binary body', async () => {
 	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
 	const encoder = new TextEncoder()

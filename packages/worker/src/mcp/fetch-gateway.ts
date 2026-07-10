@@ -490,7 +490,12 @@ async function readRequestBody(
 	if (!shouldSendBody(request.method)) return null
 	const bytes = new Uint8Array(await request.arrayBuffer())
 	try {
-		const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+		// ignoreBOM keeps a leading UTF-8 BOM in the decoded text so text
+		// bodies round-trip byte-for-byte after placeholder expansion.
+		const text = new TextDecoder('utf-8', {
+			fatal: true,
+			ignoreBOM: true,
+		}).decode(bytes)
 		return { kind: 'text', text }
 	} catch {
 		return { kind: 'binary', bytes }
