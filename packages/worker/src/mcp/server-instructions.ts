@@ -54,7 +54,7 @@ export function buildBaseMcpServerInstructions(
 End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use
 
-Two-step flow:
+Two-step flow (unless you know exactly what to do):
 1. \`search\` — built-in kody, saved packages, persisted values, saved integrations, and secret references (metadata).
 2. \`execute\` — run one ephemeral module with imports/exports and runtime access through \`kody:runtime\`.
 
