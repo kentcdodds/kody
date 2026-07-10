@@ -434,17 +434,23 @@ export async function publishCommunityListing(input: {
 		throw snapshotError
 	}
 	if (existingListing) {
-		await deleteCommunityIconAsset({
-			env: input.env,
-			listingId,
-			pinnedCommit: existingListing.pinnedCommit,
-		}).catch((error: unknown) => {
-			console.error(
-				'community-icon-old-revision-delete-failed',
+		for (const pinnedCommit of new Set([
+			existingListing.pinnedCommit,
+			publishedCommit,
+		])) {
+			await deleteCommunityIconAsset({
+				env: input.env,
 				listingId,
-				error,
-			)
-		})
+				pinnedCommit,
+			}).catch((error: unknown) => {
+				console.error(
+					'community-icon-republish-delete-failed',
+					listingId,
+					pinnedCommit,
+					error,
+				)
+			})
+		}
 	}
 
 	const listing = await getCommunityListingById(input.env.APP_DB, {

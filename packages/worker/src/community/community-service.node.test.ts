@@ -530,16 +530,20 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 	)
 })
 
-test('publishCommunityListing invalidates same-commit icon fallbacks after metadata updates', async () => {
+test('publishCommunityListing invalidates old and reused icon revisions', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
 		sampleListing(),
 	)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	const republishedSource = validPublishSource()
+	republishedSource.source.published_commit = 'commit-2'
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
 	mockModule.updateCommunityListing.mockResolvedValue(true)
 	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
-	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({ pinnedCommit: 'commit-2' }),
+	)
 
 	await publishCommunityListing({
 		env: createEnv(),
@@ -550,6 +554,9 @@ test('publishCommunityListing invalidates same-commit icon fallbacks after metad
 
 	expect(testCommunityAssets.delete).toHaveBeenCalledWith(
 		'community-icon:v1/listing-1/commit-1/asset',
+	)
+	expect(testCommunityAssets.delete).toHaveBeenCalledWith(
+		'community-icon:v1/listing-1/commit-2/asset',
 	)
 })
 
