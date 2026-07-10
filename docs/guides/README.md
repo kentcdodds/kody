@@ -13,7 +13,7 @@ available `guide` ids).
 | [secret-backed-integration.md](./secret-backed-integration.md)                           | Default recipe for non-OAuth integrations that use one or more saved secrets                                |
 | [integration-backed-app-happy-path.md](./integration-backed-app-happy-path.md)           | Default package app pattern after integration smoke test passes                                             |
 | [package-service-pattern.md](./package-service-pattern.md)                               | General package-service pattern for native long-lived runtimes inside Kody                                  |
-| [package-subscriptions.md](./package-subscriptions.md)                                   | Package subscription manifest shape, discovery, and email.message.received payload guidance                 |
+| [package-subscriptions.md](./package-subscriptions.md)                                   | Package subscription manifest shape, discovery, and email.message.received / email.system-message.received payload guidance |
 | [platform-friction.md](./platform-friction.md)                                           | Agent self-improvement loop for Kody capability, package, memory, and guide friction                        |
 | [oauth.md](./oauth.md)                                                                   | **Start here** for third-party OAuth (`/connect/oauth`, redirect URI, params)                               |
 | [account-secret-setup.md](./account-secret-setup.md)                                     | `/account/secrets/new` URL parameters and policies                                                          |

@@ -1,4 +1,8 @@
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import {
+	isMissingStableUserIdColumnError,
+	type UserStableIdRow,
+} from '#worker/user-id.ts'
 
 type PermissionRow = {
 	role_name: string
@@ -39,6 +43,49 @@ export async function getUserRolesAndPermissions(
 	return {
 		roles: Array.from(roleSet).sort(),
 		permissions: Array.from(permissionSet).sort(),
+	}
+}
+
+function isMissingRbacTableError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	const message = error.message.toLowerCase()
+	return (
+		message.includes('no such table: user_roles') ||
+		message.includes('no such table: roles')
+	)
+}
+
+/**
+ * List account rows (email + stored stable id) for every user holding the
+ * admin role. Returns an empty list on pre-RBAC databases so callers can
+ * treat "no RBAC tables" as "no admins".
+ */
+export async function listAdminAccountRows(
+	db: D1Database,
+): Promise<Array<UserStableIdRow>> {
+	const select = (columns: string) =>
+		`SELECT DISTINCT ${columns}
+		 FROM users u
+		 INNER JOIN user_roles ur ON ur.user_id = u.id
+		 INNER JOIN roles r ON r.id = ur.role_id
+		 WHERE r.name = 'admin'`
+	try {
+		const result = await db
+			.prepare(select('u.email, u.stable_user_id'))
+			.all<{ email: string; stable_user_id: string | null }>()
+		return result.results ?? []
+	} catch (error) {
+		if (isMissingRbacTableError(error)) return []
+		if (!isMissingStableUserIdColumnError(error)) throw error
+	}
+	try {
+		const result = await db
+			.prepare(select('u.email'))
+			.all<{ email: string }>()
+		return result.results ?? []
+	} catch (error) {
+		if (isMissingRbacTableError(error)) return []
+		throw error
 	}
 }
 

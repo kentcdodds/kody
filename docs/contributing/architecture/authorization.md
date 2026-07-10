@@ -251,6 +251,11 @@ grants, and so on). None of it appears in admin endpoints, pages, or payloads.
 is stored under `system:email` as platform content, not under Kent's or any
 other user's account. Admin reads through MCP (`admin_system_email_list`,
 `admin_system_email_get`) and the `/admin/system-email` UI are audit logged.
+Stored system mail also fans out metadata (never bodies or attachment bytes) on
+the `email.system-message.received` package subscription topic, and only to
+packages saved by users who hold the admin role at dispatch time — a non-admin
+subscriber never receives the event, and revoking admin stops delivery
+immediately.
 
 This boundary is enforced structurally:
 

@@ -35,7 +35,10 @@ import {
 	recordBoundedEmailRejectionEvent,
 	touchEmailThread,
 } from './repo.ts'
-import { dispatchInboundEmailSubscriptionEvents } from './package-subscriptions.ts'
+import {
+	dispatchInboundEmailSubscriptionEvents,
+	dispatchSystemInboundEmailSubscriptionEvents,
+} from './package-subscriptions.ts'
 import {
 	consumeSystemEmailDailyReceive,
 	countStoredSystemEmailMessages,
@@ -227,6 +230,7 @@ export async function handleInboundEmail(
 			recipient,
 			localPart: localBase,
 			systemDomain,
+			ctx: _ctx,
 		})
 		return
 	}
@@ -442,6 +446,7 @@ async function handleSystemInboundEmail(input: {
 	recipient: string
 	localPart: SystemEmailLocal
 	systemDomain: string
+	ctx?: ExecutionContext
 }) {
 	const provisioned = await ensureSystemEmailInbox({
 		db: input.env.APP_DB,
@@ -543,4 +548,21 @@ async function handleSystemInboundEmail(input: {
 	})
 	if (!stored) return
 	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
+	// System mail fans out to packages saved by admin users on the dedicated
+	// email.system-message.received topic (never to the synthetic system
+	// owner, which has no saved packages).
+	const dispatchPromise = dispatchSystemInboundEmailSubscriptionEvents({
+		env: input.env,
+		message: stored,
+	})
+	if (input.ctx) {
+		input.ctx.waitUntil(dispatchPromise)
+	} else {
+		void dispatchPromise.catch((error) => {
+			console.error(
+				'System inbound email package subscription dispatch failed',
+				error,
+			)
+		})
+	}
 }

@@ -100,3 +100,18 @@ Do not expect parsed bodies or attachment bytes in the event. Fetch full message
 bodies, parsed headers beyond the event metadata, or attachment bytes only when
 the handler needs them with `email_message_get`, `email_attachment_get`, or the
 package runtime `email` helper.
+
+## `email.system-message.received` (admins)
+
+Mail stored in the operator-owned system inbox (`kody@<apex>`,
+`support@<apex>`, and the other reserved system locals) dispatches
+`email.system-message.received` to packages saved by users who hold the admin
+role at dispatch time. Non-admin subscribers never receive system mail.
+
+The payload matches `email.message.received` (with
+`event: 'email.system-message.received'`) plus an `admin_url` string linking to
+the stored message in the admin interface (`/admin/system-email?messageId=...`).
+Handlers run as the admin package owner, so the user-scoped email capabilities
+and the `email` runtime helper cannot read the system message — use the
+metadata and `admin_url` for notifications, and the admin
+`admin_system_email_get` capability for full contents.

@@ -182,6 +182,32 @@ the package runtime `email` helper. Use `package_subscriptions_list` with
 `topic: "email.message.received"` to discover which saved packages subscribe for
 the signed-in user.
 
+## `email.system-message.received` package subscription (admins)
+
+Mail stored in the operator-owned system inbox (`kody`, `support`, `abuse`,
+`postmaster`, `security`, and `admin` at the apex) dispatches the separate
+package subscription topic `email.system-message.received`. It fans out to
+packages saved by users who hold the admin role at dispatch time — a non-admin
+saving the same subscription never receives system mail, and a revoked admin
+stops receiving immediately.
+
+The payload is the same metadata-first envelope as `email.message.received`
+(with `event: 'email.system-message.received'`), plus one extra field:
+
+```ts
+type SystemEmailMessageReceivedEvent = EmailMessageReceivedEvent & {
+	event: 'email.system-message.received'
+	/** Link to the stored message in the admin interface. */
+	admin_url: string
+}
+```
+
+Handlers run as the admin package owner, not the system owner, so the
+user-scoped email capabilities and the `kody:runtime` `email` helper cannot
+read the system message. Use the metadata for routing and notifications (for
+example a Discord report), and follow `admin_url` (or the admin
+`admin_system_email_get` capability) for full contents.
+
 ## Local inbound testing
 
 Run the worker locally with `APP_BASE_URL` set, sign up a user, then post raw

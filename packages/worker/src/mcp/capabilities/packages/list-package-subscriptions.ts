@@ -31,6 +31,8 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 			'handler',
 			'email.message.received',
 			'email message received',
+			'email.system-message.received',
+			'system email',
 			'inbound email',
 			'list',
 			'discover',
