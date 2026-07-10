@@ -46,6 +46,14 @@ type SendEmailEnv = Pick<
  */
 export const maxOutboundEmailAttachments = 10
 
+/**
+ * Hard ceiling on combined decoded attachment bytes, matching the
+ * provider's 5 MiB message cap. Enforced from base64 string lengths
+ * before any decoding so oversized inputs never allocate buffers;
+ * plan-level email_message_bytes still applies afterwards.
+ */
+export const maxOutboundEmailAttachmentTotalBytes = 5 * 1024 * 1024
+
 export type OutboundEmailAttachmentInput = {
 	filename: string
 	contentType: string
@@ -176,6 +184,18 @@ function prepareOutboundAttachments(
 	if (attachments.length > maxOutboundEmailAttachments) {
 		throw new Error(
 			`Outbound email supports at most ${maxOutboundEmailAttachments} attachments.`,
+		)
+	}
+	// Base64 encodes 3 bytes per 4 characters, so the string length bounds
+	// the decoded size without allocating anything.
+	const estimatedTotalBytes = attachments.reduce(
+		(total, attachment) =>
+			total + Math.floor((attachment.contentBase64.trim().length * 3) / 4),
+		0,
+	)
+	if (estimatedTotalBytes > maxOutboundEmailAttachmentTotalBytes) {
+		throw new Error(
+			`Outbound email attachments exceed the ${Math.floor(maxOutboundEmailAttachmentTotalBytes / (1024 * 1024))} MiB combined limit.`,
 		)
 	}
 	return attachments.map((attachment) => {

@@ -12,7 +12,10 @@ import {
 	listEmailAttachmentsForMessage,
 	listEmailMessages,
 } from './repo.ts'
-import { sendOutboundEmail } from './outbound.ts'
+import {
+	maxOutboundEmailAttachmentTotalBytes,
+	sendOutboundEmail,
+} from './outbound.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
@@ -738,7 +741,30 @@ test('sendOutboundEmail rejects invalid and oversized attachments', async () => 
 	expect(error.details).toMatchObject({
 		resource: 'email_message_bytes',
 	})
-	// Neither failure consumed the daily send quota or stored a message.
+	// Attachments whose base64 length alone exceeds the 5 MiB hard cap are
+	// rejected before any decoding (no entitlement lookup, no allocation).
+	const hardCapBase64Length = Math.ceil(
+		((maxOutboundEmailAttachmentTotalBytes + 3) * 4) / 3,
+	)
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail,
+			recipientPolicy: 'self',
+			subject: 'Way too big',
+			text: 'Body',
+			attachments: [
+				{
+					filename: 'giant.bin',
+					contentType: 'application/octet-stream',
+					contentBase64: 'A'.repeat(hardCapBase64Length),
+				},
+			],
+		}),
+	).rejects.toThrow('exceed the 5 MiB combined limit')
+
+	// None of the failures consumed the daily send quota or stored a message.
 	expect(await readDailyEmailSendCounter(userId)).toBe(0)
 	expect(
 		await listEmailMessages({
