@@ -261,4 +261,29 @@ test('get_git_remote create mode registers a stub package when missing', async (
 	expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
 	expect(existingResult.created).toBe(false)
 	expect(existingResult.package_id).toBe('package-1')
+
+	resetMocks()
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(null)
+	mockModule.createStubSavedPackage.mockImplementation(async () => {
+		mockPackageSource()
+		return {
+			packageId: 'package-1',
+			kodyId: 'unleashed-wifi',
+			name: '@kentcdodds/unleashed-wifi',
+		}
+	})
+	const trimmedResult = await getGitRemoteCapability.handler(
+		{ kody_id: '  unleashed-wifi  ', create: true },
+		createContext(),
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		expect.objectContaining({ kodyId: 'unleashed-wifi' }),
+	)
+	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
+		expect.objectContaining({ kodyId: 'unleashed-wifi' }),
+	)
+	expect(trimmedResult.created).toBe(true)
+	expect(trimmedResult.kody_id).toBe('unleashed-wifi')
 })
