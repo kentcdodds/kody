@@ -153,6 +153,121 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 	)
 })
 
+test('generated kody provider source projects remote proxy metadata', () => {
+	const source = createKodyProviderProxySource({
+		providerName: 'kody',
+		remoteConnectors: [
+			{
+				name: 'home',
+				instanceId: 'home-instance',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 1,
+					message: 'The connector "home" is connected.',
+					unavailableMessage: 'The connector "home" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'set_pin',
+						dispatchName: 'remotehomeset_pin',
+					},
+				],
+			},
+		],
+		mcpServers: [
+			{
+				name: 'docs',
+				serverId: 'docs-server',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 2,
+					message: 'The MCP server "docs" is connected.',
+					unavailableMessage: 'The MCP server "docs" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'search',
+						dispatchName: 'mcpdocssearch',
+					},
+				],
+			},
+		],
+		openApiProviders: [
+			{
+				name: 'widgets',
+				bindingName: 'widgets-binding',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 1,
+					message: 'The OpenAPI provider "widgets" is connected.',
+					unavailableMessage: 'The OpenAPI provider "widgets" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'listwidgets',
+						dispatchName: 'openapiwidgetslistwidgets',
+					},
+				],
+			},
+		],
+	})
+
+	expect(source).not.toContain('"instanceId"')
+	expect(source).not.toContain('"serverId"')
+	expect(source).not.toContain('"bindingName"')
+	expect(source).not.toContain('"state":')
+	expect(source).not.toContain('"message":')
+	expect(source).toContain('"unavailableMessage":')
+	expect(source).toContain('"toolCount":')
+	expect(source).toContain('"dispatchName":"remotehomeset_pin"')
+	expect(source).toContain('"dispatchName":"mcpdocssearch"')
+	expect(source).toContain('"dispatchName":"openapiwidgetslistwidgets"')
+})
+
+test('generated kody provider source ignores volatile metadata fields for script identity', () => {
+	const baseConnectors = [
+		{
+			name: 'home',
+			instanceId: 'home-a',
+			status: {
+				state: 'connected',
+				connected: true,
+				toolCount: 1,
+				message: 'status prose A',
+				unavailableMessage: 'The connector "home" is connected.',
+			},
+			capabilities: [
+				{
+					name: 'set_pin',
+					dispatchName: 'remotehomeset_pin',
+				},
+			],
+		},
+	] as const
+	const first = createKodyProviderProxySource({
+		providerName: 'kody',
+		remoteConnectors: [...baseConnectors],
+	})
+	const second = createKodyProviderProxySource({
+		providerName: 'kody',
+		remoteConnectors: [
+			{
+				...baseConnectors[0],
+				instanceId: 'home-b',
+				status: {
+					...baseConnectors[0].status,
+					state: 'degraded',
+					message: 'status prose B — different volatile text',
+				},
+			},
+		],
+	})
+	expect(second).toBe(first)
+})
+
 test('generated kody provider source avoids bundle-scoped __name helpers', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',

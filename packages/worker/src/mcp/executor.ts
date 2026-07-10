@@ -429,15 +429,51 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
 }
 
+// Keep only fields the sandbox proxy reads so inlined executor scripts stay
+// smaller and volatile status prose does not churn the stable worker-ID hash.
+function projectKodyRemoteProxyMetadata(
+	entries: ReadonlyArray<{
+		name: string
+		status: {
+			connected: boolean
+			toolCount: number
+			unavailableMessage: string
+		}
+		capabilities: ReadonlyArray<{
+			name: string
+			dispatchName: string
+		}>
+	}>,
+) {
+	return entries.map((entry) => ({
+		name: entry.name,
+		status: {
+			connected: entry.status.connected,
+			toolCount: entry.status.toolCount,
+			unavailableMessage: entry.status.unavailableMessage,
+		},
+		capabilities: entry.capabilities.map((capability) => ({
+			name: capability.name,
+			dispatchName: capability.dispatchName,
+		})),
+	}))
+}
+
 export function createKodyProviderProxySource(input: {
 	providerName: string
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	mcpServers?: Array<KodyMcpServerMetadata>
 	openApiProviders?: Array<KodyOpenApiProviderMetadata>
 }) {
-	const metadataJson = JSON.stringify(input.remoteConnectors)
-	const mcpMetadataJson = JSON.stringify(input.mcpServers ?? [])
-	const openApiMetadataJson = JSON.stringify(input.openApiProviders ?? [])
+	const metadataJson = JSON.stringify(
+		projectKodyRemoteProxyMetadata(input.remoteConnectors),
+	)
+	const mcpMetadataJson = JSON.stringify(
+		projectKodyRemoteProxyMetadata(input.mcpServers ?? []),
+	)
+	const openApiMetadataJson = JSON.stringify(
+		projectKodyRemoteProxyMetadata(input.openApiProviders ?? []),
+	)
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
     const __kodyCallDispatcher = async (dispatchName, args) => {
       const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
