@@ -347,6 +347,8 @@ test('unpublishCommunityListing refuses delisted listings without deleting anyth
 test('unpublishCommunityListing deletes active listings and cascades cleanup', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.deleteCommunityListing.mockResolvedValue(true)
+	testCommunityAssets.delete.mockRejectedValue(new Error('r2 unavailable'))
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
 	await unpublishCommunityListing({
 		env: createEnv(),
@@ -372,6 +374,14 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 	expect(
 		mockModule.deleteCommunityListing.mock.invocationCallOrder[0],
 	).toBeLessThan(testCommunityAssets.delete.mock.invocationCallOrder[0] ?? 0)
+	expect(consoleError).toHaveBeenCalledWith(
+		'community-icon-delete-failed',
+		'unpublish',
+		'listing-1',
+		'commit-1',
+		expect.any(Error),
+	)
+	consoleError.mockRestore()
 })
 
 test('forkCommunityListing rejects banned users', async () => {

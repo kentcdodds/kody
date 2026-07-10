@@ -84,6 +84,25 @@ export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 // a materialized score column if the catalog ever approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
+async function deleteCommunityIconAssetBestEffort(input: {
+	env: Env
+	listingId: string
+	pinnedCommit: string
+	reason: 'republish' | 'unpublish' | 'hard-delete'
+}) {
+	try {
+		await deleteCommunityIconAsset(input)
+	} catch (error) {
+		console.error(
+			'community-icon-delete-failed',
+			input.reason,
+			input.listingId,
+			input.pinnedCommit,
+			error,
+		)
+	}
+}
+
 export function isCommunityListingSearchMatch(input: {
 	query: string
 	document: string
@@ -438,17 +457,11 @@ export async function publishCommunityListing(input: {
 			existingListing.pinnedCommit,
 			publishedCommit,
 		])) {
-			await deleteCommunityIconAsset({
+			await deleteCommunityIconAssetBestEffort({
 				env: input.env,
 				listingId,
 				pinnedCommit,
-			}).catch((error: unknown) => {
-				console.error(
-					'community-icon-republish-delete-failed',
-					listingId,
-					pinnedCommit,
-					error,
-				)
+				reason: 'republish',
 			})
 		}
 	}
@@ -490,10 +503,11 @@ export async function unpublishCommunityListing(input: {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
 
-	await deleteCommunityIconAsset({
+	await deleteCommunityIconAssetBestEffort({
 		env: input.env,
 		listingId: listing.id,
 		pinnedCommit: listing.pinnedCommit,
+		reason: 'unpublish',
 	})
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
@@ -896,10 +910,11 @@ export async function resolveCommunityReport(input: {
 				)
 			} else {
 				if (listing) {
-					await deleteCommunityIconAsset({
+					await deleteCommunityIconAssetBestEffort({
 						env: input.env,
 						listingId: listing.id,
 						pinnedCommit: listing.pinnedCommit,
+						reason: 'hard-delete',
 					})
 				}
 				await deleteCommunityRatingsByListingId(
