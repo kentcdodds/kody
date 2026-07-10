@@ -87,8 +87,15 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	expect(communityScrollY).toBeGreaterThan(detailScrollY + 20)
 	await page.goBack()
 	await expect(page).toHaveURL(/\/community$/)
+	// Scroll restoration retries until the async listings frame renders and
+	// the saved position becomes reachable, so wait for the content first.
+	// Generous timeouts: in CI the whole validate pipeline shares one runner
+	// and the frame fetch alone can take several seconds.
+	await expect(page.getByText(alphaListing.description)).toBeVisible({
+		timeout: 15_000,
+	})
 	await expect
-		.poll(() => page.evaluate(() => window.scrollY))
+		.poll(() => page.evaluate(() => window.scrollY), { timeout: 15_000 })
 		.toBeGreaterThan(detailScrollY + 20)
 
 	await page

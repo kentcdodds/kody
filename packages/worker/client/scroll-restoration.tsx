@@ -85,8 +85,10 @@ function isRouterNavigationEvent(
 
 // Async route content (frames, deferred lists, images) can keep the document
 // too short to reach a saved scroll position right after navigation. Retry on
-// animation frames until the position becomes reachable or this deadline hits.
-const scrollRestorationDeadlineMs = 3_000
+// animation frames until the position becomes reachable or this deadline
+// hits. Generous on purpose: slow fetches must not strand the old scroll
+// position, and retries stop early on user scroll or the next navigation.
+const scrollRestorationDeadlineMs = 15_000
 
 function maxWindowScrollPosition(): ScrollPosition {
 	const root = document.documentElement
