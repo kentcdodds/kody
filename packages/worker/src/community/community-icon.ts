@@ -144,7 +144,18 @@ async function createCommunityIconDescriptor(input: {
 		communityIconPaths.find((path) => path === snapshot.communityIconPath) ??
 		findCommunityIconPath(snapshot.files)
 	let processed: ProcessedCommunityIcon
-	if (sourcePath) {
+	if (sourcePath === 'community-icon.svg') {
+		const source = snapshot.files[sourcePath]
+		if (source == null) {
+			throw new Error(
+				`Community icon "${sourcePath}" was not retained in the listing snapshot.`,
+			)
+		}
+		processed = await processCommunityIcon({
+			path: sourcePath,
+			sourceBytes: new TextEncoder().encode(source),
+		})
+	} else if (sourcePath) {
 		const source = await getEntitySourceById(
 			input.env.APP_DB,
 			input.listing.sourceId,
@@ -479,6 +490,10 @@ export function buildCommunityIconFallbackSvg(name: string) {
 	for (const character of name) hash = (hash * 31 + character.charCodeAt(0)) | 0
 	const background = colors[Math.abs(hash) % colors.length]
 	return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" rx="56" fill="${background}"/><text x="128" y="136" fill="white" font-family="sans-serif" font-size="92" font-weight="700" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`
+}
+
+export async function renderCommunityIconFallbackPng(name: string) {
+	return await renderCommunitySvgIcon(buildCommunityIconFallbackSvg(name))
 }
 
 function isCommunityIconDescriptor(

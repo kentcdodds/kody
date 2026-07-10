@@ -2,6 +2,7 @@ import { type Action } from 'remix/router'
 import {
 	buildCommunityIconFallbackSvg,
 	getCommunityIconObject,
+	renderCommunityIconFallbackPng,
 } from '#worker/community/community-icon.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { type routes } from '#app/routes.ts'
@@ -36,6 +37,23 @@ export function createCommunityIconHandler(env: Env) {
 				})
 			} catch (error) {
 				console.error('community-icon-load-failed', listing.id, error)
+				try {
+					const fallback = await renderCommunityIconFallbackPng(listing.name)
+					return new Response(new Uint8Array(fallback).buffer, {
+						headers: {
+							'Cache-Control': 'no-store',
+							'Content-Length': String(fallback.byteLength),
+							'Content-Type': 'image/png',
+							'X-Content-Type-Options': 'nosniff',
+						},
+					})
+				} catch (fallbackError) {
+					console.error(
+						'community-icon-fallback-render-failed',
+						listing.id,
+						fallbackError,
+					)
+				}
 				return new Response(buildCommunityIconFallbackSvg(listing.name), {
 					headers: {
 						'Cache-Control': 'no-store',

@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { readArtifactFileAtCommit } from './artifact-file.ts'
 
 const mocks = vi.hoisted(() => ({
+	addRemote: vi.fn(),
 	fetch: vi.fn(),
 	init: vi.fn(),
 	readBlob: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('isomorphic-git', () => ({
 	default: {
+		addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
 		fetch: (...args: Array<unknown>) => mocks.fetch(...args),
 		init: (...args: Array<unknown>) => mocks.init(...args),
 		readBlob: (...args: Array<unknown>) => mocks.readBlob(...args),
@@ -56,13 +58,24 @@ test('reads binary artifact files from an exact pinned commit', async () => {
 			dir: '/repo',
 		}),
 	)
+	expect(mocks.addRemote).toHaveBeenCalledWith(
+		expect.objectContaining({
+			dir: '/repo',
+			remote: 'origin',
+			url: 'https://artifacts.example.test/package.git',
+		}),
+	)
 	expect(mocks.fetch).toHaveBeenCalledWith(
 		expect.objectContaining({
+			remote: 'origin',
 			ref: 'abc123',
 			depth: 1,
 			singleBranch: true,
 			tags: false,
 		}),
+	)
+	expect(mocks.addRemote.mock.invocationCallOrder[0]).toBeLessThan(
+		mocks.fetch.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
 	)
 	expect(mocks.readBlob).toHaveBeenCalledWith(
 		expect.objectContaining({

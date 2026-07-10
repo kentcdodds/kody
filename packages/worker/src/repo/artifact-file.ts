@@ -45,11 +45,17 @@ export async function readArtifactFileAtCommit(input: {
 		fs: workspace.fs,
 		dir: workspace.dir,
 	})
+	await git.addRemote({
+		fs: workspace.fs,
+		dir: workspace.dir,
+		remote: 'origin',
+		url: remote,
+	})
 	await git.fetch({
 		fs: workspace.fs,
 		http,
 		dir: workspace.dir,
-		url: remote,
+		remote: 'origin',
 		ref: input.commit,
 		depth: 1,
 		singleBranch: true,
