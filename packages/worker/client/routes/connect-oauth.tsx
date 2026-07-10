@@ -436,24 +436,16 @@ export function ConnectOauthRoute(handle: Handle) {
 	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
 	) => {
-		for (const valueName of getIntegrationValueCandidates(
-			queryConfig.provider,
-			queryConfig.providerKey,
-		)) {
-			const raw = await readValue(valueName)
-			if (!raw) continue
-			const parsed = parseStoredIntegrationConfig(raw, queryConfig.provider)
-			if (parsed) {
-				return {
-					valueName,
-					integration: parsed,
-				}
-			}
-		}
-		return {
-			valueName: null,
-			integration: null,
-		}
+		// Integration identity is the canonical provider key, so a single
+		// deterministic lookup replaces the historical raw-name probe.
+		const valueName = buildIntegrationValueName(queryConfig.providerKey)
+		const raw = await readValue(valueName)
+		const parsed = raw
+			? parseStoredIntegrationConfig(raw, queryConfig.provider)
+			: null
+		return parsed
+			? { valueName, integration: parsed }
+			: { valueName: null, integration: null }
 	}
 
 	const initializeSetupState = async (nextConfig: ConnectOauthConfig) => {
@@ -1258,21 +1250,12 @@ function normalizeHosts(hosts: Array<string>) {
 	).sort()
 }
 
+/**
+ * Integration identity is the canonical provider key; mirrors
+ * buildIntegrationValueName in integration-shared.ts.
+ */
 export function buildIntegrationValueName(provider: string) {
-	return `_integration:${provider}`
-}
-
-export function getIntegrationValueCandidates(
-	provider: string,
-	providerKey: string,
-) {
-	return Array.from(
-		new Set(
-			[provider.trim(), providerKey.trim()]
-				.filter((value) => value.length > 0)
-				.map((value) => buildIntegrationValueName(value)),
-		),
-	)
+	return `_integration:${normalizeProviderKey(provider)}`
 }
 
 export function parseStoredIntegrationConfig(

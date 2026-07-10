@@ -2,9 +2,11 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { integrationSaveCapability } from './integration-save.ts'
 import {
+	buildIntegrationValueName,
 	integrationConfigSchema,
 	mergeIntegrationConfig,
 	parseIntegrationConfig,
+	parseIntegrationValueName,
 } from './integration-shared.ts'
 
 function createValueTestDb() {
@@ -347,4 +349,81 @@ test('integration_save persists usePkce only when it differs from the flow defau
 	expect(
 		JSON.parse(defaultDb.entries.get('_integration:spotify') ?? '{}'),
 	).not.toHaveProperty('usePkce')
+})
+
+test('integration identity is the canonical provider key across save, lookup, and value-name parsing', async () => {
+	// Saving with display casing stores and returns the canonical name.
+	const casedDb = createValueTestDb()
+	const saved = await integrationSaveCapability.handler(
+		{
+			name: 'GitHub',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'confidential',
+			clientIdValueName: 'github-client-id',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			requiredHosts: ['api.github.com'],
+		},
+		{
+			env: { APP_DB: casedDb.db } as unknown as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+		},
+	)
+	expect(saved.integration.name).toBe('github')
+	expect(casedDb.entries.has('_integration:github')).toBe(true)
+	expect(casedDb.entries.has('_integration:GitHub')).toBe(false)
+
+	// Every value-key derivation goes through the same canonicalization.
+	expect(buildIntegrationValueName('GitHub')).toBe('_integration:github')
+	expect(buildIntegrationValueName('Spotify Family')).toBe(
+		'_integration:spotify-family',
+	)
+
+	// Only canonical stored keys parse as integrations.
+	expect(parseIntegrationValueName('_integration:github')).toBe('github')
+	expect(parseIntegrationValueName('_integration:GitHub')).toBeNull()
+	expect(parseIntegrationValueName('_integration:')).toBeNull()
+	expect(parseIntegrationValueName('value:github')).toBeNull()
+
+	// Names without any letters or numbers are rejected outright — including
+	// ones made only of characters the canonical form preserves (. _ -).
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: '._-',
+				tokenUrl: 'https://example.com/token',
+				flow: 'pkce',
+				clientIdValueName: 'x-client-id',
+				accessTokenSecretName: 'xAccessToken',
+			},
+			{
+				env: { APP_DB: createValueTestDb().db } as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					user: { userId: 'user-123' },
+				}),
+			},
+		),
+	).rejects.toThrow(/letters or numbers/i)
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: '!!!',
+				tokenUrl: 'https://example.com/token',
+				flow: 'pkce',
+				clientIdValueName: 'x-client-id',
+				accessTokenSecretName: 'xAccessToken',
+			},
+			{
+				env: { APP_DB: createValueTestDb().db } as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					user: { userId: 'user-123' },
+				}),
+			},
+		),
+	).rejects.toThrow(/letters or numbers/i)
 })

@@ -1,7 +1,25 @@
+import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { z } from 'zod'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 export const integrationFlowValues = ['pkce', 'confidential'] as const
+
+/**
+ * Integration identity is the canonical provider key (lowercase kebab via
+ * normalizeProviderKey). Every read and write path derives names and value
+ * keys through this one function, so lookups never depend on how a caller
+ * cased or spaced the provider name.
+ */
+export function canonicalIntegrationName(name: string) {
+	return normalizeProviderKey(name)
+}
+
+const integrationNameSchema = z
+	.string()
+	.min(1)
+	.refine((name) => /[a-z0-9]/.test(canonicalIntegrationName(name)), {
+		message: 'Integration name must contain letters or numbers.',
+	})
 
 const defaultIntegrationScopeSeparator = ' '
 
@@ -30,7 +48,7 @@ export const integrationAuthorizationSchema = z
 	.strict()
 
 export const integrationConfigSchema = z.object({
-	name: z.string().min(1),
+	name: integrationNameSchema,
 	tokenUrl: z.string().url(),
 	apiBaseUrl: z.string().url().optional().nullable(),
 	flow: z.enum(integrationFlowValues),
@@ -54,7 +72,7 @@ type IntegrationAuthorization = z.infer<typeof integrationAuthorizationSchema>
 
 export const integrationSaveSchema = z
 	.object({
-		name: z.string().min(1),
+		name: integrationNameSchema,
 		tokenUrl: z.string().url().optional(),
 		apiBaseUrl: z.string().url().nullable().optional(),
 		flow: z.enum(integrationFlowValues).optional(),
@@ -86,7 +104,7 @@ export function normalizeIntegrationConfig(
 			? value.usePkce
 			: null
 	return {
-		name: value.name.trim(),
+		name: canonicalIntegrationName(value.name),
 		tokenUrl: value.tokenUrl.trim(),
 		apiBaseUrl: value.apiBaseUrl?.trim() || null,
 		flow: value.flow,
@@ -142,13 +160,21 @@ export function mergeIntegrationConfig(
 const integrationValuePrefix = '_integration:'
 
 export function buildIntegrationValueName(name: string) {
-	return `${integrationValuePrefix}${name}`
+	return `${integrationValuePrefix}${canonicalIntegrationName(name)}`
 }
 
 export function parseIntegrationValueName(name: string) {
 	if (!name.startsWith(integrationValuePrefix)) return null
-	const integrationName = name.slice(integrationValuePrefix.length).trim()
-	return integrationName.length > 0 ? integrationName : null
+	const integrationName = name.slice(integrationValuePrefix.length)
+	// Only canonical keys count as integrations; a non-canonical suffix cannot
+	// have been written by any current write path.
+	if (
+		integrationName.length === 0 ||
+		integrationName !== canonicalIntegrationName(integrationName)
+	) {
+		return null
+	}
+	return integrationName
 }
 
 export function parseIntegrationConfig(

@@ -99,6 +99,12 @@ and the current client credentials.
 
 ## Integration naming convention
 
+Integration identity is the canonical provider key: names are normalized to
+lowercase kebab (letters, numbers, `.`, `_`, `-`) on every save and lookup, so
+`GitHub`, `github`, and `Git Hub` all resolve to the same `github` record. There
+is exactly one stored value per integration, keyed
+`_integration:<canonical-name>`.
+
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call

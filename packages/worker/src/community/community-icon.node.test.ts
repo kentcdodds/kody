@@ -3,6 +3,7 @@ import {
 	findCommunityIconPath,
 	getCommunityIconObject,
 	processCommunityIcon,
+	renderCommunityIconFallbackPng,
 } from './community-icon.ts'
 import { type CommunityListingRecord } from './types.ts'
 
@@ -186,6 +187,10 @@ test('community raster icon formats are validated and preserved', async () => {
 	expect(Array.from(renderedSvg.bytes.slice(0, 4))).toEqual([
 		0x89, 0x50, 0x4e, 0x47,
 	])
+	const fallbackPng = await renderCommunityIconFallbackPng(
+		'@kentcdodds/github-tools',
+	)
+	expect(Array.from(fallbackPng.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47])
 	await expect(
 		processCommunityIcon({
 			path: 'community-icon.svg',
@@ -194,6 +199,42 @@ test('community raster icon formats are validated and preserved', async () => {
 			),
 		}),
 	).rejects.toThrow('active external content')
+})
+
+test('community SVG icons load directly from the retained listing snapshot', async () => {
+	const { kv } = createFakeKv()
+	const { bucket } = createFakeR2()
+	const env = {
+		APP_DB: {} as D1Database,
+		BUNDLE_ARTIFACTS_KV: kv,
+		COMMUNITY_ASSETS: bucket,
+	} as Env
+	mocks.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: listing.id,
+		pinnedCommit: listing.pinnedCommit,
+		files: {
+			'community-icon.svg':
+				'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="#2563eb"/></svg>',
+		},
+		communityIconPath: 'community-icon.svg',
+		createdAt: '2026-07-10T00:00:00.000Z',
+	})
+	mocks.getCommunityListingById.mockResolvedValue(listing)
+
+	const result = await getCommunityIconObject({ env, listing })
+
+	expect(result.descriptor.sourcePath).toBe('community-icon.svg')
+	expect(result.descriptor.contentType).toBe('image/png')
+	expect(
+		Array.from(
+			new Uint8Array(
+				await new Response(result.object.body).arrayBuffer(),
+			).slice(0, 4),
+		),
+	).toEqual([0x89, 0x50, 0x4e, 0x47])
+	expect(mocks.getEntitySourceById).not.toHaveBeenCalled()
+	expect(mocks.readArtifactFileAtCommit).not.toHaveBeenCalled()
 })
 
 test('community icon descriptor caches the R2 reference and repairs a dangling reference', async () => {

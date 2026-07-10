@@ -6,6 +6,7 @@ import { type CommunityListingRecord } from '#worker/community/types.ts'
 const mocks = vi.hoisted(() => ({
 	getCommunityIconObject: vi.fn(),
 	getCommunityListingById: vi.fn(),
+	renderCommunityIconFallbackPng: vi.fn(),
 }))
 
 vi.mock('#worker/community/community-icon.ts', () => {
@@ -14,6 +15,8 @@ vi.mock('#worker/community/community-icon.ts', () => {
 			`<svg xmlns="http://www.w3.org/2000/svg"><text>${name}</text></svg>`,
 		getCommunityIconObject: (...args: Array<unknown>) =>
 			mocks.getCommunityIconObject(...args),
+		renderCommunityIconFallbackPng: (...args: Array<unknown>) =>
+			mocks.renderCommunityIconFallbackPng(...args),
 	}
 })
 
@@ -84,15 +87,33 @@ test('community icon handler rejects stale commit URLs and degrades to a safe fa
 	mocks.getCommunityIconObject.mockRejectedValue(
 		new Error('Artifacts unavailable'),
 	)
+	const fallbackPng = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+	mocks.renderCommunityIconFallbackPng.mockResolvedValue(fallbackPng)
 	const response = await callHandler()
 	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toBe(
+	expect(response.headers.get('Content-Type')).toBe('image/png')
+	expect(response.headers.get('Cache-Control')).toBe('no-store')
+	expect(response.headers.get('Content-Length')).toBe(
+		String(fallbackPng.byteLength),
+	)
+	expect(new Uint8Array(await response.arrayBuffer())).toEqual(fallbackPng)
+
+	mocks.renderCommunityIconFallbackPng.mockRejectedValue(
+		new Error('Renderer unavailable'),
+	)
+	const lastResortResponse = await callHandler()
+	expect(lastResortResponse.headers.get('Content-Type')).toBe(
 		'image/svg+xml; charset=utf-8',
 	)
-	expect(response.headers.get('Cache-Control')).toBe('no-store')
-	expect(await response.text()).toContain('<svg')
+	expect(lastResortResponse.headers.get('Cache-Control')).toBe('no-store')
+	expect(await lastResortResponse.text()).toContain('<svg')
 	expect(consoleError).toHaveBeenCalledWith(
 		'community-icon-load-failed',
+		listing.id,
+		expect.any(Error),
+	)
+	expect(consoleError).toHaveBeenCalledWith(
+		'community-icon-fallback-render-failed',
 		listing.id,
 		expect.any(Error),
 	)
