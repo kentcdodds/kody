@@ -424,10 +424,7 @@ export function AccountManagementPanel(
 				{content()}
 			</form>
 		) : (
-			<section
-				aria-label={handle.props.ariaLabel}
-				mix={css(cardCss)}
-			>
+			<section aria-label={handle.props.ariaLabel} mix={css(cardCss)}>
 				{content()}
 			</section>
 		)
