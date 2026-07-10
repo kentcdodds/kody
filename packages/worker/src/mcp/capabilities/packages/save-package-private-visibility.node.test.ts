@@ -169,9 +169,7 @@ async function createContext() {
 	const userId = await createStableUserIdFromEmail(email)
 	return {
 		env: {
-			APP_DB: createDatabase([
-				{ email, plan: null, username: 'visibility' },
-			]),
+			APP_DB: createDatabase([{ email, plan: null, username: 'visibility' }]),
 		} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
