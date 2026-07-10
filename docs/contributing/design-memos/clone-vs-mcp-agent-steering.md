@@ -132,21 +132,67 @@ pre-committing it to `package_save`. Cheap sibling: add a `package_authoring`
 guide section (or a new `coding_guide_get` id) that finally carries the
 clone-edit-push content from `docs/use/packages.md`.
 
+### E. Complexity triage with a handoff prompt (self-selection)
+
+The other approaches steer a coding-capable agent toward the right lane. This
+one steers a **tool-only** agent out of work it should not attempt. Before
+starting package authoring, the agent estimates whether the request is feasible
+through MCP round trips alone. When any hard trigger fires, it stops, tells the
+user this task fits a coding-capable agent better, and asks for confirmation
+before grinding through the MCP lane.
+
+The triggers are objective, not vibes — each maps to a real constraint in this
+repo:
+
+- **Binary assets** — `packageFileSchema` is UTF-8-text-only; images, fonts, or
+  archives cannot pass through `package_save` or `repo_write_file` at all.
+- **Large or many-file changes** — repo session capability bundles cap at 250
+  files / 2 MiB, publish checks at 2,000 files / 15 MiB; multi-file refactors
+  through `git apply` heredocs hit unified-diff context drift, the failure mode
+  `repo-run-commands-text.ts` already warns about.
+- **Iterative build/test loops** — repo sessions accept only parsed git command
+  forms; there is no `npm`, no shell, no way to run a test suite between edits.
+- **Vendored dependencies or generated output** — anything normally produced by
+  a local toolchain has no MCP-side equivalent.
+
+Steering lives in two places. First, a short triage bullet in the server
+instructions and the `repo_run_commands` description (its description already
+self-identifies the tool-only audience, so it is the natural anchor). Second —
+the novel part — a **handoff prompt** in the confirmation: the repo already has
+the copyable-prompt pattern in `buildForkPrompt` (`community-public.ts`), which
+packages a task into a paste-into-an-agent instruction. The same pattern here
+produces a ready-to-paste prompt for the user's coding agent: package name or
+kody id, the user's goal, and the clone-edit-push call sequence
+(`package_get_git_remote` → clone → edit → push →
+`package_publish_external_push`). The tool-only agent's failure mode becomes a
+one-paste onboarding for the right agent, instead of a dead end or a long
+degraded session.
+
+A response-side backstop mirrors approach B: repo session responses already
+return line-specific parse errors, so after repeated `git apply` failures or
+many round trips in one `conversationId`, the response can carry the same
+handoff recommendation — catching agents that misjudged the triage upfront.
+
 ## Comparison
 
-| Approach                 | Fixes                                    | Cost / risk                                                         |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------- |
-| A. Git-native creation   | The structural funnel (root cause #1, 3) | New capability + stub-source lifecycle; must handle abandoned stubs |
-| B. Response steering     | Momentum / sunk cost (#2, 6)             | Small; response bloat if overdone; needs per-conversation counters  |
-| C. Environment handshake | One-size-fits-all defaults (#5)          | `clientInfo` plumbing + instruction variants; allowlist maintenance |
-| D. Workflow cards        | First-search framing (#3, 4)             | New search entity type; static content to garden                    |
+| Approach                 | Fixes                                       | Cost / risk                                                         |
+| ------------------------ | ------------------------------------------- | ------------------------------------------------------------------- |
+| A. Git-native creation   | The structural funnel (root cause #1, 3)    | New capability + stub-source lifecycle; must handle abandoned stubs |
+| B. Response steering     | Momentum / sunk cost (#2, 6)                | Small; response bloat if overdone; needs per-conversation counters  |
+| C. Environment handshake | One-size-fits-all defaults (#5)             | `clientInfo` plumbing + instruction variants; allowlist maintenance |
+| D. Workflow cards        | First-search framing (#3, 4)                | New search entity type; static content to garden                    |
+| E. Complexity triage     | Tool-only agents attempting infeasible work | Instruction text + handoff prompt; triage thresholds need tuning    |
 
-**Recommendation: A + B.** A removes the only _structural_ reason the MCP loop
-wins — everything else is copywriting until the git lane can actually start at
-creation. B is the cheapest high-leverage complement and is already endorsed by
-this repo's own documentation principles; it catches agents that entered via
-`package_save` anyway and hands them the exit ramp with zero extra discovery
-cost. C is the most interesting long-term (it generalizes beyond packages to
+**Recommendation: A + B, with E's triage text as a cheap rider.** A removes the
+only _structural_ reason the MCP loop wins — everything else is copywriting
+until the git lane can actually start at creation. B is the cheapest
+high-leverage complement and is already endorsed by this repo's own
+documentation principles; it catches agents that entered via `package_save`
+anyway and hands them the exit ramp with zero extra discovery cost. E addresses
+a different failure — the tool-only agent that should not be doing the work at
+all — and its instruction-text half costs almost nothing to ship alongside A/B;
+the handoff-prompt half can follow once the triage triggers prove out. C is the
+most interesting long-term (it generalizes beyond packages to
 `repo_run_commands` routing) but is advisory-signal plumbing that can land after
 A/B prove the direction. D overlaps heavily with fixing guide content, which
 should happen regardless.
