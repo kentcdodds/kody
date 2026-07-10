@@ -1,7 +1,7 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
-import { colors, radius } from '#client/styles/tokens.ts'
+import { radius, spacing } from '#client/styles/tokens.ts'
 import { type PublicCommunityListing } from '#app/community-public-types.ts'
 
 type CommunityListingIconProps = {
@@ -21,12 +21,9 @@ export function CommunityListingIcon(
 				width: dimension,
 				height: dimension,
 				flex: `0 0 ${dimension}px`,
-				overflow: 'hidden',
 				alignItems: 'center',
 				justifyContent: 'center',
-				border: `1px solid ${colors.border}`,
-				borderRadius: size === 'card' ? radius.md : radius.lg,
-				backgroundColor: colors.surface,
+				margin: size === 'card' ? spacing.xs : spacing.sm,
 			})}
 			data-testid={`community-listing-icon-${size}`}
 		>
@@ -41,6 +38,7 @@ export function CommunityListingIcon(
 					display: 'block',
 					width: '100%',
 					height: '100%',
+					borderRadius: size === 'card' ? radius.md : radius.lg,
 					objectFit: 'contain',
 				})}
 			/>
