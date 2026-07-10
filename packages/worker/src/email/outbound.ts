@@ -363,6 +363,9 @@ async function sendViaRestFallback(input: {
 							filename: attachment.filename,
 							type: attachment.contentType,
 							disposition: 'attachment' as const,
+							// The inferred schema output type requires this key even
+							// when undefined; JSON.stringify drops it from the payload.
+							contentId: undefined,
 						}))
 					: undefined,
 		},
