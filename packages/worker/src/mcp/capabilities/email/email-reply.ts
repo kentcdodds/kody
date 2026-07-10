@@ -65,14 +65,14 @@ export const emailReplyCapability = defineDomainCapability(
 				subject: original.subject?.toLowerCase().startsWith('re:')
 					? original.subject
 					: `Re: ${original.subject ?? '(no subject)'}`,
-			text: args.text ?? null,
-			html: args.html ?? null,
-			attachments: args.attachments?.map((attachment) => ({
-				filename: attachment.filename,
-				contentType: attachment.content_type,
-				contentBase64: attachment.content_base64,
-			})),
-			inReplyToHeader: original.messageIdHeader ?? null,
+				text: args.text ?? null,
+				html: args.html ?? null,
+				attachments: args.attachments?.map((attachment) => ({
+					filename: attachment.filename,
+					contentType: attachment.content_type,
+					contentBase64: attachment.content_base64,
+				})),
+				inReplyToHeader: original.messageIdHeader ?? null,
 				references: [
 					...stringArray(original.references),
 					...(original.messageIdHeader ? [original.messageIdHeader] : []),
