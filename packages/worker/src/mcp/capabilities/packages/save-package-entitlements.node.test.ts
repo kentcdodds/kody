@@ -385,6 +385,25 @@ test('package_save does not gate updates to an existing package at the limit', a
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 })
 
+test('package_save responses steer coding agents toward the git lane', async () => {
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const db = createDatabase({
+		users: [{ email, plan: null, username: 'planned' }],
+	})
+	setupPersistenceMocks()
+	const ctx = createHandlerContext({ db, userId, email })
+
+	const result = await savePackageCapability.handler(
+		{ files: buildPackageFiles('steered-package', 'planned') },
+		ctx,
+	)
+
+	expect(result.next_steps).toContain('package_get_git_remote')
+	expect(result.next_steps).toContain('package_publish_external_push')
+	expect(result.next_steps).toContain(JSON.stringify(result.kody_id))
+})
+
 test('package_save stays unlimited for users without a plan', async () => {
 	const email = 'legacy@example.com'
 	const userId = await createStableUserIdFromEmail(email)

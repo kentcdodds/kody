@@ -363,19 +363,22 @@ is guidance, not a new Kody primitive or manifest field.
 
 Use:
 
-- `package_save` to create or replace a saved package
+- `package_get_git_remote` and `package_publish_external_push` when you have a
+  normal git client: mint a remote (pass `create: true` with a new `kody_id` to
+  register a stub package first), clone, edit, push, and then ask Kody to
+  reconcile the pushed Artifacts HEAD
+- `package_save` to create or replace a saved package from a complete UTF-8 text
+  file set when no local git client is available
 - `package_get` and `package_list` to inspect saved packages
 - `repo_run_commands` to edit, check, and publish repo-backed package source
   after it exists using parsed, git-only command forms rather than shell
-- `package_get_git_remote` and `package_publish_external_push` when you want a
-  normal git client to clone, edit, push, and then ask Kody to reconcile the
-  pushed Artifacts HEAD
 
-## Edit a saved package via direct git push
+## Author a saved package via direct git push
 
 Saved package source is backed by a Cloudflare Artifacts git repository. You can
-edit it with a normal git client without round-tripping each file change through
-`package_save` or `repo_run_commands`.
+create and edit it with a normal git client without round-tripping each file
+change through `package_save` or `repo_run_commands`. This lane supports binary
+assets, which `package_save` and repo sessions do not.
 
 1. Mint a short-lived remote credential:
 
@@ -392,6 +395,22 @@ edit it with a normal git client without round-tripping each file change through
    `Authorization: Bearer ...` extra header, and setup commands that use
    `git -c http.extraHeader=...` so the token does not need to be saved in shell
    history or `.git/config`.
+
+   To start a **new** package in this lane, pass `create: true` with the new
+   `kody_id` (and an optional `description`):
+
+   ```json
+   {
+   	"kody_id": "my-package",
+   	"create": true,
+   	"description": "What this package is for"
+   }
+   ```
+
+   Kody registers a private stub saved package (minimal `package.json`,
+   `README.md` with an Intent placeholder, and a stub root export) and returns
+   the minted remote in the same call. Replace the stub content in your first
+   push.
 
 2. Clone and edit:
 

@@ -15,7 +15,7 @@ import { savePackageCapability } from './save-package.ts'
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
 	description:
-		'Saved packages are the only top-level persisted primitive. Coding agents with local git access can use package_get_git_remote for clone-edit-push workflows; tool-only agents can edit through repo sessions. Package metadata is rooted at package.json, including exports, jobs, apps, services, and event subscriptions.',
+		'Saved packages are the only top-level persisted primitive. Coding agents with local git access should use package_get_git_remote (create: true for new packages) for clone-edit-push workflows; tool-only agents create with package_save and edit through repo sessions. Package metadata is rooted at package.json, including exports, jobs, apps, services, and event subscriptions.',
 	keywords: [
 		'package',
 		'repo',
