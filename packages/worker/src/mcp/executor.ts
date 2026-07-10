@@ -783,6 +783,14 @@ export type ExecutionErrorDetails =
 				resource: EntitlementLimitErrorDetails['resource']
 			}
 	  }
+	| {
+			kind: 'sandbox_runtime_stale'
+			message: string
+			nextStep: string
+			suggestedAction: {
+				type: 'report_bug'
+			}
+	  }
 
 export function getExecutionErrorDetails(
 	error: unknown,
@@ -918,6 +926,18 @@ export function getExecutionErrorDetails(
 		}
 	}
 
+	if (isDisposedRpcStubMessage(message)) {
+		return {
+			kind: 'sandbox_runtime_stale',
+			message,
+			nextStep:
+				'The sandbox reused an RPC stub from an earlier execution, which is a Kody runtime lifecycle bug — retrying the identical call will hit the same cached sandbox worker. Re-run the execute call with a trivially different module (for example, add a comment) so a fresh sandbox is created, and report this error.',
+			suggestedAction: {
+				type: 'report_bug',
+			},
+		}
+	}
+
 	const missingRuntimeExport = parseMissingRuntimeExportMessage(message)
 	if (missingRuntimeExport) {
 		return {
@@ -956,6 +976,17 @@ const kodyRuntimeExportNames = new Set([
 	'packages',
 	'events',
 ])
+
+/**
+ * workerd throws this when an RPC stub outlives the execution context that
+ * created it (stubs passed as RPC parameters are implicitly disposed when the
+ * call returns; everything else when the I/O context is destroyed). In the
+ * execute pipeline this indicates per-run state leaked into a cached dynamic
+ * worker, so surface a structured hint instead of a bare error string.
+ */
+function isDisposedRpcStubMessage(message: string) {
+	return message.includes('RPC stub used after being disposed')
+}
 
 function parseMissingRuntimeExportMessage(message: string) {
 	const match = /^(?:ReferenceError: )?(\w+) is not defined\b/.exec(message)

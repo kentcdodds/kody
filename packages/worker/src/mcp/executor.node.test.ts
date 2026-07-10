@@ -799,6 +799,17 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		getExecutionErrorDetails(new Error('myHelper is not defined')),
 	).toBeNull()
 
+	// A disposed RPC stub in the sandbox means per-run state leaked into a
+	// cached dynamic worker; the structured hint explains how to escape the
+	// poisoned worker instead of suggesting a futile identical retry.
+	expect(
+		getExecutionErrorDetails(new Error('RPC stub used after being disposed.')),
+	).toMatchObject({
+		kind: 'sandbox_runtime_stale',
+		nextStep: expect.stringContaining('fresh sandbox'),
+		suggestedAction: { type: 'report_bug' },
+	})
+
 	const errors = [
 		capabilityError,
 		new Error(createMissingSecretMessage('missingToken')),
