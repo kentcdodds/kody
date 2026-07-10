@@ -1,5 +1,9 @@
+import { readdirSync, statSync } from 'node:fs'
+import path from 'node:path'
+
 import {
 	deleteR2Bucket,
+	deleteWorkerScript,
 	ensureR2Bucket,
 	fail,
 	listD1Databases,
@@ -293,6 +297,38 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
 }
 
+function listMockServerNames() {
+	const mockServersRoot = path.resolve('packages/mock-servers')
+	let entries: Array<string>
+	try {
+		entries = readdirSync(mockServersRoot)
+	} catch {
+		return []
+	}
+
+	return entries.filter((entry) => {
+		const dir = path.join(mockServersRoot, entry)
+		try {
+			if (!statSync(dir).isDirectory()) {
+				return false
+			}
+		} catch {
+			return false
+		}
+		return readdirSync(dir).some((file) => file === 'wrangler.jsonc')
+	})
+}
+
+function deletePreviewWorkers(workerName: string, dryRun: boolean) {
+	deleteWorkerScript({ name: workerName, dryRun })
+	for (const service of listMockServerNames()) {
+		deleteWorkerScript({
+			name: `${workerName}-mock-${service}`,
+			dryRun,
+		})
+	}
+}
+
 async function cleanupPreviewResources(options: CliOptions) {
 	const {
 		d1DatabaseName,
@@ -300,6 +336,7 @@ async function cleanupPreviewResources(options: CliOptions) {
 		bundleArtifactsKvTitle,
 		emailBlobsBucketName,
 	} = buildPreviewResourceNames(options.workerName)
+	deletePreviewWorkers(options.workerName, options.dryRun)
 	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
 	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
 	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })

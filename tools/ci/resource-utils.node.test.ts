@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test, vi } from 'vitest'
 
 import {
+	isWranglerNotFoundOutput,
 	parseJsonc,
 	parseR2BucketListOutput,
 	writeGeneratedWranglerConfig,
@@ -15,6 +16,17 @@ const workerWranglerConfigPath = path.resolve(
 	thisDir,
 	'../../packages/worker/wrangler.jsonc',
 )
+
+test('isWranglerNotFoundOutput recognizes common Wrangler missing-resource messages', () => {
+	expect(isWranglerNotFoundOutput('Worker not found')).toBe(true)
+	expect(isWranglerNotFoundOutput('No such script exists')).toBe(true)
+	expect(
+		isWranglerNotFoundOutput('The requested resource does not exist'),
+	).toBe(true)
+	expect(isWranglerNotFoundOutput('Authentication error [code: 10000]')).toBe(
+		false,
+	)
+})
 
 test('writeGeneratedWranglerConfig preserves migrations and copies environment asset routing', async () => {
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))

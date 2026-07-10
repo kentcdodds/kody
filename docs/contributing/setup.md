@@ -198,8 +198,8 @@ each PR preview is isolated:
 - D1 database: `<preview-worker-name>-db`
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 
-When a PR is closed, the cleanup job deletes the preview Worker(s) and these
-resources as well.
+When a PR is closed, the cleanup job deletes the preview Worker(s), mock
+Workers, and these resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds

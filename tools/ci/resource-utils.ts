@@ -104,8 +104,54 @@ export function listKvNamespaces(): Array<KvNamespaceListEntry> {
 	try {
 		return JSON.parse(result.stdout) as Array<KvNamespaceListEntry>
 	} catch {
-		fail('Could not parse JSON output from wrangler kv namespace list.')
+		fail('Failed to parse JSON output from wrangler kv namespace list.')
 	}
+}
+
+export function isWranglerNotFoundOutput(output: string) {
+	const lower = output.toLowerCase()
+	return (
+		lower.includes('not found') ||
+		lower.includes('no such') ||
+		lower.includes('does not exist')
+	)
+}
+
+export function deleteWorkerScript({
+	name,
+	dryRun,
+}: {
+	name: string
+	dryRun: boolean
+}) {
+	if (dryRun) {
+		console.error(`[dry-run] delete Worker script: ${name}`)
+		return
+	}
+
+	// Delete by script name only. Passing --config/--env makes Wrangler resolve
+	// bindings from wrangler.jsonc (including KV namespaces without ids) and
+	// can fail even when the token can delete the Worker and preview resources.
+	const result = runWrangler(['delete', name, '--force'], { quiet: true })
+	const output = `${result.stdout}${result.stderr}`.trim()
+
+	if (result.status === 0) {
+		if (output) {
+			console.error(output)
+		}
+		console.error(`Deleted Worker script: ${name}`)
+		return
+	}
+
+	if (isWranglerNotFoundOutput(output)) {
+		console.error(`Worker script already deleted: ${name}`)
+		return
+	}
+
+	if (output) {
+		console.error(output)
+	}
+	fail(`Failed to delete Worker script: ${name}`)
 }
 
 const ansiEscape = String.fromCharCode(27)
