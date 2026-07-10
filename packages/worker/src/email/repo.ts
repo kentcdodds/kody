@@ -28,6 +28,20 @@ export function emailRawMimeKey(userId: string, messageId: string) {
 }
 
 /**
+ * R2 object key for an attachment stored on its own (storage_kind
+ * 'external'), used by outbound mail whose bytes never exist as raw MIME.
+ * The userId prefix follows the same per-user isolation contract as
+ * emailRawMimeKey.
+ */
+export function emailAttachmentBlobKey(
+	userId: string,
+	messageId: string,
+	attachmentId: string,
+) {
+	return `email-attachment:v1:${userId}/${messageId}/${attachmentId}`
+}
+
+/**
  * Best-effort raw-MIME offload to R2. Returns the stored object key, or
  * null when the payload must stay inline in D1 because the put failed
  * (for example a transient R2 outage). Never throws: falling back to
@@ -886,25 +900,43 @@ export async function searchEmailMessages(input: {
 
 export async function deleteEmailMessageById(input: {
 	db: D1Database
-	/** EMAIL_BLOBS bucket; the raw-MIME blob is deleted with the row. */
+	/**
+	 * EMAIL_BLOBS bucket; the raw-MIME blob and any external attachment
+	 * blobs are deleted with the rows.
+	 */
 	blobs: R2Bucket
 	messageId: string
 }) {
-	// Capture the blob key before the row disappears. A failed read must
-	// abort the delete (and be retried) rather than orphan the R2 blob; only
-	// the R2 delete itself is best-effort.
+	// Capture the blob keys before the rows disappear. A failed read must
+	// abort the delete (and be retried) rather than orphan the R2 blobs;
+	// only the R2 deletes themselves are best-effort.
 	const row = await input.db
 		.prepare(`SELECT raw_mime_key FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
 		.first<{ raw_mime_key: string | null }>()
 	const rawMimeKey = row?.raw_mime_key ?? null
+	const attachmentRows = await input.db
+		.prepare(
+			`SELECT storage_key FROM email_attachments
+			WHERE message_id = ? AND storage_key IS NOT NULL`,
+		)
+		.bind(input.messageId)
+		.all<{ storage_key: string }>()
+	const blobKeys = [
+		...(rawMimeKey != null ? [rawMimeKey] : []),
+		...(attachmentRows.results ?? []).map((result) => result.storage_key),
+	]
+	await input.db
+		.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
+		.bind(input.messageId)
+		.run()
 	await input.db
 		.prepare(`DELETE FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
 		.run()
-	if (rawMimeKey != null) {
-		await input.blobs.delete(rawMimeKey).catch((error: unknown) => {
-			console.warn('email-raw-mime-blob-delete-failed', rawMimeKey, error)
+	for (const blobKey of blobKeys) {
+		await input.blobs.delete(blobKey).catch((error: unknown) => {
+			console.warn('email-blob-delete-failed', blobKey, error)
 		})
 	}
 }
@@ -913,6 +945,11 @@ export async function insertEmailAttachments(input: {
 	db: D1Database
 	messageId: string
 	attachments: Array<{
+		/**
+		 * Pre-generated row id. Callers that store attachment bytes in R2
+		 * before inserting the row pass the id embedded in the blob key.
+		 */
+		id?: string | null
 		filename?: string | null
 		contentType?: string | null
 		contentId?: string | null
@@ -932,7 +969,7 @@ export async function insertEmailAttachments(input: {
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
-				crypto.randomUUID(),
+				attachment.id ?? crypto.randomUUID(),
 				input.messageId,
 				attachment.filename ?? null,
 				attachment.contentType ?? null,
@@ -1005,6 +1042,25 @@ export async function getEmailAttachmentById(input: {
 		.first<Record<string, unknown>>()
 	if (!row) return null
 	const attachment = mapAttachmentRow(row)
+	// Externally stored attachments (outbound mail) keep their bytes in a
+	// dedicated R2 object instead of inside raw MIME.
+	if (attachment.storageKind === 'external') {
+		const object = attachment.storageKey
+			? await input.blobs.get(attachment.storageKey)
+			: null
+		if (!object) {
+			return { ...attachment, content: null, contentBase64: null }
+		}
+		const buffer = await object.arrayBuffer()
+		return {
+			...attachment,
+			content: buffer,
+			contentBase64: bytesToBase64(new Uint8Array(buffer)),
+		}
+	}
+	if (attachment.storageKind === 'unavailable') {
+		return { ...attachment, content: null, contentBase64: null }
+	}
 	const message = await getEmailMessageById({
 		db: input.db,
 		userId: input.userId,

@@ -95,7 +95,7 @@ type UserDeletionInventory = {
 	vectorIds: Array<string>
 	storageIds: Array<string>
 	bundleKvKeys: Array<string>
-	emailRawMimeKeys: Array<string>
+	emailBlobKeys: Array<string>
 	sourceSnapshots: Array<UserSourceSnapshot>
 	savedPackages: Array<UserSavedPackageSnapshot>
 	repoSessions: Array<UserRepoSessionSnapshot>
@@ -283,15 +283,28 @@ async function listUserPackageServices(env: Env, userId: string) {
 	}))
 }
 
-async function listUserEmailRawMimeKeys(env: Env, userId: string) {
-	const rows = await env.APP_DB.prepare(
+async function listUserEmailBlobKeys(env: Env, userId: string) {
+	const rawMimeRows = await env.APP_DB.prepare(
 		`SELECT raw_mime_key
 		FROM email_messages
 		WHERE user_id = ? AND raw_mime_key IS NOT NULL`,
 	)
 		.bind(userId)
 		.all<{ raw_mime_key: string }>()
-	return uniqueStrings((rows.results ?? []).map((row) => row.raw_mime_key))
+	// Externally stored attachments (outbound mail) have their own R2
+	// objects, separate from any raw-MIME blob.
+	const attachmentRows = await env.APP_DB.prepare(
+		`SELECT attachment.storage_key AS storage_key
+		FROM email_attachments attachment
+		JOIN email_messages message ON message.id = attachment.message_id
+		WHERE message.user_id = ? AND attachment.storage_key IS NOT NULL`,
+	)
+		.bind(userId)
+		.all<{ storage_key: string }>()
+	return uniqueStrings([
+		...(rawMimeRows.results ?? []).map((row) => row.raw_mime_key),
+		...(attachmentRows.results ?? []).map((row) => row.storage_key),
+	])
 }
 
 async function listUserCommunityListingIds(env: Env, userId: string) {
@@ -342,7 +355,7 @@ async function collectUserDeletionInventory(input: {
 	const [
 		vectorIds,
 		storageIds,
-		emailRawMimeKeys,
+		emailBlobKeys,
 		sourceSnapshots,
 		savedPackages,
 		repoSessions,
@@ -361,11 +374,9 @@ async function collectUserDeletionInventory(input: {
 			input.warnings.push(`Failed to enumerate storage ids: ${message}`)
 			return [] as Array<string>
 		}),
-		listUserEmailRawMimeKeys(input.env, input.userId).catch((error) => {
+		listUserEmailBlobKeys(input.env, input.userId).catch((error) => {
 			const message = error instanceof Error ? error.message : String(error)
-			input.warnings.push(
-				`Failed to enumerate email raw-MIME blob keys: ${message}`,
-			)
+			input.warnings.push(`Failed to enumerate email blob keys: ${message}`)
 			return [] as Array<string>
 		}),
 		listUserSourceSnapshots(input.env, input.userId).catch((error) => {
@@ -418,7 +429,7 @@ async function collectUserDeletionInventory(input: {
 		vectorIds,
 		storageIds,
 		bundleKvKeys,
-		emailRawMimeKeys,
+		emailBlobKeys,
 		sourceSnapshots,
 		savedPackages,
 		repoSessions,
@@ -1068,7 +1079,7 @@ export async function deleteUserAccount(input: {
 
 	result.deletedEmailBlobs = await deleteEmailBlobs({
 		blobs: input.env.EMAIL_BLOBS,
-		keys: inventory.emailRawMimeKeys,
+		keys: inventory.emailBlobKeys,
 		warnings,
 	})
 

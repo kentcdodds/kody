@@ -11,6 +11,7 @@ vi.mock('#worker/email/repo.ts', () => ({
 }))
 
 vi.mock('#worker/email/outbound.ts', () => ({
+	maxOutboundEmailAttachments: 10,
 	sendOutboundEmail: mocks.sendOutboundEmail,
 }))
 
@@ -126,5 +127,70 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 	)
 	expect(mocks.sendOutboundEmail).not.toHaveBeenCalledWith(
 		expect.objectContaining({ to: expect.anything() }),
+	)
+})
+
+test('email_reply forwards attachments to the outbound send', async () => {
+	mocks.getEmailMessageById.mockResolvedValue({
+		id: 'inbound-1',
+		subject: 'Hello',
+		fromAddress: 'sender@example.com',
+		envelopeFrom: null,
+		replyToAddresses: [],
+		messageIdHeader: '<inbound@example.com>',
+		references: [],
+		threadId: 'thread-1',
+		inboxId: 'inbox-1',
+	})
+	mocks.sendOutboundEmail.mockResolvedValue({
+		status: 'sent',
+		error: null,
+		providerMessageId: 'provider-1',
+		message: {
+			id: 'outbound-1',
+			direction: 'outbound',
+			inboxId: 'inbox-1',
+			threadId: 'thread-1',
+			fromAddress: 'user@heykody.dev',
+			envelopeFrom: 'user@heykody.dev',
+			toAddresses: ['sender@example.com'],
+			subject: 'Re: Hello',
+			messageIdHeader: '<outbound@heykody.dev>',
+			processingStatus: 'sent',
+			providerMessageId: 'provider-1',
+			error: null,
+			receivedAt: null,
+			sentAt: '2026-05-13T07:30:16.000Z',
+			createdAt: '2026-05-13T07:30:16.000Z',
+			updatedAt: '2026-05-13T07:30:16.000Z',
+		},
+	})
+
+	await emailReplyCapability.handler(
+		{
+			message_id: 'inbound-1',
+			text: 'Reply body',
+			attachments: [
+				{
+					filename: 'notes.txt',
+					content_type: 'text/plain',
+					content_base64: 'aGVsbG8=',
+				},
+			],
+		},
+		createContext(),
+	)
+	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
+		expect.objectContaining({
+			recipientPolicy: 'reply',
+			replyToMessageId: 'inbound-1',
+			attachments: [
+				{
+					filename: 'notes.txt',
+					contentType: 'text/plain',
+					contentBase64: 'aGVsbG8=',
+				},
+			],
+		}),
 	)
 })

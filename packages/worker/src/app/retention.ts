@@ -202,6 +202,7 @@ export type RetentionPruneResult = {
 		deletedAttachments: number
 		deletedThreads: number
 		deletedRawMimeBlobs: number
+		deletedAttachmentBlobs: number
 		blobDeleteErrors: number
 	}
 	entitlementDailyCounters: number
@@ -714,6 +715,7 @@ export type EmailMessageRetentionResult = {
 	deletedAttachments: number
 	deletedThreads: number
 	deletedRawMimeBlobs: number
+	deletedAttachmentBlobs: number
 	blobDeleteErrors: number
 	hasMore: boolean
 	nextCursor: EmailMessageRetentionCursor | null
@@ -760,25 +762,63 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		deletedAttachments: 0,
 		deletedThreads: 0,
 		deletedRawMimeBlobs: 0,
+		deletedAttachmentBlobs: 0,
 		blobDeleteErrors: 0,
 		hasMore: false,
 		nextCursor: null,
 	}
-	const rowsWithBlob = rows.filter((row) => row.raw_mime_key !== null)
+	// Externally stored attachments (outbound mail) have their own R2
+	// objects that must be deleted along with the raw-MIME blobs.
+	const attachmentKeysByMessageId = new Map<string, Array<string>>()
+	for (
+		let index = 0;
+		index < rows.length;
+		index += retentionDeleteIdsMaxParameters
+	) {
+		const chunk = rows.slice(index, index + retentionDeleteIdsMaxParameters)
+		const placeholders = chunk.map(() => '?').join(', ')
+		const attachmentRows = await runD1WithRetry(() =>
+			input.db
+				.prepare(
+					`SELECT message_id, storage_key
+				FROM email_attachments
+				WHERE storage_key IS NOT NULL AND message_id IN (${placeholders})`,
+				)
+				.bind(...chunk.map((row) => row.id))
+				.all<{ message_id: string; storage_key: string }>(),
+		)
+		for (const attachmentRow of attachmentRows.results ?? []) {
+			const keys = attachmentKeysByMessageId.get(attachmentRow.message_id)
+			if (keys) keys.push(attachmentRow.storage_key)
+			else {
+				attachmentKeysByMessageId.set(attachmentRow.message_id, [
+					attachmentRow.storage_key,
+				])
+			}
+		}
+	}
+	const blobKeysForRow = (row: (typeof rows)[number]) => [
+		...(row.raw_mime_key !== null ? [row.raw_mime_key] : []),
+		...(attachmentKeysByMessageId.get(row.id) ?? []),
+	]
+	const rowsWithBlob = rows.filter((row) => blobKeysForRow(row).length > 0)
 	let deletableRows = rows
 	if (rowsWithBlob.length > 0) {
-		// Never delete a row whose R2 blob could not be deleted first: once
-		// the row is gone its raw_mime_key is lost and the blob is orphaned
+		// Never delete a row whose R2 blobs could not be deleted first: once
+		// the row is gone its blob keys are lost and the blobs are orphaned
 		// forever. Failed rows are skipped and retried on a later run.
+		const blobKeys = rowsWithBlob.flatMap(blobKeysForRow)
 		try {
-			await input.blobs.delete(
-				rowsWithBlob.map((row) => row.raw_mime_key as string),
-			)
-			result.deletedRawMimeBlobs = rowsWithBlob.length
+			await input.blobs.delete(blobKeys)
+			result.deletedRawMimeBlobs = rowsWithBlob.filter(
+				(row) => row.raw_mime_key !== null,
+			).length
+			result.deletedAttachmentBlobs =
+				blobKeys.length - result.deletedRawMimeBlobs
 		} catch (error) {
-			result.blobDeleteErrors = rowsWithBlob.length
-			deletableRows = rows.filter((row) => row.raw_mime_key === null)
-			console.warn('retention-email-raw-mime-delete-failed', { error })
+			result.blobDeleteErrors = blobKeys.length
+			deletableRows = rows.filter((row) => blobKeysForRow(row).length === 0)
+			console.warn('retention-email-blob-delete-failed', { error })
 		}
 	}
 	const messageIds = deletableRows.map((row) => row.id)
@@ -930,6 +970,7 @@ export async function pruneRetention(input: {
 			deletedAttachments: 0,
 			deletedThreads: 0,
 			deletedRawMimeBlobs: 0,
+			deletedAttachmentBlobs: 0,
 			blobDeleteErrors: 0,
 		},
 		entitlementDailyCounters: 0,
@@ -1027,6 +1068,8 @@ export async function pruneRetention(input: {
 				result.emailMessages.deletedAttachments += batch.deletedAttachments
 				result.emailMessages.deletedThreads += batch.deletedThreads
 				result.emailMessages.deletedRawMimeBlobs += batch.deletedRawMimeBlobs
+				result.emailMessages.deletedAttachmentBlobs +=
+					batch.deletedAttachmentBlobs
 				result.emailMessages.blobDeleteErrors += batch.blobDeleteErrors
 				emailMessagesCursor = batch.nextCursor
 				return batch.hasMore

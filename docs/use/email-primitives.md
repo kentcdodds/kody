@@ -46,7 +46,11 @@ Use the MCP `email` domain:
 - `email_send` sends a notification email to your own account email address
   (notify-self only; any other recipient is rejected).
 - `email_reply` replies to a stored inbound message. The recipient always comes
-  from the stored message.
+  from the stored message. Optional `attachments` (up to 10 of
+  `{ filename, content_type, content_base64 }`) are sent with the reply and
+  stored as `external` attachments readable later via `email_attachment_get`.
+  With attachments, the whole message (bodies plus decoded attachment bytes)
+  must fit the plan's `email_message_bytes` per-message cap.
 - `email_attachment_get` returns stored attachment bytes by attachment id.
 - `email_message_list` lists stored inbound and outbound messages.
 - `email_message_search` searches stored messages by case-insensitive substring

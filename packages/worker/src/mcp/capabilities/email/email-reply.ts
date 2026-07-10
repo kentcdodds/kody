@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
-import { sendOutboundEmail } from '#worker/email/outbound.ts'
+import {
+	maxOutboundEmailAttachments,
+	sendOutboundEmail,
+} from '#worker/email/outbound.ts'
 import { getEmailMessageById } from '#worker/email/repo.ts'
 import {
 	emailMessageSummarySchema,
@@ -15,8 +18,8 @@ export const emailReplyCapability = defineDomainCapability(
 	{
 		name: 'email_reply',
 		description:
-			'Reply to a stored inbound email from your platform-assigned {username}@<platform domain> address, preserving thread headers. The recipient always comes from the stored message.',
-		keywords: ['email', 'reply', 'thread', 'message'],
+			'Reply to a stored inbound email from your platform-assigned {username}@<platform domain> address, preserving thread headers and optionally attaching files (base64 content). The recipient always comes from the stored message.',
+		keywords: ['email', 'reply', 'thread', 'message', 'attachment'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -25,6 +28,17 @@ export const emailReplyCapability = defineDomainCapability(
 				message_id: z.string().min(1),
 				text: z.string().min(1).optional(),
 				html: z.string().min(1).optional(),
+				attachments: z
+					.array(
+						z.object({
+							filename: z.string().min(1).max(255),
+							content_type: z.string().min(1).max(255),
+							content_base64: z.string().min(1),
+						}),
+					)
+					.min(1)
+					.max(maxOutboundEmailAttachments)
+					.optional(),
 			})
 			.refine((value) => value.text !== undefined || value.html !== undefined, {
 				message: 'Email text or HTML body is required.',
@@ -51,9 +65,14 @@ export const emailReplyCapability = defineDomainCapability(
 				subject: original.subject?.toLowerCase().startsWith('re:')
 					? original.subject
 					: `Re: ${original.subject ?? '(no subject)'}`,
-				text: args.text ?? null,
-				html: args.html ?? null,
-				inReplyToHeader: original.messageIdHeader ?? null,
+			text: args.text ?? null,
+			html: args.html ?? null,
+			attachments: args.attachments?.map((attachment) => ({
+				filename: attachment.filename,
+				contentType: attachment.content_type,
+				contentBase64: attachment.content_base64,
+			})),
+			inReplyToHeader: original.messageIdHeader ?? null,
 				references: [
 					...stringArray(original.references),
 					...(original.messageIdHeader ? [original.messageIdHeader] : []),

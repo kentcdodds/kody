@@ -130,13 +130,14 @@ async function sendViaCloudflareApi(
 
 export async function sendCloudflareEmail(
 	config: CloudflareEmailClientConfig,
-	message: Omit<OutboundEmail, 'replyTo' | 'headers'> &
-		Partial<Pick<OutboundEmail, 'replyTo' | 'headers'>>,
+	message: Omit<OutboundEmail, 'replyTo' | 'headers' | 'attachments'> &
+		Partial<Pick<OutboundEmail, 'replyTo' | 'headers' | 'attachments'>>,
 ): Promise<CloudflareSendResult> {
 	const normalized = normalizeEmailPayload({
 		...message,
 		replyTo: message.replyTo,
 		headers: message.headers,
+		attachments: message.attachments,
 	})
 	const apiBaseUrl =
 		typeof config.apiBaseUrl === 'string' && config.apiBaseUrl.trim().length > 0

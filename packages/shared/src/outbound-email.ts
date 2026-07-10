@@ -2,6 +2,7 @@ import {
 	array,
 	createSchema,
 	fail,
+	literal,
 	object,
 	optional,
 	string,
@@ -36,6 +37,19 @@ const optionalHeadersSchema = createSchema<
 	return { value: headers }
 })
 
+const outboundEmailAttachmentSchema = object({
+	/** Base64-encoded bytes, as the Cloudflare Email REST API expects. */
+	content: nonEmptyStringSchema,
+	filename: nonEmptyStringSchema,
+	type: nonEmptyStringSchema,
+	disposition: union([literal('attachment'), literal('inline')]),
+	contentId: optional(nonEmptyStringSchema),
+})
+
+export type OutboundEmailAttachment = InferOutput<
+	typeof outboundEmailAttachmentSchema
+>
+
 const outboundEmailSchema = object({
 	from: nonEmptyStringSchema,
 	to: union([nonEmptyStringSchema, array(nonEmptyStringSchema)]),
@@ -44,6 +58,7 @@ const outboundEmailSchema = object({
 	text: optional(nonEmptyStringSchema),
 	replyTo: optional(nonEmptyStringSchema),
 	headers: optionalHeadersSchema,
+	attachments: optional(array(outboundEmailAttachmentSchema)),
 })
 
 export type OutboundEmail = InferOutput<typeof outboundEmailSchema>

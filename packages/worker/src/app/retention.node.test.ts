@@ -753,6 +753,16 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 		) VALUES ('att-old', 'msg-old-blob', 'text/plain', 1, 'raw-mime', ?)`,
 		)
 		.run(daysAgo(emailMessageRetentionDays + 1))
+	// Externally stored attachment bytes (outbound mail) live in their own
+	// R2 object that must be deleted alongside the raw-MIME blobs.
+	sqlite
+		.prepare(
+			`INSERT INTO email_attachments (
+			id, message_id, content_type, size, storage_kind, storage_key, created_at
+		) VALUES ('att-ext', 'msg-old-plain', 'text/plain', 1, 'external',
+			'email-attachment:v1:user-1/msg-old-plain/att-ext', ?)`,
+		)
+		.run(daysAgo(emailMessageRetentionDays + 1))
 	const blobDelete = vi.fn(async () => undefined)
 
 	const result = await pruneUserEmailMessagesForRetention({
@@ -763,14 +773,18 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 
 	expect(result).toEqual({
 		deletedMessages: 2,
-		deletedAttachments: 1,
+		deletedAttachments: 2,
 		deletedThreads: 1,
 		deletedRawMimeBlobs: 1,
+		deletedAttachmentBlobs: 1,
 		blobDeleteErrors: 0,
 		hasMore: false,
 		nextCursor: null,
 	})
-	expect(blobDelete).toHaveBeenCalledWith(['raw-mime/user-1/msg-old-blob'])
+	expect(blobDelete).toHaveBeenCalledWith([
+		'raw-mime/user-1/msg-old-blob',
+		'email-attachment:v1:user-1/msg-old-plain/att-ext',
+	])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([
 		'msg-boundary',
 		'msg-fresh',

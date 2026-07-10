@@ -1,11 +1,15 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import {
+	deleteEmailMessageById,
+	getEmailAttachmentById,
 	getEmailMessageById,
 	insertEmailMessage,
+	listEmailAttachmentsForMessage,
 	listEmailMessages,
 } from './repo.ts'
 import { sendOutboundEmail } from './outbound.ts'
@@ -509,6 +513,241 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	expect(
 		(await listEmailSendRollups(env.APP_DB, isolatedUserId))[0],
 	).toBeUndefined()
+})
+
+test('sendOutboundEmail sends, stores, and re-serves reply attachments', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+	const inbound = await insertEmailMessage({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		message: {
+			direction: 'inbound',
+			userId,
+			fromAddress: 'recipient@example.com',
+			envelopeFrom: 'recipient@example.com',
+			toAddresses: [accountEmail],
+			subject: 'Needs a file',
+			messageIdHeader: '<inbound-attach@example.com>',
+			processingStatus: 'stored',
+			receivedAt: new Date().toISOString(),
+		},
+	})
+	const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
+	const sent: Array<Record<string, unknown>> = []
+	const sendEnv = {
+		...env,
+		APP_BASE_URL: platformBaseUrl,
+		EMAIL: {
+			async send(message: Record<string, unknown>) {
+				sent.push(message)
+				return { messageId: 'provider-attach-1' }
+			},
+		} as unknown as SendEmail,
+	}
+
+	const result = await sendOutboundEmail({
+		env: sendEnv,
+		userId,
+		accountEmail,
+		recipientPolicy: 'reply',
+		replyToMessageId: inbound.id,
+		subject: 'Re: Needs a file',
+		text: 'File attached.',
+		attachments: [
+			{
+				filename: 'invoice.pdf',
+				contentType: 'application/pdf',
+				contentBase64: bytesToBase64(pdfBytes),
+			},
+		],
+	})
+
+	expect(result.status).toBe('sent')
+	// The binding receives raw bytes (string content would be treated as
+	// raw text, not base64).
+	expect(sent).toHaveLength(1)
+	const sentAttachments = sent[0]?.attachments as Array<Record<string, unknown>>
+	expect(sentAttachments).toHaveLength(1)
+	expect(sentAttachments[0]).toMatchObject({
+		disposition: 'attachment',
+		filename: 'invoice.pdf',
+		type: 'application/pdf',
+	})
+	expect(new Uint8Array(sentAttachments[0]?.content as Uint8Array)).toEqual(
+		pdfBytes,
+	)
+
+	// The attachment is stored as its own R2 object and stays readable via
+	// the normal attachment read path.
+	const stored = await listEmailAttachmentsForMessage({
+		db: env.APP_DB,
+		messageId: result.message.id,
+	})
+	expect(stored).toHaveLength(1)
+	expect(stored[0]).toMatchObject({
+		filename: 'invoice.pdf',
+		contentType: 'application/pdf',
+		disposition: 'attachment',
+		size: pdfBytes.byteLength,
+		storageKind: 'external',
+	})
+	const storageKey = stored[0]?.storageKey
+	expect(storageKey).toContain(`email-attachment:v1:${userId}/`)
+	const loaded = await getEmailAttachmentById({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		userId,
+		attachmentId: stored[0]!.id,
+	})
+	expect(loaded?.contentBase64).toBe(bytesToBase64(pdfBytes))
+
+	// Usage bytes include the attachment payload.
+	const rollups = await listEmailSendRollups(env.APP_DB, userId)
+	expect(rollups[0]).toMatchObject({
+		total_bytes:
+			new TextEncoder().encode('File attached.').byteLength +
+			pdfBytes.byteLength,
+	})
+
+	// Deleting the message removes the external attachment blob too.
+	await deleteEmailMessageById({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		messageId: result.message.id,
+	})
+	expect(await env.EMAIL_BLOBS.get(storageKey!)).toBeNull()
+	expect(
+		await listEmailAttachmentsForMessage({
+			db: env.APP_DB,
+			messageId: result.message.id,
+		}),
+	).toEqual([])
+})
+
+test('sendOutboundEmail passes base64 attachments to the REST fallback', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+	const contentBase64 = bytesToBase64(new TextEncoder().encode('name,total'))
+	const fetchCalls: Array<Record<string, unknown>> = []
+
+	using _server = createMswNodeServer(
+		[
+			http.post(cloudflareEmailApi, async ({ request }) => {
+				fetchCalls.push((await request.json()) as Record<string, unknown>)
+				return HttpResponse.json({
+					success: true,
+					result: { message_id: 'rest-attach-1' },
+				})
+			}),
+		],
+		{ onUnhandledRequest: 'bypass' },
+	)
+
+	const result = await sendOutboundEmail({
+		env: {
+			...env,
+			APP_BASE_URL: platformBaseUrl,
+			EMAIL: undefined as unknown as SendEmail,
+			CLOUDFLARE_ACCOUNT_ID: 'account-123',
+			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+			CLOUDFLARE_API_TOKEN: 'token-123',
+		},
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		subject: 'Report',
+		text: 'Report attached.',
+		attachments: [
+			{
+				filename: 'report.csv',
+				contentType: 'text/csv',
+				contentBase64,
+			},
+		],
+	})
+
+	expect(result.status).toBe('sent')
+	expect(result.providerMessageId).toBe('rest-attach-1')
+	expect(fetchCalls).toHaveLength(1)
+	expect(fetchCalls[0]?.attachments).toEqual([
+		{
+			content: contentBase64,
+			filename: 'report.csv',
+			type: 'text/csv',
+			disposition: 'attachment',
+		},
+	])
+})
+
+test('sendOutboundEmail rejects invalid and oversized attachments', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `account-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail,
+			recipientPolicy: 'self',
+			subject: 'Bad base64',
+			text: 'Body',
+			attachments: [
+				{
+					filename: 'broken.bin',
+					contentType: 'application/octet-stream',
+					contentBase64: '!!not-base64!!',
+				},
+			],
+		}),
+	).rejects.toThrow('Attachment content must be valid base64: broken.bin')
+
+	// Attachments put the message under the plan-less per-message backstop
+	// (email_message_bytes) that body-only sends are not subject to.
+	const oversize = new Uint8Array(
+		nullPlanEmailFallbackLimits.email_message_bytes + 1,
+	)
+	const error = await sendOutboundEmail({
+		env: createBindingSendEnv(),
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		subject: 'Too big',
+		text: 'Body',
+		attachments: [
+			{
+				filename: 'huge.bin',
+				contentType: 'application/octet-stream',
+				contentBase64: bytesToBase64(oversize),
+			},
+		],
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected an EntitlementLimitError from sendOutboundEmail.')
+	}
+	expect(error.details).toMatchObject({
+		resource: 'email_message_bytes',
+	})
+	// Neither failure consumed the daily send quota or stored a message.
+	expect(await readDailyEmailSendCounter(userId)).toBe(0)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			direction: 'outbound',
+			limit: 5,
+		}),
+	).toEqual([])
 })
 
 test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit', async () => {

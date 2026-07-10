@@ -1,9 +1,11 @@
+import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
 import {
+	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 	estimateEntitlementStorageEntryBytes,
@@ -13,9 +15,11 @@ import { normalizeEmailAddress } from './address.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import {
 	createEmailThread,
+	emailAttachmentBlobKey,
 	ensurePlatformSenderIdentity,
 	getEmailMessageById,
 	getEmailMessageByMessageIdHeader,
+	insertEmailAttachments,
 	insertEmailMessage,
 	insertEmailDeliveryEvent,
 	updateEmailMessageDelivery,
@@ -35,6 +39,20 @@ type SendEmailEnv = Pick<
 	| 'CLOUDFLARE_API_TOKEN'
 >
 
+/**
+ * Ceiling on the number of files per outbound message. Total size is
+ * governed separately by the plan's email_message_bytes limit (and the
+ * provider's own 5 MiB hard cap far above it).
+ */
+export const maxOutboundEmailAttachments = 10
+
+export type OutboundEmailAttachmentInput = {
+	filename: string
+	contentType: string
+	/** Base64-encoded attachment bytes. */
+	contentBase64: string
+}
+
 export type EmailSendInput = {
 	env: SendEmailEnv
 	userId: string
@@ -53,6 +71,7 @@ export type EmailSendInput = {
 	references?: Array<string>
 	threadId?: string | null
 	inboxId?: string | null
+	attachments?: Array<OutboundEmailAttachmentInput>
 } & (
 	| {
 			/**
@@ -143,6 +162,95 @@ function buildProviderHeaders(headers: Record<string, string>) {
 	)
 }
 
+type PreparedOutboundAttachment = {
+	filename: string
+	contentType: string
+	bytes: Uint8Array
+	contentBase64: string
+}
+
+function prepareOutboundAttachments(
+	attachments: Array<OutboundEmailAttachmentInput> | undefined,
+): Array<PreparedOutboundAttachment> {
+	if (!attachments || attachments.length === 0) return []
+	if (attachments.length > maxOutboundEmailAttachments) {
+		throw new Error(
+			`Outbound email supports at most ${maxOutboundEmailAttachments} attachments.`,
+		)
+	}
+	return attachments.map((attachment) => {
+		const filename = attachment.filename.trim()
+		if (!filename) throw new Error('Attachment filename is required.')
+		const contentType = attachment.contentType.trim()
+		if (!contentType) {
+			throw new Error(`Attachment content type is required: ${filename}`)
+		}
+		const contentBase64 = attachment.contentBase64.trim()
+		let bytes: Uint8Array
+		try {
+			bytes = base64ToBytes(contentBase64)
+		} catch {
+			throw new Error(`Attachment content must be valid base64: ${filename}`)
+		}
+		if (bytes.byteLength === 0) {
+			throw new Error(`Attachment content is empty: ${filename}`)
+		}
+		return { filename, contentType, bytes, contentBase64 }
+	})
+}
+
+/**
+ * Persist outbound attachment bytes to R2 and record one email_attachments
+ * row per file. A failed blob put degrades that attachment to metadata-only
+ * (storage_kind 'unavailable') rather than blocking the send — the provider
+ * still receives the in-memory bytes.
+ */
+async function storeOutboundAttachments(input: {
+	db: D1Database
+	blobs: R2Bucket
+	userId: string
+	messageId: string
+	attachments: Array<PreparedOutboundAttachment>
+}) {
+	if (input.attachments.length === 0) return
+	const rows: Parameters<typeof insertEmailAttachments>[0]['attachments'] = []
+	for (const attachment of input.attachments) {
+		const attachmentId = crypto.randomUUID()
+		const storageKey = emailAttachmentBlobKey(
+			input.userId,
+			input.messageId,
+			attachmentId,
+		)
+		let stored = false
+		try {
+			await input.blobs.put(storageKey, attachment.bytes, {
+				httpMetadata: { contentType: attachment.contentType },
+			})
+			stored = true
+		} catch (error) {
+			console.warn(
+				'email-outbound-attachment-blob-put-failed',
+				storageKey,
+				error,
+			)
+		}
+		rows.push({
+			id: attachmentId,
+			filename: attachment.filename,
+			contentType: attachment.contentType,
+			disposition: 'attachment',
+			size: attachment.bytes.byteLength,
+			storageKind: stored ? 'external' : 'unavailable',
+			storageKey: stored ? storageKey : null,
+		})
+	}
+	await insertEmailAttachments({
+		db: input.db,
+		messageId: input.messageId,
+		attachments: rows,
+	})
+}
+
 async function requireStoredEmailMessage(input: {
 	env: SendEmailEnv
 	userId: string
@@ -170,6 +278,7 @@ async function sendViaBinding(input: {
 	html?: string | null
 	replyTo?: string | null
 	headers: Record<string, string>
+	attachments: Array<PreparedOutboundAttachment>
 }) {
 	const binding = input.env.EMAIL
 	if (!binding) return { sent: false, messageId: null }
@@ -181,6 +290,18 @@ async function sendViaBinding(input: {
 		headers: input.headers,
 		...(input.text ? { text: input.text } : {}),
 		...(input.html ? { html: input.html } : {}),
+		...(input.attachments.length > 0
+			? {
+					// The binding treats string content as raw text, so binary
+					// payloads must go through as bytes rather than base64.
+					attachments: input.attachments.map((attachment) => ({
+						disposition: 'attachment' as const,
+						filename: attachment.filename,
+						type: attachment.contentType,
+						content: attachment.bytes,
+					})),
+				}
+			: {}),
 	})
 	return { sent: true, messageId: result.messageId ?? null }
 }
@@ -194,6 +315,7 @@ async function sendViaRestFallback(input: {
 	html?: string | null
 	replyTo?: string | null
 	headers: Record<string, string>
+	attachments: Array<PreparedOutboundAttachment>
 }) {
 	const html = input.html ?? input.text
 	if (!html) {
@@ -214,6 +336,17 @@ async function sendViaRestFallback(input: {
 			replyTo: input.replyTo ?? undefined,
 			headers:
 				Object.keys(input.headers).length > 0 ? input.headers : undefined,
+			attachments:
+				input.attachments.length > 0
+					? // The REST API expects base64 string content.
+						input.attachments.map((attachment) => ({
+							content: attachment.contentBase64,
+							filename: attachment.filename,
+							type: attachment.contentType,
+							disposition: 'attachment' as const,
+							contentId: undefined,
+						}))
+					: undefined,
 		},
 	)
 	if (!result.ok) {
@@ -225,9 +358,10 @@ async function sendViaRestFallback(input: {
 function outboundEmailContentBytes(
 	text: string | null,
 	html: string | null,
+	attachmentBytes = 0,
 ): number | undefined {
-	if (!text && !html) return undefined
-	let bytes = 0
+	if (!text && !html && attachmentBytes === 0) return undefined
+	let bytes = attachmentBytes
 	if (text) bytes += new TextEncoder().encode(text).byteLength
 	if (html) bytes += new TextEncoder().encode(html).byteLength
 	return bytes
@@ -305,6 +439,26 @@ export async function sendOutboundEmail(
 	const text = input.text?.trim() || null
 	const html = input.html?.trim() || null
 	if (!text && !html) throw new Error('Email text or HTML body is required.')
+	const attachments = prepareOutboundAttachments(input.attachments)
+	const attachmentBytesTotal = attachments.reduce(
+		(total, attachment) => total + attachment.bytes.byteLength,
+		0,
+	)
+	if (attachments.length > 0) {
+		// Attachments put outbound mail under the same per-message ceiling
+		// as inbound mail. Body-only sends keep their pre-attachment
+		// behavior (no per-message cap).
+		await assertWithinEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: sender.accountEmail,
+			resource: 'email_message_bytes',
+			requested: 0,
+			getCurrent: async () =>
+				(outboundEmailContentBytes(text, html) ?? 0) + attachmentBytesTotal,
+			fallbackLimit: nullPlanEmailFallbackLimits.email_message_bytes,
+		})
+	}
 	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
 	const storedHeaders = buildStoredHeaders({
 		messageId: messageIdHeader,
@@ -315,18 +469,19 @@ export async function sendOutboundEmail(
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: sender.accountEmail,
-		requested: estimateEntitlementStorageEntryBytes({
-			key: messageIdHeader,
-			value: {
-				from,
-				to,
-				subject,
-				replyTo: input.replyTo,
-				text,
-				html,
-				headers: storedHeaders,
-			},
-		}),
+		requested:
+			estimateEntitlementStorageEntryBytes({
+				key: messageIdHeader,
+				value: {
+					from,
+					to,
+					subject,
+					replyTo: input.replyTo,
+					text,
+					html,
+					headers: storedHeaders,
+				},
+			}) + attachmentBytesTotal,
 	})
 
 	// Atomic check-and-increment: the counter tracks attempts for every user
@@ -390,6 +545,13 @@ export async function sendOutboundEmail(
 			sentAt: null,
 		},
 	})
+	await storeOutboundAttachments({
+		db: input.env.APP_DB,
+		blobs: input.env.EMAIL_BLOBS,
+		userId: input.userId,
+		messageId: message.id,
+		attachments,
+	})
 	await insertEmailDeliveryEvent({
 		db: input.env.APP_DB,
 		messageId: message.id,
@@ -398,10 +560,14 @@ export async function sendOutboundEmail(
 		eventType: 'send_requested',
 		provider: 'cloudflare-email',
 		providerMessageId: null,
-		detail: { to, from, subject },
+		detail: { to, from, subject, attachmentCount: attachments.length },
 	})
 
-	const messageContentBytes = outboundEmailContentBytes(text, html)
+	const messageContentBytes = outboundEmailContentBytes(
+		text,
+		html,
+		attachmentBytesTotal,
+	)
 	const sendStartedAtMs = Date.now()
 	let sendOutcome: 'success' | 'error' = 'success'
 	try {
@@ -416,6 +582,7 @@ export async function sendOutboundEmail(
 				? (normalizeEmailAddress(input.replyTo) ?? undefined)
 				: undefined,
 			headers: providerHeaders,
+			attachments,
 		})
 		const providerMessageId = bindingResult.sent
 			? bindingResult.messageId
@@ -430,6 +597,7 @@ export async function sendOutboundEmail(
 						? (normalizeEmailAddress(input.replyTo) ?? undefined)
 						: undefined,
 					headers: providerHeaders,
+					attachments,
 				})
 		await updateEmailMessageDelivery({
 			db: input.env.APP_DB,
