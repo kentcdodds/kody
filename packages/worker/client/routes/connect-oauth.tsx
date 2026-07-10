@@ -8,6 +8,7 @@ import {
 } from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import {
 	buildHostApprovalRequestUrl,
 	submitApprovalRequest,
@@ -1039,9 +1040,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
-							autoComplete="off"
-							data-1p-ignore
-							data-lpignore="true"
+							{...passwordManagerIgnoreProps}
 							mix={[
 								on('submit', handleSetupSubmit),
 								css({ display: 'grid', gap: spacing.md }),
@@ -1052,9 +1051,7 @@ export function ConnectOauthRoute(handle: Handle) {
 								<input
 									name="oauthClientId"
 									required
-									autoComplete="off"
-									data-1p-ignore
-									data-lpignore="true"
+									{...passwordManagerIgnoreProps}
 									value={clientIdInput}
 									mix={[
 										on(
@@ -1111,9 +1108,7 @@ export function ConnectOauthRoute(handle: Handle) {
 											name="oauthClientSecret"
 											type="password"
 											required
-											autoComplete="off"
-											data-1p-ignore
-											data-lpignore="true"
+											{...passwordManagerIgnoreProps}
 											value={clientSecretInput}
 											mix={[
 												on(

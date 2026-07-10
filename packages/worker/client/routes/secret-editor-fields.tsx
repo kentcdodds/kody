@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { colors, mq, spacing } from '#client/styles/tokens.ts'
 import {
 	fieldCss,
@@ -72,9 +73,7 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							<input
 								type="text"
 								required
-								autoComplete="off"
-								data-1p-ignore
-								data-lpignore="true"
+								{...passwordManagerIgnoreProps}
 								value={props.value}
 								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
 								mix={[
@@ -96,9 +95,7 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							<input
 								type="password"
 								required
-								autoComplete="off"
-								data-1p-ignore
-								data-lpignore="true"
+								{...passwordManagerIgnoreProps}
 								value={props.value}
 								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
 								mix={[

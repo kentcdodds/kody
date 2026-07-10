@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -123,6 +124,7 @@ export function ResetPasswordRoute(handle: Handle) {
 					<p mix={css(pageDescriptionCss)}>{description}</p>
 				</header>
 				<form
+					{...passwordManagerIgnoreProps}
 					mix={[
 						css(cardCss),
 						on(
@@ -142,7 +144,7 @@ export function ResetPasswordRoute(handle: Handle) {
 								type="password"
 								name="password"
 								required
-								autoComplete="new-password"
+								{...passwordManagerIgnoreProps}
 								placeholder="At least 8 characters"
 								disabled={isSubmitting}
 								mix={css(inputCss)}
