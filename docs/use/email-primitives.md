@@ -195,7 +195,10 @@ The payload is the same metadata-first envelope as `email.message.received`
 (with `event: 'email.system-message.received'`), plus one extra field:
 
 ```ts
-type SystemEmailMessageReceivedEvent = EmailMessageReceivedEvent & {
+type SystemEmailMessageReceivedEvent = Omit<
+	EmailMessageReceivedEvent,
+	'event'
+> & {
 	event: 'email.system-message.received'
 	/** Link to the stored message in the admin interface. */
 	admin_url: string

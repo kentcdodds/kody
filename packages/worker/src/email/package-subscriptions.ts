@@ -202,10 +202,25 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 
 async function listAdminStableUserIds(db: D1Database) {
 	const rows = await listAdminAccountRows(db)
-	const stableIds = await Promise.all(
+	// One unresolvable admin row (for example corrupt account data) must not
+	// block dispatch to the remaining admins.
+	const settled = await Promise.allSettled(
 		rows.map(async (row) => await resolveUserStableId(row)),
 	)
-	return Array.from(new Set(stableIds))
+	const stableIds = new Set<string>()
+	for (const result of settled) {
+		if (result.status === 'fulfilled' && result.value) {
+			stableIds.add(result.value)
+			continue
+		}
+		if (result.status === 'rejected') {
+			console.warn(
+				'Failed to resolve admin stable user id for system email dispatch',
+				result.reason,
+			)
+		}
+	}
+	return Array.from(stableIds)
 }
 
 /**
