@@ -2275,7 +2275,7 @@ test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helpe
 		expect(wrappedSource).not.toContain('IntegrationHostNotAllowedError')
 		expect(wrappedSource).not.toContain('__kodyRefreshAccessToken')
 		expect(wrappedSource).toContain(
-			'typeof refreshAccessToken === \'undefined\' ? undefined : refreshAccessToken',
+			"typeof refreshAccessToken === 'undefined' ? undefined : refreshAccessToken",
 		)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
