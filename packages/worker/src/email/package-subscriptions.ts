@@ -43,11 +43,12 @@ type EmailReceiptSubscriptionEnvelope = {
 	}>
 }
 
-type SystemEmailReceiptSubscriptionEnvelope = EmailReceiptSubscriptionEnvelope & {
-	event: typeof systemInboundEmailReceiptTopic
-	/** Admin-interface link for the stored system message. */
-	admin_url: string
-}
+type SystemEmailReceiptSubscriptionEnvelope =
+	EmailReceiptSubscriptionEnvelope & {
+		event: typeof systemInboundEmailReceiptTopic
+		/** Admin-interface link for the stored system message. */
+		admin_url: string
+	}
 
 type LoadedEmailSubscription = {
 	savedPackage: SavedPackageRecord

@@ -323,8 +323,8 @@ bodies or attachment bytes only when needed with `email_message_get`,
 `email_attachment_get`, or the `email` helper from `kody:runtime`. Operator
 system-inbox mail dispatches the separate `email.system-message.received` topic
 to packages saved by admin users; its payload adds an `admin_url` link to the
-message in the admin interface. See
-[Email primitives](./email-primitives.md) for the full payload shapes.
+message in the admin interface. See [Email primitives](./email-primitives.md)
+for the full payload shapes.
 
 ## Package-owned jobs
 

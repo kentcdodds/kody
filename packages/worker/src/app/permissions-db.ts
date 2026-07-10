@@ -79,9 +79,7 @@ export async function listAdminAccountRows(
 		if (!isMissingStableUserIdColumnError(error)) throw error
 	}
 	try {
-		const result = await db
-			.prepare(select('u.email'))
-			.all<{ email: string }>()
+		const result = await db.prepare(select('u.email')).all<{ email: string }>()
 		return result.results ?? []
 	} catch (error) {
 		if (isMissingRbacTableError(error)) return []

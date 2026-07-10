@@ -261,8 +261,8 @@ Operator system-inbox mail (`system:email` owner) dispatches the separate
 `email.system-message.received` topic to packages saved by users who hold the
 admin role at dispatch time. The payload is the same metadata-first envelope
 plus an `admin_url` link to the message in `/admin/system-email`. Handlers run
-as the admin package owner (not the system owner), so user-scoped email reads
-do not apply to the system message.
+as the admin package owner (not the system owner), so user-scoped email reads do
+not apply to the system message.
 
 ## Package-owned workflows
 

@@ -203,10 +203,10 @@ type SystemEmailMessageReceivedEvent = EmailMessageReceivedEvent & {
 ```
 
 Handlers run as the admin package owner, not the system owner, so the
-user-scoped email capabilities and the `kody:runtime` `email` helper cannot
-read the system message. Use the metadata for routing and notifications (for
-example a Discord report), and follow `admin_url` (or the admin
-`admin_system_email_get` capability) for full contents.
+user-scoped email capabilities and the `kody:runtime` `email` helper cannot read
+the system message. Use the metadata for routing and notifications (for example
+a Discord report), and follow `admin_url` (or the admin `admin_system_email_get`
+capability) for full contents.
 
 ## Local inbound testing
 
