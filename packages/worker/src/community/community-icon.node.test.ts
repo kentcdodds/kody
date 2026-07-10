@@ -9,6 +9,7 @@ import { type CommunityListingRecord } from './types.ts'
 const mocks = vi.hoisted(() => ({
 	readArtifactFileAtCommit: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	getCommunityListingById: vi.fn(),
 	readCommunitySnapshot: vi.fn(),
 }))
 
@@ -20,6 +21,11 @@ vi.mock('#worker/repo/artifact-file.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mocks.getEntitySourceById(...args),
+}))
+
+vi.mock('./repo.ts', () => ({
+	getCommunityListingById: (...args: Array<unknown>) =>
+		mocks.getCommunityListingById(...args),
 }))
 
 vi.mock('./snapshot.ts', () => ({
@@ -192,7 +198,7 @@ test('community raster icon formats are validated and preserved', async () => {
 
 test('community icon descriptor caches the R2 reference and repairs a dangling reference', async () => {
 	const png = createPngHeader(128, 128)
-	const { kv } = createFakeKv()
+	const { kv, values: kvValues } = createFakeKv()
 	const { bucket, values } = createFakeR2()
 	const env = {
 		APP_DB: {} as D1Database,
@@ -221,6 +227,7 @@ test('community icon descriptor caches the R2 reference and repairs a dangling r
 		created_at: '2026-07-10T00:00:00.000Z',
 		updated_at: '2026-07-10T00:00:00.000Z',
 	})
+	mocks.getCommunityListingById.mockResolvedValue(listing)
 	mocks.readArtifactFileAtCommit.mockResolvedValue(png)
 
 	const first = await getCommunityIconObject({ env, listing })
@@ -233,6 +240,15 @@ test('community icon descriptor caches the R2 reference and repairs a dangling r
 	const repaired = await getCommunityIconObject({ env, listing })
 	expect(repaired.descriptor.r2Key).toBe(first.descriptor.r2Key)
 	expect(mocks.readArtifactFileAtCommit).toHaveBeenCalledTimes(2)
+
+	values.clear()
+	kvValues.clear()
+	mocks.getCommunityListingById.mockReset()
+	mocks.getCommunityListingById
+		.mockResolvedValueOnce(listing)
+		.mockResolvedValueOnce(null)
+	await getCommunityIconObject({ env, listing })
+	expect(kvValues.size).toBe(0)
 })
 
 test('community icon path selection is deterministic', () => {

@@ -369,6 +369,9 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 		expect.anything(),
 		'listing-1',
 	)
+	expect(
+		mockModule.deleteCommunityListing.mock.invocationCallOrder[0],
+	).toBeLessThan(testCommunityAssets.delete.mock.invocationCallOrder[0] ?? 0)
 })
 
 test('forkCommunityListing rejects banned users', async () => {
@@ -495,6 +498,7 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 			...validPublishSource().files,
 			'README.md': `${padding}\n\n## Intent\n\nBridge Discord events.`,
 			'community-icon.png': 'binary bytes decoded as text',
+			'community-icon.jpg': 'extra binary bytes decoded as text',
 		},
 	})
 	mockModule.insertCommunityListing.mockResolvedValue(undefined)
@@ -520,8 +524,32 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 			communityIconPath: 'community-icon.png',
 			files: expect.not.objectContaining({
 				'community-icon.png': expect.anything(),
+				'community-icon.jpg': expect.anything(),
 			}),
 		}),
+	)
+})
+
+test('publishCommunityListing invalidates same-commit icon fallbacks after metadata updates', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing(),
+	)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(testCommunityAssets.delete).toHaveBeenCalledWith(
+		'community-icon:v1/listing-1/commit-1/asset',
 	)
 })
 

@@ -4,6 +4,7 @@ import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { ensureRenderPipelineReady } from '#worker/og/render.ts'
 import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getCommunityListingById } from './repo.ts'
 import { readCommunitySnapshot } from './snapshot.ts'
 import { type CommunityListingRecord } from './types.ts'
 
@@ -67,7 +68,15 @@ export async function getCommunityIconObject(input: {
 	descriptor: CommunityIconDescriptor
 	object: R2ObjectBody
 }> {
-	const cache = createKvCachifiedCache(input.env.BUNDLE_ARTIFACTS_KV)
+	const baseCache = createKvCachifiedCache(input.env.BUNDLE_ARTIFACTS_KV)
+	const cache = {
+		...baseCache,
+		async set(key: string, entry: Parameters<typeof baseCache.set>[1]) {
+			if (await isCurrentActiveListing(input.env.APP_DB, input.listing)) {
+				await baseCache.set(key, entry)
+			}
+		},
+	}
 	const key = buildCommunityIconCacheKey({
 		listingId: input.listing.id,
 		pinnedCommit: input.listing.pinnedCommit,
@@ -186,6 +195,12 @@ async function createCommunityIconDescriptor(input: {
 			sourcePath: sourcePath ?? '',
 		},
 	})
+	if (!(await isCurrentActiveListing(input.env.APP_DB, input.listing))) {
+		await input.env.COMMUNITY_ASSETS.delete(r2Key)
+		throw new Error(
+			`Community listing "${input.listing.id}" was removed while its icon was generated.`,
+		)
+	}
 	return {
 		version: communityIconVersion,
 		listingId: input.listing.id,
@@ -195,6 +210,22 @@ async function createCommunityIconDescriptor(input: {
 		sourcePath,
 		byteLength: processed.bytes.byteLength,
 	}
+}
+
+async function isCurrentActiveListing(
+	db: D1Database,
+	listing: CommunityListingRecord,
+) {
+	const current = await getCommunityListingById(db, {
+		listingId: listing.id,
+		includeDelisted: false,
+	})
+	return (
+		current?.ownerUserId === listing.ownerUserId &&
+		current.packageId === listing.packageId &&
+		current.sourceId === listing.sourceId &&
+		current.pinnedCommit === listing.pinnedCommit
+	)
 }
 
 export async function processCommunityIcon(input: {

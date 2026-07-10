@@ -54,6 +54,7 @@ import {
 	writeCommunitySnapshot,
 } from './snapshot.ts'
 import {
+	communityIconPaths,
 	deleteCommunityIconAsset,
 	findCommunityIconPath,
 } from './community-icon.ts'
@@ -343,11 +344,12 @@ export async function publishCommunityListing(input: {
 	const tagsJson = JSON.stringify(savedPackage.tags)
 	const communityIconPath = findCommunityIconPath(loadedSource.files)
 	const snapshotFiles = { ...loadedSource.files }
-	if (communityIconPath && communityIconPath !== 'community-icon.svg') {
-		// Package source snapshots are text-backed. Keep the binary icon's path as
-		// metadata for public artifact reads, but do not put corrupted UTF-8 bytes
-		// into community forks.
-		delete snapshotFiles[communityIconPath]
+	for (const iconPath of communityIconPaths) {
+		if (iconPath === 'community-icon.svg') continue
+		// Package source snapshots are text-backed. Keep the selected binary
+		// icon's path as metadata for public artifact reads, but do not put any
+		// corrupted UTF-8 raster bytes into community forks.
+		delete snapshotFiles[iconPath]
 	}
 	const snapshot = {
 		version: 1 as const,
@@ -431,7 +433,7 @@ export async function publishCommunityListing(input: {
 		}
 		throw snapshotError
 	}
-	if (existingListing && existingListing.pinnedCommit !== publishedCommit) {
+	if (existingListing) {
 		await deleteCommunityIconAsset({
 			env: input.env,
 			listingId,
@@ -474,11 +476,6 @@ export async function unpublishCommunityListing(input: {
 		)
 	}
 
-	await deleteCommunityIconAsset({
-		env: input.env,
-		listingId: listing.id,
-		pinnedCommit: listing.pinnedCommit,
-	})
 	const deleted = await deleteCommunityListing(input.env.APP_DB, {
 		listingId: input.listingId,
 		ownerUserId: input.userId,
@@ -487,6 +484,11 @@ export async function unpublishCommunityListing(input: {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
 
+	await deleteCommunityIconAsset({
+		env: input.env,
+		listingId: listing.id,
+		pinnedCommit: listing.pinnedCommit,
+	})
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 	invalidateCommunityPublicCache()
@@ -879,13 +881,6 @@ export async function resolveCommunityReport(input: {
 				listingId: report.listingId,
 				includeDelisted: true,
 			})
-			if (listing) {
-				await deleteCommunityIconAsset({
-					env: input.env,
-					listingId: listing.id,
-					pinnedCommit: listing.pinnedCommit,
-				})
-			}
 			const deleted = await deleteCommunityListing(input.env.APP_DB, {
 				listingId: report.listingId,
 			})
@@ -894,6 +889,13 @@ export async function resolveCommunityReport(input: {
 					`Community listing "${report.listingId}" was already deleted during report resolution.`,
 				)
 			} else {
+				if (listing) {
+					await deleteCommunityIconAsset({
+						env: input.env,
+						listingId: listing.id,
+						pinnedCommit: listing.pinnedCommit,
+					})
+				}
 				await deleteCommunityRatingsByListingId(
 					input.env.APP_DB,
 					report.listingId,
