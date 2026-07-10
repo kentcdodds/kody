@@ -23,11 +23,35 @@ Requirements:
   permissive licensing only; MIT is the only accepted value.
 - **`package.json#private`** must not be `true`. Like npm, `"private": true`
   blocks public community publishing; set `"private": false` or remove `private`
-  only after the user explicitly approves public sharing.
+  only after the user explicitly approves public sharing. Note that
+  `package_save` always creates **new** packages as `"private": true` when the
+  manifest omits `private` — even when `confirm_private_visibility_change` is
+  true, because that flag only confirms an explicit manifest state. To create a
+  community-publishable package, send `"private": false` explicitly along with
+  the confirmation. Removing `private` (with confirmation) works when
+  **updating** an existing package.
 - A root **`README.md`** with a **`## Intent`** section (same guidance as
   [Packages](./packages.md#save-and-edit-packages)).
 - A **published** saved package commit. Publishing creates a **pinned snapshot**
   of the files at that commit.
+
+### Community icon
+
+Add one optional icon at the package root:
+
+- `community-icon.svg`
+- `community-icon.png`
+- `community-icon.webp`
+- `community-icon.jpg` or `community-icon.jpeg`
+
+The first file in that order wins when more than one exists. Icons must be at
+most 2 MiB, 4096 pixels per side, and 16 megapixels total. Kody rasterizes SVG
+icons to PNG before serving them; PNG, WebP, and JPEG files are validated and
+served in their original format. Packages without an icon receive a generated
+visual based on the package name.
+
+Icon URLs are pinned to the same published commit as the listing. Re-publish the
+saved package and then re-run `community_publish` to update its icon.
 
 Re-running `community_publish` updates the public listing to the package's
 current published commit. Private edits after publishing do not change the

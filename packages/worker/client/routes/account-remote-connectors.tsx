@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import toggle from 'remix/ui/toggle'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -639,6 +640,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 						<form
 							method="post"
 							noValidate
+							{...passwordManagerIgnoreProps}
 							mix={[
 								on('submit', (event) => {
 									event.preventDefault()
@@ -745,7 +747,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												type="text"
 												value={editorState.sharedSecret}
 												placeholder="Connector hello shared secret"
-												autoComplete="off"
+												{...passwordManagerIgnoreProps}
 												disabled={isMutating}
 												mix={[
 													on('input', (event) => {
@@ -765,7 +767,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 												type="password"
 												value={editorState.sharedSecret}
 												placeholder="Connector hello shared secret"
-												autoComplete="off"
+												{...passwordManagerIgnoreProps}
 												disabled={isMutating}
 												mix={[
 													on('input', (event) => {

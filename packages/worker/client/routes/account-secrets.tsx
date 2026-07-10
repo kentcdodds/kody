@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import {
 	buildAccountSecretPath,
 	parseAccountSecretPath,
@@ -1485,6 +1486,7 @@ export function AccountSecretsRoute(handle: Handle) {
 					>
 						{showEditor ? (
 							<form
+								{...passwordManagerIgnoreProps}
 								mix={[
 									css({ display: 'grid', gap: spacing.lg }),
 									on('submit', saveSecretChanges),

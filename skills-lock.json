@@ -1,6 +1,12 @@
 {
 	"version": 1,
 	"skills": {
+		"orchistrate": {
+			"source": "kentcdodds/kcd-skills",
+			"sourceType": "github",
+			"skillPath": "skills/orchistrate/SKILL.md",
+			"computedHash": "b6c6125d9820c91d202eff051bf9eb3af7f4efab62c9f6211deb7a93422dd8f0"
+		},
 		"ship-pr": {
 			"source": "kentcdodds/kcd-skills",
 			"sourceType": "github",

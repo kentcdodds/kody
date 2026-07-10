@@ -163,11 +163,14 @@ function createTestDb(initial: RowMap): {
 							}
 							if (
 								lower ===
-								'select id from community_listings where owner_user_id = ?'
+								'select id, pinned_commit from community_listings where owner_user_id = ?'
 							) {
 								results = (rows.community_listings ?? [])
 									.filter((row) => row['owner_user_id'] === userId)
-									.map((row) => ({ id: row['id'] }))
+									.map((row) => ({
+										id: row['id'],
+										pinned_commit: row['pinned_commit'],
+									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							const m = lower.match(/^select id from (\w+) where user_id = \?/)
@@ -588,8 +591,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 		],
 		community_listings: [
-			{ id: 'listing-1', owner_user_id: userAaa },
-			{ id: 'listing-2', owner_user_id: userBbb },
+			{ id: 'listing-1', owner_user_id: userAaa, pinned_commit: 'commit-1' },
+			{ id: 'listing-2', owner_user_id: userBbb, pinned_commit: 'commit-2' },
 		],
 		community_forks: [
 			{ id: 'fork-1', listing_id: 'listing-1', forker_user_id: userBbb },
@@ -664,6 +667,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			deletedEmailBlobKeys.push(key)
 		},
 	} as unknown as R2Bucket
+	const deletedCommunityAssetKeys: Array<string> = []
+	const communityAssets = {
+		async delete(key: string) {
+			deletedCommunityAssetKeys.push(key)
+		},
+	} as unknown as R2Bucket
 
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
@@ -675,6 +684,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const env = {
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: kv,
+		COMMUNITY_ASSETS: communityAssets,
 		EMAIL_BLOBS: emailBlobs,
 		CAPABILITY_VECTOR_INDEX: {
 			deleteByIds: deleteVectorsMock,
@@ -782,7 +792,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{ id: 'log-2', run_id: 'run-3', user_id: userBbb, package_id: 'pkg-2' },
 	])
 	expect(rows.community_listings).toEqual([
-		{ id: 'listing-2', owner_user_id: userBbb },
+		{ id: 'listing-2', owner_user_id: userBbb, pinned_commit: 'commit-2' },
 	])
 	expect(rows.community_forks).toEqual([
 		{ id: 'fork-3', listing_id: 'listing-2', forker_user_id: userBbb },
@@ -834,6 +844,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedKvKeys.sort()).toEqual([
 		'bundle-artifact:v1:src-1',
 		'community-snapshot:v1:listing-1',
+		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index:v1:user-aaa:context',
@@ -858,8 +869,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_reports).toBe(1)
 	expect(result.deletedRowCounts.community_bans).toBe(1)
 	expect(result.updatedRowCounts.community_bans).toBe(1)
-	expect(result.deletedKvKeys).toBe(11)
+	expect(result.deletedKvKeys).toBe(12)
+	expect(result.deletedCommunityAssets).toBe(1)
 	expect(result.deletedEmailBlobs).toBe(1)
+	expect(deletedCommunityAssetKeys).toEqual([
+		'community-icon:v1/listing-1/commit-1/asset',
+	])
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,

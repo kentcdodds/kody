@@ -7,6 +7,7 @@ import {
 	formatCommunityAdaptationEffort,
 	formatCommunityStars,
 } from '#app/community-display.ts'
+import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
 import {
 	colors,
 	mq,
@@ -38,23 +39,27 @@ export function CommunityListingsContent(
 				<div mix={css(listingGridCss)}>
 					{listings.map((listing) => (
 						<article key={listing.id} mix={css(cardCss)}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
-							>
-								<a
-									href={`/community/${listing.id}`}
+							<div mix={css(listingHeadingCss)}>
+								<CommunityListingIcon listing={listing} size="card" />
+								<h2
 									mix={css({
-										color: colors.primaryText,
-										textDecoration: 'none',
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
 									})}
 								>
-									{listing.name}
-								</a>
-							</h2>
+									<a
+										href={`/community/${listing.id}`}
+										mix={css({
+											color: colors.primaryText,
+											textDecoration: 'none',
+											overflowWrap: 'anywhere',
+										})}
+									>
+										{listing.name}
+									</a>
+								</h2>
+							</div>
 							<p
 								mix={css(descriptionCss)}
 								data-testid={`community-listing-description-${listing.id}`}
@@ -116,6 +121,12 @@ const listingGridCss = {
 	[mq.mobile]: {
 		gridTemplateColumns: '1fr',
 	},
+}
+
+const listingHeadingCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.md,
 }
 
 const tagListCss = {

@@ -421,6 +421,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId,
 	oauthKvId,
 	bundleArtifactsKvId,
+	communityAssetsBucketName,
 	emailBlobsBucketName,
 	workerVars,
 	extraMigrations,
@@ -433,6 +434,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId: string
 	oauthKvId: string
 	bundleArtifactsKvId: string
+	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 	workerVars?: Record<string, string | undefined>
 	extraMigrations?: Array<WranglerMigration>
@@ -541,6 +543,25 @@ export async function writeGeneratedWranglerConfig({
 		fail(
 			`wrangler config "${baseConfigPath}" is missing "env.${envName}.r2_buckets".`,
 		)
+	}
+
+	const communityAssetsEntryIndex = r2Buckets.findIndex((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === 'COMMUNITY_ASSETS'
+	})
+	if (communityAssetsEntryIndex < 0) {
+		fail(
+			`wrangler config "${baseConfigPath}" has no ${envName} R2 binding for "COMMUNITY_ASSETS".`,
+		)
+	}
+
+	const communityAssetsEntry = r2Buckets[communityAssetsEntryIndex] as Record<
+		string,
+		unknown
+	>
+	r2Buckets[communityAssetsEntryIndex] = {
+		...communityAssetsEntry,
+		bucket_name: communityAssetsBucketName,
 	}
 
 	const emailBlobsEntryIndex = r2Buckets.findIndex((entry) => {

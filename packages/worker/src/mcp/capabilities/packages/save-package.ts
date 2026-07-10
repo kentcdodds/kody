@@ -76,11 +76,20 @@ function normalizeFiles(files: Array<z.infer<typeof packageFileSchema>>) {
 	return next
 }
 
+export function buildPackageSaveNextSteps(kodyId: string) {
+	return [
+		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
+		`call package_get_git_remote({ kody_id: ${JSON.stringify(kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with package_publish_external_push.`,
+		'Binary assets and multi-file refactors are only supported through that git lane.',
+		'Tool-only agents without local git can continue with package_save or repo sessions.',
+	].join(' ')
+}
+
 export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_save',
-		description: `Create or replace a saved package by writing a complete package file set. Prefer package_get_git_remote or repo sessions for iterative edits. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
+		description: `Create or replace a saved package by writing a complete UTF-8 text file set (no binary assets). Coding agents with local filesystem/git access should prefer package_get_git_remote (pass create: true for new packages) to clone, edit, push, and publish with package_publish_external_push; tool-only agents use package_save or repo sessions. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
 		keywords: [
 			'package',
 			'save',
@@ -95,7 +104,13 @@ export const savePackageCapability = defineDomainCapability(
 		idempotent: false,
 		destructive: true,
 		inputSchema,
-		outputSchema: packageSummarySchema,
+		outputSchema: packageSummarySchema.extend({
+			next_steps: z
+				.string()
+				.describe(
+					'Follow-up guidance for continuing package work, including the git clone-edit-push lane for coding agents.',
+				),
+		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			let files = normalizeFiles(args.files)
@@ -235,6 +250,7 @@ export const savePackageCapability = defineDomainCapability(
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
+				next_steps: buildPackageSaveNextSteps(saved.kodyId),
 			}
 		},
 	},

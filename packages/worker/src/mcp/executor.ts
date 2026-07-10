@@ -429,15 +429,51 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
 }
 
+// Keep only fields the sandbox proxy reads so inlined executor scripts stay
+// smaller and volatile status prose does not churn the stable worker-ID hash.
+function projectKodyRemoteProxyMetadata(
+	entries: ReadonlyArray<{
+		name: string
+		status: {
+			connected: boolean
+			toolCount: number
+			unavailableMessage: string
+		}
+		capabilities: ReadonlyArray<{
+			name: string
+			dispatchName: string
+		}>
+	}>,
+) {
+	return entries.map((entry) => ({
+		name: entry.name,
+		status: {
+			connected: entry.status.connected,
+			toolCount: entry.status.toolCount,
+			unavailableMessage: entry.status.unavailableMessage,
+		},
+		capabilities: entry.capabilities.map((capability) => ({
+			name: capability.name,
+			dispatchName: capability.dispatchName,
+		})),
+	}))
+}
+
 export function createKodyProviderProxySource(input: {
 	providerName: string
 	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	mcpServers?: Array<KodyMcpServerMetadata>
 	openApiProviders?: Array<KodyOpenApiProviderMetadata>
 }) {
-	const metadataJson = JSON.stringify(input.remoteConnectors)
-	const mcpMetadataJson = JSON.stringify(input.mcpServers ?? [])
-	const openApiMetadataJson = JSON.stringify(input.openApiProviders ?? [])
+	const metadataJson = JSON.stringify(
+		projectKodyRemoteProxyMetadata(input.remoteConnectors),
+	)
+	const mcpMetadataJson = JSON.stringify(
+		projectKodyRemoteProxyMetadata(input.mcpServers ?? []),
+	)
+	const openApiMetadataJson = JSON.stringify(
+		projectKodyRemoteProxyMetadata(input.openApiProviders ?? []),
+	)
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
     const __kodyCallDispatcher = async (dispatchName, args) => {
       const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
@@ -783,6 +819,14 @@ export type ExecutionErrorDetails =
 				resource: EntitlementLimitErrorDetails['resource']
 			}
 	  }
+	| {
+			kind: 'sandbox_runtime_stale'
+			message: string
+			nextStep: string
+			suggestedAction: {
+				type: 'report_bug'
+			}
+	  }
 
 export function getExecutionErrorDetails(
 	error: unknown,
@@ -918,6 +962,18 @@ export function getExecutionErrorDetails(
 		}
 	}
 
+	if (isDisposedRpcStubMessage(message)) {
+		return {
+			kind: 'sandbox_runtime_stale',
+			message,
+			nextStep:
+				'The sandbox reused an RPC stub from an earlier execution, which is a Kody runtime lifecycle bug — retrying the identical call will hit the same cached sandbox worker. Re-run the execute call with a trivially different module (for example, add a comment) so a fresh sandbox is created, and report this error.',
+			suggestedAction: {
+				type: 'report_bug',
+			},
+		}
+	}
+
 	const missingRuntimeExport = parseMissingRuntimeExportMessage(message)
 	if (missingRuntimeExport) {
 		return {
@@ -956,6 +1012,17 @@ const kodyRuntimeExportNames = new Set([
 	'packages',
 	'events',
 ])
+
+/**
+ * workerd throws this when an RPC stub outlives the execution context that
+ * created it (stubs passed as RPC parameters are implicitly disposed when the
+ * call returns; everything else when the I/O context is destroyed). In the
+ * execute pipeline this indicates per-run state leaked into a cached dynamic
+ * worker, so surface a structured hint instead of a bare error string.
+ */
+function isDisposedRpcStubMessage(message: string) {
+	return message.includes('RPC stub used after being disposed')
+}
 
 function parseMissingRuntimeExportMessage(message: string) {
 	const match = /^(?:ReferenceError: )?(\w+) is not defined\b/.exec(message)

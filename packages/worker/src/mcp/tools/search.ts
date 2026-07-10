@@ -1626,9 +1626,12 @@ does not fix an empty ranked list.
 exact \`execute\` module snippet plus TypeScript call-shape definitions by
 default.
 
-Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
-For package creation or material updates, load \`coding_guide_get\` with
-\`guide: "package_authoring"\` and maintain a root README.md Intent section.
+Packages: \`package_list\` and \`package_get\` to inspect. Coding agents with
+local filesystem/git access author via \`package_get_git_remote\`
+(\`create: true\` for new packages) + clone-edit-push +
+\`package_publish_external_push\`; tool-only agents use \`package_save\` and
+\`repo_*\`. For package creation or material updates, load \`coding_guide_get\`
+with \`guide: "package_authoring"\` and maintain a root README.md Intent section.
 Open package apps through their hosted package URLs.
 Secrets: results expose metadata; use \`kody.secret_list\` during execute,
 \`/account/secrets/new\` for API key/PAT entry and rotation, and

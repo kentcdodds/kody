@@ -54,6 +54,11 @@ import {
 	writeCommunitySnapshot,
 } from './snapshot.ts'
 import {
+	communityIconPaths,
+	deleteCommunityIconAsset,
+	findCommunityIconPath,
+} from './community-icon.ts'
+import {
 	type CommunityListingRecord,
 	type CommunityListingWithAggregates,
 	type CommunityReportRecord,
@@ -78,6 +83,25 @@ export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 // pre-filter) but not through unfiltered browse pagination. Revisit with
 // a materialized score column if the catalog ever approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
+
+async function deleteCommunityIconAssetBestEffort(input: {
+	env: Env
+	listingId: string
+	pinnedCommit: string
+	reason: 'republish' | 'unpublish' | 'hard-delete'
+}) {
+	try {
+		await deleteCommunityIconAsset(input)
+	} catch (error) {
+		console.error(
+			'community-icon-delete-failed',
+			input.reason,
+			input.listingId,
+			input.pinnedCommit,
+			error,
+		)
+	}
+}
 
 export function isCommunityListingSearchMatch(input: {
 	query: string
@@ -337,11 +361,21 @@ export async function publishCommunityListing(input: {
 	const now = new Date().toISOString()
 	const listingId = existingListing?.id ?? crypto.randomUUID()
 	const tagsJson = JSON.stringify(savedPackage.tags)
+	const communityIconPath = findCommunityIconPath(loadedSource.files)
+	const snapshotFiles = { ...loadedSource.files }
+	for (const iconPath of communityIconPaths) {
+		if (iconPath === 'community-icon.svg') continue
+		// Package source snapshots are text-backed. Keep the selected binary
+		// icon's path as metadata for public artifact reads, but do not put any
+		// corrupted UTF-8 raster bytes into community forks.
+		delete snapshotFiles[iconPath]
+	}
 	const snapshot = {
 		version: 1 as const,
 		listingId,
 		pinnedCommit: publishedCommit,
-		files: loadedSource.files,
+		files: snapshotFiles,
+		communityIconPath,
 		createdAt: now,
 	}
 
@@ -418,6 +452,19 @@ export async function publishCommunityListing(input: {
 		}
 		throw snapshotError
 	}
+	if (existingListing) {
+		for (const pinnedCommit of new Set([
+			existingListing.pinnedCommit,
+			publishedCommit,
+		])) {
+			await deleteCommunityIconAssetBestEffort({
+				env: input.env,
+				listingId,
+				pinnedCommit,
+				reason: 'republish',
+			})
+		}
+	}
 
 	const listing = await getCommunityListingById(input.env.APP_DB, {
 		listingId,
@@ -456,6 +503,12 @@ export async function unpublishCommunityListing(input: {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
 
+	await deleteCommunityIconAssetBestEffort({
+		env: input.env,
+		listingId: listing.id,
+		pinnedCommit: listing.pinnedCommit,
+		reason: 'unpublish',
+	})
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 	invalidateCommunityPublicCache()
@@ -841,9 +894,13 @@ export async function resolveCommunityReport(input: {
 			return
 		}
 		case 'delete': {
-			// Hard delete removes listing metadata, ratings, and KV snapshot only.
+			// Hard delete removes listing metadata, ratings, snapshot, and icon.
 			// Fork rows are preserved for provenance and the rate-after-fork gate;
 			// report rows stay denormalized so moderation history survives deletion.
+			const listing = await getCommunityListingById(input.env.APP_DB, {
+				listingId: report.listingId,
+				includeDelisted: true,
+			})
 			const deleted = await deleteCommunityListing(input.env.APP_DB, {
 				listingId: report.listingId,
 			})
@@ -852,6 +909,14 @@ export async function resolveCommunityReport(input: {
 					`Community listing "${report.listingId}" was already deleted during report resolution.`,
 				)
 			} else {
+				if (listing) {
+					await deleteCommunityIconAssetBestEffort({
+						env: input.env,
+						listingId: listing.id,
+						pinnedCommit: listing.pinnedCommit,
+						reason: 'hard-delete',
+					})
+				}
 				await deleteCommunityRatingsByListingId(
 					input.env.APP_DB,
 					report.listingId,

@@ -129,13 +129,20 @@ const {
 	reportCommunityListing,
 	searchCommunityListings,
 	forkCommunityListing,
-	resolveCommunityReport,
 } = await import('./service.ts')
+
+const testBundleArtifactsKv = {
+	delete: vi.fn(async () => undefined),
+} as unknown as KVNamespace
+const testCommunityAssets = {
+	delete: vi.fn(async () => undefined),
+} as unknown as R2Bucket
 
 function createEnv() {
 	return {
 		APP_DB: {} as D1Database,
-		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+		BUNDLE_ARTIFACTS_KV: testBundleArtifactsKv,
+		COMMUNITY_ASSETS: testCommunityAssets,
 	} as Env
 }
 
@@ -340,6 +347,8 @@ test('unpublishCommunityListing refuses delisted listings without deleting anyth
 test('unpublishCommunityListing deletes active listings and cascades cleanup', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.deleteCommunityListing.mockResolvedValue(true)
+	testCommunityAssets.delete.mockRejectedValue(new Error('r2 unavailable'))
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
 	await unpublishCommunityListing({
 		env: createEnv(),
@@ -362,6 +371,17 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 		expect.anything(),
 		'listing-1',
 	)
+	expect(
+		mockModule.deleteCommunityListing.mock.invocationCallOrder[0],
+	).toBeLessThan(testCommunityAssets.delete.mock.invocationCallOrder[0] ?? 0)
+	expect(consoleError).toHaveBeenCalledWith(
+		'community-icon-delete-failed',
+		'unpublish',
+		'listing-1',
+		'commit-1',
+		expect.any(Error),
+	)
+	consoleError.mockRestore()
 })
 
 test('forkCommunityListing rejects banned users', async () => {
@@ -487,6 +507,8 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 		files: {
 			...validPublishSource().files,
 			'README.md': `${padding}\n\n## Intent\n\nBridge Discord events.`,
+			'community-icon.png': 'binary bytes decoded as text',
+			'community-icon.jpg': 'extra binary bytes decoded as text',
 		},
 	})
 	mockModule.insertCommunityListing.mockResolvedValue(undefined)
@@ -505,6 +527,46 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 		expect.objectContaining({
 			readme_content: expect.stringMatching(/…$/),
 		}),
+	)
+	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			communityIconPath: 'community-icon.png',
+			files: expect.not.objectContaining({
+				'community-icon.png': expect.anything(),
+				'community-icon.jpg': expect.anything(),
+			}),
+		}),
+	)
+})
+
+test('publishCommunityListing invalidates old and reused icon revisions', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing(),
+	)
+	const republishedSource = validPublishSource()
+	republishedSource.source.published_commit = 'commit-2'
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({ pinnedCommit: 'commit-2' }),
+	)
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(testCommunityAssets.delete).toHaveBeenCalledWith(
+		'community-icon:v1/listing-1/commit-1/asset',
+	)
+	expect(testCommunityAssets.delete).toHaveBeenCalledWith(
+		'community-icon:v1/listing-1/commit-2/asset',
 	)
 })
 

@@ -58,5 +58,7 @@ test('community page handler returns bare listings frame HTML for target header'
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	expect(html).toContain('data-testid="community-listings-frame"')
 	expect(html).toContain('@kentcdodds/github-triage')
+	expect(html).toContain('data-testid="community-listing-icon-card"')
+	expect(html).toContain('/community/listing-1/icon/abc1234567890')
 	expect(html).not.toContain('<html')
 })

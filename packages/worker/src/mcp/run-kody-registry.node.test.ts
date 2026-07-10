@@ -2235,3 +2235,150 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 		recordUsageSpy.mockRestore()
 	}
 })
+
+test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helper capabilities are absent', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	let wrappedSource = ''
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped) {
+				wrappedSource = String(wrapped)
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+			},
+		)
+		expect(result.result).toBe('ok')
+		expect(wrappedSource).not.toContain('IntegrationHostNotAllowedError')
+		expect(wrappedSource).not.toContain('__kodyRefreshAccessToken')
+		expect(wrappedSource).toContain(
+			"typeof refreshAccessToken === 'undefined' ? undefined : refreshAccessToken",
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry injects OAuth helper prelude when execute helper capabilities are present', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	let wrappedSource = ''
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped) {
+				wrappedSource = String(wrapped)
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				additionalTools: {
+					integration_get: async () => ({}),
+					value_get: async () => ({}),
+					secret_set: async () => ({}),
+				},
+			},
+		)
+		expect(result.result).toBe('ok')
+		expect(wrappedSource).toContain('IntegrationHostNotAllowedError')
+		expect(wrappedSource).toContain('__kodyRefreshAccessToken')
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
+test('runKodyWithRegistry expression path omits OAuth helper prelude without execute helper capabilities', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const emptyRegistry = {
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {} as Record<string, string>,
+		capabilityHandlers: {},
+		capabilityList: [],
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue(emptyRegistry)
+	let wrappedSource = ''
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped) {
+				wrappedSource = String(wrapped)
+				return {
+					result: 42,
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runKodyWithRegistry(
+			env,
+			callerContext,
+			'async () => 42',
+			undefined,
+			{
+				capabilityRegistry: emptyRegistry,
+			},
+		)
+		expect(result.result).toBe(42)
+		expect(wrappedSource).not.toContain('IntegrationHostNotAllowedError')
+		expect(wrappedSource).not.toContain('__kodyRefreshAccessToken')
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})

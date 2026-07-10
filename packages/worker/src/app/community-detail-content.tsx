@@ -9,6 +9,7 @@ import {
 	formatCommunityStars,
 	shortCommunityCommit,
 } from '#app/community-display.ts'
+import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -36,8 +37,13 @@ export function CommunityDetailContent(
 						Community packages
 					</a>
 				</p>
-				<h1 mix={css(pageTitleCss)}>{listing.name}</h1>
-				<p mix={css(pageDescriptionCss)}>by @{listing.ownerUsername}</p>
+				<div mix={css(detailHeadingCss)}>
+					<CommunityListingIcon listing={listing} size="detail" />
+					<div>
+						<h1 mix={css(pageTitleCss)}>{listing.name}</h1>
+						<p mix={css(pageDescriptionCss)}>by @{listing.ownerUsername}</p>
+					</div>
+				</div>
 			</header>
 
 			<section mix={css(cardCss)}>
@@ -101,6 +107,12 @@ const tagListCss = {
 	margin: 0,
 	padding: 0,
 	listStyle: 'none',
+}
+
+const detailHeadingCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.lg,
 }
 
 const tagPillCss = {

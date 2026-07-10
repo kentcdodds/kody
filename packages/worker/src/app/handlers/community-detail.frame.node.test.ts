@@ -63,6 +63,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	expect(html).toContain('data-testid="community-detail-frame"')
 	expect(html).toContain('@kentcdodds/github-triage')
+	expect(html).toContain('data-testid="community-listing-icon-detail"')
+	expect(html).toContain('/community/listing-1/icon/abc1234567890')
 	expect(html).toContain('data-testid="community-detail-forks"')
 	expect(html).not.toContain('<html')
 })

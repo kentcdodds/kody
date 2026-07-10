@@ -44,7 +44,10 @@ import {
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
 import { openApiProviderKodyName } from '#worker/openapi/openapi-domain-id.ts'
-import { createExecuteHelperPrelude } from '#mcp/execute-modules/kody-runtime-utils.ts'
+import {
+	createExecuteHelperPrelude,
+	getExecuteHelperCapabilityNames,
+} from '#mcp/execute-modules/kody-runtime-utils.ts'
 import {
 	hasTopLevelModuleSyntax,
 	stripCodeFences,
@@ -849,6 +852,10 @@ function createPackageEventRuntimeBridgeProvider(
 	return resolveProvider(provider)
 }
 
+function providerExposesExecuteHelperCapabilities(provider: ResolvedProvider) {
+	return getExecuteHelperCapabilityNames().every((name) => name in provider.fns)
+}
+
 function createCapabilityInputSecretResolver(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -1018,8 +1025,13 @@ export async function runKodyWithRegistry(
 	]
 		.filter((value) => value.trim().length > 0)
 		.join('\n')
+	const executeHelperPrelude = providerExposesExecuteHelperCapabilities(
+		provider,
+	)
+		? createExecuteHelperPrelude()
+		: ''
 	const wrapped = `async () => {
-${createExecuteHelperPrelude()}
+${executeHelperPrelude ? `${executeHelperPrelude}\n` : ''}
 ${helperPrelude ? `${helperPrelude}\n` : ''}
   const __kodyUserCode = (${normalized});
   return await __kodyUserCode();
@@ -1078,6 +1090,7 @@ export async function runModuleWithRegistry(
 			'entry.ts': code,
 		},
 		entryPoint: 'entry.ts',
+		reuseCachedBundle: true,
 	})
 	return runBundledModuleWithRegistry(
 		env,
@@ -1245,11 +1258,16 @@ export async function runBundledModuleWithRegistry(
 		const eventsHelperPrelude = options?.packageEventTools
 			? createEventsHelperPrelude()
 			: ''
+		const executeHelperPrelude = providerExposesExecuteHelperCapabilities(
+			provider,
+		)
+			? createExecuteHelperPrelude()
+			: ''
 		const entrypointInputJson = JSON.stringify(params)
 		const entrypointInputSource =
 			entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
 		const wrapped = `async () => {
-${createExecuteHelperPrelude()}
+${executeHelperPrelude ? `${executeHelperPrelude}\n` : ''}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
 ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
 ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
@@ -1266,10 +1284,10 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
   const __kodyRuntime = {
     kody,
     storage: typeof storage === 'undefined' ? undefined : storage,
-    refreshAccessToken,
-    createAuthenticatedFetch,
-    secretHeaders,
-    oauthClientCredentials,
+    refreshAccessToken: typeof refreshAccessToken === 'undefined' ? undefined : refreshAccessToken,
+    createAuthenticatedFetch: typeof createAuthenticatedFetch === 'undefined' ? undefined : createAuthenticatedFetch,
+    secretHeaders: typeof secretHeaders === 'undefined' ? undefined : secretHeaders,
+    oauthClientCredentials: typeof oauthClientCredentials === 'undefined' ? undefined : oauthClientCredentials,
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
     service: typeof service === 'undefined' ? null : service,

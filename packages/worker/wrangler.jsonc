@@ -170,6 +170,10 @@
 			],
 			"r2_buckets": [
 				{
+					"binding": "COMMUNITY_ASSETS",
+					"bucket_name": "kody-community-assets",
+				},
+				{
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-email-blobs",
 				},
@@ -280,6 +284,10 @@
 				},
 			],
 			"r2_buckets": [
+				{
+					"binding": "COMMUNITY_ASSETS",
+					"bucket_name": "kody-preview-community-assets",
+				},
 				{
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-preview-email-blobs",
@@ -393,6 +401,10 @@
 			// Like the D1 database above, the test env reuses the preview
 			// bucket name; local runs and vitest-pool-workers simulate it.
 			"r2_buckets": [
+				{
+					"binding": "COMMUNITY_ASSETS",
+					"bucket_name": "kody-preview-community-assets",
+				},
 				{
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-preview-email-blobs",

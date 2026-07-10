@@ -1,4 +1,5 @@
 import { type PublicCommunityListing } from '#app/community-public-types.ts'
+import { routes } from '#app/routes.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 export { type PublicCommunityListing } from '#app/community-public-types.ts'
@@ -16,6 +17,13 @@ export function truncateCommunityText(text: string, maxLength: number) {
 	return `${trimmed.slice(0, maxLength - 1)}…`
 }
 
+export function buildCommunityIconUrl(input: {
+	listingId: string
+	pinnedCommit: string
+}) {
+	return routes.communityDetailIcon.href(input)
+}
+
 export function toPublicCommunityListing(
 	listing: CommunityListingWithAggregates,
 ): PublicCommunityListing {
@@ -24,6 +32,10 @@ export function toPublicCommunityListing(
 		kodyId: listing.kodyId,
 		name: listing.name,
 		description: listing.description,
+		iconUrl: buildCommunityIconUrl({
+			listingId: listing.id,
+			pinnedCommit: listing.pinnedCommit,
+		}),
 		tags: listing.tags,
 		readmeContent: listing.readmeContent,
 		license: listing.license,

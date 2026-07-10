@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import {
@@ -635,6 +636,7 @@ export function AccountRoute(handle: Handle) {
 								</div>
 							</form>
 							<form
+								{...passwordManagerIgnoreProps}
 								mix={[
 									css({
 										display: 'grid',
@@ -679,7 +681,7 @@ export function AccountRoute(handle: Handle) {
 										type="password"
 										name="password"
 										required
-										autoComplete="current-password"
+										{...passwordManagerIgnoreProps}
 										value={emailChangePassword}
 										mix={[
 											css(inputCss),

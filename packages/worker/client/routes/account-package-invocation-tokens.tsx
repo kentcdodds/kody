@@ -4,6 +4,7 @@ import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
@@ -1019,6 +1020,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								<form
 									method="post"
 									noValidate
+									{...passwordManagerIgnoreProps}
 									mix={[
 										on('submit', (event) => {
 											event.preventDefault()
@@ -1073,7 +1075,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												type="password"
 												value={editorState.rawToken}
 												placeholder="Paste or generate a token"
-												autoComplete="off"
+												{...passwordManagerIgnoreProps}
 												disabled={isMutating}
 												required
 												mix={[
@@ -1234,6 +1236,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								<form
 									method="post"
 									noValidate
+									{...passwordManagerIgnoreProps}
 									mix={[
 										on('submit', (event) => {
 											event.preventDefault()
@@ -1310,7 +1313,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 													type="password"
 													value={editorState.rawToken}
 													placeholder="Leave blank to keep the current token value"
-													autoComplete="off"
+													{...passwordManagerIgnoreProps}
 													disabled={isMutating}
 													mix={[
 														on('input', (event) => {

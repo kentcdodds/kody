@@ -23,6 +23,11 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
+import {
+	buildCommunityIconCacheKey,
+	buildCommunityIconR2Key,
+} from '#worker/community/community-icon.ts'
+import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
 
 // Imported manually instead of via `@cloudflare/workers-oauth-provider` so
 // node-only unit tests can require this module without dragging in
@@ -48,6 +53,7 @@ export type AccountDeletionResult = {
 	deletedRowCounts: Record<string, number>
 	updatedRowCounts: Record<string, number>
 	deletedKvKeys: number
+	deletedCommunityAssets: number
 	deletedEmailBlobs: number
 	deletedArtifactRepos: number
 	revokedOAuthGrants: number
@@ -91,6 +97,11 @@ type UserPackageServiceSnapshot = {
 	serviceName: string
 }
 
+type UserCommunityListingSnapshot = {
+	id: string
+	pinnedCommit: string
+}
+
 type UserDeletionInventory = {
 	vectorIds: Array<string>
 	storageIds: Array<string>
@@ -102,7 +113,7 @@ type UserDeletionInventory = {
 	remoteConnectors: Array<UserRemoteConnectorSnapshot>
 	mcpServers: Array<UserMcpServerSnapshot>
 	packageServices: Array<UserPackageServiceSnapshot>
-	communityListingIds: Array<string>
+	communityListings: Array<UserCommunityListingSnapshot>
 }
 
 function uniqueStrings(values: Iterable<string | null | undefined>) {
@@ -309,20 +320,23 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 	])
 }
 
-async function listUserCommunityListingIds(env: Env, userId: string) {
+async function listUserCommunityListings(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
-		`SELECT id FROM community_listings WHERE owner_user_id = ?`,
+		`SELECT id, pinned_commit FROM community_listings WHERE owner_user_id = ?`,
 	)
 		.bind(userId)
-		.all<{ id: string }>()
-	return uniqueStrings((rows.results ?? []).map((row) => row.id))
+		.all<{ id: string; pinned_commit: string }>()
+	return (rows.results ?? []).map((row) => ({
+		id: row.id,
+		pinnedCommit: row.pinned_commit,
+	}))
 }
 
 async function listUserBundleKvKeys(input: {
 	env: Env
 	userId: string
 	sourceSnapshots: ReadonlyArray<UserSourceSnapshot>
-	communityListingIds: ReadonlyArray<string>
+	communityListings: ReadonlyArray<UserCommunityListingSnapshot>
 }) {
 	const published = await input.env.APP_DB.prepare(
 		`SELECT kv_key FROM published_bundle_artifacts WHERE user_id = ?`,
@@ -345,7 +359,14 @@ async function listUserBundleKvKeys(input: {
 					]
 				: [],
 		),
-		...input.communityListingIds.map(buildCommunitySnapshotKvKey),
+		...input.communityListings.flatMap((listing) => [
+			buildCommunitySnapshotKvKey(listing.id),
+			derivedCacheKeyPrefix +
+				buildCommunityIconCacheKey({
+					listingId: listing.id,
+					pinnedCommit: listing.pinnedCommit,
+				}),
+		]),
 	])
 }
 
@@ -364,7 +385,7 @@ async function collectUserDeletionInventory(input: {
 		remoteConnectors,
 		mcpServers,
 		packageServices,
-		communityListingIds,
+		communityListings,
 	] = await Promise.all([
 		listUserVectorIds(input.env, input.userId).catch((error) => {
 			const message = getErrorMessage(error)
@@ -411,17 +432,17 @@ async function collectUserDeletionInventory(input: {
 			input.warnings.push(`Failed to enumerate package services: ${message}`)
 			return [] as Array<UserPackageServiceSnapshot>
 		}),
-		listUserCommunityListingIds(input.env, input.userId).catch((error) => {
+		listUserCommunityListings(input.env, input.userId).catch((error) => {
 			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate community listings: ${message}`)
-			return [] as Array<string>
+			return [] as Array<UserCommunityListingSnapshot>
 		}),
 	])
 	const bundleKvKeys = await listUserBundleKvKeys({
 		env: input.env,
 		userId: input.userId,
 		sourceSnapshots,
-		communityListingIds,
+		communityListings,
 	}).catch((error) => {
 		const message = getErrorMessage(error)
 		input.warnings.push(`Failed to enumerate bundle KV keys: ${message}`)
@@ -438,7 +459,7 @@ async function collectUserDeletionInventory(input: {
 		remoteConnectors,
 		mcpServers,
 		packageServices,
-		communityListingIds,
+		communityListings,
 	}
 }
 
@@ -726,9 +747,10 @@ async function deleteKvKeys(input: {
 	return deleted
 }
 
-async function deleteEmailBlobs(input: {
+async function deleteR2Objects(input: {
 	blobs: R2Bucket
 	keys: ReadonlyArray<string>
+	label: string
 	warnings: Array<string>
 }): Promise<number> {
 	let deleted = 0
@@ -738,7 +760,7 @@ async function deleteEmailBlobs(input: {
 			deleted += 1
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
-			input.warnings.push(`Email blob delete failed for ${key}: ${message}`)
+			input.warnings.push(`${input.label} delete failed for ${key}: ${message}`)
 		}
 	}
 	return deleted
@@ -973,6 +995,7 @@ export async function deleteUserAccount(input: {
 		deletedRowCounts: {},
 		updatedRowCounts: {},
 		deletedKvKeys: 0,
+		deletedCommunityAssets: 0,
 		deletedEmailBlobs: 0,
 		deletedArtifactRepos: 0,
 		revokedOAuthGrants: 0,
@@ -1079,9 +1102,21 @@ export async function deleteUserAccount(input: {
 		)
 	}
 
-	result.deletedEmailBlobs = await deleteEmailBlobs({
+	result.deletedCommunityAssets = await deleteR2Objects({
+		blobs: input.env.COMMUNITY_ASSETS,
+		keys: inventory.communityListings.map((listing) =>
+			buildCommunityIconR2Key({
+				listingId: listing.id,
+				pinnedCommit: listing.pinnedCommit,
+			}),
+		),
+		label: 'Community asset',
+		warnings,
+	})
+	result.deletedEmailBlobs = await deleteR2Objects({
 		blobs: input.env.EMAIL_BLOBS,
 		keys: inventory.emailBlobKeys,
+		label: 'Email blob',
 		warnings,
 	})
 

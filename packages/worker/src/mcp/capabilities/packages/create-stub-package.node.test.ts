@@ -1,0 +1,147 @@
+import { expect, test, vi } from 'vitest'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+
+const mockModule = vi.hoisted(() => ({
+	assertWithinEntitlement: vi.fn(),
+	getMcpUserPackageScope: vi.fn(),
+	ensureEntitySource: vi.fn(),
+	syncArtifactSourceSnapshot: vi.fn(),
+	insertSavedPackage: vi.fn(),
+	upsertSavedPackageVector: vi.fn(),
+	refreshSavedPackageProjection: vi.fn(),
+}))
+
+vi.mock('#worker/entitlements/service.ts', () => ({
+	assertWithinEntitlement: (...args: Array<unknown>) =>
+		mockModule.assertWithinEntitlement(...args),
+}))
+
+vi.mock('#worker/package-registry/user-scope.ts', () => ({
+	getMcpUserPackageScope: (...args: Array<unknown>) =>
+		mockModule.getMcpUserPackageScope(...args),
+}))
+
+vi.mock('#worker/repo/source-service.ts', () => ({
+	ensureEntitySource: (...args: Array<unknown>) =>
+		mockModule.ensureEntitySource(...args),
+}))
+
+vi.mock('#worker/repo/source-sync.ts', () => ({
+	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.syncArtifactSourceSnapshot(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	insertSavedPackage: (...args: Array<unknown>) =>
+		mockModule.insertSavedPackage(...args),
+}))
+
+vi.mock('#worker/package-registry/vectorize.ts', () => ({
+	upsertSavedPackageVector: (...args: Array<unknown>) =>
+		mockModule.upsertSavedPackageVector(...args),
+}))
+
+vi.mock('#worker/package-registry/service.ts', () => ({
+	refreshSavedPackageProjection: (...args: Array<unknown>) =>
+		mockModule.refreshSavedPackageProjection(...args),
+}))
+
+const { buildStubPackageFiles, createStubSavedPackage } =
+	await import('./create-stub-package.ts')
+
+function resetMocks() {
+	for (const fn of Object.values(mockModule)) {
+		fn.mockReset()
+	}
+	mockModule.assertWithinEntitlement.mockResolvedValue(undefined)
+	mockModule.getMcpUserPackageScope.mockResolvedValue('kentcdodds')
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-new',
+		bootstrapAccess: null,
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-1')
+	mockModule.insertSavedPackage.mockResolvedValue(undefined)
+	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
+	mockModule.refreshSavedPackageProjection.mockResolvedValue({ record: {} })
+}
+
+const user = {
+	userId: 'user-1',
+	email: 'user-1@example.com',
+	displayName: 'User One',
+}
+
+test('buildStubPackageFiles produces a valid private manifest with an Intent README', () => {
+	const files = buildStubPackageFiles({
+		name: '@kentcdodds/my-package',
+		kodyId: 'my-package',
+		description: 'Does the thing.',
+	})
+	const packageJson = files['package.json']
+	if (!packageJson) throw new Error('Expected package.json in stub files.')
+	const manifest = parseAuthoredPackageJson({
+		content: packageJson,
+		manifestPath: 'package.json',
+		expectedPackageScope: 'kentcdodds',
+	})
+	expect(manifest.kody.id).toBe('my-package')
+	expect(manifest.kody.description).toBe('Does the thing.')
+	expect(JSON.parse(packageJson)).toMatchObject({ private: true })
+	expect(files['README.md']).toContain('## Intent')
+	expect(files['README.md']).toContain('Does the thing.')
+	expect(files['src/index.ts']).toContain('export default')
+})
+
+test('createStubSavedPackage rejects invalid kody ids before any writes', async () => {
+	resetMocks()
+	await expect(
+		createStubSavedPackage({
+			env: { APP_DB: {} } as Env,
+			baseUrl: 'https://heykody.dev',
+			user,
+			kodyId: 'Not_A_Valid_Id',
+		}),
+	).rejects.toThrow('must be lower-kebab-case')
+	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+})
+
+test('createStubSavedPackage registers the stub through the standard package pipeline', async () => {
+	resetMocks()
+	const result = await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		user,
+		kodyId: 'my-package',
+		description: 'Does the thing.',
+	})
+	expect(result).toMatchObject({
+		kodyId: 'my-package',
+		name: '@kentcdodds/my-package',
+	})
+	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
+		expect.objectContaining({ resource: 'saved_packages' }),
+	)
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceId: 'source-new',
+			userId: 'user-1',
+			files: expect.objectContaining({
+				'package.json': expect.stringContaining('"private": true'),
+				'README.md': expect.stringContaining('## Intent'),
+			}),
+		}),
+	)
+	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			name: '@kentcdodds/my-package',
+			kody_id: 'my-package',
+			description: 'Does the thing.',
+			source_id: 'source-new',
+			has_app: 0,
+		}),
+	)
+	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
+	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
+})
