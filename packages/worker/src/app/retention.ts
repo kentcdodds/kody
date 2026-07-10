@@ -776,13 +776,13 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		index += retentionDeleteIdsMaxParameters
 	) {
 		const chunk = rows.slice(index, index + retentionDeleteIdsMaxParameters)
-		const placeholders = chunk.map(() => '?').join(', ')
+		const chunkPlaceholders = chunk.map(() => '?').join(', ')
 		const attachmentRows = await runD1WithRetry(() =>
 			input.db
 				.prepare(
 					`SELECT message_id, storage_key
 				FROM email_attachments
-				WHERE storage_key IS NOT NULL AND message_id IN (${placeholders})`,
+				WHERE storage_key IS NOT NULL AND message_id IN (${chunkPlaceholders})`,
 				)
 				.bind(...chunk.map((row) => row.id))
 				.all<{ message_id: string; storage_key: string }>(),
@@ -813,8 +813,11 @@ export async function pruneUserEmailMessagesForRetention(input: {
 			result.deletedRawMimeBlobs = rowsWithBlob.filter(
 				(row) => row.raw_mime_key !== null,
 			).length
-			result.deletedAttachmentBlobs =
-				blobKeys.length - result.deletedRawMimeBlobs
+			result.deletedAttachmentBlobs = rowsWithBlob.reduce(
+				(count, row) =>
+					count + (attachmentKeysByMessageId.get(row.id)?.length ?? 0),
+				0,
+			)
 		} catch (error) {
 			result.blobDeleteErrors = blobKeys.length
 			deletableRows = rows.filter((row) => blobKeysForRow(row).length === 0)

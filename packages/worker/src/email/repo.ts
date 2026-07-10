@@ -926,14 +926,16 @@ export async function deleteEmailMessageById(input: {
 		...(rawMimeKey != null ? [rawMimeKey] : []),
 		...(attachmentRows.results ?? []).map((result) => result.storage_key),
 	]
-	await input.db
-		.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
-		.bind(input.messageId)
-		.run()
-	await input.db
-		.prepare(`DELETE FROM email_messages WHERE id = ?`)
-		.bind(input.messageId)
-		.run()
+	// Atomic batch: a partial delete (attachments gone, message left) would
+	// lose the storage_key values needed to delete the R2 blobs on retry.
+	await input.db.batch([
+		input.db
+			.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
+			.bind(input.messageId),
+		input.db
+			.prepare(`DELETE FROM email_messages WHERE id = ?`)
+			.bind(input.messageId),
+	])
 	for (const blobKey of blobKeys) {
 		await input.blobs.delete(blobKey).catch((error: unknown) => {
 			console.warn('email-blob-delete-failed', blobKey, error)

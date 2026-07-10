@@ -244,11 +244,30 @@ async function storeOutboundAttachments(input: {
 			storageKey: stored ? storageKey : null,
 		})
 	}
-	await insertEmailAttachments({
-		db: input.db,
-		messageId: input.messageId,
-		attachments: rows,
-	})
+	try {
+		await insertEmailAttachments({
+			db: input.db,
+			messageId: input.messageId,
+			attachments: rows,
+		})
+	} catch (error) {
+		// Without rows, cleanup paths (retention, deletion) can never find
+		// these blobs again — delete them now rather than orphan them.
+		await Promise.all(
+			rows
+				.filter((row) => row.storageKey != null)
+				.map((row) =>
+					input.blobs.delete(row.storageKey!).catch((deleteError: unknown) => {
+						console.warn(
+							'email-outbound-attachment-blob-cleanup-failed',
+							row.storageKey,
+							deleteError,
+						)
+					}),
+				),
+		)
+		throw error
+	}
 }
 
 async function requireStoredEmailMessage(input: {
@@ -344,7 +363,6 @@ async function sendViaRestFallback(input: {
 							filename: attachment.filename,
 							type: attachment.contentType,
 							disposition: 'attachment' as const,
-							contentId: undefined,
 						}))
 					: undefined,
 		},

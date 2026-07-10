@@ -284,23 +284,25 @@ async function listUserPackageServices(env: Env, userId: string) {
 }
 
 async function listUserEmailBlobKeys(env: Env, userId: string) {
-	const rawMimeRows = await env.APP_DB.prepare(
-		`SELECT raw_mime_key
-		FROM email_messages
-		WHERE user_id = ? AND raw_mime_key IS NOT NULL`,
-	)
-		.bind(userId)
-		.all<{ raw_mime_key: string }>()
-	// Externally stored attachments (outbound mail) have their own R2
-	// objects, separate from any raw-MIME blob.
-	const attachmentRows = await env.APP_DB.prepare(
-		`SELECT attachment.storage_key AS storage_key
-		FROM email_attachments attachment
-		JOIN email_messages message ON message.id = attachment.message_id
-		WHERE message.user_id = ? AND attachment.storage_key IS NOT NULL`,
-	)
-		.bind(userId)
-		.all<{ storage_key: string }>()
+	const [rawMimeRows, attachmentRows] = await Promise.all([
+		env.APP_DB.prepare(
+			`SELECT raw_mime_key
+			FROM email_messages
+			WHERE user_id = ? AND raw_mime_key IS NOT NULL`,
+		)
+			.bind(userId)
+			.all<{ raw_mime_key: string }>(),
+		// Externally stored attachments (outbound mail) have their own R2
+		// objects, separate from any raw-MIME blob.
+		env.APP_DB.prepare(
+			`SELECT attachment.storage_key AS storage_key
+			FROM email_attachments attachment
+			JOIN email_messages message ON message.id = attachment.message_id
+			WHERE message.user_id = ? AND attachment.storage_key IS NOT NULL`,
+		)
+			.bind(userId)
+			.all<{ storage_key: string }>(),
+	])
 	return uniqueStrings([
 		...(rawMimeRows.results ?? []).map((row) => row.raw_mime_key),
 		...(attachmentRows.results ?? []).map((row) => row.storage_key),
@@ -375,7 +377,7 @@ async function collectUserDeletionInventory(input: {
 			return [] as Array<string>
 		}),
 		listUserEmailBlobKeys(input.env, input.userId).catch((error) => {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = getErrorMessage(error)
 			input.warnings.push(`Failed to enumerate email blob keys: ${message}`)
 			return [] as Array<string>
 		}),
