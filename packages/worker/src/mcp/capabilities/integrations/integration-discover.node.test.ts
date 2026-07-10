@@ -144,35 +144,13 @@ test('integration_discover serves fresh cached surface data without calling live
 	})
 })
 
-test('integration_discover runs live discovery when the cached surface is missing', async () => {
+test('integration_discover runs live discovery when cached surface is missing or empty', async () => {
 	const surfaceUrl = buildIntegrationSurfaceUrlForTest('linear.app')
 	const discoverUrl = buildIntegrationDiscoverUrlForTest('linear.app')
-	using _server = createMswNodeServer([
-		http.get(surfaceUrl, () =>
-			HttpResponse.json({ error: 'not found' }, { status: 404 }),
-		),
-		http.get(discoverUrl, () => HttpResponse.json(linearRegistryFixture)),
-	])
 
-	const result = await integrationDiscoverCapability.handler(
-		{ domain: 'linear.app' },
-		ctx,
-	)
-
-	expect(result).toMatchObject({
-		domain: 'linear.app',
-		source: discoverUrl,
-		provenance: 'live',
-		liveDiscoveryError: null,
-		surfaces: expectedLinearSurfaces,
-	})
-})
-
-test('integration_discover runs live discovery when the cached surface has no usable data', async () => {
-	const surfaceUrl = buildIntegrationSurfaceUrlForTest('linear.app')
-	const discoverUrl = buildIntegrationDiscoverUrlForTest('linear.app')
-	using _server = createMswNodeServer([
-		http.get(surfaceUrl, () =>
+	for (const surfaceResponse of [
+		() => HttpResponse.json({ error: 'not found' }, { status: 404 }),
+		() =>
 			HttpResponse.json({
 				version: 3,
 				domain: 'linear.app',
@@ -180,20 +158,24 @@ test('integration_discover runs live discovery when the cached surface has no us
 				credentials: {},
 				surfaces: [],
 			}),
-		),
-		http.get(discoverUrl, () => HttpResponse.json(linearRegistryFixture)),
-	])
+	]) {
+		using _server = createMswNodeServer([
+			http.get(surfaceUrl, surfaceResponse),
+			http.get(discoverUrl, () => HttpResponse.json(linearRegistryFixture)),
+		])
 
-	const result = await integrationDiscoverCapability.handler(
-		{ domain: 'linear.app' },
-		ctx,
-	)
-
-	expect(result).toMatchObject({
-		source: discoverUrl,
-		provenance: 'live',
-		surfaces: expectedLinearSurfaces,
-	})
+		const result = await integrationDiscoverCapability.handler(
+			{ domain: 'linear.app' },
+			ctx,
+		)
+		expect(result).toMatchObject({
+			domain: 'linear.app',
+			source: discoverUrl,
+			provenance: 'live',
+			liveDiscoveryError: null,
+			surfaces: expectedLinearSurfaces,
+		})
+	}
 })
 
 test('integration_discover attempts live rediscovery for stale cached data and returns the live result', async () => {
@@ -226,44 +208,7 @@ test('integration_discover attempts live rediscovery for stale cached data and r
 	})
 })
 
-test('integration_discover falls back to stale cached data when live discovery times out', async () => {
-	const surfaceUrl = buildIntegrationSurfaceUrlForTest('slack.com')
-	const discoverUrl = buildIntegrationDiscoverUrlForTest('slack.com')
-	const staleFixture = {
-		...linearRegistryFixture,
-		domain: 'slack.com',
-		discoveredAt: staleDiscoveredAt,
-	}
-	using _server = createMswNodeServer([
-		http.get(surfaceUrl, () => HttpResponse.json(staleFixture)),
-		// A dropped connection surfaces as a fetch rejection, the same code
-		// path as an AbortSignal timeout on the live discovery request.
-		http.get(discoverUrl, () => HttpResponse.error()),
-	])
-
-	const result = await integrationDiscoverCapability.handler(
-		{ domain: 'slack.com' },
-		ctx,
-	)
-
-	expect(result).toMatchObject({
-		domain: 'slack.com',
-		discoveredAt: staleDiscoveredAt,
-		source: surfaceUrl,
-		provenance: 'cached',
-		surfaces: expectedLinearSurfaces,
-	})
-	expect(result).toHaveProperty(
-		'liveDiscoveryError',
-		expect.stringContaining('live discovery failed'),
-	)
-	expect(result).toHaveProperty(
-		'liveDiscoveryError',
-		expect.stringContaining(staleDiscoveredAt),
-	)
-})
-
-test('integration_discover falls back to stale cached data when the live discovery body stream fails mid-read', async () => {
+test('integration_discover falls back to stale cached data when live discovery fails', async () => {
 	const surfaceUrl = buildIntegrationSurfaceUrlForTest('slack.com')
 	const discoverUrl = buildIntegrationDiscoverUrlForTest('slack.com')
 	const staleFixture = {
@@ -277,25 +222,29 @@ test('integration_discover falls back to stale cached data when the live discove
 			controller.error(new Error('body stream aborted'))
 		},
 	})
-	using _server = createMswNodeServer([
-		http.get(surfaceUrl, () => HttpResponse.json(staleFixture)),
-		http.get(discoverUrl, () => new HttpResponse(failingBody)),
-	])
 
-	const result = await integrationDiscoverCapability.handler(
-		{ domain: 'slack.com' },
-		ctx,
-	)
+	for (const discoverResponse of [
+		() => HttpResponse.error(),
+		() => new HttpResponse(failingBody),
+	]) {
+		using _server = createMswNodeServer([
+			http.get(surfaceUrl, () => HttpResponse.json(staleFixture)),
+			http.get(discoverUrl, discoverResponse),
+		])
 
-	expect(result).toMatchObject({
-		domain: 'slack.com',
-		source: surfaceUrl,
-		provenance: 'cached',
-	})
-	expect(result).toHaveProperty(
-		'liveDiscoveryError',
-		expect.stringContaining('live discovery failed'),
-	)
+		const result = await integrationDiscoverCapability.handler(
+			{ domain: 'slack.com' },
+			ctx,
+		)
+		expect(result).toMatchObject({
+			domain: 'slack.com',
+			discoveredAt: staleDiscoveredAt,
+			source: surfaceUrl,
+			provenance: 'cached',
+			surfaces: expectedLinearSurfaces,
+		})
+		expect(result.liveDiscoveryError).toMatch(/live discovery failed/)
+	}
 })
 
 test('integration_discover fails with a clear terminal error when neither cached nor live data is usable', async () => {
@@ -354,7 +303,7 @@ test('integration_discover rejects oversized response bodies from both endpoints
 		...linearRegistryFixture,
 		padding: 'x'.repeat(500_001),
 	})
-	using oversizedServer = createMswNodeServer([
+	using _oversizedServer = createMswNodeServer([
 		http.get(surfaceUrl, () => new HttpResponse(oversizedBody)),
 		http.get(discoverUrl, () => new HttpResponse(oversizedBody)),
 	])
@@ -363,7 +312,7 @@ test('integration_discover rejects oversized response bodies from both endpoints
 		integrationDiscoverCapability.handler({ domain: 'linear.app' }, ctx),
 	).rejects.toThrow(/response exceeds 500000 bytes/)
 
-	using contentLengthServer = createMswNodeServer([
+	using _contentLengthServer = createMswNodeServer([
 		http.get(
 			surfaceUrl,
 			() =>

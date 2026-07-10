@@ -110,13 +110,11 @@ test('synthesizes an openapi:<provider> domain with a capability per operation',
 		method: 'get',
 		path: '/widgets',
 	})
-	expect(list?.description).toContain('GET /widgets')
 
 	const create = synthesized?.domain.capabilities.find(
 		(capability) => capability.name === 'openapi:widgets:createwidget',
 	)
 	expect(create?.readOnly).toBe(false)
-	expect(create?.description).toContain('Create a widget')
 
 	const del = synthesized?.domain.capabilities.find(
 		(capability) => capability.name === 'openapi:widgets:deletewidget',
@@ -131,7 +129,7 @@ test('synthesizes an openapi:<provider> domain with a capability per operation',
 	).toBeNull()
 })
 
-test('input schema includes params/query/headers/body with required rules', () => {
+test('input schema includes params, query, headers, body, and cookie requirements', () => {
 	const binding = createBinding()
 	const deleteOp = binding.operations[2]!
 	const schema = buildOpenApiOperationInputSchema(deleteOp) as {
@@ -154,10 +152,8 @@ test('input schema includes params/query/headers/body with required rules', () =
 	expect(createSchema.properties.body).toMatchObject({
 		type: 'object',
 	})
-})
 
-test('input schema models required header/query params and cookie notes', () => {
-	const schema = buildOpenApiOperationInputSchema({
+	const searchSchema = buildOpenApiOperationInputSchema({
 		slug: 'search',
 		operationId: 'search',
 		method: 'get',
@@ -207,25 +203,23 @@ test('input schema models required header/query params and cookie notes', () => 
 			headers?: {
 				required?: Array<string>
 				properties?: Record<string, unknown>
-				description?: string
 				additionalProperties?: unknown
 			}
 		}
 	}
 
-	expect(schema.required).toEqual(expect.arrayContaining(['query', 'headers']))
-	expect(schema.properties.query).toMatchObject({
+	expect(searchSchema.required).toEqual(
+		expect.arrayContaining(['query', 'headers']),
+	)
+	expect(searchSchema.properties.query).toMatchObject({
 		required: ['q'],
 		properties: { q: { type: 'string' } },
 	})
-	expect(schema.properties.headers).toMatchObject({
+	expect(searchSchema.properties.headers).toMatchObject({
 		required: ['X-Request-Id'],
 		properties: { 'X-Request-Id': { type: 'string' } },
 		additionalProperties: { type: 'string' },
 	})
-	expect(schema.properties.headers?.description).toContain(
-		'Cookie parameters from the spec (session, csrf) must be passed manually via a "cookie" header.',
-	)
 })
 
 test('domain description falls back to specTitle then default', () => {

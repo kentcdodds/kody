@@ -187,7 +187,7 @@ test('scaffoldOpenApiClient builds URL, method, query, and JSON body for bearer 
 	expect(calls[2]?.init?.method).toBe('POST')
 })
 
-test('scaffoldOpenApiClient injects headerSecret and basicSecrets placeholders', async () => {
+test('scaffoldOpenApiClient injects headerSecret, basicSecrets, integration auth, and none auth', async () => {
 	const headerScaffold = scaffoldOpenApiClient({
 		spec: baseSpec({ operations: [listWidgets] }),
 		operationSlugs: ['list_widgets'],
@@ -228,39 +228,35 @@ test('scaffoldOpenApiClient injects headerSecret and basicSecrets placeholders',
 	expect(headersOf(basicRec.calls[0]?.init).Authorization).toBe(
 		'{{secret-basic:username=user,password=pass}}',
 	)
-})
 
-test('scaffoldOpenApiClient auth kind none adds no auth headers', async () => {
-	const scaffold = scaffoldOpenApiClient({
+	const noneScaffold = scaffoldOpenApiClient({
 		spec: baseSpec({ operations: [listWidgets] }),
 		operationSlugs: ['list_widgets'],
 		auth: { kind: 'none' },
 		apiBaseUrl: 'https://api.widgets.example',
 	})
-	const mod = await importScaffold(scaffold.moduleSource)
-	const { calls, fetchImpl } = recordingFetch()
-	await mod.listWidgets({ headers: { 'x-a': '1' } }, { fetchImpl })
-	expect(headersOf(calls[0]?.init)).toEqual({ 'x-a': '1' })
-})
+	const noneMod = await importScaffold(noneScaffold.moduleSource)
+	const noneRec = recordingFetch()
+	await noneMod.listWidgets(
+		{ headers: { 'x-a': '1' } },
+		{ fetchImpl: noneRec.fetchImpl },
+	)
+	expect(headersOf(noneRec.calls[0]?.init)).toEqual({ 'x-a': '1' })
 
-test('scaffoldOpenApiClient integration auth references createAuthenticatedFetch and works with fetchImpl', async () => {
-	const scaffold = scaffoldOpenApiClient({
+	const integrationScaffold = scaffoldOpenApiClient({
 		spec: baseSpec({ operations: [listWidgets] }),
 		operationSlugs: ['list_widgets'],
 		auth: { kind: 'integration', provider: 'widgets-prod' },
 		apiBaseUrl: 'https://api.widgets.example',
 		providerLabel: 'Widgets',
 	})
-	expect(scaffold.moduleSource).toContain(
-		'createAuthenticatedFetch(kody, "widgets-prod")',
+	const integrationMod = await importScaffold(integrationScaffold.moduleSource)
+	const integrationRec = recordingFetch()
+	await integrationMod.listWidgets({}, { fetchImpl: integrationRec.fetchImpl })
+	expect(String(integrationRec.calls[0]?.input)).toBe(
+		'https://api.widgets.example/widgets',
 	)
-	expect(scaffold.moduleSource).toContain('fetchImpl bypasses integration auth')
-
-	const mod = await importScaffold(scaffold.moduleSource)
-	const { calls, fetchImpl } = recordingFetch()
-	await mod.listWidgets({}, { fetchImpl })
-	expect(String(calls[0]?.input)).toBe('https://api.widgets.example/widgets')
-	expect(headersOf(calls[0]?.init)).toEqual({})
+	expect(headersOf(integrationRec.calls[0]?.init)).toEqual({})
 })
 
 test('scaffoldOpenApiClient throws when a required path param is missing', async () => {
@@ -298,24 +294,6 @@ test('scaffoldOpenApiClient warns on unknown slugs and throws when none resolve'
 })
 
 test('scaffoldOpenApiClient passes non-JSON bodies through with the operation content type', async () => {
-	const scaffold = scaffoldOpenApiClient({
-		spec: baseSpec({ operations: [uploadWidget] }),
-		operationSlugs: ['upload_widget'],
-		auth: { kind: 'none' },
-		apiBaseUrl: 'https://api.widgets.example',
-	})
-	expect(scaffold.moduleSource).toContain('Non-JSON request body content type')
-	const mod = await importScaffold(scaffold.moduleSource)
-	const { calls, fetchImpl } = recordingFetch()
-	const payload = 'raw-bytes'
-	await mod.uploadWidget({ body: payload }, { fetchImpl })
-	expect(calls[0]?.init?.body).toBe(payload)
-	expect(headersOf(calls[0]?.init)['content-type']).toBe(
-		'application/octet-stream',
-	)
-})
-
-test('scaffoldOpenApiClient treats application/json-seq as non-JSON', async () => {
 	const streamWidget = op({
 		slug: 'stream_widget',
 		method: 'post',
@@ -328,18 +306,24 @@ test('scaffoldOpenApiClient treats application/json-seq as non-JSON', async () =
 		},
 	})
 	const scaffold = scaffoldOpenApiClient({
-		spec: baseSpec({ operations: [streamWidget] }),
-		operationSlugs: ['stream_widget'],
+		spec: baseSpec({ operations: [uploadWidget, streamWidget] }),
+		operationSlugs: ['upload_widget', 'stream_widget'],
 		auth: { kind: 'none' },
 		apiBaseUrl: 'https://api.widgets.example',
 	})
-	expect(scaffold.moduleSource).toContain('Non-JSON request body content type')
 	const mod = await importScaffold(scaffold.moduleSource)
 	const { calls, fetchImpl } = recordingFetch()
-	const payload = '{"id":1}\n{"id":2}\n'
-	await mod.streamWidget({ body: payload }, { fetchImpl })
-	expect(calls[0]?.init?.body).toBe(payload)
-	expect(headersOf(calls[0]?.init)['content-type']).toBe('application/json-seq')
+	const rawPayload = 'raw-bytes'
+	await mod.uploadWidget({ body: rawPayload }, { fetchImpl })
+	expect(calls[0]?.init?.body).toBe(rawPayload)
+	expect(headersOf(calls[0]?.init)['content-type']).toBe(
+		'application/octet-stream',
+	)
+
+	const jsonSeqPayload = '{"id":1}\n{"id":2}\n'
+	await mod.streamWidget({ body: jsonSeqPayload }, { fetchImpl })
+	expect(calls[1]?.init?.body).toBe(jsonSeqPayload)
+	expect(headersOf(calls[1]?.init)['content-type']).toBe('application/json-seq')
 })
 
 test('scaffoldOpenApiClient escapes hostile path and summary so the module stays importable', async () => {

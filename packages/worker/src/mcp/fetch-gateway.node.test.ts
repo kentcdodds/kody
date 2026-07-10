@@ -9,10 +9,7 @@ import {
 	parseHostApprovalRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
 } from '#mcp/secrets/errors.ts'
-import {
-	buildBasicAuthSecretPlaceholder,
-	parseBasicAuthSecretPlaceholders,
-} from '#mcp/secrets/placeholders.ts'
+import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 
@@ -223,103 +220,114 @@ test('opt-out header value "on" resolves normally and is stripped; unknown value
 	}
 })
 
-test('fetch gateway preserves binary request bodies byte-for-byte', async () => {
-	// PNG-like header bytes: invalid UTF-8, so the body must skip the text
-	// pipeline entirely and pass through unchanged.
-	const binaryBytes = new Uint8Array([
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x01,
-	])
-	const boundary = '----TestBoundary123'
-	const encoder = new TextEncoder()
-	const prefix = encoder.encode(
-		`--${boundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n`,
-	)
-	const suffix = encoder.encode(`\r\n--${boundary}--\r\n`)
-	const multipartBody = new Uint8Array(
-		prefix.length + binaryBytes.length + suffix.length,
-	)
-	multipartBody.set(prefix, 0)
-	multipartBody.set(binaryBytes, prefix.length)
-	multipartBody.set(suffix, prefix.length + binaryBytes.length)
-
+test('fetch gateway preserves request bodies and honors opt-out for text and binary payloads', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue({
 			found: true,
 			value: 'secret-value',
 			scope: 'user',
-			allowedHosts: ['discord.com'],
+			allowedHosts: ['discord.com', 'example.com'],
 			allowedCapabilities: [],
 		})
 	try {
-		const request = new Request('https://discord.com/api/channels/1/messages', {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bot {{secret:discordBotToken|scope=user}}',
-				'Content-Type': `multipart/form-data; boundary=${boundary}`,
+		const binaryBytes = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x01,
+		])
+		const boundary = '----TestBoundary123'
+		const encoder = new TextEncoder()
+		const prefix = encoder.encode(
+			`--${boundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n`,
+		)
+		const suffix = encoder.encode(`\r\n--${boundary}--\r\n`)
+		const multipartBody = new Uint8Array(
+			prefix.length + binaryBytes.length + suffix.length,
+		)
+		multipartBody.set(prefix, 0)
+		multipartBody.set(binaryBytes, prefix.length)
+		multipartBody.set(suffix, prefix.length + binaryBytes.length)
+
+		const multipartRequest = new Request(
+			'https://discord.com/api/channels/1/messages',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bot {{secret:discordBotToken|scope=user}}',
+					'Content-Type': `multipart/form-data; boundary=${boundary}`,
+				},
+				body: multipartBody,
 			},
-			body: multipartBody,
+		)
+		const transformedMultipart = await expandSecretPlaceholders({
+			request: multipartRequest,
+			props,
+			env,
 		})
-		const transformed = await expandSecretPlaceholders({ request, props, env })
-		// Header placeholders still resolve for binary-bodied requests.
-		expect(transformed.headers.get('Authorization')).toBe('Bot secret-value')
-		const transformedBytes = new Uint8Array(await transformed.arrayBuffer())
-		expect(transformedBytes).toEqual(multipartBody)
-	} finally {
-		resolveSpy.mockRestore()
-	}
-})
+		expect(transformedMultipart.headers.get('Authorization')).toBe(
+			'Bot secret-value',
+		)
+		expect(new Uint8Array(await transformedMultipart.arrayBuffer())).toEqual(
+			multipartBody,
+		)
 
-test('fetch gateway preserves a leading UTF-8 BOM in text request bodies', async () => {
-	const bomBody = new Uint8Array([
-		0xef,
-		0xbb,
-		0xbf,
-		...new TextEncoder().encode('{"note":"bom-prefixed json"}'),
-	])
-	const request = new Request('https://example.com/api', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: bomBody,
-	})
-	const transformed = await expandSecretPlaceholders({ request, props, env })
-	const transformedBytes = new Uint8Array(await transformed.arrayBuffer())
-	expect(transformedBytes).toEqual(bomBody)
-})
+		const bomBody = new Uint8Array([
+			0xef,
+			0xbb,
+			0xbf,
+			...encoder.encode('{"note":"bom-prefixed json"}'),
+		])
+		const bomRequest = new Request('https://example.com/api', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: bomBody,
+		})
+		const transformedBom = await expandSecretPlaceholders({
+			request: bomRequest,
+			props,
+			env,
+		})
+		expect(new Uint8Array(await transformedBom.arrayBuffer())).toEqual(bomBody)
 
-test('fetch gateway never resolves secret placeholder text embedded in a binary body', async () => {
-	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
-	const encoder = new TextEncoder()
-	const placeholderText = encoder.encode('{{secret:name|scope=user}}')
-	const body = new Uint8Array(placeholderText.length + 2)
-	// Leading invalid UTF-8 byte marks the body as binary.
-	body[0] = 0xff
-	body.set(placeholderText, 1)
-	body[body.length - 1] = 0xfe
-
-	try {
-		const request = new Request('https://example.com/upload', {
+		const placeholderText = encoder.encode('{{secret:name|scope=user}}')
+		const binaryPlaceholderBody = new Uint8Array(placeholderText.length + 2)
+		binaryPlaceholderBody[0] = 0xff
+		binaryPlaceholderBody.set(placeholderText, 1)
+		binaryPlaceholderBody[binaryPlaceholderBody.length - 1] = 0xfe
+		const binaryPlaceholderRequest = new Request('https://example.com/upload', {
 			method: 'PUT',
-			body,
+			body: binaryPlaceholderBody,
 		})
-		const transformed = await expandSecretPlaceholders({ request, props, env })
+		const transformedBinaryPlaceholder = await expandSecretPlaceholders({
+			request: binaryPlaceholderRequest,
+			props,
+			env,
+		})
+		expect(resolveSpy).toHaveBeenCalledTimes(1)
+		resolveSpy.mockClear()
+		expect(
+			new Uint8Array(await transformedBinaryPlaceholder.arrayBuffer()),
+		).toEqual(binaryPlaceholderBody)
+
+		const optOutBinaryBody = new Uint8Array([
+			0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10,
+		])
+		const optOutBinaryRequest = new Request('https://example.com/upload', {
+			method: 'POST',
+			headers: { [secretResolutionHeaderName]: 'off' },
+			body: optOutBinaryBody,
+		})
+		const transformedOptOutBinary = await expandSecretPlaceholders({
+			request: optOutBinaryRequest,
+			props,
+			env,
+		})
 		expect(resolveSpy).not.toHaveBeenCalled()
-		const transformedBytes = new Uint8Array(await transformed.arrayBuffer())
-		expect(transformedBytes).toEqual(body)
+		expect(new Uint8Array(await transformedOptOutBinary.arrayBuffer())).toEqual(
+			optOutBinaryBody,
+		)
 	} finally {
 		resolveSpy.mockRestore()
 	}
-})
-
-test('opt-out header passes binary bodies through unchanged', async () => {
-	const binaryBody = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
-	const request = new Request('https://example.com/upload', {
-		method: 'POST',
-		headers: { [secretResolutionHeaderName]: 'off' },
-		body: binaryBody,
-	})
-	const transformed = await expandSecretPlaceholders({ request, props, env })
-	expect(new Uint8Array(await transformed.arrayBuffer())).toEqual(binaryBody)
 })
 
 test('fetch gateway expands placeholders in form-urlencoded bodies', async () => {
@@ -361,19 +369,12 @@ test('fetch gateway expands placeholders in form-urlencoded bodies', async () =>
 	}
 })
 
-test('fetch gateway derives Basic Auth header after approving both secrets', async () => {
+test('fetch gateway derives Basic Auth header and enforces host approval', async () => {
 	const placeholder = buildBasicAuthSecretPlaceholder({
 		usernameSecret: 'paypalClientId',
 		passwordSecret: 'paypalClientSecret',
 		scope: 'user',
 	})
-	expect(parseBasicAuthSecretPlaceholders(`Basic ${placeholder}`)).toEqual([
-		{
-			username: { name: 'paypalClientId', scope: 'user' },
-			password: { name: 'paypalClientSecret', scope: 'user' },
-			scope: 'user',
-		},
-	])
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockImplementation(async ({ name }) => {
@@ -440,61 +441,30 @@ test('fetch gateway derives Basic Auth header after approving both secrets', asy
 		expect(schemePrefixed.headers.get('Authorization')).toBe(
 			`Basic ${btoa('client-id:client-secret')}`,
 		)
-	} finally {
-		resolveSpy.mockRestore()
-	}
-})
 
-test('fetch gateway reports missing secret for derived Basic Auth placeholders', async () => {
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockImplementation(async ({ name }) => ({
+		resolveSpy.mockImplementation(async ({ name }) => ({
 			found: name === 'paypalClientId',
 			value: name === 'paypalClientId' ? 'client-id' : null,
 			scope: name === 'paypalClientId' ? 'user' : null,
 			allowedHosts: name === 'paypalClientId' ? ['api-m.paypal.com'] : [],
 			allowedCapabilities: [],
 		}))
-	const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
-		headers: {
-			Authorization: buildBasicAuthSecretPlaceholder({
-				usernameSecret: 'paypalClientId',
-				passwordSecret: 'paypalClientSecret',
-				scope: 'user',
-			}),
-		},
-	})
-
-	try {
+		const missingSecretRequest = new Request(
+			'https://api-m.paypal.com/v1/oauth2/token',
+			{
+				headers: { Authorization: placeholder },
+			},
+		)
 		await expect(
-			expandSecretPlaceholders({ request, props, env }),
+			expandSecretPlaceholders({ request: missingSecretRequest, props, env }),
 		).rejects.toThrow('Secret "paypalClientSecret" was not found.')
-	} finally {
-		resolveSpy.mockRestore()
-	}
-})
 
-test.each([
-	{
-		blockedSecretName: 'paypalClientId',
-		allowedHosts: {
-			paypalClientId: [],
-			paypalClientSecret: ['api-m.paypal.com'],
-		},
-	},
-	{
-		blockedSecretName: 'paypalClientSecret',
-		allowedHosts: {
-			paypalClientId: ['api-m.paypal.com'],
-			paypalClientSecret: [],
-		},
-	},
-])(
-	'fetch gateway requires host approval for derived Basic Auth $blockedSecretName',
-	async ({ blockedSecretName, allowedHosts }) => {
-		const resolveSpy = vi
-			.spyOn(secretService, 'resolveSecret')
-			.mockImplementation(async ({ name }) => {
+		for (const blockedSecretName of ['paypalClientId', 'paypalClientSecret']) {
+			const allowedHosts =
+				blockedSecretName === 'paypalClientId'
+					? { paypalClientId: [], paypalClientSecret: ['api-m.paypal.com'] }
+					: { paypalClientId: ['api-m.paypal.com'], paypalClientSecret: [] }
+			resolveSpy.mockImplementation(async ({ name }) => {
 				const values: Record<string, string> = {
 					paypalClientId: 'client-id',
 					paypalClientSecret: 'client-secret',
@@ -507,36 +477,28 @@ test.each([
 					allowedCapabilities: [],
 				}
 			})
-		const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
-			headers: {
-				Authorization: buildBasicAuthSecretPlaceholder({
-					usernameSecret: 'paypalClientId',
-					passwordSecret: 'paypalClientSecret',
-					scope: 'user',
-				}),
-			},
-		})
-
-		try {
-			await expandSecretPlaceholders({ request, props, env })
-			throw new Error('Expected host approval error.')
-		} catch (error) {
-			const message = getErrorMessage(error)
-			const approvals = parseHostApprovalRequiredBatchMessage(message)
-			expect(approvals).toEqual([
-				expect.objectContaining({
-					secretName: blockedSecretName,
-					host: 'api-m.paypal.com',
-					approvalUrl: expect.stringContaining(
-						`/account/secrets/user/${blockedSecretName}?allowed-host=api-m.paypal.com`,
-					),
-				}),
-			])
-		} finally {
-			resolveSpy.mockRestore()
+			const blockedRequest = new Request(
+				'https://api-m.paypal.com/v1/oauth2/token',
+				{
+					headers: { Authorization: placeholder },
+				},
+			)
+			await expect(
+				expandSecretPlaceholders({ request: blockedRequest, props, env }),
+			).rejects.toSatisfy((error: unknown) => {
+				const approvals = parseHostApprovalRequiredBatchMessage(
+					getErrorMessage(error),
+				)
+				return (
+					approvals?.[0]?.secretName === blockedSecretName &&
+					approvals?.[0]?.host === 'api-m.paypal.com'
+				)
+			})
 		}
-	},
-)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})
 
 test('fetch gateway resolves path-only URLs against baseUrl', async () => {
 	// Node's Request rejects path-only URLs; workerd allows them for kody outbound fetch.

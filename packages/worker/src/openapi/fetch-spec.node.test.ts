@@ -5,7 +5,7 @@ import { fetchOpenApiSpecText } from './fetch-spec.ts'
 
 const SPEC_URL = 'https://specs.example/openapi.json'
 
-test('fetchOpenApiSpecText rejects non-https URLs', async () => {
+test('fetchOpenApiSpecText rejects unsafe URLs, credentials, and bad responses', async () => {
 	await expect(
 		fetchOpenApiSpecText({ specUrl: 'http://specs.example/openapi.json' }),
 	).rejects.toThrow(/must use https/)
@@ -15,34 +15,30 @@ test('fetchOpenApiSpecText rejects non-https URLs', async () => {
 	await expect(fetchOpenApiSpecText({ specUrl: 'not-a-url' })).rejects.toThrow(
 		/not a valid URL/,
 	)
-})
-
-test('fetchOpenApiSpecText rejects embedded credentials', async () => {
 	await expect(
 		fetchOpenApiSpecText({
 			specUrl: 'https://user:pass@specs.example/openapi.json',
 		}),
 	).rejects.toThrow(/embedded credentials/)
-})
+	await expect(
+		fetchOpenApiSpecText({
+			specUrl: 'https://user:pass@specs.example/openapi.json',
+		}),
+	).rejects.toThrow(/embedded credentials/)
 
-test('fetchOpenApiSpecText rejects non-OK responses', async () => {
-	using _server = createMswNodeServer([
+	using _badResponseServer = createMswNodeServer([
 		http.get(SPEC_URL, () =>
 			HttpResponse.json({ error: 'nope' }, { status: 503 }),
 		),
 	])
-
 	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).rejects.toThrow(
 		/HTTP 503/,
 	)
-})
 
-test('fetchOpenApiSpecText rejects oversized bodies via readBoundedBody', async () => {
 	const body = 'x'.repeat(101)
 	using _oversizedServer = createMswNodeServer([
 		http.get(SPEC_URL, () => new HttpResponse(body)),
 	])
-
 	await expect(
 		fetchOpenApiSpecText({ specUrl: SPEC_URL, maxBytes: 100 }),
 	).rejects.toThrow(/response exceeds 100 bytes/)
@@ -56,25 +52,21 @@ test('fetchOpenApiSpecText rejects oversized bodies via readBoundedBody', async 
 				}),
 		),
 	])
-
 	await expect(
 		fetchOpenApiSpecText({ specUrl: SPEC_URL, maxBytes: 100 }),
 	).rejects.toThrow(/response exceeds 100 bytes/)
 })
 
-test('fetchOpenApiSpecText returns body text on success', async () => {
+test('fetchOpenApiSpecText follows safe redirects and rejects unsafe redirect chains', async () => {
 	const payload = JSON.stringify({ openapi: '3.0.3', info: { title: 'ok' } })
-	using _server = createMswNodeServer([
+	using _successServer = createMswNodeServer([
 		http.get(SPEC_URL, () => new HttpResponse(payload)),
 	])
-
 	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).resolves.toBe(
 		payload,
 	)
-})
 
-test('fetchOpenApiSpecText rejects https→http redirects', async () => {
-	using _server = createMswNodeServer([
+	using _httpRedirectServer = createMswNodeServer([
 		http.get(
 			SPEC_URL,
 			() =>
@@ -84,16 +76,12 @@ test('fetchOpenApiSpecText rejects https→http redirects', async () => {
 				}),
 		),
 	])
-
 	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).rejects.toThrow(
 		/must use https/,
 	)
-})
 
-test('fetchOpenApiSpecText follows https→https redirects', async () => {
 	const finalUrl = 'https://specs.example/v2/openapi.json'
-	const payload = JSON.stringify({ openapi: '3.0.3', info: { title: 'ok' } })
-	using _server = createMswNodeServer([
+	using _httpsRedirectServer = createMswNodeServer([
 		http.get(
 			SPEC_URL,
 			() =>
@@ -104,14 +92,11 @@ test('fetchOpenApiSpecText follows https→https redirects', async () => {
 		),
 		http.get(finalUrl, () => new HttpResponse(payload)),
 	])
-
 	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).resolves.toBe(
 		payload,
 	)
-})
 
-test('fetchOpenApiSpecText rejects redirects with embedded credentials', async () => {
-	using _server = createMswNodeServer([
+	using _credentialRedirectServer = createMswNodeServer([
 		http.get(
 			SPEC_URL,
 			() =>
@@ -123,14 +108,11 @@ test('fetchOpenApiSpecText rejects redirects with embedded credentials', async (
 				}),
 		),
 	])
-
 	await expect(fetchOpenApiSpecText({ specUrl: SPEC_URL })).rejects.toThrow(
 		/embedded credentials/,
 	)
-})
 
-test('fetchOpenApiSpecText rejects redirect chains longer than 5 hops', async () => {
-	using _server = createMswNodeServer([
+	using _hopServer = createMswNodeServer([
 		http.get(
 			'https://specs.example/hop-0',
 			() =>
@@ -180,7 +162,6 @@ test('fetchOpenApiSpecText rejects redirect chains longer than 5 hops', async ()
 				}),
 		),
 	])
-
 	await expect(
 		fetchOpenApiSpecText({ specUrl: 'https://specs.example/hop-0' }),
 	).rejects.toThrow(/too many redirects/)

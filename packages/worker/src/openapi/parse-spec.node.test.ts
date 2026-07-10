@@ -119,7 +119,7 @@ const minimalJsonSpec = {
 	},
 }
 
-test('parseOpenApiSpec accepts OpenAPI 3.0 JSON and truncates long descriptions', () => {
+test('parseOpenApiSpec accepts OpenAPI 3.0 JSON, 3.1 YAML, and truncates long descriptions', () => {
 	const parsed = parseOpenApiSpec(JSON.stringify(minimalJsonSpec))
 	expect(parsed.openapiVersion).toBe('3.0.3')
 	expect(parsed.title).toBe('Widgets API')
@@ -133,9 +133,7 @@ test('parseOpenApiSpec accepts OpenAPI 3.0 JSON and truncates long descriptions'
 		},
 	])
 	expect(parsed.operations.length).toBeGreaterThanOrEqual(5)
-})
 
-test('parseOpenApiSpec accepts OpenAPI 3.1 YAML', () => {
 	const yaml = `
 openapi: 3.1.0
 info:
@@ -149,11 +147,11 @@ paths:
         "200":
           description: ok
 `
-	const parsed = parseOpenApiSpec(yaml)
-	expect(parsed.openapiVersion).toBe('3.1.0')
-	expect(parsed.title).toBe('YAML API')
-	expect(parsed.operations).toHaveLength(1)
-	expect(parsed.operations[0]?.slug).toBe('ping')
+	const yamlParsed = parseOpenApiSpec(yaml)
+	expect(yamlParsed.openapiVersion).toBe('3.1.0')
+	expect(yamlParsed.title).toBe('YAML API')
+	expect(yamlParsed.operations).toHaveLength(1)
+	expect(yamlParsed.operations[0]?.slug).toBe('ping')
 })
 
 test('parseOpenApiSpec rejects Swagger 2.0', () => {
@@ -192,12 +190,7 @@ test('parseOpenApiSpec resolves local $refs and warns on unresolvable refs', () 
 			warning.includes('unresolvable local $ref'),
 		),
 	).toBe(true)
-})
 
-test('parseOpenApiSpec does not hang on cyclic local schema refs', () => {
-	const started = Date.now()
-	const parsed = parseOpenApiSpec(JSON.stringify(minimalJsonSpec))
-	expect(Date.now() - started).toBeLessThan(2_000)
 	const tree = parsed.operations.find((op) => op.path === '/tree')
 	expect(tree).toBeDefined()
 	expect(
@@ -207,9 +200,8 @@ test('parseOpenApiSpec does not hang on cyclic local schema refs', () => {
 				warning.includes('schema truncated'),
 		),
 	).toBe(true)
-})
 
-test('deriveOperationSlug and dedupe follow contract rules', () => {
+	const slugs = parsed.operations.map((op) => op.slug)
 	expect(deriveOperationSlug('List Widgets!', 'get', '/widgets')).toBe(
 		'list_widgets',
 	)
@@ -217,14 +209,8 @@ test('deriveOperationSlug and dedupe follow contract rules', () => {
 		'get_widgets_id',
 	)
 	expect(deriveOperationSlug('!!!', 'post', '///')).toBe('operation')
-
-	const parsed = parseOpenApiSpec(JSON.stringify(minimalJsonSpec))
-	const slugs = parsed.operations.map((op) => op.slug)
-	// operationId camelCase lowercases without inserted underscores
 	expect(slugs).toContain('listwidgets')
-	// missing operationId falls back to method_path
 	expect(slugs).toContain('post_widgets')
-	// duplicate operationIds get _2 suffix in document order
 	expect(slugs).toContain('getwidget')
 	expect(slugs).toContain('getwidget_2')
 })

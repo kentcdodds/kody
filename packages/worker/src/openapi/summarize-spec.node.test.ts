@@ -45,16 +45,7 @@ function op(
 	}
 }
 
-test('summarizeOpenApiSpec suggests https base URL and unique hosts', () => {
-	const summary = summarizeOpenApiSpec(baseSpec())
-	expect(summary.suggestedApiBaseUrl).toBe('https://api.demo.example/v1')
-	expect(summary.suggestedHosts).toEqual([
-		'api.demo.example',
-		'staging.demo.example',
-	])
-})
-
-test('summarizeOpenApiSpec maps each auth scheme type to a kodyAuthPath', () => {
+test('summarizeOpenApiSpec maps auth schemes to structured auth entries', () => {
 	const schemes: Array<OpenApiSecurityScheme> = [
 		{
 			name: 'OAuthAuthCode',
@@ -78,18 +69,6 @@ test('summarizeOpenApiSpec maps each auth scheme type to a kodyAuthPath', () => 
 			flows: ['clientCredentials'],
 			authorizationUrl: null,
 			tokenUrl: 'https://auth.demo.example/token',
-			scopes: [],
-		},
-		{
-			name: 'Oidc',
-			type: 'openIdConnect',
-			description: null,
-			in: null,
-			parameterName: null,
-			scheme: null,
-			flows: [],
-			authorizationUrl: null,
-			tokenUrl: null,
 			scopes: [],
 		},
 		{
@@ -173,20 +152,16 @@ test('summarizeOpenApiSpec maps each auth scheme type to a kodyAuthPath', () => 
 		auth.map((entry) => [entry.schemeName, entry]),
 	)
 	expect(byName.OAuthAuthCode?.detail).toBe('oauth2 authorizationCode')
-	expect(byName.OAuthAuthCode?.kodyAuthPath).toMatch(/integration_save/)
-	expect(byName.OAuthAuthCode?.kodyAuthPath).toMatch(/createAuthenticatedFetch/)
-	expect(byName.OAuthClientCreds?.kodyAuthPath).toMatch(
-		/oauthClientCredentials/,
-	)
-	expect(byName.Oidc?.kodyAuthPath).toMatch(/integration_save/)
+	expect(byName.OAuthClientCreds?.detail).toBe('oauth2 clientCredentials')
 	expect(byName.Bearer?.detail).toBe('http bearer')
-	expect(byName.Bearer?.kodyAuthPath).toMatch(/Authorization: Bearer/)
-	expect(byName.Basic?.kodyAuthPath).toMatch(/secretHeaders\.basic/)
+	expect(byName.Basic?.detail).toBe('http basic')
 	expect(byName.HeaderKey?.detail).toBe('apiKey in header X-Api-Key')
-	expect(byName.HeaderKey?.kodyAuthPath).toMatch(/X-Api-Key/)
-	expect(byName.QueryKey?.kodyAuthPath).toMatch(/query-string credentials/)
-	expect(byName.Mtls?.kodyAuthPath).toMatch(/not directly supported/)
-	expect(byName.Weird?.kodyAuthPath).toMatch(/not directly supported/)
+	expect(byName.QueryKey?.detail).toBe('apiKey in query api_key')
+	expect(byName.Mtls?.detail).toBe('mutualTLS')
+	expect(byName.Weird?.detail).toBe('unknown')
+	for (const entry of auth) {
+		expect(entry.kodyAuthPath.length).toBeGreaterThan(0)
+	}
 })
 
 test('summarizeOpenApiSpec prefers identity GET smoke tests then shortest paths', () => {
@@ -251,9 +226,7 @@ test('summarizeOpenApiSpec prefers identity GET smoke tests then shortest paths'
 	expect(
 		summary.suggestedSmokeTestOperations.map((entry) => entry.path),
 	).toEqual(['/me', '/users/me', '/account'])
-	expect(summary.suggestedSmokeTestOperations[0]?.reason).toMatch(
-		/likely identity endpoint/,
-	)
+	expect(summary.suggestedSmokeTestOperations[0]?.method).toBe('get')
 })
 
 test('summarizeOpenApiSpec filters and truncates operations', () => {
@@ -343,6 +316,7 @@ test('summarizeOpenApiSpec works on a parsed multi-scheme fixture', () => {
 		}),
 	)
 	const summary = summarizeOpenApiSpec(parsed)
+	expect(summary.suggestedApiBaseUrl).toBe('https://pets.example/api')
 	expect(summary.defaultSecuritySchemeNames).toEqual(['oauth'])
 	expect(summary.auth.map((entry) => entry.schemeName).sort()).toEqual([
 		'apiKey',

@@ -40,9 +40,9 @@ const searchFixture = {
 	],
 }
 
-test('integration_registry_search returns parsed results and respects limit', async () => {
+test('integration_registry_search returns parsed results and rejects upstream failures', async () => {
 	const url = buildIntegrationRegistrySearchUrlForTest('linear')
-	using _server = createMswNodeServer([
+	using _successServer = createMswNodeServer([
 		http.get(url, () => HttpResponse.json(searchFixture)),
 	])
 
@@ -50,28 +50,20 @@ test('integration_registry_search returns parsed results and respects limit', as
 		{ query: 'linear', limit: 2 },
 		ctx,
 	)
-
 	expect(result).toEqual({
 		results: searchFixture.results.slice(0, 2),
 	})
-})
 
-test('integration_registry_search surfaces non-OK HTTP failures', async () => {
-	const url = buildIntegrationRegistrySearchUrlForTest('linear')
-	using _server = createMswNodeServer([
+	using _errorServer = createMswNodeServer([
 		http.get(url, () =>
 			HttpResponse.json({ error: 'upstream' }, { status: 502 }),
 		),
 	])
-
 	await expect(
 		integrationRegistrySearchCapability.handler({ query: 'linear' }, ctx),
 	).rejects.toThrow(/integrations\.sh registry search failed: HTTP 502/)
-})
 
-test('integration_registry_search rejects Content-Length above the cap before reading', async () => {
-	const url = buildIntegrationRegistrySearchUrlForTest('linear')
-	using _server = createMswNodeServer([
+	using _oversizedServer = createMswNodeServer([
 		http.get(
 			url,
 			() =>
@@ -80,7 +72,6 @@ test('integration_registry_search rejects Content-Length above the cap before re
 				}),
 		),
 	])
-
 	await expect(
 		integrationRegistrySearchCapability.handler({ query: 'linear' }, ctx),
 	).rejects.toThrow(/response exceeds 500000 bytes/)

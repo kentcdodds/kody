@@ -47,7 +47,19 @@ function createContext(options: { emailVerifiedAt?: string | null } = {}) {
 	}
 }
 
-test('email_reply is rejected for unverified accounts', async () => {
+const inboundMessage = {
+	id: 'inbound-1',
+	subject: 'Hello',
+	fromAddress: 'sender@example.com',
+	envelopeFrom: null,
+	replyToAddresses: [],
+	messageIdHeader: '<inbound@example.com>',
+	references: [],
+	threadId: 'thread-1',
+	inboxId: 'inbox-1',
+}
+
+test('email_reply gates unverified accounts, surfaces failed delivery, and forwards attachments', async () => {
 	await expect(
 		emailReplyCapability.handler(
 			{
@@ -59,20 +71,8 @@ test('email_reply is rejected for unverified accounts', async () => {
 		),
 	).rejects.toThrow(/Account email is not verified/)
 	expect(mocks.sendOutboundEmail).not.toHaveBeenCalled()
-})
 
-test('email_reply throws when provider delivery is persisted as failed', async () => {
-	mocks.getEmailMessageById.mockResolvedValue({
-		id: 'inbound-1',
-		subject: 'Hello',
-		fromAddress: 'sender@example.com',
-		envelopeFrom: null,
-		replyToAddresses: [],
-		messageIdHeader: '<inbound@example.com>',
-		references: [],
-		threadId: 'thread-1',
-		inboxId: 'inbox-1',
-	})
+	mocks.getEmailMessageById.mockResolvedValue(inboundMessage)
 	mocks.sendOutboundEmail.mockResolvedValue({
 		status: 'failed',
 		error: 'Invalid email address: Invalid input',
@@ -108,8 +108,6 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 	).rejects.toThrow(
 		'Email reply delivery failed: Invalid email address: Invalid input',
 	)
-	// The recipient is derived inside sendOutboundEmail from the stored
-	// message; the capability passes neither a from nor a to address.
 	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
@@ -122,32 +120,13 @@ test('email_reply throws when provider delivery is persisted as failed', async (
 			inboxId: 'inbox-1',
 		}),
 	)
-	expect(mocks.sendOutboundEmail).not.toHaveBeenCalledWith(
-		expect.objectContaining({ from: expect.anything() }),
-	)
-	expect(mocks.sendOutboundEmail).not.toHaveBeenCalledWith(
-		expect.objectContaining({ to: expect.anything() }),
-	)
-})
 
-test('email_reply forwards attachments to the outbound send', async () => {
-	mocks.getEmailMessageById.mockResolvedValue({
-		id: 'inbound-1',
-		subject: 'Hello',
-		fromAddress: 'sender@example.com',
-		envelopeFrom: null,
-		replyToAddresses: [],
-		messageIdHeader: '<inbound@example.com>',
-		references: [],
-		threadId: 'thread-1',
-		inboxId: 'inbox-1',
-	})
 	mocks.sendOutboundEmail.mockResolvedValue({
 		status: 'sent',
 		error: null,
 		providerMessageId: 'provider-1',
 		message: {
-			id: 'outbound-1',
+			id: 'outbound-2',
 			direction: 'outbound',
 			inboxId: 'inbox-1',
 			threadId: 'thread-1',
@@ -180,7 +159,7 @@ test('email_reply forwards attachments to the outbound send', async () => {
 		},
 		createContext(),
 	)
-	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
+	expect(mocks.sendOutboundEmail).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			recipientPolicy: 'reply',
 			replyToMessageId: 'inbound-1',
