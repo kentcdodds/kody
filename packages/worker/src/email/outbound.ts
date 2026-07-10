@@ -566,13 +566,43 @@ export async function sendOutboundEmail(
 			sentAt: null,
 		},
 	})
-	await storeOutboundAttachments({
-		db: input.env.APP_DB,
-		blobs: input.env.EMAIL_BLOBS,
-		userId: input.userId,
-		messageId: message.id,
-		attachments,
-	})
+	try {
+		await storeOutboundAttachments({
+			db: input.env.APP_DB,
+			blobs: input.env.EMAIL_BLOBS,
+			userId: input.userId,
+			messageId: message.id,
+			attachments,
+		})
+	} catch (error) {
+		// The daily send counter deliberately tracks attempts (see the
+		// consumeDailyEntitlement comment), but the message must not stay in
+		// 'stored' limbo with no delivery attempt recorded.
+		const messageText = getErrorMessage(error)
+		await updateEmailMessageDelivery({
+			db: input.env.APP_DB,
+			messageId: message.id,
+			status: 'failed',
+			providerMessageId: null,
+			error: messageText,
+			sentAt: null,
+		}).catch((updateError) => {
+			console.warn('email-attachment-failure-status-update-failed', updateError)
+		})
+		await insertEmailDeliveryEvent({
+			db: input.env.APP_DB,
+			messageId: message.id,
+			userId: input.userId,
+			inboxId: null,
+			eventType: 'failed',
+			provider: 'cloudflare-email',
+			providerMessageId: null,
+			detail: { error: messageText },
+		}).catch((eventError) => {
+			console.warn('email-attachment-failure-event-insert-failed', eventError)
+		})
+		throw error
+	}
 	await insertEmailDeliveryEvent({
 		db: input.env.APP_DB,
 		messageId: message.id,

@@ -961,16 +961,19 @@ export async function insertEmailAttachments(input: {
 		storageKey?: string | null
 	}>
 }) {
+	if (input.attachments.length === 0) return
 	const timestamp = nowIso()
-	for (const attachment of input.attachments) {
-		await input.db
-			.prepare(
-				`INSERT INTO email_attachments (
-					id, message_id, filename, content_type, content_id, disposition,
-					size, storage_kind, storage_key, created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			)
-			.bind(
+	// One atomic batch: a mid-list failure must not leave a partial set of
+	// rows behind (callers clean up blobs assuming all-or-nothing rows).
+	const statement = input.db.prepare(
+		`INSERT INTO email_attachments (
+			id, message_id, filename, content_type, content_id, disposition,
+			size, storage_kind, storage_key, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	)
+	await input.db.batch(
+		input.attachments.map((attachment) =>
+			statement.bind(
 				attachment.id ?? crypto.randomUUID(),
 				input.messageId,
 				attachment.filename ?? null,
@@ -981,9 +984,9 @@ export async function insertEmailAttachments(input: {
 				attachment.storageKind,
 				attachment.storageKey ?? null,
 				timestamp,
-			)
-			.run()
-	}
+			),
+		),
+	)
 }
 export async function insertEmailMessageWithAttachments(
 	input: Parameters<typeof insertEmailMessage>[0] & {
