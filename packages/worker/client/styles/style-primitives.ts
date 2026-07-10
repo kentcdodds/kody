@@ -234,7 +234,6 @@ export const detailValueCss = {
 	color: colors.text,
 	overflowWrap: 'anywhere',
 	whiteSpace: 'normal',
-	wordBreak: 'break-all',
 }
 
 export const primaryLinkCss = {
