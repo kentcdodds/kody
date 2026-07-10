@@ -45,6 +45,13 @@ import {
 	buildIntegrationValueName,
 	parseIntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
+import {
+	buildOAuthTokenExchangeFailurePayload,
+	buildOAuthTokenExchangeRequest,
+	oauthTokenExchangeFailureHttpStatus,
+	resolveTokenExchangeStyle,
+	type TokenExchangeStyle,
+} from '#app/oauth-token-exchange.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'package' | 'user'>
 
@@ -356,6 +363,10 @@ async function handleConnectOauthAction(input: {
 		clientSecretSecretName,
 		accessTokenSecretName,
 		refreshTokenSecretName,
+		tokenExchangeStyle: resolveTokenExchangeStyle({
+			tokenUrl,
+			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
+		}),
 		tokenPayload: tokenRecord,
 		allowedHosts,
 		authorization: authorizeUrl
@@ -497,7 +508,13 @@ async function handleOAuthExchangeAction(input: {
 		)
 	}
 
+	const tokenExchangeStyle = resolveTokenExchangeStyle({
+		tokenUrl,
+		tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
+	})
+
 	const params = new URLSearchParams(paramsRaw)
+	let clientSecret: string | null = null
 	if (flow === 'confidential') {
 		if (!clientSecretSecretName) {
 			return jsonResponse(
@@ -515,16 +532,34 @@ async function handleOAuthExchangeAction(input: {
 		if (!resolved.found || !resolved.value) {
 			return jsonResponse({ ok: false, error: 'Client secret not found.' }, 400)
 		}
-		params.set('client_secret', resolved.value)
+		clientSecret = resolved.value
+	}
+
+	let exchangeRequest: { headers: Record<string, string>; body: string }
+	try {
+		exchangeRequest = buildOAuthTokenExchangeRequest({
+			params,
+			flow,
+			clientSecret,
+			style: tokenExchangeStyle,
+		})
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error
+						? error.message
+						: 'Unable to build token exchange request.',
+			},
+			400,
+		)
 	}
 
 	const response = await fetch(tokenUrl, {
 		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: params.toString(),
+		headers: exchangeRequest.headers,
+		body: exchangeRequest.body,
 	})
 	const text = await response.text()
 	let payload: unknown = null
@@ -533,13 +568,29 @@ async function handleOAuthExchangeAction(input: {
 	} catch {
 		payload = null
 	}
-	if (!payload || typeof payload !== 'object') {
+	const payloadRecord =
+		payload && typeof payload === 'object' && !Array.isArray(payload)
+			? (payload as Record<string, unknown>)
+			: null
+	if (!response.ok) {
 		return jsonResponse(
-			{ ok: false, error: 'Token exchange failed.' },
-			response.status,
+			buildOAuthTokenExchangeFailurePayload({
+				providerStatus: response.status,
+				payload: payloadRecord,
+			}),
+			oauthTokenExchangeFailureHttpStatus(),
 		)
 	}
-	return jsonResponse(payload as Record<string, unknown>, response.status)
+	if (!payloadRecord) {
+		return jsonResponse(
+			buildOAuthTokenExchangeFailurePayload({
+				providerStatus: response.status,
+				payload: null,
+			}),
+			oauthTokenExchangeFailureHttpStatus(),
+		)
+	}
+	return jsonResponse(payloadRecord, response.status)
 }
 
 async function saveIntegrationConfig(input: {
@@ -554,6 +605,7 @@ async function saveIntegrationConfig(input: {
 	clientSecretSecretName: string | null
 	accessTokenSecretName: string
 	refreshTokenSecretName: string | null
+	tokenExchangeStyle: TokenExchangeStyle | null
 	tokenPayload: Record<string, unknown>
 	allowedHosts: Array<string>
 	authorization: {
@@ -581,6 +633,9 @@ async function saveIntegrationConfig(input: {
 			accessTokenSecretName: input.accessTokenSecretName,
 			refreshTokenSecretName: input.refreshTokenSecretName,
 			requiredHosts: input.allowedHosts,
+			...(input.tokenExchangeStyle && input.tokenExchangeStyle !== 'form'
+				? { tokenExchangeStyle: input.tokenExchangeStyle }
+				: {}),
 			...(input.authorization ? { authorization: input.authorization } : {}),
 		},
 		input.provider,

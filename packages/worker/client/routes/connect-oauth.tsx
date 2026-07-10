@@ -38,6 +38,7 @@ import {
 } from '#client/styles/style-primitives.ts'
 
 type OAuthFlow = 'pkce' | 'confidential'
+type TokenExchangeStyle = 'form' | 'basic-json'
 
 type ConnectOauthQueryConfig = {
 	provider: string
@@ -65,6 +66,7 @@ type ConnectOauthConfig = {
 	apiBaseUrl: string | null
 	scopes: Array<string>
 	flow: OAuthFlow
+	tokenExchangeStyle: TokenExchangeStyle
 	scopeSeparator: string
 	extraAuthorizeParams: Record<string, string>
 	providerSetupInstructions: string | null
@@ -86,6 +88,7 @@ type StoredIntegrationConfig = {
 	accessTokenSecretName: string
 	refreshTokenSecretName: string | null
 	requiredHosts: Array<string>
+	tokenExchangeStyle?: TokenExchangeStyle | null
 	authorization?: StoredIntegrationAuthorization | null
 }
 
@@ -601,13 +604,11 @@ export function ConnectOauthRoute(handle: Handle) {
 				tokenUrl: nextConfig.tokenUrl,
 				params: params.toString(),
 				flow: nextConfig.flow,
+				tokenExchangeStyle: nextConfig.tokenExchangeStyle,
 				clientSecretSecretName: nextConfig.clientSecretSecretName,
 				allowedHosts: nextConfig.allowedHosts,
 			}),
 		})
-		if (redirectToLoginOn401(response)) {
-			return { ok: false, status: 401, error: 'Session expired.' }
-		}
 		const text = await response.text()
 		let data: Record<string, unknown> | null = null
 		try {
@@ -615,17 +616,19 @@ export function ConnectOauthRoute(handle: Handle) {
 		} catch {
 			data = null
 		}
+		const failure = formatOAuthExchangeFailure({
+			status: response.status,
+			data,
+		})
+		if (failure.treatAsSessionExpired) {
+			window.location.assign('/login')
+			return { ok: false, status: 401, error: 'Session expired.' }
+		}
 		if (!response.ok || !data) {
-			const errorDescription =
-				typeof data?.error_description === 'string'
-					? data.error_description
-					: typeof data?.error === 'string'
-						? data.error
-						: null
 			return {
 				ok: false,
 				status: response.status,
-				error: errorDescription ?? 'Token exchange failed.',
+				error: failure.error,
 			}
 		}
 		return { ok: true, data, status: response.status }
@@ -753,6 +756,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				scopeSeparator: config.scopeSeparator,
 				extraAuthorizeParams: config.extraAuthorizeParams,
 				flow: config.flow,
+				tokenExchangeStyle: config.tokenExchangeStyle,
 				clientIdValueName: config.clientIdValueName,
 				clientSecretSecretName: config.clientSecretSecretName,
 				allowedHosts: config.allowedHosts,
@@ -1304,6 +1308,9 @@ export function parseStoredIntegrationConfig(
 			parsed.clientSecretSecretName.trim()
 				? parsed.clientSecretSecretName.trim()
 				: null
+		const tokenExchangeStyle = parseTokenExchangeStyle(
+			parsed.tokenExchangeStyle,
+		)
 		const requiredHosts = Array.isArray(parsed.requiredHosts)
 			? parsed.requiredHosts.filter(
 					(value): value is string => typeof value === 'string',
@@ -1328,6 +1335,7 @@ export function parseStoredIntegrationConfig(
 			accessTokenSecretName,
 			refreshTokenSecretName,
 			requiredHosts: normalizeHosts(requiredHosts),
+			...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 			authorization,
 		}
 	} catch {
@@ -1426,6 +1434,10 @@ export function mergeConnectOauthConfig(input: {
 			input.storedIntegration?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
 		scopes,
 		flow,
+		tokenExchangeStyle: resolveConnectOauthTokenExchangeStyle({
+			tokenUrl,
+			storedStyle: input.storedIntegration?.tokenExchangeStyle ?? null,
+		}),
 		scopeSeparator:
 			input.queryConfig.scopeSeparator ??
 			input.storedIntegration?.authorization?.scopeSeparator ??
@@ -1485,6 +1497,69 @@ export function summarizeStoredSetupState(input: {
 		missingFields,
 		isReady: missingFields.length === 0,
 	}
+}
+
+/**
+ * Distinguish real Kody session expiry (401 Unauthorized) from provider token
+ * exchange failures that historically leaked through as HTTP 401.
+ */
+export function formatOAuthExchangeFailure(input: {
+	status: number
+	data: Record<string, unknown> | null
+}): { treatAsSessionExpired: boolean; error: string } {
+	if (isOAuthExchangeSessionExpired(input)) {
+		return { treatAsSessionExpired: true, error: 'Session expired.' }
+	}
+	const errorDescription =
+		typeof input.data?.error_description === 'string' &&
+		input.data.error_description.trim()
+			? input.data.error_description.trim()
+			: typeof input.data?.error === 'string' && input.data.error.trim()
+				? input.data.error.trim()
+				: null
+	return {
+		treatAsSessionExpired: false,
+		error: errorDescription ?? 'Token exchange failed.',
+	}
+}
+
+export function isOAuthExchangeSessionExpired(input: {
+	status: number
+	data: Record<string, unknown> | null
+}) {
+	if (input.status !== 401) return false
+	if (hasProviderOAuthExchangeError(input.data)) return false
+	return true
+}
+
+function hasProviderOAuthExchangeError(data: Record<string, unknown> | null) {
+	if (!data) return false
+	if (typeof data.providerStatus === 'number') return true
+	if (
+		typeof data.error_description === 'string' &&
+		data.error_description.trim()
+	) {
+		return true
+	}
+	return (
+		typeof data.error === 'string' &&
+		data.error.trim() !== '' &&
+		data.error !== 'Unauthorized.'
+	)
+}
+
+function resolveConnectOauthTokenExchangeStyle(input: {
+	tokenUrl: string
+	storedStyle: TokenExchangeStyle | null
+}): TokenExchangeStyle {
+	if (input.storedStyle) return input.storedStyle
+	const host = safeParseHost(input.tokenUrl)
+	if (host === 'api.notion.com') return 'basic-json'
+	return 'form'
+}
+
+function parseTokenExchangeStyle(raw: unknown): TokenExchangeStyle | null {
+	return raw === 'form' || raw === 'basic-json' ? raw : null
 }
 
 function formatMissingSetupFields(missingFields: Array<string>) {

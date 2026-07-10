@@ -715,3 +715,159 @@ test('account secrets API loads selected secret values and deletes the selected 
 		}),
 	)
 })
+
+test('oauth_exchange supports Notion basic-json and confidential form-body styles without leaking provider 401', async () => {
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'notion-client-secret',
+	})
+	fetchMock.mockResolvedValueOnce(
+		new Response(
+			JSON.stringify({
+				access_token: 'notion-access',
+				refresh_token: 'notion-refresh',
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } },
+		),
+	)
+
+	const notionSuccess = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'oauth_exchange',
+				tokenUrl: 'https://api.notion.com/v1/oauth/token',
+				params: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: 'notion-client-id',
+					code: 'auth-code',
+					redirect_uri: 'https://example.com/connect/oauth',
+				}).toString(),
+				flow: 'confidential',
+				clientSecretSecretName: 'notionClientSecret',
+				allowedHosts: ['api.notion.com'],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(notionSuccess.status).toBe(200)
+	await expect(notionSuccess.json()).resolves.toMatchObject({
+		access_token: 'notion-access',
+		refresh_token: 'notion-refresh',
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	const notionRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
+	expect(notionRequest.method).toBe('POST')
+	expect(notionRequest.headers).toMatchObject({
+		Accept: 'application/json',
+		'Content-Type': 'application/json',
+		Authorization: `Basic ${btoa('notion-client-id:notion-client-secret')}`,
+	})
+	expect(JSON.parse(String(notionRequest.body))).toEqual({
+		grant_type: 'authorization_code',
+		code: 'auth-code',
+		redirect_uri: 'https://example.com/connect/oauth',
+	})
+
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'slack-client-secret',
+	})
+	fetchMock.mockResolvedValueOnce(
+		new Response(JSON.stringify({ access_token: 'slack-access' }), {
+			status: 200,
+			headers: { 'Content-Type': 'application/json' },
+		}),
+	)
+
+	const formSuccess = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'oauth_exchange',
+				tokenUrl: 'https://slack.com/api/oauth.v2.access',
+				params: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: 'slack-client-id',
+					code: 'slack-code',
+					redirect_uri: 'https://example.com/connect/oauth',
+				}).toString(),
+				flow: 'confidential',
+				tokenExchangeStyle: 'form',
+				clientSecretSecretName: 'slackClientSecret',
+				allowedHosts: ['slack.com'],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(formSuccess.status).toBe(200)
+	await expect(formSuccess.json()).resolves.toMatchObject({
+		access_token: 'slack-access',
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(2)
+	const formRequest = fetchMock.mock.calls[1]?.[1] as RequestInit
+	expect(formRequest.headers).toMatchObject({
+		Accept: 'application/json',
+		'Content-Type': 'application/x-www-form-urlencoded',
+	})
+	expect(formRequest.headers).not.toHaveProperty('Authorization')
+	expect(
+		new URLSearchParams(String(formRequest.body)).get('client_secret'),
+	).toBe('slack-client-secret')
+	expect(new URLSearchParams(String(formRequest.body)).get('client_id')).toBe(
+		'slack-client-id',
+	)
+
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'notion-client-secret',
+	})
+	fetchMock.mockResolvedValueOnce(
+		new Response(
+			JSON.stringify({
+				error: 'invalid_client',
+				error_description: 'Client authentication failed',
+			}),
+			{ status: 401, headers: { 'Content-Type': 'application/json' } },
+		),
+	)
+
+	const notionFailure = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'oauth_exchange',
+				tokenUrl: 'https://api.notion.com/v1/oauth/token',
+				params: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: 'notion-client-id',
+					code: 'bad-code',
+					redirect_uri: 'https://example.com/connect/oauth',
+				}).toString(),
+				flow: 'confidential',
+				clientSecretSecretName: 'notionClientSecret',
+				allowedHosts: ['api.notion.com'],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(notionFailure.status).toBe(502)
+	await expect(notionFailure.json()).resolves.toEqual({
+		ok: false,
+		error: 'invalid_client',
+		error_description: 'Client authentication failed',
+		providerStatus: 401,
+	})
+
+	vi.unstubAllGlobals()
+})

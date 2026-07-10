@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	buildIntegrationValueName,
+	formatOAuthExchangeFailure,
 	getIntegrationValueCandidates,
+	isOAuthExchangeSessionExpired,
 	mergeConnectOauthConfig,
 	parseStoredIntegrationConfig,
 	summarizeStoredSetupState,
@@ -88,6 +90,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		apiBaseUrl: 'https://api.github.com',
 		scopes: ['repo', 'read:user'],
 		flow: 'confidential',
+		tokenExchangeStyle: 'form',
 		scopeSeparator: ' ',
 		extraAuthorizeParams: { prompt: 'consent' },
 		dashboardUrl: 'https://github.com/settings/developers',
@@ -227,6 +230,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		tokenHost: 'accounts.spotify.com',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		flow: 'pkce',
+		tokenExchangeStyle: 'form',
 		clientIdValueName: 'spotify-client-id',
 		clientSecretSecretName: null,
 		accessTokenSecretName: 'spotifyAccessToken',
@@ -248,4 +252,97 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 	})
 	expect(pkceSetup.isReady).toBe(true)
 	expect(pkceSetup.missingFields).toEqual([])
+})
+
+test('connect OAuth derives Notion basic-json exchange and surfaces provider failures instead of session expiry', () => {
+	const notionConfig = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'notion',
+			providerKey: 'notion',
+			authorizeHost: 'api.notion.com',
+			authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			apiBaseUrl: 'https://api.notion.com/v1',
+			scopes: [],
+			flow: 'confidential',
+			scopeSeparator: ' ',
+			extraAuthorizeParams: { owner: 'user', response_type: 'code' },
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: ['api.notion.com'],
+		},
+		storedIntegration: null,
+	})
+
+	expect(notionConfig).toMatchObject({
+		provider: 'notion',
+		tokenUrl: 'https://api.notion.com/v1/oauth/token',
+		flow: 'confidential',
+		tokenExchangeStyle: 'basic-json',
+		clientSecretSecretName: 'notionClientSecret',
+		accessTokenSecretName: 'notionAccessToken',
+	})
+
+	const storedNotion = parseStoredIntegrationConfig(
+		JSON.stringify({
+			name: 'notion',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			apiBaseUrl: 'https://api.notion.com/v1',
+			flow: 'confidential',
+			clientIdValueName: 'notion-client-id',
+			clientSecretSecretName: 'notionClientSecret',
+			accessTokenSecretName: 'notionAccessToken',
+			refreshTokenSecretName: 'notionRefreshToken',
+			requiredHosts: ['api.notion.com'],
+			tokenExchangeStyle: 'basic-json',
+			authorization: {
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+				scopes: [],
+				scopeSeparator: null,
+				extraAuthorizeParams: { owner: 'user' },
+			},
+		}),
+		null,
+	)
+	expect(storedNotion?.tokenExchangeStyle).toBe('basic-json')
+
+	expect(
+		formatOAuthExchangeFailure({
+			status: 401,
+			data: { ok: false, error: 'Unauthorized.' },
+		}),
+	).toEqual({
+		treatAsSessionExpired: true,
+		error: 'Session expired.',
+	})
+	expect(
+		isOAuthExchangeSessionExpired({
+			status: 401,
+			data: { ok: false, error: 'Unauthorized.' },
+		}),
+	).toBe(true)
+
+	expect(
+		formatOAuthExchangeFailure({
+			status: 502,
+			data: {
+				ok: false,
+				error: 'invalid_client',
+				error_description: 'Client authentication failed',
+				providerStatus: 401,
+			},
+		}),
+	).toEqual({
+		treatAsSessionExpired: false,
+		error: 'Client authentication failed',
+	})
+	expect(
+		isOAuthExchangeSessionExpired({
+			status: 401,
+			data: {
+				error: 'invalid_client',
+				error_description: 'Client authentication failed',
+			},
+		}),
+	).toBe(false)
 })

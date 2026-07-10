@@ -5,6 +5,8 @@ export const integrationFlowValues = ['pkce', 'confidential'] as const
 
 const defaultIntegrationScopeSeparator = ' '
 
+export const tokenExchangeStyleValues = ['form', 'basic-json'] as const
+
 export const integrationAuthorizationSchema = z
 	.object({
 		authorizeUrl: z.string().url().refine(isHttpUrl, {
@@ -33,6 +35,7 @@ export const integrationConfigSchema = z.object({
 	accessTokenSecretName: z.string().min(1),
 	refreshTokenSecretName: z.string().min(1).optional().nullable(),
 	requiredHosts: z.array(z.string()).optional(),
+	tokenExchangeStyle: z.enum(tokenExchangeStyleValues).optional().nullable(),
 	authorization: integrationAuthorizationSchema.optional().nullable(),
 })
 
@@ -50,6 +53,7 @@ export const integrationSaveSchema = z
 		accessTokenSecretName: z.string().min(1).optional(),
 		refreshTokenSecretName: z.string().min(1).nullable().optional(),
 		requiredHosts: z.array(z.string()).optional(),
+		tokenExchangeStyle: z.enum(tokenExchangeStyleValues).nullable().optional(),
 		authorization: integrationAuthorizationSchema.nullable().optional(),
 	})
 	.strict()
@@ -62,6 +66,7 @@ export function normalizeIntegrationConfig(
 	const authorization = value.authorization
 		? normalizeIntegrationAuthorization(value.authorization)
 		: null
+	const tokenExchangeStyle = value.tokenExchangeStyle ?? null
 	return {
 		...value,
 		name: value.name.trim(),
@@ -72,6 +77,7 @@ export function normalizeIntegrationConfig(
 		accessTokenSecretName: value.accessTokenSecretName.trim(),
 		refreshTokenSecretName: value.refreshTokenSecretName?.trim() || null,
 		requiredHosts: normalizeAllowedHosts(value.requiredHosts ?? []),
+		...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 		...(authorization ? { authorization } : {}),
 	}
 }

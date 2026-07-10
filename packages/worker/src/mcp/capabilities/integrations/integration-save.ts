@@ -96,6 +96,9 @@ function createNewIntegrationConfig(args: z.infer<typeof inputSchema>) {
 		accessTokenSecretName: args.accessTokenSecretName,
 		refreshTokenSecretName: args.refreshTokenSecretName ?? null,
 		requiredHosts: args.requiredHosts,
+		...(args.tokenExchangeStyle !== undefined
+			? { tokenExchangeStyle: args.tokenExchangeStyle }
+			: {}),
 		...(args.authorization !== undefined
 			? { authorization: args.authorization }
 			: {}),
