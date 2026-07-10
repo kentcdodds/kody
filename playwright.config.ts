@@ -11,6 +11,10 @@ export default defineConfig({
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
+	// CI runs `validate`, which executes unit, MCP, and Playwright suites
+	// concurrently on one runner. The default 30s per-test budget flakes under
+	// that resource contention (page.goto alone has been observed taking >30s).
+	timeout: process.env.CI ? 60_000 : 30_000,
 	// Every worker hits the same local D1 file (`.wrangler/state/e2e`) through
 	// Wrangler and the `d1 execute` helpers. Parallel workers cause SQLITE_BUSY
 	// and transient 500s during auth/admin flows.

@@ -53,6 +53,14 @@ when that makes a single test longer and more assertion-heavy.
   setup a test needs rather than relying on leftover state from a prior case.
   Keep explicit mid-test resets only when one workflow test runs multiple
   scenarios in a single `test(...)`.
+- Console output is guarded globally
+  (`packages/worker/src/test-support/console-spies.ts`, wired via `setupFiles`):
+  unexpected `console.error`/`console.warn` calls fail the test, and
+  `console.info`/`console.debug` are silenced. When code under test
+  intentionally logs, import the exported `consoleError`/`consoleWarn` spies,
+  call `.mockImplementation(() => {})` in the test, and assert on the calls
+  (prefer the stable first-argument tag plus `expect.any(Error)`; do not pin
+  long prose). Keep test output free of stray logging.
 
 ## Examples
 

@@ -6,6 +6,7 @@ import {
 	getScrollRestorationTarget,
 	type RouterNavigationEventDetail,
 	type ScrollPosition,
+	type ScrollRestorationTarget,
 } from './router-scroll-state.ts'
 
 const scrollPositionsSessionKey = 'kody:router-scroll-positions'
@@ -82,50 +83,50 @@ function isRouterNavigationEvent(
 	)
 }
 
-function scheduleScrollRestoration(
-	applyScroll: () => void,
-	signal: AbortSignal,
-) {
-	const requestId = ++restoreScrollRequestId
-	const run = () => {
-		if (signal.aborted || requestId !== restoreScrollRequestId) return
-		applyScroll()
+// Async route content (frames, deferred lists, images) can keep the document
+// too short to reach a saved scroll position right after navigation. Retry on
+// animation frames until the position becomes reachable or this deadline hits.
+const scrollRestorationDeadlineMs = 3_000
+
+function maxWindowScrollPosition(): ScrollPosition {
+	const root = document.documentElement
+	return {
+		x: Math.max(0, root.scrollWidth - window.innerWidth),
+		y: Math.max(0, root.scrollHeight - window.innerHeight),
 	}
-	if (typeof window.requestAnimationFrame === 'function') {
-		window.requestAnimationFrame(run)
-		return
-	}
-	window.setTimeout(run, 0)
 }
 
-function applyWindowScroll(detail: RouterNavigationEventDetail) {
-	const key = getCurrentScrollRestorationKey()
-	const target = getScrollRestorationTarget({
-		historyAction: detail.historyAction,
-		location: detail.location,
-		preventScrollReset: detail.preventScrollReset,
-		savedPosition: key ? savedScrollPositions.get(key) : null,
-	})
-
+function applyWindowScroll(
+	detail: RouterNavigationEventDetail,
+	target: ScrollRestorationTarget,
+	isFinalAttempt: boolean,
+): boolean {
 	switch (target.type) {
-		case 'position':
+		case 'position': {
 			window.scrollTo(target.position.x, target.position.y)
-			return
+			const max = maxWindowScrollPosition()
+			// Report failure while the document is still too short to reach the
+			// saved position so the caller retries once more content rendered.
+			return target.position.y <= max.y && target.position.x <= max.x
+		}
 		case 'hash': {
 			const element = getHashTarget(target.id)
 			if (element) {
 				element.scrollIntoView()
-				return
+				return true
 			}
-			if (detail.preventScrollReset) return
+			// The hash target may render asynchronously; retry until the deadline
+			// before falling back.
+			if (!isFinalAttempt) return false
+			if (detail.preventScrollReset) return true
 			window.scrollTo(0, 0)
-			return
+			return true
 		}
 		case 'preserve':
-			return
+			return true
 		case 'top':
 			window.scrollTo(0, 0)
-			return
+			return true
 		default: {
 			const exhaustive: never = target
 			return exhaustive
@@ -137,7 +138,43 @@ function restoreWindowScroll(
 	detail: RouterNavigationEventDetail,
 	signal: AbortSignal,
 ) {
-	scheduleScrollRestoration(() => applyWindowScroll(detail), signal)
+	const key = getCurrentScrollRestorationKey()
+	const target = getScrollRestorationTarget({
+		historyAction: detail.historyAction,
+		location: detail.location,
+		preventScrollReset: detail.preventScrollReset,
+		savedPosition: key ? savedScrollPositions.get(key) : null,
+	})
+	const requestId = ++restoreScrollRequestId
+	const startedAt = Date.now()
+	let lastAppliedX: number | null = null
+	let lastAppliedY: number | null = null
+	const schedule = (run: () => void) => {
+		if (typeof window.requestAnimationFrame === 'function') {
+			window.requestAnimationFrame(run)
+			return
+		}
+		window.setTimeout(run, 0)
+	}
+	const attempt = () => {
+		if (signal.aborted || requestId !== restoreScrollRequestId) return
+		// Stop retrying when something else (like the user) scrolled between
+		// attempts; restoration must never fight manual scrolling.
+		if (
+			lastAppliedY !== null &&
+			(window.scrollX !== lastAppliedX || window.scrollY !== lastAppliedY)
+		) {
+			return
+		}
+		const isFinalAttempt = Date.now() - startedAt >= scrollRestorationDeadlineMs
+		if (applyWindowScroll(detail, target, isFinalAttempt) || isFinalAttempt) {
+			return
+		}
+		lastAppliedX = window.scrollX
+		lastAppliedY = window.scrollY
+		schedule(attempt)
+	}
+	schedule(attempt)
 }
 
 function handleNavigationStart(event: Event) {
