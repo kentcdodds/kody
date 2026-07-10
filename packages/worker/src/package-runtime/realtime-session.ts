@@ -292,7 +292,7 @@ function createPackageAppWorkerBindingIdentity(
 	])
 }
 
-async function resolvePackageAppWorker(input: {
+async function resolvePackageAppWorkerBuildInput(input: {
 	env: Env
 	binding: PackageRealtimeBindingState
 }) {
@@ -325,8 +325,7 @@ async function resolvePackageAppWorker(input: {
 		},
 		repoContext: null,
 	})
-	return await buildPackageAppWorker({
-		env: input.env,
+	return {
 		baseUrl: input.binding.baseUrl,
 		userId: input.binding.userId,
 		savedPackage: {
@@ -342,7 +341,7 @@ async function resolvePackageAppWorker(input: {
 		runtime: {
 			callerContext,
 		},
-	})
+	}
 }
 
 export async function resolvePackageAppWorkerCacheKey(input: {
@@ -374,8 +373,12 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		cacheKey: string
 		expiresAt: number
 	} | null = null
-	private cachedAppWorkerPromise: Promise<
-		Awaited<ReturnType<typeof buildPackageAppWorker>>
+	// Caches only the build *input* (D1 rows + source files + caller context).
+	// The worker stub itself is request-bound and must be re-acquired per
+	// event via buildPackageAppWorker, which reuses cached worker options and
+	// warm loader isolates internally.
+	private cachedAppWorkerBuildInputPromise: Promise<
+		Awaited<ReturnType<typeof resolvePackageAppWorkerBuildInput>>
 	> | null = null
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -411,7 +414,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		this.stateSnapshot = createInitialState()
 		this.cachedAppWorkerKey = null
 		this.cachedAppWorkerKeyLookup = null
-		this.cachedAppWorkerPromise = null
+		this.cachedAppWorkerBuildInputPromise = null
 		await this.ctx.storage.deleteAll()
 	}
 
@@ -442,24 +445,31 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		}
 	}
 
-	private async getCachedPackageAppWorker(
-		binding: PackageRealtimeBindingState,
-	) {
+	private async getPackageAppWorker(binding: PackageRealtimeBindingState) {
 		const cacheKey = await this.getResolvedPackageAppWorkerCacheKey(binding)
-		if (this.cachedAppWorkerKey !== cacheKey || !this.cachedAppWorkerPromise) {
+		if (
+			this.cachedAppWorkerKey !== cacheKey ||
+			!this.cachedAppWorkerBuildInputPromise
+		) {
 			this.cachedAppWorkerKey = cacheKey
-			this.cachedAppWorkerPromise = resolvePackageAppWorker({
-				env: this.env,
-				binding,
-			}).catch((error) => {
+			this.cachedAppWorkerBuildInputPromise = resolvePackageAppWorkerBuildInput(
+				{
+					env: this.env,
+					binding,
+				},
+			).catch((error) => {
 				if (this.cachedAppWorkerKey === cacheKey) {
 					this.cachedAppWorkerKey = null
-					this.cachedAppWorkerPromise = null
+					this.cachedAppWorkerBuildInputPromise = null
 				}
 				throw error
 			})
 		}
-		return await this.cachedAppWorkerPromise
+		const buildInput = await this.cachedAppWorkerBuildInputPromise
+		return await buildPackageAppWorker({
+			env: this.env,
+			...buildInput,
+		})
 	}
 
 	private async getResolvedPackageAppWorkerCacheKey(
@@ -581,7 +591,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		binding: PackageRealtimeBindingState
 		payload: PackageRealtimeHookInput
 	}) {
-		const appWorker = await this.getCachedPackageAppWorker(input.binding)
+		const appWorker = await this.getPackageAppWorker(input.binding)
 		const entrypoint = appWorker.stub.getEntrypoint(
 			appWorker.entrypointName,
 		) as {
