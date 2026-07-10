@@ -871,3 +871,136 @@ test('oauth_exchange supports Notion basic-json and confidential form-body style
 
 	vi.unstubAllGlobals()
 })
+
+test('oauth_exchange supports Canva basic-form with PKCE code_verifier and a client secret together', async () => {
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'canva-client-secret',
+	})
+	fetchMock.mockResolvedValueOnce(
+		new Response(
+			JSON.stringify({
+				access_token: 'canva-access',
+				refresh_token: 'canva-refresh',
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } },
+		),
+	)
+
+	const canvaSuccess = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'oauth_exchange',
+				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+				params: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: 'canva-client-id',
+					code: 'canva-code',
+					redirect_uri: 'https://example.com/connect/oauth',
+					code_verifier: 'pkce-verifier',
+				}).toString(),
+				flow: 'confidential',
+				clientSecretSecretName: 'canvaClientSecret',
+				allowedHosts: ['api.canva.com'],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(canvaSuccess.status).toBe(200)
+	await expect(canvaSuccess.json()).resolves.toMatchObject({
+		access_token: 'canva-access',
+		refresh_token: 'canva-refresh',
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	expect(fetchMock.mock.calls[0]?.[0]).toBe(
+		'https://api.canva.com/rest/v1/oauth/token',
+	)
+	const canvaRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
+	expect(canvaRequest.method).toBe('POST')
+	expect(canvaRequest.headers).toMatchObject({
+		Accept: 'application/json',
+		'Content-Type': 'application/x-www-form-urlencoded',
+		Authorization: `Basic ${btoa('canva-client-id:canva-client-secret')}`,
+	})
+	const canvaBody = new URLSearchParams(String(canvaRequest.body))
+	expect(canvaBody.get('grant_type')).toBe('authorization_code')
+	expect(canvaBody.get('code')).toBe('canva-code')
+	expect(canvaBody.get('code_verifier')).toBe('pkce-verifier')
+	expect(canvaBody.get('client_id')).toBeNull()
+	expect(canvaBody.get('client_secret')).toBeNull()
+
+	vi.unstubAllGlobals()
+})
+
+test('connect oauth persists usePkce for confidential + PKCE providers like Canva', async () => {
+	mockModule.saveValue.mockClear()
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	const canvaResponse = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'canva',
+				authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
+				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+				apiBaseUrl: 'https://api.canva.com/rest/v1',
+				scopes: ['design:content:read'],
+				scopeSeparator: ' ',
+				flow: 'confidential',
+				usePkce: true,
+				tokenExchangeStyle: 'basic-form',
+				clientIdValueName: 'canva-client-id',
+				clientSecretSecretName: 'canvaClientSecret',
+				accessTokenSecretName: 'canvaAccessToken',
+				refreshTokenSecretName: 'canvaRefreshToken',
+				allowedHosts: ['api.canva.com'],
+				tokenPayload: {
+					access_token: 'access-token',
+					refresh_token: 'refresh-token',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(canvaResponse.status).toBe(200)
+	await expect(canvaResponse.json()).resolves.toMatchObject({
+		ok: true,
+		accessTokenSaved: true,
+		refreshTokenSaved: true,
+		integrationName: 'canva',
+	})
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_integration:canva',
+			value: JSON.stringify({
+				name: 'canva',
+				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+				apiBaseUrl: 'https://api.canva.com/rest/v1',
+				flow: 'confidential',
+				usePkce: true,
+				clientIdValueName: 'canva-client-id',
+				clientSecretSecretName: 'canvaClientSecret',
+				accessTokenSecretName: 'canvaAccessToken',
+				refreshTokenSecretName: 'canvaRefreshToken',
+				requiredHosts: ['api.canva.com'],
+				tokenExchangeStyle: 'basic-form',
+				authorization: {
+					authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
+					scopes: ['design:content:read'],
+					scopeSeparator: null,
+					extraAuthorizeParams: {},
+				},
+			}),
+		}),
+	)
+})

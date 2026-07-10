@@ -65,6 +65,24 @@ test('token exchange style resolves Notion basic-json and builds both request sh
 		'client-secret',
 	)
 
+	const formPkceConfidentialRequest = buildOAuthTokenExchangeRequest({
+		params: new URLSearchParams({
+			grant_type: 'authorization_code',
+			client_id: 'client-id',
+			code: 'code',
+			redirect_uri: 'https://example.com/connect/oauth',
+			code_verifier: 'pkce-verifier',
+		}),
+		flow: 'confidential',
+		clientSecret: 'client-secret',
+		style: 'form',
+	})
+	const formPkceConfidentialBody = new URLSearchParams(
+		formPkceConfidentialRequest.body,
+	)
+	expect(formPkceConfidentialBody.get('client_secret')).toBe('client-secret')
+	expect(formPkceConfidentialBody.get('code_verifier')).toBe('pkce-verifier')
+
 	expect(oauthTokenExchangeFailureHttpStatus()).toBe(502)
 	expect(
 		buildOAuthTokenExchangeFailurePayload({
@@ -80,4 +98,68 @@ test('token exchange style resolves Notion basic-json and builds both request sh
 		error_description: 'Client authentication failed',
 		providerStatus: 401,
 	})
+})
+
+test('token exchange style resolves Canva basic-form and keeps PKCE code_verifier alongside Basic client auth', () => {
+	expect(
+		resolveTokenExchangeStyle({
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+		}),
+	).toBe('basic-form')
+	expect(
+		resolveTokenExchangeStyle({
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			tokenExchangeStyle: 'form',
+		}),
+	).toBe('form')
+
+	const canvaRequest = buildOAuthTokenExchangeRequest({
+		params: new URLSearchParams({
+			grant_type: 'authorization_code',
+			client_id: 'canva-client-id',
+			code: 'canva-code',
+			redirect_uri: 'https://example.com/connect/oauth',
+			code_verifier: 'pkce-verifier',
+		}),
+		flow: 'confidential',
+		clientSecret: 'canva-client-secret',
+		style: 'basic-form',
+	})
+	expect(canvaRequest.headers).toEqual({
+		Accept: 'application/json',
+		'Content-Type': 'application/x-www-form-urlencoded',
+		Authorization: `Basic ${btoa('canva-client-id:canva-client-secret')}`,
+	})
+	const canvaBody = new URLSearchParams(canvaRequest.body)
+	expect(canvaBody.get('grant_type')).toBe('authorization_code')
+	expect(canvaBody.get('code')).toBe('canva-code')
+	expect(canvaBody.get('code_verifier')).toBe('pkce-verifier')
+	expect(canvaBody.get('client_id')).toBeNull()
+	expect(canvaBody.get('client_secret')).toBeNull()
+
+	expect(() =>
+		buildOAuthTokenExchangeRequest({
+			params: new URLSearchParams({
+				grant_type: 'authorization_code',
+				client_id: 'canva-client-id',
+				code: 'canva-code',
+			}),
+			flow: 'pkce',
+			clientSecret: null,
+			style: 'basic-form',
+		}),
+	).toThrow(
+		'basic-form token exchange requires confidential flow with a client secret.',
+	)
+	expect(() =>
+		buildOAuthTokenExchangeRequest({
+			params: new URLSearchParams({
+				grant_type: 'authorization_code',
+				code: 'canva-code',
+			}),
+			flow: 'confidential',
+			clientSecret: 'canva-client-secret',
+			style: 'basic-form',
+		}),
+	).toThrow('basic-form token exchange requires client_id in params.')
 })

@@ -5,7 +5,11 @@ export const integrationFlowValues = ['pkce', 'confidential'] as const
 
 const defaultIntegrationScopeSeparator = ' '
 
-export const tokenExchangeStyleValues = ['form', 'basic-json'] as const
+export const tokenExchangeStyleValues = [
+	'form',
+	'basic-json',
+	'basic-form',
+] as const
 
 export const integrationAuthorizationSchema = z
 	.object({
@@ -30,6 +34,12 @@ export const integrationConfigSchema = z.object({
 	tokenUrl: z.string().url(),
 	apiBaseUrl: z.string().url().optional().nullable(),
 	flow: z.enum(integrationFlowValues),
+	/**
+	 * PKCE is orthogonal to `flow`. Absent means the flow default: PKCE on for
+	 * `pkce` flow, off for `confidential`. Canva-style providers store
+	 * `usePkce: true` with `confidential` flow.
+	 */
+	usePkce: z.boolean().optional().nullable(),
 	clientIdValueName: z.string().min(1),
 	clientSecretSecretName: z.string().min(1).optional().nullable(),
 	accessTokenSecretName: z.string().min(1),
@@ -48,6 +58,7 @@ export const integrationSaveSchema = z
 		tokenUrl: z.string().url().optional(),
 		apiBaseUrl: z.string().url().nullable().optional(),
 		flow: z.enum(integrationFlowValues).optional(),
+		usePkce: z.boolean().nullable().optional(),
 		clientIdValueName: z.string().min(1).optional(),
 		clientSecretSecretName: z.string().min(1).nullable().optional(),
 		accessTokenSecretName: z.string().min(1).optional(),
@@ -67,11 +78,19 @@ export function normalizeIntegrationConfig(
 		? normalizeIntegrationAuthorization(value.authorization)
 		: null
 	const tokenExchangeStyle = value.tokenExchangeStyle ?? null
+	// Store usePkce only when it differs from the flow default so existing
+	// integration records keep their canonical shape.
+	const usePkce =
+		typeof value.usePkce === 'boolean' &&
+		value.usePkce !== (value.flow === 'pkce')
+			? value.usePkce
+			: null
 	return {
-		...value,
 		name: value.name.trim(),
 		tokenUrl: value.tokenUrl.trim(),
 		apiBaseUrl: value.apiBaseUrl?.trim() || null,
+		flow: value.flow,
+		...(usePkce == null ? {} : { usePkce }),
 		clientIdValueName: value.clientIdValueName.trim(),
 		clientSecretSecretName: value.clientSecretSecretName?.trim() || null,
 		accessTokenSecretName: value.accessTokenSecretName.trim(),

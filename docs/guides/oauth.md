@@ -46,16 +46,38 @@ with `allowedHosts` when needed.
 
 ## Common optional parameters
 
-| Param                       | Purpose                                    |
-| --------------------------- | ------------------------------------------ |
-| `flow`                      | `pkce` (default) or `confidential`.        |
-| `scopes`                    | Space- or separator-separated scopes.      |
-| `scopeSeparator`            | Defaults to a single space.                |
-| `allowedHosts`              | Extra API hosts beyond the token host.     |
-| `apiBaseUrl`                | Optional API base URL hint.                |
-| `dashboardUrl`              | Provider settings link.                    |
-| `extraAuthorizeParams`      | Provider-specific authorize params.        |
-| `providerSetupInstructions` | Free-form setup hints shown in the wizard. |
+| Param                       | Purpose                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| `flow`                      | `pkce` (default) or `confidential`.                                          |
+| `pkce`                      | `true` or `false`; overrides the PKCE default (see below).                   |
+| `tokenExchangeStyle`        | `form` (default), `basic-json`, or `basic-form`; overrides the host default. |
+| `scopes`                    | Space- or separator-separated scopes.                                        |
+| `scopeSeparator`            | Defaults to a single space.                                                  |
+| `allowedHosts`              | Extra API hosts beyond the token host.                                       |
+| `apiBaseUrl`                | Optional API base URL hint.                                                  |
+| `dashboardUrl`              | Provider settings link.                                                      |
+| `extraAuthorizeParams`      | Provider-specific authorize params.                                          |
+| `providerSetupInstructions` | Free-form setup hints shown in the wizard.                                   |
+
+## PKCE and client secrets are orthogonal
+
+`flow` decides whether a client secret is collected and sent (`confidential`) or
+not (`pkce`). PKCE itself is a separate switch: it defaults to on for the `pkce`
+flow and off for `confidential`, and `pkce=true` enables S256 PKCE on top of a
+confidential flow for providers that require both.
+
+`tokenExchangeStyle` decides how confidential credentials reach the token
+endpoint: `form` puts `client_secret` in the urlencoded body (GitHub, Slack,
+Google), `basic-json` sends HTTP Basic with a JSON body (Notion), and
+`basic-form` sends HTTP Basic with an urlencoded body (Canva).
+
+Known host defaults (no extra params needed):
+
+- `api.notion.com`: `basic-json` token exchange.
+- `api.canva.com` (Canva Connect): `confidential` flow with S256 PKCE and
+  `basic-form` token exchange. Authorize URL is
+  `https://www.canva.com/api/oauth/authorize`, token URL is
+  `https://api.canva.com/rest/v1/oauth/token`.
 
 Client ID, access token, and refresh token names are derived from a normalized
 slug of `provider`.

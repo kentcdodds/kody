@@ -91,6 +91,7 @@ function createNewIntegrationConfig(args: z.infer<typeof inputSchema>) {
 		tokenUrl: args.tokenUrl,
 		apiBaseUrl: args.apiBaseUrl ?? null,
 		flow: args.flow,
+		...(args.usePkce !== undefined ? { usePkce: args.usePkce } : {}),
 		clientIdValueName: args.clientIdValueName,
 		clientSecretSecretName: args.clientSecretSecretName ?? null,
 		accessTokenSecretName: args.accessTokenSecretName,

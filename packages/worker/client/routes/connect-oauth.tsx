@@ -38,7 +38,7 @@ import {
 } from '#client/styles/style-primitives.ts'
 
 type OAuthFlow = 'pkce' | 'confidential'
-type TokenExchangeStyle = 'form' | 'basic-json'
+type TokenExchangeStyle = 'form' | 'basic-json' | 'basic-form'
 
 type ConnectOauthQueryConfig = {
 	provider: string
@@ -49,6 +49,8 @@ type ConnectOauthQueryConfig = {
 	apiBaseUrl: string | null
 	scopes: Array<string> | null
 	flow: OAuthFlow | null
+	usePkce: boolean | null
+	tokenExchangeStyle: TokenExchangeStyle | null
 	scopeSeparator: string | null
 	extraAuthorizeParams: Record<string, string> | null
 	providerSetupInstructions: string | null
@@ -66,6 +68,11 @@ type ConnectOauthConfig = {
 	apiBaseUrl: string | null
 	scopes: Array<string>
 	flow: OAuthFlow
+	/**
+	 * PKCE is orthogonal to `flow`: providers like Canva require S256 PKCE
+	 * *and* a client secret on token exchange.
+	 */
+	usePkce: boolean
 	tokenExchangeStyle: TokenExchangeStyle
 	scopeSeparator: string
 	extraAuthorizeParams: Record<string, string>
@@ -83,6 +90,7 @@ type StoredIntegrationConfig = {
 	tokenUrl: string
 	apiBaseUrl: string | null
 	flow: OAuthFlow
+	usePkce?: boolean | null
 	clientIdValueName: string
 	clientSecretSecretName: string | null
 	accessTokenSecretName: string
@@ -231,8 +239,13 @@ export function ConnectOauthRoute(handle: Handle) {
 			setStatus('Token URL must be valid when provided.', 'error')
 			return null
 		}
-		let flow = (readOptional('flow') ?? 'pkce').toLowerCase()
-		if (flow !== 'pkce' && flow !== 'confidential') flow = 'pkce'
+		const rawFlow = readOptional('flow')?.toLowerCase() ?? null
+		const flow: OAuthFlow | null =
+			rawFlow === 'pkce' || rawFlow === 'confidential' ? rawFlow : null
+		const usePkce = parseOptionalBoolean(readOptional('pkce'))
+		const tokenExchangeStyle = parseTokenExchangeStyle(
+			readOptional('tokenExchangeStyle'),
+		)
 		const rawScopes = readOptional('scopes')
 		const scopes = rawScopes == null ? null : parseScopes(rawScopes)
 		const scopeSeparator = readOptional('scopeSeparator')
@@ -263,7 +276,9 @@ export function ConnectOauthRoute(handle: Handle) {
 			tokenUrl,
 			apiBaseUrl,
 			scopes,
-			flow: flow as OAuthFlow,
+			flow,
+			usePkce,
+			tokenExchangeStyle,
 			scopeSeparator,
 			extraAuthorizeParams,
 			providerSetupInstructions,
@@ -310,6 +325,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			typeof record.authorizeHost === 'string' &&
 			typeof record.tokenHost === 'string' &&
 			typeof record.flow === 'string' &&
+			typeof record.usePkce === 'boolean' &&
 			typeof record.scopeSeparator === 'string' &&
 			typeof record.clientIdValueName === 'string' &&
 			typeof record.accessTokenSecretName === 'string' &&
@@ -380,7 +396,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 		const state = createState(getStateKey(nextConfig.providerKey))
 		url.searchParams.set('state', state)
-		if (nextConfig.flow === 'pkce') {
+		if (nextConfig.usePkce) {
 			const verifier = createCodeVerifier()
 			sessionStorage.setItem(getPkceKey(nextConfig.providerKey), verifier)
 			const challenge = await createCodeChallenge(verifier)
@@ -583,7 +599,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		params.set('client_id', clientId)
 		params.set('code', code)
 		params.set('redirect_uri', getRedirectUri())
-		if (nextConfig.flow === 'pkce') {
+		if (nextConfig.usePkce) {
 			const verifier = sessionStorage.getItem(
 				getPkceKey(nextConfig.providerKey),
 			)
@@ -756,6 +772,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				scopeSeparator: config.scopeSeparator,
 				extraAuthorizeParams: config.extraAuthorizeParams,
 				flow: config.flow,
+				usePkce: config.usePkce,
 				tokenExchangeStyle: config.tokenExchangeStyle,
 				clientIdValueName: config.clientIdValueName,
 				clientSecretSecretName: config.clientSecretSecretName,
@@ -1010,6 +1027,12 @@ export function ConnectOauthRoute(handle: Handle) {
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>Flow</span>
 							<span mix={css(detailValueCss)}>{config.flow}</span>
+						</div>
+						<div mix={css(detailItemCss)}>
+							<span mix={css(detailLabelCss)}>PKCE</span>
+							<span mix={css(detailValueCss)}>
+								{config.usePkce ? 'S256' : 'off'}
+							</span>
 						</div>
 						<div mix={css(detailItemCss)}>
 							<span mix={css(detailLabelCss)}>Scopes</span>
@@ -1290,6 +1313,7 @@ export function parseStoredIntegrationConfig(
 		const tokenUrl =
 			typeof parsed.tokenUrl === 'string' ? parsed.tokenUrl.trim() : ''
 		const flow = parsed.flow === 'confidential' ? 'confidential' : 'pkce'
+		const usePkce = typeof parsed.usePkce === 'boolean' ? parsed.usePkce : null
 		const clientIdValueName =
 			typeof parsed.clientIdValueName === 'string'
 				? parsed.clientIdValueName.trim()
@@ -1330,6 +1354,7 @@ export function parseStoredIntegrationConfig(
 					? parsed.apiBaseUrl.trim()
 					: null,
 			flow,
+			usePkce,
 			clientIdValueName,
 			clientSecretSecretName,
 			accessTokenSecretName,
@@ -1414,7 +1439,14 @@ export function mergeConnectOauthConfig(input: {
 	) {
 		return null
 	}
-	const flow = input.storedIntegration?.flow ?? input.queryConfig.flow ?? 'pkce'
+	const flow =
+		input.storedIntegration?.flow ??
+		input.queryConfig.flow ??
+		defaultConnectOauthFlow(tokenUrl)
+	const usePkce =
+		input.queryConfig.usePkce ??
+		input.storedIntegration?.usePkce ??
+		defaultConnectOauthUsePkce({ flow, tokenUrl })
 	const scopes = resolveConnectOauthScopes(input)
 	const extraAuthorizeParams = resolveConnectOauthExtraAuthorizeParams(input)
 	const allowedHosts = normalizeHosts([
@@ -1434,8 +1466,10 @@ export function mergeConnectOauthConfig(input: {
 			input.storedIntegration?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
 		scopes,
 		flow,
+		usePkce,
 		tokenExchangeStyle: resolveConnectOauthTokenExchangeStyle({
 			tokenUrl,
+			queryStyle: input.queryConfig.tokenExchangeStyle,
 			storedStyle: input.storedIntegration?.tokenExchangeStyle ?? null,
 		}),
 		scopeSeparator:
@@ -1550,16 +1584,45 @@ function hasProviderOAuthExchangeError(data: Record<string, unknown> | null) {
 
 function resolveConnectOauthTokenExchangeStyle(input: {
 	tokenUrl: string
+	queryStyle: TokenExchangeStyle | null
 	storedStyle: TokenExchangeStyle | null
 }): TokenExchangeStyle {
+	if (input.queryStyle) return input.queryStyle
 	if (input.storedStyle) return input.storedStyle
 	const host = safeParseHost(input.tokenUrl)
 	if (host === 'api.notion.com') return 'basic-json'
+	if (host === 'api.canva.com') return 'basic-form'
 	return 'form'
 }
 
+/**
+ * Hosts that require a confidential client even though the default flow is
+ * PKCE-only. Canva requires both S256 PKCE and a client secret.
+ */
+function defaultConnectOauthFlow(tokenUrl: string): OAuthFlow {
+	return safeParseHost(tokenUrl) === 'api.canva.com' ? 'confidential' : 'pkce'
+}
+
+function defaultConnectOauthUsePkce(input: {
+	flow: OAuthFlow
+	tokenUrl: string
+}): boolean {
+	if (input.flow === 'pkce') return true
+	return safeParseHost(input.tokenUrl) === 'api.canva.com'
+}
+
 function parseTokenExchangeStyle(raw: unknown): TokenExchangeStyle | null {
-	return raw === 'form' || raw === 'basic-json' ? raw : null
+	return raw === 'form' || raw === 'basic-json' || raw === 'basic-form'
+		? raw
+		: null
+}
+
+function parseOptionalBoolean(raw: string | null): boolean | null {
+	if (raw == null) return null
+	const normalized = raw.trim().toLowerCase()
+	if (normalized === 'true' || normalized === '1') return true
+	if (normalized === 'false' || normalized === '0') return false
+	return null
 }
 
 function formatMissingSetupFields(missingFields: Array<string>) {
@@ -1676,7 +1739,10 @@ const pageCss = {
 
 const headerCss = pageHeaderCss
 const eyebrowCss = pageEyebrowCss
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
 const secondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',

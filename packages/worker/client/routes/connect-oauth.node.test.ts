@@ -36,6 +36,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		apiBaseUrl: 'https://api.github.com/',
 		flow: 'confidential',
+		usePkce: null,
 		clientIdValueName: 'github-client-id',
 		clientSecretSecretName: 'githubClientSecret',
 		accessTokenSecretName: 'githubAccessToken',
@@ -61,6 +62,8 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: null,
 			scopes: ['repo', 'read:user'],
 			flow: null,
+			usePkce: null,
+			tokenExchangeStyle: null,
 			scopeSeparator: ' ',
 			extraAuthorizeParams: { prompt: 'consent' },
 			providerSetupInstructions: 'Open the GitHub app settings.',
@@ -90,6 +93,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		apiBaseUrl: 'https://api.github.com',
 		scopes: ['repo', 'read:user'],
 		flow: 'confidential',
+		usePkce: false,
 		tokenExchangeStyle: 'form',
 		scopeSeparator: ' ',
 		extraAuthorizeParams: { prompt: 'consent' },
@@ -111,6 +115,8 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: null,
 			scopes: null,
 			flow: null,
+			usePkce: null,
+			tokenExchangeStyle: null,
 			scopeSeparator: null,
 			extraAuthorizeParams: null,
 			providerSetupInstructions: null,
@@ -169,6 +175,8 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: null,
 			scopes: [],
 			flow: null,
+			usePkce: null,
+			tokenExchangeStyle: null,
 			scopeSeparator: null,
 			extraAuthorizeParams: {},
 			providerSetupInstructions: null,
@@ -215,6 +223,8 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: null,
 			scopes: [],
 			flow: 'pkce',
+			usePkce: null,
+			tokenExchangeStyle: null,
 			scopeSeparator: ' ',
 			extraAuthorizeParams: {},
 			providerSetupInstructions: null,
@@ -230,6 +240,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		tokenHost: 'accounts.spotify.com',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		flow: 'pkce',
+		usePkce: true,
 		tokenExchangeStyle: 'form',
 		clientIdValueName: 'spotify-client-id',
 		clientSecretSecretName: null,
@@ -265,6 +276,8 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 			apiBaseUrl: 'https://api.notion.com/v1',
 			scopes: [],
 			flow: 'confidential',
+			usePkce: null,
+			tokenExchangeStyle: null,
 			scopeSeparator: ' ',
 			extraAuthorizeParams: { owner: 'user', response_type: 'code' },
 			providerSetupInstructions: null,
@@ -278,6 +291,7 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 		provider: 'notion',
 		tokenUrl: 'https://api.notion.com/v1/oauth/token',
 		flow: 'confidential',
+		usePkce: false,
 		tokenExchangeStyle: 'basic-json',
 		clientSecretSecretName: 'notionClientSecret',
 		accessTokenSecretName: 'notionAccessToken',
@@ -345,4 +359,125 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 			},
 		}),
 	).toBe(false)
+})
+
+test('connect OAuth derives Canva confidential + PKCE basic-form defaults and honors explicit overrides', () => {
+	const canvaQueryConfig = {
+		provider: 'canva',
+		providerKey: 'canva',
+		authorizeHost: 'www.canva.com',
+		authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
+		tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+		apiBaseUrl: 'https://api.canva.com/rest/v1',
+		scopes: ['design:content:read'],
+		flow: null,
+		usePkce: null,
+		tokenExchangeStyle: null,
+		scopeSeparator: ' ',
+		extraAuthorizeParams: {},
+		providerSetupInstructions: null,
+		dashboardUrl: null,
+		allowedHosts: ['api.canva.com'],
+	}
+
+	// Canva requires BOTH S256 PKCE and a client secret on token exchange, so
+	// the host defaults must combine a confidential flow with PKCE enabled.
+	const canvaConfig = mergeConnectOauthConfig({
+		queryConfig: canvaQueryConfig,
+		storedIntegration: null,
+	})
+	expect(canvaConfig).toMatchObject({
+		provider: 'canva',
+		tokenHost: 'api.canva.com',
+		flow: 'confidential',
+		usePkce: true,
+		tokenExchangeStyle: 'basic-form',
+		clientSecretSecretName: 'canvaClientSecret',
+		accessTokenSecretName: 'canvaAccessToken',
+	})
+
+	// Explicit query params still win over host defaults.
+	const overriddenConfig = mergeConnectOauthConfig({
+		queryConfig: {
+			...canvaQueryConfig,
+			usePkce: false,
+			tokenExchangeStyle: 'form',
+		},
+		storedIntegration: null,
+	})
+	expect(overriddenConfig).toMatchObject({
+		flow: 'confidential',
+		usePkce: false,
+		tokenExchangeStyle: 'form',
+	})
+
+	// PKCE can be enabled on top of a confidential flow for any provider.
+	const confidentialPkceConfig = mergeConnectOauthConfig({
+		queryConfig: {
+			...canvaQueryConfig,
+			provider: 'acme',
+			providerKey: 'acme',
+			authorizeHost: 'auth.acme.test',
+			authorizeUrl: 'https://auth.acme.test/oauth/authorize',
+			tokenUrl: 'https://auth.acme.test/oauth/token',
+			apiBaseUrl: null,
+			flow: 'confidential',
+			usePkce: true,
+			allowedHosts: ['auth.acme.test'],
+		},
+		storedIntegration: null,
+	})
+	expect(confidentialPkceConfig).toMatchObject({
+		flow: 'confidential',
+		usePkce: true,
+		tokenExchangeStyle: 'form',
+		clientSecretSecretName: 'acmeClientSecret',
+	})
+
+	// Reconnects read the persisted PKCE choice back from the stored config.
+	const storedCanva = parseStoredIntegrationConfig(
+		JSON.stringify({
+			name: 'canva',
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			apiBaseUrl: 'https://api.canva.com/rest/v1',
+			flow: 'confidential',
+			usePkce: true,
+			clientIdValueName: 'canva-client-id',
+			clientSecretSecretName: 'canvaClientSecret',
+			accessTokenSecretName: 'canvaAccessToken',
+			refreshTokenSecretName: 'canvaRefreshToken',
+			requiredHosts: ['api.canva.com'],
+			tokenExchangeStyle: 'basic-form',
+			authorization: {
+				authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
+				scopes: ['design:content:read'],
+				scopeSeparator: null,
+				extraAuthorizeParams: {},
+			},
+		}),
+		null,
+	)
+	expect(storedCanva?.usePkce).toBe(true)
+	expect(storedCanva?.tokenExchangeStyle).toBe('basic-form')
+
+	const reconnectConfig = mergeConnectOauthConfig({
+		queryConfig: {
+			...canvaQueryConfig,
+			authorizeHost: null,
+			authorizeUrl: null,
+			tokenUrl: null,
+			apiBaseUrl: null,
+			scopes: null,
+			allowedHosts: [],
+		},
+		storedIntegration: storedCanva,
+	})
+	expect(reconnectConfig).toMatchObject({
+		provider: 'canva',
+		authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
+		tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+		flow: 'confidential',
+		usePkce: true,
+		tokenExchangeStyle: 'basic-form',
+	})
 })

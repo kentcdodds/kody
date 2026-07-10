@@ -8,8 +8,15 @@ import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
  *   `client_secret` in the body (GitHub/Slack-style).
  * - `basic-json`: HTTP Basic (client_id:client_secret) + JSON body without
  *   credentials in the body (Notion-style).
+ * - `basic-form`: HTTP Basic (client_id:client_secret) +
+ *   application/x-www-form-urlencoded body without credentials in the body
+ *   (Canva-style).
+ *
+ * Client-secret authentication and PKCE are orthogonal: `params` may carry a
+ * PKCE `code_verifier` in any style, so providers like Canva that require both
+ * S256 PKCE and a client secret on token exchange are supported.
  */
-export const tokenExchangeStyles = ['form', 'basic-json'] as const
+export const tokenExchangeStyles = ['form', 'basic-json', 'basic-form'] as const
 export type TokenExchangeStyle = (typeof tokenExchangeStyles)[number]
 
 export function isTokenExchangeStyle(
@@ -28,6 +35,9 @@ export function resolveTokenExchangeStyle(input: {
 	// Notion's token endpoint rejects form-body client_secret and requires
 	// Basic Auth + JSON: https://developers.notion.com/guides/get-started/authorization
 	if (host === 'api.notion.com') return 'basic-json'
+	// Canva's token endpoint takes Basic Auth (or form-body credentials) with
+	// an urlencoded body: https://www.canva.dev/docs/connect/authentication/
+	if (host === 'api.canva.com') return 'basic-form'
 	return 'form'
 }
 
@@ -40,29 +50,36 @@ export function buildOAuthTokenExchangeRequest(input: {
 	const params = new URLSearchParams(input.params)
 	switch (input.style) {
 		case 'basic-json': {
-			if (input.flow !== 'confidential' || !input.clientSecret) {
-				throw new Error(
-					'basic-json token exchange requires confidential flow with a client secret.',
-				)
-			}
-			const clientId = params.get('client_id')?.trim() ?? ''
-			if (!clientId) {
-				throw new Error(
-					'basic-json token exchange requires client_id in params.',
-				)
-			}
-			params.delete('client_id')
-			params.delete('client_secret')
+			const authorization = buildBasicAuthorization({
+				params,
+				flow: input.flow,
+				clientSecret: input.clientSecret,
+				style: input.style,
+			})
 			const bodyObject = Object.fromEntries(params.entries())
 			return {
 				headers: {
 					Accept: 'application/json',
 					'Content-Type': 'application/json',
-					Authorization: `Basic ${bytesToBase64(
-						new TextEncoder().encode(`${clientId}:${input.clientSecret}`),
-					)}`,
+					Authorization: authorization,
 				},
 				body: JSON.stringify(bodyObject),
+			}
+		}
+		case 'basic-form': {
+			const authorization = buildBasicAuthorization({
+				params,
+				flow: input.flow,
+				clientSecret: input.clientSecret,
+				style: input.style,
+			})
+			return {
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/x-www-form-urlencoded',
+					Authorization: authorization,
+				},
+				body: params.toString(),
 			}
 		}
 		case 'form': {
@@ -87,6 +104,34 @@ export function buildOAuthTokenExchangeRequest(input: {
 			)
 		}
 	}
+}
+
+/**
+ * Builds the HTTP Basic Authorization header for the basic-* styles and strips
+ * the credentials from the body params. Mutates `params`.
+ */
+function buildBasicAuthorization(input: {
+	params: URLSearchParams
+	flow: 'pkce' | 'confidential'
+	clientSecret: string | null
+	style: TokenExchangeStyle
+}): string {
+	if (input.flow !== 'confidential' || !input.clientSecret) {
+		throw new Error(
+			`${input.style} token exchange requires confidential flow with a client secret.`,
+		)
+	}
+	const clientId = input.params.get('client_id')?.trim() ?? ''
+	if (!clientId) {
+		throw new Error(
+			`${input.style} token exchange requires client_id in params.`,
+		)
+	}
+	input.params.delete('client_id')
+	input.params.delete('client_secret')
+	return `Basic ${bytesToBase64(
+		new TextEncoder().encode(`${clientId}:${input.clientSecret}`),
+	)}`
 }
 
 /**

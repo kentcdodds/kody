@@ -247,6 +247,7 @@ async function handleConnectOauthAction(input: {
 	const apiBaseUrl = readOptionalString(input.body, 'apiBaseUrl')
 	const authorizeUrl = readOptionalString(input.body, 'authorizeUrl')
 	const flow = readOptionalString(input.body, 'flow')
+	const usePkce = readOptionalBoolean(input.body, 'usePkce')
 	const clientIdValueName = readOptionalString(input.body, 'clientIdValueName')
 	const clientSecretSecretName = readOptionalString(
 		input.body,
@@ -359,6 +360,7 @@ async function handleConnectOauthAction(input: {
 		tokenUrl,
 		apiBaseUrl,
 		flow: flow === 'confidential' ? 'confidential' : 'pkce',
+		usePkce,
 		clientIdValueName,
 		clientSecretSecretName,
 		accessTokenSecretName,
@@ -601,6 +603,7 @@ async function saveIntegrationConfig(input: {
 	tokenUrl: string
 	apiBaseUrl: string | null
 	flow: 'pkce' | 'confidential'
+	usePkce: boolean | null
 	clientIdValueName: string
 	clientSecretSecretName: string | null
 	accessTokenSecretName: string
@@ -625,6 +628,7 @@ async function saveIntegrationConfig(input: {
 			tokenUrl: input.tokenUrl,
 			apiBaseUrl: input.apiBaseUrl,
 			flow: input.flow,
+			...(input.usePkce == null ? {} : { usePkce: input.usePkce }),
 			clientIdValueName: input.clientIdValueName,
 			clientSecretSecretName:
 				input.flow === 'confidential'
@@ -995,6 +999,11 @@ function readString(body: object, key: string) {
 function readOptionalString(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'string' ? value.trim() : null
+}
+
+function readOptionalBoolean(body: object, key: string) {
+	const value = (body as Record<string, unknown>)[key]
+	return typeof value === 'boolean' ? value : null
 }
 
 function readRawOptionalString(body: object, key: string) {

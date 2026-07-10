@@ -283,3 +283,68 @@ test('integration config helpers and integration_save persist validated integrat
 		requiredHosts: ['api.spotify.com'],
 	})
 })
+
+test('integration_save persists usePkce only when it differs from the flow default', async () => {
+	// Canva-style: confidential flow with PKCE enabled must round-trip.
+	const canvaDb = createValueTestDb()
+	const canvaResult = await integrationSaveCapability.handler(
+		{
+			name: 'canva',
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			apiBaseUrl: 'https://api.canva.com/rest/v1',
+			flow: 'confidential',
+			usePkce: true,
+			clientIdValueName: 'canva-client-id',
+			clientSecretSecretName: 'canvaClientSecret',
+			accessTokenSecretName: 'canvaAccessToken',
+			refreshTokenSecretName: 'canvaRefreshToken',
+			requiredHosts: ['api.canva.com'],
+			tokenExchangeStyle: 'basic-form',
+		},
+		{
+			env: { APP_DB: canvaDb.db } as unknown as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+		},
+	)
+	expect(canvaResult.integration).toMatchObject({
+		name: 'canva',
+		flow: 'confidential',
+		usePkce: true,
+		tokenExchangeStyle: 'basic-form',
+	})
+	expect(
+		JSON.parse(canvaDb.entries.get('_integration:canva') ?? '{}'),
+	).toMatchObject({
+		flow: 'confidential',
+		usePkce: true,
+		tokenExchangeStyle: 'basic-form',
+	})
+
+	// Flow-default PKCE choices normalize away instead of being stored.
+	const defaultDb = createValueTestDb()
+	const defaultResult = await integrationSaveCapability.handler(
+		{
+			name: 'spotify',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			flow: 'pkce',
+			usePkce: true,
+			clientIdValueName: 'spotify-client-id',
+			accessTokenSecretName: 'spotifyAccessToken',
+			requiredHosts: ['api.spotify.com'],
+		},
+		{
+			env: { APP_DB: defaultDb.db } as unknown as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+		},
+	)
+	expect(defaultResult.integration).not.toHaveProperty('usePkce')
+	expect(
+		JSON.parse(defaultDb.entries.get('_integration:spotify') ?? '{}'),
+	).not.toHaveProperty('usePkce')
+})
