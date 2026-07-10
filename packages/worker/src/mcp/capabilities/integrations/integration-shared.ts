@@ -17,7 +17,7 @@ export function canonicalIntegrationName(name: string) {
 const integrationNameSchema = z
 	.string()
 	.min(1)
-	.refine((name) => canonicalIntegrationName(name).length > 0, {
+	.refine((name) => /[a-z0-9]/.test(canonicalIntegrationName(name)), {
 		message: 'Integration name must contain letters or numbers.',
 	})
 

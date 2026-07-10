@@ -388,7 +388,26 @@ test('integration identity is the canonical provider key across save, lookup, an
 	expect(parseIntegrationValueName('_integration:')).toBeNull()
 	expect(parseIntegrationValueName('value:github')).toBeNull()
 
-	// Names without any letters or numbers are rejected outright.
+	// Names without any letters or numbers are rejected outright — including
+	// ones made only of characters the canonical form preserves (. _ -).
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: '._-',
+				tokenUrl: 'https://example.com/token',
+				flow: 'pkce',
+				clientIdValueName: 'x-client-id',
+				accessTokenSecretName: 'xAccessToken',
+			},
+			{
+				env: { APP_DB: createValueTestDb().db } as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					user: { userId: 'user-123' },
+				}),
+			},
+		),
+	).rejects.toThrow(/letters or numbers/i)
 	await expect(
 		integrationSaveCapability.handler(
 			{
