@@ -557,9 +557,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `community-snapshot:v1:{listingId}`.
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index:v1:{userId}:{scope}` for the legacy combined
-  retriever index blob. No longer written (the combined blob risked the 25MB KV
-  value limit); refresh and removal delete it best-effort, and it is read only
-  as a fallback when the KV binding does not support `list()`.
+  retriever index blob. Not written — the combined blob risks the 25MB KV value
+  limit; refresh and removal delete it best-effort, and it is read only as a
+  fallback when the KV binding does not support `list()`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
 
@@ -669,8 +669,8 @@ Current retention policies:
   repo session for the source. When a row is pruned, the matching
   `source-snapshot:v1:{sourceId}:{commit}` and
   `source-manifest-snapshot:v1:{sourceId}:{commit}` KV keys are deleted under
-  the same safety conditions, so per-commit snapshots no longer accumulate
-  forever. Ambiguous publish/edit cases are intentionally kept.
+  the same safety conditions, so per-commit snapshots do not accumulate
+  indefinitely. Ambiguous publish/edit cases are intentionally kept.
 - `email_delivery_events`: user-owned delivery events keep 90 days. System email
   rows under `system:email` remain governed by the system-email retention job,
   which prunes messages (and their `EMAIL_BLOBS` raw-MIME blobs) and delivery
