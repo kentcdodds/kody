@@ -312,30 +312,6 @@ export function ConnectOauthRoute(handle: Handle) {
 
 	const configStorageKey = 'connect-oauth:config'
 
-	const isConnectOauthConfig = (
-		value: unknown,
-	): value is ConnectOauthConfig => {
-		if (!value || typeof value !== 'object') return false
-		const record = value as Record<string, unknown>
-		return (
-			typeof record.provider === 'string' &&
-			typeof record.providerKey === 'string' &&
-			typeof record.authorizeUrl === 'string' &&
-			typeof record.tokenUrl === 'string' &&
-			typeof record.authorizeHost === 'string' &&
-			typeof record.tokenHost === 'string' &&
-			typeof record.flow === 'string' &&
-			typeof record.usePkce === 'boolean' &&
-			typeof record.scopeSeparator === 'string' &&
-			typeof record.clientIdValueName === 'string' &&
-			typeof record.accessTokenSecretName === 'string' &&
-			Array.isArray(record.scopes) &&
-			Array.isArray(record.allowedHosts) &&
-			record.scopes.every((value) => typeof value === 'string') &&
-			record.allowedHosts.every((value) => typeof value === 'string')
-		)
-	}
-
 	const persistConfig = (nextConfig: ConnectOauthConfig) => {
 		try {
 			sessionStorage.setItem(configStorageKey, JSON.stringify(nextConfig))
@@ -346,12 +322,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (typeof window === 'undefined') return null
 		const raw = sessionStorage.getItem(configStorageKey)
 		if (!raw) return null
-		try {
-			const parsed = JSON.parse(raw)
-			return isConnectOauthConfig(parsed) ? parsed : null
-		} catch {
-			return null
-		}
+		return parseSessionConnectOauthConfig(raw)
 	}
 
 	const createState = (key: string) => {
@@ -1515,6 +1486,49 @@ function resolveConnectOauthExtraAuthorizeParams(input: {
 		return queryParams
 	}
 	return input.storedIntegration?.authorization?.extraAuthorizeParams ?? {}
+}
+
+/**
+ * Parses the sessionStorage config persisted before redirecting to the
+ * provider. Configs written before the orthogonal-PKCE change lack `usePkce`,
+ * and the callback leg cannot rebuild settings from the URL alone, so backfill
+ * the flow/host default instead of rejecting mid-flight connects.
+ */
+export function parseSessionConnectOauthConfig(
+	raw: string,
+): ConnectOauthConfig | null {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(raw)
+	} catch {
+		return null
+	}
+	if (!parsed || typeof parsed !== 'object') return null
+	const record = parsed as Record<string, unknown>
+	const isValid =
+		typeof record.provider === 'string' &&
+		typeof record.providerKey === 'string' &&
+		typeof record.authorizeUrl === 'string' &&
+		typeof record.tokenUrl === 'string' &&
+		typeof record.authorizeHost === 'string' &&
+		typeof record.tokenHost === 'string' &&
+		(record.flow === 'pkce' || record.flow === 'confidential') &&
+		typeof record.scopeSeparator === 'string' &&
+		typeof record.clientIdValueName === 'string' &&
+		typeof record.accessTokenSecretName === 'string' &&
+		Array.isArray(record.scopes) &&
+		Array.isArray(record.allowedHosts) &&
+		record.scopes.every((value) => typeof value === 'string') &&
+		record.allowedHosts.every((value) => typeof value === 'string')
+	if (!isValid) return null
+	const config = record as unknown as ConnectOauthConfig
+	if (typeof record.usePkce !== 'boolean') {
+		config.usePkce = defaultConnectOauthUsePkce({
+			flow: config.flow,
+			tokenUrl: config.tokenUrl,
+		})
+	}
+	return config
 }
 
 export function summarizeStoredSetupState(input: {

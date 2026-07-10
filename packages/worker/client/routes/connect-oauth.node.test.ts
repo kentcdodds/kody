@@ -5,6 +5,7 @@ import {
 	getIntegrationValueCandidates,
 	isOAuthExchangeSessionExpired,
 	mergeConnectOauthConfig,
+	parseSessionConnectOauthConfig,
 	parseStoredIntegrationConfig,
 	summarizeStoredSetupState,
 } from './connect-oauth.tsx'
@@ -480,4 +481,74 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 		usePkce: true,
 		tokenExchangeStyle: 'basic-form',
 	})
+})
+
+test('session config parsing backfills usePkce for configs persisted before the orthogonal-PKCE change', () => {
+	const legacyConfig = {
+		provider: 'spotify',
+		providerKey: 'spotify',
+		authorizeHost: 'accounts.spotify.com',
+		tokenHost: 'accounts.spotify.com',
+		authorizeUrl: 'https://accounts.spotify.com/authorize',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		apiBaseUrl: null,
+		scopes: [],
+		flow: 'pkce',
+		tokenExchangeStyle: 'form',
+		scopeSeparator: ' ',
+		extraAuthorizeParams: {},
+		providerSetupInstructions: null,
+		dashboardUrl: null,
+		clientIdValueName: 'spotify-client-id',
+		clientSecretSecretName: null,
+		accessTokenSecretName: 'spotifyAccessToken',
+		refreshTokenSecretName: 'spotifyRefreshToken',
+		allowedHosts: ['accounts.spotify.com'],
+	}
+
+	// Mid-flight configs without usePkce derive the flow default so callbacks
+	// keep working across the deploy boundary.
+	expect(
+		parseSessionConnectOauthConfig(JSON.stringify(legacyConfig)),
+	).toMatchObject({ provider: 'spotify', flow: 'pkce', usePkce: true })
+
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...legacyConfig,
+				provider: 'github',
+				flow: 'confidential',
+			}),
+		),
+	).toMatchObject({ flow: 'confidential', usePkce: false })
+
+	// Canva host default enables PKCE even for legacy confidential configs.
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...legacyConfig,
+				provider: 'canva',
+				flow: 'confidential',
+				tokenHost: 'api.canva.com',
+				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			}),
+		),
+	).toMatchObject({ flow: 'confidential', usePkce: true })
+
+	// An explicit persisted choice is respected as-is.
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({ ...legacyConfig, usePkce: false }),
+		),
+	).toMatchObject({ flow: 'pkce', usePkce: false })
+
+	expect(parseSessionConnectOauthConfig('not json')).toBeNull()
+	expect(
+		parseSessionConnectOauthConfig(JSON.stringify({ provider: 'x' })),
+	).toBeNull()
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({ ...legacyConfig, flow: 'implicit' }),
+		),
+	).toBeNull()
 })
