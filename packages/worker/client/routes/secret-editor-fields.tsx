@@ -72,7 +72,9 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							<input
 								type="text"
 								required
-								autoComplete="new-password"
+								autoComplete="off"
+								data-1p-ignore
+								data-lpignore="true"
 								value={props.value}
 								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
 								mix={[
@@ -94,7 +96,9 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							<input
 								type="password"
 								required
-								autoComplete="new-password"
+								autoComplete="off"
+								data-1p-ignore
+								data-lpignore="true"
 								value={props.value}
 								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
 								mix={[

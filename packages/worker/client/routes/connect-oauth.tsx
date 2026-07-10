@@ -1039,6 +1039,9 @@ export function ConnectOauthRoute(handle: Handle) {
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
+							autoComplete="off"
+							data-1p-ignore
+							data-lpignore="true"
 							mix={[
 								on('submit', handleSetupSubmit),
 								css({ display: 'grid', gap: spacing.md }),
@@ -1047,8 +1050,11 @@ export function ConnectOauthRoute(handle: Handle) {
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Client ID</span>
 								<input
-									name="clientId"
+									name="oauthClientId"
 									required
+									autoComplete="off"
+									data-1p-ignore
+									data-lpignore="true"
 									value={clientIdInput}
 									mix={[
 										on(
@@ -1102,9 +1108,12 @@ export function ConnectOauthRoute(handle: Handle) {
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Client Secret</span>
 										<input
-											name="clientSecret"
+											name="oauthClientSecret"
 											type="password"
 											required
+											autoComplete="off"
+											data-1p-ignore
+											data-lpignore="true"
 											value={clientSecretInput}
 											mix={[
 												on(
