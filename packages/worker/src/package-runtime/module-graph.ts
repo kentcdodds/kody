@@ -161,19 +161,30 @@ export function createRuntimeModuleSource() {
 	// globalThis - the per-request runtime value is held inside the ALS, so
 	// concurrent requests do not stomp on each other's view.
 	//
-	// The exports are evaluated when the module is first imported. The
-	// surrounding wrapper resolves the same AsyncLocalStorage off the
-	// well-known symbol and calls \`storage.run(runtime, async () => {
-	// await import(...) })\`. Optional exports still capture the initial
-	// value so \`if (email) { ... }\` guards stay falsy when a wrapper
-	// intentionally omits that export.
+	// This module is evaluated at most once per isolate, but dynamic workers
+	// with identical code are cached and reused across executions (stable
+	// worker-loader ids). Per-run values must therefore never freeze into
+	// module scope: the \`kody\` capability proxy in particular closes over
+	// the RPC ToolDispatcher stubs passed to a single \`evaluate()\` call,
+	// and those stubs are implicitly disposed when that call returns. A
+	// frozen \`export const kody = runtime.kody\` would make every later run
+	// in a reused worker call capabilities through the first run's disposed
+	// stubs ("RPC stub used after being disposed"). Every export below is
+	// instead late-bound: it re-reads the current AsyncLocalStorage store on
+	// each property access / call.
 	//
-	// \`kody\` is different: every execute/package runtime should provide
-	// it, and Worker module loaders may evaluate this virtual module before
-	// the wrapper installs the per-run store. In that preload case, expose a
-	// late-bound proxy so named imports like \`import { kody } from
-	// 'kody:runtime'\` still resolve against the current AsyncLocalStorage
-	// store at call time instead of freezing as undefined.
+	// Optional helpers (\`storage\`, \`email\`, ...) still preserve their
+	// absent value (\`undefined\` / \`null\`) so \`if (email) { ... }\`
+	// guards stay falsy when a wrapper intentionally omits that export.
+	// Helper *presence* is decided by the generated wrapper source, which is
+	// part of the worker id hash, so presence observed on the first in-run
+	// evaluation is identical for every later run of the same worker.
+	//
+	// \`kody\` is always exported as a late-bound proxy: every
+	// execute/package runtime provides it, and Worker module loaders may
+	// evaluate this virtual module before the wrapper installs the per-run
+	// store. The proxy resolves against the current AsyncLocalStorage store
+	// at call time in both the preload and the reused-worker case.
 	const source = `
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -251,7 +262,22 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			}
 			const runtimeExport = __kodyReadRuntimeExport(exportName);
 			const value = runtimeExport[property];
-			return typeof value === 'function' ? value.bind(runtimeExport) : value;
+			if (typeof value !== 'function') return value;
+			// Late-bind method calls to the runtime of the *calling* run: a
+			// function captured at property-access time (for example a
+			// top-level \`const search = kody.community_search\`) would
+			// otherwise keep pointing at the run that evaluated this module,
+			// whose RPC dispatcher stubs are disposed once that run returns.
+			return function (...args) {
+				const currentExport = __kodyReadRuntimeExport(exportName);
+				const currentValue = currentExport[property];
+				if (typeof currentValue !== 'function') {
+					throw new Error(
+						\`kody:runtime export "\${exportName}.\${String(property)}" is not callable in this execution context.\`,
+					);
+				}
+				return currentValue.apply(currentExport, args);
+			};
 		},
 		has(_target, property) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
@@ -259,35 +285,112 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			const runtimeExport = currentRuntime?.[exportName];
 			return runtimeExport != null && property in runtimeExport;
 		},
+		ownKeys() {
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const runtimeExport = currentRuntime?.[exportName];
+			return runtimeExport == null ? [] : Reflect.ownKeys(runtimeExport);
+		},
+		getOwnPropertyDescriptor(_target, property) {
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			const runtimeExport = currentRuntime?.[exportName];
+			if (runtimeExport == null) return undefined;
+			const descriptor = Reflect.getOwnPropertyDescriptor(runtimeExport, property);
+			if (descriptor === undefined) return undefined;
+			return { ...descriptor, configurable: true };
+		},
 	});
 }
 
+function __kodyCreateRuntimeFunctionExport(exportName) {
+	return function (...args) {
+		const runtimeExport = __kodyReadRuntimeExport(exportName);
+		if (typeof runtimeExport !== 'function') {
+			throw new Error(
+				\`kody:runtime export "\${exportName}" is not callable in this execution context.\`,
+			);
+		}
+		return runtimeExport(...args);
+	};
+}
+
 const __kodyInitialRuntime = __kodyRuntimeStorage.getStore();
-const runtime = __kodyInitialRuntime ?? {};
-const __kodyObject =
-	__kodyInitialRuntime === undefined
-		? __kodyCreateRuntimeObjectProxy('kody')
-		: runtime.kody;
 
-export const kody = __kodyObject;
-export const storage = runtime.storage;
-export const refreshAccessToken = runtime.refreshAccessToken;
-export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
-export const secretHeaders = runtime.secretHeaders;
-export const oauthClientCredentials = runtime.oauthClientCredentials;
-export const packageContext = runtime.packageContext ?? null;
-export const serviceContext = runtime.serviceContext ?? null;
-export const service = runtime.service ?? null;
-export const packageSecrets = runtime.packageSecrets ?? null;
-export const email = runtime.email ?? null;
-export const workflows = runtime.workflows ?? null;
-export const packages = runtime.packages ?? null;
-export const events = runtime.events ?? null;
+function __kodyOptionalRuntimeObjectExport(exportName, absentValue) {
+	if (__kodyInitialRuntime === undefined) return absentValue;
+	if (__kodyInitialRuntime[exportName] == null) return absentValue;
+	return __kodyCreateRuntimeObjectProxy(exportName);
+}
 
-export default
-	__kodyInitialRuntime === undefined
-		? { ...runtime, kody: __kodyObject }
-		: runtime;
+function __kodyOptionalRuntimeFunctionExport(exportName) {
+	if (__kodyInitialRuntime === undefined) return undefined;
+	if (typeof __kodyInitialRuntime[exportName] !== 'function') return undefined;
+	return __kodyCreateRuntimeFunctionExport(exportName);
+}
+
+export const kody = __kodyCreateRuntimeObjectProxy('kody');
+export const storage = __kodyOptionalRuntimeObjectExport('storage', undefined);
+export const refreshAccessToken = __kodyOptionalRuntimeFunctionExport('refreshAccessToken');
+export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
+export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
+export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
+export const packageContext = __kodyInitialRuntime?.packageContext ?? null;
+export const serviceContext = __kodyInitialRuntime?.serviceContext ?? null;
+export const service = __kodyOptionalRuntimeObjectExport('service', null);
+export const packageSecrets = __kodyOptionalRuntimeObjectExport('packageSecrets', null);
+export const email = __kodyOptionalRuntimeObjectExport('email', null);
+export const workflows = __kodyOptionalRuntimeObjectExport('workflows', null);
+export const packages = __kodyOptionalRuntimeObjectExport('packages', null);
+export const events = __kodyOptionalRuntimeObjectExport('events', null);
+
+const __kodyRuntimeNamedExports = {
+	kody,
+	storage,
+	refreshAccessToken,
+	createAuthenticatedFetch,
+	secretHeaders,
+	oauthClientCredentials,
+	packageContext,
+	serviceContext,
+	service,
+	packageSecrets,
+	email,
+	workflows,
+	packages,
+	events,
+};
+
+// The default export mirrors the named exports and forwards any extra
+// wrapper-specific helpers (for example package-app \`realtime\`) to the
+// current run's store instead of freezing the first run's object.
+export default new Proxy(__kodyRuntimeNamedExports, {
+	get(target, property) {
+		if (Reflect.has(target, property)) return Reflect.get(target, property);
+		const currentRuntime = __kodyRuntimeStorage.getStore();
+		return currentRuntime?.[property];
+	},
+	has(target, property) {
+		if (Reflect.has(target, property)) return true;
+		const currentRuntime = __kodyRuntimeStorage.getStore();
+		return currentRuntime != null && property in currentRuntime;
+	},
+	ownKeys(target) {
+		const keys = new Set(Reflect.ownKeys(target));
+		const currentRuntime = __kodyRuntimeStorage.getStore();
+		if (currentRuntime != null) {
+			for (const key of Reflect.ownKeys(currentRuntime)) keys.add(key);
+		}
+		return [...keys];
+	},
+	getOwnPropertyDescriptor(target, property) {
+		const ownDescriptor = Reflect.getOwnPropertyDescriptor(target, property);
+		if (ownDescriptor) return ownDescriptor;
+		const currentRuntime = __kodyRuntimeStorage.getStore();
+		if (currentRuntime == null) return undefined;
+		const descriptor = Reflect.getOwnPropertyDescriptor(currentRuntime, property);
+		if (descriptor === undefined) return undefined;
+		return { ...descriptor, configurable: true };
+	},
+});
 `.trim()
 	cachedRuntimeModuleSource = source
 	return source

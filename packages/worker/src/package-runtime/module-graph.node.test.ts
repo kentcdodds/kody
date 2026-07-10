@@ -356,6 +356,76 @@ test('createRuntimeModuleSource returns a stable memoized string', () => {
 	expect(first).toContain('__kodyCreateRuntimeObjectProxy')
 })
 
+test('kody:runtime exports resolve against the current run when the module instance is reused across sequential runs', async () => {
+	// Dynamic workers with identical code are cached and reused, so the
+	// runtime module evaluates once and then serves every later run from the
+	// isolate's ES module cache. Each run's `kody` closes over that run's RPC
+	// dispatcher stubs, which are disposed when the run's evaluate() call
+	// returns — a frozen `export const kody = runtime.kody` therefore made
+	// every later run fail with "RPC stub used after being disposed".
+	const modules = {
+		'.__kody_virtual__/runtime.js': createRuntimeModuleSource(),
+		'entry.js': [
+			"import { kody, email } from './.__kody_virtual__/runtime.js'",
+			'const capturedSearch = kody.community_search',
+			'export default async function main() {',
+			'\treturn {',
+			"\t\tviaProxy: await kody.community_search({ query: 'slack' }),",
+			"\t\tviaTopLevelCapture: await capturedSearch({ query: 'slack' }),",
+			'\t\temail,',
+			'\t}',
+			'}',
+		].join('\n'),
+	}
+	const moduleGraph = await createTemporaryModuleGraph(modules)
+	try {
+		const runtimeModule = (await moduleGraph.importModule(
+			'.__kody_virtual__/runtime.js',
+			{ cacheBust: false },
+		)) as RuntimeModule
+		const createRunRuntime = (label: string, state: { disposed: boolean }) => ({
+			kody: {
+				community_search: async (args: unknown) => {
+					if (state.disposed) {
+						throw new Error('RPC stub used after being disposed.')
+					}
+					return { label, args }
+				},
+			},
+			email: null,
+		})
+		const runOnce = async (runtime: Record<string, unknown>) =>
+			await runtimeModule.__kodyRunInRuntime(runtime, async () => {
+				const entry = (await moduleGraph.importModule('entry.js', {
+					cacheBust: false,
+				})) as { default: () => Promise<unknown> }
+				return await entry.default()
+			})
+
+		const firstState = { disposed: false }
+		const first = await runOnce(createRunRuntime('first-run', firstState))
+		expect(first).toEqual({
+			viaProxy: { label: 'first-run', args: { query: 'slack' } },
+			viaTopLevelCapture: { label: 'first-run', args: { query: 'slack' } },
+			email: null,
+		})
+
+		// The first run's dispatcher stubs die once its evaluate() returns.
+		firstState.disposed = true
+
+		const second = await runOnce(
+			createRunRuntime('second-run', { disposed: false }),
+		)
+		expect(second).toEqual({
+			viaProxy: { label: 'second-run', args: { query: 'slack' } },
+			viaTopLevelCapture: { label: 'second-run', args: { query: 'slack' } },
+			email: null,
+		})
+	} finally {
+		await moduleGraph.cleanup()
+	}
+})
+
 test('buildKodyAppBundle cache lifecycle reuses hits, shares in-flight builds, evicts failures, and keys by entrypoint', async () => {
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('warm-cache'))
