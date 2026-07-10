@@ -1078,6 +1078,7 @@ export async function runModuleWithRegistry(
 			'entry.ts': code,
 		},
 		entryPoint: 'entry.ts',
+		reuseCachedBundle: true,
 	})
 	return runBundledModuleWithRegistry(
 		env,

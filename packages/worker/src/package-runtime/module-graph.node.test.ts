@@ -43,6 +43,7 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 
 const {
 	buildKodyAppBundle,
+	buildKodyModuleBundle,
 	createPublishedPackageAppBundleCacheKey,
 	createRuntimeModuleSource,
 	hydrateKodyRuntimeModules,
@@ -91,6 +92,27 @@ function createBundleInput(input?: {
 		},
 		entryPoint: input?.entryPoint ?? 'app.js',
 		cacheKey: input?.cacheKey,
+	}
+}
+
+function createModuleBundleInput(input?: {
+	reuseCachedBundle?: boolean
+	userId?: string
+	code?: string
+}) {
+	return {
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: input?.userId ?? 'user-1',
+		sourceFiles: {
+			'entry.ts':
+				input?.code ?? 'export default async function run() { return "ok" }',
+		},
+		entryPoint: 'entry.ts',
+		reuseCachedBundle: input?.reuseCachedBundle,
 	}
 }
 
@@ -474,6 +496,91 @@ test('buildKodyAppBundle cache lifecycle reuses hits, shares in-flight builds, e
 	)
 	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
 	expect(appBundle).not.toBe(adminBundle)
+})
+
+test('buildKodyModuleBundle cache lifecycle reuses hits, skips when disabled, keys by code and userId, and evicts failures', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('module-warm'))
+
+	const first = await buildKodyModuleBundle(
+		createModuleBundleInput({ reuseCachedBundle: true }),
+	)
+	const second = await buildKodyModuleBundle(
+		createModuleBundleInput({ reuseCachedBundle: true }),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
+	expect(first).toEqual(second)
+	expect(first.modules).not.toBe(second.modules)
+	expect(first.dependencies).not.toBe(second.dependencies)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('module-uncached-first'))
+		.mockResolvedValueOnce(createBundleResult('module-uncached-second'))
+	await buildKodyModuleBundle(createModuleBundleInput())
+	await buildKodyModuleBundle(
+		createModuleBundleInput({ reuseCachedBundle: false }),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('module-code-a'))
+		.mockResolvedValueOnce(createBundleResult('module-code-b'))
+	await buildKodyModuleBundle(
+		createModuleBundleInput({
+			reuseCachedBundle: true,
+			code: 'export default async function run() { return "a" }',
+		}),
+	)
+	await buildKodyModuleBundle(
+		createModuleBundleInput({
+			reuseCachedBundle: true,
+			code: 'export default async function run() { return "b" }',
+		}),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('module-user-1'))
+		.mockResolvedValueOnce(createBundleResult('module-user-2'))
+	await buildKodyModuleBundle(
+		createModuleBundleInput({
+			reuseCachedBundle: true,
+			userId: 'user-cache-a',
+			code: 'export default async function run() { return "shared" }',
+		}),
+	)
+	await buildKodyModuleBundle(
+		createModuleBundleInput({
+			reuseCachedBundle: true,
+			userId: 'user-cache-b',
+			code: 'export default async function run() { return "shared" }',
+		}),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockRejectedValueOnce(new Error('module bundle failed'))
+		.mockResolvedValueOnce(createBundleResult('module-retry-success'))
+	await expect(
+		buildKodyModuleBundle(
+			createModuleBundleInput({
+				reuseCachedBundle: true,
+				code: 'export default async function run() { return "retry" }',
+			}),
+		),
+	).rejects.toThrow('module bundle failed')
+	const retried = await buildKodyModuleBundle(
+		createModuleBundleInput({
+			reuseCachedBundle: true,
+			code: 'export default async function run() { return "retry" }',
+		}),
+	)
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+	expect(retried).toEqual(createBundleResult('module-retry-success'))
 })
 
 test('buildKodyModuleBundle resolves scoped package imports by full package name first', async () => {

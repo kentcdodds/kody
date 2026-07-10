@@ -1,3 +1,4 @@
+import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
@@ -57,6 +58,7 @@ const dynamicPackageImportSpecifierExportName = '__kodyDynamicPackageSpecifier'
 const dynamicPackageImportResolvedMarker = '__kodyDynamicPackageResolved'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
+const moduleBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 let cachedRuntimeModuleSource: string | null = null
 
 async function createWorkerBundle(input: {
@@ -1485,12 +1487,54 @@ async function rewriteKodyImports(input: {
 	return helpers.length > 0 ? `${helpers.join('\n')}\n${rewritten}` : rewritten
 }
 
+function serializePreparedFilesRecord(files: Record<string, string>) {
+	const sortedKeys = Object.keys(files).sort()
+	const record: Record<string, string> = {}
+	for (const key of sortedKeys) {
+		const content = files[key]
+		if (content === undefined) continue
+		record[key] = content
+	}
+	return JSON.stringify(record)
+}
+
+async function createModuleBundleCacheKey(input: {
+	userId: string
+	entryPoint: string
+	files: Record<string, string>
+}) {
+	// Digest prepared files (not raw source) so package republishes that change
+	// rewritten graph contents invalidate the cache without a staleness window.
+	const filesDigest = await sha256Base64Url(
+		serializePreparedFilesRecord(input.files),
+	)
+	return JSON.stringify([
+		'module-bundle',
+		input.userId,
+		input.entryPoint,
+		filesDigest,
+	])
+}
+
+function cloneRuntimeBundle(bundle: RuntimeBundle): RuntimeBundle {
+	return {
+		mainModule: bundle.mainModule,
+		modules: { ...bundle.modules },
+		dependencies: [...bundle.dependencies],
+		...(bundle.dynamicDependencies
+			? { dynamicDependencies: [...bundle.dynamicDependencies] }
+			: {}),
+	}
+}
+
 export async function buildKodyModuleBundle(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	// Opt-in: cache createWorkerBundle by prepared-files digest (see createModuleBundleCacheKey).
+	reuseCachedBundle?: boolean
 }) {
 	const { files, packages } = await prepareKodyGraphFiles({
 		env: input.env,
@@ -1512,30 +1556,48 @@ export async function buildKodyModuleBundle(input: {
 			normalizedEntrypoint,
 		),
 	})
-	const bundle = await createWorkerBundle({
-		files,
-		entryPoint: bootstrapPath,
-	})
-	const modules = {
-		...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
-		...collectDynamicPackageImportProxyModules(
+
+	const assembleBundle = async (): Promise<RuntimeBundle> => {
+		const bundle = await createWorkerBundle({
 			files,
-			bundle.modules as WorkerLoaderModules,
-		),
+			entryPoint: bootstrapPath,
+		})
+		const modules = {
+			...stripKodyRuntimeModules(bundle.modules as WorkerLoaderModules),
+			...collectDynamicPackageImportProxyModules(
+				files,
+				bundle.modules as WorkerLoaderModules,
+			),
+		}
+		assertBundleHasNoUnresolvedBareImports({
+			modules,
+			bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+		})
+		return {
+			mainModule: bundle.mainModule,
+			modules,
+			dependencies: await resolveDirectKodyDependenciesForEntryPoint({
+				...input,
+				loadedPackages: packages,
+			}),
+			...includeDynamicDependenciesWhenPresent(modules),
+		}
 	}
-	assertBundleHasNoUnresolvedBareImports({
-		modules,
-		bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+
+	if (!input.reuseCachedBundle) {
+		return await assembleBundle()
+	}
+
+	const cacheKey = await createModuleBundleCacheKey({
+		userId: input.userId,
+		entryPoint,
+		files,
 	})
-	return {
-		mainModule: bundle.mainModule,
-		modules,
-		dependencies: await resolveDirectKodyDependenciesForEntryPoint({
-			...input,
-			loadedPackages: packages,
-		}),
-		...includeDynamicDependenciesWhenPresent(modules),
-	}
+	const cached = await moduleBundleCache.getOrCreate({
+		cacheKey,
+		create: assembleBundle,
+	})
+	return cloneRuntimeBundle(cached)
 }
 
 export async function buildKodyImportableModuleBundle(input: {
