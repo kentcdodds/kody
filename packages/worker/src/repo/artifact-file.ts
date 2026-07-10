@@ -41,14 +41,19 @@ export async function readArtifactFileAtCommit(input: {
 	})
 	const auth = buildArtifactsGitAuth({ token: token.plaintext })
 	const workspace = createEphemeralGitWorkspace()
-	await git.clone({
+	await git.init({
+		fs: workspace.fs,
+		dir: workspace.dir,
+	})
+	await git.fetch({
 		fs: workspace.fs,
 		http,
 		dir: workspace.dir,
 		url: remote,
+		ref: input.commit,
+		depth: 1,
 		singleBranch: true,
-		ref: info.defaultBranch || 'main',
-		noCheckout: true,
+		tags: false,
 		onAuth() {
 			return auth
 		},

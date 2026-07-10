@@ -2,7 +2,8 @@ import { expect, test, vi } from 'vitest'
 import { readArtifactFileAtCommit } from './artifact-file.ts'
 
 const mocks = vi.hoisted(() => ({
-	clone: vi.fn(),
+	fetch: vi.fn(),
+	init: vi.fn(),
 	readBlob: vi.fn(),
 	readMockArtifactSnapshot: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
@@ -10,7 +11,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('isomorphic-git', () => ({
 	default: {
-		clone: (...args: Array<unknown>) => mocks.clone(...args),
+		fetch: (...args: Array<unknown>) => mocks.fetch(...args),
+		init: (...args: Array<unknown>) => mocks.init(...args),
 		readBlob: (...args: Array<unknown>) => mocks.readBlob(...args),
 	},
 }))
@@ -49,11 +51,17 @@ test('reads binary artifact files from an exact pinned commit', async () => {
 	})
 
 	expect(result).toEqual(bytes)
-	expect(mocks.clone).toHaveBeenCalledWith(
+	expect(mocks.init).toHaveBeenCalledWith(
 		expect.objectContaining({
-			ref: 'main',
+			dir: '/repo',
+		}),
+	)
+	expect(mocks.fetch).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'abc123',
+			depth: 1,
 			singleBranch: true,
-			noCheckout: true,
+			tags: false,
 		}),
 	)
 	expect(mocks.readBlob).toHaveBeenCalledWith(
