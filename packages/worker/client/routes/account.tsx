@@ -32,9 +32,9 @@ import {
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
+	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import {
@@ -539,9 +539,10 @@ export function AccountRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
-				<AccountManagementHeader
-					title={username ? `${username} account` : 'Account'}
+				<AccountPageHeader
+					title="Account"
 					description="Manage your profile, integrations, approval requests, stored secrets, and package invocation tokens."
+					currentHref={currentHref}
 				/>
 
 				{status === 'loading' ? (

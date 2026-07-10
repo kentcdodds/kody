@@ -15,9 +15,9 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
+	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -269,9 +269,10 @@ export function AccountPasskeysRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
-				<AccountManagementHeader
+				<AccountPageHeader
 					title="Passkeys"
 					description="Sign in with your device's screen lock, a hardware key, or a synced passkey instead of your password."
+					currentHref={currentHref}
 				/>
 
 				{status === 'loading' ? (

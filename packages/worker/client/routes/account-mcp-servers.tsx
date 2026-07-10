@@ -14,13 +14,13 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementLayout,
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountManagementSidebar,
+	AccountPageHeader,
 	MetadataGrid,
 } from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
@@ -150,7 +150,6 @@ function readOAuthResultFromHref(href: string): {
 export function AccountMcpServersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
-	let email = ''
 	let servers: Array<McpServerListItem> = []
 	let selectedId: string | null = null
 	let addName = ''
@@ -183,7 +182,6 @@ export function AccountMcpServersRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountMcpServersPayload) {
-		email = payload.email
 		servers = payload.servers
 		deleteConfirm = false
 		if (payload.selectedServerId) {
@@ -358,9 +356,10 @@ export function AccountMcpServersRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
-					title={email ? `${email} MCP servers` : 'MCP servers'}
+				<AccountPageHeader
+					title="MCP servers"
 					description="Connect remote MCP servers so their tools are available to Kody as kody.mcp capabilities. Servers that require OAuth prompt for authorization after they are added."
+					currentHref={currentHref}
 					actions={
 						<button
 							type="button"

@@ -15,13 +15,13 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementLayout,
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountManagementSidebar,
+	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -290,7 +290,6 @@ const iconButtonCss = {
 export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
-	let email = ''
 	let username = ''
 	let connectorUrlOrigin = ''
 	let connectors: Array<RemoteConnectorListItem> = []
@@ -339,7 +338,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountRemoteConnectorsPayload) {
-		email = payload.email
 		username = payload.username
 		connectorUrlOrigin = payload.connectorUrlOrigin
 		connectors = payload.connectors
@@ -568,9 +566,10 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
-					title={email ? `${email} remote connectors` : 'Remote connectors'}
+				<AccountPageHeader
+					title="Remote connectors"
 					description="Attach connector refs to normal Kody sessions and manage the shared secrets used by connector hello authentication."
+					currentHref={currentHref}
 					actions={
 						<button
 							type="button"

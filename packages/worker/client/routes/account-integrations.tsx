@@ -1,9 +1,11 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { ProviderIcon } from '#client/provider-icons.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -13,10 +15,16 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
+	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
+import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
+import {
+	buildCustomIntegrationSetupPrompt,
+	buildIntegrationSetupPrompt,
+	integrationProviderSuggestions,
+} from '#client/routes/integration-provider-catalog.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -66,6 +74,12 @@ type AccountIntegrationsPayload = {
 
 const accountIntegrationsApiPath = '/account/integrations.json'
 const accountIntegrationsPath = '/account/integrations'
+
+const providerCatalogGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(min(22rem, 100%), 1fr))',
+	gap: spacing.lg,
+}
 
 function isAccountIntegrationsPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === accountIntegrationsPath
@@ -118,7 +132,6 @@ function renderIntegrationDetail(label: string, value: string) {
 
 export function AccountIntegrationsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
-	let email = ''
 	let integrations: Array<AccountIntegrationListItem> = []
 	let message: string | null = null
 	const loadLatch = createRouteLoadLatch()
@@ -140,7 +153,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load integrations.')
 			}
-			email = payload.email
 			integrations = payload.integrations
 			status = 'ready'
 			message = null
@@ -164,7 +176,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			href,
 		)
 		if (!routeData) return false
-		email = routeData.email
 		integrations = routeData.integrations
 		status = 'ready'
 		message = null
@@ -189,11 +200,17 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			handle.queueTask(loadIntegrations)
 		}
 
+		const setupIntro =
+			integrations.length === 0
+				? 'No integrations yet. Pick a service and copy its prompt into your agent — setup takes a few minutes.'
+				: 'Add another service: copy a prompt into your agent.'
+
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
-					title={email ? `${email} integrations` : 'Integrations'}
-					description="Review saved OAuth integrations and reconnect providers when tokens need to be refreshed."
+				<AccountPageHeader
+					title="Integrations"
+					description="Services Kody can act on for you — built on OAuth apps you create and own."
+					currentHref={currentHref}
 				/>
 
 				{status === 'loading' ? (
@@ -209,25 +226,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					</AccountManagementMessage>
 				) : null}
 
-				{status === 'ready' && integrations.length === 0 ? (
-					<section mix={css(cardCss)}>
-						<h2 mix={css(cardTitleCss)}>No integrations yet</h2>
-						<p mix={css(descriptionCss)}>
-							OAuth integrations appear here after Kody saves provider
-							configuration through an OAuth setup flow.
-						</p>
-					</section>
-				) : null}
-
 				{status === 'ready' && integrations.length > 0 ? (
-					<section
-						mix={css({
-							display: 'grid',
-							gridTemplateColumns:
-								'repeat(auto-fit, minmax(min(22rem, 100%), 1fr))',
-							gap: spacing.lg,
-						})}
-					>
+					<section mix={css(providerCatalogGridCss)}>
 						{integrations.map((integration) => {
 							const connectHref = buildConnectOauthHref(integration)
 							return (
@@ -333,6 +333,67 @@ export function AccountIntegrationsRoute(handle: Handle) {
 							)
 						})}
 					</section>
+				) : null}
+
+				{status === 'ready' ? (
+					<>
+						{renderByokExplainer({ image: 'keys' })}
+
+						<section mix={css({ display: 'grid', gap: spacing.lg })}>
+							<div mix={css({ display: 'grid', gap: spacing.xs })}>
+								<h2 mix={css(sectionTitleCss)}>Set up with your agent</h2>
+								<p mix={css(descriptionCss)}>{setupIntro}</p>
+							</div>
+
+							<div mix={css(providerCatalogGridCss)}>
+								{integrationProviderSuggestions.map((provider) => (
+									<article key={provider.id} mix={css(cardCss)}>
+										<div mix={css({ display: 'grid', gap: spacing.md })}>
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h3
+													mix={css({
+														...cardTitleCss,
+														display: 'flex',
+														alignItems: 'center',
+														gap: spacing.sm,
+													})}
+												>
+													<ProviderIcon providerId={provider.id} />
+													{provider.name}
+												</h3>
+												<p mix={css(descriptionCss)}>{provider.tagline}</p>
+											</div>
+											<div>
+												<CopyTextButton
+													value={buildIntegrationSetupPrompt(provider)}
+													idleLabel="Copy setup prompt"
+													variant="secondary"
+												/>
+											</div>
+										</div>
+									</article>
+								))}
+
+								<article mix={css(cardCss)}>
+									<div mix={css({ display: 'grid', gap: spacing.md })}>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<h3 mix={css(cardTitleCss)}>Something else</h3>
+											<p mix={css(descriptionCss)}>
+												If it has an API, your Kody can learn to use it.
+											</p>
+										</div>
+										<div>
+											<CopyTextButton
+												value={buildCustomIntegrationSetupPrompt()}
+												idleLabel="Copy setup prompt"
+												variant="secondary"
+											/>
+										</div>
+									</div>
+								</article>
+							</div>
+						</section>
+					</>
 				) : null}
 
 				<p mix={css({ margin: 0 })}>

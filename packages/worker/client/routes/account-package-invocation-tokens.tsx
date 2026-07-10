@@ -37,13 +37,13 @@ import {
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementLayout,
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountManagementSidebar,
+	AccountPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
 
@@ -207,7 +207,9 @@ function getSelectedTokenIdFromPath(href: string) {
 }
 
 function buildTokenDetailPath(tokenId: string) {
-	return createHref(accountPackageInvocationTokenDetailPathPattern, { tokenId })
+	return createHref(accountPackageInvocationTokenDetailPathPattern, {
+		tokenId,
+	})
 }
 
 function getNewTokenQueryKey(href: string) {
@@ -323,7 +325,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		| 'revoking'
 		| 'reinstating'
 		| 'deleting' = 'idle'
-	let email = ''
 	let username = ''
 	let invocationUrlOrigin = ''
 	let packages: Array<PackageOption> = []
@@ -414,7 +415,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		payload: AccountPackageInvocationTokensPayload,
 		href: string,
 	) {
-		email = payload.email
 		username = payload.username
 		invocationUrlOrigin = payload.invocationUrlOrigin
 		packages = payload.packages
@@ -941,13 +941,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
-					title={
-						email
-							? `${email} package invocation tokens`
-							: 'Package invocation tokens'
-					}
+				<AccountPageHeader
+					title="Package tokens"
 					description="Create bearer tokens for trusted personal clients without storing the raw token in Kody."
+					currentHref={currentHref}
 					actions={
 						<button
 							type="button"

@@ -52,13 +52,13 @@ import {
 	normalizeAllowedPackages,
 } from './secret-normalization.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementLayout,
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountManagementSidebar,
+	AccountPageHeader,
 	MetadataGrid,
 } from './account-management-components.tsx'
 
@@ -567,7 +567,6 @@ const truncatedTextCss = {
 
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
-	let email = ''
 	let packageOptions: Array<PackageOption> = []
 	let packagesById = new Map<string, { kodyId: string; name: string }>()
 	let secrets: Array<SecretListItem> = []
@@ -654,7 +653,6 @@ export function AccountSecretsRoute(handle: Handle) {
 		selection: SelectionState,
 		nextMessage: string | null,
 	) {
-		email = payload.email
 		packageOptions = payload.packageOptions
 		packagesById = new Map(
 			payload.packages.map((pkg) => [
@@ -1126,9 +1124,10 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell>
-				<AccountManagementHeader
-					title={email ? `${email} secrets` : 'Secrets'}
+				<AccountPageHeader
+					title="Secrets"
 					description="Create, update, and delete user secrets and package-owned secrets."
+					currentHref={currentHref}
 					actions={
 						<>
 							<a

@@ -1,6 +1,5 @@
 import { type Handle, css } from 'remix/ui'
-import { writeClipboardText } from '#client/clipboard.ts'
-import { on } from '#client/event-mixin.ts'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -18,13 +17,12 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
+import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
 	insetCardCss,
 	layoutMaxWidths,
 	mutedLinkCss,
@@ -83,11 +81,7 @@ export function OnboardingRoute(handle: Handle) {
 	let mcpServerUrl = ''
 	let setupPrompt = ''
 	let hasMcpClient = false
-	let urlCopyState: 'idle' | 'copied' | 'error' = 'idle'
-	let promptCopyState: 'idle' | 'copied' | 'error' = 'idle'
 	const loadLatch = createRouteLoadLatch()
-	let urlCopyResetTimer: ReturnType<typeof setTimeout> | null = null
-	let promptCopyResetTimer: ReturnType<typeof setTimeout> | null = null
 
 	function applyPayload(payload: OnboardingPayload) {
 		mcpServerUrl = payload.mcpServerUrl
@@ -136,31 +130,6 @@ export function OnboardingRoute(handle: Handle) {
 		return true
 	}
 
-	async function copyValue(value: string, kind: 'url' | 'prompt') {
-		try {
-			await writeClipboardText(value)
-			if (kind === 'url') {
-				urlCopyState = 'copied'
-				if (urlCopyResetTimer) clearTimeout(urlCopyResetTimer)
-				urlCopyResetTimer = setTimeout(() => {
-					urlCopyState = 'idle'
-					handle.update()
-				}, 2000)
-			} else {
-				promptCopyState = 'copied'
-				if (promptCopyResetTimer) clearTimeout(promptCopyResetTimer)
-				promptCopyResetTimer = setTimeout(() => {
-					promptCopyState = 'idle'
-					handle.update()
-				}, 2000)
-			}
-		} catch {
-			if (kind === 'url') urlCopyState = 'error'
-			else promptCopyState = 'error'
-		}
-		handle.update()
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const appliedRouteData = applyRouteLoaderData(currentHref)
@@ -175,9 +144,6 @@ export function OnboardingRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadOnboarding)
 		}
-
-		const primaryButtonCss = getPrimaryButtonCss()
-		const secondaryButtonCss = getSecondaryButtonCss()
 
 		return (
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
@@ -224,19 +190,11 @@ export function OnboardingRoute(handle: Handle) {
 									flexWrap: 'wrap',
 								})}
 							>
-								<button
-									type="button"
-									mix={[
-										css(primaryButtonCss),
-										on('click', () => void copyValue(mcpServerUrl, 'url')),
-									]}
-								>
-									{urlCopyState === 'copied'
-										? 'Copied'
-										: urlCopyState === 'error'
-											? 'Copy failed'
-											: 'Copy MCP URL'}
-								</button>
+								<CopyTextButton
+									value={mcpServerUrl}
+									idleLabel="Copy MCP URL"
+									variant="primary"
+								/>
 							</div>
 							<p mix={css(descriptionCss)}>
 								When your agent connects, it starts an OAuth flow. Sign in to
@@ -257,20 +215,14 @@ export function OnboardingRoute(handle: Handle) {
 								you configure the basics.
 							</p>
 							<pre mix={css(codeBlockCss)}>{setupPrompt}</pre>
-							<button
-								type="button"
-								mix={[
-									css(secondaryButtonCss),
-									on('click', () => void copyValue(setupPrompt, 'prompt')),
-								]}
-							>
-								{promptCopyState === 'copied'
-									? 'Copied'
-									: promptCopyState === 'error'
-										? 'Copy failed'
-										: 'Copy prompt'}
-							</button>
+							<CopyTextButton
+								value={setupPrompt}
+								idleLabel="Copy prompt"
+								variant="secondary"
+							/>
 						</section>
+
+						{renderByokExplainer({ image: 'handoff' })}
 
 						<p mix={css({ margin: 0 })}>
 							<a href="/account" mix={css(mutedLinkCss)}>

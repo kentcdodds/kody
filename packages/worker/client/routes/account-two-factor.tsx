@@ -14,9 +14,9 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
+	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
@@ -314,9 +314,10 @@ export function AccountTwoFactorRoute(handle: Handle) {
 
 		return (
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
-				<AccountManagementHeader
+				<AccountPageHeader
 					title="Two-factor authentication"
 					description="Add a one-time code from an authenticator app as a second step when signing in."
+					currentHref={currentHref}
 				/>
 
 				{status === 'loading' ? (

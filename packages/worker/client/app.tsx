@@ -123,6 +123,19 @@ export function App(handle: Handle<AppProps>) {
 		marginBottom: spacing.lg,
 	}
 
+	const navGroupCss = {
+		display: 'flex',
+		alignItems: 'center',
+		gap: spacing.md,
+		flexWrap: 'wrap',
+		[mq.tablet]: {
+			gap: spacing.sm,
+		},
+		[mq.mobile]: {
+			gap: spacing.sm,
+		},
+	}
+
 	return () => {
 		currentPathname = readRouterPathname(handle)
 		const sessionEmail = session?.email ?? ''
@@ -166,73 +179,60 @@ export function App(handle: Handle<AppProps>) {
 							boxSizing: 'border-box',
 							display: 'flex',
 							alignItems: 'center',
+							justifyContent: 'space-between',
 							gap: spacing.md,
 							flexWrap: 'wrap',
 							[mq.tablet]: compactNavCss,
 							[mq.mobile]: compactNavCss,
 						})}
 					>
-						<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
-							<img
-								src="/logo.png"
-								alt=""
-								width={112}
-								height={28}
-								mix={css({
-									display: 'block',
-									height: '1.35em',
-									width: 'auto',
-								})}
-							/>
-						</a>
-						<a href="/community" mix={css(primaryLinkCss)}>
-							Community
-						</a>
-						{showAuthLinks ? (
-							<>
-								<a href={loginHref} mix={css(primaryLinkCss)}>
-									Login
-								</a>
-								<a href={signupHref} mix={css(primaryLinkCss)}>
-									Signup
-								</a>
-							</>
-						) : null}
-						{isLoggedIn ? (
-							<>
-								<a href="/account" mix={css(primaryLinkCss)}>
-									{sessionDisplayName}
-								</a>
-								<a href="/account/secrets" mix={css(primaryLinkCss)}>
-									Secrets
-								</a>
-								<a href="/account/integrations" mix={css(primaryLinkCss)}>
-									Integrations
-								</a>
-								<a
-									href="/account/package-invocation-tokens"
-									mix={css(primaryLinkCss)}
-								>
-									Package tokens
-								</a>
-								<a href="/account/remote-connectors" mix={css(primaryLinkCss)}>
-									Connectors
-								</a>
-								<a href="/account/mcp-servers" mix={css(primaryLinkCss)}>
-									MCP servers
-								</a>
-								{showAdminLink ? (
-									<a href="/admin/users" mix={css(primaryLinkCss)}>
-										Admin
+						<div mix={css(navGroupCss)}>
+							<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
+								<img
+									src="/logo.png"
+									alt=""
+									width={112}
+									height={28}
+									mix={css({
+										display: 'block',
+										height: '1.35em',
+										width: 'auto',
+									})}
+								/>
+							</a>
+							<a href="/community" mix={css(primaryLinkCss)}>
+								Community
+							</a>
+						</div>
+						<div mix={css(navGroupCss)}>
+							{showAuthLinks ? (
+								<>
+									<a href={loginHref} mix={css(primaryLinkCss)}>
+										Login
 									</a>
-								) : null}
-								<form method="post" action="/logout" mix={css({ margin: 0 })}>
-									<button type="submit" mix={css(logOutButtonCss)}>
-										Log out
-									</button>
-								</form>
-							</>
-						) : null}
+									<a href={signupHref} mix={css(primaryLinkCss)}>
+										Signup
+									</a>
+								</>
+							) : null}
+							{isLoggedIn ? (
+								<>
+									{showAdminLink ? (
+										<a href="/admin/users" mix={css(primaryLinkCss)}>
+											Admin
+										</a>
+									) : null}
+									<a href="/account" mix={css(primaryLinkCss)}>
+										{sessionDisplayName}
+									</a>
+									<form method="post" action="/logout" mix={css({ margin: 0 })}>
+										<button type="submit" mix={css(logOutButtonCss)}>
+											Log out
+										</button>
+									</form>
+								</>
+							) : null}
+						</div>
 					</nav>
 					<main mix={css({ width: '100%', boxSizing: 'border-box' })}>
 						<Router
