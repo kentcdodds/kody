@@ -28,7 +28,7 @@ test('social login signs in via mock GitHub and manages connections', async ({
 
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(
-		page.getByRole('heading', { name: 'mock-github-user account' }),
+		page.getByRole('heading', { name: 'Account', exact: true }),
 	).toBeVisible()
 	// The provider-verified email skips the verification-email flow entirely.
 	await expect(
