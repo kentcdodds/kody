@@ -1,4 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -344,6 +348,7 @@ test('refreshSavedPackageProjection omits files when artifact rebuild is skipped
 })
 
 test('refreshSavedPackageProjection continues best-effort cleanup when dependent steps fail', async () => {
+	consoleError.mockImplementation(() => {})
 	setupDefaultMocks()
 	const manifest = {
 		name: '@kentcdodds/shade-automation',
@@ -402,6 +407,8 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 		env: envAfterRetrieverFailure,
 		userId: 'user-1',
 	})
+	// The swallowed retriever-cache failure is still logged for operators.
+	expect(consoleError).toHaveBeenCalledTimes(1)
 
 	setupDefaultMocks()
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
@@ -536,6 +543,8 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 })
 
 test('deleteSavedPackageProjection continues best-effort cleanup when dependent steps fail', async () => {
+	consoleError.mockImplementation(() => {})
+	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
 	const env = createEnv()
 	mockModule.getSavedPackageById.mockResolvedValue({
@@ -567,6 +576,8 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 		env,
 		userId: 'user-1',
 	})
+	// The swallowed entity source cleanup failure is still logged.
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
 	setupDefaultMocks()
 	mockModule.getSavedPackageById.mockResolvedValue({

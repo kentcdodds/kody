@@ -12,6 +12,7 @@ import {
 } from './mcp-auth.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from './user-id.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 function expectAuthenticateHeader(
 	header: string,
@@ -272,6 +273,9 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		remoteConnectors: [{ instanceId: 'home' }],
 	})
 
+	// The failing D1 lookup logs the roles-load failure before the request
+	// rethrows the underlying error.
+	consoleError.mockImplementation(() => {})
 	const appDbUnavailable = {
 		prepare: () => {
 			throw new Error('D1 unavailable')
@@ -293,6 +297,10 @@ test('mcp request enforces token audience and forwards caller props', async () =
 			},
 		}),
 	).rejects.toThrow('D1 unavailable')
+	expect(consoleError).toHaveBeenCalledWith(
+		'Failed to load roles for MCP user context:',
+		expect.any(Error),
+	)
 })
 
 test('mcp request rejects unverified and unidentifiable accounts fail-closed', async () => {

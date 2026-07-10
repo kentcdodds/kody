@@ -13,6 +13,7 @@ import {
 } from './system-email.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -337,6 +338,7 @@ test('system email retention prunes old operator-owned messages and counters', a
 })
 
 test('system email retention deletes blobs before rows and keeps rows when the blob delete fails', async () => {
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const old = new Date(
@@ -378,6 +380,11 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 		now,
 	})
 
+	// The simulated outage is warned for operators.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'system-email-raw-mime-blob-delete-failed',
+		expect.any(Error),
+	)
 	// The blob-backed row survives the failed blob delete; only the plain row
 	// is pruned, and the blob is still readable for the retry.
 	expect(failed.deletedMessages).toBe(1)
@@ -413,6 +420,7 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 })
 
 test('system email retention advances past skipped blob rows at the head of a batch', async () => {
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-07-06T12:00:00.000Z')
 	const oldMs =
@@ -486,6 +494,11 @@ test('system email retention advances past skipped blob rows at the head of a ba
 
 	expect(result.blobDeleteErrors).toBe(blockedCount)
 	expect(result.deletedMessages).toBe(plainCount)
+	// The simulated outage is warned for operators.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'system-email-raw-mime-blob-delete-failed',
+		expect.any(Error),
+	)
 	const remainingPlain = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-plain-%'`,
 	).first<{ count: number }>()

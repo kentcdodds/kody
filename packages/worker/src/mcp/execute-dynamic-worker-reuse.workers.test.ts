@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 /**
  * Regression coverage for the production "RPC stub used after being
@@ -42,6 +43,8 @@ test(
 	'sequential executes with identical code reuse the dynamic worker without stale dispatcher stubs',
 	{ timeout: 60_000 },
 	async () => {
+		// The worker bundler emits an incidental experimental warning.
+		consoleWarn.mockImplementation(() => {})
 		const bundle = await buildKodyModuleBundle({
 			env: reuseEnv,
 			baseUrl: 'https://kody.dev',

@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	captureException: vi.fn(),
@@ -413,6 +414,7 @@ test('force publish passes destructive confirmation through and refuses without 
 })
 
 test('publishExternalPush recovers from transient Durable Object resets', async () => {
+	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
@@ -457,6 +459,8 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			},
 		}),
 	)
+	// Each transient reset leaves exactly one retry warn trail.
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
 	setupDefaultMocks()
 	mockModule.getEntitySourceById

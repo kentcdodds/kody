@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { recordUsage } from './record-usage.ts'
 import { ensureUsageRollupsTestSchema } from './test-schema.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 async function listRollups(db: D1Database, userId: string) {
 	const { results } = await db
@@ -149,6 +150,7 @@ test('recordUsage accumulates per-user monthly rollups without USAGE_EVENTS (loc
 })
 
 test('recordUsage never throws when bindings are missing, sinks fail, or userId is empty', async () => {
+	consoleWarn.mockImplementation(() => {})
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const userId = `usage-degrade-user-${crypto.randomUUID()}`
 
@@ -180,6 +182,10 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 		),
 	).resolves.toBeUndefined()
 	expect(await listRollups(env.APP_DB, userId)).toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'usage-event-analytics-failed',
+		expect.any(Error),
+	)
 
 	// Missing userId: skipped entirely, no row written.
 	await expect(
@@ -198,4 +204,8 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 			{ userId, eventType: 'execute', outcome: 'success' },
 		),
 	).resolves.toBeUndefined()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'usage-rollup-failed',
+		expect.any(Error),
+	)
 })

@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	captureException: vi.fn(),
@@ -108,6 +109,7 @@ function resetMocks() {
 
 test('handlePackageAppRequest reports host setup failures with helpful responses and Sentry context', async () => {
 	resetMocks()
+	consoleError.mockImplementation(() => {})
 
 	const response = await handlePackageAppRequest(
 		new Request(
@@ -182,10 +184,17 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 		},
 		request_path: '/@test-user/packages/example/api/data',
 	})
+	// Both host-setup failures are logged for operators.
+	expect(consoleError).toHaveBeenCalledTimes(2)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.any(String),
+		expect.any(Error),
+	)
 })
 
 test('handlePackageAppRequest does not report package entrypoint failures to Kody Sentry', async () => {
 	resetMocks()
+	consoleError.mockImplementation(() => {})
 
 	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
 		source: {
@@ -216,6 +225,12 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 
 	expect(response.status).toBe(500)
 	expect(mockModule.captureException).not.toHaveBeenCalled()
+	// The entrypoint failure is still logged even though it is not
+	// reported to Kody Sentry.
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.any(String),
+		expect.any(Error),
+	)
 })
 
 test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {

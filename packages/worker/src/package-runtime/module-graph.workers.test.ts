@@ -9,6 +9,14 @@ import {
 } from './module-graph.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
+
+// Every test here runs the bundler (incidental experimental warning) and the
+// registry runtime, whose optional MCP-server and usage lookups warn when
+// their tables are absent from the test schema.
+function silenceIncidentalRuntimeWarnings() {
+	consoleWarn.mockImplementation(() => {})
+}
 
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
@@ -122,6 +130,7 @@ test(
 	'saved package bundles and executes npm dependencies declared in package.json',
 	{ timeout: 20_000 },
 	async () => {
+		silenceIncidentalRuntimeWarnings()
 		const packageJson = JSON.stringify({
 			name: '@kentcdodds/dependency-package',
 			exports: {
@@ -191,6 +200,7 @@ test(
 )
 
 test('worker bundler executes the wrapper when multiple package artifact defaults are imported', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const bundle = await createWorker({
 		files: {
 			'.__kody_root__/.__kody_execute_entry__.js': [
@@ -279,6 +289,7 @@ test('worker bundler executes the wrapper when multiple package artifact default
 })
 
 test('saved package artifact imports keep the execute wrapper as the runtime entrypoint', async () => {
+	silenceIncidentalRuntimeWarnings()
 	await ensureSavedPackageArtifactSchema()
 	const unique = crypto.randomUUID()
 	const userId = `user-${unique}`
@@ -433,6 +444,7 @@ test('saved package artifact imports keep the execute wrapper as the runtime ent
 })
 
 test('subscription bundles refresh stale nested runtime modules from static package dependencies', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const nestedRuntimeModule =
 		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
 	const result = await runBundledModuleWithRegistry(
@@ -497,6 +509,7 @@ test('subscription bundles refresh stale nested runtime modules from static pack
 })
 
 test('saved package execution passes input as the default export argument', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const packageJson = JSON.stringify({
 		name: '@kentcdodds/input-package',
 		exports: {
@@ -550,6 +563,7 @@ test('saved package execution passes input as the default export argument', asyn
 })
 
 test('saved package execution exposes packages.invoke when package invoke tools are provided', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const packageJson = JSON.stringify({
 		name: '@kentcdodds/invoker-package',
 		exports: {
@@ -682,6 +696,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 })
 
 test('ad hoc execute runtime exposes packages.invoke when package invoke tools are provided', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const bundle = await buildKodyModuleBundle({
 		env,
 		baseUrl: 'https://kody.dev',
@@ -795,6 +810,7 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 })
 
 test('ad hoc execute runtime exposes packages as null without package invoke tools', async () => {
+	silenceIncidentalRuntimeWarnings()
 	const bundle = await buildKodyModuleBundle({
 		env,
 		baseUrl: 'https://kody.dev',

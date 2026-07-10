@@ -27,6 +27,7 @@ import {
 	workflowRunRetentionDays,
 } from './retention.ts'
 import { systemEmailOwnerId } from '#worker/email/system-email.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -795,6 +796,7 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 })
 
 test('email message retention never deletes rows whose blob cannot be deleted first', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createRetentionDb()
 	insertEmailMessage(sqlite, {
 		id: 'msg-old-blob',
@@ -819,6 +821,10 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 		deletedRawMimeBlobs: 0,
 		blobDeleteErrors: 1,
 	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'retention-email-blob-delete-failed',
+		{ error: expect.any(Error) },
+	)
 	expect(idsForTable(sqlite, 'email_messages')).toEqual(['msg-old-blob'])
 
 	const workingDelete = vi.fn(async () => undefined)
@@ -835,6 +841,8 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 })
 
 test('email message retention cursor advances past skipped blob rows at the head', async () => {
+	// Failed blob deletes are already counted via blobDeleteErrors below.
+	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createRetentionDb()
 	// The two oldest expired rows are blob-backed and unpassable while the
 	// R2 delete fails; the two plain expired rows behind them must still be
@@ -909,6 +917,8 @@ test('email message retention cursor advances past skipped blob rows at the head
 })
 
 test('retention run prunes expired plain emails behind a skipped blob-row head', async () => {
+	// Failed blob deletes are already counted via blobDeleteErrors below.
+	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createRetentionDb()
 	// 251 blob-backed rows fill the first default-size batch and spill into the
 	// second; 5 plain expired rows sit behind them.

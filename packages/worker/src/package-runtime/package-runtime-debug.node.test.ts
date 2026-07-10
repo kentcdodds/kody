@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	beginPackageRuntimeRun,
 	finishPackageRuntimeRun,
@@ -299,6 +300,7 @@ test('package runtime debug records runs, enforces log limits, and surfaces erro
 		message: 'line-204',
 	})
 
+	consoleWarn.mockImplementation(() => {})
 	const failingLogEnv = {
 		APP_DB: createDebugDatabase({ failLogInsert: true }),
 	} as Env
@@ -332,4 +334,8 @@ test('package runtime debug records runs, enforces log limits, and surfaces erro
 		runId: logFailureRun?.id ?? '',
 	})
 	expect(loadedAfterLogFailure?.logs).toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'package-runtime-debug-logs-failed',
+		expect.any(Error),
+	)
 })

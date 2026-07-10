@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listEntitySourcesForExternalReconcile: vi.fn(),
@@ -132,6 +133,7 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 })
 
 test('reconcile records source checks and continues the batch when a source or its check write fails', async () => {
+	consoleWarn.mockImplementation(() => {})
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
 	mockModule.resolveArtifactSourceHead.mockRejectedValueOnce(new Error('boom'))
 
@@ -142,6 +144,10 @@ test('reconcile records source checks and continues the batch when a source or i
 	})
 
 	expect(singleFailure.errors).toBe(1)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'reconcile_artifacts_pushes source failed',
+		expect.objectContaining({ sourceId: 'source-1' }),
+	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		{
@@ -188,9 +194,14 @@ test('reconcile records source checks and continues the batch when a source or i
 		budgetExhausted: false,
 	})
 	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'reconcile_artifacts_pushes cursor update failed',
+		expect.objectContaining({ sourceId: 'source-1' }),
+	)
 })
 
 test('reconcile runs token cleanup in the 03:00 UTC window without blocking publish on cleanup failure', async () => {
+	consoleWarn.mockImplementation(() => {})
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
@@ -242,6 +253,10 @@ test('reconcile runs token cleanup in the 03:00 UTC window without blocking publ
 			errors: 0,
 			tokenCleanupErrors: 1,
 		}),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'reconcile_artifacts_pushes token cleanup failed',
+		expect.objectContaining({ sourceId: 'source-1' }),
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 })
@@ -331,6 +346,7 @@ test('reconcile stops between items once the time budget is exhausted', async ()
 })
 
 test('reconcile does not reprocess a source whose cursor write keeps failing', async () => {
+	consoleWarn.mockImplementation(() => {})
 	mockModule.listEntitySourcesForExternalReconcile.mockReset()
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
 		source({ id: 'source-1', published_commit: 'commit-current' }),
@@ -363,12 +379,19 @@ test('reconcile does not reprocess a source whose cursor write keeps failing', a
 	expect(
 		mockModule.listEntitySourcesForExternalReconcile,
 	).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'reconcile_artifacts_pushes cursor update failed',
+		expect.objectContaining({ sourceId: 'source-1' }),
+	)
 
 	mockModule.updateEntitySource.mockReset()
 	mockModule.updateEntitySource.mockResolvedValue(true)
 })
 
 test('head sources with failing cursor writes do not starve sources behind them within a tick', async () => {
+	// Cursor-write failure warns are covered elsewhere; this test is about
+	// keyset paging, so the warns are silenced without assertions.
+	consoleWarn.mockImplementation(() => {})
 	// Simulated table: two head-of-queue sources whose cursor writes keep
 	// failing, plus one healthy source ordered behind them.
 	const rows = [

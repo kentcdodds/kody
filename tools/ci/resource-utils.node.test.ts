@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 import {
 	isWranglerNotFoundOutput,
@@ -29,6 +30,7 @@ test('isWranglerNotFoundOutput recognizes common Wrangler missing-resource messa
 })
 
 test('writeGeneratedWranglerConfig preserves migrations and copies environment asset routing', async () => {
+	consoleError.mockImplementation(() => {})
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
 
 	try {
@@ -120,6 +122,9 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			},
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
 		])
+		expect(consoleError).toHaveBeenCalledWith(
+			`Wrote generated Wrangler config: ${previewOutPath}`,
+		)
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

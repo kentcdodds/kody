@@ -45,5 +45,8 @@ export const sharedProjectConfig = {
 		fileParallelism: false,
 		clearMocks: true,
 		mockReset: true,
+		setupFiles: [
+			resolve(rootDir, 'packages/worker/src/test-support/console-spies.ts'),
+		],
 	},
 } satisfies UserConfig

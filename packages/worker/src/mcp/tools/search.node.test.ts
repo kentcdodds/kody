@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
@@ -766,6 +767,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	expect(sourceMocks.loadPackageSourceBySourceId).toHaveBeenCalledTimes(1)
 
 	// Hydration failures degrade to the lean match instead of failing search.
+	consoleWarn.mockImplementation(() => {})
 	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
 		new Error('missing-source'),
 	)
@@ -808,6 +810,10 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 				readmeSnippet: null,
 			}),
 		]),
+	)
+	// The degraded path leaves a hydration-failure trail for the package.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('package-123'),
 	)
 })
 
@@ -899,6 +905,7 @@ test('searchUnified ranks packages via user-filtered package vectors when Vector
 })
 
 test('searchUnified degrades to lexical package ranking when the vector query throws', async () => {
+	consoleWarn.mockImplementation(() => {})
 	let packageVectorQueryAttempts = 0
 	const env = {
 		SENTRY_ENVIRONMENT: 'production',
@@ -968,6 +975,10 @@ test('searchUnified degrades to lexical package ranking when the vector query th
 			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
 		),
 	).toBe(true)
+	// The degradation leaves a warn trail carrying the vector failure.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('vectorize unavailable'),
+	)
 })
 
 test('down remote connector statuses surface only disconnected connectors for signed-in users', async () => {

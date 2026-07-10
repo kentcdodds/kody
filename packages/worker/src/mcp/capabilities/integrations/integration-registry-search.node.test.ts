@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import {
 	buildIntegrationRegistrySearchUrlForTest,
@@ -41,6 +42,9 @@ const searchFixture = {
 }
 
 test('integration_registry_search returns parsed results and rejects upstream failures', async () => {
+	// msw warns about the query string in the handler URL; that tooling
+	// notice is incidental to the capability behavior under test.
+	consoleWarn.mockImplementation(() => {})
 	const url = buildIntegrationRegistrySearchUrlForTest('linear')
 	using _successServer = createMswNodeServer([
 		http.get(url, () => HttpResponse.json(searchFixture)),

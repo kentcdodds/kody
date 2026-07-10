@@ -3,6 +3,10 @@ import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -325,6 +329,9 @@ function stubCloudflareEmailFetch(
 }
 
 test('auth handler login and signup workflow', async () => {
+	// The signup context has no email sender configured, so the skipped
+	// verification send logs a warning in the non-production runtime.
+	consoleWarn.mockImplementation(() => {})
 	// Production signups must actually deliver the verification email, so
 	// the production context gets a (stubbed) configured Cloudflare sender.
 	const productionContext = createAuthTestContext({ emailConfigured: true })
@@ -413,6 +420,10 @@ test('auth handler login and signup workflow', async () => {
 	expect(signupContext.testDb.users.has('allowed@example.com')).toBe(true)
 	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
 		'allowed-user',
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'email-verification-send-skipped',
+		expect.any(Number),
 	)
 
 	await signupContext.testDb.addUser(
@@ -524,6 +535,8 @@ test('signup fails when the default user role cannot be assigned', async () => {
 })
 
 test('signup rolls back when the verification email cannot be sent', async () => {
+	consoleError.mockImplementation(() => {})
+	consoleWarn.mockImplementation(() => {})
 	const context = createAuthTestContext({
 		signupEnabled: true,
 		emailConfigured: true,
@@ -544,9 +557,22 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	// The created user row is rolled back so signup can be retried.
 	expect(context.testDb.users.has('undeliverable@example.com')).toBe(false)
+	// Only the verification failure is logged; the rollback delete succeeds.
+	expect(consoleError).toHaveBeenCalledTimes(1)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.any(String),
+		expect.any(Error),
+	)
+	// The failed Cloudflare API send is warned for operators.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cloudflare-email-api-failed',
+		expect.any(String),
+	)
 })
 
 test('production signup fails closed when no verification email sender is configured', async () => {
+	consoleError.mockImplementation(() => {})
+	consoleWarn.mockImplementation(() => {})
 	const context = createAuthTestContext()
 	context.testDb.addInvite('PROD-NO-EMAIL')
 
@@ -565,4 +591,13 @@ test('production signup fails closed when no verification email sender is config
 	expect(context.testDb.users.has('no-sender@example.com')).toBe(false)
 	// The consumed invite use is released so the invite can be retried.
 	expect(context.testDb.invites.get('PROD-NO-EMAIL')?.use_count).toBe(0)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.any(String),
+		expect.any(Error),
+	)
+	// The skipped send is warned with the unconfigured-sender tag.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cloudflare-email-unconfigured',
+		expect.any(String),
+	)
 })

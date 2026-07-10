@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	backfillStableUserIds,
 	handleSecretMaintenanceRequest,
@@ -176,6 +177,7 @@ test('backfillStableUserIds pages with a keyset and only touches NULL rows', asy
 })
 
 test('backfillStableUserIds counts per-row failures without aborting', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const { db, users } = createBackfillTestDb({
 		users: [
 			{ id: 1, email: 'ok@example.com', stable_user_id: null },
@@ -190,6 +192,11 @@ test('backfillStableUserIds counts per-row failures without aborting', async () 
 	expect(result).toEqual({ scanned: 3, backfilled: 2, failed: 1 })
 	expect(users[1]?.stable_user_id).toBeNull()
 	expect(users[2]?.stable_user_id).not.toBeNull()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'stable-user-id-backfill-row-failed',
+		2,
+		expect.any(Error),
+	)
 })
 
 test('handleStableUserIdBackfillRequest enforces the maintenance auth pattern', async () => {

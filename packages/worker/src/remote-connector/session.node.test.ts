@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const captureMessageMock = vi.fn()
 
@@ -95,6 +96,9 @@ async function createRemoteConnectorSession(
 }
 
 test('remote connector session lifecycle across restore, snapshot, heartbeat, close, and error', async () => {
+	// Websocket closes log an operational warning alongside the Sentry
+	// capture asserted below.
+	consoleWarn.mockImplementation(() => {})
 	const restored = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {

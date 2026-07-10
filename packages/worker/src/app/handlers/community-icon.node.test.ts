@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createCommunityIconHandler } from './community-icon.ts'
 import { type CommunityListingRecord } from '#worker/community/types.ts'
 
@@ -76,6 +77,7 @@ test('community icon handler serves cached R2 bytes for the pinned listing', asy
 })
 
 test('community icon handler rejects stale commit URLs and degrades to a safe fallback', async () => {
+	consoleError.mockImplementation(() => {})
 	mocks.getCommunityListingById.mockResolvedValue(listing)
 	expect((await callHandler('old-commit')).status).toBe(404)
 
@@ -89,4 +91,9 @@ test('community icon handler rejects stale commit URLs and degrades to a safe fa
 	)
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	expect(await response.text()).toContain('<svg')
+	expect(consoleError).toHaveBeenCalledWith(
+		'community-icon-load-failed',
+		listing.id,
+		expect.any(Error),
+	)
 })

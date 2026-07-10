@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -420,6 +421,9 @@ function setCommonSessionFixtures() {
 }
 
 test('rebaseSession and publishSession use Artifacts username/password auth without token override', async () => {
+	// Best-effort publish git-note attachment fails in this mocked git
+	// environment and logs a warning that is incidental to auth behavior.
+	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.writePublishedSourceSnapshot.mockClear()
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
@@ -599,6 +603,8 @@ test('runCommands rejects publish without checks for direct RPC callers', async 
 })
 
 test('runCommands fetches session metadata after publish side effects', async () => {
+	// Best-effort publish git-note attachment logs an incidental warning.
+	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published'
 	mockModule.workspaceGlob.mockResolvedValue([
@@ -657,6 +663,8 @@ test('runCommands fetches session metadata after publish side effects', async ()
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
+	// Best-effort publish git-note attachment logs an incidental warning.
+	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published-new'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
@@ -1345,6 +1353,8 @@ test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 })
 
 test('publishFromExternalRef checks fast-forward ancestry through shell git adapter', async () => {
+	// Best-effort publish git-note setup logs an incidental warning.
+	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',

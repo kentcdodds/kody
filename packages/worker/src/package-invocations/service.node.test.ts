@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	createExecutePackageInvokeTools,
 	createPackageRuntimeInvokeTools,
@@ -1477,6 +1478,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 
 	const failingDb = createDatabase({ failInsert: true })
 	seedPackageResolution()
+	consoleError.mockImplementation(() => {})
 	const persistenceFailure = await invokePackageExport({
 		env: createEnv(failingDb),
 		baseUrl: 'https://kody.dev',
@@ -1502,6 +1504,10 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 			replayed: false,
 		},
 	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'package invocation idempotency persistence failed',
+		expect.any(Error),
+	)
 })
 
 test('invokePackageExport enforces source scopes for wildcard tokens', async () => {

@@ -57,7 +57,7 @@
     "audit:prod": "npm audit --omit=dev"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.14.7",
+    "@cloudflare/vitest-pool-workers": "^0.14.9",
     "@cloudflare/workers-types": "^4.20260415.1",
     "@epic-web/config": "^1.24.1",
     "@kody-internal/shared": "file:packages/shared",

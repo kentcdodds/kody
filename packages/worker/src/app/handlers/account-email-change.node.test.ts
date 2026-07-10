@@ -11,6 +11,7 @@ import { verifyEmailChangeToken } from '#app/email-change.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createAccountEmailChangeHandler } from './account-email-change.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -186,6 +187,9 @@ beforeAll(() => {
 })
 
 test('email change requests require the current password and create a pending verification', async () => {
+	// No email sender is configured in this test env, so the skipped
+	// verification send logs a warning.
+	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createMigratedDb()
 	await seedUser(sqlite, {
 		id: 1,
@@ -268,6 +272,7 @@ test('email change requests require the current password and create a pending ve
 		token_hash: expect.any(String),
 	})
 	expect(pendingRows[0]?.token_hash).not.toBe(firstPendingToken)
+	expect(consoleWarn).toHaveBeenCalledWith('email-change-send-skipped', 1)
 })
 
 test('email change requests reject emails already owned by another account', async () => {

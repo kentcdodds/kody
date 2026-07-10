@@ -19,6 +19,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
@@ -64,6 +65,9 @@ async function seedVerifiedAccount(input: {
 }
 
 test('inbound email routes {username}@platform-domain and auto-provisions the default inbox', async () => {
+	// Usage recording degrades with a warn when the usage_rollups table is
+	// not part of this test's schema; that is incidental to routing.
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `inbound-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `account-${crypto.randomUUID()}@example.com`
@@ -219,6 +223,9 @@ test('inbound email routes {username}@platform-domain and auto-provisions the de
 })
 
 test('inbound email rejects unknown usernames, reserved locals, and foreign domains', async () => {
+	// Usage recording degrades with a warn when the usage_rollups table is
+	// not part of this test's schema; that is incidental to rejection.
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 
 	async function expectRejected(input: { to: string; reason: string }) {
@@ -383,6 +390,9 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 })
 
 test('inbound email reclaims a platform address left behind by a username change', async () => {
+	// Usage recording degrades with a warn when the usage_rollups table is
+	// not part of this test's schema; that is incidental to reclaiming.
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `recycled-${crypto.randomUUID().slice(0, 8)}`
 	const address = `${username}@${platformDomain}`
@@ -782,6 +792,9 @@ test('raw MIME stays inline when the R2 put fails', async () => {
 })
 
 test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {
+	// The subscription runtime warns on optional lookups (usage rollups, MCP
+	// server refs) whose tables are not part of this test's schema.
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `subscriber-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `email-subscription-user-${crypto.randomUUID()}@example.com`

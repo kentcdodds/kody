@@ -4,6 +4,10 @@ import {
 	setAuthSessionSecret,
 	type AuthSession,
 } from '#app/auth-session.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { createAccountResendVerificationHandler } from './account-resend-verification.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -156,6 +160,9 @@ test('resend verification requires an authenticated session', async () => {
 })
 
 test('resend verification issues a fresh token for unverified accounts and rate-limits repeats', async () => {
+	// No email sender is configured in this test env, so each resend logs
+	// a send-skipped warning.
+	consoleWarn.mockImplementation(() => {})
 	const testDb = createResendTestDb({ emailVerifiedAt: null })
 	const handler = createAccountResendVerificationHandler(
 		createAppEnv(testDb.db),
@@ -174,6 +181,10 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 	}
 	expect(testDb.state.verificationInserts).toBe(3)
 	expect(testDb.state.verificationDeletes).toBe(3)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'email-verification-send-skipped',
+		expect.any(Number),
+	)
 
 	const rateLimitedResponse = await runHandler(
 		handler,
@@ -207,6 +218,8 @@ test('resend verification rejects already-verified accounts', async () => {
 })
 
 test('resend verification surfaces send failures without pretending success', async () => {
+	consoleError.mockImplementation(() => {})
+	consoleWarn.mockImplementation(() => {})
 	const testDb = createResendTestDb({ emailVerifiedAt: null })
 	const handler = createAccountResendVerificationHandler(
 		createAppEnv(testDb.db, {
@@ -237,5 +250,14 @@ test('resend verification surfaces send failures without pretending success', as
 	// net-new token remains and prior tokens stay untouched.
 	expect(testDb.state.verificationInserts).toBe(1)
 	expect(testDb.state.verificationDeletes).toBe(1)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.any(String),
+		expect.any(Error),
+	)
+	// The failed Cloudflare API send is warned for operators.
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cloudflare-email-api-failed',
+		expect.any(String),
+	)
 	vi.unstubAllGlobals()
 })
