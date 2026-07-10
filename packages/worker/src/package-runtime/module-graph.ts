@@ -327,7 +327,15 @@ function __kodyOptionalRuntimeFunctionExport(exportName) {
 	return __kodyCreateRuntimeFunctionExport(exportName);
 }
 
-export const kody = __kodyCreateRuntimeObjectProxy('kody');
+// \`kody\` keeps its preload late-binding (imported before any store exists)
+// and additionally stays late-bound for in-run evaluations, so reused worker
+// isolates never pin the first run's dispatcher-backed proxy. A wrapper that
+// deliberately omits \`kody\` still observes \`undefined\` so falsiness
+// guards keep working.
+export const kody =
+	__kodyInitialRuntime === undefined || __kodyInitialRuntime.kody != null
+		? __kodyCreateRuntimeObjectProxy('kody')
+		: undefined;
 export const storage = __kodyOptionalRuntimeObjectExport('storage', undefined);
 export const refreshAccessToken = __kodyOptionalRuntimeFunctionExport('refreshAccessToken');
 export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
