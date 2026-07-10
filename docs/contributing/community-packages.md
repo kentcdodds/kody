@@ -60,8 +60,26 @@ Pinned file trees live in `BUNDLE_ARTIFACTS_KV` under:
 `community-snapshot:v1:{listingId}`
 
 `packages/worker/src/community/snapshot.ts` reads and writes `CommunitySnapshot`
-(`version`, `listingId`, `pinnedCommit`, `files`, `createdAt`). Publish and
-re-publish overwrite the snapshot; unpublish and hard delete remove it.
+(`version`, `listingId`, `pinnedCommit`, `files`, optional `communityIconPath`,
+`createdAt`). Publish and re-publish overwrite the snapshot; unpublish and hard
+delete remove it. Binary icon bytes are omitted from the text-backed `files`
+map; the path metadata lets the icon route retrieve bytes from Artifacts.
+
+### Community icon cache
+
+Community listing icons are derived lazily from the pinned Artifacts commit.
+`@epic-web/cachified` stores a small descriptor in `BUNDLE_ARTIFACTS_KV` under
+`derived-cache:v1:community-icon:v1:{listingId}:{pinnedCommit}`. The processed
+bytes live in the private `COMMUNITY_ASSETS` R2 bucket under
+`community-icon:v1/{listingId}/{pinnedCommit}/asset`.
+
+On a descriptor cache miss, the icon service checks the pinned community
+snapshot for a standardized root `community-icon.*` path, reads that file as
+bytes from the Artifacts git repo at `pinnedCommit`, validates it, and writes
+the derived asset to R2 before returning the descriptor. A dangling descriptor
+is deleted and regenerated once. Packages without an icon receive a generated
+fallback. SVG input is rasterized to PNG; PNG, WebP, and JPEG input remains in
+its validated source format.
 
 ## Service layer
 
@@ -116,6 +134,8 @@ Client routes: `packages/worker/client/routes/community*`
 - `/community` — searchable index of active listings
 - `/community/:listingId` — metadata, ratings, README, fork prompt, report link
   (report requires login)
+- `/community/:listingId/icon/:pinnedCommit` — cached package icon or generated
+  fallback; stale commit URLs are rejected
 
 Shared OG rendering lives in `packages/worker/src/og/`: a light-mode palette
 mirroring app design tokens, satori layout + resvg rasterization, and the

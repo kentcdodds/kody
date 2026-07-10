@@ -49,3 +49,11 @@ Account publishing still works so the owner can run the package privately.
   publish only after that approval.
 - Community publish additionally requires `"private": false` or omitting
   `private`, plus MIT license and README `## Intent`.
+
+## Community icon
+
+Public community packages may include one root `community-icon.svg`,
+`community-icon.png`, `community-icon.webp`, `community-icon.jpg`, or
+`community-icon.jpeg`. Prefer a square visual with a simple silhouette that
+remains legible at 56 pixels. Keep it under 2 MiB and 16 megapixels. Kody
+generates a package-name fallback when the repository has no icon.

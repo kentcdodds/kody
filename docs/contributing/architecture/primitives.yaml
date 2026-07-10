@@ -201,7 +201,8 @@ primitives:
     summary:
       Public pinned snapshots of published saved packages on the same
       deployment; inert forks, ratings, user reports, admin moderation at
-      /admin/community-reports, and /community routes.
+      /admin/community-reports, /community routes, and lazily derived package
+      icons pinned to the published commit.
     code:
       - packages/worker/src/community/
       - packages/worker/src/mcp/capabilities/community/
@@ -505,6 +506,21 @@ primitives:
     code:
       - packages/worker/src/email/repo.ts
     docs:
+      - docs/contributing/architecture/data-storage.md
+
+  - id: community-assets-r2
+    group: storage
+    name: Community asset storage (R2)
+    summary:
+      COMMUNITY_ASSETS R2 bucket holding validated, lazily derived community
+      icon bytes under community-icon:v1/{listingId}/{pinnedCommit}/asset.
+      Cachified descriptors live in Bundle artifacts KV; public reads remain
+      gated by an active listing and account deletion removes owner assets.
+    code:
+      - packages/worker/src/community/community-icon.ts
+      - packages/worker/src/app/handlers/community-icon.ts
+    docs:
+      - docs/contributing/community-packages.md
       - docs/contributing/architecture/data-storage.md
 
 invariants:

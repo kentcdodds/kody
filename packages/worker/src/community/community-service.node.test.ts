@@ -129,13 +129,20 @@ const {
 	reportCommunityListing,
 	searchCommunityListings,
 	forkCommunityListing,
-	resolveCommunityReport,
 } = await import('./service.ts')
+
+const testBundleArtifactsKv = {
+	delete: vi.fn(async () => undefined),
+} as unknown as KVNamespace
+const testCommunityAssets = {
+	delete: vi.fn(async () => undefined),
+} as unknown as R2Bucket
 
 function createEnv() {
 	return {
 		APP_DB: {} as D1Database,
-		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+		BUNDLE_ARTIFACTS_KV: testBundleArtifactsKv,
+		COMMUNITY_ASSETS: testCommunityAssets,
 	} as Env
 }
 
@@ -487,6 +494,7 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 		files: {
 			...validPublishSource().files,
 			'README.md': `${padding}\n\n## Intent\n\nBridge Discord events.`,
+			'community-icon.png': 'binary bytes decoded as text',
 		},
 	})
 	mockModule.insertCommunityListing.mockResolvedValue(undefined)
@@ -504,6 +512,15 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 		expect.anything(),
 		expect.objectContaining({
 			readme_content: expect.stringMatching(/…$/),
+		}),
+	)
+	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			communityIconPath: 'community-icon.png',
+			files: expect.not.objectContaining({
+				'community-icon.png': expect.anything(),
+			}),
 		}),
 	)
 })

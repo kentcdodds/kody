@@ -150,6 +150,7 @@ export type CommunitySnapshot = {
 	listingId: string
 	pinnedCommit: string
 	files: Record<string, string>
+	communityIconPath?: string | null
 	createdAt: string
 }
 

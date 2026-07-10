@@ -31,7 +31,7 @@ export type SatoriElement = {
 
 let renderPipelineReady: Promise<void> | null = null
 
-function ensureRenderPipelineReady(): Promise<void> {
+export function ensureRenderPipelineReady(): Promise<void> {
 	if (!renderPipelineReady) {
 		renderPipelineReady = Promise.all([
 			initSatori(ogYogaWasm),

@@ -28,6 +28,7 @@ type ResolvedProductionBindings = {
 	oauthKvConfiguredId: string
 	bundleArtifactsKvTitle: string
 	bundleArtifactsKvConfiguredId: string
+	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 }
 
@@ -334,6 +335,25 @@ async function resolveProductionBindings({
 		)
 	}
 
+	const communityAssetsEntry = r2Buckets.find((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === 'COMMUNITY_ASSETS'
+	}) as Record<string, unknown> | undefined
+	if (!communityAssetsEntry) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" has no production R2 binding for "COMMUNITY_ASSETS".`,
+		)
+	}
+	const communityAssetsBucketName = communityAssetsEntry.bucket_name
+	if (
+		typeof communityAssetsBucketName !== 'string' ||
+		communityAssetsBucketName.length === 0
+	) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" is missing "bucket_name" for production "COMMUNITY_ASSETS".`,
+		)
+	}
+
 	const resolved: ResolvedProductionBindings = {
 		workerName,
 		d1DatabaseName,
@@ -342,6 +362,7 @@ async function resolveProductionBindings({
 		oauthKvConfiguredId,
 		bundleArtifactsKvTitle,
 		bundleArtifactsKvConfiguredId,
+		communityAssetsBucketName,
 		emailBlobsBucketName,
 	}
 
@@ -354,7 +375,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Email R2: ${bindings.emailBlobsBucketName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -377,6 +398,10 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.emailBlobsBucketName,
 		dryRun: options.dryRun,
 	})
+	const communityAssets = ensureR2Bucket({
+		name: bindings.communityAssetsBucketName,
+		dryRun: options.dryRun,
+	})
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
@@ -387,6 +412,7 @@ async function ensureProductionResources(options: CliOptions) {
 		d1DatabaseId: d1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
+		communityAssetsBucketName: communityAssets.name,
 		emailBlobsBucketName: emailBlobs.name,
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
@@ -402,6 +428,7 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
+	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
 }
 

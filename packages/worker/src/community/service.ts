@@ -54,6 +54,10 @@ import {
 	writeCommunitySnapshot,
 } from './snapshot.ts'
 import {
+	deleteCommunityIconAsset,
+	findCommunityIconPath,
+} from './community-icon.ts'
+import {
 	type CommunityListingRecord,
 	type CommunityListingWithAggregates,
 	type CommunityReportRecord,
@@ -337,11 +341,20 @@ export async function publishCommunityListing(input: {
 	const now = new Date().toISOString()
 	const listingId = existingListing?.id ?? crypto.randomUUID()
 	const tagsJson = JSON.stringify(savedPackage.tags)
+	const communityIconPath = findCommunityIconPath(loadedSource.files)
+	const snapshotFiles = { ...loadedSource.files }
+	if (communityIconPath && communityIconPath !== 'community-icon.svg') {
+		// Package source snapshots are text-backed. Keep the binary icon's path as
+		// metadata for public artifact reads, but do not put corrupted UTF-8 bytes
+		// into community forks.
+		delete snapshotFiles[communityIconPath]
+	}
 	const snapshot = {
 		version: 1 as const,
 		listingId,
 		pinnedCommit: publishedCommit,
-		files: loadedSource.files,
+		files: snapshotFiles,
+		communityIconPath,
 		createdAt: now,
 	}
 
@@ -418,6 +431,19 @@ export async function publishCommunityListing(input: {
 		}
 		throw snapshotError
 	}
+	if (existingListing && existingListing.pinnedCommit !== publishedCommit) {
+		await deleteCommunityIconAsset({
+			env: input.env,
+			listingId,
+			pinnedCommit: existingListing.pinnedCommit,
+		}).catch((error: unknown) => {
+			console.error(
+				'community-icon-old-revision-delete-failed',
+				listingId,
+				error,
+			)
+		})
+	}
 
 	const listing = await getCommunityListingById(input.env.APP_DB, {
 		listingId,
@@ -448,6 +474,11 @@ export async function unpublishCommunityListing(input: {
 		)
 	}
 
+	await deleteCommunityIconAsset({
+		env: input.env,
+		listingId: listing.id,
+		pinnedCommit: listing.pinnedCommit,
+	})
 	const deleted = await deleteCommunityListing(input.env.APP_DB, {
 		listingId: input.listingId,
 		ownerUserId: input.userId,
@@ -841,9 +872,20 @@ export async function resolveCommunityReport(input: {
 			return
 		}
 		case 'delete': {
-			// Hard delete removes listing metadata, ratings, and KV snapshot only.
+			// Hard delete removes listing metadata, ratings, snapshot, and icon.
 			// Fork rows are preserved for provenance and the rate-after-fork gate;
 			// report rows stay denormalized so moderation history survives deletion.
+			const listing = await getCommunityListingById(input.env.APP_DB, {
+				listingId: report.listingId,
+				includeDelisted: true,
+			})
+			if (listing) {
+				await deleteCommunityIconAsset({
+					env: input.env,
+					listingId: listing.id,
+					pinnedCommit: listing.pinnedCommit,
+				})
+			}
 			const deleted = await deleteCommunityListing(input.env.APP_DB, {
 				listingId: report.listingId,
 			})

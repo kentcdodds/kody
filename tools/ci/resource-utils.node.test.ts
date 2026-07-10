@@ -44,6 +44,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			d1DatabaseId: 'dry-run-kody',
 			oauthKvId: 'dry-run-kody-oauth',
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+			communityAssetsBucketName: 'kody-community-assets',
 			emailBlobsBucketName: 'kody-email-blobs',
 		})
 
@@ -82,6 +83,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		)
 		expect(productionConfig.assets?.run_worker_first?.length).toBeGreaterThan(0)
 		expect(productionConfig.env?.production?.r2_buckets).toEqual([
+			{ binding: 'COMMUNITY_ASSETS', bucket_name: 'kody-community-assets' },
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-email-blobs' },
 		])
 
@@ -95,6 +97,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			d1DatabaseId: 'dry-run-kody-pr-123-db',
 			oauthKvId: 'dry-run-kody-pr-123-oauth',
 			bundleArtifactsKvId: 'dry-run-kody-pr-123-bundle-artifacts',
+			communityAssetsBucketName: 'kody-pr-123-community-assets',
 			emailBlobsBucketName: 'kody-pr-123-email-blobs',
 		})
 
@@ -111,6 +114,10 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		expect(previewConfig.assets?.run_worker_first?.length).toBeGreaterThan(0)
 		// The preview R2 bucket name is overridden per preview deploy.
 		expect(previewConfig.env?.preview?.r2_buckets).toEqual([
+			{
+				binding: 'COMMUNITY_ASSETS',
+				bucket_name: 'kody-pr-123-community-assets',
+			},
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
 		])
 	} finally {
@@ -173,6 +180,7 @@ test('writeGeneratedWranglerConfig rejects invalid environment asset config', as
 				d1DatabaseId: 'dry-run-kody',
 				oauthKvId: 'dry-run-kody-oauth',
 				bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+				communityAssetsBucketName: 'kody-community-assets',
 				emailBlobsBucketName: 'kody-email-blobs',
 			}),
 		).rejects.toThrow('process.exit')

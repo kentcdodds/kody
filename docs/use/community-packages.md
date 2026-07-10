@@ -29,6 +29,24 @@ Requirements:
 - A **published** saved package commit. Publishing creates a **pinned snapshot**
   of the files at that commit.
 
+### Community icon
+
+Add one optional icon at the package root:
+
+- `community-icon.svg`
+- `community-icon.png`
+- `community-icon.webp`
+- `community-icon.jpg` or `community-icon.jpeg`
+
+The first file in that order wins when more than one exists. Icons must be at
+most 2 MiB, 4096 pixels per side, and 16 megapixels total. Kody rasterizes SVG
+icons to PNG before serving them; PNG, WebP, and JPEG files are validated and
+served in their original format. Packages without an icon receive a generated
+visual based on the package name.
+
+Icon URLs are pinned to the same published commit as the listing. Re-publish the
+saved package and then re-run `community_publish` to update its icon.
+
 Re-running `community_publish` updates the public listing to the package's
 current published commit. Private edits after publishing do not change the
 listing until you publish again and re-run `community_publish`.

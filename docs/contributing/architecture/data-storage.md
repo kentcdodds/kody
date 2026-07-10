@@ -215,7 +215,21 @@ snapshots are stored in `BUNDLE_ARTIFACTS_KV`.
   source ids, published commits, bundle artifact rows, community listing ids,
   and package ids.
 
-## R2 (`EMAIL_BLOBS`)
+## R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`)
+
+Processed public community icons live in the private `COMMUNITY_ASSETS` bucket.
+The public icon route reads the active listing first, then resolves a cachified
+descriptor from `BUNDLE_ARTIFACTS_KV` and streams the referenced R2 object.
+Source files remain in the listing's pinned Artifacts commit; R2 stores only
+validated derived output or a generated fallback.
+
+- Keys use `community-icon:v1/{listingId}/{pinnedCommit}/asset`.
+- Descriptor keys include the same listing id and pinned commit, so re-publish
+  cannot serve an older icon.
+- Unpublish, admin hard delete, re-publish, and account deletion remove known
+  descriptor and object keys.
+- Bucket names are `kody-community-assets` in production and
+  `{worker}-community-assets` for preview deployments.
 
 Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket instead of D1.
 `email_messages` stores an object key in `raw_mime_key`
@@ -569,7 +583,11 @@ or a deliberate retention note.
 
 ### R2 key contracts
 
-App-owned `EMAIL_BLOBS` keys are:
+App-owned R2 keys are:
+
+- `community-icon:v1/{listingId}/{pinnedCommit}/asset` — processed public
+  community icon bytes. The listing id is the public ownership boundary; account
+  deletion derives keys from the owner's listing rows.
 
 - `email-raw:v1:{userId}/{messageId}` — raw email MIME for the message row that
   stores this key in `email_messages.raw_mime_key`. The `userId` prefix is part
