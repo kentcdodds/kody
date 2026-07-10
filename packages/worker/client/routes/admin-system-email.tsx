@@ -1,11 +1,13 @@
+import { buildAdminEmailHtmlPreviewDocument } from '#client/email-html-preview.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
+import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, typography } from '#client/styles/tokens.ts'
+import { colors, radius, typography } from '#client/styles/tokens.ts'
 import { cardCss } from '#client/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
@@ -26,6 +28,26 @@ import {
 type PageStatus = 'loading' | 'ready' | 'error'
 
 const adminSystemEmailApiPath = '/admin/system-email.json'
+
+const emailBodyPreCss = css({
+	margin: 0,
+	whiteSpace: 'pre-wrap',
+	overflowX: 'auto',
+})
+
+const emailBodyEmptyCss = css({
+	margin: 0,
+	color: colors.textMuted,
+})
+
+const emailHtmlPreviewIframeCss = css({
+	display: 'block',
+	width: '100%',
+	minHeight: '24rem',
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.md,
+	background: colors.surface,
+})
 
 function isAdminSystemEmailPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/system-email'
@@ -295,39 +317,55 @@ export function AdminSystemEmailRoute(handle: Handle) {
 											fontSize: typography.fontSize.base,
 										})}
 									>
-										Text body
+										Message body
 									</h3>
-									<pre
-										mix={css({
-											margin: 0,
-											whiteSpace: 'pre-wrap',
-											overflowX: 'auto',
-										})}
-									>
-										{selectedMessage.text_body ?? '(no text body)'}
-									</pre>
+									<Tabs defaultActiveTab="html">
+										<TabList aria-label="Email body">
+											<Tab name="html">HTML</Tab>
+											<Tab name="text">Text</Tab>
+											<Tab name="source">HTML Source</Tab>
+										</TabList>
+										<TabPanel name="html">
+											{selectedMessage.html_body ? (
+												<iframe
+													title="Email HTML preview"
+													sandbox=""
+													referrerPolicy="no-referrer"
+													srcdoc={buildAdminEmailHtmlPreviewDocument(
+														selectedMessage.html_body,
+													)}
+													mix={emailHtmlPreviewIframeCss}
+												/>
+											) : (
+												<p mix={emailBodyEmptyCss}>
+													No HTML body exists for this message.
+												</p>
+											)}
+										</TabPanel>
+										<TabPanel name="text">
+											{selectedMessage.text_body ? (
+												<pre mix={emailBodyPreCss}>
+													{selectedMessage.text_body}
+												</pre>
+											) : (
+												<p mix={emailBodyEmptyCss}>
+													No text exists in this tab content.
+												</p>
+											)}
+										</TabPanel>
+										<TabPanel name="source">
+											{selectedMessage.html_body ? (
+												<pre mix={emailBodyPreCss}>
+													{selectedMessage.html_body}
+												</pre>
+											) : (
+												<p mix={emailBodyEmptyCss}>
+													No HTML body exists for this message.
+												</p>
+											)}
+										</TabPanel>
+									</Tabs>
 								</section>
-								{selectedMessage.html_body ? (
-									<section mix={css(cardCss)}>
-										<h3
-											mix={css({
-												margin: 0,
-												fontSize: typography.fontSize.base,
-											})}
-										>
-											HTML body source
-										</h3>
-										<pre
-											mix={css({
-												margin: 0,
-												whiteSpace: 'pre-wrap',
-												overflowX: 'auto',
-											})}
-										>
-											{selectedMessage.html_body}
-										</pre>
-									</section>
-								) : null}
 							</AccountManagementPanel>
 						) : null}
 					</>
