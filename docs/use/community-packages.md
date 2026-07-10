@@ -23,7 +23,13 @@ Requirements:
   permissive licensing only; MIT is the only accepted value.
 - **`package.json#private`** must not be `true`. Like npm, `"private": true`
   blocks public community publishing; set `"private": false` or remove `private`
-  only after the user explicitly approves public sharing.
+  only after the user explicitly approves public sharing. Note that
+  `package_save` always creates **new** packages as `"private": true` when the
+  manifest omits `private` — even when `confirm_private_visibility_change` is
+  true, because that flag only confirms an explicit manifest state. To create a
+  community-publishable package, send `"private": false` explicitly along with
+  the confirmation. Removing `private` (with confirmation) works when
+  **updating** an existing package.
 - A root **`README.md`** with a **`## Intent`** section (same guidance as
   [Packages](./packages.md#save-and-edit-packages)).
 - A **published** saved package commit. Publishing creates a **pinned snapshot**
