@@ -3,15 +3,20 @@
  *
  * Auth uses the `X-Kit-Api-Key` header against `https://api.kit.com/v4`.
  * Public signup captures join the `waitlist::kody` tag (created in Kit for
- * this product). Forms cannot be created via the API, and Kent's existing
- * waitlists use the `waitlist::…` tag convention, so tagging is the right
- * integration surface.
+ * this product) and enrolls them in the "Kody Waitlist Welcome" sequence,
+ * which sends an immediate thank-you from hello@kentcdodds.com.
  */
 
 export const KIT_API_BASE_URL = 'https://api.kit.com/v4'
 
 /** Kit tag `waitlist::kody` — override with `KIT_WAITLIST_TAG_ID` if needed. */
 export const DEFAULT_KIT_WAITLIST_TAG_ID = 21081721
+
+/**
+ * Kit sequence "Kody Waitlist Welcome" (from hello@kentcdodds.com).
+ * Override with `KIT_WAITLIST_SEQUENCE_ID` if needed.
+ */
+export const DEFAULT_KIT_WAITLIST_SEQUENCE_ID = 2823893
 
 /** Bound Kit round-trips so a hung upstream cannot pin a Worker request. */
 export const KIT_WAITLIST_REQUEST_TIMEOUT_MS = 8_000
@@ -21,6 +26,7 @@ export type KitWaitlistSubscribeInput = {
 	email: string
 	firstName: string
 	tagId?: number
+	sequenceId?: number
 	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }
@@ -120,15 +126,17 @@ async function kitFetch(
 }
 
 /**
- * Find an existing Kit subscriber by email, tag them for the waitlist, and
- * only create (with first_name) when they are new. Existing CRM names are
- * never overwritten by a public waitlist submission.
+ * Find an existing Kit subscriber by email, tag them for the waitlist, enroll
+ * them in the welcome sequence, and only create (with first_name) when they
+ * are new. Existing CRM names are never overwritten by a public waitlist
+ * submission.
  */
 export async function subscribeToKitWaitlist(
 	input: KitWaitlistSubscribeInput,
 ): Promise<KitWaitlistSubscribeResult> {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const tagId = input.tagId ?? DEFAULT_KIT_WAITLIST_TAG_ID
+	const sequenceId = input.sequenceId ?? DEFAULT_KIT_WAITLIST_SEQUENCE_ID
 	const timeoutMs = input.timeoutMs ?? KIT_WAITLIST_REQUEST_TIMEOUT_MS
 	const headers = kitHeaders(input.apiKey)
 
@@ -222,17 +230,56 @@ export async function subscribeToKitWaitlist(
 		)
 	}
 
+	const sequenceResponse = await kitFetch(
+		fetchImpl,
+		`${KIT_API_BASE_URL}/sequences/${sequenceId}/subscribers`,
+		{
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				email_address: input.email,
+			}),
+		},
+		timeoutMs,
+	)
+	const sequencePayload = await readKitJson(sequenceResponse)
+	if (!sequenceResponse.ok) {
+		throw new KitWaitlistError(
+			kitErrorMessage(
+				sequencePayload,
+				`Kit waitlist sequence enroll failed (${sequenceResponse.status}).`,
+			),
+			{
+				status: sequenceResponse.status,
+				kind: classifyHttpKind(sequenceResponse.status),
+			},
+		)
+	}
+
 	return { subscriberId, created }
+}
+
+function resolvePositiveIntId(
+	raw: string | undefined,
+	fallback: number,
+): number | null {
+	if (raw === undefined) return fallback
+	const trimmed = raw.trim()
+	if (!trimmed) return fallback
+	if (!/^\d+$/.test(trimmed)) return null
+	const parsed = Number.parseInt(trimmed, 10)
+	if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
+	return parsed
 }
 
 export function resolveKitWaitlistTagId(
 	raw: string | undefined,
 ): number | null {
-	if (raw === undefined) return DEFAULT_KIT_WAITLIST_TAG_ID
-	const trimmed = raw.trim()
-	if (!trimmed) return DEFAULT_KIT_WAITLIST_TAG_ID
-	if (!/^\d+$/.test(trimmed)) return null
-	const parsed = Number.parseInt(trimmed, 10)
-	if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
-	return parsed
+	return resolvePositiveIntId(raw, DEFAULT_KIT_WAITLIST_TAG_ID)
+}
+
+export function resolveKitWaitlistSequenceId(
+	raw: string | undefined,
+): number | null {
+	return resolvePositiveIntId(raw, DEFAULT_KIT_WAITLIST_SEQUENCE_ID)
 }

@@ -1,20 +1,27 @@
 import { expect, test, vi } from 'vitest'
 import {
+	DEFAULT_KIT_WAITLIST_SEQUENCE_ID,
 	DEFAULT_KIT_WAITLIST_TAG_ID,
 	type KitWaitlistError,
+	resolveKitWaitlistSequenceId,
 	resolveKitWaitlistTagId,
 	subscribeToKitWaitlist,
 } from '#app/kit-waitlist.ts'
 
-test('resolveKitWaitlistTagId defaults and validates overrides', () => {
+test('resolveKitWaitlist ids default and validate overrides', () => {
 	expect(resolveKitWaitlistTagId(undefined)).toBe(DEFAULT_KIT_WAITLIST_TAG_ID)
 	expect(resolveKitWaitlistTagId('')).toBe(DEFAULT_KIT_WAITLIST_TAG_ID)
 	expect(resolveKitWaitlistTagId(' 99 ')).toBe(99)
 	expect(resolveKitWaitlistTagId('0')).toBeNull()
 	expect(resolveKitWaitlistTagId('nope')).toBeNull()
+	expect(resolveKitWaitlistSequenceId(undefined)).toBe(
+		DEFAULT_KIT_WAITLIST_SEQUENCE_ID,
+	)
+	expect(resolveKitWaitlistSequenceId('2823893')).toBe(2823893)
+	expect(resolveKitWaitlistSequenceId('nope')).toBeNull()
 })
 
-test('subscribeToKitWaitlist creates new subscribers then tags them', async () => {
+test('subscribeToKitWaitlist creates, tags, and enrolls new subscribers', async () => {
 	const calls: Array<{ url: string; method: string; body: unknown }> = []
 	const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = String(input)
@@ -41,6 +48,7 @@ test('subscribeToKitWaitlist creates new subscribers then tags them', async () =
 		email: 'ada@example.com',
 		firstName: 'Ada',
 		tagId: 123,
+		sequenceId: 456,
 		fetchImpl: fetchImpl as typeof fetch,
 	})
 
@@ -58,6 +66,11 @@ test('subscribeToKitWaitlist creates new subscribers then tags them', async () =
 		},
 		{
 			url: 'https://api.kit.com/v4/tags/123/subscribers',
+			method: 'POST',
+			body: { email_address: 'ada@example.com' },
+		},
+		{
+			url: 'https://api.kit.com/v4/sequences/456/subscribers',
 			method: 'POST',
 			body: { email_address: 'ada@example.com' },
 		},
@@ -96,6 +109,7 @@ test('subscribeToKitWaitlist does not overwrite an existing first name', async (
 		email: 'ada@example.com',
 		firstName: 'Ada',
 		tagId: 123,
+		sequenceId: 456,
 		fetchImpl: fetchImpl as typeof fetch,
 	})
 
@@ -108,6 +122,11 @@ test('subscribeToKitWaitlist does not overwrite an existing first name', async (
 		},
 		{
 			url: 'https://api.kit.com/v4/tags/123/subscribers',
+			method: 'POST',
+			body: { email_address: 'ada@example.com' },
+		},
+		{
+			url: 'https://api.kit.com/v4/sequences/456/subscribers',
 			method: 'POST',
 			body: { email_address: 'ada@example.com' },
 		},

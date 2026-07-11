@@ -96,6 +96,8 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
   joins no-op instead of writing to the production Kit audience.
 - `KIT_WAITLIST_TAG_ID` — optional override for the Kit tag id (defaults to the
   `waitlist::kody` tag).
+- `KIT_WAITLIST_SEQUENCE_ID` — optional override for the welcome sequence id
+  (defaults to "Kody Waitlist Welcome", from `hello@kentcdodds.com`).
 
 See [`architecture/authentication.md`](./architecture/authentication.md).
 

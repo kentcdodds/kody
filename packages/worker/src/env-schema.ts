@@ -200,6 +200,7 @@ export const EnvSchema = object({
 	// closed without KIT_API_KEY. Non-production skips Kit when unset.
 	KIT_API_KEY: optionalNonEmptyStringSchema,
 	KIT_WAITLIST_TAG_ID: optionalNonEmptyStringSchema,
+	KIT_WAITLIST_SEQUENCE_ID: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

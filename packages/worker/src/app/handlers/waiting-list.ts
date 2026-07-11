@@ -4,6 +4,7 @@ import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import {
 	KitWaitlistError,
+	resolveKitWaitlistSequenceId,
 	resolveKitWaitlistTagId,
 	subscribeToKitWaitlist,
 } from '#app/kit-waitlist.ts'
@@ -71,7 +72,10 @@ export function createWaitingListHandler(env: Env) {
 			}
 
 			const tagId = resolveKitWaitlistTagId(env.KIT_WAITLIST_TAG_ID)
-			if (tagId === null) {
+			const sequenceId = resolveKitWaitlistSequenceId(
+				env.KIT_WAITLIST_SEQUENCE_ID,
+			)
+			if (tagId === null || sequenceId === null) {
 				return jsonResponse(
 					{ ok: false, error: 'Waiting list is misconfigured.' },
 					500,
@@ -154,6 +158,7 @@ export function createWaitingListHandler(env: Env) {
 					email,
 					firstName,
 					tagId,
+					sequenceId,
 				})
 			} catch (error) {
 				console.error('Failed to subscribe waiting list contact to Kit:', error)

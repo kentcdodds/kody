@@ -68,11 +68,15 @@ Waiting-list Kit integration:
 
 - Worker secret `KIT_API_KEY` (Kit v4 `X-Kit-Api-Key`)
 - Optional `KIT_WAITLIST_TAG_ID` (defaults to the `waitlist::kody` tag id)
+- Optional `KIT_WAITLIST_SEQUENCE_ID` (defaults to the "Kody Waitlist Welcome"
+  sequence, which sends an immediate thank-you from `hello@kentcdodds.com`
+  asking what they hope to use Kody for)
 - Production fails closed with 503 when `KIT_API_KEY` is unset; non-production
   accepts the join without calling Kit so local/preview UX stays usable. Preview
   deploys intentionally omit `KIT_API_KEY` so they never write to the production
   Kit audience.
-- Existing Kit subscribers are tagged without overwriting their `first_name`
+- Existing Kit subscribers are tagged/enrolled without overwriting their
+  `first_name`
 - Rate-limited per client IP (5 requests / 15 minutes)
 
 The `invites` table stores operator-created invite codes:

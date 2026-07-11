@@ -154,6 +154,12 @@ test('joins the Kit waitlist with first name and email', async () => {
 					{ status: 201 },
 				)
 			}
+			if (url.includes('/sequences/') && url.endsWith('/subscribers')) {
+				return Response.json(
+					{ subscriber: { id: 42, email_address: 'ada@example.com' } },
+					{ status: 201 },
+				)
+			}
 			return Response.json({ errors: ['unexpected'] }, { status: 500 })
 		},
 	)
@@ -172,7 +178,7 @@ test('joins the Kit waitlist with first name and email', async () => {
 		ok: true,
 		message: "You're on the list. We'll be in touch.",
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(3)
+	expect(fetchMock).toHaveBeenCalledTimes(4)
 	const createCall = fetchMock.mock.calls.find(([url, init]) => {
 		return (
 			String(url).endsWith('/subscribers') &&
