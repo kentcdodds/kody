@@ -50,10 +50,11 @@ icons to PNG before serving them; PNG, WebP, and JPEG files are validated and
 served in their original format. Packages without an icon receive a generated
 visual based on the package name.
 
-Icon URLs embed the package's **current published commit**, so publishing a new
-package version with an updated `community-icon.*` refreshes the listing icon
-without re-running `community_publish`. Remember the priority order above: an
-old `community-icon.svg` left at the package root keeps winning over a newly
+Icon URLs embed the package's **current published commit** (falling back to the
+listing's pinned commit if the package source no longer exists), so publishing a
+new package version with an updated `community-icon.*` refreshes the listing
+icon without re-running `community_publish`. Remember the priority order above:
+an old `community-icon.svg` left at the package root keeps winning over a newly
 added `community-icon.png`, so delete superseded icon files when switching
 formats.
 
