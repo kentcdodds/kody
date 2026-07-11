@@ -713,8 +713,8 @@ Current retention policies:
   are not user-owned D1 rows and remain independent of account deletion/export.
 
 Migration `0055-retention-indexes.sql` adds the global time-column indexes these
-prunes order by (`created_at` / `day` / `month` / `started_at` across users)
-since the older per-user composite indexes cannot serve them.
+prunes order by (`created_at` / `day` / `month` / `started_at` across users);
+per-user composite indexes cannot serve those ordered scans.
 
 Documented exemptions: `archived_job_artifacts` is exempt because job artifact
 cleanup is driven by each row's `retain_until` value, and `mcp_memories` is
