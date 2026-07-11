@@ -56,11 +56,22 @@ when that makes a single test longer and more assertion-heavy.
 - Console output is guarded globally
   (`packages/worker/src/test-support/console-spies.ts`, wired via `setupFiles`):
   unexpected `console.error`/`console.warn` calls fail the test, and
-  `console.info`/`console.debug` are silenced. When code under test
-  intentionally logs, import the exported `consoleError`/`consoleWarn` spies,
-  call `.mockImplementation(() => {})` in the test, and assert on the calls
-  (prefer the stable first-argument tag plus `expect.any(Error)`; do not pin
-  long prose). Keep test output free of stray logging.
+  `console.info`/`console.debug` are silenced. Never silence blindly — a blanket
+  `.mockImplementation(() => {})` can hide a real regression. Instead:
+  - When the log is part of the tested contract, import the exported
+    `consoleError`/`consoleWarn` spies, call `.mockImplementation(() => {})`,
+    and assert on the calls (prefer the stable first-argument tag plus
+    `expect.any(Error)`; do not pin long prose). Assert the call count too when
+    it is deterministic.
+  - When the log is incidental to the behavior under test, use
+    `silenceExpectedConsoleWarns([...])` / `silenceExpectedConsoleErrors([...])`
+    (same module) with the exact expected message tags, or
+    `silenceIncidentalRuntimeWarnings()`
+    (`packages/worker/src/test-support/incidental-runtime-warnings.ts`) for the
+    bundler/registry-runtime noise set. Anything outside the allowlist still
+    fails the test.
+
+  Keep test output free of stray logging.
 
 ## Examples
 

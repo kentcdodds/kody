@@ -17,6 +17,7 @@ import {
 	sendOutboundEmail,
 } from './outbound.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
@@ -115,7 +116,7 @@ function restFallbackMustNotRunHandler() {
 test('sendOutboundEmail sends from the platform-assigned username address to the account email', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to sending.
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `account-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
@@ -193,7 +194,7 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 test('sendOutboundEmail rejects non-self recipients under the self policy', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to the policy.
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `account-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
@@ -282,7 +283,7 @@ test('sendOutboundEmail blocks reserved usernames and unconfigured platform doma
 test('sendOutboundEmail skips REST fallback when the binding succeeds or validation fails first', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to the fallback.
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const mswOptions = { onUnhandledRequest: 'bypass' as const }
 
@@ -382,7 +383,7 @@ test('sendOutboundEmail blocks unverified accounts', async () => {
 })
 
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings(['cloudflare-email-api-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const isolatedUserId = `email-outbound-isolated-user-${crypto.randomUUID()}`

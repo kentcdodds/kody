@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listEntitySourcesForExternalReconcile: vi.fn(),
@@ -391,7 +394,10 @@ test('reconcile does not reprocess a source whose cursor write keeps failing', a
 test('head sources with failing cursor writes do not starve sources behind them within a tick', async () => {
 	// Cursor-write failure warns are covered elsewhere; this test is about
 	// keyset paging, so the warns are silenced without assertions.
-	consoleWarn.mockImplementation(() => {})
+	silenceExpectedConsoleWarns([
+		'reconcile_artifacts_pushes cursor update failed',
+		'reconcile_artifacts_pushes source failed',
+	])
 	// Simulated table: two head-of-queue sources whose cursor writes keep
 	// failing, plus one healthy source ordered behind them.
 	const rows = [

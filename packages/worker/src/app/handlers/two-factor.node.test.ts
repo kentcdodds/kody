@@ -18,12 +18,17 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 
 // The handlers fire `void logAuditEvent(...)` without awaiting it; those
 // promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Stub the audit sink.
+// the runner output once the console spies are restored. Route the sink to a
+// spy so the expected audit events are asserted instead of silently dropped.
+const auditSpy = vi.hoisted(() => ({
+	logAuditEvent: vi.fn(async () => undefined),
+}))
+
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
 	return {
 		...actual,
-		logAuditEvent: async () => undefined,
+		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
 	}
 })
 
@@ -313,6 +318,28 @@ test('two-factor setup requires authentication and a valid code before activatin
 		type: '2fa',
 		secret: setupPayload.secret,
 	})
+	// Setup start, the rejected confirm, and the successful enable are audited.
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'two_factor_setup_start',
+			result: 'success',
+		}),
+	)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'two_factor_enable',
+			result: 'failure',
+		}),
+	)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'two_factor_enable',
+			result: 'success',
+		}),
+	)
 })
 
 test('cancelling a pending setup removes it without touching active 2fa', async () => {
@@ -548,6 +575,20 @@ test('disabling 2fa requires a valid current code and clears stale pending rows'
 				.get() as { count: number }
 		).count,
 	).toBe(0)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'two_factor_disable',
+			result: 'failure',
+		}),
+	)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'two_factor_disable',
+			result: 'success',
+		}),
+	)
 })
 
 test('setup and confirm are rejected while 2fa is already enabled', async () => {

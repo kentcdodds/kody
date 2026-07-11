@@ -13,12 +13,17 @@ import { createAccountResendVerificationHandler } from './account-resend-verific
 
 // The handler fires `void logAuditEvent(...)` without awaiting it; those
 // promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Stub the audit sink.
+// the runner output once the console spies are restored. Route the sink to a
+// spy so the expected audit events are asserted instead of silently dropped.
+const auditSpy = vi.hoisted(() => ({
+	logAuditEvent: vi.fn(async () => undefined),
+}))
+
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
 	return {
 		...actual,
-		logAuditEvent: async () => undefined,
+		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
 	}
 })
 
@@ -209,6 +214,24 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 	})
 	// No new token is created for rate-limited requests.
 	expect(testDb.state.verificationInserts).toBe(3)
+	// Three successful resends plus the rate-limited attempt are audited.
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(4)
+	expect(auditSpy.logAuditEvent).toHaveBeenNthCalledWith(
+		3,
+		expect.objectContaining({
+			category: 'auth',
+			action: 'email_verification_resend',
+			result: 'success',
+		}),
+	)
+	expect(auditSpy.logAuditEvent).toHaveBeenNthCalledWith(
+		4,
+		expect.objectContaining({
+			category: 'auth',
+			action: 'email_verification_resend',
+			result: 'rate_limited',
+		}),
+	)
 })
 
 test('resend verification rejects already-verified accounts', async () => {
@@ -269,6 +292,15 @@ test('resend verification surfaces send failures without pretending success', as
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'cloudflare-email-api-failed',
 		expect.any(String),
+	)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(1)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'email_verification_resend',
+			result: 'failure',
+			reason: 'send_failed',
+		}),
 	)
 	vi.unstubAllGlobals()
 })

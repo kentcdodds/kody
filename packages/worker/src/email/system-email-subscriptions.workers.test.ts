@@ -7,7 +7,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
@@ -253,7 +253,7 @@ export default async function main(input = {}) {
 test('system inbound email dispatches email.system-message.received to admin-saved packages only', async () => {
 	// The subscription runtime warns on optional lookups (e.g. MCP server
 	// refs) whose tables are not part of this test's schema.
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)

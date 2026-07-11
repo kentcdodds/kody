@@ -8,12 +8,17 @@ import { createAccountProfileApiHandler } from './account-profile.ts'
 
 // The handler fires `void logAuditEvent(...)` without awaiting it; those
 // promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Stub the audit sink.
+// the runner output once the console spies are restored. Route the sink to a
+// spy so the expected audit events are asserted instead of silently dropped.
+const auditSpy = vi.hoisted(() => ({
+	logAuditEvent: vi.fn(async () => undefined),
+}))
+
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
 	return {
 		...actual,
-		logAuditEvent: async () => undefined,
+		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
 	}
 })
 
@@ -206,6 +211,8 @@ test('account profile API returns email and username for the signed-in user', as
 		username: 'current-user',
 		displayName: 'current-user',
 	})
+	// Reads are not audited.
+	expect(auditSpy.logAuditEvent).not.toHaveBeenCalled()
 })
 
 test('account profile API updates username for the signed-in user', async () => {
@@ -233,6 +240,14 @@ test('account profile API updates username for the signed-in user', async () => 
 		displayName: 'next_user',
 	})
 	expect(testDb.users.get(1)?.username).toBe('next_user')
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(1)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'update_username',
+			result: 'success',
+		}),
+	)
 })
 
 test('account profile API rejects invalid or duplicate usernames', async () => {
@@ -285,4 +300,14 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 		error: 'Username already registered.',
 	})
 	expect(testDb.users.get(1)?.username).toBe('current-user')
+	// Only the duplicate attempt is audited; validation rejections are not.
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(1)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'update_username',
+			result: 'failure',
+			reason: 'username_exists',
+		}),
+	)
 })

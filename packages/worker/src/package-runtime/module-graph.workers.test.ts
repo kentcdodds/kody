@@ -9,14 +9,7 @@ import {
 } from './module-graph.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
-
-// Every test here runs the bundler (incidental experimental warning) and the
-// registry runtime, whose optional MCP-server and usage lookups warn when
-// their tables are absent from the test schema.
-function silenceIncidentalRuntimeWarnings() {
-	consoleWarn.mockImplementation(() => {})
-}
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)

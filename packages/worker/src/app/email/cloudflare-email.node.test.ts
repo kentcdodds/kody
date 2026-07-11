@@ -141,6 +141,9 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		ok: false,
 		error: 'Failed to fetch',
 	})
+	// Exactly the one expected warning; anything else the mock swallowed
+	// would be a regression hidden by the opt-in above.
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'cloudflare-email-api-request-failed',
 		expect.any(Error),
@@ -171,4 +174,8 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 			},
 		),
 	).rejects.toThrow('not valid JSON')
+	// The parse failure throws before any operator warning, so the silenced
+	// consoleWarn must not have picked up anything new.
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	expect(consoleInfo).toHaveBeenCalledTimes(1)
 })

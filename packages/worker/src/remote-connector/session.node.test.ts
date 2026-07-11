@@ -161,6 +161,10 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	closed.state.getWebSockets.mockReturnValue([])
 	await closed.session.webSocketClose({} as WebSocket, 1006, 'network', false)
 
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'Remote connector session websocket closed code=1006 wasClean=false reason=network',
+	)
 	expect(captureMessageMock).toHaveBeenCalledWith(
 		expect.any(String),
 		expect.objectContaining({

@@ -422,7 +422,8 @@ function setCommonSessionFixtures() {
 
 test('rebaseSession and publishSession use Artifacts username/password auth without token override', async () => {
 	// Best-effort publish git-note attachment fails in this mocked git
-	// environment and logs a warning that is incidental to auth behavior.
+	// environment and logs a warning that is incidental to auth behavior;
+	// it is asserted at the end of the test.
 	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.writePublishedSourceSnapshot.mockClear()
@@ -482,6 +483,10 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	for (const call of mockModule.git.push.mock.calls) {
 		expect(call[0]).not.toHaveProperty('token')
 	}
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('publish_git_note'),
+		expect.anything(),
+	)
 })
 
 test('runCommands applies git apply patches (modify, delete, and rename)', async () => {
@@ -660,6 +665,10 @@ test('runCommands fetches session metadata after publish side effects', async ()
 		}),
 	)
 	expect(result.session.published_commit).toBe('commit-published')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('publish_git_note'),
+		expect.anything(),
+	)
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
@@ -718,6 +727,10 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 			id: 'source-1',
 			publishedCommit: 'commit-published-new',
 		}),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('publish_git_note'),
+		expect.anything(),
 	)
 })
 
@@ -1403,6 +1416,12 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 				'package.json': '{"name":"@kody/demo"}',
 				'index.ts': 'export const ready = true\n',
 			},
+		}),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'publish_git_note failed',
+		expect.objectContaining({
+			scope: 'repo.publishFromExternalRef.publish-git-note',
 		}),
 	)
 })

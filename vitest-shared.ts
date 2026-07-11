@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotEnv } from 'dotenv'
 import { type UserConfig } from 'vitest/config'
+import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
 export const rootDir = fileURLToPath(new URL('.', import.meta.url))
 const testTimeout = process.env.CI ? 20_000 : 5_000
@@ -11,14 +12,8 @@ loadDotEnv({
 	quiet: true,
 })
 
-// Several npm packages (e.g. @modelcontextprotocol/sdk, cron-schedule) ship
-// sourcemaps whose `sources` files are not published, and Vite warns once per
-// transformed file ("Sourcemap ... points to missing source files"). That is
-// third-party packaging noise we cannot act on, so only surface Vite errors.
-export const viteLogLevel = 'error' as const
-
 export const sharedProjectConfig = {
-	logLevel: viteLogLevel,
+	plugins: [suppressThirdPartySourcemapWarnings()],
 	resolve: {
 		alias: [
 			{

@@ -1,11 +1,11 @@
 import { defineConfig } from 'vitest/config'
-import { viteLogLevel } from './vitest-shared.ts'
+import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
 export default defineConfig({
 	// The workers pool resolves modules through this root-level Vite server, so
 	// the broken-third-party-sourcemap warning filter has to apply here too
-	// (see vitest-shared.ts).
-	logLevel: viteLogLevel,
+	// (see tools/vite-suppress-sourcemap-warnings.ts).
+	plugins: [suppressThirdPartySourcemapWarnings()],
 	test: {
 		projects: [
 			'./vitest.node.config.ts',

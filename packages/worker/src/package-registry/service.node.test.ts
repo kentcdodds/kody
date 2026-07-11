@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	consoleError,
 	consoleWarn,
+	silenceExpectedConsoleErrors,
 } from '#worker/test-support/console-spies.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
@@ -543,7 +544,9 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 })
 
 test('deleteSavedPackageProjection continues best-effort cleanup when dependent steps fail', async () => {
-	consoleError.mockImplementation(() => {})
+	silenceExpectedConsoleErrors([
+		/"message":"package retriever projection update failed"/,
+	])
 	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
 	const env = createEnv()

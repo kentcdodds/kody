@@ -27,6 +27,40 @@ function failOnUnexpectedCall(
 	}
 }
 
+// For tests that exercise paths with known operational warnings/errors that
+// are incidental to the behavior under test: swallow exactly the expected
+// messages and fail on anything else, so silencing can never hide a new
+// unexpected log. Prefer asserting on the spy directly when the message
+// itself is part of the tested contract.
+function silenceExpectedCalls(
+	method: 'error' | 'warn',
+	spy: () => MockInstance<(...args: Array<unknown>) => void>,
+	patterns: Array<RegExp | string>,
+) {
+	spy().mockImplementation((...args: Array<unknown>) => {
+		const [first] = args
+		if (
+			typeof first === 'string' &&
+			patterns.some((pattern) =>
+				typeof pattern === 'string' ? pattern === first : pattern.test(first),
+			)
+		) {
+			return
+		}
+		throw new Error(
+			`Unexpected console.${method} call (not in this test's expected-message allowlist): ${String(first)}`,
+		)
+	})
+}
+
+export function silenceExpectedConsoleWarns(patterns: Array<RegExp | string>) {
+	silenceExpectedCalls('warn', () => consoleWarn, patterns)
+}
+
+export function silenceExpectedConsoleErrors(patterns: Array<RegExp | string>) {
+	silenceExpectedCalls('error', () => consoleError, patterns)
+}
+
 beforeEach(() => {
 	consoleError = vi
 		.spyOn(console, 'error')

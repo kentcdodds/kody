@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -27,7 +27,7 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
 test('buildKodyFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
 	// The stub Env has no MCP server storage, so metadata loading warns
 	// 'mcp-server-refs-load-failed' before degrading to "no MCP servers".
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const adminOnlyCapability = defineDomainCapability('admin', {
 		name: 'admin_user_list',
 		description: 'List admin user account metadata',
@@ -67,7 +67,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 })
 
 test('package workflow tools create instances from package context and honor caller overrides in runModuleWithRegistry', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const workflowTools = createWorkflowTools({
 		env: {
@@ -226,7 +226,7 @@ export default async function run() {
 })
 
 test('runModuleWithRegistry queues inline workflows.create calls without runAt or idempotencyKey', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const env = {
 		APP_DB: {
@@ -649,7 +649,11 @@ function createRepoSessionRow(input: {
 }
 
 test('buildKodyFns updates and deletes jobs through production-shaped bindings', async () => {
-	consoleWarn.mockImplementation(() => {})
+	// Deleting the job also best-effort deletes its artifact repo, which fails
+	// against this test's stub fetch and logs a JSON warning.
+	silenceIncidentalRuntimeWarnings([
+		/^\{"message":"artifact repo delete failed"/,
+	])
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
@@ -826,7 +830,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 })
 
 test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	let toolArguments: Record<string, unknown> | null = null
 	const connectorEnv = {
 		REMOTE_CONNECTOR_SESSION: {
@@ -1057,7 +1061,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 })
 
 test('remote connector calls round-trip through sanitized ToolDispatcher names', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	let toolArguments: Record<string, unknown> | null = null
 	const connectorEnv = {
 		REMOTE_CONNECTOR_SESSION: {
@@ -1139,7 +1143,7 @@ test('remote connector calls round-trip through sanitized ToolDispatcher names',
 })
 
 test('buildKodyFns rejects storage kody tools that collide with capabilities', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {
 		STORAGE_RUNNER: {
 			idFromName(name: string) {
@@ -1239,7 +1243,7 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 })
 
 test('runKodyWithRegistry redacts secret keys and survives cyclic results', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1410,7 +1414,7 @@ export default async function run() {
 })
 
 test('runKodyWithRegistry routes module and snippet inputs through the expected execution path', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1528,7 +1532,7 @@ export default async function run() {
 })
 
 test('runKodyWithRegistry forwards package context for module syntax', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -1640,7 +1644,7 @@ export default async function run() {
 })
 
 test('runBundledModuleWithRegistry passes params and injects runtime helpers', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
 	const workflowEnv = {
 		APP_DB: {
@@ -2030,7 +2034,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 })
 
 test('runBundledModuleWithRegistry uses a prebuilt capability registry without reloading', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -2087,7 +2091,7 @@ test('runBundledModuleWithRegistry uses a prebuilt capability registry without r
 })
 
 test('runBundledModuleWithRegistry records package_export usage for bundled runs with package context', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -2253,7 +2257,7 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 })
 
 test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helper capabilities are absent', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -2300,7 +2304,7 @@ test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helpe
 })
 
 test('runBundledModuleWithRegistry injects OAuth helper prelude when execute helper capabilities are present', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
@@ -2349,7 +2353,7 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude when execute hel
 })
 
 test('runKodyWithRegistry expression path omits OAuth helper prelude without execute helper capabilities', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',

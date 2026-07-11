@@ -16,12 +16,17 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 
 // The handlers fire `void logAuditEvent(...)` without awaiting it; those
 // promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Stub the audit sink.
+// the runner output once the console spies are restored. Route the sink to a
+// spy so the expected audit events are asserted instead of silently dropped.
+const auditSpy = vi.hoisted(() => ({
+	logAuditEvent: vi.fn(async () => undefined),
+}))
+
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
 	return {
 		...actual,
-		logAuditEvent: async () => undefined,
+		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
 	}
 })
 
@@ -312,6 +317,14 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		)
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(user.id)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_signup',
+			result: 'success',
+			reason: 'provider=github',
+		}),
+	)
 
 	// A second sign-in with the same provider identity reuses the account.
 	const secondStart = await startProviderFlow(
@@ -338,6 +351,14 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		.prepare(`SELECT COUNT(*) AS count FROM users`)
 		.get() as { count: number }
 	expect(userCount.count).toBe(1)
+	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_login',
+			result: 'success',
+			reason: 'provider=github',
+		}),
+	)
 })
 
 test('google sign-in links a matching verified email to the existing account', async () => {

@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { capabilityMap } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { errorFields, logMcpEvent } from '#mcp/observability.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -132,7 +132,7 @@ test('observability helpers normalize errors and emit resilient mcp-event logs',
 test('package_save logs parse failures, rejects invalid manifests, and logs successful saves', async () => {
 	// The worker bundler emits an incidental experimental warning during the
 	// successful save's artifact rebuild.
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	console.info = ((tag: unknown, json?: unknown) => {

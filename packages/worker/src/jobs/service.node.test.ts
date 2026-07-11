@@ -1,6 +1,6 @@
 import { expect, test, vi, afterEach } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -1704,7 +1704,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 
 test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	// Usage rollup writes are best-effort and fail against this fake env.
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
@@ -1887,7 +1887,7 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 })
 
 test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
@@ -2086,7 +2086,7 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 })
 
 test('executeJobOnce preserves kody secret and value semantics', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	const env = {
@@ -2263,7 +2263,7 @@ test('executeJobOnce preserves kody secret and value semantics', async () => {
 })
 
 test('executeJobOnce refreshes repo sessions when base commit moves', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -2434,7 +2434,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 })
 
 test('executeJobOnce rebuilds stale published job bundles after the source commit changes', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -2574,7 +2574,7 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 })
 
 test('executeJobOnce executes package-backed jobs from published artifacts', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -2703,7 +2703,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 })
 
 test('executeJobOnce bypasses typecheck-only failures when the stored repo policy allows it', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -2860,7 +2860,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 })
 
 test('executeJobOnce preserves bypass audit logs when execution fails after a typecheck-only bypass', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -3020,7 +3020,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 })
 
 test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute paths and migrated entrypoints', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -3202,7 +3202,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 })
 
 test('executeJobOnce fails instead of reusing a stale repo session when discard fails', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -3307,7 +3307,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 })
 
 test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -3509,7 +3509,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 })
 
 test('executeJobOnce returns an error when kody secret policy would reject execution', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	await insertPublishedEntitySource({
@@ -3657,7 +3657,7 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 })
 
 test('runJobNow deletes vectors for once jobs', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	const env = {
@@ -3804,7 +3804,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 })
 
 test('runJobNow can use a one-off repo check policy override without changing the stored job', async () => {
-	consoleWarn.mockImplementation(() => {})
+	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	await insertPublishedEntitySource({
 		db,
