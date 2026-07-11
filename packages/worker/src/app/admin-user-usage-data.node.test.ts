@@ -1,11 +1,8 @@
 import { expect, test } from 'vitest'
 import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import {
-	type AdminUsageLoaderData,
-	type AdminUsageRollup,
-} from './loader-data.ts'
-import { loadAdminUsageData } from './admin-usage-data.ts'
+import { type AdminUsageRollup } from './loader-data.ts'
+import { loadAdminUserUsageData } from './admin-user-usage-data.ts'
 
 type UserRow = {
 	id: number
@@ -49,7 +46,7 @@ function normalizeQuery(query: string) {
 	return query.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
-function createAdminUsageTestDb(input: {
+function createAdminUserUsageTestDb(input: {
 	users: Array<UserRow>
 	usageRollups?: Array<UsageRollupRow>
 	dailyCounters?: Array<CounterRow>
@@ -91,9 +88,6 @@ function createAdminUsageTestDb(input: {
 			const normalizedQuery = normalizeQuery(query)
 			const createStatement = (params: Array<unknown>) => ({
 				async first<T>() {
-					if (normalizedQuery.includes('select count(*) as total from users')) {
-						return { total: users.length } as T
-					}
 					if (
 						normalizedQuery.includes(
 							'select id, username, email, plan, stable_user_id from users where id = ?',
@@ -116,31 +110,6 @@ function createAdminUsageTestDb(input: {
 					throw new Error(`Unsupported first query: ${query}`)
 				},
 				async all<T>() {
-					if (
-						normalizedQuery.includes(
-							'select id, username, email, plan, stable_user_id from users order by id asc limit ? offset ?',
-						)
-					) {
-						const pageSize = Number(params[0])
-						const offset = Number(params[1])
-						return {
-							results: users
-								.sort((left, right) => left.id - right.id)
-								.slice(offset, offset + pageSize) as Array<T>,
-						}
-					}
-					if (
-						normalizedQuery.includes('from usage_rollups') &&
-						normalizedQuery.includes('where user_id in')
-					) {
-						const month = String(params.at(-1))
-						const userIds = params.slice(0, -1).map(String)
-						return {
-							results: usageRollups.filter(
-								(row) => userIds.includes(row.user_id) && row.month === month,
-							) as Array<T>,
-						}
-					}
 					if (
 						normalizedQuery.includes('from usage_rollups') &&
 						normalizedQuery.includes('where user_id = ?')
@@ -187,10 +156,20 @@ function usageRow(
 	}
 }
 
-test('loadAdminUsageData returns zeroed usage for empty rollups', async () => {
+test('loadAdminUserUsageData returns null for unknown users', async () => {
+	const db = createAdminUserUsageTestDb({ users: [] })
+	const data = await loadAdminUserUsageData(
+		{ APP_DB: db } as Env,
+		42,
+		new Date('2026-07-05T12:00:00.000Z'),
+	)
+	expect(data).toBeNull()
+})
+
+test('loadAdminUserUsageData returns zeroed usage for empty rollups', async () => {
 	const email = 'empty-usage@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
-	const db = createAdminUsageTestDb({
+	const db = createAdminUserUsageTestDb({
 		users: [
 			{
 				id: 1,
@@ -204,27 +183,19 @@ test('loadAdminUsageData returns zeroed usage for empty rollups', async () => {
 		},
 	})
 
-	const data = await loadAdminUsageData(
+	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		'https://kody.local/admin/usage.json',
+		1,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
-	expect(data.currentMonth).toBe('2026-07')
-	expect(data.today).toBe('2026-07-05')
-	expect(data.users).toHaveLength(1)
-	expect(
-		data.users[0]?.currentMonthUsage.every((row) => row.eventCount === 0),
-	).toBe(true)
-	expect(data.users[0]?.todayCounters).toEqual([
-		{ resource: 'email_sends_per_day', label: 'email sends per day', count: 0 },
-		{
-			resource: 'email_receives_per_day',
-			label: 'email receives per day',
-			count: 0,
-		},
-	])
-	expect(data.selectedUser?.monthUsage).toEqual([
+	expect(data?.currentMonth).toBe('2026-07')
+	expect(data?.today).toBe('2026-07-05')
+	expect(data?.userId).toBe(1)
+	expect(data?.currentMonthUsage.every((row) => row.eventCount === 0)).toBe(
+		true,
+	)
+	expect(data?.monthUsage).toEqual([
 		{
 			month: '2026-07',
 			usage: expect.arrayContaining([
@@ -232,43 +203,30 @@ test('loadAdminUsageData returns zeroed usage for empty rollups', async () => {
 			]),
 		},
 	])
+	expect(data?.warnings).toEqual([])
 })
 
-test('loadAdminUsageData aggregates multiple users and warns above eighty percent of plan limits', async () => {
-	const adminEmail = 'admin-usage@example.com'
-	const memberEmail = 'member-usage@example.com'
-	const adminUsageUserId = await createStableUserIdFromEmail(adminEmail)
-	const memberUsageUserId = await createStableUserIdFromEmail(memberEmail)
-	const db = createAdminUsageTestDb({
+test('loadAdminUserUsageData warns above eighty percent of plan limits', async () => {
+	const email = 'member-usage@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	const db = createAdminUserUsageTestDb({
 		users: [
-			{
-				id: 1,
-				username: 'admin',
-				email: adminEmail,
-				plan: 'pro',
-			},
 			{
 				id: 2,
 				username: 'member',
-				email: memberEmail,
+				email,
 				plan: 'personal',
 			},
 		],
 		usageRollups: [
 			usageRow({
-				user_id: adminUsageUserId,
-				metric: 'execute',
-				month: '2026-07',
-				event_count: 5,
-			}),
-			usageRow({
-				user_id: memberUsageUserId,
+				user_id: usageUserId,
 				metric: 'job_run',
 				month: '2026-07',
 				event_count: 4,
 			}),
 			usageRow({
-				user_id: memberUsageUserId,
+				user_id: usageUserId,
 				metric: 'job_run',
 				month: '2026-06',
 				event_count: 40,
@@ -276,15 +234,14 @@ test('loadAdminUsageData aggregates multiple users and warns above eighty percen
 		],
 		dailyCounters: [
 			{
-				user_id: memberUsageUserId,
+				user_id: usageUserId,
 				resource: 'email_sends_per_day',
 				day: '2026-07-05',
 				count: 17,
 			},
 		],
 		resourceCounts: {
-			[adminUsageUserId]: { saved_packages: 3 },
-			[memberUsageUserId]: {
+			[usageUserId]: {
 				saved_packages: 18,
 				scheduled_jobs: 8,
 				package_services: 1,
@@ -294,26 +251,28 @@ test('loadAdminUsageData aggregates multiple users and warns above eighty percen
 		},
 	})
 
-	const data = await loadAdminUsageData(
+	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		'https://kody.local/admin/usage.json?userId=2',
+		2,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
-	expect(data.users).toHaveLength(2)
-	expect(getEventCount(data.users[0], 'execute')).toBe(5)
-	expect(getEventCount(data.users[1], 'job_run')).toBe(4)
-	expect(data.users[1]?.todayCounters[0]?.count).toBe(17)
-	expect(data.selectedUser?.id).toBe(2)
-	expect(
-		data.selectedUser?.warnings.map((warning) => warning.resource),
-	).toEqual(['saved_packages', 'email_sends_per_day'])
+	expect(data?.userId).toBe(2)
+	expect(getEventCount(data?.currentMonthUsage, 'job_run')).toBe(4)
+	expect(data?.monthUsage.map((month) => month.month)).toEqual([
+		'2026-07',
+		'2026-06',
+	])
+	expect(data?.warnings.map((warning) => warning.resource)).toEqual([
+		'saved_packages',
+		'email_sends_per_day',
+	])
 })
 
-test('loadAdminUsageData shows email fallback limits for plan-less users', async () => {
+test('loadAdminUserUsageData shows email fallback limits for plan-less users', async () => {
 	const email = 'null-plan-email@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
-	const db = createAdminUsageTestDb({
+	const db = createAdminUserUsageTestDb({
 		users: [
 			{
 				id: 1,
@@ -335,14 +294,14 @@ test('loadAdminUsageData shows email fallback limits for plan-less users', async
 		},
 	})
 
-	const data = await loadAdminUsageData(
+	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		'https://kody.local/admin/usage.json?userId=1',
+		1,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
 	const consumption = new Map(
-		(data.selectedUser?.entitlementConsumption ?? []).map((entry) => [
+		(data?.entitlementConsumption ?? []).map((entry) => [
 			entry.resource,
 			entry,
 		]),
@@ -364,9 +323,9 @@ test('loadAdminUsageData shows email fallback limits for plan-less users', async
 		limit: 2000,
 		overEightyPercent: false,
 	})
-	expect(
-		data.selectedUser?.warnings.map((warning) => warning.resource),
-	).toEqual(['email_receives_per_day'])
+	expect(data?.warnings.map((warning) => warning.resource)).toEqual([
+		'email_receives_per_day',
+	])
 })
 
 function createFakeKv() {
@@ -386,11 +345,11 @@ function createFakeKv() {
 	return { kv, store }
 }
 
-test('loadAdminUsageData caches rollup reads in KV and serves repeat loads from cache', async () => {
+test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads from cache', async () => {
 	const email = 'cached-usage@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
 	let rollupQueryCount = 0
-	const db = createAdminUsageTestDb({
+	const db = createAdminUserUsageTestDb({
 		users: [{ id: 1, username: 'cached', email, plan: null }],
 		usageRollups: [
 			usageRow({
@@ -419,12 +378,8 @@ test('loadAdminUsageData caches rollup reads in KV and serves repeat loads from 
 	const env = { APP_DB: countingDb, BUNDLE_ARTIFACTS_KV: kv } as Env
 	const now = new Date('2026-07-05T12:00:00.000Z')
 
-	const first = await loadAdminUsageData(
-		env,
-		'https://kody.local/admin/usage.json',
-		now,
-	)
-	expect(getEventCount(first.users[0], 'execute')).toBe(7)
+	const first = await loadAdminUserUsageData(env, 1, now)
+	expect(getEventCount(first?.currentMonthUsage, 'execute')).toBe(7)
 	const queriesAfterFirstLoad = rollupQueryCount
 	expect(queriesAfterFirstLoad).toBeGreaterThan(0)
 	expect(store.size).toBeGreaterThan(0)
@@ -432,21 +387,17 @@ test('loadAdminUsageData caches rollup reads in KV and serves repeat loads from 
 		expect(key.startsWith('derived-cache:v1:usage-rollups:')).toBe(true)
 	}
 
-	const second = await loadAdminUsageData(
-		env,
-		'https://kody.local/admin/usage.json',
-		now,
-	)
-	expect(getEventCount(second.users[0], 'execute')).toBe(7)
-	expect(second.selectedUser?.monthUsage[0]?.month).toBe('2026-07')
+	const second = await loadAdminUserUsageData(env, 1, now)
+	expect(getEventCount(second?.currentMonthUsage, 'execute')).toBe(7)
+	expect(second?.monthUsage[0]?.month).toBe('2026-07')
 	// The repeat load is served from KV: no additional rollup queries.
 	expect(rollupQueryCount).toBe(queriesAfterFirstLoad)
 })
 
-test('loadAdminUsageData keeps current-month and month-over-month rollups on UTC month boundaries', async () => {
+test('loadAdminUserUsageData keeps current-month and month-over-month rollups on UTC month boundaries', async () => {
 	const email = 'month-boundary@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
-	const db = createAdminUsageTestDb({
+	const db = createAdminUserUsageTestDb({
 		users: [
 			{
 				id: 1,
@@ -474,41 +425,24 @@ test('loadAdminUsageData keeps current-month and month-over-month rollups on UTC
 		},
 	})
 
-	const data = await loadAdminUsageData(
+	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		'https://kody.local/admin/usage.json',
+		1,
 		new Date('2026-07-01T00:00:00.000Z'),
 	)
 
-	expect(getEventCount(data.users[0], 'execute')).toBe(2)
-	expect(data.selectedUser?.monthUsage.map((month) => month.month)).toEqual([
+	expect(getEventCount(data?.currentMonthUsage, 'execute')).toBe(2)
+	expect(data?.monthUsage.map((month) => month.month)).toEqual([
 		'2026-07',
 		'2026-06',
 	])
-	expect(
-		getEventCountFromUsage(
-			data.selectedUser?.monthUsage[0]?.usage ?? [],
-			'execute',
-		),
-	).toBe(2)
-	expect(
-		getEventCountFromUsage(
-			data.selectedUser?.monthUsage[1]?.usage ?? [],
-			'execute',
-		),
-	).toBe(12)
+	expect(getEventCount(data?.monthUsage[0]?.usage, 'execute')).toBe(2)
+	expect(getEventCount(data?.monthUsage[1]?.usage, 'execute')).toBe(12)
 })
 
 function getEventCount(
-	user: AdminUsageLoaderData['users'][number] | undefined,
+	usage: Array<AdminUsageRollup> | undefined,
 	metric: AdminUsageRollup['metric'],
 ) {
-	return getEventCountFromUsage(user?.currentMonthUsage ?? [], metric)
-}
-
-function getEventCountFromUsage(
-	usage: Array<AdminUsageRollup>,
-	metric: AdminUsageRollup['metric'],
-) {
-	return usage.find((row) => row.metric === metric)?.eventCount ?? 0
+	return usage?.find((row) => row.metric === metric)?.eventCount ?? 0
 }

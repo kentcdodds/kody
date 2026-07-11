@@ -1,7 +1,7 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
-import { adminUsageOverviewCapability } from './admin-usage-overview.ts'
+import { adminUserUsageCapability } from './admin-user-usage.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
@@ -29,7 +29,7 @@ export const adminDomain = defineDomain({
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
 		adminAuditLogQueryCapability,
-		adminUsageOverviewCapability,
+		adminUserUsageCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
 	],

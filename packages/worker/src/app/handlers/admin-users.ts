@@ -2,6 +2,7 @@ import { readPositiveInt } from '#app/query-params.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { loadAdminUserUsageData } from '#app/admin-user-usage-data.ts'
 import {
 	loadAdminUsersData,
 	loadRolesByUserIds,
@@ -134,6 +135,35 @@ export function createAdminUsersApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.adminUsersApi>
+}
+
+/**
+ * Per-user usage drill-down for the admin users page. Loads usage for
+ * exactly one account (the selected one) instead of a whole page of
+ * users, so the cost per request stays constant as the user base grows.
+ */
+export function createAdminUserUsageApiHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			try {
+				await requireUserWithPermission(request, env, 'read:user:any')
+				const url = new URL(request.url)
+				const userId = readPositiveInt(url.searchParams.get('userId'), 0)
+				if (!userId) {
+					return jsonResponse({ ok: false, error: 'userId is required.' }, 400)
+				}
+				const payload = await loadAdminUserUsageData(env, userId)
+				if (!payload) {
+					return jsonResponse({ ok: false, error: 'User not found.' }, 404)
+				}
+				return jsonResponse(payload)
+			} catch (error) {
+				if (error instanceof Response) return error
+				throw error
+			}
+		},
+	} satisfies Action<typeof routes.adminUserUsageApi>
 }
 
 async function handleAssignRoleAction(input: {

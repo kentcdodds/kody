@@ -105,7 +105,6 @@ const adminNavItems = [
 		label: 'Community reports',
 		paths: ['/admin/community-reports'],
 	},
-	{ href: '/admin/usage', label: 'Usage', paths: ['/admin/usage'] },
 	{
 		href: '/admin/system-email',
 		label: 'System email',

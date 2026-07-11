@@ -18,14 +18,16 @@ import {
 	formatPercentShare,
 } from '#client/charts/chart-theme.ts'
 import {
+	formatMonthKeyLabel,
+	monthShortNames,
+	usageMetricSeries,
+} from '#client/charts/usage-metric-series.ts'
+import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AdminPageHeader,
 } from './account-management-components.tsx'
-import {
-	type AdminInsightsLoaderData,
-	type AdminUsageMetric,
-} from '#app/loader-data.ts'
+import { type AdminInsightsLoaderData } from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -34,33 +36,6 @@ import {
 type PageStatus = 'loading' | 'ready' | 'error'
 
 const adminInsightsApiPath = '/admin/insights.json'
-
-const usageMetricSeries: Array<{
-	metric: AdminUsageMetric
-	label: string
-	color: string
-}> = [
-	{ metric: 'execute', label: 'Executes', color: chartColor.blue },
-	{
-		metric: 'package_export',
-		label: 'Package runs',
-		color: chartColor.emerald,
-	},
-	{ metric: 'job_run', label: 'Job runs', color: chartColor.amber },
-	{ metric: 'workflow_run', label: 'Workflow runs', color: chartColor.violet },
-	{
-		metric: 'service_runtime',
-		label: 'Service runtime',
-		color: chartColor.rose,
-	},
-	{ metric: 'outbound_fetch', label: 'Fetches', color: chartColor.cyan },
-	{ metric: 'email_send', label: 'Email sends', color: chartColor.lime },
-	{
-		metric: 'email_received',
-		label: 'Email receives',
-		color: chartColor.fuchsia,
-	},
-]
 
 const planColors: Record<string, string> = {
 	pro: chartColor.violet,
@@ -89,21 +64,6 @@ const authCategoryColors: Record<string, string> = {
 	oauth: chartColor.violet,
 }
 
-const monthNames = [
-	'Jan',
-	'Feb',
-	'Mar',
-	'Apr',
-	'May',
-	'Jun',
-	'Jul',
-	'Aug',
-	'Sep',
-	'Oct',
-	'Nov',
-	'Dec',
-] as const
-
 function isAdminInsightsPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/insights'
 }
@@ -112,13 +72,7 @@ function isAdminInsightsPath(href: string) {
 function formatDayLabel(dayKey: string) {
 	const monthIndex = Number(dayKey.slice(5, 7)) - 1
 	const dayOfMonth = Number(dayKey.slice(8, 10))
-	return `${monthNames[monthIndex] ?? '?'} ${dayOfMonth}`
-}
-
-/** `2026-06` -> `Jun ’26` */
-function formatMonthLabel(monthKey: string) {
-	const monthIndex = Number(monthKey.slice(5, 7)) - 1
-	return `${monthNames[monthIndex] ?? '?'} ’${monthKey.slice(2, 4)}`
+	return `${monthShortNames[monthIndex] ?? '?'} ${dayOfMonth}`
 }
 
 function formatPlanLabel(plan: string) {
@@ -317,7 +271,7 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 	const latestWeek = signupWeeks[signupWeeks.length - 1]
 	const weekLabels = signupWeeks.map((week) => formatDayLabel(week.weekStart))
 	const monthLabels = data.usageByMonth.map((month) =>
-		formatMonthLabel(month.month),
+		formatMonthKeyLabel(month.month),
 	)
 	const dayLabels = data.emailByDay.map((day) => formatDayLabel(day.day))
 	const authDayLabels = data.authByDay.map((day) => formatDayLabel(day.day))

@@ -29,9 +29,10 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await page.goto('/admin/users')
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeHidden()
 	await expect(page.getByText('Forbidden')).toBeVisible()
-	await page.goto('/admin/usage')
-	await expect(page.getByRole('heading', { name: 'Admin usage' })).toBeHidden()
-	await expect(page.getByText('Forbidden')).toBeVisible()
+	const memberUsageResponse = await page.request.get(
+		'/admin/users/usage.json?userId=1',
+	)
+	expect(memberUsageResponse.status()).toBe(403)
 	await page.goto('/admin/insights')
 	await expect(
 		page.getByRole('heading', { name: 'Admin insights' }),
@@ -134,20 +135,30 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
 
-	await page.goto('/admin/usage')
-	await expect(page.getByRole('heading', { name: 'Admin usage' })).toBeVisible()
-	await expect(page.getByText('Unable to load admin usage.')).toHaveCount(0)
-	await expect(page.getByText('Current month usage')).toBeVisible()
+	// The usage drill-down lives on the users page and loads for the
+	// selected account only.
+	await page.goto(`/admin/users?pageSize=100&page=${lastUsersPage}`)
+	await page.getByRole('button', { name: memberUser.username }).click()
+	await expect(page.getByText('Usage & quotas')).toBeVisible()
+	await expect(
+		page.getByText('Unable to load usage for this account.'),
+	).toHaveCount(0)
+	await expect(
+		page.getByRole('heading', { name: 'Entitlements' }),
+	).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
 	await expect(page.getByText('super-secret-value')).toHaveCount(0)
+	const memberId = Number(memberRecord.id)
 	const usageApiResponse = await page.request.get(
-		'/admin/usage.json?pageSize=100',
+		`/admin/users/usage.json?userId=${memberId}`,
 	)
 	expect(usageApiResponse.ok()).toBe(true)
 	const usagePayload = await usageApiResponse.json()
 	expect(usagePayload.ok).toBe(true)
+	expect(usagePayload.userId).toBe(memberId)
 	expect(JSON.stringify(usagePayload)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(usagePayload)).not.toContain('super-secret-value')
+	expect(JSON.stringify(usagePayload)).not.toContain(memberUser.email)
 
 	await page.goto('/admin/insights')
 	await expect(

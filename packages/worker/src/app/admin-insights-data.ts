@@ -1,7 +1,7 @@
 import { cachified } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
-import { adminUsageMetrics } from '#app/admin-usage-data.ts'
+import { adminUsageMetrics } from '#app/admin-user-usage-data.ts'
 import {
 	type AdminInsightsAuthCategory,
 	type AdminInsightsAuthDay,

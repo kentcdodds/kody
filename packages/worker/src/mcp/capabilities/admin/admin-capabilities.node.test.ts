@@ -7,7 +7,7 @@ vi.unmock('#app/audit-log.ts')
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
-import { adminUsageOverviewCapability } from './admin-usage-overview.ts'
+import { adminUserUsageCapability } from './admin-user-usage.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
@@ -526,11 +526,19 @@ test('admin capabilities list and get account metadata and query sanitized audit
 		roles: ['user'],
 	})
 
-	const usage = await adminUsageOverviewCapability.handler(
-		{ pageSize: 10 },
-		ctx,
-	)
-	expect(usage.users).toHaveLength(2)
+	const usage = await adminUserUsageCapability.handler({ id: 2 }, ctx)
+	expect(usage.usage).toMatchObject({
+		userId: 2,
+		username: 'jane',
+		plan: null,
+	})
+	expect(usage.usage?.entitlementConsumption.length).toBeGreaterThan(0)
+	expect(
+		await adminUserUsageCapability.handler(
+			{ email: 'missing@example.com' },
+			ctx,
+		),
+	).toEqual({ usage: null })
 
 	const audit = await adminAuditLogQueryCapability.handler(
 		{ action: 'admin_user_get', limit: 10 },
@@ -550,7 +558,8 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	expect(auditEvents.map((event) => event.action)).toEqual([
 		'admin_user_list',
 		'admin_user_get',
-		'admin_usage_overview',
+		'admin_user_usage',
+		'admin_user_usage',
 		'admin_audit_log_query',
 	])
 })

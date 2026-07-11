@@ -131,18 +131,6 @@ export type AdminUsageRollup = {
 	totalBytes: number
 }
 
-export type AdminUsageDailyCounter = {
-	resource: AdminUsageEntitlementResource
-	label: string
-	count: number
-}
-
-export type AdminUsageResourceCount = {
-	resource: AdminUsageEntitlementResource
-	label: string
-	current: number
-}
-
 export type AdminUsageEntitlementConsumption = {
 	resource: AdminUsageEntitlementResource
 	label: string
@@ -157,31 +145,22 @@ export type AdminUsageMonthRollup = {
 	usage: Array<AdminUsageRollup>
 }
 
-export type AdminUsageUserSummary = {
-	id: number
+/**
+ * Per-user usage drill-down shown on the admin users page. Loaded lazily
+ * for one selected account at a time so admin reads stay O(1) per view
+ * regardless of how many users the deployment has.
+ */
+export type AdminUserUsageLoaderData = {
+	ok: true
+	userId: number
 	username: string
-	email: string
 	plan: AdminPlanName | null
+	currentMonth: string
+	today: string
 	currentMonthUsage: Array<AdminUsageRollup>
-	todayCounters: Array<AdminUsageDailyCounter>
-	resourceCounts: Array<AdminUsageResourceCount>
-}
-
-export type AdminUsageSelectedUser = AdminUsageUserSummary & {
 	monthUsage: Array<AdminUsageMonthRollup>
 	entitlementConsumption: Array<AdminUsageEntitlementConsumption>
 	warnings: Array<AdminUsageEntitlementConsumption>
-}
-
-export type AdminUsageLoaderData = {
-	ok: true
-	users: Array<AdminUsageUserSummary>
-	selectedUser: AdminUsageSelectedUser | null
-	page: number
-	pageSize: number
-	total: number
-	currentMonth: string
-	today: string
 }
 
 export type AdminInsightsTotals = {
@@ -539,7 +518,6 @@ export type AppLoaderData = {
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
-	adminUsage?: AdminUsageLoaderData
 	adminInsights?: AdminInsightsLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData

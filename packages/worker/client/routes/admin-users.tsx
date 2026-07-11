@@ -25,12 +25,24 @@ import {
 	AccountManagementSidebar,
 	AdminPageHeader,
 	MetadataGrid,
+	accountManagementTableCellCss,
+	accountManagementTableCss,
+	accountManagementTableNumericCellCss,
+	noticeCardCss,
 } from './account-management-components.tsx'
+import { ChartLegend } from '#client/charts/chart-legend.tsx'
+import { StackedBarChart } from '#client/charts/stacked-bar-chart.tsx'
+import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
+import {
+	formatMonthKeyLabel,
+	usageMetricSeries,
+} from '#client/charts/usage-metric-series.ts'
 import { type RoleName } from '#app/permissions.ts'
 import {
 	type AdminPlanName,
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
+	type AdminUserUsageLoaderData,
 } from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
@@ -38,8 +50,19 @@ import {
 } from '#client/route-loader.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
+type UsageStatus = 'loading' | 'ready' | 'error'
 
 const adminUsersApiPath = '/admin/users.json'
+const adminUserUsageApiPath = '/admin/users/usage.json'
+
+function formatUsageLimit(limit: number | null) {
+	return limit === null ? 'Unlimited' : formatIntegerNumber(limit)
+}
+
+function formatUsagePercent(value: number | null) {
+	if (value === null) return '—'
+	return `${Math.round(value * 100)}%`
+}
 
 function isAdminUsersPath(href: string) {
 	const path = new URL(href, 'http://localhost').pathname
@@ -95,9 +118,60 @@ export function AdminUsersRoute(handle: Handle) {
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
+	let usageStatus: UsageStatus = 'loading'
+	let usageData: AdminUserUsageLoaderData | null = null
+	let usageMessage: string | null = null
+	let usageRequestId = 0
+	let usageLoadedForUserId: number | null = null
+	let usageLoadingForUserId: number | null = null
+	let usageFailedForUserId: number | null = null
 
 	function getSelectedUser() {
 		return users.find((user) => user.id === selectedUserId) ?? null
+	}
+
+	async function loadUserUsage(userId: number) {
+		usageLoadingForUserId = userId
+		const requestId = ++usageRequestId
+		try {
+			const response = await fetch(
+				`${adminUserUsageApiPath}?userId=${userId}`,
+				{ headers: { Accept: 'application/json' }, credentials: 'include' },
+			)
+			if (requestId !== usageRequestId) return
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<AdminUserUsageLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load usage for this account.')
+			}
+			usageData = payload
+			usageStatus = 'ready'
+			usageMessage = null
+			usageLoadedForUserId = userId
+			usageFailedForUserId = null
+			handle.update()
+		} catch (error) {
+			if (requestId !== usageRequestId) return
+			usageStatus = 'error'
+			usageMessage =
+				error instanceof Error
+					? error.message
+					: 'Unable to load usage for this account.'
+			usageFailedForUserId = userId
+			handle.update()
+		} finally {
+			if (requestId === usageRequestId) usageLoadingForUserId = null
+		}
+	}
+
+	// Plan changes move entitlement limits, so the drill-down must refetch
+	// even though the selected user did not change.
+	function invalidateUsage() {
+		usageLoadedForUserId = null
+		usageFailedForUserId = null
 	}
 
 	// Any refresh of `users` may carry a newer stored plan, so drop the
@@ -265,6 +339,7 @@ export function AdminUsersRoute(handle: Handle) {
 			pageSize = payload.pageSize
 			total = payload.total
 			resetPlanDraft()
+			invalidateUsage()
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
 			message = `Updated plan to ${plan ?? 'legacy/unlimited'}.`
@@ -342,6 +417,28 @@ export function AdminUsersRoute(handle: Handle) {
 		const totalPages = Math.max(1, Math.ceil(total / pageSize))
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
+
+		if (
+			selectedUser &&
+			typeof document !== 'undefined' &&
+			usageLoadedForUserId !== selectedUser.id &&
+			usageLoadingForUserId !== selectedUser.id &&
+			usageFailedForUserId !== selectedUser.id
+		) {
+			usageStatus = 'loading'
+			usageLoadingForUserId = selectedUser.id
+			const usageUserId = selectedUser.id
+			handle.queueTask(() => loadUserUsage(usageUserId))
+		}
+		// Never render one account's usage under another account's header
+		// while the drill-down request is still in flight.
+		const selectedUsage =
+			selectedUser && usageData && usageData.userId === selectedUser.id
+				? usageData
+				: null
+		const usageMonthsAscending = selectedUsage
+			? [...selectedUsage.monthUsage].reverse()
+			: []
 
 		// Re-seed the plan draft whenever a different user becomes selected so
 		// the select always starts from that user's stored plan.
@@ -616,6 +713,173 @@ export function AdminUsersRoute(handle: Handle) {
 											{actionState === 'saving-plan' ? 'Saving…' : 'Save plan'}
 										</button>
 									</div>
+								</AccountManagementPanel>
+								<AccountManagementPanel
+									title="Usage & quotas"
+									description="Metered usage rollups and entitlement consumption for this account. Warnings appear above 80% of a numeric limit."
+								>
+									{!selectedUsage && usageStatus === 'loading' ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											Loading usage…
+										</p>
+									) : null}
+									{usageStatus === 'error' &&
+									usageFailedForUserId === selectedUser.id &&
+									usageMessage ? (
+										<AccountManagementMessage tone="error">
+											{usageMessage}
+										</AccountManagementMessage>
+									) : null}
+									{selectedUsage ? (
+										<>
+											{selectedUsage.warnings.length > 0 ? (
+												<div mix={css(noticeCardCss)}>
+													<strong>Quota watch:</strong>{' '}
+													{selectedUsage.warnings
+														.map(
+															(item) =>
+																`${item.label} at ${formatUsagePercent(item.percentOfLimit)}`,
+														)
+														.join(', ')}
+												</div>
+											) : null}
+											<div mix={css({ display: 'grid', gap: spacing.md })}>
+												<h3
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.base,
+													})}
+												>
+													Monthly activity
+												</h3>
+												<StackedBarChart
+													id="admin-user-usage"
+													ariaLabel={`Metered events by month for ${selectedUsage.username}`}
+													series={usageMetricSeries.map((entry) => ({
+														label: entry.label,
+														color: entry.color,
+														values: usageMonthsAscending.map(
+															(month) =>
+																month.usage.find(
+																	(row) => row.metric === entry.metric,
+																)?.eventCount ?? 0,
+														),
+													}))}
+													xLabels={usageMonthsAscending.map((month) =>
+														formatMonthKeyLabel(month.month),
+													)}
+													viewBoxWidth={560}
+													height={200}
+												/>
+												<ChartLegend
+													items={usageMetricSeries.map((entry) => ({
+														label: entry.label,
+														color: entry.color,
+														value: formatIntegerNumber(
+															selectedUsage.currentMonthUsage.find(
+																(row) => row.metric === entry.metric,
+															)?.eventCount ?? 0,
+														),
+													}))}
+												/>
+												<p
+													mix={css({
+														margin: 0,
+														color: colors.textMuted,
+														fontSize: typography.fontSize.xs,
+													})}
+												>
+													Legend counts are for the current month (
+													{selectedUsage.currentMonth}).
+												</p>
+											</div>
+											<div mix={css({ display: 'grid', gap: spacing.md })}>
+												<h3
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.base,
+													})}
+												>
+													Entitlements
+												</h3>
+												<div mix={css({ overflowX: 'auto' })}>
+													<table mix={css(accountManagementTableCss)}>
+														<thead>
+															<tr>
+																<th mix={css(accountManagementTableCellCss)}>
+																	Resource
+																</th>
+																<th
+																	mix={css(
+																		accountManagementTableNumericCellCss,
+																	)}
+																>
+																	In use
+																</th>
+																<th
+																	mix={css(
+																		accountManagementTableNumericCellCss,
+																	)}
+																>
+																	Limit
+																</th>
+																<th
+																	mix={css(
+																		accountManagementTableNumericCellCss,
+																	)}
+																>
+																	Used
+																</th>
+															</tr>
+														</thead>
+														<tbody>
+															{selectedUsage.entitlementConsumption.map(
+																(item) => (
+																	<tr key={item.resource}>
+																		<td
+																			mix={css(accountManagementTableCellCss)}
+																		>
+																			{item.label}
+																		</td>
+																		<td
+																			mix={css(
+																				accountManagementTableNumericCellCss,
+																			)}
+																		>
+																			{item.current === null
+																				? 'Not measured'
+																				: formatIntegerNumber(item.current)}
+																		</td>
+																		<td
+																			mix={css(
+																				accountManagementTableNumericCellCss,
+																			)}
+																		>
+																			{formatUsageLimit(item.limit)}
+																		</td>
+																		<td
+																			mix={css({
+																				...accountManagementTableNumericCellCss,
+																				...(item.overEightyPercent
+																					? {
+																							color: chartColor.amber,
+																							fontWeight:
+																								typography.fontWeight.semibold,
+																						}
+																					: {}),
+																			})}
+																		>
+																			{formatUsagePercent(item.percentOfLimit)}
+																		</td>
+																	</tr>
+																),
+															)}
+														</tbody>
+													</table>
+												</div>
+											</div>
+										</>
+									) : null}
 								</AccountManagementPanel>
 							</>
 						) : (
