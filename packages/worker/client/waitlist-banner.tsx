@@ -102,7 +102,7 @@ export function WaitlistBanner(handle: Handle) {
 								Kody is invite-only — join the waiting list
 							</p>
 							<form mix={[css(formCss), on('submit', handleSubmit)]}>
-								<label mix={css(fieldCss)}>
+								<label mix={css(nameFieldCss)}>
 									<span mix={css(visuallyHiddenCss)}>First name</span>
 									<input
 										type="text"
@@ -114,24 +114,26 @@ export function WaitlistBanner(handle: Handle) {
 										mix={css(bannerInputCss)}
 									/>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(visuallyHiddenCss)}>Email</span>
-									<input
-										type="email"
-										name="email"
-										required
-										autoComplete="email"
-										placeholder="Email"
-										mix={css(bannerInputCss)}
-									/>
-								</label>
-								<button
-									type="submit"
-									disabled={isSubmitting}
-									mix={css(submitCss)}
-								>
-									{isSubmitting ? 'Joining…' : 'Join'}
-								</button>
+								<div mix={css(emailGroupCss)}>
+									<label mix={css(emailFieldCss)}>
+										<span mix={css(visuallyHiddenCss)}>Email</span>
+										<input
+											type="email"
+											name="email"
+											required
+											autoComplete="email"
+											placeholder="Email"
+											mix={css(emailInputCss)}
+										/>
+									</label>
+									<button
+										type="submit"
+										disabled={isSubmitting}
+										mix={css(submitCss)}
+									>
+										{isSubmitting ? 'Joining…' : 'Join'}
+									</button>
+								</div>
 							</form>
 							{message ? (
 								<p
@@ -140,6 +142,8 @@ export function WaitlistBanner(handle: Handle) {
 										margin: 0,
 										color: colors.error,
 										fontSize: typography.fontSize.xs,
+										width: '100%',
+										textAlign: 'center' as const,
 									})}
 								>
 									{message}
@@ -182,8 +186,9 @@ const bannerInnerCss = {
 
 const promptCss = {
 	margin: 0,
-	color: colors.textMuted,
+	color: colors.text,
 	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.medium,
 	whiteSpace: 'nowrap' as const,
 	[mq.mobile]: {
 		whiteSpace: 'normal' as const,
@@ -194,7 +199,7 @@ const promptCss = {
 
 const formCss = {
 	display: 'flex',
-	alignItems: 'center',
+	alignItems: 'stretch',
 	gap: spacing.xs,
 	flexWrap: 'wrap' as const,
 	[mq.mobile]: {
@@ -202,28 +207,78 @@ const formCss = {
 	},
 }
 
-const fieldCss = {
+const nameFieldCss = {
 	display: 'grid',
 	margin: 0,
-	flex: '1 1 8rem',
+	flex: '0 1 9rem',
 	minWidth: '7rem',
 	[mq.mobile]: {
-		flex: '1 1 calc(50% - 0.25rem)',
+		flex: '1 1 6rem',
+		minWidth: '5.5rem',
 	},
+}
+
+const emailGroupCss = {
+	display: 'flex',
+	alignItems: 'stretch',
+	flex: '1 1 14rem',
+	minWidth: '12rem',
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.sm,
+	overflow: 'hidden',
+	backgroundColor: colors.surface,
+	'&:focus-within': {
+		borderColor: colors.primary,
+	},
+	[mq.mobile]: {
+		flex: '1 1 11rem',
+		minWidth: '10rem',
+	},
+}
+
+const emailFieldCss = {
+	display: 'grid',
+	margin: 0,
+	flex: '1 1 auto',
+	minWidth: 0,
 }
 
 const bannerInputCss = {
 	...compactInputCss,
+	height: '100%',
 	backgroundColor: colors.surface,
 	borderRadius: radius.sm,
+}
+
+const emailInputCss = {
+	...bannerInputCss,
+	border: 'none',
+	borderRadius: 0,
+	boxShadow: 'none',
+	outline: 'none',
+	'&:focus': {
+		outline: 'none',
+		boxShadow: 'none',
+		borderColor: 'transparent',
+	},
 }
 
 const submitCss = {
 	...getPrimaryButtonCss({ size: 'md' }),
 	padding: `${spacing.xs} ${spacing.md}`,
 	fontSize: typography.fontSize.sm,
-	borderRadius: radius.sm,
+	borderRadius: 0,
 	flex: '0 0 auto',
+	alignSelf: 'stretch',
+	transform: 'none',
+	'&:not(:disabled):hover': {
+		backgroundColor: colors.primaryHover,
+		transform: 'none',
+	},
+	'&:not(:disabled):active': {
+		backgroundColor: colors.primaryActive,
+		transform: 'none',
+	},
 }
 
 const visuallyHiddenCss = {
