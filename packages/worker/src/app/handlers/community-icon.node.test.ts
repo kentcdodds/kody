@@ -71,7 +71,9 @@ test('community icon handler serves cached R2 bytes for current and pinned commi
 		},
 	})
 	mocks.getCommunityListingById.mockResolvedValue(listing)
-	mocks.getCommunityIconObject.mockImplementation(async () => createIconObject())
+	mocks.getCommunityIconObject.mockImplementation(async () =>
+		createIconObject(),
+	)
 
 	const currentResponse = await callHandler()
 	expect(currentResponse.status).toBe(200)
