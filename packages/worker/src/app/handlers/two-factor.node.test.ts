@@ -2,7 +2,7 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { generateTOTP } from '@epic-web/totp'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
@@ -15,6 +15,17 @@ import { createTwoFactorVerifyApiHandler } from '#app/handlers/verify.ts'
 import { setVerifySessionSecret } from '#app/verify-session.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+
+// The handlers fire `void logAuditEvent(...)` without awaiting it; those
+// promises can resolve after the test ends and leak `audit-event` lines into
+// the runner output once the console spies are restored. Stub the audit sink.
+vi.mock('#app/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	return {
+		...actual,
+		logAuditEvent: async () => undefined,
+	}
+})
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 

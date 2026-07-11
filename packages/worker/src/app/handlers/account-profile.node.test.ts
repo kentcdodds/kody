@@ -1,10 +1,21 @@
-import { beforeAll, expect, test } from 'vitest'
+import { beforeAll, expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountProfileApiHandler } from './account-profile.ts'
+
+// The handler fires `void logAuditEvent(...)` without awaiting it; those
+// promises can resolve after the test ends and leak `audit-event` lines into
+// the runner output once the console spies are restored. Stub the audit sink.
+vi.mock('#app/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	return {
+		...actual,
+		logAuditEvent: async () => undefined,
+	}
+})
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 

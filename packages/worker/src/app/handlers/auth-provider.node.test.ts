@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { HttpResponse, http } from 'msw'
-import { afterAll, afterEach, beforeAll, expect, test } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
 import {
@@ -13,6 +13,17 @@ import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+
+// The handlers fire `void logAuditEvent(...)` without awaiting it; those
+// promises can resolve after the test ends and leak `audit-event` lines into
+// the runner output once the console spies are restored. Stub the audit sink.
+vi.mock('#app/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	return {
+		...actual,
+		logAuditEvent: async () => undefined,
+	}
+})
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 

@@ -11,6 +11,17 @@ import {
 } from '#worker/test-support/console-spies.ts'
 import { createAccountResendVerificationHandler } from './account-resend-verification.ts'
 
+// The handler fires `void logAuditEvent(...)` without awaiting it; those
+// promises can resolve after the test ends and leak `audit-event` lines into
+// the runner output once the console spies are restored. Stub the audit sink.
+vi.mock('#app/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	return {
+		...actual,
+		logAuditEvent: async () => undefined,
+	}
+})
+
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 type StatementMeta = { changes: number; last_row_id: number }
