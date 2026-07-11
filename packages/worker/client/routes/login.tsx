@@ -55,6 +55,18 @@ function shouldOpenInviteSignup(searchParams: URLSearchParams) {
 	return panel === 'invite' || panel === 'code'
 }
 
+function readPrefillInviteCode(searchParams: URLSearchParams) {
+	for (const key of ['code', 'invite'] as const) {
+		const value = searchParams.get(key)?.trim()
+		if (value) return value
+	}
+	return ''
+}
+
+function resolveSignupPanel(searchParams: URLSearchParams): SignupPanel {
+	return shouldOpenInviteSignup(searchParams) ? 'invite' : 'waiting-list'
+}
+
 function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
 	const path = mode === 'signup' ? '/signup' : '/login'
 	return buildAuthLink(path, redirectTo)
@@ -109,9 +121,9 @@ export function LoginRoute(handle: Handle) {
 	let authProvidersReady = false
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
-	let signupPanel: SignupPanel = shouldOpenInviteSignup(getSearchParams(handle))
-		? 'invite'
-		: 'waiting-list'
+	let activeSignupSearch = readRouterSearch(handle)
+	let signupPanel: SignupPanel = resolveSignupPanel(getSearchParams(handle))
+	let prefillInviteCode = readPrefillInviteCode(getSearchParams(handle))
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
 		status = nextStatus
@@ -122,6 +134,11 @@ export function LoginRoute(handle: Handle) {
 	function resetAuthState() {
 		status = 'idle'
 		message = null
+	}
+
+	function applySignupSearch(searchParams: URLSearchParams) {
+		signupPanel = resolveSignupPanel(searchParams)
+		prefillInviteCode = readPrefillInviteCode(searchParams)
 	}
 
 	function setSignupPanel(nextPanel: SignupPanel) {
@@ -369,15 +386,22 @@ export function LoginRoute(handle: Handle) {
 			handle.queueTask(loadSessionAndProviders)
 		}
 		const mode = getCurrentAuthMode(handle)
+		const currentSignupSearch = readRouterSearch(handle)
 		if (!routePath) {
 			routePath = getPathname(handle)
 		}
 		if (mode !== activeMode) {
 			activeMode = mode
 			resetAuthState()
-			signupPanel = shouldOpenInviteSignup(getSearchParams(handle))
-				? 'invite'
-				: 'waiting-list'
+			activeSignupSearch = currentSignupSearch
+			applySignupSearch(getSearchParams(handle))
+		} else if (
+			mode === 'signup' &&
+			currentSignupSearch !== activeSignupSearch
+		) {
+			activeSignupSearch = currentSignupSearch
+			applySignupSearch(getSearchParams(handle))
+			resetAuthState()
 		}
 		const redirectTo = getCurrentRedirectTo(handle)
 		const oauthErrorMessage =
@@ -516,7 +540,7 @@ export function LoginRoute(handle: Handle) {
 								<input
 									type="text"
 									name="inviteCode"
-									required
+									defaultValue={prefillInviteCode}
 									autoComplete="one-time-code"
 									placeholder="Required for production launch cohorts"
 									mix={css(inputCss)}
