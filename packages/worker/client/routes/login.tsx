@@ -168,8 +168,9 @@ export function LoginRoute(handle: Handle) {
 	async function handleWaitingListSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
 
-		const formData = new FormData(event.currentTarget)
+		const formData = new FormData(form)
 		const firstName = String(formData.get('firstName') ?? '').trim()
 		const email = String(formData.get('email') ?? '').trim()
 
@@ -202,8 +203,8 @@ export function LoginRoute(handle: Handle) {
 				typeof payload?.message === 'string'
 					? payload.message
 					: "You're on the list. We'll be in touch."
+			form.reset()
 			setState('success', successMessage)
-			event.currentTarget.reset()
 		} catch {
 			setState('error', 'Network error. Please try again.')
 		}
