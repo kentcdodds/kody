@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
 import { sendCloudflareEmail } from './cloudflare-email.ts'
@@ -94,7 +94,6 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
 	)
 
-	consoleWarn.mockImplementation(() => {})
 	const skippedResult = await sendCloudflareEmail(
 		{},
 		{
@@ -109,16 +108,18 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		ok: false,
 		skipped: true,
 	})
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
-	const [warnReason, warnPayload] = consoleWarn.mock.calls[0]!
-	expect(warnReason).toBe('cloudflare-email-unconfigured')
-	expect(String(warnPayload)).not.toContain('secret body')
-	expect(String(warnPayload)).not.toContain('secret text')
-	expect(String(warnPayload)).not.toContain('recipient@example.com')
-	expect(String(warnPayload)).toContain('***@example.com')
-	expect(String(warnPayload)).toContain('Skipped email')
-	consoleWarn.mockClear()
+	expect(consoleInfo).toHaveBeenCalledTimes(1)
+	const [skipReason, skipPayload] = consoleInfo.mock.calls[0]!
+	expect(skipReason).toBe('cloudflare-email-unconfigured')
+	expect(String(skipPayload)).not.toContain('secret body')
+	expect(String(skipPayload)).not.toContain('secret text')
+	expect(String(skipPayload)).not.toContain('recipient@example.com')
+	expect(String(skipPayload)).toContain('***@example.com')
+	expect(String(skipPayload)).toContain('Skipped email')
 
+	// The transport failure below warns for operators; capture it instead of
+	// letting the console guard fail the test.
+	consoleWarn.mockImplementation(() => {})
 	using _networkFailureServer = createMswNodeServer(
 		[http.post('https://api.cloudflare.test/*', () => HttpResponse.error())],
 		{ onUnhandledRequest: 'bypass' },

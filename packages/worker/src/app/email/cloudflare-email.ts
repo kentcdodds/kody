@@ -57,7 +57,10 @@ function redactRecipients(to: string | Array<string>) {
 }
 
 function logSkippedEmail(reason: string, message: OutboundEmail) {
-	console.warn(
+	// Informational: callers decide whether a skipped send is a problem (the
+	// verification flow throws in production), so an unconfigured client in
+	// local dev / e2e runs must not surface as a warning.
+	console.info(
 		reason,
 		JSON.stringify({
 			to: redactRecipients(message.to),

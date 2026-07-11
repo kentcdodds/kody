@@ -6,6 +6,7 @@ import {
 } from '#app/auth-session.ts'
 import {
 	consoleError,
+	consoleInfo,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 import { createAccountResendVerificationHandler } from './account-resend-verification.ts'
@@ -160,9 +161,6 @@ test('resend verification requires an authenticated session', async () => {
 })
 
 test('resend verification issues a fresh token for unverified accounts and rate-limits repeats', async () => {
-	// No email sender is configured in this test env, so each resend logs
-	// a send-skipped warning.
-	consoleWarn.mockImplementation(() => {})
 	const testDb = createResendTestDb({ emailVerifiedAt: null })
 	const handler = createAccountResendVerificationHandler(
 		createAppEnv(testDb.db),
@@ -181,7 +179,9 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 	}
 	expect(testDb.state.verificationInserts).toBe(3)
 	expect(testDb.state.verificationDeletes).toBe(3)
-	expect(consoleWarn).toHaveBeenCalledWith(
+	// No email sender is configured in this test env, so each resend logs
+	// the send as skipped at info level.
+	expect(consoleInfo).toHaveBeenCalledWith(
 		'email-verification-send-skipped',
 		expect.any(Number),
 	)

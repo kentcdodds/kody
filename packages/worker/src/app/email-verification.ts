@@ -122,7 +122,9 @@ export async function createEmailVerification(input: {
 				sendResult.error ?? 'Verification email could not be sent.',
 			)
 		}
-		console.warn('email-verification-send-skipped', input.userId)
+		// This branch only exists for non-production runtimes (checked above),
+		// so an operator warning would be noise; keep it informational.
+		console.info('email-verification-send-skipped', input.userId)
 	}
 
 	// The new token is delivered (or the send was deliberately skipped in a

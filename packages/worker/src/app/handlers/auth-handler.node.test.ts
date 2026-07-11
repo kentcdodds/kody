@@ -5,6 +5,7 @@ import { createAuthHandler } from '#app/handlers/auth.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import {
 	consoleError,
+	consoleInfo,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 
@@ -340,9 +341,6 @@ function stubCloudflareEmailFetch(
 }
 
 test('auth handler login and signup workflow', async () => {
-	// The signup context has no email sender configured, so the skipped
-	// verification send logs a warning in the non-production runtime.
-	consoleWarn.mockImplementation(() => {})
 	// Production signups must actually deliver the verification email, so
 	// the production context gets a (stubbed) configured Cloudflare sender.
 	const productionContext = createAuthTestContext({ emailConfigured: true })
@@ -432,7 +430,9 @@ test('auth handler login and signup workflow', async () => {
 	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
 		'allowed-user',
 	)
-	expect(consoleWarn).toHaveBeenCalledWith(
+	// The signup context has no email sender configured, so the skipped
+	// verification send logs at info level in the non-production runtime.
+	expect(consoleInfo).toHaveBeenCalledWith(
 		'email-verification-send-skipped',
 		expect.any(Number),
 	)
@@ -583,7 +583,6 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 
 test('production signup fails closed when no verification email sender is configured', async () => {
 	consoleError.mockImplementation(() => {})
-	consoleWarn.mockImplementation(() => {})
 	const context = createAuthTestContext()
 	context.testDb.addInvite('PROD-NO-EMAIL')
 
@@ -606,8 +605,8 @@ test('production signup fails closed when no verification email sender is config
 		expect.any(String),
 		expect.any(Error),
 	)
-	// The skipped send is warned with the unconfigured-sender tag.
-	expect(consoleWarn).toHaveBeenCalledWith(
+	// The skipped send is logged with the unconfigured-sender tag.
+	expect(consoleInfo).toHaveBeenCalledWith(
 		'cloudflare-email-unconfigured',
 		expect.any(String),
 	)
