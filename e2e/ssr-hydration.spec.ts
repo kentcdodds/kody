@@ -40,7 +40,10 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 		readmeContent: longReadme,
 	})
 
-	const htmlResponse = await request.get('/community')
+	// First API request after the multi-second `wrangler d1 execute` seeding
+	// gap can reuse a keep-alive socket the dev server already closed
+	// ("socket hang up"). `maxRetries` enables Playwright's ECONNRESET retry.
+	const htmlResponse = await request.get('/community', { maxRetries: 1 })
 	expect(htmlResponse.ok()).toBe(true)
 	const rawHtml = await htmlResponse.text()
 	expect(rawHtml).toContain(alphaListing.description)

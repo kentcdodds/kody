@@ -18,7 +18,12 @@ test('public pages emit OG meta and serve generated PNG images', async ({
 		ownerEmail: primaryTestUser.email,
 	})
 
-	const homeHtml = await (await request.get('/')).text()
+	// Seeding above shells out to `wrangler d1 execute` for multiple seconds.
+	// Playwright's APIRequestContext pools keep-alive sockets in a
+	// process-global agent, so the first request after that idle gap can race
+	// the dev server closing the stale socket ("socket hang up"/ECONNRESET).
+	// `maxRetries` opts into Playwright's built-in ECONNRESET-only retry.
+	const homeHtml = await (await request.get('/', { maxRetries: 1 })).text()
 	expect(homeHtml).toContain('property="og:image"')
 	expect(homeHtml).toContain('/og/home.png')
 	expect(homeHtml).toContain(
