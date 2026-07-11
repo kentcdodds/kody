@@ -240,6 +240,13 @@ test('community raster icon formats are validated and preserved', async () => {
 			),
 		}),
 	).rejects.toThrow('active external content')
+	expect(
+		findCommunityIconPath({
+			'community-icon.jpeg': '',
+			'community-icon.svg': '',
+		}),
+	).toBe('community-icon.svg')
+	expect(findCommunityIconPath({ 'package.json': '{}' })).toBeNull()
 })
 
 test('community SVG icons load directly from the retained listing snapshot', async () => {
@@ -479,14 +486,4 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 	expect(r2Values.has(r2Key('old-publish'))).toBe(true)
 	expect(getCommunityPublicCacheVersion()).toBe(1)
 	resetDataCacheForTests()
-})
-
-test('community icon path selection is deterministic', () => {
-	expect(
-		findCommunityIconPath({
-			'community-icon.jpeg': '',
-			'community-icon.svg': '',
-		}),
-	).toBe('community-icon.svg')
-	expect(findCommunityIconPath({ 'package.json': '{}' })).toBeNull()
 })

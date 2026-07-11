@@ -156,17 +156,16 @@ function usageRow(
 	}
 }
 
-test('loadAdminUserUsageData returns null for unknown users', async () => {
-	const db = createAdminUserUsageTestDb({ users: [] })
-	const data = await loadAdminUserUsageData(
-		{ APP_DB: db } as Env,
-		42,
-		new Date('2026-07-05T12:00:00.000Z'),
-	)
-	expect(data).toBeNull()
-})
+test('loadAdminUserUsageData returns null for unknown users and zeroed usage for empty rollups', async () => {
+	const emptyDb = createAdminUserUsageTestDb({ users: [] })
+	expect(
+		await loadAdminUserUsageData(
+			{ APP_DB: emptyDb } as Env,
+			42,
+			new Date('2026-07-05T12:00:00.000Z'),
+		),
+	).toBeNull()
 
-test('loadAdminUserUsageData returns zeroed usage for empty rollups', async () => {
 	const email = 'empty-usage@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
 	const db = createAdminUserUsageTestDb({

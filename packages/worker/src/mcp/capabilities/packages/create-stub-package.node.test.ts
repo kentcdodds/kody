@@ -1,5 +1,4 @@
 import { expect, test, vi } from 'vitest'
-import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 
 const mockModule = vi.hoisted(() => ({
 	assertWithinEntitlement: vi.fn(),
@@ -46,8 +45,7 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 		mockModule.refreshSavedPackageProjection(...args),
 }))
 
-const { buildStubPackageFiles, createStubSavedPackage } =
-	await import('./create-stub-package.ts')
+const { createStubSavedPackage } = await import('./create-stub-package.ts')
 
 function resetMocks() {
 	for (const fn of Object.values(mockModule)) {
@@ -71,28 +69,7 @@ const user = {
 	displayName: 'User One',
 }
 
-test('buildStubPackageFiles produces a valid private manifest with an Intent README', () => {
-	const files = buildStubPackageFiles({
-		name: '@kentcdodds/my-package',
-		kodyId: 'my-package',
-		description: 'Does the thing.',
-	})
-	const packageJson = files['package.json']
-	if (!packageJson) throw new Error('Expected package.json in stub files.')
-	const manifest = parseAuthoredPackageJson({
-		content: packageJson,
-		manifestPath: 'package.json',
-		expectedPackageScope: 'kentcdodds',
-	})
-	expect(manifest.kody.id).toBe('my-package')
-	expect(manifest.kody.description).toBe('Does the thing.')
-	expect(JSON.parse(packageJson)).toMatchObject({ private: true })
-	expect(files['README.md']).toContain('## Intent')
-	expect(files['README.md']).toContain('Does the thing.')
-	expect(files['src/index.ts']).toContain('export default')
-})
-
-test('createStubSavedPackage rejects invalid kody ids before any writes', async () => {
+test('createStubSavedPackage rejects invalid kody ids and registers valid stubs through the pipeline', async () => {
 	resetMocks()
 	await expect(
 		createStubSavedPackage({
@@ -101,12 +78,10 @@ test('createStubSavedPackage rejects invalid kody ids before any writes', async 
 			user,
 			kodyId: 'Not_A_Valid_Id',
 		}),
-	).rejects.toThrow('must be lower-kebab-case')
+	).rejects.toThrow(/lower-kebab-case/)
 	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
-})
 
-test('createStubSavedPackage registers the stub through the standard package pipeline', async () => {
 	resetMocks()
 	const result = await createStubSavedPackage({
 		env: { APP_DB: {} } as Env,

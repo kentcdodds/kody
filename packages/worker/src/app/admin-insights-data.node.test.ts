@@ -14,43 +14,38 @@ import {
 
 const now = new Date('2026-07-08T12:00:00.000Z')
 
-test('utcWeekStart returns the UTC Monday of the containing week', () => {
+test('admin insights date helpers bucket, zero-fill, and fold correctly', () => {
 	// 2026-07-08 is a Wednesday; 2026-07-06 is the Monday before.
 	expect(utcWeekStart(new Date('2026-07-08T12:00:00.000Z'))).toBe('2026-07-06')
 	expect(utcWeekStart(new Date('2026-07-06T00:00:00.000Z'))).toBe('2026-07-06')
 	// Sunday belongs to the week that started the previous Monday.
 	expect(utcWeekStart(new Date('2026-07-05T23:59:59.000Z'))).toBe('2026-06-29')
-})
 
-test('listUtcWeekStarts and listUtcDayKeys are oldest-first and end at now', () => {
 	const weeks = listUtcWeekStarts(now, 3)
 	expect(weeks).toEqual(['2026-06-22', '2026-06-29', '2026-07-06'])
 	const days = listUtcDayKeys(now, 3)
 	expect(days).toEqual(['2026-07-06', '2026-07-07', '2026-07-08'])
 	expect(listUtcMonthKeys(now, 3)).toEqual(['2026-05', '2026-06', '2026-07'])
-})
 
-test('buildSignupWeeks buckets daily rows into weeks and accumulates totals', () => {
-	const result = buildSignupWeeks({
-		dayRows: [
-			{ day: '2026-06-23', n: 2 },
-			{ day: '2026-06-29', n: 1 },
-			{ day: '2026-07-04', n: 3 },
-			{ day: '2026-07-08', n: 5 },
-		],
-		usersBeforeWindow: 10,
-		now,
-		weeks: 3,
-	})
-	expect(result).toEqual([
+	expect(
+		buildSignupWeeks({
+			dayRows: [
+				{ day: '2026-06-23', n: 2 },
+				{ day: '2026-06-29', n: 1 },
+				{ day: '2026-07-04', n: 3 },
+				{ day: '2026-07-08', n: 5 },
+			],
+			usersBeforeWindow: 10,
+			now,
+			weeks: 3,
+		}),
+	).toEqual([
 		{ weekStart: '2026-06-22', signups: 2, cumulativeUsers: 12 },
 		{ weekStart: '2026-06-29', signups: 4, cumulativeUsers: 16 },
 		{ weekStart: '2026-07-06', signups: 5, cumulativeUsers: 21 },
 	])
-})
 
-test('buildUsageMonths zero-fills months and ignores unknown metrics', () => {
-	const result = buildUsageMonths(
+	const usageMonths = buildUsageMonths(
 		[
 			{ month: '2026-06', metric: 'execute', events: 7, errors: 1 },
 			{ month: '2026-06', metric: 'job_run', events: 3, errors: 0 },
@@ -59,17 +54,18 @@ test('buildUsageMonths zero-fills months and ignores unknown metrics', () => {
 		now,
 		2,
 	)
-	expect(result.map((month) => month.month)).toEqual(['2026-06', '2026-07'])
-	expect(result[0]?.events.execute).toBe(7)
-	expect(result[0]?.events.job_run).toBe(3)
-	expect(result[0]?.errorCount).toBe(1)
-	expect(result[1]?.errorCount).toBe(0)
-	expect(Object.values(result[1]?.events ?? {}).every((n) => n === 0)).toBe(
-		true,
-	)
-})
+	expect(usageMonths.map((month) => month.month)).toEqual([
+		'2026-06',
+		'2026-07',
+	])
+	expect(usageMonths[0]?.events.execute).toBe(7)
+	expect(usageMonths[0]?.events.job_run).toBe(3)
+	expect(usageMonths[0]?.errorCount).toBe(1)
+	expect(usageMonths[1]?.errorCount).toBe(0)
+	expect(
+		Object.values(usageMonths[1]?.events ?? {}).every((n) => n === 0),
+	).toBe(true)
 
-test('buildEmailDays and buildAuthDays zero-fill the window', () => {
 	const emailDays = buildEmailDays(
 		[
 			{ day: '2026-07-07', resource: 'email_sends_per_day', n: 4 },
@@ -98,17 +94,16 @@ test('buildEmailDays and buildAuthDays zero-fill the window', () => {
 		failure: 2,
 		rateLimited: 1,
 	})
-})
 
-test('buildHeatmapCells folds days into weekday x hour cells', () => {
 	// 2026-07-01 and 2026-07-08 are both Wednesdays (weekday 3).
-	const cells = buildHeatmapCells([
-		{ day: '2026-07-01', hour: '09', n: 2 },
-		{ day: '2026-07-08', hour: '09', n: 3 },
-		{ day: '2026-07-05', hour: '23', n: 1 },
-		{ day: '2026-07-05', hour: 'xx', n: 5 },
-	])
-	expect(cells).toEqual([
+	expect(
+		buildHeatmapCells([
+			{ day: '2026-07-01', hour: '09', n: 2 },
+			{ day: '2026-07-08', hour: '09', n: 3 },
+			{ day: '2026-07-05', hour: '23', n: 1 },
+			{ day: '2026-07-05', hour: 'xx', n: 5 },
+		]),
+	).toEqual([
 		{ weekday: 0, hour: 23, count: 1 },
 		{ weekday: 3, hour: 9, count: 5 },
 	])

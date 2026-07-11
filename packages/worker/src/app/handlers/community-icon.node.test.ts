@@ -58,10 +58,9 @@ function callHandler(iconCommit = listing.iconCommit) {
 	} as never)
 }
 
-test('community icon handler serves cached R2 bytes for the current icon commit', async () => {
+test('community icon handler serves cached R2 bytes for current and pinned commits', async () => {
 	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
-	mocks.getCommunityListingById.mockResolvedValue(listing)
-	mocks.getCommunityIconObject.mockResolvedValue({
+	const createIconObject = () => ({
 		descriptor: {
 			byteLength: bytes.byteLength,
 			contentType: 'image/png',
@@ -71,34 +70,21 @@ test('community icon handler serves cached R2 bytes for the current icon commit'
 			httpEtag: '"icon-etag"',
 		},
 	})
+	mocks.getCommunityListingById.mockResolvedValue(listing)
+	mocks.getCommunityIconObject.mockImplementation(async () => createIconObject())
 
-	const response = await callHandler()
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toBe('image/png')
-	expect(response.headers.get('ETag')).toBe('"icon-etag"')
-	expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
-	expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
+	const currentResponse = await callHandler()
+	expect(currentResponse.status).toBe(200)
+	expect(currentResponse.headers.get('Content-Type')).toBe('image/png')
+	expect(currentResponse.headers.get('ETag')).toBe('"icon-etag"')
+	expect(currentResponse.headers.get('X-Content-Type-Options')).toBe('nosniff')
+	expect(new Uint8Array(await currentResponse.arrayBuffer())).toEqual(bytes)
 	expect(mocks.getCommunityIconObject).toHaveBeenCalledWith(
 		expect.objectContaining({ iconCommit: listing.iconCommit }),
 	)
-})
 
-test('community icon handler keeps serving the pinned snapshot commit', async () => {
-	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
-	mocks.getCommunityListingById.mockResolvedValue(listing)
-	mocks.getCommunityIconObject.mockResolvedValue({
-		descriptor: {
-			byteLength: bytes.byteLength,
-			contentType: 'image/png',
-		},
-		object: {
-			body: new Blob([bytes]).stream(),
-			httpEtag: '"icon-etag"',
-		},
-	})
-
-	const response = await callHandler(listing.pinnedCommit)
-	expect(response.status).toBe(200)
+	const pinnedResponse = await callHandler(listing.pinnedCommit)
+	expect(pinnedResponse.status).toBe(200)
 	expect(mocks.getCommunityIconObject).toHaveBeenCalledWith(
 		expect.objectContaining({ iconCommit: listing.pinnedCommit }),
 	)
