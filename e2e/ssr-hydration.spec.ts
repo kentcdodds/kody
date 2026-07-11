@@ -68,6 +68,12 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	})
 
 	await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+	// Clicking auto-scrolls the link into view, which the router saves as the
+	// pop-restoration position. Make that scroll explicit and measure the
+	// position the click actually navigates from.
+	await page
+		.getByRole('link', { name: alphaListing.name })
+		.scrollIntoViewIfNeeded()
 	const communityScrollY = await page.evaluate(() => window.scrollY)
 	expect(communityScrollY).toBeGreaterThan(0)
 
@@ -97,9 +103,11 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	await expect(page.getByText(alphaListing.description)).toBeVisible({
 		timeout: 15_000,
 	})
+	// Restoration must land back at the saved bottom-of-list position, not
+	// merely somewhere below the detail page's small offset.
 	await expect
 		.poll(() => page.evaluate(() => window.scrollY), { timeout: 15_000 })
-		.toBeGreaterThan(detailScrollY + 20)
+		.toBeGreaterThanOrEqual(communityScrollY - 2)
 
 	await page
 		.getByRole('link', { name: betaListing.name })

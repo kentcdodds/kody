@@ -1,4 +1,4 @@
-import { beforeEach, vi, type MockInstance } from 'vitest'
+import { afterEach, beforeEach, vi, type MockInstance } from 'vitest'
 
 // Epic Stack-style console guard. Tests fail loudly when code under test
 // calls console.error/console.warn unless the test opts in with
@@ -36,4 +36,14 @@ beforeEach(() => {
 		.mockImplementation(failOnUnexpectedCall('warn', originalWarn))
 	consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {})
 	consoleDebug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+})
+
+// vitest-shared.ts enables clearMocks/mockReset but not restoreMocks, so
+// restore these spies explicitly to hand the real console methods back
+// between tests instead of leaving spy wrappers installed.
+afterEach(() => {
+	consoleError.mockRestore()
+	consoleWarn.mockRestore()
+	consoleInfo.mockRestore()
+	consoleDebug.mockRestore()
 })

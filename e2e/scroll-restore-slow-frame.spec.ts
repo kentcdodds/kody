@@ -34,6 +34,10 @@ test('scroll restoration retries until slow frame content makes the saved positi
 	await page.setViewportSize({ width: 900, height: 320 })
 
 	await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+	// Clicking auto-scrolls the link into view, which the router saves as the
+	// pop-restoration position. Make that scroll explicit and measure the
+	// position the click actually navigates from.
+	await page.getByRole('link', { name: listing.name }).scrollIntoViewIfNeeded()
 	const communityScrollY = await page.evaluate(() => window.scrollY)
 	expect(communityScrollY).toBeGreaterThan(0)
 
@@ -71,7 +75,9 @@ test('scroll restoration retries until slow frame content makes the saved positi
 	await expect(page.getByText(listing.description)).toBeVisible({
 		timeout: 10_000,
 	})
+	// Restoration must land back at the saved bottom-of-list position, not
+	// merely somewhere below the detail page's small offset.
 	await expect
 		.poll(() => page.evaluate(() => window.scrollY), { timeout: 10_000 })
-		.toBeGreaterThan(detailScrollY + 20)
+		.toBeGreaterThanOrEqual(communityScrollY - 2)
 })

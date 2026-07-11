@@ -90,6 +90,15 @@ function isRouterNavigationEvent(
 // position, and retries stop early on user scroll or the next navigation.
 const scrollRestorationDeadlineMs = 15_000
 
+// Input that signals the user has taken over scrolling; mousedown covers
+// scrollbar drags.
+const userScrollInputEvents = [
+	'wheel',
+	'touchmove',
+	'keydown',
+	'mousedown',
+] as const
+
 function maxWindowScrollPosition(): ScrollPosition {
 	const root = document.documentElement
 	return {
@@ -149,8 +158,22 @@ function restoreWindowScroll(
 	})
 	const requestId = ++restoreScrollRequestId
 	const startedAt = Date.now()
-	let lastAppliedX: number | null = null
-	let lastAppliedY: number | null = null
+	// Restoration must never fight manual scrolling, but layout-driven shifts
+	// (scroll anchoring, async content replacing nodes above the viewport) can
+	// move the position between attempts without any user involvement. Watch
+	// for real input instead of comparing positions across attempts.
+	let userInteracted = false
+	const markUserInteraction = () => {
+		userInteracted = true
+	}
+	for (const eventName of userScrollInputEvents) {
+		window.addEventListener(eventName, markUserInteraction, { passive: true })
+	}
+	const stopListening = () => {
+		for (const eventName of userScrollInputEvents) {
+			window.removeEventListener(eventName, markUserInteraction)
+		}
+	}
 	const schedule = (run: () => void) => {
 		if (typeof window.requestAnimationFrame === 'function') {
 			window.requestAnimationFrame(run)
@@ -159,21 +182,19 @@ function restoreWindowScroll(
 		window.setTimeout(run, 0)
 	}
 	const attempt = () => {
-		if (signal.aborted || requestId !== restoreScrollRequestId) return
-		// Stop retrying when something else (like the user) scrolled between
-		// attempts; restoration must never fight manual scrolling.
 		if (
-			lastAppliedY !== null &&
-			(window.scrollX !== lastAppliedX || window.scrollY !== lastAppliedY)
+			signal.aborted ||
+			requestId !== restoreScrollRequestId ||
+			userInteracted
 		) {
+			stopListening()
 			return
 		}
 		const isFinalAttempt = Date.now() - startedAt >= scrollRestorationDeadlineMs
 		if (applyWindowScroll(detail, target, isFinalAttempt) || isFinalAttempt) {
+			stopListening()
 			return
 		}
-		lastAppliedX = window.scrollX
-		lastAppliedY = window.scrollY
 		schedule(attempt)
 	}
 	schedule(attempt)
