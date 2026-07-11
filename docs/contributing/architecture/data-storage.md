@@ -223,11 +223,14 @@ descriptor from `BUNDLE_ARTIFACTS_KV` and streams the referenced R2 object.
 Source files remain in the listing's pinned Artifacts commit; R2 stores only
 validated derived output or a generated fallback.
 
-- Keys use `community-icon:v1/{listingId}/{pinnedCommit}/asset`.
-- Descriptor keys include the same listing id and pinned commit, so re-publish
-  cannot serve an older icon.
-- Unpublish, admin hard delete, re-publish, and account deletion remove known
-  descriptor and object keys.
+- Keys use `community-icon:v1/{listingId}/{commit}/asset`, where the commit is
+  the listing's icon commit (the owner package's current published commit) or
+  its pinned snapshot commit.
+- Descriptor keys include the same listing id and commit, so package publish and
+  listing re-publish cannot serve an older icon.
+- Unpublish, admin hard delete, and re-publish prune all descriptor and object
+  keys under the listing prefix; package publish prunes superseded commits;
+  account deletion removes the pinned and icon commit keys derived from D1.
 - Bucket names are `kody-community-assets` in production and
   `{worker}-community-assets` for preview deployments.
 
@@ -585,9 +588,10 @@ or a deliberate retention note.
 
 App-owned R2 keys are:
 
-- `community-icon:v1/{listingId}/{pinnedCommit}/asset` — processed public
-  community icon bytes. The listing id is the public ownership boundary; account
-  deletion derives keys from the owner's listing rows.
+- `community-icon:v1/{listingId}/{commit}/asset` — processed public community
+  icon bytes at the listing's pinned or icon commit. The listing id is the
+  public ownership boundary; account deletion derives keys from the owner's
+  listing rows and their joined package source commits.
 
 - `email-raw:v1:{userId}/{messageId}` — raw email MIME for the message row that
   stores this key in `email_messages.raw_mime_key`. The `userId` prefix is part

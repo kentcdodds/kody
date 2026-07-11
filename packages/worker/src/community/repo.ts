@@ -33,6 +33,10 @@ function mapCommunityListingRow(
 			row['readme_content'] == null ? null : String(row['readme_content']),
 		license: String(row['license']),
 		pinnedCommit: String(row['pinned_commit']),
+		iconCommit:
+			row['source_published_commit'] == null
+				? String(row['pinned_commit'])
+				: String(row['source_published_commit']),
 		status: String(row['status']) as CommunityListingStatus,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
@@ -88,8 +92,28 @@ function mapCommunityBanRow(row: Record<string, unknown>): CommunityBanRecord {
 }
 
 function listingStatusFilter(includeDelisted: boolean) {
-	return includeDelisted ? '' : `WHERE status = 'active'`
+	return includeDelisted ? '' : `WHERE community_listings.status = 'active'`
 }
+
+/**
+ * Listing reads join the owner package's entity source so the icon commit
+ * (`source_published_commit`) tracks the latest package publish. The join is
+ * scoped to the listing owner + package so a foreign source row can never
+ * leak a commit into another user's listing.
+ */
+const communityListingSelectColumns = `community_listings.id, community_listings.owner_user_id,
+	community_listings.package_id, community_listings.source_id, community_listings.kody_id,
+	community_listings.name, community_listings.description, community_listings.tags_json,
+	community_listings.search_text, community_listings.readme_content, community_listings.license,
+	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
+	community_listings.updated_at, community_listings.published_at,
+	entity_sources.published_commit AS source_published_commit`
+
+const communityListingSourceJoin = `LEFT JOIN entity_sources
+	ON entity_sources.id = community_listings.source_id
+	AND entity_sources.user_id = community_listings.owner_user_id
+	AND entity_sources.entity_kind = 'package'
+	AND entity_sources.entity_id = community_listings.package_id`
 
 // D1 caps bound parameters per statement, so IN (...) lookups over large id
 // sets are issued in chunks (90 leaves headroom for fixed bindings).
@@ -230,14 +254,15 @@ export async function getCommunityListingById(
 		includeDelisted: boolean
 	},
 ): Promise<CommunityListingRecord | null> {
-	const statusClause = input.includeDelisted ? '' : `AND status = 'active'`
+	const statusClause = input.includeDelisted
+		? ''
+		: `AND community_listings.status = 'active'`
 	const row = await db
 		.prepare(
-			`SELECT id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, search_text, readme_content, license, pinned_commit, status,
-				created_at, updated_at, published_at
+			`SELECT ${communityListingSelectColumns}
 			FROM community_listings
-			WHERE id = ? ${statusClause}`,
+			${communityListingSourceJoin}
+			WHERE community_listings.id = ? ${statusClause}`,
 		)
 		.bind(input.listingId)
 		.first<Record<string, unknown>>()
@@ -253,11 +278,10 @@ export async function getCommunityListingByOwnerAndPackage(
 ): Promise<CommunityListingRecord | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, search_text, readme_content, license, pinned_commit, status,
-				created_at, updated_at, published_at
+			`SELECT ${communityListingSelectColumns}
 			FROM community_listings
-			WHERE owner_user_id = ? AND package_id = ?`,
+			${communityListingSourceJoin}
+			WHERE community_listings.owner_user_id = ? AND community_listings.package_id = ?`,
 		)
 		.bind(input.ownerUserId, input.packageId)
 		.first<Record<string, unknown>>()
@@ -274,12 +298,11 @@ export async function listCommunityListings(
 ): Promise<Array<CommunityListingRecord>> {
 	const rows = await db
 		.prepare(
-			`SELECT id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, search_text, readme_content, license, pinned_commit, status,
-				created_at, updated_at, published_at
+			`SELECT ${communityListingSelectColumns}
 			FROM community_listings
+			${communityListingSourceJoin}
 			${listingStatusFilter(input.includeDelisted)}
-			ORDER BY published_at DESC
+			ORDER BY community_listings.published_at DESC
 			LIMIT ? OFFSET ?`,
 		)
 		.bind(input.limit, input.offset)
@@ -304,7 +327,7 @@ export async function listCommunityListingCandidates(
 	const conditions: Array<string> = []
 	const bindings: Array<unknown> = []
 	if (!input.includeDelisted) {
-		conditions.push(`status = 'active'`)
+		conditions.push(`community_listings.status = 'active'`)
 	}
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
@@ -312,7 +335,7 @@ export async function listCommunityListingCandidates(
 			const pattern = `%${token}%`
 			const columnClauses = communityListingSearchTextColumns.map((column) => {
 				bindings.push(pattern)
-				return `${column} LIKE ?`
+				return `community_listings.${column} LIKE ?`
 			})
 			return `(${columnClauses.join(' OR ')})`
 		})
@@ -322,12 +345,11 @@ export async function listCommunityListingCandidates(
 		conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 	const rows = await db
 		.prepare(
-			`SELECT id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, search_text, readme_content, license, pinned_commit, status,
-				created_at, updated_at, published_at
+			`SELECT ${communityListingSelectColumns}
 			FROM community_listings
+			${communityListingSourceJoin}
 			${whereClause}
-			ORDER BY published_at DESC
+			ORDER BY community_listings.published_at DESC
 			LIMIT ?`,
 		)
 		.bind(...bindings, input.limit)

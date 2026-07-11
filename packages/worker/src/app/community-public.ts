@@ -19,7 +19,7 @@ export function truncateCommunityText(text: string, maxLength: number) {
 
 export function buildCommunityIconUrl(input: {
 	listingId: string
-	pinnedCommit: string
+	iconCommit: string
 }) {
 	return routes.communityDetailIcon.href(input)
 }
@@ -34,7 +34,7 @@ export function toPublicCommunityListing(
 		description: listing.description,
 		iconUrl: buildCommunityIconUrl({
 			listingId: listing.id,
-			pinnedCommit: listing.pinnedCommit,
+			iconCommit: listing.iconCommit,
 		}),
 		tags: listing.tags,
 		readmeContent: listing.readmeContent,

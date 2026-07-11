@@ -38,26 +38,27 @@ const listing = {
 	readmeContent: null,
 	license: 'MIT',
 	pinnedCommit: 'abc123',
+	iconCommit: 'def456',
 	status: 'active',
 	createdAt: '2026-07-10T00:00:00.000Z',
 	updatedAt: '2026-07-10T00:00:00.000Z',
 	publishedAt: '2026-07-10T00:00:00.000Z',
 } satisfies CommunityListingRecord
 
-function callHandler(pinnedCommit = listing.pinnedCommit) {
+function callHandler(iconCommit = listing.iconCommit) {
 	const handler = createCommunityIconHandler({ APP_DB: {} } as Env)
 	return handler.handler({
 		request: new Request(
-			`https://example.com/community/${listing.id}/icon/${pinnedCommit}`,
+			`https://example.com/community/${listing.id}/icon/${iconCommit}`,
 		),
-		params: { listingId: listing.id, pinnedCommit },
+		params: { listingId: listing.id, iconCommit },
 		url: new URL(
-			`https://example.com/community/${listing.id}/icon/${pinnedCommit}`,
+			`https://example.com/community/${listing.id}/icon/${iconCommit}`,
 		),
 	} as never)
 }
 
-test('community icon handler serves cached R2 bytes for the pinned listing', async () => {
+test('community icon handler serves cached R2 bytes for the current icon commit', async () => {
 	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
 	mocks.getCommunityListingById.mockResolvedValue(listing)
 	mocks.getCommunityIconObject.mockResolvedValue({
@@ -77,6 +78,30 @@ test('community icon handler serves cached R2 bytes for the pinned listing', asy
 	expect(response.headers.get('ETag')).toBe('"icon-etag"')
 	expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
 	expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
+	expect(mocks.getCommunityIconObject).toHaveBeenCalledWith(
+		expect.objectContaining({ iconCommit: listing.iconCommit }),
+	)
+})
+
+test('community icon handler keeps serving the pinned snapshot commit', async () => {
+	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+	mocks.getCommunityListingById.mockResolvedValue(listing)
+	mocks.getCommunityIconObject.mockResolvedValue({
+		descriptor: {
+			byteLength: bytes.byteLength,
+			contentType: 'image/png',
+		},
+		object: {
+			body: new Blob([bytes]).stream(),
+			httpEtag: '"icon-etag"',
+		},
+	})
+
+	const response = await callHandler(listing.pinnedCommit)
+	expect(response.status).toBe(200)
+	expect(mocks.getCommunityIconObject).toHaveBeenCalledWith(
+		expect.objectContaining({ iconCommit: listing.pinnedCommit }),
+	)
 })
 
 test('community icon handler rejects stale commit URLs and degrades to a safe fallback', async () => {

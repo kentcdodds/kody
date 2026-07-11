@@ -162,15 +162,25 @@ function createTestDb(initial: RowMap): {
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower ===
-								'select id, pinned_commit from community_listings where owner_user_id = ?'
+								lower.startsWith(
+									'select community_listings.id, community_listings.pinned_commit',
+								)
 							) {
 								results = (rows.community_listings ?? [])
 									.filter((row) => row['owner_user_id'] === userId)
-									.map((row) => ({
-										id: row['id'],
-										pinned_commit: row['pinned_commit'],
-									}))
+									.map((row) => {
+										const source = (rows.entity_sources ?? []).find(
+											(sourceRow) =>
+												sourceRow['id'] === row['source_id'] &&
+												sourceRow['user_id'] === row['owner_user_id'],
+										)
+										return {
+											id: row['id'],
+											pinned_commit: row['pinned_commit'],
+											source_published_commit:
+												source?.['published_commit'] ?? null,
+										}
+									})
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							const m = lower.match(/^select id from (\w+) where user_id = \?/)
@@ -591,7 +601,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 		],
 		community_listings: [
-			{ id: 'listing-1', owner_user_id: userAaa, pinned_commit: 'commit-1' },
+			{
+				id: 'listing-1',
+				owner_user_id: userAaa,
+				pinned_commit: 'commit-1',
+				source_id: 'src-1',
+			},
 			{ id: 'listing-2', owner_user_id: userBbb, pinned_commit: 'commit-2' },
 		],
 		community_forks: [
@@ -844,6 +859,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedKvKeys.sort()).toEqual([
 		'bundle-artifact:v1:src-1',
 		'community-snapshot:v1:listing-1',
+		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
@@ -869,10 +885,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_reports).toBe(1)
 	expect(result.deletedRowCounts.community_bans).toBe(1)
 	expect(result.updatedRowCounts.community_bans).toBe(1)
-	expect(result.deletedKvKeys).toBe(12)
-	expect(result.deletedCommunityAssets).toBe(1)
+	expect(result.deletedKvKeys).toBe(13)
+	expect(result.deletedCommunityAssets).toBe(2)
 	expect(result.deletedEmailBlobs).toBe(1)
-	expect(deletedCommunityAssetKeys).toEqual([
+	// Both the pinned snapshot revision and the current icon commit revision
+	// (the source's published commit) are removed.
+	expect(deletedCommunityAssetKeys.sort()).toEqual([
+		'community-icon:v1/listing-1/abc123/asset',
 		'community-icon:v1/listing-1/commit-1/asset',
 	])
 	expect(result.deletedVectors).toBe(5)

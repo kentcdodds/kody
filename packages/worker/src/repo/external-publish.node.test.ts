@@ -8,6 +8,7 @@ const mockModule = vi.hoisted(() => ({
 	deletePublishedSourceSnapshot: vi.fn(async () => undefined),
 	loadPublishedSourceSnapshot: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
+	refreshCommunityIconForPackagePublish: vi.fn(async () => undefined),
 	hasPublishedRuntimeArtifacts: vi.fn(() => false),
 }))
 
@@ -36,6 +37,11 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 vi.mock('#worker/package-registry/service.ts', () => ({
 	refreshSavedPackageProjection: (...args: Array<unknown>) =>
 		mockModule.refreshSavedPackageProjection(...args),
+}))
+
+vi.mock('#worker/community/community-icon.ts', () => ({
+	refreshCommunityIconForPackagePublish: (...args: Array<unknown>) =>
+		mockModule.refreshCommunityIconForPackagePublish(...args),
 }))
 
 const { publishFromExternalRef } = await import('./external-publish.ts')
@@ -103,6 +109,16 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		expect.anything(),
 		expect.objectContaining({
 			id: 'source-1',
+			publishedCommit: 'commit-new',
+		}),
+	)
+	// A successful package publish refreshes the community listing icon so
+	// updated community-icon.* files become publicly visible without a
+	// community republish.
+	expect(mockModule.refreshCommunityIconForPackagePublish).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			packageId: 'package-1',
 			publishedCommit: 'commit-new',
 		}),
 	)
@@ -365,6 +381,10 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 			publishedCommit: 'commit-old',
 		}),
 	)
+	// Failed publishes must not invalidate community icon caches.
+	expect(
+		mockModule.refreshCommunityIconForPackagePublish,
+	).not.toHaveBeenCalled()
 
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)

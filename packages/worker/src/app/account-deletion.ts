@@ -100,6 +100,7 @@ type UserPackageServiceSnapshot = {
 type UserCommunityListingSnapshot = {
 	id: string
 	pinnedCommit: string
+	iconCommit: string
 }
 
 type UserDeletionInventory = {
@@ -322,13 +323,26 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 
 async function listUserCommunityListings(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
-		`SELECT id, pinned_commit FROM community_listings WHERE owner_user_id = ?`,
+		`SELECT community_listings.id, community_listings.pinned_commit,
+			entity_sources.published_commit AS source_published_commit
+		FROM community_listings
+		LEFT JOIN entity_sources
+			ON entity_sources.id = community_listings.source_id
+			AND entity_sources.user_id = community_listings.owner_user_id
+			AND entity_sources.entity_kind = 'package'
+			AND entity_sources.entity_id = community_listings.package_id
+		WHERE community_listings.owner_user_id = ?`,
 	)
 		.bind(userId)
-		.all<{ id: string; pinned_commit: string }>()
+		.all<{
+			id: string
+			pinned_commit: string
+			source_published_commit: string | null
+		}>()
 	return (rows.results ?? []).map((row) => ({
 		id: row.id,
 		pinnedCommit: row.pinned_commit,
+		iconCommit: row.source_published_commit ?? row.pinned_commit,
 	}))
 }
 
@@ -364,7 +378,12 @@ async function listUserBundleKvKeys(input: {
 			derivedCacheKeyPrefix +
 				buildCommunityIconCacheKey({
 					listingId: listing.id,
-					pinnedCommit: listing.pinnedCommit,
+					commit: listing.pinnedCommit,
+				}),
+			derivedCacheKeyPrefix +
+				buildCommunityIconCacheKey({
+					listingId: listing.id,
+					commit: listing.iconCommit,
 				}),
 		]),
 	])
@@ -1104,11 +1123,17 @@ export async function deleteUserAccount(input: {
 
 	result.deletedCommunityAssets = await deleteR2Objects({
 		blobs: input.env.COMMUNITY_ASSETS,
-		keys: inventory.communityListings.map((listing) =>
-			buildCommunityIconR2Key({
-				listingId: listing.id,
-				pinnedCommit: listing.pinnedCommit,
-			}),
+		keys: uniqueStrings(
+			inventory.communityListings.flatMap((listing) => [
+				buildCommunityIconR2Key({
+					listingId: listing.id,
+					commit: listing.pinnedCommit,
+				}),
+				buildCommunityIconR2Key({
+					listingId: listing.id,
+					commit: listing.iconCommit,
+				}),
+			]),
 		),
 		label: 'Community asset',
 		warnings,

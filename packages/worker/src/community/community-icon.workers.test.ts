@@ -22,6 +22,7 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 		readmeContent: null,
 		license: 'MIT',
 		pinnedCommit: 'abc123',
+		iconCommit: 'abc123',
 		status: 'active',
 		createdAt: '2026-07-10T00:00:00.000Z',
 		updatedAt: '2026-07-10T00:00:00.000Z',
@@ -30,13 +31,13 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
 	const r2Key = buildCommunityIconR2Key({
 		listingId: listing.id,
-		pinnedCommit: listing.pinnedCommit,
+		commit: listing.iconCommit,
 	})
 	const cacheKey =
 		derivedCacheKeyPrefix +
 		buildCommunityIconCacheKey({
 			listingId: listing.id,
-			pinnedCommit: listing.pinnedCommit,
+			commit: listing.iconCommit,
 		})
 	await env.COMMUNITY_ASSETS.put(r2Key, bytes, {
 		httpMetadata: { contentType: 'image/png' },
@@ -51,7 +52,7 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 			value: {
 				version: 1,
 				listingId: listing.id,
-				pinnedCommit: listing.pinnedCommit,
+				iconCommit: listing.iconCommit,
 				r2Key,
 				contentType: 'image/png',
 				sourcePath: 'community-icon.png',
@@ -63,6 +64,7 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 	const result = await getCommunityIconObject({
 		env,
 		listing,
+		iconCommit: listing.iconCommit,
 	})
 
 	expect(result.descriptor.r2Key).toBe(r2Key)

@@ -1,10 +1,18 @@
 import { cachified } from '@epic-web/cachified'
 import { Resvg } from '@resvg/resvg-wasm'
-import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
+import {
+	createKvCachifiedCache,
+	derivedCacheKeyPrefix,
+} from '#worker/kv-cachified.ts'
 import { ensureRenderPipelineReady } from '#worker/og/render.ts'
-import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
+import { readFirstArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { getCommunityListingById } from './repo.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
+import {
+	getCommunityListingById,
+	getCommunityListingByOwnerAndPackage,
+} from './repo.ts'
 import { readCommunitySnapshot } from './snapshot.ts'
 import { type CommunityListingRecord } from './types.ts'
 
@@ -29,7 +37,7 @@ type CommunityIconContentType = 'image/png' | 'image/webp' | 'image/jpeg'
 type CommunityIconDescriptor = {
 	version: typeof communityIconVersion
 	listingId: string
-	pinnedCommit: string
+	iconCommit: string
 	r2Key: string
 	contentType: CommunityIconContentType
 	sourcePath: (typeof communityIconPaths)[number] | null
@@ -43,16 +51,24 @@ type ProcessedCommunityIcon = {
 
 export function buildCommunityIconCacheKey(input: {
 	listingId: string
-	pinnedCommit: string
+	commit: string
 }) {
-	return `community-icon:v${communityIconVersion}:${input.listingId}:${input.pinnedCommit}`
+	return `community-icon:v${communityIconVersion}:${input.listingId}:${input.commit}`
+}
+
+function buildCommunityIconKvListingPrefix(listingId: string) {
+	return `${derivedCacheKeyPrefix}community-icon:v${communityIconVersion}:${listingId}:`
 }
 
 export function buildCommunityIconR2Key(input: {
 	listingId: string
-	pinnedCommit: string
+	commit: string
 }) {
-	return `community-icon:v${communityIconVersion}/${input.listingId}/${input.pinnedCommit}/asset`
+	return `community-icon:v${communityIconVersion}/${input.listingId}/${input.commit}/asset`
+}
+
+function buildCommunityIconR2ListingPrefix(listingId: string) {
+	return `community-icon:v${communityIconVersion}/${listingId}/`
 }
 
 export function findCommunityIconPath(
@@ -64,6 +80,7 @@ export function findCommunityIconPath(
 export async function getCommunityIconObject(input: {
 	env: Env
 	listing: CommunityListingRecord
+	iconCommit: string
 }): Promise<{
 	descriptor: CommunityIconDescriptor
 	object: R2ObjectBody
@@ -72,18 +89,18 @@ export async function getCommunityIconObject(input: {
 	const cache = {
 		...baseCache,
 		async set(key: string, entry: Parameters<typeof baseCache.set>[1]) {
-			if (await isCurrentActiveListing(input.env.APP_DB, input.listing)) {
+			if (await isServableIconCommit(input)) {
 				await baseCache.set(key, entry)
 			}
 		},
 	}
 	const key = buildCommunityIconCacheKey({
 		listingId: input.listing.id,
-		pinnedCommit: input.listing.pinnedCommit,
+		commit: input.iconCommit,
 	})
 	const expectedR2Key = buildCommunityIconR2Key({
 		listingId: input.listing.id,
-		pinnedCommit: input.listing.pinnedCommit,
+		commit: input.iconCommit,
 	})
 	const loadDescriptor = (forceFresh = false) =>
 		cachified({
@@ -94,7 +111,7 @@ export async function getCommunityIconObject(input: {
 			checkValue: (value) =>
 				isCommunityIconDescriptor(value) &&
 				value.listingId === input.listing.id &&
-				value.pinnedCommit === input.listing.pinnedCommit &&
+				value.iconCommit === input.iconCommit &&
 				value.r2Key === expectedR2Key,
 			getFreshValue: () => createCommunityIconDescriptor(input),
 		})
@@ -114,86 +131,189 @@ export async function getCommunityIconObject(input: {
 	return { descriptor, object }
 }
 
-export async function deleteCommunityIconAsset(input: {
+/**
+ * Deletes cached community icon descriptors (KV) and derived assets (R2) for
+ * a listing, keeping only entries for the provided commits. Publish paths
+ * pass the commits that remain servable; unpublish/delete paths pass none.
+ */
+export async function deleteCommunityIconAssets(input: {
 	env: Pick<Env, 'BUNDLE_ARTIFACTS_KV' | 'COMMUNITY_ASSETS'>
 	listingId: string
-	pinnedCommit: string
+	keepCommits?: ReadonlyArray<string>
 }) {
-	const cache = createKvCachifiedCache(input.env.BUNDLE_ARTIFACTS_KV)
-	await Promise.all([
-		cache.delete(buildCommunityIconCacheKey(input)),
-		input.env.COMMUNITY_ASSETS.delete(buildCommunityIconR2Key(input)),
-	])
+	const keptKvKeys = new Set(
+		(input.keepCommits ?? []).map(
+			(commit) =>
+				derivedCacheKeyPrefix +
+				buildCommunityIconCacheKey({ listingId: input.listingId, commit }),
+		),
+	)
+	const keptR2Keys = new Set(
+		(input.keepCommits ?? []).map((commit) =>
+			buildCommunityIconR2Key({ listingId: input.listingId, commit }),
+		),
+	)
+	let kvCursor: string | undefined
+	do {
+		const page = await input.env.BUNDLE_ARTIFACTS_KV.list({
+			prefix: buildCommunityIconKvListingPrefix(input.listingId),
+			cursor: kvCursor,
+		})
+		await Promise.all(
+			page.keys
+				.map((key) => key.name)
+				.filter((name) => !keptKvKeys.has(name))
+				.map((name) => input.env.BUNDLE_ARTIFACTS_KV.delete(name)),
+		)
+		kvCursor = page.list_complete ? undefined : page.cursor
+	} while (kvCursor)
+	let r2Cursor: string | undefined
+	do {
+		const page = await input.env.COMMUNITY_ASSETS.list({
+			prefix: buildCommunityIconR2ListingPrefix(input.listingId),
+			cursor: r2Cursor,
+		})
+		await Promise.all(
+			page.objects
+				.map((object) => object.key)
+				.filter((objectKey) => !keptR2Keys.has(objectKey))
+				.map((objectKey) => input.env.COMMUNITY_ASSETS.delete(objectKey)),
+		)
+		r2Cursor = page.truncated ? page.cursor : undefined
+	} while (r2Cursor)
+}
+
+/**
+ * Package-publish hook: when the owner republishes the package behind an
+ * active community listing, drop cached icon assets for superseded commits
+ * and bust the public listing data cache so pages emit the new icon URL
+ * (which embeds the new published commit) promptly.
+ */
+export async function refreshCommunityIconForPackagePublish(input: {
+	env: Env
+	userId: string
+	packageId: string
+	publishedCommit: string
+}) {
+	const listing = await getCommunityListingByOwnerAndPackage(input.env.APP_DB, {
+		ownerUserId: input.userId,
+		packageId: input.packageId,
+	})
+	if (!listing || listing.status !== 'active') return
+	await deleteCommunityIconAssets({
+		env: input.env,
+		listingId: listing.id,
+		keepCommits: [listing.pinnedCommit, input.publishedCommit],
+	})
+	invalidateCommunityPublicCache()
+}
+
+async function loadCommunityIconSource(input: {
+	env: Env
+	listing: CommunityListingRecord
+	iconCommit: string
+}): Promise<{
+	path: (typeof communityIconPaths)[number]
+	bytes: Uint8Array
+} | null> {
+	if (input.iconCommit === input.listing.pinnedCommit) {
+		const snapshot = await readCommunitySnapshot(
+			input.env.BUNDLE_ARTIFACTS_KV,
+			input.listing.id,
+		)
+		if (!snapshot || snapshot.pinnedCommit !== input.listing.pinnedCommit) {
+			throw new Error(
+				`Community listing snapshot for "${input.listing.id}" at "${input.listing.pinnedCommit}" was not found.`,
+			)
+		}
+		const sourcePath =
+			communityIconPaths.find((path) => path === snapshot.communityIconPath) ??
+			findCommunityIconPath(snapshot.files)
+		if (!sourcePath) return null
+		if (sourcePath === 'community-icon.svg') {
+			const source = snapshot.files[sourcePath]
+			if (source == null) {
+				throw new Error(
+					`Community icon "${sourcePath}" was not retained in the listing snapshot.`,
+				)
+			}
+			return {
+				path: sourcePath,
+				bytes: new TextEncoder().encode(source),
+			}
+		}
+		const source = await getValidatedListingPackageSource(input)
+		const found = await readFirstArtifactFileAtCommit({
+			env: input.env,
+			repoId: source.repo_id,
+			commit: input.iconCommit,
+			filePaths: [sourcePath],
+		})
+		if (!found) {
+			throw new Error(
+				`Community icon "${sourcePath}" was not found at pinned commit "${input.listing.pinnedCommit}".`,
+			)
+		}
+		return { path: sourcePath, bytes: found.bytes }
+	}
+
+	// Icon commits ahead of the pinned snapshot come straight from the owner
+	// package's Artifacts repo at the published commit.
+	const source = await getValidatedListingPackageSource(input)
+	const found = await readFirstArtifactFileAtCommit({
+		env: input.env,
+		repoId: source.repo_id,
+		commit: input.iconCommit,
+		filePaths: communityIconPaths,
+	})
+	if (!found) return null
+	const path = communityIconPaths.find((candidate) => candidate === found.path)
+	if (!path) return null
+	return { path, bytes: found.bytes }
+}
+
+async function getValidatedListingPackageSource(input: {
+	env: Env
+	listing: CommunityListingRecord
+}): Promise<EntitySourceRow> {
+	const source = await getEntitySourceById(
+		input.env.APP_DB,
+		input.listing.sourceId,
+	)
+	if (
+		!source ||
+		source.user_id !== input.listing.ownerUserId ||
+		source.entity_kind !== 'package' ||
+		source.entity_id !== input.listing.packageId
+	) {
+		throw new Error(
+			`Community listing "${input.listing.id}" has an invalid package source.`,
+		)
+	}
+	return source
 }
 
 async function createCommunityIconDescriptor(input: {
 	env: Env
 	listing: CommunityListingRecord
+	iconCommit: string
 }): Promise<CommunityIconDescriptor> {
-	const snapshot = await readCommunitySnapshot(
-		input.env.BUNDLE_ARTIFACTS_KV,
-		input.listing.id,
-	)
-	if (!snapshot || snapshot.pinnedCommit !== input.listing.pinnedCommit) {
-		throw new Error(
-			`Community listing snapshot for "${input.listing.id}" at "${input.listing.pinnedCommit}" was not found.`,
-		)
-	}
-
-	const sourcePath =
-		communityIconPaths.find((path) => path === snapshot.communityIconPath) ??
-		findCommunityIconPath(snapshot.files)
-	let processed: ProcessedCommunityIcon
-	if (sourcePath === 'community-icon.svg') {
-		const source = snapshot.files[sourcePath]
-		if (source == null) {
-			throw new Error(
-				`Community icon "${sourcePath}" was not retained in the listing snapshot.`,
-			)
-		}
-		processed = await processCommunityIcon({
-			path: sourcePath,
-			sourceBytes: new TextEncoder().encode(source),
-		})
-	} else if (sourcePath) {
-		const source = await getEntitySourceById(
-			input.env.APP_DB,
-			input.listing.sourceId,
-		)
-		if (
-			!source ||
-			source.user_id !== input.listing.ownerUserId ||
-			source.entity_kind !== 'package' ||
-			source.entity_id !== input.listing.packageId
-		) {
-			throw new Error(
-				`Community listing "${input.listing.id}" has an invalid package source.`,
-			)
-		}
-		const sourceBytes = await readArtifactFileAtCommit({
-			env: input.env,
-			repoId: source.repo_id,
-			commit: input.listing.pinnedCommit,
-			filePath: sourcePath,
-		})
-		if (!sourceBytes) {
-			throw new Error(
-				`Community icon "${sourcePath}" was not found at pinned commit "${input.listing.pinnedCommit}".`,
-			)
-		}
-		processed = await processCommunityIcon({ path: sourcePath, sourceBytes })
-	} else {
-		processed = {
-			bytes: await renderCommunitySvgIcon(
-				buildCommunityIconFallbackSvg(input.listing.name),
-			),
-			contentType: 'image/png',
-		}
-	}
+	const iconSource = await loadCommunityIconSource(input)
+	const processed: ProcessedCommunityIcon = iconSource
+		? await processCommunityIcon({
+				path: iconSource.path,
+				sourceBytes: iconSource.bytes,
+			})
+		: {
+				bytes: await renderCommunitySvgIcon(
+					buildCommunityIconFallbackSvg(input.listing.name),
+				),
+				contentType: 'image/png',
+			}
 
 	const r2Key = buildCommunityIconR2Key({
 		listingId: input.listing.id,
-		pinnedCommit: input.listing.pinnedCommit,
+		commit: input.iconCommit,
 	})
 	await input.env.COMMUNITY_ASSETS.put(r2Key, processed.bytes, {
 		httpMetadata: {
@@ -202,11 +322,11 @@ async function createCommunityIconDescriptor(input: {
 		},
 		customMetadata: {
 			listingId: input.listing.id,
-			pinnedCommit: input.listing.pinnedCommit,
-			sourcePath: sourcePath ?? '',
+			iconCommit: input.iconCommit,
+			sourcePath: iconSource?.path ?? '',
 		},
 	})
-	if (!(await isCurrentActiveListing(input.env.APP_DB, input.listing))) {
+	if (!(await isServableIconCommit(input))) {
 		await input.env.COMMUNITY_ASSETS.delete(r2Key)
 		throw new Error(
 			`Community listing "${input.listing.id}" was removed while its icon was generated.`,
@@ -215,27 +335,35 @@ async function createCommunityIconDescriptor(input: {
 	return {
 		version: communityIconVersion,
 		listingId: input.listing.id,
-		pinnedCommit: input.listing.pinnedCommit,
+		iconCommit: input.iconCommit,
 		r2Key,
 		contentType: processed.contentType,
-		sourcePath,
+		sourcePath: iconSource?.path ?? null,
 		byteLength: processed.bytes.byteLength,
 	}
 }
 
-async function isCurrentActiveListing(
-	db: D1Database,
-	listing: CommunityListingRecord,
-) {
-	const current = await getCommunityListingById(db, {
-		listingId: listing.id,
+/**
+ * A commit stays cacheable while the listing is still active with the same
+ * owner/package/source identity and the commit is either the pinned snapshot
+ * commit or the current icon commit. This keeps unpublish/delete cleanup
+ * race-free: assets are never re-persisted for removed or superseded state.
+ */
+async function isServableIconCommit(input: {
+	env: Pick<Env, 'APP_DB'>
+	listing: CommunityListingRecord
+	iconCommit: string
+}) {
+	const current = await getCommunityListingById(input.env.APP_DB, {
+		listingId: input.listing.id,
 		includeDelisted: false,
 	})
 	return (
-		current?.ownerUserId === listing.ownerUserId &&
-		current.packageId === listing.packageId &&
-		current.sourceId === listing.sourceId &&
-		current.pinnedCommit === listing.pinnedCommit
+		current?.ownerUserId === input.listing.ownerUserId &&
+		current.packageId === input.listing.packageId &&
+		current.sourceId === input.listing.sourceId &&
+		(current.pinnedCommit === input.iconCommit ||
+			current.iconCommit === input.iconCommit)
 	)
 }
 
@@ -504,7 +632,7 @@ function isCommunityIconDescriptor(
 	return (
 		descriptor.version === communityIconVersion &&
 		typeof descriptor.listingId === 'string' &&
-		typeof descriptor.pinnedCommit === 'string' &&
+		typeof descriptor.iconCommit === 'string' &&
 		typeof descriptor.r2Key === 'string' &&
 		['image/png', 'image/webp', 'image/jpeg'].includes(
 			descriptor.contentType ?? '',

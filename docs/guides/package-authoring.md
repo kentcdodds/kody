@@ -78,3 +78,8 @@ Public community packages may include one root `community-icon.svg`,
 `community-icon.jpeg`. Prefer a square visual with a simple silhouette that
 remains legible at 56 pixels. Keep it under 2 MiB and 16 megapixels. Kody
 generates a package-name fallback when the repository has no icon.
+
+Publishing the package refreshes the community listing icon automatically. The
+candidate paths win in the order listed above, so when replacing an icon with a
+different format (for example svg → png), delete the old file in the same commit
+or the old format keeps being served.

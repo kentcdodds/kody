@@ -34,6 +34,14 @@ export type CommunityListingRecord = {
 	readmeContent: string | null
 	license: string
 	pinnedCommit: string
+	/**
+	 * Commit the public listing icon is derived from: the owner package's
+	 * current published commit when the listing's package source still
+	 * exists, otherwise the pinned snapshot commit. Package publishes move
+	 * this forward without a community republish, so icon URLs and cache
+	 * keys bust as soon as a new `community-icon.*` is published.
+	 */
+	iconCommit: string
 	status: CommunityListingStatus
 	createdAt: string
 	updatedAt: string

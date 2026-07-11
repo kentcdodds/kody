@@ -67,19 +67,30 @@ map; the path metadata lets the icon route retrieve bytes from Artifacts.
 
 ### Community icon cache
 
-Community listing icons are derived lazily from the pinned Artifacts commit.
-`@epic-web/cachified` stores a small descriptor in `BUNDLE_ARTIFACTS_KV` under
-`derived-cache:v1:community-icon:v1:{listingId}:{pinnedCommit}`. The processed
-bytes live in the private `COMMUNITY_ASSETS` R2 bucket under
-`community-icon:v1/{listingId}/{pinnedCommit}/asset`.
+Community listing icons are derived lazily from the listing's **icon commit**:
+the owner package's current `entity_sources.published_commit` (falling back to
+the listing's pinned commit when the source row is gone). Listing reads join the
+entity source, so a plain package publish moves the icon commit forward — and
+with it the icon URL — without a community republish. `@epic-web/cachified`
+stores a small descriptor in `BUNDLE_ARTIFACTS_KV` under
+`derived-cache:v1:community-icon:v1:{listingId}:{commit}`. The processed bytes
+live in the private `COMMUNITY_ASSETS` R2 bucket under
+`community-icon:v1/{listingId}/{commit}/asset`.
 
-On a descriptor cache miss, the icon service checks the pinned community
-snapshot for a standardized root `community-icon.*` path, reads that file as
-bytes from the Artifacts git repo at `pinnedCommit`, validates it, and writes
-the derived asset to R2 before returning the descriptor. A dangling descriptor
-is deleted and regenerated once. Packages without an icon receive a generated
-fallback. SVG input is rasterized to PNG; PNG, WebP, and JPEG input remains in
-its validated source format.
+On a descriptor cache miss, the icon service resolves the standardized root
+`community-icon.*` path (from the pinned snapshot when serving the pinned
+commit, otherwise by probing the Artifacts git repo at the icon commit), reads
+the bytes, validates them, and writes the derived asset to R2 before returning
+the descriptor. A dangling descriptor is deleted and regenerated once. Packages
+without an icon receive a generated fallback. SVG input is rasterized to PNG;
+PNG, WebP, and JPEG input remains in its validated source format.
+
+The icon route serves only the current icon commit and the pinned commit; stale
+commit URLs 404. Package publish (`finalizePublishedEntitySource`) calls
+`refreshCommunityIconForPackagePublish`, which prunes superseded KV/R2 icon
+entries by listing prefix and invalidates the public listing data cache.
+Community republish, unpublish, admin hard delete, and account deletion remove
+icon entries for the listing.
 
 ## Service layer
 
@@ -134,8 +145,9 @@ Client routes: `packages/worker/client/routes/community*`
 - `/community` — searchable index of active listings
 - `/community/:listingId` — metadata, ratings, README, fork prompt, report link
   (report requires login)
-- `/community/:listingId/icon/:pinnedCommit` — cached package icon or generated
-  fallback; stale commit URLs are rejected
+- `/community/:listingId/icon/:iconCommit` — cached package icon or generated
+  fallback; serves the current icon commit or the pinned snapshot commit, and
+  rejects stale commit URLs
 
 Shared OG rendering lives in `packages/worker/src/og/`: a light-mode palette
 mirroring app design tokens, satori layout + resvg rasterization, and the

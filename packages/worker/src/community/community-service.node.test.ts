@@ -133,9 +133,20 @@ const {
 
 const testBundleArtifactsKv = {
 	delete: vi.fn(async () => undefined),
+	list: vi.fn(async () => ({
+		keys: [{ name: 'derived-cache:v1:community-icon:v1:listing-1:commit-1' }],
+		list_complete: true,
+	})),
 } as unknown as KVNamespace
 const testCommunityAssets = {
 	delete: vi.fn(async () => undefined),
+	list: vi.fn(async () => ({
+		objects: [
+			{ key: 'community-icon:v1/listing-1/commit-1/asset' },
+			{ key: 'community-icon:v1/listing-1/commit-2/asset' },
+		],
+		truncated: false,
+	})),
 } as unknown as R2Bucket
 
 function createEnv() {
@@ -162,6 +173,7 @@ function sampleListing(
 		readmeContent: '# Discord Gateway\n\n## Intent\n\nBridge Discord events.',
 		license: 'MIT',
 		pinnedCommit: 'commit-1',
+		iconCommit: 'commit-1',
 		status: 'active',
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
@@ -378,7 +390,6 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 		'community-icon-delete-failed',
 		'unpublish',
 		'listing-1',
-		'commit-1',
 		expect.any(Error),
 	)
 	consoleError.mockRestore()

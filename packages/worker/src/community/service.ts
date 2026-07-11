@@ -55,7 +55,7 @@ import {
 } from './snapshot.ts'
 import {
 	communityIconPaths,
-	deleteCommunityIconAsset,
+	deleteCommunityIconAssets,
 	findCommunityIconPath,
 } from './community-icon.ts'
 import {
@@ -84,20 +84,19 @@ export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 // a materialized score column if the catalog ever approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
-async function deleteCommunityIconAssetBestEffort(input: {
+async function deleteCommunityIconAssetsBestEffort(input: {
 	env: Env
 	listingId: string
-	pinnedCommit: string
+	keepCommits?: ReadonlyArray<string>
 	reason: 'republish' | 'unpublish' | 'hard-delete'
 }) {
 	try {
-		await deleteCommunityIconAsset(input)
+		await deleteCommunityIconAssets(input)
 	} catch (error) {
 		console.error(
 			'community-icon-delete-failed',
 			input.reason,
 			input.listingId,
-			input.pinnedCommit,
 			error,
 		)
 	}
@@ -453,17 +452,13 @@ export async function publishCommunityListing(input: {
 		throw snapshotError
 	}
 	if (existingListing) {
-		for (const pinnedCommit of new Set([
-			existingListing.pinnedCommit,
-			publishedCommit,
-		])) {
-			await deleteCommunityIconAssetBestEffort({
-				env: input.env,
-				listingId,
-				pinnedCommit,
-				reason: 'republish',
-			})
-		}
+		// Drop all cached icon revisions (including a reused commit id) so the
+		// republished listing regenerates its icon lazily from fresh state.
+		await deleteCommunityIconAssetsBestEffort({
+			env: input.env,
+			listingId,
+			reason: 'republish',
+		})
 	}
 
 	const listing = await getCommunityListingById(input.env.APP_DB, {
@@ -503,10 +498,9 @@ export async function unpublishCommunityListing(input: {
 		throw new Error(`Community listing "${input.listingId}" was not found.`)
 	}
 
-	await deleteCommunityIconAssetBestEffort({
+	await deleteCommunityIconAssetsBestEffort({
 		env: input.env,
 		listingId: listing.id,
-		pinnedCommit: listing.pinnedCommit,
 		reason: 'unpublish',
 	})
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
@@ -910,10 +904,9 @@ export async function resolveCommunityReport(input: {
 				)
 			} else {
 				if (listing) {
-					await deleteCommunityIconAssetBestEffort({
+					await deleteCommunityIconAssetsBestEffort({
 						env: input.env,
 						listingId: listing.id,
-						pinnedCommit: listing.pinnedCommit,
 						reason: 'hard-delete',
 					})
 				}

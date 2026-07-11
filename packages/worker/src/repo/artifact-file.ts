@@ -15,6 +15,26 @@ export async function readArtifactFileAtCommit(input: {
 	commit: string
 	filePath: string
 }): Promise<Uint8Array | null> {
+	const found = await readFirstArtifactFileAtCommit({
+		env: input.env,
+		repoId: input.repoId,
+		commit: input.commit,
+		filePaths: [input.filePath],
+	})
+	return found?.bytes ?? null
+}
+
+/**
+ * Reads the first candidate path that exists at the given commit using a
+ * single shallow fetch, so callers probing a small set of well-known paths
+ * (for example `community-icon.*`) do not pay one fetch per candidate.
+ */
+export async function readFirstArtifactFileAtCommit(input: {
+	env: Env
+	repoId: string
+	commit: string
+	filePaths: ReadonlyArray<string>
+}): Promise<{ path: string; bytes: Uint8Array } | null> {
 	const repo = await resolveExistingArtifactSourceRepo(input.env, input.repoId)
 	if (!repo) {
 		throw new Error(`Artifact repo "${input.repoId}" was not found.`)
@@ -30,8 +50,13 @@ export async function readArtifactFileAtCommit(input: {
 			repoId: input.repoId,
 			commit: input.commit,
 		})
-		const content = snapshot?.files[input.filePath]
-		return content == null ? null : new TextEncoder().encode(content)
+		for (const filePath of input.filePaths) {
+			const content = snapshot?.files[filePath]
+			if (content != null) {
+				return { path: filePath, bytes: new TextEncoder().encode(content) }
+			}
+		}
+		return null
 	}
 
 	const token = await repo.createToken('read', 300)
@@ -65,18 +90,20 @@ export async function readArtifactFileAtCommit(input: {
 		},
 	})
 
-	try {
-		const result = await git.readBlob({
-			fs: workspace.fs,
-			dir: workspace.dir,
-			oid: input.commit,
-			filepath: input.filePath,
-		})
-		return result.blob
-	} catch (error) {
-		if (isMissingArtifactFileError(error)) return null
-		throw error
+	for (const filePath of input.filePaths) {
+		try {
+			const result = await git.readBlob({
+				fs: workspace.fs,
+				dir: workspace.dir,
+				oid: input.commit,
+				filepath: filePath,
+			})
+			return { path: filePath, bytes: result.blob }
+		} catch (error) {
+			if (!isMissingArtifactFileError(error)) throw error
+		}
 	}
+	return null
 }
 
 function isMissingArtifactFileError(error: unknown) {

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { refreshCommunityIconForPackagePublish } from '#worker/community/community-icon.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	deletePublishedSourceSnapshot,
@@ -74,48 +75,64 @@ export async function finalizePublishedEntitySource(
 			throw snapshotError
 		}
 	}
-	if (input.source.entity_kind === 'package') {
+	if (input.source.entity_kind !== 'package') return
+	try {
+		await refreshSavedPackageProjection({
+			env: input.env,
+			baseUrl: input.baseUrl ?? input.source.source_root,
+			userId: input.source.user_id,
+			// No account email in this publish path; plan lookup fails open per entitlements.md.
+			packageId: input.source.entity_id,
+			sourceId: input.source.id,
+			rebuildArtifacts: input.rebuildPackageArtifacts ?? true,
+		})
+	} catch (projectionError) {
 		try {
-			await refreshSavedPackageProjection({
-				env: input.env,
-				baseUrl: input.baseUrl ?? input.source.source_root,
+			await updateEntitySource(input.env.APP_DB, {
+				id: input.source.id,
 				userId: input.source.user_id,
-				// No account email in this publish path; plan lookup fails open per entitlements.md.
-				packageId: input.source.entity_id,
-				sourceId: input.source.id,
-				rebuildArtifacts: input.rebuildPackageArtifacts ?? true,
+				publishedCommit: previousPublishedCommit,
+				manifestPath: input.source.manifest_path,
+				sourceRoot: input.source.source_root,
 			})
-		} catch (projectionError) {
-			try {
-				await updateEntitySource(input.env.APP_DB, {
-					id: input.source.id,
-					userId: input.source.user_id,
-					publishedCommit: previousPublishedCommit,
-					manifestPath: input.source.manifest_path,
-					sourceRoot: input.source.source_root,
-				})
-				if (wrotePublishedSnapshot) {
-					await deletePublishedSourceSnapshot({
-						env: input.env,
-						sourceId: input.source.id,
-						publishedCommit: input.publishedCommit,
-					})
-				}
-			} catch (revertError) {
-				Sentry.captureException(revertError, {
-					tags: {
-						scope:
-							'repo.publishFromExternalRef.revert-after-projection-failure',
-					},
-					extra: {
-						sourceId: input.source.id,
-						previousPublishedCommit,
-						attemptedPublishedCommit: input.publishedCommit,
-					},
+			if (wrotePublishedSnapshot) {
+				await deletePublishedSourceSnapshot({
+					env: input.env,
+					sourceId: input.source.id,
+					publishedCommit: input.publishedCommit,
 				})
 			}
-			throw projectionError
+		} catch (revertError) {
+			Sentry.captureException(revertError, {
+				tags: {
+					scope: 'repo.publishFromExternalRef.revert-after-projection-failure',
+				},
+				extra: {
+					sourceId: input.source.id,
+					previousPublishedCommit,
+					attemptedPublishedCommit: input.publishedCommit,
+				},
+			})
 		}
+		throw projectionError
+	}
+	// Best-effort: an active community listing derives its public icon from
+	// the package's published commit, so superseded cached icon revisions are
+	// dropped and the public listing cache is invalidated. Failures must not
+	// unwind an otherwise successful publish.
+	try {
+		await refreshCommunityIconForPackagePublish({
+			env: input.env,
+			userId: input.source.user_id,
+			packageId: input.source.entity_id,
+			publishedCommit: input.publishedCommit,
+		})
+	} catch (error) {
+		console.error(
+			'community-icon-publish-refresh-failed',
+			input.source.entity_id,
+			error,
+		)
 	}
 }
 

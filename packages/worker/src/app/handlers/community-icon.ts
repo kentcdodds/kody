@@ -17,7 +17,14 @@ export function createCommunityIconHandler(env: Env) {
 				listingId: params.listingId,
 				includeDelisted: false,
 			})
-			if (!listing || listing.pinnedCommit !== params.pinnedCommit) {
+			// The pinned snapshot commit stays servable alongside the current
+			// icon commit so pages cached just before a package publish do not
+			// break; anything else is a stale URL and is rejected.
+			if (
+				!listing ||
+				(params.iconCommit !== listing.iconCommit &&
+					params.iconCommit !== listing.pinnedCommit)
+			) {
 				return new Response('Not found', { status: 404 })
 			}
 
@@ -25,6 +32,7 @@ export function createCommunityIconHandler(env: Env) {
 				const { descriptor, object } = await getCommunityIconObject({
 					env,
 					listing,
+					iconCommit: params.iconCommit,
 				})
 				return new Response(object.body, {
 					headers: {
