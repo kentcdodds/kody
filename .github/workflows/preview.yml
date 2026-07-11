@@ -264,6 +264,7 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID_PREVIEW }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
         run: |
           set -euo pipefail
           ENV_FILE="packages/worker/.env.example"
@@ -281,7 +282,7 @@ jobs:
             extra_args+=(--set "APP_BASE_URL=$PREVIEW_URL")
           fi
 
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --generate-cookie-secret --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional KIT_API_KEY --generate-cookie-secret --include-empty "${extra_args[@]}"
 
       - name: 📤 Upload Worker source maps to Sentry
         env:

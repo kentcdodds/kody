@@ -106,6 +106,7 @@ import {
 } from '#app/handlers/password-reset.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
 import { createSignupHandler } from '#app/handlers/signup.ts'
+import { createWaitingListHandler } from '#app/handlers/waiting-list.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#app/routes.ts'
 export function createAppRouter(env: Env) {
@@ -135,6 +136,7 @@ export function createAppRouter(env: Env) {
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),
 			signup: createSignupHandler(env),
+			waitingList: createWaitingListHandler(env),
 			account: createAccountHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),

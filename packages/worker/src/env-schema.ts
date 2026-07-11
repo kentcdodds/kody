@@ -196,6 +196,10 @@ export const EnvSchema = object({
 	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
+	// Kit (kit.com) waitlist — optional; production waiting-list submits fail
+	// closed without KIT_API_KEY. Non-production skips Kit when unset.
+	KIT_API_KEY: optionalNonEmptyStringSchema,
+	KIT_WAITLIST_TAG_ID: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

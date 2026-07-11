@@ -33,10 +33,11 @@ shared state between users.
 - Optimization target: a high-quality personal assistant for each individual
   signed-in user, with hard isolation between users
 - Onboarding: production signup is invite-gated by operator-created invite
-  codes. Local dev, preview, and test runtimes remain open so fixtures, seeds,
-  and manual development do not need an auth-bypass path. New signups must
-  verify their email address; unverified accounts can sign in but cannot send
-  outbound email. There is still no privileged "primary user" at runtime.
+  codes. People without a code can join a Kit-backed waiting list from
+  `/signup`. Local dev, preview, and test runtimes remain open so fixtures,
+  seeds, and manual development do not need an auth-bypass path. New signups
+  must verify their email address; unverified accounts can sign in but cannot
+  send outbound email. There is still no privileged "primary user" at runtime.
 - Tests and fixtures may seed deterministic local accounts, but seeded accounts
   are fixtures only and are not privileged at runtime
 

@@ -59,6 +59,19 @@ whether an invite is required. Production wrangler env sets
 `'preview'` / `'test'`. The predicate fails closed: if the runtime cannot be
 positively identified as non-production, signup requires a valid invite code.
 
+The public `/signup` page defaults to a waiting-list form (first name + email)
+backed by `POST /waiting-list`, which upserts a Kit subscriber and tags them
+`waitlist::kody`. An "I have a code" control reveals the invite signup form.
+`?code`, `?invite`, or `?panel=invite` also opens the invite form directly.
+
+Waiting-list Kit integration:
+
+- Worker secret `KIT_API_KEY` (Kit v4 `X-Kit-Api-Key`)
+- Optional `KIT_WAITLIST_TAG_ID` (defaults to the `waitlist::kody` tag id)
+- Production fails closed with 503 when `KIT_API_KEY` is unset; non-production
+  accepts the join without calling Kit so local/preview UX stays usable
+- Rate-limited per client IP (5 requests / 15 minutes)
+
 The `invites` table stores operator-created invite codes:
 
 - `code` is the primary key shown to the invited user

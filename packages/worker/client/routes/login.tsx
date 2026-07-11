@@ -40,12 +40,19 @@ import {
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
+type SignupPanel = 'waiting-list' | 'invite'
 
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
 	if (!value.startsWith('/')) return null
 	if (value.startsWith('//')) return null
 	return value
+}
+
+function shouldOpenInviteSignup(searchParams: URLSearchParams) {
+	if (searchParams.has('code') || searchParams.has('invite')) return true
+	const panel = searchParams.get('panel')
+	return panel === 'invite' || panel === 'code'
 }
 
 function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
@@ -102,6 +109,9 @@ export function LoginRoute(handle: Handle) {
 	let authProvidersReady = false
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
+	let signupPanel: SignupPanel = shouldOpenInviteSignup(getSearchParams(handle))
+		? 'invite'
+		: 'waiting-list'
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
 		status = nextStatus
@@ -112,6 +122,12 @@ export function LoginRoute(handle: Handle) {
 	function resetAuthState() {
 		status = 'idle'
 		message = null
+	}
+
+	function setSignupPanel(nextPanel: SignupPanel) {
+		signupPanel = nextPanel
+		resetAuthState()
+		handle.update()
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -147,6 +163,50 @@ export function LoginRoute(handle: Handle) {
 			return
 		}
 		handle.update()
+	}
+
+	async function handleWaitingListSubmit(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+
+		const formData = new FormData(event.currentTarget)
+		const firstName = String(formData.get('firstName') ?? '').trim()
+		const email = String(formData.get('email') ?? '').trim()
+
+		if (!firstName || !email) {
+			setState('error', 'First name and email are required.')
+			return
+		}
+
+		setState('submitting')
+
+		try {
+			const response = await fetch('/waiting-list', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ firstName, email }),
+			})
+			const payload = await response.json().catch(() => null)
+
+			if (!response.ok) {
+				const errorMessage =
+					typeof payload?.error === 'string'
+						? payload.error
+						: 'Unable to join the waiting list.'
+				setState('error', errorMessage)
+				return
+			}
+
+			const successMessage =
+				typeof payload?.message === 'string'
+					? payload.message
+					: "You're on the list. We'll be in touch."
+			setState('success', successMessage)
+			event.currentTarget.reset()
+		} catch {
+			setState('error', 'Network error. Please try again.')
+		}
 	}
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -314,6 +374,9 @@ export function LoginRoute(handle: Handle) {
 		if (mode !== activeMode) {
 			activeMode = mode
 			resetAuthState()
+			signupPanel = shouldOpenInviteSignup(getSearchParams(handle))
+				? 'invite'
+				: 'waiting-list'
 		}
 		const redirectTo = getCurrentRedirectTo(handle)
 		const oauthErrorMessage =
@@ -321,11 +384,19 @@ export function LoginRoute(handle: Handle) {
 				? getOauthLoginErrorMessage(getSearchParams(handle).get('oauthError'))
 				: null
 		const isSignup = mode === 'signup'
+		const showWaitingList = isSignup && signupPanel === 'waiting-list'
+		const showInviteSignup = isSignup && signupPanel === 'invite'
 		const isSubmitting = status === 'submitting'
-		const title = isSignup ? 'Create your account' : 'Welcome back'
-		const description = isSignup
-			? 'Sign up to start using kody.'
-			: 'Log in to continue to kody.'
+		const title = showWaitingList
+			? 'Join the waiting list'
+			: isSignup
+				? 'Create your account'
+				: 'Welcome back'
+		const description = showWaitingList
+			? 'Kody is invite-only for now. Leave your name and email and we will let you know when a spot opens.'
+			: isSignup
+				? 'Sign up with your invite code to start using kody.'
+				: 'Log in to continue to kody.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const toggleLabel = isSignup
 			? 'Already have an account?'
@@ -350,128 +421,197 @@ export function LoginRoute(handle: Handle) {
 						{oauthErrorMessage}
 					</p>
 				) : null}
-				<form mix={[css(cardCss), on('submit', handleSubmit)]}>
-					{isSignup ? (
+				{showWaitingList ? (
+					<form mix={[css(cardCss), on('submit', handleWaitingListSubmit)]}>
 						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Username</span>
+							<span mix={css(fieldLabelCss)}>First name</span>
 							<input
 								type="text"
-								name="username"
+								name="firstName"
 								required
 								autoFocus
-								autoComplete="username"
-								pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,30}[A-Za-z0-9]"
-								title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
-								placeholder="kent"
+								autoComplete="given-name"
+								maxLength={80}
+								placeholder="Ada"
 								mix={css(inputCss)}
 							/>
 						</label>
-					) : null}
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>Email</span>
-						<input
-							type="email"
-							name="email"
-							required
-							autoFocus={!isSignup}
-							autoComplete="email"
-							placeholder="you@example.com"
-							mix={css(inputCss)}
-						/>
-					</label>
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>Password</span>
-						<input
-							type="password"
-							name="password"
-							required
-							autoComplete={isSignup ? 'new-password' : 'current-password'}
-							placeholder="At least 8 characters"
-							mix={css(inputCss)}
-						/>
-					</label>
-					{isSignup ? (
 						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Invite code</span>
+							<span mix={css(fieldLabelCss)}>Email</span>
 							<input
-								type="text"
-								name="inviteCode"
-								autoComplete="one-time-code"
-								placeholder="Required for production launch cohorts"
+								type="email"
+								name="email"
+								required
+								autoComplete="email"
+								placeholder="you@example.com"
 								mix={css(inputCss)}
 							/>
 						</label>
-					) : null}
-					{!isSignup ? (
-						<label
-							mix={css({
-								display: 'flex',
-								gap: spacing.sm,
-								alignItems: 'flex-start',
-								color: colors.text,
-							})}
-						>
-							<input
-								type="checkbox"
-								name="rememberMe"
-								mix={[
-									checkbox(),
-									css({
-										marginTop: '0.15rem',
-									}),
-								]}
-							/>
-
-							<span mix={css({ display: 'grid', gap: spacing.xs })}>
-								<span
-									mix={css({
-										fontWeight: typography.fontWeight.medium,
-										fontSize: typography.fontSize.sm,
-									})}
-								>
-									Remember me
-								</span>
-								<span
-									mix={css({
-										color: colors.textMuted,
-										fontSize: typography.fontSize.sm,
-									})}
-								>
-									Stay signed in for 30 days. Active sessions renew after 14
-									days.
-								</span>
-							</span>
-						</label>
-					) : null}
-					<button
-						type="submit"
-						disabled={isSubmitting}
-						mix={css(primaryButtonCss)}
-					>
-						{isSubmitting ? 'Submitting...' : submitLabel}
-					</button>
-					{!isSignup ? (
 						<button
-							type="button"
-							disabled={isSubmitting}
-							mix={[css(secondaryButtonCss), on('click', handlePasskeySignIn)]}
+							type="submit"
+							disabled={isSubmitting || status === 'success'}
+							mix={css(primaryButtonCss)}
 						>
-							Sign in with a passkey
+							{isSubmitting ? 'Joining...' : 'Join waiting list'}
 						</button>
-					) : null}
-					{message ? (
-						<p
-							aria-live="polite"
-							mix={css({
-								color: status === 'error' ? colors.error : colors.text,
-								fontSize: typography.fontSize.sm,
-							})}
+						{message ? (
+							<p
+								aria-live="polite"
+								mix={css({
+									color: status === 'error' ? colors.error : colors.text,
+									fontSize: typography.fontSize.sm,
+								})}
+							>
+								{message}
+							</p>
+						) : null}
+					</form>
+				) : (
+					<form mix={[css(cardCss), on('submit', handleSubmit)]}>
+						{showInviteSignup ? (
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Username</span>
+								<input
+									type="text"
+									name="username"
+									required
+									autoFocus
+									autoComplete="username"
+									pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,30}[A-Za-z0-9]"
+									title="Use 3 to 32 letters, numbers, hyphens, or underscores. Start and end with a letter or number."
+									placeholder="kent"
+									mix={css(inputCss)}
+								/>
+							</label>
+						) : null}
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Email</span>
+							<input
+								type="email"
+								name="email"
+								required
+								autoFocus={!showInviteSignup}
+								autoComplete="email"
+								placeholder="you@example.com"
+								mix={css(inputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Password</span>
+							<input
+								type="password"
+								name="password"
+								required
+								autoComplete={
+									showInviteSignup ? 'new-password' : 'current-password'
+								}
+								placeholder="At least 8 characters"
+								mix={css(inputCss)}
+							/>
+						</label>
+						{showInviteSignup ? (
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Invite code</span>
+								<input
+									type="text"
+									name="inviteCode"
+									required
+									autoComplete="one-time-code"
+									placeholder="Required for production launch cohorts"
+									mix={css(inputCss)}
+								/>
+							</label>
+						) : null}
+						{!isSignup ? (
+							<label
+								mix={css({
+									display: 'flex',
+									gap: spacing.sm,
+									alignItems: 'flex-start',
+									color: colors.text,
+								})}
+							>
+								<input
+									type="checkbox"
+									name="rememberMe"
+									mix={[
+										checkbox(),
+										css({
+											marginTop: '0.15rem',
+										}),
+									]}
+								/>
+
+								<span mix={css({ display: 'grid', gap: spacing.xs })}>
+									<span
+										mix={css({
+											fontWeight: typography.fontWeight.medium,
+											fontSize: typography.fontSize.sm,
+										})}
+									>
+										Remember me
+									</span>
+									<span
+										mix={css({
+											color: colors.textMuted,
+											fontSize: typography.fontSize.sm,
+										})}
+									>
+										Stay signed in for 30 days. Active sessions renew after 14
+										days.
+									</span>
+								</span>
+							</label>
+						) : null}
+						<button
+							type="submit"
+							disabled={isSubmitting}
+							mix={css(primaryButtonCss)}
 						>
-							{message}
-						</p>
-					) : null}
-				</form>
-				{authProviders.length > 0 ? (
+							{isSubmitting ? 'Submitting...' : submitLabel}
+						</button>
+						{!isSignup ? (
+							<button
+								type="button"
+								disabled={isSubmitting}
+								mix={[
+									css(secondaryButtonCss),
+									on('click', handlePasskeySignIn),
+								]}
+							>
+								Sign in with a passkey
+							</button>
+						) : null}
+						{message ? (
+							<p
+								aria-live="polite"
+								mix={css({
+									color: status === 'error' ? colors.error : colors.text,
+									fontSize: typography.fontSize.sm,
+								})}
+							>
+								{message}
+							</p>
+						) : null}
+					</form>
+				)}
+				{isSignup ? (
+					<button
+						type="button"
+						disabled={isSubmitting}
+						mix={[
+							css(secondaryButtonCss),
+							on('click', () =>
+								setSignupPanel(showWaitingList ? 'invite' : 'waiting-list'),
+							),
+						]}
+					>
+						{showWaitingList
+							? 'I have a code'
+							: 'Join the waiting list instead'}
+					</button>
+				) : null}
+				{!showWaitingList && authProviders.length > 0 ? (
 					<div mix={css({ display: 'grid', gap: spacing.sm })}>
 						<p
 							mix={css({

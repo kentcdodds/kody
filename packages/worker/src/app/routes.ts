@@ -77,6 +77,7 @@ export const routes = route({
 	verifyEmail: '/verify-email',
 	verifyEmailChange: '/verify-email-change',
 	signup: '/signup',
+	waitingList: post('/waiting-list'),
 	account: '/account',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
