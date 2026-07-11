@@ -25,6 +25,7 @@ import { type AppLoaderData } from '#app/loader-data.ts'
 import { userHasRole } from '#app/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from './styles/tokens.ts'
+import { WaitlistBanner } from './waitlist-banner.tsx'
 
 registerRouteLoaders(clientRouteLoaders)
 
@@ -151,6 +152,12 @@ export function App(handle: Handle<AppProps>) {
 				: null
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
 		const signupHref = buildAuthLink('/signup', oauthRedirectTo)
+		const hideWaitlistBanner =
+			!showAuthLinks ||
+			currentPathname === '/signup' ||
+			currentPathname === '/login' ||
+			currentPathname === '/oauth/authorize' ||
+			currentPathname === '/connect/oauth'
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
@@ -160,104 +167,116 @@ export function App(handle: Handle<AppProps>) {
 					mix={css({
 						width: '100%',
 						minHeight: '100vh',
-						padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
 						fontFamily: typography.fontFamily,
 						boxSizing: 'border-box',
-						[mq.tablet]: {
-							padding: `${spacing.sm} ${spacing.sm} 0`,
-						},
-						[mq.mobile]: {
-							padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-						},
 					})}
 				>
-					<nav
+					{hideWaitlistBanner ? null : <WaitlistBanner />}
+					<div
 						mix={css({
-							maxWidth: layoutMaxWidths.wide,
 							width: '100%',
-							margin: `0 auto ${spacing.xl}`,
+							padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
 							boxSizing: 'border-box',
-							display: 'flex',
-							alignItems: 'center',
-							justifyContent: 'space-between',
-							gap: spacing.md,
-							flexWrap: 'wrap',
-							[mq.tablet]: compactNavCss,
-							[mq.mobile]: compactNavCss,
+							[mq.tablet]: {
+								padding: `${spacing.sm} ${spacing.sm} 0`,
+							},
+							[mq.mobile]: {
+								padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+							},
 						})}
 					>
-						<div mix={css(navGroupCss)}>
-							<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
-								<img
-									src="/logo.png"
-									alt=""
-									width={112}
-									height={28}
-									mix={css({
-										display: 'block',
-										height: '1.35em',
-										width: 'auto',
-									})}
-								/>
-							</a>
-							<a href="/community" mix={css(primaryLinkCss)}>
-								Community
-							</a>
-						</div>
-						<div mix={css(navGroupCss)}>
-							{showAuthLinks ? (
-								<>
-									<a href={loginHref} mix={css(primaryLinkCss)}>
-										Login
-									</a>
-									<a href={signupHref} mix={css(primaryLinkCss)}>
-										Signup
-									</a>
-								</>
-							) : null}
-							{isLoggedIn ? (
-								<>
-									{showAdminLink ? (
-										<a href="/admin/users" mix={css(primaryLinkCss)}>
-											Admin
-										</a>
-									) : null}
-									<a href="/account" mix={css(primaryLinkCss)}>
-										{sessionDisplayName}
-									</a>
-									<form method="post" action="/logout" mix={css({ margin: 0 })}>
-										<button type="submit" mix={css(logOutButtonCss)}>
-											Log out
-										</button>
-									</form>
-								</>
-							) : null}
-						</div>
-					</nav>
-					<main mix={css({ width: '100%', boxSizing: 'border-box' })}>
-						<Router
-							routes={clientRoutes}
-							loaderData={handle.props.loaderData}
-							notFound={handle.props.notFound}
-							fallback={
-								<section>
-									<h2
+						<nav
+							mix={css({
+								maxWidth: layoutMaxWidths.wide,
+								width: '100%',
+								margin: `0 auto ${spacing.xl}`,
+								boxSizing: 'border-box',
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'space-between',
+								gap: spacing.md,
+								flexWrap: 'wrap',
+								[mq.tablet]: compactNavCss,
+								[mq.mobile]: compactNavCss,
+							})}
+						>
+							<div mix={css(navGroupCss)}>
+								<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
+									<img
+										src="/logo.png"
+										alt=""
+										width={112}
+										height={28}
 										mix={css({
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											marginBottom: spacing.sm,
-											color: colors.text,
+											display: 'block',
+											height: '1.35em',
+											width: 'auto',
 										})}
-									>
-										Not Found
-									</h2>
-									<p mix={css({ color: colors.textMuted })}>
-										We could not find that page.
-									</p>
-								</section>
-							}
-						/>
-					</main>
+									/>
+								</a>
+								<a href="/community" mix={css(primaryLinkCss)}>
+									Community
+								</a>
+							</div>
+							<div mix={css(navGroupCss)}>
+								{showAuthLinks ? (
+									<>
+										<a href={loginHref} mix={css(primaryLinkCss)}>
+											Login
+										</a>
+										<a href={signupHref} mix={css(primaryLinkCss)}>
+											Signup
+										</a>
+									</>
+								) : null}
+								{isLoggedIn ? (
+									<>
+										{showAdminLink ? (
+											<a href="/admin/users" mix={css(primaryLinkCss)}>
+												Admin
+											</a>
+										) : null}
+										<a href="/account" mix={css(primaryLinkCss)}>
+											{sessionDisplayName}
+										</a>
+										<form
+											method="post"
+											action="/logout"
+											mix={css({ margin: 0 })}
+										>
+											<button type="submit" mix={css(logOutButtonCss)}>
+												Log out
+											</button>
+										</form>
+									</>
+								) : null}
+							</div>
+						</nav>
+						<main mix={css({ width: '100%', boxSizing: 'border-box' })}>
+							<Router
+								routes={clientRoutes}
+								loaderData={handle.props.loaderData}
+								notFound={handle.props.notFound}
+								fallback={
+									<section>
+										<h2
+											mix={css({
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												marginBottom: spacing.sm,
+												color: colors.text,
+											})}
+										>
+											Not Found
+										</h2>
+										<p mix={css({ color: colors.textMuted })}>
+											We could not find that page.
+										</p>
+									</section>
+								}
+							/>
+						</main>
+					</div>
 				</div>
 			</AppLoaderDataProvider>
 		)
