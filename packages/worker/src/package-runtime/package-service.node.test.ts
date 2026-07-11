@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -56,9 +56,14 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 }))
 
 const usageModule = await import('#worker/usage/record-usage.ts')
-const recordUsageSpy = vi
-	.spyOn(usageModule, 'recordUsage')
-	.mockResolvedValue(undefined)
+const recordUsageSpy = vi.spyOn(usageModule, 'recordUsage')
+
+// The global `mockReset: true` config restores the spy's real implementation
+// before every test; the real recordUsage would then run against the stub env
+// and log `usage-rollup-failed`. Re-stub per test.
+beforeEach(() => {
+	recordUsageSpy.mockResolvedValue(undefined)
+})
 
 const {
 	PackageServiceInstance,

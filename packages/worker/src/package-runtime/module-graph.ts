@@ -490,8 +490,12 @@ function resolvePackageAppHandler() {
   if (candidate && typeof candidate.fetch === 'function') {
     return candidate.fetch.bind(candidate);
   }
-  if (typeof userModule.fetch === 'function') {
-    return userModule.fetch;
+  // Read "fetch" reflectively: a static userModule.fetch access makes esbuild
+  // emit an import-is-undefined warning for every app without a named fetch
+  // export.
+  const moduleFetch = Reflect.get(userModule, 'fetch');
+  if (typeof moduleFetch === 'function') {
+    return moduleFetch;
   }
   throw new Error(
     'Kody package apps must export a fetch handler via default export or named fetch.',

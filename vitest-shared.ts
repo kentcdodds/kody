@@ -11,7 +11,14 @@ loadDotEnv({
 	quiet: true,
 })
 
+// Several npm packages (e.g. @modelcontextprotocol/sdk, cron-schedule) ship
+// sourcemaps whose `sources` files are not published, and Vite warns once per
+// transformed file ("Sourcemap ... points to missing source files"). That is
+// third-party packaging noise we cannot act on, so only surface Vite errors.
+export const viteLogLevel = 'error' as const
+
 export const sharedProjectConfig = {
+	logLevel: viteLogLevel,
 	resolve: {
 		alias: [
 			{
@@ -48,5 +55,8 @@ export const sharedProjectConfig = {
 		setupFiles: [
 			resolve(rootDir, 'packages/worker/src/test-support/console-spies.ts'),
 		],
+		// msw's cookie store probes `typeof localStorage`, which trips Node's
+		// experimental localStorage warning in every fork that loads it.
+		execArgv: ['--disable-warning=ExperimentalWarning'],
 	},
 } satisfies UserConfig

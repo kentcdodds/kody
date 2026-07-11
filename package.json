@@ -57,8 +57,8 @@
     "audit:prod": "npm audit --omit=dev"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.14.9",
-    "@cloudflare/workers-types": "^4.20260415.1",
+    "@cloudflare/vitest-pool-workers": "^0.17.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@epic-web/config": "^1.24.1",
     "@kody-internal/shared": "file:packages/shared",
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -78,7 +78,7 @@
     "set-cookie-parser": "^3.0.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.1",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.106.0"
   },
   "overrides": {
     "@modelcontextprotocol/sdk": "1.29.0",

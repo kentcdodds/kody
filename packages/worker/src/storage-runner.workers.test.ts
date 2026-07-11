@@ -281,33 +281,35 @@ test('storage runner enforces read-only SQL policy for mutations, multi-statemen
 	})
 	const readOnlyError =
 		'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.'
+	// Rejections that cross the test RPC stub surface twice inside workerd and
+	// print `uncaught exception` noise, so run the intentionally failing
+	// queries inside the Durable Object instead.
+	const failingStub = env.STORAGE_RUNNER.get(
+		env.STORAGE_RUNNER.idFromName(JSON.stringify(['user-123', storageId])),
+	)
 
-	try {
-		await runner.sqlQuery({
-			query: 'delete from counters',
-			writable: false,
-		})
-		throw new Error('Expected read-only SQL mutation to fail.')
-	} catch (error) {
-		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(readOnlyError)
-	}
+	await runInDurableObject(failingStub, async (instance: StorageRunner) => {
+		await expect(
+			instance.sqlQuery({
+				query: 'delete from counters',
+				writable: false,
+			}),
+		).rejects.toThrow(readOnlyError)
+	})
 
 	await runner.setValue({
 		key: 'counter',
 		value: 1,
 	})
 
-	try {
-		await runner.sqlQuery({
-			query: 'select 1 as ok; delete from sqlite_schema',
-			writable: false,
-		})
-		throw new Error('Expected multi-statement read-only SQL to fail.')
-	} catch (error) {
-		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(readOnlyError)
-	}
+	await runInDurableObject(failingStub, async (instance: StorageRunner) => {
+		await expect(
+			instance.sqlQuery({
+				query: 'select 1 as ok; delete from sqlite_schema',
+				writable: false,
+			}),
+		).rejects.toThrow(readOnlyError)
+	})
 
 	await expect(
 		runner.getValue({

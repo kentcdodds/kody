@@ -5,8 +5,11 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { hashVerificationToken } from '../packages/worker/src/app/email-verification.ts'
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 import { buildRoleAssignmentSql, buildSeedUserSql } from '../tools/seed-sql.ts'
+import { seedCommunitySnapshotInE2eKv } from './kv-utils.ts'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
+
+const e2eCommunityPinnedCommit = 'abc1234567890abcdef1234567890abcdef12345678'
 
 function sleepSync(ms: number) {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
@@ -148,7 +151,7 @@ INSERT INTO community_listings (
 	${quoteSqlString(tagsJson)},
 	${readmeContent === null ? 'NULL' : quoteSqlString(readmeContent)},
 	'MIT',
-	'abc1234567890abcdef1234567890abcdef12345678',
+	${quoteSqlString(e2eCommunityPinnedCommit)},
 	'active'
 )
 ON CONFLICT(id) DO UPDATE SET
@@ -160,6 +163,12 @@ ON CONFLICT(id) DO UPDATE SET
 	status = excluded.status,
 	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
+	// Icon requests resolve through the listing's KV snapshot; without one the
+	// worker logs `community-icon-load-failed` on every page view.
+	seedCommunitySnapshotInE2eKv({
+		listingId: input.listingId,
+		pinnedCommit: e2eCommunityPinnedCommit,
+	})
 }
 
 export function updateCommunityListingDescriptionInE2eDatabase(input: {
@@ -194,7 +203,7 @@ INSERT INTO community_forks (
 	${quoteSqlString(forkId)},
 	${quoteSqlString(input.listingId)},
 	${quoteSqlString(forkerUserId)},
-	'abc1234567890abcdef1234567890abcdef12345678',
+	${quoteSqlString(e2eCommunityPinnedCommit)},
 	${quoteSqlString(`pkg-fork-${forkId}`)},
 	${quoteSqlString(`src-fork-${forkId}`)},
 	${quoteSqlString(input.listingId)}

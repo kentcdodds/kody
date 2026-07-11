@@ -1,5 +1,6 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
 import { sendCloudflareEmail } from './cloudflare-email.ts'
@@ -93,33 +94,30 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
 	)
 
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	try {
-		const skippedResult = await sendCloudflareEmail(
-			{},
-			{
-				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
-				subject: 'Skipped email',
-				html: '<p>secret body</p>',
-				text: 'secret text',
-			},
-		)
-		expect(skippedResult).toEqual({
-			ok: false,
-			skipped: true,
-		})
-		expect(warnSpy).toHaveBeenCalledTimes(1)
-		const [reason, payload] = warnSpy.mock.calls[0]!
-		expect(reason).toBe('cloudflare-email-unconfigured')
-		expect(String(payload)).not.toContain('secret body')
-		expect(String(payload)).not.toContain('secret text')
-		expect(String(payload)).not.toContain('recipient@example.com')
-		expect(String(payload)).toContain('***@example.com')
-		expect(String(payload)).toContain('Skipped email')
-	} finally {
-		warnSpy.mockRestore()
-	}
+	consoleWarn.mockImplementation(() => {})
+	const skippedResult = await sendCloudflareEmail(
+		{},
+		{
+			to: 'recipient@example.com',
+			from: 'reset@kody.dev',
+			subject: 'Skipped email',
+			html: '<p>secret body</p>',
+			text: 'secret text',
+		},
+	)
+	expect(skippedResult).toEqual({
+		ok: false,
+		skipped: true,
+	})
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	const [warnReason, warnPayload] = consoleWarn.mock.calls[0]!
+	expect(warnReason).toBe('cloudflare-email-unconfigured')
+	expect(String(warnPayload)).not.toContain('secret body')
+	expect(String(warnPayload)).not.toContain('secret text')
+	expect(String(warnPayload)).not.toContain('recipient@example.com')
+	expect(String(warnPayload)).toContain('***@example.com')
+	expect(String(warnPayload)).toContain('Skipped email')
+	consoleWarn.mockClear()
 
 	using _networkFailureServer = createMswNodeServer(
 		[http.post('https://api.cloudflare.test/*', () => HttpResponse.error())],
@@ -142,6 +140,10 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		ok: false,
 		error: 'Failed to fetch',
 	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cloudflare-email-api-request-failed',
+		expect.any(Error),
+	)
 
 	using _invalidJsonServer = createMswNodeServer(
 		[
