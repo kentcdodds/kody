@@ -168,8 +168,10 @@ export function AdminUsersRoute(handle: Handle) {
 	}
 
 	// Plan changes move entitlement limits, so the drill-down must refetch
-	// even though the selected user did not change.
+	// even though the selected user did not change. Dropping the cached data
+	// keeps stale limits from rendering while the refetch is in flight.
 	function invalidateUsage() {
+		usageData = null
 		usageLoadedForUserId = null
 		usageFailedForUserId = null
 	}
