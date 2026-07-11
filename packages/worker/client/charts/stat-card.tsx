@@ -27,6 +27,7 @@ const sparkHeight = 44
 export function StatCard(handle: Handle<StatCardProps>) {
 	return () => {
 		const { id, label, value, sub, color, sparkValues } = handle.props
+		const hasSparkline = Boolean(sparkValues && sparkValues.length > 1)
 		return (
 			<div
 				mix={css({
@@ -36,6 +37,8 @@ export function StatCard(handle: Handle<StatCardProps>) {
 					gap: spacing.xs,
 					alignContent: 'start',
 					padding: spacing.lg,
+					// Keep the sub text clear of the sparkline strip.
+					paddingBottom: hasSparkline ? '2.75rem' : spacing.lg,
 					borderRadius: radius.lg,
 					border: `1px solid ${colors.border}`,
 					backgroundColor: colors.surface,
@@ -88,7 +91,7 @@ export function StatCard(handle: Handle<StatCardProps>) {
 						{sub}
 					</span>
 				) : null}
-				{sparkValues && sparkValues.length > 1
+				{hasSparkline && sparkValues
 					? renderSparkline(id, color, sparkValues)
 					: null}
 			</div>

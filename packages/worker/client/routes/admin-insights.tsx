@@ -339,8 +339,9 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 				mix={css({
 					display: 'grid',
 					gap: spacing.md,
-					gridTemplateColumns:
-						'repeat(auto-fit, minmax(min(13rem, 100%), 1fr))',
+					gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+					[mq.tablet]: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
+					[mq.mobile]: { gridTemplateColumns: 'minmax(0, 1fr)' },
 				})}
 			>
 				<StatCard
@@ -444,6 +445,7 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 						]}
 						xLabels={weekLabels}
 						xTickEvery={3}
+						viewBoxWidth={360}
 					/>
 				</ChartCard>
 

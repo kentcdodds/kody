@@ -22,9 +22,13 @@ type StackedBarChartProps = {
 	ariaLabel: string
 	xTickEvery?: number
 	height?: number
+	/**
+	 * ViewBox width. Use a smaller value for charts rendered in narrow
+	 * cards so axis text keeps a readable on-screen size.
+	 */
+	viewBoxWidth?: number
 }
 
-const width = 720
 const pad = { top: 14, right: 16, bottom: 26, left: 46 }
 
 /**
@@ -34,6 +38,7 @@ const pad = { top: 14, right: 16, bottom: 26, left: 46 }
 export function StackedBarChart(handle: Handle<StackedBarChartProps>) {
 	return () => {
 		const { id, series, xLabels, ariaLabel } = handle.props
+		const width = handle.props.viewBoxWidth ?? 720
 		const height = handle.props.height ?? 230
 		const plotWidth = width - pad.left - pad.right
 		const plotHeight = height - pad.top - pad.bottom
