@@ -13,7 +13,10 @@ import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -336,6 +339,13 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		.prepare(`SELECT COUNT(*) AS count FROM users`)
 		.get() as { count: number }
 	expect(userCount.count).toBe(1)
+	// The first callback signs the user up and logs them in; the second
+	// callback is a pure login. Nothing else is audited.
+	expect(auditEventSummaries()).toEqual([
+		'oauth_signup:success',
+		'oauth_login:success',
+		'oauth_login:success',
+	])
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',

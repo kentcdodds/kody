@@ -8,7 +8,10 @@ import {
 	consoleInfo,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
-import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -545,6 +548,27 @@ test('auth handler login and signup workflow', async () => {
 	expect(secureCookieResponse.headers.get('Set-Cookie') ?? '').toContain(
 		'Secure',
 	)
+	// The full workflow audits exactly these events, in order: the unknown
+	// login, the invite-less production signup, the invited signup (+ invite
+	// use), the weak-password rejection, the open signup, the six username
+	// rejections, and the three successful logins.
+	expect(auditEventSummaries()).toEqual([
+		'login:failure',
+		'signup:failure',
+		'signup:success',
+		'invite_use:success',
+		'signup:failure',
+		'signup:success',
+		'signup:failure',
+		'signup:failure',
+		'signup:failure',
+		'signup:failure',
+		'signup:failure',
+		'signup:failure',
+		'login:success',
+		'login:success',
+		'login:success',
+	])
 })
 
 test('signup fails when the default user role cannot be assigned', async () => {
@@ -564,6 +588,7 @@ test('signup fails when the default user role cannot be assigned', async () => {
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	// The created user row is rolled back so signup can be retried.
 	expect(context.testDb.users.has('roleless@example.com')).toBe(false)
+	expect(auditEventSummaries()).toEqual(['signup:failure'])
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',

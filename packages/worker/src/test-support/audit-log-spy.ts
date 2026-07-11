@@ -27,3 +27,12 @@ vi.mock('#app/audit-log.ts', async (importOriginal) => {
 			logAuditEventSpy(...args),
 	}
 })
+
+// Compact `action:result` view of every audit event recorded so far, in call
+// order. Asserting on this catches extra unexpected events that a bare
+// `toHaveBeenCalledWith` would let through.
+export function auditEventSummaries() {
+	return logAuditEventSpy.mock.calls.map(
+		([event]) => `${event.action}:${event.result}`,
+	)
+}

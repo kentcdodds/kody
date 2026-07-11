@@ -44,7 +44,9 @@ const searchFixture = {
 test('integration_registry_search returns parsed results and rejects upstream failures', async () => {
 	// msw warns about the query string in the handler URL; that tooling
 	// notice is incidental to the capability behavior under test.
-	silenceExpectedConsoleWarns([/^\[MSW\] /])
+	silenceExpectedConsoleWarns([
+		/^\[MSW\] Found a redundant usage of query parameters/,
+	])
 	const url = buildIntegrationRegistrySearchUrlForTest('linear')
 	using _successServer = createMswNodeServer([
 		http.get(url, () => HttpResponse.json(searchFixture)),

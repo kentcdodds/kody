@@ -15,7 +15,10 @@ import { createTwoFactorVerifyApiHandler } from '#app/handlers/verify.ts'
 import { setVerifySessionSecret } from '#app/verify-session.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -303,21 +306,13 @@ test('two-factor setup requires authentication and a valid code before activatin
 		type: '2fa',
 		secret: setupPayload.secret,
 	})
-	// Setup start, the rejected confirm, and the successful enable are audited.
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'two_factor_setup_start',
-			result: 'success',
-		}),
-	)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'two_factor_enable',
-			result: 'failure',
-		}),
-	)
+	// Setup start, the rejected confirm, and the successful enable are audited
+	// — and nothing else.
+	expect(auditEventSummaries()).toEqual([
+		'two_factor_setup_start:success',
+		'two_factor_enable:failure',
+		'two_factor_enable:success',
+	])
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
@@ -560,13 +555,14 @@ test('disabling 2fa requires a valid current code and clears stale pending rows'
 				.get() as { count: number }
 		).count,
 	).toBe(0)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'two_factor_disable',
-			result: 'failure',
-		}),
-	)
+	// The in-test 2FA enablement plus the rejected and successful disable
+	// attempts are audited — and nothing else.
+	expect(auditEventSummaries()).toEqual([
+		'two_factor_setup_start:success',
+		'two_factor_enable:success',
+		'two_factor_disable:failure',
+		'two_factor_disable:success',
+	])
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
