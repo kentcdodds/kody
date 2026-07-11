@@ -91,7 +91,9 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
 (`POST /waiting-list`):
 
 - `KIT_API_KEY` — Kit v4 API key (`X-Kit-Api-Key`). Required for production
-  waiting-list joins; non-production skips Kit when unset.
+  waiting-list joins to succeed; when unset, production returns 503 for the
+  endpoint while the rest of the app stays up. Preview deploys omit the key so
+  joins no-op instead of writing to the production Kit audience.
 - `KIT_WAITLIST_TAG_ID` — optional override for the Kit tag id (defaults to the
   `waitlist::kody` tag).
 

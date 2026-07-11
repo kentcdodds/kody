@@ -3,6 +3,7 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import {
+	KitWaitlistError,
 	resolveKitWaitlistTagId,
 	subscribeToKitWaitlist,
 } from '#app/kit-waitlist.ts'
@@ -156,7 +157,18 @@ export function createWaitingListHandler(env: Env) {
 				})
 			} catch (error) {
 				console.error('Failed to subscribe waiting list contact to Kit:', error)
-				await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
+				const kitError = error instanceof KitWaitlistError ? error : null
+				// Refund only transient failures. Client 4xx (bad email, etc.)
+				// should still count against the IP budget.
+				const shouldRefund =
+					kitError === null ||
+					kitError.kind === 'network' ||
+					kitError.kind === 'server'
+				if (shouldRefund) {
+					await releaseRateLimit(env.APP_DB, rateLimitKey).catch(
+						() => undefined,
+					)
+				}
 				void logAuditEvent({
 					db: env.APP_DB,
 					category: 'auth',

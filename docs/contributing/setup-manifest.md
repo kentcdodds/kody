@@ -146,9 +146,11 @@ Configure these GitHub Actions secrets and variables for workflows:
   `GITHUB_CLIENT_ID`-style secrets — the `OAUTH_` prefix exists because GitHub
   Actions reserves the `GITHUB_*` secret namespace. See
   `docs/contributing/social-login.md` for provider app setup.)
-- `KIT_API_KEY` (optional; Kit / kit.com API key for `/waiting-list` signup.
-  Synced to the Worker as a secret. Production waiting-list joins fail closed
-  when unset; non-production skips Kit. Create a Kit API key at
+- `KIT_API_KEY` (optional GitHub / Worker secret; Kit / kit.com API key for
+  `/waiting-list` signup. Production deploy syncs it when set; without it,
+  production waiting-list joins return 503 while the rest of the app still
+  deploys. Preview deploys intentionally omit the key so preview/E2E joins do
+  not write to the production Kit audience. Create a Kit API key at
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with

@@ -13,25 +13,48 @@ export const KIT_API_BASE_URL = 'https://api.kit.com/v4'
 /** Kit tag `waitlist::kody` — override with `KIT_WAITLIST_TAG_ID` if needed. */
 export const DEFAULT_KIT_WAITLIST_TAG_ID = 21081721
 
+/** Bound Kit round-trips so a hung upstream cannot pin a Worker request. */
+export const KIT_WAITLIST_REQUEST_TIMEOUT_MS = 8_000
+
 export type KitWaitlistSubscribeInput = {
 	apiKey: string
 	email: string
 	firstName: string
 	tagId?: number
 	fetchImpl?: typeof fetch
+	timeoutMs?: number
 }
 
 export type KitWaitlistSubscribeResult = {
 	subscriberId: number
+	created: boolean
+}
+
+type KitSubscriber = {
+	id?: number
+	email_address?: string
+	first_name?: string
 }
 
 type KitSubscriberPayload = {
-	subscriber?: {
-		id?: number
-		email_address?: string
-		first_name?: string
-	}
+	subscriber?: KitSubscriber
+	subscribers?: Array<KitSubscriber>
 	errors?: Array<string>
+}
+
+export class KitWaitlistError extends Error {
+	readonly status: number | null
+	readonly kind: 'client' | 'server' | 'network'
+
+	constructor(
+		message: string,
+		options: { status?: number | null; kind: KitWaitlistError['kind'] },
+	) {
+		super(message)
+		this.name = 'KitWaitlistError'
+		this.status = options.status ?? null
+		this.kind = options.kind
+	}
 }
 
 function kitHeaders(apiKey: string): HeadersInit {
@@ -60,41 +83,121 @@ function kitErrorMessage(
 	return typeof first === 'string' && first.trim() ? first : fallback
 }
 
+function classifyHttpKind(status: number): 'client' | 'server' {
+	return status >= 500 ? 'server' : 'client'
+}
+
+function isAbortError(error: unknown) {
+	return (
+		(error instanceof DOMException && error.name === 'TimeoutError') ||
+		(error instanceof Error && error.name === 'AbortError')
+	)
+}
+
+async function kitFetch(
+	fetchImpl: typeof fetch,
+	url: string,
+	init: RequestInit,
+	timeoutMs: number,
+): Promise<Response> {
+	try {
+		return await fetchImpl(url, {
+			...init,
+			signal: AbortSignal.timeout(timeoutMs),
+		})
+	} catch (error) {
+		if (isAbortError(error)) {
+			throw new KitWaitlistError('Kit request timed out.', {
+				status: null,
+				kind: 'network',
+			})
+		}
+		throw new KitWaitlistError('Kit request failed.', {
+			status: null,
+			kind: 'network',
+		})
+	}
+}
+
 /**
- * Upsert a Kit subscriber (email + first name) and tag them for the Kody
- * waitlist. Tagging is idempotent; create is an upsert by email.
+ * Find an existing Kit subscriber by email, tag them for the waitlist, and
+ * only create (with first_name) when they are new. Existing CRM names are
+ * never overwritten by a public waitlist submission.
  */
 export async function subscribeToKitWaitlist(
 	input: KitWaitlistSubscribeInput,
 ): Promise<KitWaitlistSubscribeResult> {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const tagId = input.tagId ?? DEFAULT_KIT_WAITLIST_TAG_ID
+	const timeoutMs = input.timeoutMs ?? KIT_WAITLIST_REQUEST_TIMEOUT_MS
 	const headers = kitHeaders(input.apiKey)
 
-	const createResponse = await fetchImpl(`${KIT_API_BASE_URL}/subscribers`, {
-		method: 'POST',
-		headers,
-		body: JSON.stringify({
-			email_address: input.email,
-			first_name: input.firstName,
-		}),
-	})
-	const createPayload = await readKitJson(createResponse)
-	if (!createResponse.ok) {
-		throw new Error(
+	const lookupUrl = `${KIT_API_BASE_URL}/subscribers?email_address=${encodeURIComponent(input.email)}`
+	const lookupResponse = await kitFetch(
+		fetchImpl,
+		lookupUrl,
+		{ method: 'GET', headers },
+		timeoutMs,
+	)
+	const lookupPayload = await readKitJson(lookupResponse)
+	if (!lookupResponse.ok) {
+		throw new KitWaitlistError(
 			kitErrorMessage(
-				createPayload,
-				`Kit subscriber create failed (${createResponse.status}).`,
+				lookupPayload,
+				`Kit subscriber lookup failed (${lookupResponse.status}).`,
 			),
+			{
+				status: lookupResponse.status,
+				kind: classifyHttpKind(lookupResponse.status),
+			},
 		)
 	}
 
-	const subscriberId = createPayload?.subscriber?.id
+	const existing = lookupPayload?.subscribers?.find(
+		(subscriber) => typeof subscriber.id === 'number',
+	)
+	let subscriberId = existing?.id
+	let created = false
+
 	if (typeof subscriberId !== 'number') {
-		throw new Error('Kit subscriber create returned no subscriber id.')
+		const createResponse = await kitFetch(
+			fetchImpl,
+			`${KIT_API_BASE_URL}/subscribers`,
+			{
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					email_address: input.email,
+					first_name: input.firstName,
+				}),
+			},
+			timeoutMs,
+		)
+		const createPayload = await readKitJson(createResponse)
+		if (!createResponse.ok) {
+			throw new KitWaitlistError(
+				kitErrorMessage(
+					createPayload,
+					`Kit subscriber create failed (${createResponse.status}).`,
+				),
+				{
+					status: createResponse.status,
+					kind: classifyHttpKind(createResponse.status),
+				},
+			)
+		}
+		subscriberId = createPayload?.subscriber?.id
+		created = true
+		if (typeof subscriberId !== 'number') {
+			throw new KitWaitlistError(
+				'Kit subscriber create returned no subscriber id.',
+				{ status: createResponse.status, kind: 'server' },
+			)
+		}
 	}
 
-	const tagResponse = await fetchImpl(
+	const tagResponse = await kitFetch(
+		fetchImpl,
 		`${KIT_API_BASE_URL}/tags/${tagId}/subscribers`,
 		{
 			method: 'POST',
@@ -103,18 +206,23 @@ export async function subscribeToKitWaitlist(
 				email_address: input.email,
 			}),
 		},
+		timeoutMs,
 	)
 	const tagPayload = await readKitJson(tagResponse)
 	if (!tagResponse.ok) {
-		throw new Error(
+		throw new KitWaitlistError(
 			kitErrorMessage(
 				tagPayload,
 				`Kit waitlist tag failed (${tagResponse.status}).`,
 			),
+			{
+				status: tagResponse.status,
+				kind: classifyHttpKind(tagResponse.status),
+			},
 		)
 	}
 
-	return { subscriberId }
+	return { subscriberId, created }
 }
 
 export function resolveKitWaitlistTagId(

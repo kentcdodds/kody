@@ -138,7 +138,11 @@ test('joins the Kit waitlist with first name and email', async () => {
 	const fetchMock = vi.fn(
 		async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input)
-			if (url.endsWith('/subscribers') && init?.method === 'POST') {
+			const method = init?.method ?? 'GET'
+			if (url.includes('/subscribers?email_address=')) {
+				return Response.json({ subscribers: [] }, { status: 200 })
+			}
+			if (url.endsWith('/subscribers') && method === 'POST') {
 				return Response.json(
 					{ subscriber: { id: 42, email_address: 'ada@example.com' } },
 					{ status: 201 },
@@ -168,8 +172,13 @@ test('joins the Kit waitlist with first name and email', async () => {
 		ok: true,
 		message: "You're on the list. We'll be in touch.",
 	})
-	expect(fetchMock).toHaveBeenCalledTimes(2)
-	const createCall = fetchMock.mock.calls[0]
+	expect(fetchMock).toHaveBeenCalledTimes(3)
+	const createCall = fetchMock.mock.calls.find(([url, init]) => {
+		return (
+			String(url).endsWith('/subscribers') &&
+			(init as RequestInit | undefined)?.method === 'POST'
+		)
+	})
 	expect(createCall?.[1]?.headers).toMatchObject({
 		'X-Kit-Api-Key': 'kit-test-key',
 	})
@@ -246,9 +255,17 @@ test('no-ops successfully in non-production without a Kit key', async () => {
 test('rate limits repeated waiting list submissions', async () => {
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(async () =>
-			Response.json({ subscriber: { id: 1 } }, { status: 201 }),
-		),
+		vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input)
+			const method = init?.method ?? 'GET'
+			if (url.includes('/subscribers?email_address=')) {
+				return Response.json({ subscribers: [] }, { status: 200 })
+			}
+			if (url.endsWith('/subscribers') && method === 'POST') {
+				return Response.json({ subscriber: { id: 1 } }, { status: 201 })
+			}
+			return Response.json({ subscriber: { id: 1 } }, { status: 201 })
+		}),
 	)
 	const { handler, rateLimitDb } = createHandler({
 		KIT_API_KEY: 'kit-test-key',
@@ -273,7 +290,7 @@ test('rate limits repeated waiting list submissions', async () => {
 	expect(rateLimitDb.attemptCount).toBe(waitingListRateLimitConfig.maxRequests)
 })
 
-test('refunds the rate-limit slot when Kit subscribe fails', async () => {
+test('refunds the rate-limit slot when Kit subscribe fails transiently', async () => {
 	consoleError.mockImplementation(() => {})
 	vi.stubGlobal(
 		'fetch',
@@ -288,5 +305,25 @@ test('refunds the rate-limit slot when Kit subscribe fails', async () => {
 	})
 	expect(response.status).toBe(502)
 	expect(rateLimitDb.attemptCount).toBe(0)
+	expect(consoleError).toHaveBeenCalled()
+})
+
+test('keeps the rate-limit slot when Kit rejects with a client error', async () => {
+	consoleError.mockImplementation(() => {})
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () =>
+			Response.json({ errors: ['invalid email'] }, { status: 422 }),
+		),
+	)
+	const { handler, rateLimitDb } = createHandler({
+		KIT_API_KEY: 'kit-test-key',
+	})
+	const response = await postWaitingList(handler, {
+		firstName: 'Ada',
+		email: 'ada@example.com',
+	})
+	expect(response.status).toBe(502)
+	expect(rateLimitDb.attemptCount).toBe(1)
 	expect(consoleError).toHaveBeenCalled()
 })
