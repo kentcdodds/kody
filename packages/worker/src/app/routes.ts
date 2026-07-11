@@ -55,6 +55,8 @@ export const routes = route({
 	adminCommunityReportsApiPost: post('/admin/community-reports.json'),
 	adminUsage: '/admin/usage',
 	adminUsageApi: '/admin/usage.json',
+	adminInsights: '/admin/insights',
+	adminInsightsApi: '/admin/insights.json',
 	adminSystemEmail: '/admin/system-email',
 	adminSystemEmailApi: '/admin/system-email.json',
 	community: '/community',

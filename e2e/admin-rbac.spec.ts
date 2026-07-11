@@ -32,6 +32,11 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await page.goto('/admin/usage')
 	await expect(page.getByRole('heading', { name: 'Admin usage' })).toBeHidden()
 	await expect(page.getByText('Forbidden')).toBeVisible()
+	await page.goto('/admin/insights')
+	await expect(
+		page.getByRole('heading', { name: 'Admin insights' }),
+	).toBeHidden()
+	await expect(page.getByText('Forbidden')).toBeVisible()
 	await expect(
 		page.getByRole('link', { name: 'Admin', exact: true }),
 	).toHaveCount(0)
@@ -143,6 +148,23 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	expect(usagePayload.ok).toBe(true)
 	expect(JSON.stringify(usagePayload)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(usagePayload)).not.toContain('super-secret-value')
+
+	await page.goto('/admin/insights')
+	await expect(
+		page.getByRole('heading', { name: 'Admin insights' }),
+	).toBeVisible()
+	await expect(page.getByText('Unable to load admin insights.')).toHaveCount(0)
+	await expect(page.getByRole('heading', { name: 'User growth' })).toBeVisible()
+	await expect(
+		page.getByRole('img', { name: 'Cumulative registered users per week' }),
+	).toBeVisible()
+	const insightsApiResponse = await page.request.get('/admin/insights.json')
+	expect(insightsApiResponse.ok()).toBe(true)
+	const insightsPayload = await insightsApiResponse.json()
+	expect(insightsPayload.ok).toBe(true)
+	expect(JSON.stringify(insightsPayload)).not.toContain('memberPrivateSecret')
+	expect(JSON.stringify(insightsPayload)).not.toContain('super-secret-value')
+	expect(JSON.stringify(insightsPayload)).not.toContain(memberUser.email)
 
 	await page.goto(`/admin/users?pageSize=100&page=${lastUsersPage}`)
 	await page.getByRole('button', { name: memberUser.username }).click()

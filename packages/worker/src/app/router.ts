@@ -17,6 +17,10 @@ import {
 	createAdminRolesHandler,
 } from '#app/handlers/admin-roles.ts'
 import {
+	createAdminInsightsApiHandler,
+	createAdminInsightsHandler,
+} from '#app/handlers/admin-insights.ts'
+import {
 	createAdminUsageApiHandler,
 	createAdminUsageHandler,
 } from '#app/handlers/admin-usage.ts'
@@ -192,6 +196,8 @@ export function createAppRouter(env: Env) {
 			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(env),
 			adminUsage: createAdminUsageHandler(env),
 			adminUsageApi: createAdminUsageApiHandler(env),
+			adminInsights: createAdminInsightsHandler(env),
+			adminInsightsApi: createAdminInsightsApiHandler(env),
 			adminSystemEmail: createAdminSystemEmailHandler(env),
 			adminSystemEmailApi: createAdminSystemEmailApiHandler(env),
 			community: createCommunityHandler(env),

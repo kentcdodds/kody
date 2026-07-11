@@ -184,6 +184,93 @@ export type AdminUsageLoaderData = {
 	today: string
 }
 
+export type AdminInsightsTotals = {
+	users: number
+	verifiedUsers: number
+	savedPackages: number
+	scheduledJobs: number
+	enabledJobs: number
+	workflowRuns: number
+	activeMemories: number
+	storedEmailMessages: number
+	secrets: number
+	activeCommunityListings: number
+	passkeys: number
+	oauthConnections: number
+}
+
+export type AdminInsightsSignupWeek = {
+	/** UTC Monday that starts the week, for example `2026-06-29`. */
+	weekStart: string
+	signups: number
+	/** Total registered users at the end of the week. */
+	cumulativeUsers: number
+}
+
+export type AdminInsightsUsageMonth = {
+	month: string
+	events: Record<AdminUsageMetric, number>
+	errorCount: number
+}
+
+export type AdminInsightsEmailDay = {
+	day: string
+	sends: number
+	receives: number
+}
+
+export type AdminInsightsAuthDay = {
+	day: string
+	success: number
+	failure: number
+	rateLimited: number
+}
+
+export type AdminInsightsAuthCategory = {
+	category: string
+	count: number
+}
+
+export type AdminInsightsHeatmapCell = {
+	/** 0 = Sunday through 6 = Saturday, matching `Date#getUTCDay`. */
+	weekday: number
+	/** UTC hour of day, 0-23. */
+	hour: number
+	count: number
+}
+
+export type AdminInsightsPlanSlice = {
+	plan: string
+	count: number
+}
+
+export type AdminInsightsWorkflowStatus = {
+	status: string
+	count: number
+}
+
+export type AdminInsightsJobHealth = {
+	totalJobs: number
+	enabledJobs: number
+	successRuns: number
+	errorRuns: number
+}
+
+export type AdminInsightsLoaderData = {
+	ok: true
+	generatedAt: string
+	totals: AdminInsightsTotals
+	signupsByWeek: Array<AdminInsightsSignupWeek>
+	usageByMonth: Array<AdminInsightsUsageMonth>
+	emailByDay: Array<AdminInsightsEmailDay>
+	plans: Array<AdminInsightsPlanSlice>
+	authByDay: Array<AdminInsightsAuthDay>
+	authByCategory: Array<AdminInsightsAuthCategory>
+	authHeatmap: Array<AdminInsightsHeatmapCell>
+	workflowStatuses: Array<AdminInsightsWorkflowStatus>
+	jobHealth: AdminInsightsJobHealth
+}
+
 export type AdminSystemEmailListItem = {
 	id: string
 	inbox_local_part: string
@@ -453,6 +540,7 @@ export type AppLoaderData = {
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
 	adminUsage?: AdminUsageLoaderData
+	adminInsights?: AdminInsightsLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
 	onboarding?: OnboardingLoaderData

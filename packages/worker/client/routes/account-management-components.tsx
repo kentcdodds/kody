@@ -97,6 +97,7 @@ export function AccountManagementHeader(
 
 const adminNavItems = [
 	{ href: '/admin/users', label: 'Users', paths: ['/admin', '/admin/users'] },
+	{ href: '/admin/insights', label: 'Insights', paths: ['/admin/insights'] },
 	{ href: '/admin/invites', label: 'Invites', paths: ['/admin/invites'] },
 	{ href: '/admin/roles', label: 'Roles', paths: ['/admin/roles'] },
 	{
