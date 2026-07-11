@@ -13,22 +13,7 @@ import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-
-// The handlers fire `void logAuditEvent(...)` without awaiting it; those
-// promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Route the sink to a
-// spy so the expected audit events are asserted instead of silently dropped.
-const auditSpy = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
-}))
-
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
-	return {
-		...actual,
-		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
-	}
-})
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -317,7 +302,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		)
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(user.id)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'oauth_signup',
@@ -351,7 +336,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		.prepare(`SELECT COUNT(*) AS count FROM users`)
 		.get() as { count: number }
 	expect(userCount.count).toBe(1)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'oauth_login',

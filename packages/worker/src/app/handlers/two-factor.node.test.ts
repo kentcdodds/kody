@@ -15,22 +15,7 @@ import { createTwoFactorVerifyApiHandler } from '#app/handlers/verify.ts'
 import { setVerifySessionSecret } from '#app/verify-session.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-
-// The handlers fire `void logAuditEvent(...)` without awaiting it; those
-// promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Route the sink to a
-// spy so the expected audit events are asserted instead of silently dropped.
-const auditSpy = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
-}))
-
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
-	return {
-		...actual,
-		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
-	}
-})
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -319,21 +304,21 @@ test('two-factor setup requires authentication and a valid code before activatin
 		secret: setupPayload.secret,
 	})
 	// Setup start, the rejected confirm, and the successful enable are audited.
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'two_factor_setup_start',
 			result: 'success',
 		}),
 	)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'two_factor_enable',
 			result: 'failure',
 		}),
 	)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'two_factor_enable',
@@ -575,14 +560,14 @@ test('disabling 2fa requires a valid current code and clears stale pending rows'
 				.get() as { count: number }
 		).count,
 	).toBe(0)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'two_factor_disable',
 			result: 'failure',
 		}),
 	)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'two_factor_disable',

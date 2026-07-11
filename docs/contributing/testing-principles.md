@@ -73,6 +73,15 @@ when that makes a single test longer and more assertion-heavy.
 
   Keep test output free of stray logging.
 
+- The audit-log sink is mocked globally for `node-unit` tests
+  (`packages/worker/src/test-support/audit-log-spy.ts`, wired via the project's
+  `setupFiles`): import `logAuditEventSpy` and assert the audit events a handler
+  is expected to emit (and `not.toHaveBeenCalled()` where none are). Tests that
+  exercise the real audit pipeline opt out with
+  `vi.unmock('#app/audit-log.ts')`; tests that need to override other exports
+  (e.g. `getRequestIp`) declare their own `vi.mock('#app/audit-log.ts', ...)`
+  and route `logAuditEvent` back through the shared spy.
+
 ## Examples
 
 ### `Symbol.dispose` with `using`

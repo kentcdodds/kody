@@ -1,10 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
-	logAuditEvent: vi.fn(async () => undefined),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -12,10 +12,17 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mockModule.readAuthenticatedAppUser(...args),
 }))
 
-vi.mock('#app/audit-log.ts', () => ({
-	getRequestIp: () => '127.0.0.1',
-	logAuditEvent: (...args: Array<unknown>) => mockModule.logAuditEvent(...args),
-}))
+// The shared audit-log-spy setup file routes logAuditEvent; this test also
+// needs a deterministic request IP for its audit assertions.
+vi.mock('#app/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	return {
+		...actual,
+		getRequestIp: () => '127.0.0.1',
+		logAuditEvent: (...args: Parameters<typeof actual.logAuditEvent>) =>
+			logAuditEventSpy(...args),
+	}
+})
 
 type UserRow = {
 	id: number
@@ -293,7 +300,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 })
 
 test('assign role action updates user roles and logs audit event', async () => {
-	mockModule.logAuditEvent.mockClear()
+	logAuditEventSpy.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
@@ -331,7 +338,7 @@ test('assign role action updates user roles and logs audit event', async () => {
 	expect(response.status).toBe(200)
 	const payload = await response.json()
 	expect(payload.users[0].roles).toContain('admin')
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({ category: 'admin', action: 'assign_role' }),
 	)
 })
@@ -426,7 +433,7 @@ test('remove role removes admin when another admin remains', async () => {
 		(user: { id: number }) => user.id === 2,
 	)
 	expect(secondAdmin.roles).not.toContain('admin')
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'remove_role',
@@ -436,7 +443,7 @@ test('remove role removes admin when another admin remains', async () => {
 })
 
 test('update plan action sets, clears, validates, and scopes plan changes', async () => {
-	mockModule.logAuditEvent.mockClear()
+	logAuditEventSpy.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
@@ -475,7 +482,7 @@ test('update plan action sets, clears, validates, and scopes plan changes', asyn
 	})
 	expect(setPlanResponse.status).toBe(200)
 	expect((await setPlanResponse.json()).users[0].plan).toBe('personal')
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'update_plan',
@@ -491,7 +498,7 @@ test('update plan action sets, clears, validates, and scopes plan changes', asyn
 	})
 	expect(clearPlanResponse.status).toBe(200)
 	expect((await clearPlanResponse.json()).users[0].plan).toBe(null)
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'update_plan',

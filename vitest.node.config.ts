@@ -44,6 +44,11 @@ export default mergeConfig(
 			name: 'node-unit',
 			environment: 'node',
 			include: ['**/*.node.test.ts'],
+			// Merged with the shared setupFiles (console spies). Routes the
+			// audit-log sink through a shared spy; see test-support/audit-log-spy.ts.
+			setupFiles: [
+				resolve(rootDir, 'packages/worker/src/test-support/audit-log-spy.ts'),
+			],
 		},
 	}),
 )

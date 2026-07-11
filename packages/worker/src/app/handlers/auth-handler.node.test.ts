@@ -8,22 +8,7 @@ import {
 	consoleInfo,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
-
-// The auth handler fires `void logAuditEvent(...)` without awaiting it; those
-// promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Route the sink to a
-// spy so the expected audit events are asserted instead of silently dropped.
-const auditSpy = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
-}))
-
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
-	return {
-		...actual,
-		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
-	}
-})
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -375,7 +360,7 @@ test('auth handler login and signup workflow', async () => {
 	expect(await unknownUserLoginResponse.json()).toEqual({
 		error: 'Invalid email or password.',
 	})
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'login',
@@ -413,7 +398,7 @@ test('auth handler login and signup workflow', async () => {
 	})
 	expect(productionContext.testDb.users.has('invited@example.com')).toBe(true)
 	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(1)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'signup',
@@ -421,7 +406,7 @@ test('auth handler login and signup workflow', async () => {
 			email: 'invited@example.com',
 		}),
 	)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'invite_use',
@@ -532,7 +517,7 @@ test('auth handler login and signup workflow', async () => {
 	const loginCookie = loginResponse.headers.get('Set-Cookie') ?? ''
 	expect(loginCookie).toContain('kody_session=')
 	expect(loginCookie).toContain('Max-Age=604800')
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'login',
@@ -579,7 +564,7 @@ test('signup fails when the default user role cannot be assigned', async () => {
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	// The created user row is rolled back so signup can be retried.
 	expect(context.testDb.users.has('roleless@example.com')).toBe(false)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'signup',

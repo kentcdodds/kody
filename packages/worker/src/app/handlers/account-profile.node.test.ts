@@ -5,22 +5,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountProfileApiHandler } from './account-profile.ts'
-
-// The handler fires `void logAuditEvent(...)` without awaiting it; those
-// promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Route the sink to a
-// spy so the expected audit events are asserted instead of silently dropped.
-const auditSpy = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
-}))
-
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
-	return {
-		...actual,
-		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
-	}
-})
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -212,7 +197,7 @@ test('account profile API returns email and username for the signed-in user', as
 		displayName: 'current-user',
 	})
 	// Reads are not audited.
-	expect(auditSpy.logAuditEvent).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })
 
 test('account profile API updates username for the signed-in user', async () => {
@@ -240,8 +225,8 @@ test('account profile API updates username for the signed-in user', async () => 
 		displayName: 'next_user',
 	})
 	expect(testDb.users.get(1)?.username).toBe('next_user')
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(1)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'update_username',
@@ -301,8 +286,8 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 	})
 	expect(testDb.users.get(1)?.username).toBe('current-user')
 	// Only the duplicate attempt is audited; validation rejections are not.
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(1)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
 			action: 'update_username',

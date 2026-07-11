@@ -10,22 +10,7 @@ import {
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 import { createAccountResendVerificationHandler } from './account-resend-verification.ts'
-
-// The handler fires `void logAuditEvent(...)` without awaiting it; those
-// promises can resolve after the test ends and leak `audit-event` lines into
-// the runner output once the console spies are restored. Route the sink to a
-// spy so the expected audit events are asserted instead of silently dropped.
-const auditSpy = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
-}))
-
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
-	return {
-		...actual,
-		logAuditEvent: (...args: Array<unknown>) => auditSpy.logAuditEvent(...args),
-	}
-})
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -215,8 +200,8 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 	// No new token is created for rate-limited requests.
 	expect(testDb.state.verificationInserts).toBe(3)
 	// Three successful resends plus the rate-limited attempt are audited.
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(4)
-	expect(auditSpy.logAuditEvent).toHaveBeenNthCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledTimes(4)
+	expect(logAuditEventSpy).toHaveBeenNthCalledWith(
 		3,
 		expect.objectContaining({
 			category: 'auth',
@@ -224,7 +209,7 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 			result: 'success',
 		}),
 	)
-	expect(auditSpy.logAuditEvent).toHaveBeenNthCalledWith(
+	expect(logAuditEventSpy).toHaveBeenNthCalledWith(
 		4,
 		expect.objectContaining({
 			category: 'auth',
@@ -293,8 +278,8 @@ test('resend verification surfaces send failures without pretending success', as
 		'cloudflare-email-api-failed',
 		expect.any(String),
 	)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledTimes(1)
-	expect(auditSpy.logAuditEvent).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'email_verification_resend',

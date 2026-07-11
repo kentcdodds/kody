@@ -1,5 +1,9 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+
+// These tests assert real `audit_events` rows written through the actual
+// audit pipeline, so opt out of the shared audit-log-spy setup mock.
+vi.unmock('#app/audit-log.ts')
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'

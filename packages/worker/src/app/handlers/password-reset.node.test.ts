@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import type * as AuditLog from '#app/audit-log.ts'
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createRecord: vi.fn(async () => undefined),
@@ -8,7 +8,6 @@ const mockModule = vi.hoisted(() => ({
 		id: 123,
 		email: 'user@example.com',
 	})),
-	logAuditEvent: vi.fn(async () => undefined),
 	sendCloudflareEmail: vi.fn(async () => ({ ok: true })),
 }))
 
@@ -22,13 +21,15 @@ vi.mock('#worker/db.ts', () => ({
 	usersTable: {},
 }))
 
+// The shared audit-log-spy setup file routes logAuditEvent; this test also
+// needs getRequestIp pinned to null for deterministic audit payloads.
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof AuditLog>()
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
 	return {
 		...actual,
 		getRequestIp: () => null,
-		logAuditEvent: (...args: Array<unknown>) =>
-			mockModule.logAuditEvent(...args),
+		logAuditEvent: (...args: Parameters<typeof actual.logAuditEvent>) =>
+			logAuditEventSpy(...args),
 	}
 })
 
@@ -120,6 +121,13 @@ test('password reset sends from the APP_BASE_URL hostname without logging the to
 			expect(joined).not.toContain('token=')
 			expect(joined).not.toMatch(hexTokenPattern)
 		}
+		expect(logAuditEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: 'auth',
+				action: 'password_reset_request',
+				result: 'success',
+			}),
+		)
 	} finally {
 		warnSpy.mockRestore()
 	}
