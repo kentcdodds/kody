@@ -20,6 +20,7 @@ import {
 	releaseInviteUse,
 } from '#app/invites.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { assignUserRole } from '#app/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
@@ -91,6 +92,15 @@ export function createAuthHandler(env: Env) {
 				typeof body === 'object' && body !== null
 					? (body as Record<string, unknown>).rememberMe
 					: undefined
+			const signupRedirectTo =
+				normalizedMode === 'signup' &&
+				typeof body === 'object' &&
+				body !== null &&
+				typeof (body as Record<string, unknown>).redirectTo === 'string'
+					? normalizeRedirectTo(
+							(body as Record<string, unknown>).redirectTo as string,
+						)
+					: null
 			const requestIp = getRequestIp(request) ?? undefined
 			if (
 				rememberMeValue !== undefined &&
@@ -334,6 +344,7 @@ export function createAuthHandler(env: Env) {
 						userId: record.id,
 						email: normalizedEmail,
 						requestUrl: url,
+						redirectTo: signupRedirectTo,
 					})
 				} catch (error) {
 					console.error('Failed to create email verification at signup:', error)

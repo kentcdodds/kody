@@ -1,4 +1,5 @@
 import { css } from 'remix/ui'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { on } from '#client/event-mixin.ts'
 import { colors, spacing } from '#client/styles/tokens.ts'
 import {
@@ -21,11 +22,18 @@ export type ResendVerificationResult =
 	| { ok: true; message: string }
 	| { ok: false; message: string; unauthorized?: boolean }
 
-export async function requestResendVerification(): Promise<ResendVerificationResult> {
+export async function requestResendVerification(
+	redirectTo?: string | null,
+): Promise<ResendVerificationResult> {
+	const safeRedirectTo = normalizeRedirectTo(redirectTo)
 	const response = await fetch(resendVerificationApiPath, {
 		method: 'POST',
-		headers: { Accept: 'application/json' },
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+		},
 		credentials: 'include',
+		body: JSON.stringify(safeRedirectTo ? { redirectTo: safeRedirectTo } : {}),
 	})
 	if (response.status === 401) {
 		return {

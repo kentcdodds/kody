@@ -15,6 +15,7 @@ import {
 	renderEmailVerificationPrompt,
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
+import { resolveContinueVerificationFeedback } from '#client/routes/pending-verification-continue.ts'
 import {
 	pendingVerificationPath,
 	resolvePostVerificationRedirect,
@@ -119,7 +120,9 @@ export function PendingVerificationRoute(handle: Handle) {
 		resendTone = 'info'
 		handle.update()
 		try {
-			const result = await requestResendVerification()
+			const result = await requestResendVerification(
+				readPendingRedirectTo(handle),
+			)
 			if (!result.ok && result.unauthorized) {
 				window.location.assign(buildLoginRedirectForPending(handle))
 				return
@@ -136,16 +139,21 @@ export function PendingVerificationRoute(handle: Handle) {
 	}
 
 	async function handleContinue() {
-		const session = await fetchSessionInfo()
-		if (session?.emailVerified) {
-			window.location.assign(
-				resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
-			)
-			return
+		try {
+			const session = await fetchSessionInfo()
+			const feedback = resolveContinueVerificationFeedback(session)
+			if (feedback.status === 'verified') {
+				window.location.assign(
+					resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
+				)
+				return
+			}
+			resendTone = feedback.tone
+			resendMessage = feedback.message
+		} catch {
+			resendTone = 'error'
+			resendMessage = 'Unable to check verification status. Try again.'
 		}
-		resendTone = 'info'
-		resendMessage =
-			'Still waiting on verification. Open the link from your email, then try again.'
 		handle.update()
 	}
 

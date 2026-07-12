@@ -1,6 +1,7 @@
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
 import { findUserRowByStableUserId } from '#worker/user-id.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -53,11 +54,27 @@ function buildVerificationEmail(verificationUrl: string) {
 	}
 }
 
+/** Builds `/verify-email` with token and an optional safe post-verify resume target. */
+export function buildEmailVerificationUrl(input: {
+	appBaseUrl: string
+	token: string
+	redirectTo?: string | null
+}) {
+	const verificationUrl = new URL('/verify-email', input.appBaseUrl)
+	verificationUrl.searchParams.set('token', input.token)
+	const safeRedirectTo = normalizeRedirectTo(input.redirectTo)
+	if (safeRedirectTo) {
+		verificationUrl.searchParams.set('redirectTo', safeRedirectTo)
+	}
+	return verificationUrl
+}
+
 export async function createEmailVerification(input: {
 	env: Env
 	userId: number
 	email: string
 	requestUrl: string | URL
+	redirectTo?: string | null
 }) {
 	const db = createDb(input.env.APP_DB)
 	const token = generateVerificationToken()
@@ -86,8 +103,11 @@ export async function createEmailVerification(input: {
 		env: input.env,
 		requestUrl: input.requestUrl,
 	})
-	const verificationUrl = new URL('/verify-email', emailConfig.appBaseUrl)
-	verificationUrl.searchParams.set('token', token)
+	const verificationUrl = buildEmailVerificationUrl({
+		appBaseUrl: emailConfig.appBaseUrl,
+		token,
+		redirectTo: input.redirectTo,
+	})
 	const email = buildVerificationEmail(verificationUrl.toString())
 
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>

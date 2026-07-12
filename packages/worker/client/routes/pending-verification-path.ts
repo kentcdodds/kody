@@ -1,4 +1,9 @@
-import { normalizeRedirectTo } from '#app/safe-redirect.ts'
+import {
+	normalizeRedirectTo,
+	resolvePostVerificationRedirect,
+} from '#app/safe-redirect.ts'
+
+export { resolvePostVerificationRedirect }
 
 export const pendingVerificationPath = '/pending-verification'
 
@@ -11,9 +16,4 @@ export function buildPendingVerificationPath(redirectTo?: string | null) {
 	if (!safeRedirectTo) return pendingVerificationPath
 	const params = new URLSearchParams({ redirectTo: safeRedirectTo })
 	return `${pendingVerificationPath}?${params.toString()}`
-}
-
-/** Destination after email verification succeeds from the pending page. */
-export function resolvePostVerificationRedirect(redirectTo?: string | null) {
-	return normalizeRedirectTo(redirectTo) ?? '/onboarding'
 }

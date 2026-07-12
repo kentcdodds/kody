@@ -251,7 +251,13 @@ export function LoginRoute(handle: Handle) {
 					password,
 					mode,
 					rememberMe,
-					...(mode === 'signup' ? { username, inviteCode } : {}),
+					...(mode === 'signup'
+						? {
+								username,
+								inviteCode,
+								redirectTo: getCurrentRedirectTo(handle),
+							}
+						: {}),
 				}),
 			})
 			const payload = await response.json().catch(() => null)
@@ -351,19 +357,10 @@ export function LoginRoute(handle: Handle) {
 				return
 			}
 
-			if (verificationPayload.requiresTwoFactor === true) {
-				window.location.assign(
-					resolvePasswordAuthRedirect({
-						mode: 'login',
-						requiresTwoFactor: true,
-						redirectTo: getCurrentRedirectTo(handle),
-					}),
-				)
-				return
-			}
 			window.location.assign(
 				resolvePasswordAuthRedirect({
 					mode: 'login',
+					requiresTwoFactor: verificationPayload.requiresTwoFactor === true,
 					redirectTo: getCurrentRedirectTo(handle),
 				}),
 			)

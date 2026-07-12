@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -9,6 +10,7 @@ import {
 	renderEmailVerificationPrompt,
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
+import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-email-verified.ts'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -208,13 +210,21 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		return true
 	}
 
+	function readOAuthResumeTarget() {
+		const currentUrl = new URL(
+			readCurrentRouterHref(handle),
+			'http://localhost',
+		)
+		return normalizeRedirectTo(`${currentUrl.pathname}${currentUrl.search}`)
+	}
+
 	async function handleResendVerification() {
 		resendStatus = 'sending'
 		resendMessage = null
 		resendTone = 'info'
 		handle.update()
 		try {
-			const result = await requestResendVerification()
+			const result = await requestResendVerification(readOAuthResumeTarget())
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
 		} catch {
@@ -370,8 +380,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
-		const emailVerified =
-			session?.emailVerified === true || info?.emailVerified === true
+		const emailVerified = resolveAuthorizeEmailVerified({
+			isSessionReady,
+			sessionEmailVerified: session?.emailVerified,
+			infoEmailVerified: info?.emailVerified,
+		})
 		const needsEmailVerification = isLoggedIn && !emailVerified
 		const showResetClientCard = allowClientReset && !resetCompleted
 		const showAuthorizeForm = !resetCompleted && !needsEmailVerification

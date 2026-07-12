@@ -112,13 +112,14 @@ test('admin invite signup and email verification happy path', async ({
 	).toHaveCount(0)
 
 	await page.getByRole('button', { name: 'Resend verification email' }).click()
+	const oauthResume = '/oauth/authorize?client_id=e2e-demo&response_type=code'
 	await expect(async () => {
 		await setEmailVerificationTokenInE2eDatabase({
 			email: invitedEmail,
 			token: verificationToken,
 		})
 		await page.goto(
-			`/verify-email?token=${encodeURIComponent(verificationToken)}`,
+			`/verify-email?token=${encodeURIComponent(verificationToken)}&redirectTo=${encodeURIComponent(oauthResume)}`,
 		)
 		await expect(
 			page.getByRole('heading', { name: 'Email verified' }),
@@ -126,7 +127,14 @@ test('admin invite signup and email verification happy path', async ({
 	}).toPass({ timeout: 15_000 })
 
 	await expect(page.getByText(/MCP access is now available/i)).toBeVisible()
-	await page.getByRole('link', { name: 'Continue to onboarding' }).click()
+	const continueAuthorization = page.getByRole('link', {
+		name: 'Continue authorization',
+	})
+	await expect(continueAuthorization).toHaveAttribute('href', oauthResume)
+	await continueAuthorization.click()
+	await expect(page).toHaveURL(/\/oauth\/authorize/)
+
+	await page.goto('/onboarding')
 	await expect(page).toHaveURL(/\/onboarding$/)
 	await expect(
 		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),

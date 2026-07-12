@@ -4,11 +4,25 @@ import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { type routes } from '#app/routes.ts'
 
 export const resendVerificationRateLimitConfig = {
 	maxRequests: 3,
 	windowSeconds: 15 * 60,
+}
+
+async function readResendRedirectTo(request: Request) {
+	const contentType = request.headers.get('content-type') ?? ''
+	if (!contentType.includes('application/json')) {
+		return normalizeRedirectTo(
+			new URL(request.url).searchParams.get('redirectTo'),
+		)
+	}
+	const body = await request.json().catch(() => null)
+	if (!body || typeof body !== 'object') return null
+	const redirectTo = (body as Record<string, unknown>).redirectTo
+	return typeof redirectTo === 'string' ? normalizeRedirectTo(redirectTo) : null
 }
 
 export function createAccountResendVerificationHandler(env: Env) {
@@ -27,6 +41,8 @@ export function createAccountResendVerificationHandler(env: Env) {
 					400,
 				)
 			}
+
+			const redirectTo = await readResendRedirectTo(request)
 
 			const rateLimitKey = `verification-resend:user:${user.userId}`
 			const rateLimit = await checkRateLimit(
@@ -64,6 +80,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 					userId: user.userId,
 					email: user.email,
 					requestUrl: url,
+					redirectTo,
 				})
 			} catch (error) {
 				console.error('Failed to resend verification email:', error)
