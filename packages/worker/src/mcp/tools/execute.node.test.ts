@@ -1,5 +1,10 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { expect, test, vi } from 'vitest'
+import {
+	defaultMcpContentLimitBytes,
+	maxMcpContentBlockCount,
+	wrapDownstreamMcpToolResult,
+} from '#mcp/downstream-mcp-result.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
@@ -115,7 +120,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 		logs: [{ level: 'info', message: 'captured screenshot' }],
 	})
 	const returnedBytes = new TextEncoder().encode(
-		JSON.stringify({ __mcpContent: rawContent }),
+		JSON.stringify(rawContent),
 	).byteLength
 
 	const mcpContentResponse = await handler({
@@ -371,5 +376,160 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 			returnedBytes: 0,
 			logs: [{ level: 'error', message: 'failed' }],
 		}),
+	)
+})
+
+test('execute passes through downstream MCP image content with structured data and rejects oversize content explicitly', async () => {
+	const handler = await getExecuteHandler()
+	const webpBlock = {
+		type: 'image' as const,
+		data: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=',
+		mimeType: 'image/webp',
+	}
+
+	mockPerformanceSequence(1, 2)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: wrapDownstreamMcpToolResult(
+			{
+				content: [webpBlock],
+				structuredContent: { shotId: 's1' },
+			},
+			{ kind: 'mcp-server', label: 'vision:screenshot' },
+		),
+		logs: [],
+	})
+
+	const passthroughResponse = await handler({
+		code: 'async () => downstream',
+		conversationId: 'conv-passthrough',
+	})
+
+	expect(passthroughResponse.isError).toBe(false)
+	expect(passthroughResponse.content).toEqual([
+		{ type: 'text', text: 'conversationId: conv-passthrough' },
+		webpBlock,
+	])
+	expect(passthroughResponse.structuredContent.result).toEqual({
+		shotId: 's1',
+	})
+
+	const largeData = 'A'.repeat(Math.ceil(110_000 / 4) * 4)
+	const largeBlock = {
+		type: 'image' as const,
+		data: largeData,
+		mimeType: 'image/webp',
+	}
+	mockPerformanceSequence(3, 4)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: {
+			__mcpContent: [largeBlock],
+		},
+		logs: [],
+	})
+
+	const largeResponse = await handler({
+		code: 'async () => large',
+		conversationId: 'conv-large-image',
+		responseLimit: 102_400,
+	})
+
+	expect(largeResponse.isError).toBe(false)
+	expect(largeResponse.content).toEqual([
+		{ type: 'text', text: 'conversationId: conv-large-image' },
+		largeBlock,
+	])
+
+	const tooLargeData = 'A'.repeat(
+		Math.ceil((defaultMcpContentLimitBytes + 50_000) / 4) * 4,
+	)
+	mockPerformanceSequence(5, 6)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: {
+			__mcpContent: [
+				{
+					type: 'image',
+					data: tooLargeData,
+					mimeType: 'image/png',
+				},
+			],
+		},
+		logs: [],
+	})
+
+	const oversizeResponse = await handler({
+		code: 'async () => oversize',
+		conversationId: 'conv-oversize',
+	})
+
+	expect(oversizeResponse.isError).toBe(true)
+	expect(oversizeResponse.structuredContent.error).toContain(
+		'exceeding content limit',
+	)
+	expect(oversizeResponse.content[1]).toMatchObject({
+		type: 'text',
+		text: expect.stringContaining('exceeding content limit'),
+	})
+
+	// Ordinary application objects with a `content` array stay JSON text.
+	mockPerformanceSequence(7, 8)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: {
+			content: [webpBlock],
+			ok: true,
+		},
+		logs: [],
+	})
+	const arbitraryContentResponse = await handler({
+		code: 'async () => ({ content: [...] })',
+		conversationId: 'conv-arbitrary-content',
+	})
+	expect(arbitraryContentResponse.isError).toBe(false)
+	expect(arbitraryContentResponse.content).toEqual([
+		{ type: 'text', text: 'conversationId: conv-arbitrary-content' },
+		{
+			type: 'text',
+			text: JSON.stringify({ content: [webpBlock], ok: true }, null, 2),
+		},
+	])
+	expect(arbitraryContentResponse.content.some((b) => b.type === 'image')).toBe(
+		false,
+	)
+
+	// Malformed user-authored __mcpContent becomes an isError result (no throw).
+	mockPerformanceSequence(9, 10)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: {
+			__mcpContent: [{ type: 'image', data: '!!!', mimeType: 'image/png' }],
+		},
+		logs: [],
+	})
+	const malformedResponse = await handler({
+		code: 'async () => bad',
+		conversationId: 'conv-malformed',
+	})
+	expect(malformedResponse.isError).toBe(true)
+	expect(malformedResponse.structuredContent.error).toMatch(
+		/default export \(__mcpContent\)[\s\S]*malformed MCP content/,
+	)
+	expect(malformedResponse.content.some((b) => b.type === 'image')).toBe(false)
+
+	// Too many content blocks fail before expensive validation work.
+	mockPerformanceSequence(11, 12)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: {
+			__mcpContent: Array.from({ length: maxMcpContentBlockCount + 1 }, () => ({
+				type: 'text',
+				text: 'x',
+			})),
+		},
+		logs: [],
+	})
+	const tooManyBlocksResponse = await handler({
+		code: 'async () => many',
+		conversationId: 'conv-too-many-blocks',
+	})
+	expect(tooManyBlocksResponse.isError).toBe(true)
+	expect(tooManyBlocksResponse.structuredContent.error).toContain(
+		'too many MCP content blocks',
 	)
 })

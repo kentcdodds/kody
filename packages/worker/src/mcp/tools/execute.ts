@@ -1,15 +1,23 @@
 import * as Sentry from '@sentry/cloudflare'
-import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
+import {
+	type ContentBlock,
+	type ToolAnnotations,
+} from '@modelcontextprotocol/sdk/types.js'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import {
 	defaultExecutionResponseLimitBytes,
-	extractRawContent,
 	formatLimitedExecutionOutput,
 	limitExecutionResultValue,
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
+import {
+	defaultMcpContentLimitBytes,
+	extractMcpPassthrough,
+	limitMcpContentBlocks,
+	validateDownstreamMcpContentBlocks,
+} from '#mcp/downstream-mcp-result.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
@@ -131,7 +139,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						`Soft cap on the size of the value returned from your default export. Defaults to ~100 KB. Returns over the cap are truncated and the response includes a note. You write the code -- if you only need a few fields, project before returning. Examples:
+						`Soft cap on the JSON/text value returned from your default export (structured result / serialized output). Defaults to ~100 KB (${defaultExecutionResponseLimitBytes.toLocaleString()} bytes). Oversized JSON is truncated with a note. Protocol content blocks from __mcpContent (images/audio/resources) use a separate ~512 KB content cap and are not truncated into JSON text — oversized protocol content fails explicitly. Project large API payloads before returning. Examples:
 // bad: messages.list().then(j => j) -- returns full Gmail payloads
 // good: messages.list().then(j => j.messages.map(m => ({id: m.id, snippet: m.snippet})))
 // good: aggregate().then(rows => ({count: rows.length, sample: rows.slice(0, 3)}))`,
@@ -334,44 +342,156 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					sandboxError: false,
 					context: activeStorageId ? { storageId: activeStorageId } : undefined,
 				})
+				const responseLimitBytes =
+					responseLimit ?? defaultExecutionResponseLimitBytes
+				const passthrough = extractMcpPassthrough(result.result)
+				const rawContent = passthrough?.content ?? null
+
+				if (rawContent) {
+					let validatedContent: Array<ContentBlock>
+					try {
+						validatedContent = validateDownstreamMcpContentBlocks(rawContent, {
+							kind: 'execute',
+							label: 'default export (__mcpContent)',
+						})
+					} catch (error) {
+						const message = getErrorMessage(error)
+						return {
+							content: prependToolMetadataContent(resolvedConversationId, [
+								{
+									type: 'text',
+									text: `Error: ${message}`,
+								},
+								...formatSurfacedMemoriesMarkdown(surfacedMemories),
+							]),
+							structuredContent: {
+								conversationId: resolvedConversationId,
+								timing,
+								...(activeStorageId
+									? { storage: { id: activeStorageId } }
+									: {}),
+								returnedBytes: 0,
+								error: message,
+								result: passthrough?.structuredResult ?? null,
+								logs: result.logs ?? [],
+								...buildMemoryStructuredContent(surfacedMemories),
+							},
+							isError: true,
+						}
+					}
+
+					const contentLimited = limitMcpContentBlocks(
+						validatedContent,
+						defaultMcpContentLimitBytes,
+					)
+					if (!contentLimited.ok) {
+						return {
+							content: prependToolMetadataContent(resolvedConversationId, [
+								{
+									type: 'text',
+									text: `Error: ${contentLimited.note}`,
+								},
+								...formatSurfacedMemoriesMarkdown(surfacedMemories),
+							]),
+							structuredContent: {
+								conversationId: resolvedConversationId,
+								timing,
+								...(activeStorageId
+									? { storage: { id: activeStorageId } }
+									: {}),
+								returnedBytes: contentLimited.returnedBytes,
+								truncated: true,
+								note: contentLimited.note,
+								result: passthrough?.structuredResult ?? null,
+								logs: result.logs ?? [],
+								...buildMemoryStructuredContent(surfacedMemories),
+							},
+							isError: true,
+						}
+					}
+
+					const companionLimited =
+						passthrough?.structuredResult === undefined ||
+						passthrough.structuredResult === null
+							? null
+							: limitExecutionResultValue(
+									passthrough.structuredResult,
+									responseLimitBytes,
+								)
+
+					return {
+						content: prependToolMetadataContent(resolvedConversationId, [
+							...contentLimited.blocks,
+							...formatSurfacedMemoriesMarkdown(surfacedMemories),
+						]),
+						structuredContent: {
+							conversationId: resolvedConversationId,
+							timing,
+							...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
+							returnedBytes:
+								contentLimited.returnedBytes +
+								(companionLimited?.returnedBytes ?? 0),
+							...(companionLimited?.truncated
+								? {
+										truncated: true,
+										note: companionLimited.note,
+									}
+								: {}),
+							result: companionLimited
+								? companionLimited.value
+								: (passthrough?.structuredResult ?? null),
+							logs: result.logs ?? [],
+							...buildMemoryStructuredContent(surfacedMemories),
+						},
+						isError: passthrough?.isError ?? false,
+					}
+				}
+
 				const limitedResult = limitExecutionResultValue(
 					result.result,
-					responseLimit ?? defaultExecutionResponseLimitBytes,
+					responseLimitBytes,
 				)
-				const rawContent = limitedResult.truncated
-					? null
-					: extractRawContent(limitedResult.value)
+				const markerOnlyPassthrough =
+					passthrough &&
+					(passthrough.isError || passthrough.structuredResult !== null)
+						? passthrough
+						: null
+				const structuredResultValue = markerOnlyPassthrough
+					? limitExecutionResultValue(
+							markerOnlyPassthrough.structuredResult ?? {},
+							responseLimitBytes,
+						)
+					: limitedResult
+
 				return {
 					content: prependToolMetadataContent(resolvedConversationId, [
-						...(rawContent ?? [
-							{
-								type: 'text',
-								text: formatLimitedExecutionOutput({
-									value: limitedResult.value,
-									truncated: limitedResult.truncated,
-									note: limitedResult.note,
-									displayText: limitedResult.displayText,
-								}),
-							},
-						]),
+						{
+							type: 'text',
+							text: formatLimitedExecutionOutput({
+								value: structuredResultValue.value,
+								truncated: structuredResultValue.truncated,
+								note: structuredResultValue.note,
+								displayText: structuredResultValue.displayText,
+							}),
+						},
 						...formatSurfacedMemoriesMarkdown(surfacedMemories),
 					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						timing,
 						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
-						returnedBytes: limitedResult.returnedBytes,
-						...(limitedResult.truncated
+						returnedBytes: structuredResultValue.returnedBytes,
+						...(structuredResultValue.truncated
 							? {
 									truncated: true,
-									note: limitedResult.note,
+									note: structuredResultValue.note,
 								}
 							: {}),
-						result: rawContent ? null : limitedResult.value,
+						result: structuredResultValue.value,
 						logs: result.logs ?? [],
 						...buildMemoryStructuredContent(surfacedMemories),
 					},
-					isError: false,
+					isError: markerOnlyPassthrough?.isError ?? false,
 				}
 			}
 		},

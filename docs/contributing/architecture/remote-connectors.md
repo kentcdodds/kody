@@ -59,7 +59,10 @@ The Worker sends MCP-style requests over the WebSocket wrapped in
 
 - **`tools/call`** — Params: `{ name: string, arguments?: object }`. Return a
   normal MCP **`CallToolResult`**-compatible payload (content, structured
-  content, `isError`, etc.).
+  content, `isError`, etc.). When execute returns that capability result
+  directly, protocol-valid non-text content blocks (images, audio, resources)
+  pass through to the upstream MCP client; see
+  [Raw MCP content blocks](../../use/raw-content-blocks.md).
 
 If the Worker forwards **`notifications/tools/list_changed`**, the connector
 should re-list tools when it supports dynamic registration.

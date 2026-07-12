@@ -343,3 +343,11 @@ Readable non-secret configuration uses **`kody.value_get`** and
 By default, **`execute`** returns text output. To return non-text MCP content
 blocks such as images, return an object with a **`__mcpContent`** array instead;
 see [Raw MCP content blocks](./raw-content-blocks.md).
+
+The same passthrough applies when execute returns a result from a user-added MCP
+server or remote connector that already includes protocol image (or other
+non-text) content blocks.
+
+**`responseLimit`** caps ordinary JSON/text output (~100 KB by default).
+Protocol `__mcpContent` blocks use a separate ~512 KB content cap so valid
+images larger than 100 KB are not collapsed into truncated JSON.

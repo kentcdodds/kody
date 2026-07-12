@@ -61,7 +61,13 @@ callback replay finds no matching state.
   `kody.mcp["<server-name>"].<tool>(input)` and are never exposed as flat
   `kody.*` functions. Search capability detail returns the exact accessor.
 - Tool calls flow worker → hub DO `callTool` → `MCPClientManager.callTool` →
-  remote server. Structured content is returned directly when present.
+  remote server. At the synthesized capability boundary, results are wrapped
+  with explicit `__mcpContent` / companion markers when protocol content must
+  reach the upstream client (especially non-text blocks such as images).
+  Structured content remains available for code; `isError` is preserved. See
+  [Raw MCP content blocks](../../use/raw-content-blocks.md).
+- Malformed third-party content blocks are rejected with a source-specific
+  error. Image/audio URL-only payloads are not fetched.
 
 ## Management surfaces
 

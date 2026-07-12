@@ -15,6 +15,7 @@ import {
 } from '#worker/remote-connector/remote-domain-id.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
+import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 
 type RemoteToolCapabilityBinding = {
 	capabilityName: string
@@ -139,16 +140,10 @@ function createCapabilityFromTool(input: {
 					`Remote capability "${binding.instanceId}:${tool.name}" failed: ${message}`,
 				)
 			}
-			if (
-				result.structuredContent &&
-				typeof result.structuredContent === 'object'
-			) {
-				return result.structuredContent as Record<string, unknown>
-			}
-			return {
-				content: result.content,
-				isError: result.isError ?? false,
-			}
+			return wrapDownstreamMcpToolResult(result, {
+				kind: 'remote-connector',
+				label: `${binding.instanceId}:${tool.name}`,
+			})
 		},
 	})
 

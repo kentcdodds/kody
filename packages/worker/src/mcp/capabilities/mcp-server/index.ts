@@ -18,6 +18,7 @@ import {
 	type McpServerSnapshot,
 	type McpServerToolDescriptor,
 } from '#worker/mcp-client/types.ts'
+import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 
 type McpServerToolCapabilityBinding = {
 	capabilityName: string
@@ -142,16 +143,10 @@ function createCapabilityFromTool(input: {
 					`MCP server capability "${ref.name}:${tool.name}" failed: ${message}`,
 				)
 			}
-			if (
-				result.structuredContent &&
-				typeof result.structuredContent === 'object'
-			) {
-				return result.structuredContent as Record<string, unknown>
-			}
-			return {
-				content: result.content,
-				isError: result.isError ?? false,
-			}
+			return wrapDownstreamMcpToolResult(result, {
+				kind: 'mcp-server',
+				label: `${ref.name}:${tool.name}`,
+			})
 		},
 	})
 

@@ -954,6 +954,17 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		}),
 	).toEqual(content)
 	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
+	expect(
+		extractRawContent({
+			content: [
+				{
+					type: 'image',
+					data: 'AAAA',
+					mimeType: 'image/png',
+				},
+			],
+		}),
+	).toBeNull()
 
 	const oneByteLimit = limitExecutionResultValue('éabc', 1)
 	expect(oneByteLimit).toMatchObject({

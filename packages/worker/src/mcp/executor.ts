@@ -11,6 +11,7 @@ import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
+import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -1059,15 +1060,7 @@ export function formatExecutionOutput(result: ExecuteResult) {
 }
 
 export function extractRawContent(value: unknown): Array<ContentBlock> | null {
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		'__mcpContent' in value &&
-		Array.isArray((value as { __mcpContent: unknown }).__mcpContent)
-	) {
-		return (value as { __mcpContent: Array<ContentBlock> }).__mcpContent
-	}
-	return null
+	return extractMcpPassthrough(value)?.content ?? null
 }
 
 function extractFirstUrl(message: string) {

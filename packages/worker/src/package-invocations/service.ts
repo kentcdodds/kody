@@ -2,7 +2,8 @@ import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { normalizePackageInvocationExportName } from '@kody-internal/shared/public-urls.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
-import { extractRawContent, getExecutionErrorDetails } from '#mcp/executor.ts'
+import { getExecutionErrorDetails } from '#mcp/executor.ts'
+import { persistableExecutionArtifacts } from '#mcp/downstream-mcp-result.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
@@ -687,6 +688,11 @@ function buildExecutionSuccessResponse(input: {
 	result: unknown
 	logs: Array<string>
 	rawContent: Array<ContentBlock> | null
+	rawContentOmitted: null | {
+		note: string
+		returnedBytes: number
+		blockCount: number
+	}
 }): PackageInvocationStoredResponse {
 	return {
 		status: 200,
@@ -707,6 +713,9 @@ function buildExecutionSuccessResponse(input: {
 			logs: input.logs,
 			...(input.rawContent
 				? { rawContent: toJsonSafeValue(input.rawContent) }
+				: {}),
+			...(input.rawContentOmitted
+				? { rawContentOmitted: input.rawContentOmitted }
 				: {}),
 		},
 	}
@@ -1205,26 +1214,33 @@ async function invokeSavedPackageModule(input: {
 				}),
 			},
 		)
-		const response = executionResult.error
-			? buildExecutionErrorResponse({
-					savedPackage: input.savedPackage,
-					invocationName: input.invocationName,
-					idempotencyKey: input.idempotencyKey,
-					source: input.source,
-					topic: input.topic,
-					error: executionResult.error,
-					logs: executionResult.logs ?? [],
-				})
-			: buildExecutionSuccessResponse({
-					savedPackage: input.savedPackage,
-					invocationName: input.invocationName,
-					idempotencyKey: input.idempotencyKey,
-					source: input.source,
-					topic: input.topic,
-					result: executionResult.result,
-					logs: executionResult.logs ?? [],
-					rawContent: extractRawContent(executionResult.result),
-				})
+		let response: PackageInvocationStoredResponse
+		if (executionResult.error) {
+			response = buildExecutionErrorResponse({
+				savedPackage: input.savedPackage,
+				invocationName: input.invocationName,
+				idempotencyKey: input.idempotencyKey,
+				source: input.source,
+				topic: input.topic,
+				error: executionResult.error,
+				logs: executionResult.logs ?? [],
+			})
+		} else {
+			const persistedArtifacts = persistableExecutionArtifacts(
+				executionResult.result,
+			)
+			response = buildExecutionSuccessResponse({
+				savedPackage: input.savedPackage,
+				invocationName: input.invocationName,
+				idempotencyKey: input.idempotencyKey,
+				source: input.source,
+				topic: input.topic,
+				result: persistedArtifacts.result,
+				rawContent: persistedArtifacts.rawContent,
+				rawContentOmitted: persistedArtifacts.rawContentOmitted,
+				logs: executionResult.logs ?? [],
+			})
+		}
 		await updatePackageInvocationResult({
 			db: input.env.APP_DB,
 			id: invocationId,
