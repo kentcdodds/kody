@@ -13,7 +13,6 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	cardTitleCss,
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
@@ -35,9 +34,12 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 	AccountPageHeader,
-	noticeCardCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
+import {
+	renderEmailVerificationPrompt,
+	requestResendVerification,
+} from '#client/routes/email-verification-prompt.tsx'
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
@@ -69,7 +71,6 @@ type AccountConnectionsPayload = {
 	availableProviders: Array<AuthProviderInfo>
 }
 
-const resendVerificationApiPath = '/account/resend-verification.json'
 const emailChangeApiPath = '/account/email-change.json'
 const connectionsApiPath = '/account/connections.json'
 
@@ -312,34 +313,16 @@ export function AccountRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const response = await fetch(resendVerificationApiPath, {
-				method: 'POST',
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (response.status === 401) {
+			const result = await requestResendVerification()
+			if (!result.ok && result.unauthorized) {
 				window.location.assign('/login')
 				return
 			}
-			const payload = await readJson<{
-				ok?: boolean
-				message?: string
-				error?: string
-			}>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(
-					payload?.error || 'Unable to send the verification email.',
-				)
-			}
-			resendMessage =
-				payload.message ?? 'Verification email sent. Check your inbox.'
-			resendTone = 'info'
-		} catch (error) {
-			resendMessage =
-				error instanceof Error
-					? error.message
-					: 'Unable to send the verification email.'
+			resendTone = result.ok ? 'info' : 'error'
+			resendMessage = result.message
+		} catch {
 			resendTone = 'error'
+			resendMessage = 'Unable to send the verification email.'
 		} finally {
 			resendStatus = 'idle'
 			handle.update()
@@ -559,46 +542,21 @@ export function AccountRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
-						{needsOnboarding ? renderOnboardingBanner() : null}
-						{!emailVerified ? (
-							<section
-								aria-label="Email verification status"
-								mix={css(noticeCardCss)}
-							>
-								<h2 mix={css(cardTitleCss)}>Verify your email</h2>
-								<p mix={css(descriptionCss)}>
-									Check your inbox for the verification link. MCP access and
-									email features stay disabled until this account email is
-									verified.
-								</p>
-								<div>
-									<button
-										type="button"
-										disabled={resendStatus === 'sending'}
-										mix={[
-											css(primaryButtonCss),
-											on('click', handleResendVerification),
-										]}
-									>
-										{resendStatus === 'sending'
-											? 'Sending...'
-											: 'Resend verification email'}
-									</button>
-								</div>
-								{resendMessage ? (
-									<p
-										role="status"
-										mix={css({
-											color:
-												resendTone === 'error' ? colors.error : colors.text,
-											margin: 0,
-										})}
-									>
-										{resendMessage}
-									</p>
-								) : null}
-							</section>
-						) : null}
+						{!emailVerified
+							? renderEmailVerificationPrompt({
+									description:
+										'Check your inbox for the verification link. MCP access and email features stay locked until this account email is verified.',
+									resendStatus,
+									resendMessage,
+									resendTone,
+									onResend: () => {
+										void handleResendVerification()
+									},
+									secondaryHref: '/pending-verification',
+									secondaryLabel: 'Verification page',
+								})
+							: null}
+						{emailVerified && needsOnboarding ? renderOnboardingBanner() : null}
 						<AccountManagementPanel
 							title="Profile"
 							description="Your username is unique and visible anywhere Kody needs a display name. Your email stays on the account for login."

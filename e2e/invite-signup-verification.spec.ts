@@ -93,10 +93,23 @@ test('admin invite signup and email verification happy path', async ({
 	await page.getByLabel('Password').fill(invitedPassword)
 	await page.getByLabel('Invite code').fill(inviteCode)
 	await page.getByRole('button', { name: 'Create account' }).click()
-	await expect(page).toHaveURL(/\/account$/)
+	await expect(page).toHaveURL(/\/pending-verification$/)
+	await expect(
+		page.getByRole('heading', { name: 'Check your email' }),
+	).toBeVisible()
 	await expect(
 		page.getByRole('heading', { name: 'Verify your email' }),
 	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),
+	).toHaveCount(0)
+	await expect(page.getByText(/\/mcp/)).toHaveCount(0)
+
+	await page.goto('/onboarding')
+	await expect(page).toHaveURL(/\/pending-verification$/)
+	await expect(
+		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),
+	).toHaveCount(0)
 
 	await page.getByRole('button', { name: 'Resend verification email' }).click()
 	await expect(async () => {
@@ -111,6 +124,14 @@ test('admin invite signup and email verification happy path', async ({
 			page.getByRole('heading', { name: 'Email verified' }),
 		).toBeVisible({ timeout: 1_000 })
 	}).toPass({ timeout: 15_000 })
+
+	await expect(page.getByText(/MCP access is now available/i)).toBeVisible()
+	await page.getByRole('link', { name: 'Continue to onboarding' }).click()
+	await expect(page).toHaveURL(/\/onboarding$/)
+	await expect(
+		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),
+	).toBeVisible()
+	await expect(page.getByText(/\/mcp/)).toBeVisible()
 
 	await page.goto('/account')
 	await expect(

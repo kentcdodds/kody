@@ -70,7 +70,10 @@ export function createVerifyEmailHandler(env: Env) {
 					emailVerification: {
 						ok: true,
 						kind: 'email_verify',
-						message: 'Your email address has been verified.',
+						message:
+							'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+						ctaHref: '/onboarding',
+						ctaLabel: 'Continue to onboarding',
 					},
 				},
 			})

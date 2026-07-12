@@ -5,7 +5,7 @@ import {
 	loadOnboardingData,
 } from '#app/onboarding-data.ts'
 
-test('onboarding data builds the MCP URL and derives MCP-client status from OAuth grants', async () => {
+test('onboarding data builds the MCP URL and derives incomplete setup from verification plus grants', async () => {
 	expect(
 		buildMcpServerUrl({
 			env: { APP_BASE_URL: 'https://configured.example' },
@@ -21,12 +21,14 @@ test('onboarding data builds the MCP URL and derives MCP-client status from OAut
 		},
 		requestUrl: 'https://heykody.dev/onboarding',
 		stableUserId: 'user-1',
+		emailVerified: true,
 	})
 	expect(withoutClient).toEqual({
 		ok: true,
 		mcpServerUrl: 'https://heykody.dev/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
 		hasMcpClient: false,
+		emailVerified: true,
 		needsOnboarding: true,
 	})
 
@@ -40,11 +42,33 @@ test('onboarding data builds the MCP URL and derives MCP-client status from OAut
 		},
 		requestUrl: 'http://localhost:3742/onboarding',
 		stableUserId: 'user-1',
+		emailVerified: true,
 	})
 	expect(withClient).toMatchObject({
 		hasMcpClient: true,
+		emailVerified: true,
 		needsOnboarding: false,
 		mcpServerUrl: 'http://localhost:3742/mcp',
+	})
+
+	const unverifiedWithGrant = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({
+					items: [{ id: 'grant-1' }],
+				})),
+			},
+		},
+		requestUrl: 'https://heykody.dev/onboarding',
+		stableUserId: 'user-1',
+		emailVerified: false,
+	})
+	expect(unverifiedWithGrant).toMatchObject({
+		hasMcpClient: true,
+		emailVerified: false,
+		needsOnboarding: true,
+		mcpServerUrl: '',
+		setupPrompt: '',
 	})
 
 	const whenProviderListingFails = await loadOnboardingData({
@@ -57,6 +81,7 @@ test('onboarding data builds the MCP URL and derives MCP-client status from OAut
 		},
 		requestUrl: 'https://heykody.dev/onboarding',
 		stableUserId: 'user-1',
+		emailVerified: true,
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)
 	expect(whenProviderListingFails.needsOnboarding).toBe(true)

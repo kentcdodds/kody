@@ -90,11 +90,13 @@ primitives:
       Signed kody_session cookie auth for browser users; production signup
       invite-gated with a Kit-backed public waiting list on /signup
       (non-production signup open), account email verification surfaced in
-      session state, social login (GitHub/Google/X OAuth connections in
-      oauth_connections, mockable via MOCK_ client ids on non-production
-      runtimes), and opt-in second factors — TOTP two-factor (verifications
-      table, pending kody_verify cookie gates login until /verify) and passkeys
-      (WebAuthn sign-in as an alternative first factor that still honors 2FA).
+      session state and a dedicated `/pending-verification` experience after
+      password signup, MCP OAuth authorize gated until verified, social login
+      (GitHub/Google/X OAuth connections in oauth_connections, mockable via
+      MOCK_ client ids on non-production runtimes), and opt-in second factors —
+      TOTP two-factor (verifications table, pending kody_verify cookie gates
+      login until /verify) and passkeys (WebAuthn sign-in as an alternative
+      first factor that still honors 2FA).
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
@@ -107,9 +109,12 @@ primitives:
       - packages/worker/src/app/oauth-login-errors.ts
       - packages/worker/migrations/0056-oauth-connections.sql
       - packages/worker/src/app/handlers/verify-email.ts
+      - packages/worker/src/app/handlers/pending-verification.ts
       - packages/worker/src/app/handlers/admin-invites.ts
       - packages/worker/src/app/invites.ts
       - packages/worker/src/app/email-verification.ts
+      - packages/worker/src/app/onboarding-data.ts
+      - packages/worker/src/oauth-handlers.ts
       - packages/worker/src/app/two-factor.ts
       - packages/worker/src/app/verify-session.ts
       - packages/worker/src/app/passkeys.ts

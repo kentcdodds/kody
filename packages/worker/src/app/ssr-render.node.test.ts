@@ -10,7 +10,6 @@ import { createAccountHandler } from '#app/handlers/account.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
-import { buildOnboardingSetupPrompt } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 
@@ -252,13 +251,15 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	})
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
-		mcpServerUrl: 'https://example.com/mcp',
-		setupPrompt: buildOnboardingSetupPrompt(),
+		mcpServerUrl: '',
+		setupPrompt: '',
 		hasMcpClient: false,
+		emailVerified: false,
 		needsOnboarding: true,
 	})
-	expect(accountHtml).toContain('Connect your AI agent')
-	expect(accountHtml).toContain('/onboarding')
+	expect(accountHtml).toContain('Verify your email')
+	expect(accountHtml).not.toContain('Connect your AI agent')
+	expect(accountHtml).toContain('/pending-verification')
 
 	const onboardingResponse = await runHtmlHandler(
 		createOnboardingHandler(env),
@@ -266,19 +267,22 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 			headers: { Cookie: accountCookie },
 		}),
 	)
-	expect(onboardingResponse.status).toBe(200)
-	const onboardingHtml = await readResponseText(onboardingResponse)
-	expect(onboardingHtml).toContain('Get started with Kody')
-	expect(onboardingHtml).toContain('https://example.com/mcp')
-	expect(onboardingHtml).toContain(buildOnboardingSetupPrompt())
-	const onboardingProps = readAppRootProps(onboardingHtml)
-	expect(onboardingProps.loaderData?.onboarding).toEqual({
-		ok: true,
-		mcpServerUrl: 'https://example.com/mcp',
-		setupPrompt: buildOnboardingSetupPrompt(),
-		hasMcpClient: false,
-		needsOnboarding: true,
-	})
+	expect(onboardingResponse.status).toBe(302)
+	expect(onboardingResponse.headers.get('Location')).toBe(
+		'https://example.com/pending-verification',
+	)
+
+	const onboardingPreservesRedirect = await runHtmlHandler(
+		createOnboardingHandler(env),
+		new Request(
+			'https://example.com/onboarding?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
+			{ headers: { Cookie: accountCookie } },
+		),
+	)
+	expect(onboardingPreservesRedirect.status).toBe(302)
+	expect(onboardingPreservesRedirect.headers.get('Location')).toBe(
+		'https://example.com/pending-verification?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
+	)
 
 	const anonymousOnboardingResponse = await runHtmlHandler(
 		createOnboardingHandler(env),

@@ -3,6 +3,7 @@ import { type Handle, css } from 'remix/ui'
 import checkbox from 'remix/ui/checkbox'
 import { on } from '#client/event-mixin.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import {
 	getPathname,
 	listenToRouterNavigation,
@@ -23,6 +24,7 @@ import {
 	type AuthProviderInfo,
 } from '#client/social-sign-in.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import {
 	cardCss,
 	fieldCss,
@@ -41,13 +43,6 @@ import {
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
 type SignupPanel = 'waiting-list' | 'invite'
-
-function normalizeRedirectTo(value: string | null) {
-	if (!value) return null
-	if (!value.startsWith('/')) return null
-	if (value.startsWith('//')) return null
-	return value
-}
 
 function shouldOpenInviteSignup(searchParams: URLSearchParams) {
 	if (searchParams.has('code') || searchParams.has('invite')) return true
@@ -70,12 +65,6 @@ function resolveSignupPanel(searchParams: URLSearchParams): SignupPanel {
 function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
 	const path = mode === 'signup' ? '/signup' : '/login'
 	return buildAuthLink(path, redirectTo)
-}
-
-function buildVerifyPath(redirectTo: string | null) {
-	return redirectTo
-		? `/verify?redirectTo=${encodeURIComponent(redirectTo)}`
-		: '/verify'
 }
 
 function getAuthModeFromPathname(pathname: string): AuthMode {
@@ -277,11 +266,15 @@ export function LoginRoute(handle: Handle) {
 			}
 
 			if (typeof window !== 'undefined') {
-				if (payload?.requiresTwoFactor === true) {
-					window.location.assign(buildVerifyPath(getCurrentRedirectTo(handle)))
-					return
-				}
-				window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
+				window.location.assign(
+					resolvePasswordAuthRedirect({
+						mode,
+						requiresTwoFactor: payload?.requiresTwoFactor === true,
+						emailVerificationRequired:
+							payload?.emailVerificationRequired === true,
+						redirectTo: getCurrentRedirectTo(handle),
+					}),
+				)
 			}
 		} catch {
 			setState('error', 'Network error. Please try again.')
@@ -359,10 +352,21 @@ export function LoginRoute(handle: Handle) {
 			}
 
 			if (verificationPayload.requiresTwoFactor === true) {
-				window.location.assign(buildVerifyPath(getCurrentRedirectTo(handle)))
+				window.location.assign(
+					resolvePasswordAuthRedirect({
+						mode: 'login',
+						requiresTwoFactor: true,
+						redirectTo: getCurrentRedirectTo(handle),
+					}),
+				)
 				return
 			}
-			window.location.assign(getCurrentRedirectTo(handle) ?? '/account')
+			window.location.assign(
+				resolvePasswordAuthRedirect({
+					mode: 'login',
+					redirectTo: getCurrentRedirectTo(handle),
+				}),
+			)
 		} catch {
 			setState('error', 'Network error. Please try again.')
 		}

@@ -225,7 +225,7 @@ export async function isAccountEmailVerified(input: {
 }
 
 export const emailVerificationRequiredMessage =
-	'Account email is not verified. Open the verification link sent to your account email, or resend it from the /account page.'
+	'Account email is not verified. Open the verification link sent to your account email, or resend it from /pending-verification or /account.'
 
 export async function assertAccountEmailVerified(input: {
 	db: D1Database

@@ -18,6 +18,7 @@ vi.mock('#app/onboarding-data.ts', () => ({
 		mcpServerUrl: 'https://example.com/mcp',
 		setupPrompt: 'Help me get started with Kody.',
 		hasMcpClient: false,
+		emailVerified: true,
 		needsOnboarding: true,
 	})),
 }))

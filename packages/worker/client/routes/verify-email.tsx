@@ -6,6 +6,7 @@ import {
 	pageDescriptionCss,
 	pageHeaderCss,
 	pageTitleCss,
+	primaryLinkCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
@@ -27,6 +28,18 @@ export function VerifyEmailRoute(handle: Handle) {
 				? 'Email changed'
 				: 'Email verified'
 			: 'Email verification'
+		const ctaHref =
+			data.ok && data.ctaHref
+				? data.ctaHref
+				: isEmailChange
+					? '/account'
+					: '/onboarding'
+		const ctaLabel =
+			data.ok && data.ctaLabel
+				? data.ctaLabel
+				: isEmailChange
+					? 'Go to account'
+					: 'Continue to onboarding'
 
 		return (
 			<section mix={css(pageCss)}>
@@ -36,7 +49,7 @@ export function VerifyEmailRoute(handle: Handle) {
 						{data.ok
 							? isEmailChange
 								? 'Your Kody account uses this email address.'
-								: 'Your Kody account can send outbound email.'
+								: 'Your Kody account can use MCP and send outbound email.'
 							: 'We could not verify your email address.'}
 					</p>
 				</header>
@@ -51,9 +64,21 @@ export function VerifyEmailRoute(handle: Handle) {
 					>
 						{data.ok ? data.message : data.error}
 					</p>
-					<a href="/account" mix={css(mutedLinkCss)}>
-						Go to account
-					</a>
+					{data.ok ? (
+						<p mix={css({ margin: 0 })}>
+							<a href={ctaHref} mix={css(primaryLinkCss)}>
+								{ctaLabel}
+							</a>
+							{' · '}
+							<a href="/account" mix={css(mutedLinkCss)}>
+								Account
+							</a>
+						</p>
+					) : (
+						<a href="/account" mix={css(mutedLinkCss)}>
+							Go to account
+						</a>
+					)}
 				</div>
 			</section>
 		)

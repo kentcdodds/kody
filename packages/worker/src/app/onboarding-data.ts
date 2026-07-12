@@ -55,20 +55,31 @@ export async function loadOnboardingData(input: {
 	env: OnboardingEnv
 	requestUrl: string | URL
 	stableUserId: string
+	emailVerified: boolean
 }): Promise<OnboardingLoaderData> {
-	const mcpServerUrl = buildMcpServerUrl({
-		env: input.env,
-		requestUrl: input.requestUrl,
-	})
 	const hasMcpClient = await userHasMcpOAuthGrants(
 		input.env,
 		input.stableUserId,
 	)
+	// Incomplete setup means either the account email is still unverified or no
+	// MCP host has authorized yet. An unverified account with a leftover grant
+	// still needs onboarding until verification is finished.
+	const needsOnboarding = !input.emailVerified || !hasMcpClient
+	// Keep MCP URL/setup out of unverified responses so SSR and JSON clients
+	// cannot push users into the authorize → 403 loop before verification.
+	const mcpServerUrl = input.emailVerified
+		? buildMcpServerUrl({
+				env: input.env,
+				requestUrl: input.requestUrl,
+			})
+		: ''
+	const setupPrompt = input.emailVerified ? buildOnboardingSetupPrompt() : ''
 	return {
 		ok: true,
 		mcpServerUrl,
-		setupPrompt: buildOnboardingSetupPrompt(),
+		setupPrompt,
 		hasMcpClient,
-		needsOnboarding: !hasMcpClient,
+		emailVerified: input.emailVerified,
+		needsOnboarding,
 	}
 }

@@ -11,8 +11,12 @@ agent that supports MCP — not from a separate Kody chat app.
 3. Complete the OAuth flow when the host opens it. Sign in to Kody if needed,
    then approve access.
 
-MCP stays unavailable until your account email is verified. If authorize fails
-for that reason, verify from your account page and try again.
+Your account email must be verified before authorize can finish or MCP can run.
+If authorize asks you to verify, keep that tab open, finish verification (from
+the email link or `/pending-verification`), then continue. You do not need to
+restart the host connection. Unverified visits to Get started (`/onboarding`)
+redirect to `/pending-verification`; after verification, onboarding shows the
+MCP URL and setup prompt.
 
 ## Ask your agent to help set up
 

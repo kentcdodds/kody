@@ -21,6 +21,7 @@ export function createHomeHandler(env: Env) {
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
+				emailVerified: user.emailVerified,
 			})
 			return renderAppPage({
 				request,

@@ -53,6 +53,7 @@ import {
 	createAccountTwoFactorHandler,
 } from '#app/handlers/account-two-factor.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
+import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
 	createAccountRemoteConnectorsApiHandler,
 	createAccountRemoteConnectorsHandler,
@@ -135,6 +136,7 @@ export function createAppRouter(env: Env) {
 			resetPassword: createResetPasswordHandler(env),
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),
+			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			waitingList: createWaitingListHandler(env),
 			account: createAccountHandler(env),

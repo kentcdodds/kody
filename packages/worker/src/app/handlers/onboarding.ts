@@ -2,6 +2,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import {
+	normalizeRedirectTo,
 	redirectToLogin,
 	redirectToLoginWhenUnauthenticated,
 } from '#app/auth-redirect.ts'
@@ -11,6 +12,18 @@ import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { createPageOgHeadNode } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
+
+function redirectUnverifiedToPending(request: Request) {
+	const requestUrl = new URL(request.url)
+	const redirectTo = normalizeRedirectTo(
+		requestUrl.searchParams.get('redirectTo'),
+	)
+	const pendingUrl = new URL('/pending-verification', requestUrl)
+	if (redirectTo) {
+		pendingUrl.searchParams.set('redirectTo', redirectTo)
+	}
+	return Response.redirect(pendingUrl, 302)
+}
 
 export function createOnboardingHandler(env: Env) {
 	return {
@@ -26,10 +39,15 @@ export function createOnboardingHandler(env: Env) {
 				return redirectToLoginWhenUnauthenticated(request, env)
 			}
 
+			if (!user.emailVerified) {
+				return redirectUnverifiedToPending(request)
+			}
+
 			const onboarding = await loadOnboardingData({
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
+				emailVerified: user.emailVerified,
 			})
 			const origin = getAppBaseUrl({ env, requestUrl: request.url })
 			return renderAppPage({
@@ -56,11 +74,14 @@ export function createOnboardingApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
+			// Unverified callers still get a payload so clients can detect the
+			// gate; MCP URL/setup fields stay empty until verification succeeds.
 			return jsonResponse(
 				await loadOnboardingData({
 					env,
 					requestUrl: request.url,
 					stableUserId: user.mcpUser.userId,
+					emailVerified: user.emailVerified,
 				}),
 			)
 		},

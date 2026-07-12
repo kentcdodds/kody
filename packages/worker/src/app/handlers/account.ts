@@ -31,6 +31,7 @@ export function createAccountHandler(env: Env) {
 					env,
 					requestUrl: request.url,
 					stableUserId: user.mcpUser.userId,
+					emailVerified: user.emailVerified,
 				}),
 			])
 			return renderAppPage({

@@ -2,10 +2,11 @@
 
 ## MCP requests fail with `email_verification_required`
 
-Kody requires a verified account email before any MCP access. Open the
-verification link sent to the account email at signup, or sign in to the app and
-use **Resend verification email** on the `/account` page, then reconnect the MCP
-client.
+Kody requires a verified account email before any MCP access, including OAuth
+authorization. Open the verification link sent at signup, or sign in and use
+**Resend verification email** on `/pending-verification`, `/account`, or the
+authorize page. Keep an open `/oauth/authorize` tab so you can continue the same
+OAuth request after verifying in another tab, then reconnect or approve again.
 
 ## Search returns no good matches
 

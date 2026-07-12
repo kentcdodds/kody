@@ -52,6 +52,10 @@ import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { LoginRoute, authProvidersRouteLoader } from './login.tsx'
 import { OnboardingRoute, onboardingRouteLoader } from './onboarding.tsx'
+import {
+	PendingVerificationRoute,
+	pendingVerificationRouteLoader,
+} from './pending-verification.tsx'
 import { PrivacyRoute } from './privacy.tsx'
 import {
 	OAuthAuthorizeRoute,
@@ -95,6 +99,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/signup': authProvidersRouteLoader,
 	'/oauth/authorize': oauthAuthorizeRouteLoader,
 	'/onboarding': onboardingRouteLoader,
+	'/pending-verification': pendingVerificationRouteLoader,
 }
 
 export const clientRoutes = {
@@ -129,6 +134,7 @@ export const clientRoutes = {
 	'/community/:listingId': <CommunityDetailRoute />,
 	'/login': <LoginRoute />,
 	'/onboarding': <OnboardingRoute />,
+	'/pending-verification': <PendingVerificationRoute />,
 	'/privacy': <PrivacyRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,

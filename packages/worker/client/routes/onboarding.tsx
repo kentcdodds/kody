@@ -18,6 +18,7 @@ import {
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
+import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -28,12 +29,14 @@ import {
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
+import { buildAuthLink } from '#client/auth-links.ts'
 
 export type OnboardingPayload = {
 	ok: true
 	mcpServerUrl: string
 	setupPrompt: string
 	hasMcpClient: boolean
+	emailVerified: boolean
 	needsOnboarding: boolean
 }
 
@@ -42,6 +45,10 @@ export const onboardingPath = '/onboarding'
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
+}
+
+function redirectUnverifiedOnboarding() {
+	return routeLoaderRedirect(pendingVerificationPath)
 }
 
 export async function onboardingRouteLoader(
@@ -54,11 +61,14 @@ export async function onboardingRouteLoader(
 		signal,
 	})
 	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
+		return routeLoaderRedirect(buildAuthLink('/login', onboardingPath))
 	}
 	const payload = await readJson<OnboardingPayload>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load onboarding.')
+	}
+	if (!payload.emailVerified) {
+		return redirectUnverifiedOnboarding()
 	}
 	return { onboarding: payload }
 }
@@ -101,12 +111,16 @@ export function OnboardingRoute(handle: Handle) {
 			})
 			if (signal.aborted) return
 			if (response.status === 401) {
-				window.location.assign('/login?redirectTo=%2Fonboarding')
+				window.location.assign(buildAuthLink('/login', onboardingPath))
 				return
 			}
 			const payload = await readJson<OnboardingPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load onboarding.')
+			}
+			if (!payload.emailVerified) {
+				window.location.assign(pendingVerificationPath)
+				return
 			}
 			applyPayload(payload)
 			loadLatch.markLoaded(href)
@@ -125,6 +139,10 @@ export function OnboardingRoute(handle: Handle) {
 		if (!isOnboardingPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
+		if (!routeData.emailVerified) {
+			window.location.assign(pendingVerificationPath)
+			return true
+		}
 		applyPayload(routeData)
 		loadLatch.markLoaded(href)
 		return true
@@ -200,10 +218,6 @@ export function OnboardingRoute(handle: Handle) {
 								When your agent connects, it starts an OAuth flow. Sign in to
 								Kody if needed, approve the request, and the agent receives a
 								token scoped to your account.
-							</p>
-							<p mix={css(descriptionCss)}>
-								Verify your account email first if you have not already — MCP
-								access stays disabled until the email is verified.
 							</p>
 						</section>
 

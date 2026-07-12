@@ -18,6 +18,7 @@ import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-mess
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
+	oauthEmailVerificationRequiredMessage,
 	oauthScopes,
 } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -76,13 +77,21 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	}
 }
 
-async function createDatabase(password: string) {
+async function createDatabase(
+	password: string,
+	options: { emailVerifiedAt?: string | null } = {},
+) {
 	const passwordHash = await createPasswordHash(password)
+	const emailVerifiedAt =
+		options.emailVerifiedAt === undefined
+			? new Date(0).toISOString()
+			: options.emailVerifiedAt
 	return {
 		prepare(query: string) {
 			// The 2FA gate queries verifications during inline OAuth login; the
 			// mocked user has no verification rows, so those queries are empty.
 			const isVerificationsQuery = query.includes('FROM verifications')
+			const isEmailVerifiedQuery = query.includes('email_verified_at')
 			return {
 				bind() {
 					return {
@@ -96,6 +105,7 @@ async function createDatabase(password: string) {
 												username: 'test-user',
 												email: 'user@example.com',
 												password_hash: passwordHash,
+												email_verified_at: emailVerifiedAt,
 											},
 										],
 								meta: { changes: 0, last_row_id: 0 },
@@ -103,11 +113,15 @@ async function createDatabase(password: string) {
 						},
 						async first() {
 							if (isVerificationsQuery) return null
+							if (isEmailVerifiedQuery) {
+								return { email_verified_at: emailVerifiedAt }
+							}
 							return {
 								id: 1,
 								username: 'test-user',
 								email: 'user@example.com',
 								password_hash: passwordHash,
+								email_verified_at: emailVerifiedAt,
 							}
 						},
 						async run() {
@@ -193,7 +207,11 @@ async function createSha256Hex(value: string) {
 		.join('')
 }
 
-async function seedWorkerUser(email: string, password: string) {
+async function seedWorkerUser(
+	email: string,
+	password: string,
+	options: { emailVerifiedAt?: string | null } = {},
+) {
 	const passwordHash = await createPasswordHash(password)
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS users (
@@ -201,6 +219,7 @@ async function seedWorkerUser(email: string, password: string) {
 			username TEXT NOT NULL UNIQUE,
 			email TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
+			email_verified_at TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
@@ -222,12 +241,23 @@ async function seedWorkerUser(email: string, password: string) {
 			UNIQUE (target, type)
 		)`,
 	).run()
+	const emailVerifiedAt =
+		options.emailVerifiedAt === undefined
+			? new Date(0).toISOString()
+			: options.emailVerifiedAt
 	const result = await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash)
-			VALUES (?, ?, ?)
-			ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(email) DO UPDATE SET
+				password_hash = excluded.password_hash,
+				email_verified_at = excluded.email_verified_at`,
 	)
-		.bind(`user-${crypto.randomUUID().slice(0, 8)}`, email, passwordHash)
+		.bind(
+			`user-${crypto.randomUUID().slice(0, 8)}`,
+			email,
+			passwordHash,
+			emailVerifiedAt,
+		)
 		.run()
 	return Number(result.meta.last_row_id)
 }
@@ -263,6 +293,7 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		ok: true,
 		client: { id: baseClient.clientId, name: baseClient.clientName },
 		scopes: baseAuthRequest.scope,
+		emailVerified: null,
 	})
 
 	const authorizeHtmlResponse = await handleAuthorizeRequest(
@@ -499,6 +530,97 @@ test('session approval uses database user id when cookie email is stale', async 
 	).resolves.toMatchObject({
 		session: { id: String(userId), email: currentEmail },
 	})
+})
+
+test('authorize rejects unverified accounts before creating a grant', async () => {
+	const completeAuthorization = vi.fn(async () => ({
+		redirectTo: 'https://example.com/callback?code=should-not-happen',
+	}))
+	const helpers = createHelpers({ completeAuthorization })
+	const unverifiedResponse = await handleAuthorizeRequest(
+		createFormRequest(
+			{
+				decision: 'approve',
+				email: 'user@example.com',
+				password: 'password123',
+			},
+			{ Accept: 'application/json' },
+		),
+		createEnv(
+			helpers,
+			await createDatabase('password123', { emailVerifiedAt: null }),
+		),
+	)
+
+	expect(unverifiedResponse.status).toBe(403)
+	await expect(unverifiedResponse.json()).resolves.toEqual({
+		ok: false,
+		error: oauthEmailVerificationRequiredMessage,
+		code: 'email_verification_required',
+	})
+	expect(completeAuthorization).not.toHaveBeenCalled()
+
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		false,
+	)
+	const sessionUnverifiedResponse = await handleAuthorizeRequest(
+		createFormRequest(
+			{ decision: 'approve' },
+			{ Accept: 'application/json', Cookie: cookie },
+		),
+		createEnv(
+			helpers,
+			await createDatabase('password123', { emailVerifiedAt: null }),
+		),
+	)
+	expect(sessionUnverifiedResponse.status).toBe(403)
+	await expect(sessionUnverifiedResponse.json()).resolves.toMatchObject({
+		ok: false,
+		code: 'email_verification_required',
+	})
+	expect(completeAuthorization).not.toHaveBeenCalled()
+
+	const authorizeInfo = await handleAuthorizeInfo(
+		new Request(
+			'https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
+			{
+				headers: { Accept: 'application/json', Cookie: cookie },
+			},
+		),
+		createEnv(
+			helpers,
+			await createDatabase('password123', { emailVerifiedAt: null }),
+		),
+	)
+	expect(authorizeInfo.status).toBe(200)
+	await expect(authorizeInfo.json()).resolves.toMatchObject({
+		ok: true,
+		emailVerified: false,
+	})
+
+	completeAuthorization.mockClear()
+	completeAuthorization.mockImplementation(async () => ({
+		redirectTo: 'https://example.com/callback?code=verified-ok',
+	}))
+	const verifiedResponse = await handleAuthorizeRequest(
+		createFormRequest(
+			{
+				decision: 'approve',
+				email: 'user@example.com',
+				password: 'password123',
+			},
+			{ Accept: 'application/json' },
+		),
+		createEnv(helpers, await createDatabase('password123')),
+	)
+	expect(verifiedResponse.status).toBe(200)
+	await expect(verifiedResponse.json()).resolves.toEqual({
+		ok: true,
+		redirectTo: 'https://example.com/callback?code=verified-ok',
+	})
+	expect(completeAuthorization).toHaveBeenCalledTimes(1)
 })
 
 test('worker entrypoint handles Claude-shaped authorize GET requests', async () => {

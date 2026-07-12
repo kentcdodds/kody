@@ -76,6 +76,7 @@ export const routes = route({
 	verifyTwoFactorApi: post('/verify/2fa.json'),
 	verifyEmail: '/verify-email',
 	verifyEmailChange: '/verify-email-change',
+	pendingVerification: '/pending-verification',
 	signup: '/signup',
 	waitingList: post('/waiting-list'),
 	account: '/account',

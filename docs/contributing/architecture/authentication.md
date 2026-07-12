@@ -135,7 +135,8 @@ instead.
 Signed-in users with an unverified email can request a fresh link with
 `POST /account/resend-verification.json`
 (`packages/worker/src/app/handlers/account-resend-verification.ts`), surfaced as
-a "Resend verification email" button on `/account`. The endpoint reuses
+a "Resend verification email" button on `/pending-verification`, `/account`,
+`/onboarding`, and `/oauth/authorize`. The endpoint reuses
 `createEmailVerification` (invalidating older tokens) and is rate-limited per
 user (3 requests per 15 minutes).
 
@@ -145,12 +146,29 @@ null until `GET /verify-email?token=...` succeeds. Seeded and test fixture
 accounts are created verified. Unverified accounts can sign in and see their
 status on `/account`.
 
-Unverified accounts can still use browser sessions and complete OAuth flows
-(authorize + token exchange keep working so clients can finish login), but
-assistant features are blocked until the email is verified:
+Unverified accounts can still use browser sessions (sign in, manage account,
+resend verification), but they must verify before MCP OAuth authorization or
+assistant features:
 
-- **MCP**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is the single
-  chokepoint for `/mcp`. After token validation it checks
+- **Signup**: password signup keeps the authenticated session and lands on
+  `/pending-verification` (preserving a safe `redirectTo` such as an OAuth
+  authorize URL). Users can resend the verification email and continue once the
+  link succeeds; continue returns to `redirectTo` when present, otherwise
+  `/onboarding`.
+- **Onboarding** (`/onboarding`): verified users only. Unverified HTML requests
+  redirect to `/pending-verification`. Loader/API data still exposes
+  `emailVerified` and withholds MCP URL/setup until verified as defense in
+  depth. `needsOnboarding` means incomplete overall setup (`!emailVerified` or
+  no MCP grant). Account keeps an inline verification card for resend/status;
+  home and account banners do not show the connect-agent callout while
+  unverified.
+- **MCP OAuth authorize**: `/oauth/authorize` rejects approval before creating a
+  grant/token when the account email is unverified
+  (`403 email_verification_required`). The authorize UI keeps inline
+  verification/resend controls and the original OAuth query so verification in
+  another tab can resume without restarting the host connection.
+- **MCP requests**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is
+  the single chokepoint for `/mcp`. After token validation it checks
   `users.email_verified_at` (via `isAccountEmailVerified`) and rejects
   unverified — or unidentifiable — accounts with a
   `403 email_verification_required` JSON response pointing at `/account`. The
@@ -345,7 +363,12 @@ routed from `packages/worker/src/index.ts`.
 - Supported scopes: `profile`, `email`
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
-  successful login/signup returns to the original OAuth request
+  successful login returns to the original OAuth request. Password signup lands
+  on `/pending-verification` with that safe `redirectTo` preserved for
+  continue-after-verify. The authorize tab itself should stay open when the
+  email link is opened elsewhere, so the original OAuth query remains resumable.
+- Approval is rejected before `completeAuthorization` when the account email is
+  unverified, so no grant/token is created until verification succeeds.
 
 `/mcp` is protected by `packages/worker/src/mcp-auth.ts`:
 

@@ -9,6 +9,7 @@ import {
 	onboardingPath,
 	type OnboardingPayload,
 } from '#client/routes/onboarding.tsx'
+import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
 	colors,
@@ -74,11 +75,13 @@ export async function homeRouteLoader(
 
 export function HomeRoute(handle: Handle) {
 	let needsOnboarding = false
+	let emailVerified = false
 	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
 	const loadLatch = createRouteLoadLatch()
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		needsOnboarding = payload?.needsOnboarding === true
+		emailVerified = payload?.emailVerified === true
 		onboardingStatus = 'ready'
 	}
 
@@ -126,7 +129,7 @@ export function HomeRoute(handle: Handle) {
 
 		return (
 			<section mix={css(pageCss)}>
-				{needsOnboarding ? (
+				{needsOnboarding && emailVerified ? (
 					<div
 						mix={css({
 							width: '100%',
@@ -155,9 +158,17 @@ export function HomeRoute(handle: Handle) {
 						Two tools. A vast capability graph behind them.
 					</p>
 					<div>
-						<a href={onboardingPath} mix={css(heroCtaCss)}>
-							Connect your agent
-						</a>
+						{onboardingStatus === 'ready' &&
+						needsOnboarding &&
+						!emailVerified ? (
+							<a href={pendingVerificationPath} mix={css(heroCtaCss)}>
+								Verify your email
+							</a>
+						) : (
+							<a href={onboardingPath} mix={css(heroCtaCss)}>
+								Connect your agent
+							</a>
+						)}
 					</div>
 				</section>
 

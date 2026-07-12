@@ -9,7 +9,7 @@ import {
 import { onboardingPath } from '#client/routes/onboarding.tsx'
 
 /**
- * Callout shown when the signed-in user has never authorized an MCP host.
+ * Callout shown when the signed-in verified user still needs MCP host setup.
  */
 export function renderOnboardingBanner() {
 	return (

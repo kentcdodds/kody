@@ -12,6 +12,7 @@ import {
 	readAuthSessionResult,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
+import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { getEnv } from '#app/env.ts'
 import { type OAuthAuthorizeLoaderData } from '#app/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -40,6 +41,8 @@ export const oauthPaths = {
 export const oauthScopes: Array<string> = ['profile', 'email']
 const invalidOAuthClientRegistrationMessage =
 	'Invalid OAuth client registration.'
+export const oauthEmailVerificationRequiredMessage =
+	'Verify your account email before authorizing MCP access. Keep this page open, resend or open the verification link from Account in another tab, then continue.'
 
 type OAuthProps = {
 	userId: string
@@ -626,6 +629,16 @@ export async function loadOAuthAuthorizeData(
 		}
 	}
 
+	const { email: sessionEmail, setCookie: sessionSetCookie } =
+		await resolveSessionEmail(request, env)
+	let emailVerified: boolean | null = null
+	if (sessionEmail) {
+		emailVerified = await isAccountEmailVerified({
+			db: env.APP_DB,
+			email: sessionEmail,
+		})
+	}
+
 	return {
 		data: {
 			ok: true,
@@ -634,8 +647,9 @@ export async function loadOAuthAuthorizeData(
 				name: client.clientName ?? client.clientId,
 			},
 			scopes: resolvedScopes,
+			emailVerified,
 		},
-		setCookie: clearResetVerificationCookie,
+		setCookie: clearResetVerificationCookie ?? sessionSetCookie,
 	}
 }
 
@@ -659,6 +673,7 @@ export async function handleAuthorizeInfo(
 			ok: true,
 			client: data.client,
 			scopes: data.scopes,
+			emailVerified: data.emailVerified,
 		},
 		{
 			headers: createSetCookieHeaders([setCookie]),
@@ -892,6 +907,30 @@ export async function handleAuthorizeRequest(
 				isSecureRequest(request),
 			)
 		}
+	}
+
+	const emailVerified = await isAccountEmailVerified({
+		db: env.APP_DB,
+		email: approvedEmail,
+		stableUserId: approvedUserId,
+	})
+	if (!emailVerified) {
+		void logAuditEvent({
+			category: 'oauth',
+			action: 'authorize',
+			result: 'failure',
+			email: approvedEmail,
+			ip: requestIp,
+			clientId: authRequest.clientId,
+			reason: 'email_verification_required',
+		})
+		return respondAuthorizeError(
+			request,
+			oauthEmailVerificationRequiredMessage,
+			403,
+			'email_verification_required',
+			createSetCookieHeaders([setCookie]),
+		)
 	}
 
 	const resolvedScopes = resolveScopes(authRequest.scope)

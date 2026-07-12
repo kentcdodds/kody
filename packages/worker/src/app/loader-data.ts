@@ -321,6 +321,7 @@ export type OnboardingLoaderData = {
 	mcpServerUrl: string
 	setupPrompt: string
 	hasMcpClient: boolean
+	emailVerified: boolean
 	needsOnboarding: boolean
 }
 
@@ -341,11 +342,18 @@ export type AccountPasskeysLoaderData = {
 	passkeys: Array<AccountPasskeyListItem>
 }
 
+export type PendingVerificationLoaderData = {
+	ok: true
+	email: string
+}
+
 export type EmailVerificationLoaderData =
 	| {
 			ok: true
 			kind: 'email_verify' | 'email_change'
 			message: string
+			ctaHref?: string
+			ctaLabel?: string
 	  }
 	| {
 			ok: false
@@ -505,11 +513,13 @@ export type OAuthAuthorizeLoaderData =
 			ok: true
 			client: { id: string; name: string }
 			scopes: Array<string>
+			emailVerified: boolean | null
 	  }
 	| {
 			ok: false
 			error: string
 			allowClientReset: boolean
+			code?: 'email_verification_required'
 	  }
 
 export type AppLoaderData = {
@@ -522,6 +532,7 @@ export type AppLoaderData = {
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
 	onboarding?: OnboardingLoaderData
+	pendingVerification?: PendingVerificationLoaderData
 	accountTwoFactor?: AccountTwoFactorLoaderData
 	accountPasskeys?: AccountPasskeysLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
