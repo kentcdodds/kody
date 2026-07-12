@@ -418,7 +418,7 @@ export function LoginRoute(handle: Handle) {
 				? 'Create your account'
 				: 'Welcome back'
 		const description = showWaitingList
-			? 'Kody is invite-only for now. Leave your name and email and we will let you know when a spot opens.'
+			? 'Kody is invite-only. Leave your name and email and we will let you know when a spot opens.'
 			: isSignup
 				? 'Sign up with your invite code to start using kody.'
 				: 'Log in to continue to kody.'
