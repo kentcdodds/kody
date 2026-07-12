@@ -105,8 +105,12 @@ test('admin invite signup and email verification happy path', async ({
 	).toHaveCount(0)
 	await expect(page.getByText(/\/mcp/)).toHaveCount(0)
 
-	await page.goto('/onboarding')
-	await expect(page).toHaveURL(/\/pending-verification$/)
+	await page.goto(
+		`/onboarding?redirectTo=${encodeURIComponent('/oauth/authorize?client_id=e2e-onboarding')}`,
+	)
+	await expect(page).toHaveURL(
+		/\/pending-verification\?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3De2e-onboarding$/,
+	)
 	await expect(
 		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),
 	).toHaveCount(0)

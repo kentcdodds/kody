@@ -1,9 +1,11 @@
 import { type Handle, css } from 'remix/ui'
+import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -18,7 +20,11 @@ import {
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
-import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
+import {
+	onboardingPath,
+	resolveOnboardingLoginPath,
+	resolveOnboardingPendingVerificationPath,
+} from '#client/routes/onboarding-redirect.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -29,7 +35,6 @@ import {
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
-import { buildAuthLink } from '#client/auth-links.ts'
 
 export type OnboardingPayload = {
 	ok: true
@@ -41,34 +46,39 @@ export type OnboardingPayload = {
 }
 
 export const onboardingApiPath = '/onboarding.json'
-export const onboardingPath = '/onboarding'
+export { onboardingPath }
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
 }
 
-function redirectUnverifiedOnboarding() {
-	return routeLoaderRedirect(pendingVerificationPath)
+function readOnboardingRedirectTo(handle: Handle) {
+	return normalizeRedirectTo(
+		new URLSearchParams(readRouterSearch(handle)).get('redirectTo'),
+	)
 }
 
 export async function onboardingRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
+	const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
 	const response = await fetch(onboardingApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) {
-		return routeLoaderRedirect(buildAuthLink('/login', onboardingPath))
+		return routeLoaderRedirect(resolveOnboardingLoginPath(redirectTo))
 	}
 	const payload = await readJson<OnboardingPayload>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load onboarding.')
 	}
 	if (!payload.emailVerified) {
-		return redirectUnverifiedOnboarding()
+		return routeLoaderRedirect(
+			resolveOnboardingPendingVerificationPath(redirectTo),
+		)
 	}
 	return { onboarding: payload }
 }
@@ -103,6 +113,7 @@ export function OnboardingRoute(handle: Handle) {
 
 	async function loadOnboarding(signal: AbortSignal) {
 		const href = readCurrentRouterHref(handle)
+		const redirectTo = readOnboardingRedirectTo(handle)
 		try {
 			const response = await fetch(onboardingApiPath, {
 				headers: { Accept: 'application/json' },
@@ -111,7 +122,7 @@ export function OnboardingRoute(handle: Handle) {
 			})
 			if (signal.aborted) return
 			if (response.status === 401) {
-				window.location.assign(buildAuthLink('/login', onboardingPath))
+				window.location.assign(resolveOnboardingLoginPath(redirectTo))
 				return
 			}
 			const payload = await readJson<OnboardingPayload>(response)
@@ -119,7 +130,9 @@ export function OnboardingRoute(handle: Handle) {
 				throw new Error('Unable to load onboarding.')
 			}
 			if (!payload.emailVerified) {
-				window.location.assign(pendingVerificationPath)
+				window.location.assign(
+					resolveOnboardingPendingVerificationPath(redirectTo),
+				)
 				return
 			}
 			applyPayload(payload)
@@ -140,7 +153,11 @@ export function OnboardingRoute(handle: Handle) {
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
 		if (!routeData.emailVerified) {
-			window.location.assign(pendingVerificationPath)
+			window.location.assign(
+				resolveOnboardingPendingVerificationPath(
+					readOnboardingRedirectTo(handle),
+				),
+			)
 			return true
 		}
 		applyPayload(routeData)
