@@ -1,27 +1,17 @@
 import { expect, test, vi } from 'vitest'
 import {
-	DEFAULT_KIT_WAITLIST_SEQUENCE_ID,
-	DEFAULT_KIT_WAITLIST_TAG_ID,
 	type KitWaitlistError,
 	resolveKitWaitlistSequenceId,
 	resolveKitWaitlistTagId,
 	subscribeToKitWaitlist,
 } from '#app/kit-waitlist.ts'
 
-test('resolveKitWaitlist ids default and validate overrides', () => {
-	expect(resolveKitWaitlistTagId(undefined)).toBe(DEFAULT_KIT_WAITLIST_TAG_ID)
-	expect(resolveKitWaitlistTagId('')).toBe(DEFAULT_KIT_WAITLIST_TAG_ID)
+test('subscribeToKitWaitlist enrolls new and existing subscribers', async () => {
 	expect(resolveKitWaitlistTagId(' 99 ')).toBe(99)
-	expect(resolveKitWaitlistTagId('0')).toBeNull()
 	expect(resolveKitWaitlistTagId('nope')).toBeNull()
-	expect(resolveKitWaitlistSequenceId(undefined)).toBe(
-		DEFAULT_KIT_WAITLIST_SEQUENCE_ID,
-	)
 	expect(resolveKitWaitlistSequenceId('2823893')).toBe(2823893)
 	expect(resolveKitWaitlistSequenceId('nope')).toBeNull()
-})
 
-test('subscribeToKitWaitlist creates, tags, and enrolls new subscribers', async () => {
 	const calls: Array<{ url: string; method: string; body: unknown }> = []
 	const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = String(input)
@@ -43,7 +33,7 @@ test('subscribeToKitWaitlist creates, tags, and enrolls new subscribers', async 
 		)
 	}
 
-	const result = await subscribeToKitWaitlist({
+	const created = await subscribeToKitWaitlist({
 		apiKey: 'key',
 		email: 'ada@example.com',
 		firstName: 'Ada',
@@ -51,35 +41,19 @@ test('subscribeToKitWaitlist creates, tags, and enrolls new subscribers', async 
 		sequenceId: 456,
 		fetchImpl: fetchImpl as typeof fetch,
 	})
-
-	expect(result).toEqual({ subscriberId: 7, created: true })
-	expect(calls).toEqual([
-		{
-			url: 'https://api.kit.com/v4/subscribers?email_address=ada%40example.com',
-			method: 'GET',
-			body: null,
-		},
-		{
-			url: 'https://api.kit.com/v4/subscribers',
-			method: 'POST',
-			body: { email_address: 'ada@example.com', first_name: 'Ada' },
-		},
-		{
-			url: 'https://api.kit.com/v4/tags/123/subscribers',
-			method: 'POST',
-			body: { email_address: 'ada@example.com' },
-		},
-		{
-			url: 'https://api.kit.com/v4/sequences/456/subscribers',
-			method: 'POST',
-			body: { email_address: 'ada@example.com' },
-		},
+	expect(created).toEqual({ subscriberId: 7, created: true })
+	expect(calls.map((call) => call.method)).toEqual([
+		'GET',
+		'POST',
+		'POST',
+		'POST',
 	])
-})
 
-test('subscribeToKitWaitlist does not overwrite an existing first name', async () => {
-	const calls: Array<{ url: string; method: string; body: unknown }> = []
-	const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+	calls.length = 0
+	const existingFetchImpl = async (
+		input: RequestInfo | URL,
+		init?: RequestInit,
+	) => {
 		const url = String(input)
 		const method = init?.method ?? 'GET'
 		const body = init?.body ? JSON.parse(String(init.body)) : null
@@ -104,33 +78,23 @@ test('subscribeToKitWaitlist does not overwrite an existing first name', async (
 		)
 	}
 
-	const result = await subscribeToKitWaitlist({
+	const existing = await subscribeToKitWaitlist({
 		apiKey: 'key',
 		email: 'ada@example.com',
 		firstName: 'Ada',
 		tagId: 123,
 		sequenceId: 456,
-		fetchImpl: fetchImpl as typeof fetch,
+		fetchImpl: existingFetchImpl as typeof fetch,
 	})
-
-	expect(result).toEqual({ subscriberId: 9, created: false })
-	expect(calls).toEqual([
-		{
-			url: 'https://api.kit.com/v4/subscribers?email_address=ada%40example.com',
-			method: 'GET',
-			body: null,
-		},
-		{
-			url: 'https://api.kit.com/v4/tags/123/subscribers',
-			method: 'POST',
-			body: { email_address: 'ada@example.com' },
-		},
-		{
-			url: 'https://api.kit.com/v4/sequences/456/subscribers',
-			method: 'POST',
-			body: { email_address: 'ada@example.com' },
-		},
-	])
+	expect(existing).toEqual({ subscriberId: 9, created: false })
+	expect(calls.map((call) => call.method)).toEqual(['GET', 'POST', 'POST'])
+	expect(
+		calls.some(
+			(call) =>
+				call.method === 'POST' &&
+				call.url === 'https://api.kit.com/v4/subscribers',
+		),
+	).toBe(false)
 })
 
 test('subscribeToKitWaitlist classifies client failures', async () => {

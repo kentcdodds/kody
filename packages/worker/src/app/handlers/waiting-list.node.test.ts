@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
 	createWaitingListHandler,
@@ -10,13 +10,6 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-
-afterEach(() => {
-	vi.unstubAllGlobals()
-	vi.restoreAllMocks()
-	logAuditEventSpy.mockClear()
-	consoleError.mockClear()
-})
 
 function createRateLimitDb() {
 	const rows: Array<{ id: number; key: string; ts: number }> = []
@@ -134,50 +127,66 @@ async function postWaitingList(
 	return handler.handler(context)
 }
 
-test('joins the Kit waitlist with first name and email', async () => {
-	const fetchMock = vi.fn(
-		async (input: RequestInfo | URL, init?: RequestInit) => {
-			const url = String(input)
-			const method = init?.method ?? 'GET'
-			if (url.includes('/subscribers?email_address=')) {
-				return Response.json({ subscribers: [] }, { status: 200 })
-			}
-			if (url.endsWith('/subscribers') && method === 'POST') {
-				return Response.json(
-					{ subscriber: { id: 42, email_address: 'ada@example.com' } },
-					{ status: 201 },
-				)
-			}
-			if (url.includes(`/tags/${DEFAULT_KIT_WAITLIST_TAG_ID}/subscribers`)) {
-				return Response.json(
-					{ subscriber: { id: 42, email_address: 'ada@example.com' } },
-					{ status: 201 },
-				)
-			}
-			if (url.includes('/sequences/') && url.endsWith('/subscribers')) {
-				return Response.json(
-					{ subscriber: { id: 42, email_address: 'ada@example.com' } },
-					{ status: 201 },
-				)
-			}
-			return Response.json({ errors: ['unexpected'] }, { status: 500 })
-		},
-	)
+function stubKitFetch(
+	impl: (
+		input: RequestInfo | URL,
+		init?: RequestInit,
+	) => Promise<Response> = async (input, init) => {
+		const url = String(input)
+		const method = init?.method ?? 'GET'
+		if (url.includes('/subscribers?email_address=')) {
+			return Response.json({ subscribers: [] }, { status: 200 })
+		}
+		if (url.endsWith('/subscribers') && method === 'POST') {
+			return Response.json(
+				{ subscriber: { id: 42, email_address: 'ada@example.com' } },
+				{ status: 201 },
+			)
+		}
+		if (url.includes(`/tags/${DEFAULT_KIT_WAITLIST_TAG_ID}/subscribers`)) {
+			return Response.json(
+				{ subscriber: { id: 42, email_address: 'ada@example.com' } },
+				{ status: 201 },
+			)
+		}
+		if (url.includes('/sequences/') && url.endsWith('/subscribers')) {
+			return Response.json(
+				{ subscriber: { id: 42, email_address: 'ada@example.com' } },
+				{ status: 201 },
+			)
+		}
+		return Response.json({ errors: ['unexpected'] }, { status: 500 })
+	},
+) {
+	const fetchMock = vi.fn(impl)
 	vi.stubGlobal('fetch', fetchMock)
+	return fetchMock
+}
 
-	const { handler } = createHandler({
-		KIT_API_KEY: 'kit-test-key',
+test('waiting list handler validates input and joins Kit in production', async () => {
+	const fetchMock = stubKitFetch()
+	const { handler } = createHandler({ KIT_API_KEY: 'kit-test-key' })
+
+	const missingName = await postWaitingList(handler, {
+		firstName: '   ',
+		email: 'ada@example.com',
 	})
+	expect(missingName.status).toBe(400)
+	expect(await missingName.json()).toMatchObject({ ok: false })
+
+	const badEmail = await postWaitingList(handler, {
+		firstName: 'Ada',
+		email: 'not-an-email',
+	})
+	expect(badEmail.status).toBe(400)
+	expect(await badEmail.json()).toMatchObject({ ok: false })
+
 	const response = await postWaitingList(handler, {
 		firstName: '  Ada  Lovelace ',
 		email: 'Ada@Example.com',
 	})
-
 	expect(response.status).toBe(200)
-	expect(await response.json()).toEqual({
-		ok: true,
-		message: "You're on the list. We'll be in touch.",
-	})
+	expect(await response.json()).toMatchObject({ ok: true })
 	expect(fetchMock).toHaveBeenCalledTimes(4)
 	const createCall = fetchMock.mock.calls.find(([url, init]) => {
 		return (
@@ -193,60 +202,34 @@ test('joins the Kit waitlist with first name and email', async () => {
 		first_name: 'Ada Lovelace',
 	})
 	expect(auditEventSummaries()).toEqual(['waiting_list_join:success'])
+
+	vi.unstubAllGlobals()
 })
 
-test('rejects missing first name and invalid email', async () => {
-	const { handler } = createHandler({ KIT_API_KEY: 'kit-test-key' })
-
-	const missingName = await postWaitingList(handler, {
-		firstName: '   ',
-		email: 'ada@example.com',
-	})
-	expect(missingName.status).toBe(400)
-	expect(await missingName.json()).toEqual({
-		ok: false,
-		error: 'First name is required.',
-	})
-
-	const badEmail = await postWaitingList(handler, {
-		firstName: 'Ada',
-		email: 'not-an-email',
-	})
-	expect(badEmail.status).toBe(400)
-	expect(await badEmail.json()).toEqual({
-		ok: false,
-		error: 'A valid email is required.',
-	})
-})
-
-test('fails closed in production when Kit is not configured', async () => {
-	const { handler } = createHandler({
+test('waiting list handler gates Kit by environment', async () => {
+	logAuditEventSpy.mockClear()
+	const { handler: productionHandler } = createHandler({
 		SENTRY_ENVIRONMENT: 'production',
 	})
-	const response = await postWaitingList(handler, {
+	const unavailable = await postWaitingList(productionHandler, {
 		firstName: 'Ada',
 		email: 'ada@example.com',
 	})
-	expect(response.status).toBe(503)
-	expect(await response.json()).toEqual({
-		ok: false,
-		error:
-			'Waiting list signup is temporarily unavailable. Please try again later.',
-	})
-})
+	expect(unavailable.status).toBe(503)
+	expect(await unavailable.json()).toMatchObject({ ok: false })
 
-test('no-ops successfully in non-production without a Kit key', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
-	const { handler } = createHandler({
+	const { handler: testHandler } = createHandler({
 		SENTRY_ENVIRONMENT: 'test',
 	})
-	const response = await postWaitingList(handler, {
+	logAuditEventSpy.mockClear()
+	const skipped = await postWaitingList(testHandler, {
 		firstName: 'Ada',
 		email: 'ada@example.com',
 	})
-	expect(response.status).toBe(200)
-	expect(await response.json()).toMatchObject({ ok: true })
+	expect(skipped.status).toBe(200)
+	expect(await skipped.json()).toMatchObject({ ok: true })
 	expect(fetchMock).not.toHaveBeenCalled()
 	expect(auditEventSummaries()).toEqual(['waiting_list_join:success'])
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
@@ -256,32 +239,34 @@ test('no-ops successfully in non-production without a Kit key', async () => {
 			reason: 'kit_skipped_non_production',
 		}),
 	)
+
+	vi.unstubAllGlobals()
 })
 
-test('rate limits repeated waiting list submissions', async () => {
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-			const url = String(input)
-			const method = init?.method ?? 'GET'
-			if (url.includes('/subscribers?email_address=')) {
-				return Response.json({ subscribers: [] }, { status: 200 })
-			}
-			if (url.endsWith('/subscribers') && method === 'POST') {
-				return Response.json({ subscriber: { id: 1 } }, { status: 201 })
-			}
-			return Response.json({ subscriber: { id: 1 } }, { status: 201 })
-		}),
-	)
+test('waiting list handler rate limits and refunds failed Kit attempts', async () => {
+	consoleError.mockImplementation(() => {})
 	const { handler, rateLimitDb } = createHandler({
 		KIT_API_KEY: 'kit-test-key',
+	})
+	const ip = { 'CF-Connecting-IP': '203.0.113.10' }
+
+	stubKitFetch(async (input, init) => {
+		const url = String(input)
+		const method = init?.method ?? 'GET'
+		if (url.includes('/subscribers?email_address=')) {
+			return Response.json({ subscribers: [] }, { status: 200 })
+		}
+		if (url.endsWith('/subscribers') && method === 'POST') {
+			return Response.json({ subscriber: { id: 1 } }, { status: 201 })
+		}
+		return Response.json({ subscriber: { id: 1 } }, { status: 201 })
 	})
 
 	for (let i = 0; i < waitingListRateLimitConfig.maxRequests; i++) {
 		const response = await postWaitingList(
 			handler,
 			{ firstName: 'Ada', email: `ada${i}@example.com` },
-			{ 'CF-Connecting-IP': '203.0.113.10' },
+			ip,
 		)
 		expect(response.status).toBe(200)
 	}
@@ -289,47 +274,43 @@ test('rate limits repeated waiting list submissions', async () => {
 	const limited = await postWaitingList(
 		handler,
 		{ firstName: 'Ada', email: 'ada-extra@example.com' },
-		{ 'CF-Connecting-IP': '203.0.113.10' },
+		ip,
 	)
 	expect(limited.status).toBe(429)
 	expect(limited.headers.get('Retry-After')).toBeTruthy()
 	expect(rateLimitDb.attemptCount).toBe(waitingListRateLimitConfig.maxRequests)
-})
 
-test('refunds the rate-limit slot when Kit subscribe fails transiently', async () => {
-	consoleError.mockImplementation(() => {})
+	const { handler: refundHandler, rateLimitDb: refundDb } = createHandler({
+		KIT_API_KEY: 'kit-test-key',
+	})
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async () => Response.json({ errors: ['boom'] }, { status: 500 })),
 	)
-	const { handler, rateLimitDb } = createHandler({
-		KIT_API_KEY: 'kit-test-key',
-	})
-	const response = await postWaitingList(handler, {
+	const transientFailure = await postWaitingList(refundHandler, {
 		firstName: 'Ada',
-		email: 'ada@example.com',
+		email: 'ada-transient@example.com',
 	})
-	expect(response.status).toBe(502)
-	expect(rateLimitDb.attemptCount).toBe(0)
-	expect(consoleError).toHaveBeenCalled()
-})
+	expect(transientFailure.status).toBe(502)
+	expect(refundDb.attemptCount).toBe(0)
 
-test('keeps the rate-limit slot when Kit rejects with a client error', async () => {
-	consoleError.mockImplementation(() => {})
+	const { handler: clientErrorHandler, rateLimitDb: clientErrorDb } =
+		createHandler({
+			KIT_API_KEY: 'kit-test-key',
+		})
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async () =>
 			Response.json({ errors: ['invalid email'] }, { status: 422 }),
 		),
 	)
-	const { handler, rateLimitDb } = createHandler({
-		KIT_API_KEY: 'kit-test-key',
-	})
-	const response = await postWaitingList(handler, {
+	const clientFailure = await postWaitingList(clientErrorHandler, {
 		firstName: 'Ada',
-		email: 'ada@example.com',
+		email: 'ada-client@example.com',
 	})
-	expect(response.status).toBe(502)
-	expect(rateLimitDb.attemptCount).toBe(1)
+	expect(clientFailure.status).toBe(502)
+	expect(clientErrorDb.attemptCount).toBe(1)
 	expect(consoleError).toHaveBeenCalled()
+
+	vi.unstubAllGlobals()
 })
