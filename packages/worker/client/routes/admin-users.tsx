@@ -352,10 +352,16 @@ export function AdminUsersRoute(handle: Handle) {
 		availablePlans = payload.availablePlans
 		const updatedUser = payload.updatedUser
 		const { role } = readFilterState(readCurrentRouterHref(handle))
+		// The server ignores unknown role values, so only a known role counts
+		// as an active filter — otherwise every mutation would wrongly remove
+		// its target from the list.
+		const activeRoleFilter = (availableRoles as Array<string>).includes(role)
+			? role
+			: ''
 		const matchesRoleFilter =
 			!updatedUser ||
-			!role ||
-			(updatedUser.roles as Array<string>).includes(role)
+			!activeRoleFilter ||
+			(updatedUser.roles as Array<string>).includes(activeRoleFilter)
 		const currentItems = usersSnapshot.items
 		const nextItems = updatedUser
 			? matchesRoleFilter
@@ -364,6 +370,9 @@ export function AdminUsersRoute(handle: Handle) {
 					)
 				: currentItems.filter((item) => item.id !== updatedUser.id)
 			: currentItems
+		// reset() invalidates any in-flight load-more so a page fetched before
+		// the mutation cannot merge stale rows or counts back in afterward.
+		userList.reset()
 		userList.replaceWindow({
 			items: nextItems,
 			hasMore: nextItems.length < payload.total,

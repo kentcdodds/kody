@@ -120,7 +120,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	// earlier pages: the initial window always seeds from page one.
 	await page.goto('/admin/users?pageSize=1&page=99999')
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
-	await expect(page.getByText(/Showing \d+ of \d+/)).toBeVisible()
+	await expect(page.getByText(/Showing [1-9]\d* of \d+/)).toBeVisible()
 
 	// Both rbac users share the `rbac-${runId}` username suffix, so search
 	// pins the list to exactly the accounts this test seeded.
