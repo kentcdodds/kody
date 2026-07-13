@@ -27,7 +27,7 @@ export function buildOnboardingSetupPrompt() {
 	return [
 		'Help me get started with Kody.',
 		'First, briefly explain what Kody can do for me in plain language.',
-		'Then help me connect one integration I care about: use search and the official guides to find the right setup steps, walk me through them, and verify the connection with a small ad hoc execute smoke test.',
+		'Then help me connect one integration I care about: use search and the official guides (coding_guide_get) to find the right setup steps, walk me through the connect or secrets flow, and verify the connection with a small ad hoc execute smoke test.',
 		'Do not create any packages until the integration works — start with ad hoc execute calls, then package things up once they work.',
 	].join(' ')
 }
