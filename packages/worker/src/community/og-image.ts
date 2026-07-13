@@ -6,7 +6,14 @@ import {
 	type SatoriElement,
 } from '#worker/og/render.ts'
 
-const DESCRIPTION_MAX_LENGTH = 140
+/** Character clamp for the supporting description (~2 visual lines). */
+const DESCRIPTION_MAX_LENGTH = 95
+const DESCRIPTION_FONT_SIZE = 28
+const DESCRIPTION_LINE_HEIGHT = 1.4
+/** Hard visual clamp so long text cannot overrun ratings/forks. */
+const DESCRIPTION_MAX_HEIGHT = Math.round(
+	DESCRIPTION_FONT_SIZE * DESCRIPTION_LINE_HEIGHT * 2,
+)
 const PACKAGE_ICON_SIZE = 96
 /** Matches `--radius-lg` (0.75rem) at OG canvas scale (~1.5× UI). */
 const PACKAGE_ICON_RADIUS = 18
@@ -121,8 +128,9 @@ function createPackageIdentityRow(input: CommunityOgImageInput): SatoriElement {
 								type: 'div',
 								props: {
 									style: {
-										fontSize: 30,
+										fontSize: 48,
 										fontWeight: 600,
+										letterSpacing: '-0.02em',
 										color: ogPalette.primary,
 										marginBottom: 8,
 									},
@@ -148,31 +156,28 @@ function createPackageIdentityRow(input: CommunityOgImageInput): SatoriElement {
 }
 
 function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
-	const headline = `Use Kody to ${truncateOgText(
-		input.description,
-		DESCRIPTION_MAX_LENGTH,
-	)}`
+	const description = truncateOgText(input.description, DESCRIPTION_MAX_LENGTH)
 	const starRow = createStarRow(input)
 	const ratingText = formatStarRating(input)
 
 	return createOgFrame({
 		label: 'Community package',
 		children: [
+			createPackageIdentityRow(input),
 			{
 				type: 'div',
 				props: {
 					style: {
-						fontSize: 42,
-						fontWeight: 600,
-						lineHeight: 1.2,
-						letterSpacing: '-0.02em',
+						fontSize: DESCRIPTION_FONT_SIZE,
+						lineHeight: DESCRIPTION_LINE_HEIGHT,
+						color: ogPalette.muted,
 						marginBottom: 28,
-						color: ogPalette.text,
+						maxHeight: DESCRIPTION_MAX_HEIGHT,
+						overflow: 'hidden',
 					},
-					children: headline,
+					children: description,
 				},
 			},
-			createPackageIdentityRow(input),
 			{
 				type: 'div',
 				props: {

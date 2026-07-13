@@ -154,8 +154,9 @@ mirroring app design tokens, satori layout + resvg rasterization, and the
 `publicOgPages` registry. Static public pages serve generated images from
 `/og/:page.png` (page ids such as `home`, `community`, `login`). Community
 listing cards use `og-image.ts` on that same pipeline and are served at
-`/community/:listingId/og.png` (package community icon, package name, “Use Kody
-to …” description, star rating, fork count).
+`/community/:listingId/og.png` (package identity as the visual hero — community
+icon, package name, and byline — with a truncated muted description as
+supporting text, then star rating and fork count).
 
 ## Admin moderation
 
