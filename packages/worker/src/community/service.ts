@@ -326,7 +326,8 @@ export async function publishCommunityListing(input: {
 	if (!packageJsonContent) {
 		throw new Error('Saved packages require a root package.json file.')
 	}
-	assertKodyDescriptionLength(loadedSource.manifest.kody.description)
+	const description = loadedSource.manifest.kody.description
+	assertKodyDescriptionLength(description)
 	const license = parseRawPackageLicense(packageJsonContent)
 	assertPackageNotPrivateForCommunityPublish(packageJsonContent)
 
@@ -387,7 +388,7 @@ export async function publishCommunityListing(input: {
 			sourceId: savedPackage.sourceId,
 			kodyId: savedPackage.kodyId,
 			name: savedPackage.name,
-			description: savedPackage.description,
+			description,
 			tagsJson,
 			searchText: savedPackage.searchText,
 			readmeContent: readme.content,
@@ -409,7 +410,7 @@ export async function publishCommunityListing(input: {
 			source_id: savedPackage.sourceId,
 			kody_id: savedPackage.kodyId,
 			name: savedPackage.name,
-			description: savedPackage.description,
+			description,
 			tags_json: tagsJson,
 			search_text: savedPackage.searchText,
 			readme_content: readme.content,
