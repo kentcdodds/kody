@@ -28,10 +28,36 @@ import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
 
 /**
+ * True when the URL's path could reach a user scope (`/@...`, where hosted
+ * package apps live). Deliberately over-matches: repeated leading slashes
+ * collapse (the worker routes with `split('/').filter(Boolean)`, so
+ * `//@user` still reaches package apps) and percent-encoding is decoded
+ * repeatedly (`/%40user`, `/%2540user`) before checking. Undecodable paths
+ * are treated as user-scope so ambiguity always fails closed.
+ */
+function hasUserScopePath(url: URL): boolean {
+	let pathname = url.pathname
+	for (let pass = 0; ; pass++) {
+		let decoded: string
+		try {
+			decoded = decodeURIComponent(pathname)
+		} catch {
+			return true
+		}
+		if (decoded === pathname) break
+		// Still decodable after several passes: pathologically nested
+		// encoding, so fail closed rather than guessing.
+		if (pass >= 4) return true
+		pathname = decoded
+	}
+	return pathname.replace(/^\/+/, '').startsWith('@')
+}
+
+/**
  * Returns a normalized href when the link is safe to emit, otherwise null.
  * Only absolute http(s)/mailto URLs pass, and any URL whose path enters a
- * user scope (`/@...`, where hosted package apps live) is refused on every
- * host so READMEs cannot funnel viewers into author-controlled endpoints.
+ * user scope is refused on every host so READMEs cannot funnel viewers into
+ * author-controlled endpoints.
  */
 export function getSafeMarkdownLinkHref(href: string): string | null {
 	let url: URL
@@ -41,7 +67,7 @@ export function getSafeMarkdownLinkHref(href: string): string | null {
 		return null
 	}
 	if (!allowedLinkProtocols.has(url.protocol)) return null
-	if (url.pathname.startsWith('/@')) return null
+	if (hasUserScopePath(url)) return null
 	return url.href
 }
 

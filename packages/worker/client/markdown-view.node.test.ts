@@ -141,4 +141,30 @@ test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths',
 	expect(getSafeMarkdownLinkHref('https://other.example/@user/anything')).toBe(
 		null,
 	)
+	// Repeated slashes collapse in worker routing (`split('/').filter(Boolean)`),
+	// so `//@user` must be refused too.
+	expect(
+		getSafeMarkdownLinkHref('https://heykody.dev//@user/packages/app'),
+	).toBe(null)
+	expect(
+		getSafeMarkdownLinkHref('https://heykody.dev///@user/packages/app'),
+	).toBe(null)
+	// Percent-encoded (and nested-encoded) user scopes must be refused:
+	// URL.pathname does not decode, but the server does.
+	expect(
+		getSafeMarkdownLinkHref('https://heykody.dev/%40user/packages/app'),
+	).toBe(null)
+	expect(
+		getSafeMarkdownLinkHref('https://heykody.dev/%2540user/packages/app'),
+	).toBe(null)
+	expect(
+		getSafeMarkdownLinkHref('https://heykody.dev/%25252540user/packages/app'),
+	).toBe(null)
+	expect(getSafeMarkdownLinkHref('https://heykody.dev/%2F@user/x')).toBe(null)
+	// Undecodable paths fail closed.
+	expect(getSafeMarkdownLinkHref('https://heykody.dev/%E0%A4%A')).toBe(null)
+	// Benign encoded paths that decode to non-user-scope stay allowed.
+	expect(getSafeMarkdownLinkHref('https://example.com/a%20b')).toBe(
+		'https://example.com/a%20b',
+	)
 })
