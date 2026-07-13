@@ -18,6 +18,7 @@ async function ensureSchema(db: D1Database) {
 				search_text TEXT,
 				source_id TEXT NOT NULL,
 				has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
+				hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 			)`,
@@ -50,7 +51,8 @@ function buildRow(input: {
 		tags_json: JSON.stringify(input.tags ?? []),
 		search_text: input.searchText ?? null,
 		source_id: `source-${input.id}`,
-		has_app: input.hasApp ? 1 : 0,
+		has_app: input.hasApp ? (1 as const) : (0 as const),
+		hidden: 0 as const,
 		created_at: input.createdAt,
 		updated_at: input.updatedAt,
 	}
