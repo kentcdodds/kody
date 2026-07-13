@@ -32,7 +32,11 @@ Important fields:
   public community listing
 - `exports` — authoritative import/export map
 - `kody.id` — user-scoped Kody package id
-- `kody.description` — package description for search/detail
+- `kody.description` — short public tagline for search, detail, community
+  listings, and share cards (~80–120 characters ideal; max 200). Prefer outcome
+  phrasing (“Send transactional email via Resend”) over feature lists; put API
+  surface, auth notes, and longer detail in README / Intent / `searchText` /
+  export docs
 - `kody.tags` — package tags
 - `kody.dependencies` — direct saved package names imported through static
   `kody:@...` imports

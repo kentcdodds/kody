@@ -32,6 +32,9 @@ Requirements:
   **updating** an existing package.
 - A root **`README.md`** with a **`## Intent`** section (same guidance as
   [Packages](./packages.md#save-and-edit-packages)).
+- A short **`kody.description`** tagline (~80–120 characters ideal; max 200).
+  Community listings and Open Graph share cards use this field, so keep it
+  concise — not a feature dump.
 - A **published** saved package commit. Publishing creates a **pinned snapshot**
   of the files at that commit.
 

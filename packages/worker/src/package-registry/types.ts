@@ -150,7 +150,13 @@ export type KodyPackageDependency = z.infer<typeof kodyPackageDependencySchema>
 
 export const authoredPackageKodySchema = z.object({
 	id: z.string().regex(kodyPackageIdPattern),
-	description: z.string().min(1),
+	description: z
+		.string()
+		.min(1)
+		.max(
+			200,
+			'kody.description must be at most 200 characters (short public tagline).',
+		),
 	tags: z.array(z.string().min(1)).optional(),
 	searchText: z.string().min(1).optional(),
 	dependencies: kodyPackageDependenciesSchema.optional(),

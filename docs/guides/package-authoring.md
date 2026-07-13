@@ -54,6 +54,18 @@ This package exists to ...
 Keep the section concise. It should explain why the package exists and what
 success means for the user, not duplicate every implementation detail.
 
+## `kody.description` (short public tagline)
+
+`package.json#kody.description` is a **short public tagline**, not a feature
+dump. Aim for about **80–120 characters** (hard max **200**). Prefer outcome
+phrasing such as “Send transactional email via Resend” over inventory lists of
+exports, auth, or APIs.
+
+Put feature lists, API surface, auth notes, and longer guidance in `README.md`
+(including `## Intent`), `kody.searchText`, and export/JSDoc docs — not in
+`kody.description`. Community listings and Open Graph share cards reuse this
+field, so keep it concise.
+
 ## Package visibility (`private`)
 
 Default new saved packages to `"private": true` in `package.json` unless the

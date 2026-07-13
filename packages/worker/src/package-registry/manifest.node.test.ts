@@ -75,6 +75,25 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 	).toThrow(/must be a scoped package name/)
 })
 
+test('parseAuthoredPackageJson rejects kody.description longer than 200 characters', () => {
+	const tooLong = 'a'.repeat(201)
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/long-description',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'long-description',
+					description: tooLong,
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/kody\.description must be at most 200 characters/)
+})
+
 test('parseAuthoredPackageJson accepts services, subscriptions, emits, retrievers, and secret mounts', () => {
 	const manifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
