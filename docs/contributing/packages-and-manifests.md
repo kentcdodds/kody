@@ -15,7 +15,7 @@ Use `package.json` as the canonical source of truth for saved package metadata.
   `kody.id: "my-package"`)
 - `exports` — authoritative import/export map
 - `kody.id` — user-scoped Kody package id
-- `kody.description` — package description for search/detail
+- `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
 - `kody.dependencies` — direct static saved package dependencies imported via
   `kody:@...`
