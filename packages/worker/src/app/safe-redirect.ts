@@ -41,12 +41,15 @@ export function resolvePostVerificationRedirect(redirectTo?: string | null) {
 /** Success CTA for `/verify-email`, preserving a safe OAuth (or other) resume target. */
 export function resolveVerifyEmailSuccessCta(redirectTo?: string | null) {
 	const href = resolvePostVerificationRedirect(redirectTo)
+	// Exception to the present-tense docs rule (see docs/contributing/documentation.md):
+	// this copy reports a user-specific state transition right after verification,
+	// so "now" is intentional — MCP was gated until the moment this message appears.
 	if (href === defaultPostVerificationRedirect) {
 		return {
 			href,
 			label: 'Continue to onboarding',
 			message:
-				'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
+				'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
 		}
 	}
 	if (href.startsWith('/oauth/authorize')) {
@@ -54,12 +57,13 @@ export function resolveVerifyEmailSuccessCta(redirectTo?: string | null) {
 			href,
 			label: 'Continue authorization',
 			message:
-				'Your email address has been verified. MCP access is available. Continue authorization to finish connecting your AI agent.',
+				'Your email address has been verified. MCP access is now available. Continue authorization to finish connecting your AI agent.',
 		}
 	}
 	return {
 		href,
 		label: 'Continue',
-		message: 'Your email address has been verified. MCP access is available.',
+		message:
+			'Your email address has been verified. MCP access is now available.',
 	}
 }
