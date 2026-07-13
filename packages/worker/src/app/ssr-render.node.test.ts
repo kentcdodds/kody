@@ -269,6 +269,17 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountHtml).not.toContain('Connect your AI agent')
 	expect(accountHtml).toContain('/pending-verification')
 
+	const accountLinkedResponse = await runHtmlHandler(
+		createAccountHandler(env),
+		new Request('https://example.com/account?oauthLinked=google', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(accountLinkedResponse.status).toBe(200)
+	const accountLinkedHtml = await readResponseText(accountLinkedResponse)
+	expect(accountLinkedHtml).toContain('Google connected.')
+	expect(accountLinkedHtml).toContain('No accounts connected yet.')
+
 	const onboardingResponse = await runHtmlHandler(
 		createOnboardingHandler(env),
 		new Request('https://example.com/onboarding', {

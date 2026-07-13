@@ -57,7 +57,9 @@ test('social login signs in via mock GitHub and manages connections', async ({
 		.getByRole('listitem')
 		.filter({ hasText: 'Google' })
 	await expect(googleRow).toBeVisible()
-	await expect(googleRow.getByText('Connected as mock-google-user')).toBeVisible()
+	await expect(
+		googleRow.getByText('Connected as Mock Google User'),
+	).toBeVisible()
 
 	// With two connections, disconnecting one is allowed again.
 	await googleRow.getByRole('button', { name: 'Disconnect' }).click()

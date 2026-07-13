@@ -480,7 +480,10 @@ export function AccountRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadAccountProfile)
 		}
-		if (typeof document !== 'undefined' && !consumedCallbackMessage) {
+		// Apply the OAuth flash on both SSR and client from the URL so the
+		// first client render matches the server HTML. A client-only message
+		// mismatched SSR and duplicated the connections list during hydration.
+		if (!consumedCallbackMessage) {
 			consumedCallbackMessage = true
 			connectionsMessage =
 				readConnectionCallbackMessage(currentHref) ?? connectionsMessage
