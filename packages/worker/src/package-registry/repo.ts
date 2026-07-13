@@ -202,6 +202,87 @@ export async function listSavedPackagesByUserId(
 	return (rows.results ?? []).map(mapSavedPackageRow)
 }
 
+export type SavedPackageSearchSort = 'updated' | 'created' | 'name'
+
+/** Escape LIKE wildcards so user queries match literally. */
+function escapeLikePattern(value: string) {
+	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
+}
+
+function savedPackageSearchOrderBy(sort: SavedPackageSearchSort) {
+	switch (sort) {
+		case 'updated':
+			return 'updated_at DESC, id ASC'
+		case 'created':
+			return 'created_at DESC, id ASC'
+		case 'name':
+			return 'name COLLATE NOCASE ASC, id ASC'
+		default:
+			sort satisfies never
+			throw new Error(`Unknown saved package sort: ${String(sort)}`)
+	}
+}
+
+/**
+ * Filtered, paged listing of one user's saved packages for browse UIs. The
+ * query and count share the same WHERE clause so the reported total always
+ * matches the filtered result set.
+ */
+export async function searchSavedPackagesByUserId(
+	db: D1Database,
+	input: {
+		userId: string
+		query?: string
+		hasApp?: boolean | null
+		sort?: SavedPackageSearchSort
+		limit: number
+		offset: number
+	},
+): Promise<{ items: Array<SavedPackageRecord>; total: number }> {
+	const conditions = ['user_id = ?']
+	const params: Array<unknown> = [input.userId]
+	const query = input.query?.trim() ?? ''
+	if (query) {
+		const pattern = `%${escapeLikePattern(query.toLowerCase())}%`
+		conditions.push(
+			`(LOWER(name) LIKE ? ESCAPE '\\'
+				OR LOWER(kody_id) LIKE ? ESCAPE '\\'
+				OR LOWER(description) LIKE ? ESCAPE '\\'
+				OR LOWER(COALESCE(search_text, '')) LIKE ? ESCAPE '\\'
+				OR LOWER(tags_json) LIKE ? ESCAPE '\\')`,
+		)
+		params.push(pattern, pattern, pattern, pattern, pattern)
+	}
+	if (input.hasApp != null) {
+		conditions.push('has_app = ?')
+		params.push(input.hasApp ? 1 : 0)
+	}
+	const whereClause = `WHERE ${conditions.join(' AND ')}`
+	const orderBy = savedPackageSearchOrderBy(input.sort ?? 'updated')
+
+	const [totalRow, rows] = await Promise.all([
+		db
+			.prepare(`SELECT COUNT(*) AS total FROM saved_packages ${whereClause}`)
+			.bind(...params)
+			.first<{ total: number }>(),
+		db
+			.prepare(
+				`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
+					source_id, has_app, created_at, updated_at
+				FROM saved_packages
+				${whereClause}
+				ORDER BY ${orderBy}
+				LIMIT ? OFFSET ?`,
+			)
+			.bind(...params, input.limit, input.offset)
+			.all<Record<string, unknown>>(),
+	])
+	return {
+		items: (rows.results ?? []).map(mapSavedPackageRow),
+		total: totalRow?.total ?? 0,
+	}
+}
+
 // Keyset-paged listing across all users, used by maintenance reindex so a
 // single query never loads the whole table. Pass the last row id of the
 // previous page (or null for the first page).

@@ -17,6 +17,9 @@ export const routes = route({
 	accountPackageInvocationTokensApiPost: post(
 		'/account/package-invocation-tokens.json',
 	),
+	accountPackages: '/account/packages',
+	accountPackageDetail: '/account/packages/:packageId',
+	accountPackagesApi: '/account/packages.json',
 	accountRemoteConnectors: '/account/remote-connectors',
 	accountRemoteConnectorsApi: '/account/remote-connectors.json',
 	accountRemoteConnectorsApiPost: post('/account/remote-connectors.json'),

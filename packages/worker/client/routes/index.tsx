@@ -13,6 +13,10 @@ import {
 	accountPackageInvocationTokensRouteLoader,
 } from './account-package-invocation-tokens.tsx'
 import {
+	AccountPackagesRoute,
+	accountPackagesRouteLoader,
+} from './account-packages.tsx'
+import {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'
@@ -77,6 +81,8 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountPackageInvocationTokensRouteLoader,
 	'/account/package-invocation-tokens/:tokenId':
 		accountPackageInvocationTokensRouteLoader,
+	'/account/packages': accountPackagesRouteLoader,
+	'/account/packages/:packageId': accountPackagesRouteLoader,
 	'/account/passkeys': accountPasskeysRouteLoader,
 	'/account/remote-connectors': accountRemoteConnectorsRouteLoader,
 	'/account/secrets': accountSecretsRouteLoader,
@@ -114,6 +120,8 @@ export const clientRoutes = {
 	'/account/package-invocation-tokens/:tokenId': (
 		<AccountPackageInvocationTokensRoute />
 	),
+	'/account/packages': <AccountPackagesRoute />,
+	'/account/packages/:packageId': <AccountPackagesRoute />,
 	'/account/passkeys': <AccountPasskeysRoute />,
 	'/account/remote-connectors': <AccountRemoteConnectorsRoute />,
 	'/account/secrets': <AccountSecretsRoute />,

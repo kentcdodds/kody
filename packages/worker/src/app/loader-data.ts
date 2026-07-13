@@ -480,6 +480,39 @@ export type AccountPackageInvocationTokensLoaderData = {
 	selectedTokenId?: string
 }
 
+export type AccountPackageListItem = {
+	id: string
+	name: string
+	kodyId: string
+	description: string
+	tags: Array<string>
+	hasApp: boolean
+	sourceId: string
+	createdAt: string
+	updatedAt: string
+}
+
+export type AccountPackageDetail = AccountPackageListItem & {
+	searchText: string | null
+}
+
+export type AccountPackagesSort = 'updated' | 'created' | 'name'
+
+export type AccountPackagesAppFilter = 'all' | 'with' | 'without'
+
+export type AccountPackagesLoaderData = {
+	ok: true
+	email: string
+	packages: Array<AccountPackageListItem>
+	selectedPackage: AccountPackageDetail | null
+	page: number
+	pageSize: number
+	total: number
+	query: string
+	appFilter: AccountPackagesAppFilter
+	sort: AccountPackagesSort
+}
+
 export type AccountSecretListItem = {
 	id: string
 	name: string
@@ -563,6 +596,7 @@ export type AppLoaderData = {
 	accountMcpServers?: AccountMcpServersLoaderData
 	accountRemoteConnectors?: AccountRemoteConnectorsLoaderData
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
+	accountPackages?: AccountPackagesLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	authProviders?: AuthProvidersLoaderData
 	emailVerification?: EmailVerificationLoaderData
