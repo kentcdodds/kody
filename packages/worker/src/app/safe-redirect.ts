@@ -46,7 +46,7 @@ export function resolveVerifyEmailSuccessCta(redirectTo?: string | null) {
 			href,
 			label: 'Continue to onboarding',
 			message:
-				'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+				'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
 		}
 	}
 	if (href.startsWith('/oauth/authorize')) {
@@ -54,13 +54,12 @@ export function resolveVerifyEmailSuccessCta(redirectTo?: string | null) {
 			href,
 			label: 'Continue authorization',
 			message:
-				'Your email address has been verified. MCP access is now available. Continue authorization to finish connecting your AI agent.',
+				'Your email address has been verified. MCP access is available. Continue authorization to finish connecting your AI agent.',
 		}
 	}
 	return {
 		href,
 		label: 'Continue',
-		message:
-			'Your email address has been verified. MCP access is now available.',
+		message: 'Your email address has been verified. MCP access is available.',
 	}
 }

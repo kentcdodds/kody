@@ -35,24 +35,23 @@ test('email verification links preserve safe resume targets and reject open redi
 		href: '/onboarding',
 		label: 'Continue to onboarding',
 		message:
-			'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+			'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
 	})
 	expect(resolveVerifyEmailSuccessCta(oauthResume)).toEqual({
 		href: oauthResume,
 		label: 'Continue authorization',
 		message:
-			'Your email address has been verified. MCP access is now available. Continue authorization to finish connecting your AI agent.',
+			'Your email address has been verified. MCP access is available. Continue authorization to finish connecting your AI agent.',
 	})
 	expect(resolveVerifyEmailSuccessCta('/account')).toEqual({
 		href: '/account',
 		label: 'Continue',
-		message:
-			'Your email address has been verified. MCP access is now available.',
+		message: 'Your email address has been verified. MCP access is available.',
 	})
 	expect(resolveVerifyEmailSuccessCta('https://evil.example')).toEqual({
 		href: '/onboarding',
 		label: 'Continue to onboarding',
 		message:
-			'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+			'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
 	})
 })

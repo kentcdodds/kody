@@ -40,7 +40,7 @@ test('verify-email success CTA resumes a safe OAuth target and rejects open redi
 				ok: true,
 				kind: 'email_verify',
 				message:
-					'Your email address has been verified. MCP access is now available. Continue authorization to finish connecting your AI agent.',
+					'Your email address has been verified. MCP access is available. Continue authorization to finish connecting your AI agent.',
 				ctaHref: oauthResume,
 				ctaLabel: 'Continue authorization',
 			},
@@ -63,7 +63,7 @@ test('verify-email success CTA resumes a safe OAuth target and rejects open redi
 				ok: true,
 				kind: 'email_verify',
 				message:
-					'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+					'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
 				ctaHref: '/onboarding',
 				ctaLabel: 'Continue to onboarding',
 			},
@@ -86,7 +86,7 @@ test('verify-email success CTA resumes a safe OAuth target and rejects open redi
 				ok: true,
 				kind: 'email_verify',
 				message:
-					'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+					'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
 				ctaHref: '/onboarding',
 				ctaLabel: 'Continue to onboarding',
 			},

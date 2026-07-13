@@ -53,12 +53,12 @@ test('safe redirect helpers reject open redirects and preserve same-origin paths
 		href: '/oauth/authorize?client_id=1',
 		label: 'Continue authorization',
 		message:
-			'Your email address has been verified. MCP access is now available. Continue authorization to finish connecting your AI agent.',
+			'Your email address has been verified. MCP access is available. Continue authorization to finish connecting your AI agent.',
 	})
 	expect(resolveVerifyEmailSuccessCta('https://evil.example')).toEqual({
 		href: '/onboarding',
 		label: 'Continue to onboarding',
 		message:
-			'Your email address has been verified. MCP access is now available. Continue onboarding to connect your AI agent.',
+			'Your email address has been verified. MCP access is available. Continue onboarding to connect your AI agent.',
 	})
 })
