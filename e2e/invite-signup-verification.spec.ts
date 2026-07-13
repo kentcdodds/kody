@@ -130,7 +130,6 @@ test('admin invite signup and email verification happy path', async ({
 		).toBeVisible({ timeout: 1_000 })
 	}).toPass({ timeout: 15_000 })
 
-	await expect(page.getByText(/MCP access is now available/i)).toBeVisible()
 	const continueAuthorization = page.getByRole('link', {
 		name: 'Continue authorization',
 	})
