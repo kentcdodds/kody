@@ -17,11 +17,17 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
+import {
+	getCommunityIconObject,
+	renderCommunityIconFallbackPng,
+} from '#worker/community/community-icon.ts'
 import {
 	getCommunityListingWithAggregates,
 	reportCommunityListing,
 } from '#worker/community/service.ts'
+import { type CommunityListingRecord } from '#worker/community/types.ts'
 
 const reportReasonSchema = z
 	.string()
@@ -106,6 +112,36 @@ export function createCommunityDetailApiHandler(env: Env) {
 	} satisfies Action<typeof routes.communityDetailApi>
 }
 
+/**
+ * Resolve a satori-safe data URI for the package community icon. PNG and JPEG
+ * bytes embed directly; WebP (unsupported by satori) and load failures fall
+ * back to the same generated mark the public icon route uses.
+ */
+async function loadCommunityOgIconDataUri(input: {
+	env: Env
+	listing: CommunityListingRecord
+}): Promise<string> {
+	try {
+		const { descriptor, object } = await getCommunityIconObject({
+			env: input.env,
+			listing: input.listing,
+			iconCommit: input.listing.iconCommit,
+		})
+		if (
+			descriptor.contentType === 'image/png' ||
+			descriptor.contentType === 'image/jpeg'
+		) {
+			const bytes = new Uint8Array(await object.arrayBuffer())
+			return `data:${descriptor.contentType};base64,${bytesToBase64(bytes)}`
+		}
+	} catch (error) {
+		console.error('community-og-icon-load-failed', input.listing.id, error)
+	}
+
+	const fallback = await renderCommunityIconFallbackPng(input.listing.name)
+	return `data:image/png;base64,${bytesToBase64(fallback)}`
+}
+
 export function createCommunityDetailOgImageHandler(env: Env) {
 	return {
 		middleware: [],
@@ -121,6 +157,7 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 			}
 
 			const publicListing = toPublicCommunityListing(listing)
+			const iconDataUri = await loadCommunityOgIconDataUri({ env, listing })
 			// Lazy import (sanctioned exception to the no-inline-imports rule):
 			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
 			// binaries, which would otherwise bloat isolate cold starts for a
@@ -134,6 +171,7 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 				averageStars: publicListing.averageStars,
 				ratingCount: publicListing.ratingCount,
 				forkCount: publicListing.forkCount,
+				iconDataUri,
 			})
 
 			return new Response(png, {

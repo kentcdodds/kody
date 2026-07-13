@@ -1,4 +1,6 @@
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test } from 'vitest'
+import { renderCommunityIconFallbackPng } from './community-icon.ts'
 import { renderCommunityOgImage } from './og-image.ts'
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47] as const
@@ -10,6 +12,11 @@ function expectPngBytes(png: Uint8Array) {
 	}
 }
 
+async function sampleIconDataUri(name: string) {
+	const png = await renderCommunityIconFallbackPng(name)
+	return `data:image/png;base64,${bytesToBase64(png)}`
+}
+
 test('renderCommunityOgImage returns valid PNG bytes with and without ratings', async () => {
 	const withRatings = await renderCommunityOgImage({
 		name: '@kody/github-triage',
@@ -19,6 +26,7 @@ test('renderCommunityOgImage returns valid PNG bytes with and without ratings', 
 		averageStars: 4.6,
 		ratingCount: 12,
 		forkCount: 37,
+		iconDataUri: await sampleIconDataUri('@kody/github-triage'),
 	})
 	expectPngBytes(withRatings)
 
@@ -29,6 +37,7 @@ test('renderCommunityOgImage returns valid PNG bytes with and without ratings', 
 		averageStars: null,
 		ratingCount: 0,
 		forkCount: 2,
+		iconDataUri: await sampleIconDataUri('@kody/new-package'),
 	})
 	expectPngBytes(withoutRatings)
 })

@@ -7,6 +7,9 @@ import {
 } from '#worker/og/render.ts'
 
 const DESCRIPTION_MAX_LENGTH = 140
+const PACKAGE_ICON_SIZE = 96
+/** Matches `--radius-lg` (0.75rem) at OG canvas scale (~1.5× UI). */
+const PACKAGE_ICON_RADIUS = 18
 
 /** Amber that reads well on the light surface for filled star icons. */
 const STAR_FILLED = '#d97706'
@@ -18,6 +21,8 @@ export type CommunityOgImageInput = {
 	averageStars: number | null
 	ratingCount: number
 	forkCount: number
+	/** Package community icon as a data URI (PNG or JPEG) for satori. */
+	iconDataUri: string
 }
 
 const STAR_PATH =
@@ -78,6 +83,70 @@ function createStarRow(input: CommunityOgImageInput): Array<SatoriElement> {
 	return stars
 }
 
+function createPackageIdentityRow(input: CommunityOgImageInput): SatoriElement {
+	return {
+		type: 'div',
+		props: {
+			style: {
+				display: 'flex',
+				alignItems: 'center',
+				marginBottom: 28,
+			},
+			children: [
+				{
+					type: 'img',
+					props: {
+						src: input.iconDataUri,
+						width: PACKAGE_ICON_SIZE,
+						height: PACKAGE_ICON_SIZE,
+						style: {
+							width: PACKAGE_ICON_SIZE,
+							height: PACKAGE_ICON_SIZE,
+							borderRadius: PACKAGE_ICON_RADIUS,
+							marginRight: 24,
+							objectFit: 'contain',
+						},
+					},
+				},
+				{
+					type: 'div',
+					props: {
+						style: {
+							display: 'flex',
+							flexDirection: 'column',
+							justifyContent: 'center',
+						},
+						children: [
+							{
+								type: 'div',
+								props: {
+									style: {
+										fontSize: 30,
+										fontWeight: 600,
+										color: ogPalette.primary,
+										marginBottom: 8,
+									},
+									children: input.name,
+								},
+							},
+							{
+								type: 'div',
+								props: {
+									style: {
+										fontSize: 24,
+										color: ogPalette.muted,
+									},
+									children: `by @${input.ownerUsername}`,
+								},
+							},
+						],
+					},
+				},
+			],
+		},
+	}
+}
+
 function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 	const headline = `Use Kody to ${truncateOgText(
 		input.description,
@@ -103,29 +172,7 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 					children: headline,
 				},
 			},
-			{
-				type: 'div',
-				props: {
-					style: {
-						fontSize: 30,
-						fontWeight: 600,
-						color: ogPalette.primary,
-						marginBottom: 20,
-					},
-					children: input.name,
-				},
-			},
-			{
-				type: 'div',
-				props: {
-					style: {
-						fontSize: 24,
-						color: ogPalette.muted,
-						marginBottom: 28,
-					},
-					children: `by @${input.ownerUsername}`,
-				},
-			},
+			createPackageIdentityRow(input),
 			{
 				type: 'div',
 				props: {
