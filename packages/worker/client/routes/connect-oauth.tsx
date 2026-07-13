@@ -770,8 +770,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>Redirect URI</h2>
 				<p mix={css({ margin: 0, color: colors.text })}>
 					Register this exact URL as the redirect (callback) URI in your
-					provider&apos;s OAuth app settings. Copy it as-is — do not substitute
-					localhost or any other host.
+					provider&apos;s OAuth app settings.
 				</p>
 				<pre mix={css(redirectUriValueCss)}>{redirectUri}</pre>
 				<div>
@@ -798,7 +797,10 @@ export function ConnectOauthRoute(handle: Handle) {
 					<li>Enable any APIs and scopes the integration needs.</li>
 					<li>
 						Paste the client ID
-						{config.flow === 'confidential' ? ' and client secret' : ''} below.
+						{config.flow === 'confidential' && !hasStoredClientSecret
+							? ' and client secret'
+							: ''}{' '}
+						below.
 					</li>
 				</ol>
 				{instructions && instructions.trim() ? (

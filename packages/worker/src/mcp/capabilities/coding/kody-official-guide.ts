@@ -45,7 +45,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'oauth.md',
 		title: 'OAuth guide (standard path)',
 		summary:
-			'START HERE for third-party OAuth: hosted /connect/oauth, exact redirect URI on the user\u2019s live Kody origin (never assume localhost), required query params, PKCE vs confidential, vs MCP OAuth.',
+			'START HERE for third-party OAuth: hosted /connect/oauth, the exact redirect URI (https://heykody.dev/connect/oauth), required query params, PKCE vs confidential, and how it differs from MCP OAuth.',
 	},
 	connect_secret: {
 		file: 'account-secret-setup.md',
