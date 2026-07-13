@@ -4,7 +4,10 @@ import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
-import { kodyPackageIdPattern } from '#worker/package-registry/types.ts'
+import {
+	assertKodyDescriptionLength,
+	kodyPackageIdPattern,
+} from '#worker/package-registry/types.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
@@ -71,6 +74,7 @@ export async function createStubSavedPackage(input: {
 	const scope = await getMcpUserPackageScope(input.env.APP_DB, input.user)
 	const name = `@${scope}/${kodyId}`
 	const description = input.description?.trim() || defaultStubPackageDescription
+	assertKodyDescriptionLength(description)
 	const files = buildStubPackageFiles({ name, kodyId, description })
 	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {

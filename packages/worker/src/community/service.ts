@@ -18,6 +18,7 @@ import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
+import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { CommunityActionError } from './errors.ts'
 import {
 	countCommunityForksByListingIds,
@@ -325,6 +326,7 @@ export async function publishCommunityListing(input: {
 	if (!packageJsonContent) {
 		throw new Error('Saved packages require a root package.json file.')
 	}
+	assertKodyDescriptionLength(loadedSource.manifest.kody.description)
 	const license = parseRawPackageLicense(packageJsonContent)
 	assertPackageNotPrivateForCommunityPublish(packageJsonContent)
 

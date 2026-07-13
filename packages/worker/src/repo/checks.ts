@@ -7,7 +7,10 @@ import {
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
-import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
+import {
+	assertKodyDescriptionLength,
+	type AuthoredPackageJson,
+} from '#worker/package-registry/types.ts'
 import {
 	buildKodyAppBundle,
 	buildKodyImportableModuleBundle,
@@ -882,6 +885,7 @@ export async function runRepoChecks(input: {
 		manifestPath: input.manifestPath,
 		expectedPackageScope: input.expectedPackageScope,
 	})
+	assertKodyDescriptionLength(manifest.kody.description)
 	const results: Array<RepoCheckResult> = [
 		{
 			kind: 'manifest',

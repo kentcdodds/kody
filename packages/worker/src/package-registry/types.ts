@@ -148,15 +148,23 @@ const kodyPackageDependenciesSchema = z
 
 export type KodyPackageDependency = z.infer<typeof kodyPackageDependencySchema>
 
+/** Soft cap for new/updated `kody.description` taglines on write/publish only. */
+export const KODY_DESCRIPTION_MAX_LENGTH = 200
+
+export function assertKodyDescriptionLength(description: string) {
+	if (description.length > KODY_DESCRIPTION_MAX_LENGTH) {
+		throw new Error(
+			'kody.description must be at most 200 characters (short public tagline).',
+		)
+	}
+}
+
 export const authoredPackageKodySchema = z.object({
 	id: z.string().regex(kodyPackageIdPattern),
-	description: z
-		.string()
-		.min(1)
-		.max(
-			200,
-			'kody.description must be at most 200 characters (short public tagline).',
-		),
+	// No max here: this schema is shared by load/parse. Enforce
+	// KODY_DESCRIPTION_MAX_LENGTH only at write/publish boundaries via
+	// assertKodyDescriptionLength so existing longer descriptions still load.
+	description: z.string().min(1),
 	tags: z.array(z.string().min(1)).optional(),
 	searchText: z.string().min(1).optional(),
 	dependencies: kodyPackageDependenciesSchema.optional(),

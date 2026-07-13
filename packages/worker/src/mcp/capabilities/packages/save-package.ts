@@ -21,6 +21,7 @@ import {
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
@@ -151,6 +152,7 @@ export const savePackageCapability = defineDomainCapability(
 				manifestPath: 'package.json',
 				expectedPackageScope,
 			})
+			assertKodyDescriptionLength(manifest.kody.description)
 			const packageId = existing?.id ?? args.package_id ?? crypto.randomUUID()
 			const canonicalExistingSource =
 				existing == null
