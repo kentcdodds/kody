@@ -2,11 +2,11 @@ import { type Handle, css } from 'remix/ui'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import {
 	cardCss,
+	getPrimaryButtonCss,
 	mutedLinkCss,
 	pageDescriptionCss,
 	pageHeaderCss,
 	pageTitleCss,
-	primaryLinkCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
@@ -65,15 +65,21 @@ export function VerifyEmailRoute(handle: Handle) {
 						{data.ok ? data.message : data.error}
 					</p>
 					{data.ok ? (
-						<p mix={css({ margin: 0 })}>
-							<a href={ctaHref} mix={css(primaryLinkCss)}>
+						<div
+							mix={css({
+								display: 'flex',
+								alignItems: 'center',
+								gap: spacing.md,
+								flexWrap: 'wrap',
+							})}
+						>
+							<a href={ctaHref} mix={css(ctaButtonCss)}>
 								{ctaLabel}
 							</a>
-							{' · '}
 							<a href="/account" mix={css(mutedLinkCss)}>
 								Account
 							</a>
-						</p>
+						</div>
 					) : (
 						<a href="/account" mix={css(mutedLinkCss)}>
 							Go to account
@@ -90,4 +96,10 @@ const pageCss = {
 	maxWidth: '36rem',
 	margin: '0 auto',
 	gap: spacing.lg,
+}
+
+const ctaButtonCss = {
+	...getPrimaryButtonCss({ size: 'lg', weight: 'semibold' }),
+	display: 'inline-flex',
+	textDecoration: 'none',
 }
