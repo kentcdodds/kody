@@ -91,15 +91,30 @@ function readFilterState(href: string): AdminUserFilterState {
 	}
 }
 
+/**
+ * Initial loads must anchor the window at page 1 — seeding from a stale
+ * `?page=N` link would leave every earlier page unreachable because
+ * infinite scroll only appends later pages.
+ */
+function stripPageParam(search: string) {
+	const params = new URLSearchParams(search)
+	params.delete('page')
+	const next = params.toString()
+	return next ? `?${next}` : ''
+}
+
 export async function adminUsersRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(`${adminUsersApiPath}${url.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
+	const response = await fetch(
+		`${adminUsersApiPath}${stripPageParam(url.search)}`,
+		{
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		},
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -257,7 +272,7 @@ export function AdminUsersRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
-				`${adminUsersApiPath}${readRouterSearch(handle)}`,
+				`${adminUsersApiPath}${stripPageParam(readRouterSearch(handle))}`,
 				{ headers: { Accept: 'application/json' }, credentials: 'include' },
 			)
 			if (requestId !== loadRequestId) return
@@ -328,18 +343,34 @@ export function AdminUsersRoute(handle: Handle) {
 	/**
 	 * Mutation responses carry the refreshed target user; patch it in place
 	 * so a list the admin has scrolled deep into keeps its loaded window and
-	 * selection instead of resetting to the first page.
+	 * selection instead of resetting to the first page. A role change can
+	 * knock the target out of the active role filter, so drop rows that no
+	 * longer match and take the refreshed filtered total from the server.
 	 */
 	function applyMutationPayload(payload: AdminUsersMutationData) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
 		const updatedUser = payload.updatedUser
-		if (updatedUser) {
-			userList.updateItems((items) =>
-				items.map((item) => (item.id === updatedUser.id ? updatedUser : item)),
-			)
-		}
+		const { role } = readFilterState(readCurrentRouterHref(handle))
+		const matchesRoleFilter =
+			!updatedUser ||
+			!role ||
+			(updatedUser.roles as Array<string>).includes(role)
+		const currentItems = usersSnapshot.items
+		const nextItems = updatedUser
+			? matchesRoleFilter
+				? currentItems.map((item) =>
+						item.id === updatedUser.id ? updatedUser : item,
+					)
+				: currentItems.filter((item) => item.id !== updatedUser.id)
+			: currentItems
+		userList.replaceWindow({
+			items: nextItems,
+			hasMore: nextItems.length < payload.total,
+			totalCount: payload.total,
+		})
 		resetPlanDraft()
+		ensureSelection()
 	}
 
 	async function submitRoleAction(action: 'assign_role' | 'remove_role') {

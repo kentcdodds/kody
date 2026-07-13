@@ -6,6 +6,7 @@ import {
 	adminCapabilityAccess,
 	adminUserMetadataSchema,
 	auditAdminCapabilityInvocation,
+	roleNameSchema,
 } from './admin-shared.ts'
 
 const inputSchema = z.object({
@@ -26,8 +27,7 @@ const inputSchema = z.object({
 		.string()
 		.optional()
 		.describe('Case-insensitive substring match on username or email.'),
-	role: z
-		.string()
+	role: roleNameSchema
 		.optional()
 		.describe('Only return users holding this role (for example "admin").'),
 })

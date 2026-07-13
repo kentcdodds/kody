@@ -58,7 +58,12 @@ export function createAdminUsersHandler(env: Env) {
 				return redirectToLogin(request)
 			}
 
-			const adminUsers = await loadAdminUsersData(env, request.url)
+			// The HTML page always seeds the first window; infinite scroll owns
+			// later pages through the JSON API, so a stale `?page=N` link must
+			// not anchor the list past the rows it can never load.
+			const pageUrl = new URL(request.url)
+			pageUrl.searchParams.delete('page')
+			const adminUsers = await loadAdminUsersData(env, pageUrl.toString())
 
 			return renderAppPage({
 				request,
