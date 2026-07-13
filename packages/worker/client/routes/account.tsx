@@ -525,7 +525,7 @@ export function AccountRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Account"
-					description="Manage your profile, integrations, approval requests, stored secrets, and package invocation tokens."
+					description="Manage your profile, security settings, connected accounts, and data export."
 					currentHref={currentHref}
 				/>
 
@@ -815,16 +815,6 @@ export function AccountRoute(handle: Handle) {
 							) : null}
 						</AccountManagementPanel>
 						<AccountManagementPanel
-							title="Secret management"
-							description="Create, edit, and delete secrets from the dedicated management page."
-						>
-							<div>
-								<a href="/account/secrets" mix={css(primaryLinkCss)}>
-									Manage secrets
-								</a>
-							</div>
-						</AccountManagementPanel>
-						<AccountManagementPanel
 							title="Your data"
 							description="Download a portable JSON export of your Kody account data for backup or migration. Secret values are never included; secret entries export metadata such as names, hosts, and allowlists only."
 						>
@@ -835,49 +825,6 @@ export function AccountRoute(handle: Handle) {
 									mix={css(primaryLinkCss)}
 								>
 									Download account export
-								</a>
-							</div>
-						</AccountManagementPanel>
-						<AccountManagementPanel
-							title="Integrations"
-							description="Review saved OAuth provider configurations and reconnect integrations when tokens need to be refreshed."
-						>
-							<div>
-								<a href="/account/integrations" mix={css(primaryLinkCss)}>
-									Manage integrations
-								</a>
-							</div>
-						</AccountManagementPanel>
-						<AccountManagementPanel
-							title="Package invocation tokens"
-							description="Create and revoke bearer tokens for trusted personal clients that call saved package exports."
-						>
-							<div>
-								<a
-									href="/account/package-invocation-tokens"
-									mix={css(primaryLinkCss)}
-								>
-									Manage package tokens
-								</a>
-							</div>
-						</AccountManagementPanel>
-						<AccountManagementPanel
-							title="MCP servers"
-							description="Connect remote MCP servers so their tools become Kody capabilities, including OAuth-protected servers."
-						>
-							<div>
-								<a href="/account/mcp-servers" mix={css(primaryLinkCss)}>
-									Manage MCP servers
-								</a>
-							</div>
-						</AccountManagementPanel>
-						<AccountManagementPanel
-							title="Remote connectors"
-							description="Attach generic remote connector refs to normal Kody sessions and manage their connector hello shared secrets."
-						>
-							<div>
-								<a href="/account/remote-connectors" mix={css(primaryLinkCss)}>
-									Manage remote connectors
 								</a>
 							</div>
 						</AccountManagementPanel>

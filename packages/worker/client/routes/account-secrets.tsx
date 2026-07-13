@@ -1130,30 +1130,19 @@ export function AccountSecretsRoute(handle: Handle) {
 					description="Create, update, and delete user secrets and package-owned secrets."
 					currentHref={currentHref}
 					actions={
-						<>
-							<a
-								href="/account/remote-connectors"
-								mix={css({
-									...secondaryButtonCss,
-									textDecoration: 'none',
-								})}
-							>
-								Remote connectors
-							</a>
-							<button
-								type="button"
-								disabled={isMutating}
-								mix={[
-									on('click', () => {
-										if (isMutating) return
-										navigate(buildNewSecretHref(getCurrentSearch()))
-									}),
-									css(primaryButtonCss),
-								]}
-							>
-								New secret
-							</button>
-						</>
+						<button
+							type="button"
+							disabled={isMutating}
+							mix={[
+								on('click', () => {
+									if (isMutating) return
+									navigate(buildNewSecretHref(getCurrentSearch()))
+								}),
+								css(primaryButtonCss),
+							]}
+						>
+							New secret
+						</button>
 					}
 				/>
 
