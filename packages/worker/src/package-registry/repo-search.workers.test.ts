@@ -18,6 +18,7 @@ async function ensureSchema(db: D1Database) {
 				search_text TEXT,
 				source_id TEXT NOT NULL,
 				has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
+				hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 			)`,
@@ -38,6 +39,7 @@ function buildRow(input: {
 	tags?: Array<string>
 	searchText?: string | null
 	hasApp?: boolean
+	hidden?: boolean
 	createdAt: string
 	updatedAt: string
 }) {
@@ -51,6 +53,7 @@ function buildRow(input: {
 		search_text: input.searchText ?? null,
 		source_id: `source-${input.id}`,
 		has_app: input.hasApp ? 1 : 0,
+		hidden: input.hidden ? 1 : 0,
 		created_at: input.createdAt,
 		updated_at: input.updatedAt,
 	}
@@ -79,6 +82,7 @@ beforeAll(async () => {
 			kodyId: 'beta-notifier',
 			description: 'Sends notification emails',
 			searchText: 'email digest 100% coverage',
+			hidden: true,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-06T00:00:00.000Z',
 		}),
@@ -121,6 +125,8 @@ test('lists only the requesting user packages sorted by most recently updated', 
 		'search-pkg-a',
 		'search-pkg-c',
 	])
+	expect(items.find((item) => item.id === 'search-pkg-b')?.hidden).toBe(true)
+	expect(items.find((item) => item.id === 'search-pkg-a')?.hidden).toBe(false)
 })
 
 test('supports created and name sorts', async () => {
