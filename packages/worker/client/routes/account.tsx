@@ -767,9 +767,7 @@ export function AccountRoute(handle: Handle) {
 												disabled={connectionsBusy}
 												mix={[
 													css(providerConnectButtonCss),
-													on('click', () =>
-														handleConnectProvider(provider.id),
-													),
+													on('click', () => handleConnectProvider(provider.id)),
 												]}
 											>
 												<ProviderIcon providerId={provider.id} />
