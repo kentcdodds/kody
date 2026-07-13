@@ -418,8 +418,8 @@ entities.
 
 Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
 via **`package_set_hidden`**). Ranked search excludes hidden packages by
-default. The public MCP **search** tool accepts **`includeHiddenPackages`**; the
-**meta** domain **search** capability accepts **`include_hidden`**. Known-id
-entity lookup, **`package_list`**, **`package_get`**, and context-scope package
-retrievers are unaffected. Hiding is not deletion, community delisting, or
-entitlement exclusion.
+default. The public MCP **search** tool and the **meta** domain **search**
+capability both accept **`includeHiddenPackages`**. Known-id entity lookup,
+**`package_list`**, **`package_get`**, and context-scope package retrievers are
+unaffected. Hiding is not deletion, community delisting, or entitlement
+exclusion.

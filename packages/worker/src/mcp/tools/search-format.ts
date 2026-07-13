@@ -958,6 +958,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- Kody id: \`${detail.record.kodyId}\``,
 			`- Tags: ${detail.record.tags.length > 0 ? detail.record.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`- Has app: ${detail.record.hasApp ? 'yes' : 'no'}`,
+			`- Hidden: ${detail.record.hidden ? 'yes' : 'no'}`,
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
 		]
 		if (appEntry) {

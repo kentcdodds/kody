@@ -9,7 +9,7 @@ export const setPackageHiddenCapability = defineDomainCapability(
 	{
 		name: 'package_set_hidden',
 		description:
-			'Set whether a saved package is hidden from discovery/search by default. Hidden packages are excluded from search results unless the caller opts in (includeHiddenPackages on the public search tool, or include_hidden on the meta search capability).',
+			'Set whether a saved package is hidden from discovery/search by default. Hidden packages are excluded from search results unless the caller opts in with includeHiddenPackages on the public search tool or the meta search capability.',
 		keywords: ['package', 'hidden', 'disable', 'visibility', 'search'],
 		readOnly: false,
 		idempotent: true,

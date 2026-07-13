@@ -121,7 +121,7 @@ export const searchCapability = defineDomainCapability(
 				.describe('Max number of ranked results to return. Defaults to 15.'),
 			conversationId: conversationIdInputField,
 			memoryContext: memoryContextInputField,
-			include_hidden: z
+			includeHiddenPackages: z
 				.boolean()
 				.optional()
 				.describe(
@@ -135,7 +135,7 @@ export const searchCapability = defineDomainCapability(
 				limit?: number
 				conversationId?: string
 				memoryContext?: z.infer<typeof memoryContextInputField>
-				include_hidden?: boolean
+				includeHiddenPackages?: boolean
 			},
 			ctx: CapabilityContext,
 		) {
@@ -145,7 +145,7 @@ export const searchCapability = defineDomainCapability(
 			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
-			const includeHiddenPackages = !!args.include_hidden
+			const includeHiddenPackages = !!args.includeHiddenPackages
 			const [searchRows, retrieverRun] = await Promise.all([
 				loadSearchRows({
 					ctx,

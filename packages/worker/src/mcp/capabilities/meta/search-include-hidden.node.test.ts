@@ -86,7 +86,7 @@ function resetMocks() {
 	})
 }
 
-test('meta search remaps include_hidden through to package rows and search-scope retrievers', async () => {
+test('meta search remaps includeHiddenPackages through to package rows and search-scope retrievers', async () => {
 	resetMocks()
 	const ctx = createCtx()
 
@@ -105,7 +105,10 @@ test('meta search remaps include_hidden through to package rows and search-scope
 	)
 
 	resetMocks()
-	await searchCapability.handler({ query: 'notes', include_hidden: true }, ctx)
+	await searchCapability.handler(
+		{ query: 'notes', includeHiddenPackages: true },
+		ctx,
+	)
 
 	expect(mockModule.loadSearchRowsAndRegistry).toHaveBeenCalledWith(
 		expect.objectContaining({
