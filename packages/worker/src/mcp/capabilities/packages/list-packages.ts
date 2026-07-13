@@ -33,6 +33,7 @@ export const listPackagesCapability = defineDomainCapability(
 					description: savedPackage.description,
 					tags: savedPackage.tags,
 					has_app: savedPackage.hasApp,
+					hidden: savedPackage.hidden,
 					source_id: savedPackage.sourceId,
 					created_at: savedPackage.createdAt,
 					updated_at: savedPackage.updatedAt,

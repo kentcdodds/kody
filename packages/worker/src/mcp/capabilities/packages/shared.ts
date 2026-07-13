@@ -21,6 +21,7 @@ export const packageSummarySchema = z.object({
 	description: z.string(),
 	tags: z.array(z.string()),
 	has_app: z.boolean(),
+	hidden: z.boolean(),
 	source_id: z.string(),
 	created_at: z.string(),
 	updated_at: z.string(),

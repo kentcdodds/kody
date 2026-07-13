@@ -250,6 +250,7 @@ function validSavedPackage() {
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	}
@@ -555,6 +556,7 @@ test('publishCommunityListing requires MIT license and Intent heading', async ()
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	})

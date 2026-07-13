@@ -158,6 +158,7 @@ function createProjection() {
 		tags: ['home', 'shades'],
 		searchText: 'shade automation',
 		hasApp: false,
+		hidden: false,
 	}
 }
 
@@ -232,6 +233,7 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})
@@ -266,6 +268,7 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 			searchText: 'shade automation',
 			sourceId: 'source-1',
 			hasApp: false,
+			hidden: false,
 			createdAt: '2026-04-20T00:00:00.000Z',
 		}),
 		manifest,
@@ -330,6 +333,7 @@ test('refreshSavedPackageProjection omits files when artifact rebuild is skipped
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})
@@ -376,6 +380,7 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	}
@@ -780,6 +785,62 @@ test('refreshSavedPackageProjection enforces the saved packages entitlement on i
 	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
 })
 
+test('refreshSavedPackageProjection preserves hidden across projection refresh', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	mockModule.buildPackageSearchProjection.mockReturnValue({
+		...createProjection(),
+		description: 'Updated description',
+	})
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@kentcdodds/shade-automation',
+			kody: {
+				id: 'shade-automation',
+				description: 'Updated description',
+				tags: ['home'],
+			},
+		},
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Old description',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: true,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+
+	const refreshed = await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.updateSavedPackage).toHaveBeenCalled()
+	const updateArg = mockModule.updateSavedPackage.mock.calls[0]?.[1] as Record<
+		string,
+		unknown
+	>
+	expect(updateArg).not.toHaveProperty('hidden')
+	expect(updateArg).toMatchObject({
+		userId: 'user-1',
+		packageId: 'package-1',
+		description: 'Updated description',
+	})
+	expect(refreshed.record.hidden).toBe(true)
+	expect(refreshed.record.description).toBe('Updated description')
+})
+
 test('refreshSavedPackageProjection does not gate the update branch at the limit', async () => {
 	setupDefaultMocks()
 	const email = 'planned@example.com'
@@ -815,6 +876,7 @@ test('refreshSavedPackageProjection does not gate the update branch at the limit
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})

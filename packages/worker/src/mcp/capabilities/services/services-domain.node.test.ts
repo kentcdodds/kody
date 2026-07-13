@@ -71,6 +71,7 @@ function createSavedPackage() {
 		searchText: null,
 		sourceId: 'source-123',
 		hasApp: true,
+		hidden: false,
 		createdAt: '2026-04-24T00:00:00.000Z',
 		updatedAt: '2026-04-24T00:00:00.000Z',
 	}

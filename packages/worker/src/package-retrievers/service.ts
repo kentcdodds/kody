@@ -83,6 +83,7 @@ async function invokeRetriever(input: {
 	scope: PackageRetrieverScope
 	entry: PackageRetrieverManifestCacheEntry
 	query: string
+	includeHiddenPackages: boolean
 	memoryContext?: {
 		task?: string
 		query?: string
@@ -96,6 +97,15 @@ async function invokeRetriever(input: {
 		packageId: input.entry.packageId,
 	})
 	if (!savedPackage) {
+		return []
+	}
+	// Hidden gating is a search-discovery preference only. Context retrievers
+	// (memory/tool context) must still run for hidden packages.
+	if (
+		input.scope === 'search' &&
+		savedPackage.hidden &&
+		!input.includeHiddenPackages
+	) {
 		return []
 	}
 	const source = await getEntitySourceById(
@@ -231,6 +241,7 @@ export async function runPackageRetrievers(input: {
 	userId: string | null
 	scope: PackageRetrieverScope
 	query: string
+	includeHiddenPackages?: boolean
 	memoryContext?: {
 		task?: string
 		query?: string
@@ -242,6 +253,7 @@ export async function runPackageRetrievers(input: {
 }) {
 	const userId = input.userId?.trim()
 	const query = input.query.trim()
+	const includeHiddenPackages = !!input.includeHiddenPackages
 	if (!userId || !query) {
 		return {
 			results: [],
@@ -270,6 +282,7 @@ export async function runPackageRetrievers(input: {
 					scope: input.scope,
 					entry,
 					query,
+					includeHiddenPackages,
 					memoryContext: input.memoryContext,
 					conversationId: input.conversationId,
 				}),

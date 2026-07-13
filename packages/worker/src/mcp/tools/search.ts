@@ -1059,6 +1059,7 @@ async function buildPackageCandidates(input: {
 					description: entry.record.description,
 					tags: entry.record.tags,
 					hasApp: entry.record.hasApp,
+					hidden: entry.record.hidden,
 					readmeSnippet: entry.readmeSnippet ?? null,
 					actionMatches,
 				},
@@ -1743,6 +1744,7 @@ export async function loadSearchRowsAndRegistry(input: {
 	env: Env
 	callerContext: McpCallerContext
 	userId: string | null
+	includeHiddenPackages?: boolean
 }) {
 	const [registry, optionalRows] = await Promise.all([
 		getCapabilityRegistryForContext({
@@ -1762,7 +1764,9 @@ export async function loadSearchRowsAndRegistry(input: {
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
 					userId: input.userId!,
-					records: savedPackages,
+					records: savedPackages.filter((pkg) =>
+						input.includeHiddenPackages ? true : !pkg.hidden,
+					),
 				})
 				return packageRows
 			},
@@ -1969,6 +1973,12 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
+				includeHiddenPackages: z
+					.boolean()
+					.optional()
+					.describe(
+						'Include hidden packages in search results (hidden packages are excluded by default).',
+					),
 			},
 			annotations: searchTool.annotations,
 		},
@@ -1979,12 +1989,14 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			maxResponseSize?: number
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
+			includeHiddenPackages?: boolean
 		}) => {
 			const timingStart = startToolTiming()
 			const conversationId = resolveConversationId(args.conversationId)
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
+			const includeHiddenPackages = !!args.includeHiddenPackages
 			if (!args.query && !args.entity) {
 				const timing = finishToolTiming(timingStart)
 				logMcpEvent({
@@ -2042,6 +2054,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 									userId,
 									scope: 'search',
 									query,
+									includeHiddenPackages,
 									memoryContext: resolveSearchMemoryContext({
 										query,
 										memoryContext: args.memoryContext,
@@ -2055,6 +2068,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						env: agent.getEnv(),
 						callerContext,
 						userId,
+						includeHiddenPackages,
 					}),
 					retrieverRunPromise,
 				])

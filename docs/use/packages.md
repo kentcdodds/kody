@@ -374,8 +374,24 @@ Use:
 - `package_save` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `package_get` and `package_list` to inspect saved packages
+- `package_set_hidden` to hide or unhide a package from default search discovery
 - `repo_run_commands` to edit, check, and publish repo-backed package source
   after it exists using parsed, git-only command forms rather than shell
+
+## Hidden packages
+
+Use **`package_set_hidden`** with a saved **`package_id`** and
+**`hidden: true`** to hide a package from ordinary ranked search. Set
+**`hidden: false`** to show it again.
+
+Hiding is a discovery preference, not deletion. The package stays saved,
+executable, and editable. Hiding is separate from **`package.json#private`**
+(community publishing) and from entitlement or access grants.
+
+**`package_list`** and **`package_get`** return a **`hidden`** boolean on each
+package summary. Ranked **search** excludes hidden packages unless the caller
+passes **`includeHiddenPackages: true`**. Known-id **`entity`** lookups still
+resolve hidden packages.
 
 ## Author a saved package via direct git push
 

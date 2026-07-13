@@ -489,6 +489,7 @@ test('package entity detail includes exports, jobs, and referenced local types',
 			searchText: null,
 			sourceId: 'source-package-123',
 			hasApp: true,
+			hidden: false,
 			createdAt: '2026-03-20T00:00:00.000Z',
 			updatedAt: '2026-03-20T00:00:00.000Z',
 		},
@@ -541,6 +542,7 @@ export declare function fetch(request: Request): Promise<Response>
 		type: 'package',
 		entityRef: 'observed-package:package',
 		hasApp: true,
+		hidden: false,
 		hostedUrl: 'http://localhost/@test-user/packages/observed-package',
 		appEntry: './src/app.ts',
 		exports: [
@@ -596,6 +598,7 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 				description: 'Saved package for Spotify playback controls.',
 				tags: ['spotify', 'playback'],
 				hasApp: true,
+				hidden: false,
 				readmeSnippet: {
 					path: 'README.md',
 					snippet:
@@ -610,6 +613,7 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 		id: 'spotify-playback',
 		entityRef: 'spotify-playback:package',
 		hasApp: true,
+		hidden: false,
 		hostedUrl: 'http://localhost/@test-user/packages/spotify-playback',
 	})
 
@@ -625,6 +629,7 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 				description: 'Saved package for Spotify playback controls.',
 				tags: ['spotify', 'playback'],
 				hasApp: true,
+				hidden: false,
 				readmeSnippet: null,
 			},
 		],
@@ -632,6 +637,7 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 	expect(anonymousPackageMatch).toMatchObject({
 		type: 'package',
 		hasApp: true,
+		hidden: false,
 		hostedUrl: null,
 	})
 
@@ -648,6 +654,7 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 				description: 'Google product helpers.',
 				tags: ['google', 'calendar'],
 				hasApp: true,
+				hidden: false,
 				actionMatches: [
 					{
 						subpath: './calendar',
@@ -702,6 +709,7 @@ test('search markdown summarizes broad results safely and only suggests entity d
 				description: 'Observed package with an app surface.',
 				tags: ['observed'],
 				hasApp: false,
+				hidden: false,
 				readmeSnippet: {
 					path: 'README.md',
 					snippet: truncatedReadmeSnippet,

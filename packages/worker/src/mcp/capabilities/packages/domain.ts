@@ -11,6 +11,7 @@ import { packageInvocationTokenGetCapability } from './package-invocation-token-
 import { packageInvocationTokenListCapability } from './package-invocation-token-list.ts'
 import { publishExternalPushCapability } from './publish-external-push.ts'
 import { savePackageCapability } from './save-package.ts'
+import { setPackageHiddenCapability } from './set-package-hidden.ts'
 
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
@@ -33,6 +34,7 @@ export const packagesDomain = defineDomain({
 		getGitRemoteCapability,
 		listPackagesCapability,
 		listPackageSubscriptionsCapability,
+		setPackageHiddenCapability,
 		packageInvocationTokenListCapability,
 		packageInvocationTokenGetCapability,
 		packageDebugListRunsCapability,

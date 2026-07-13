@@ -49,12 +49,14 @@ function normalizeLimit(limit: number | undefined) {
 async function loadSearchRows(input: {
 	ctx: CapabilityContext
 	userId: string | null
+	includeHiddenPackages: boolean
 }) {
 	const { loadSearchRowsAndRegistry } = await import('#mcp/tools/search.ts')
 	return await loadSearchRowsAndRegistry({
 		env: input.ctx.env,
 		callerContext: input.ctx.callerContext,
 		userId: input.userId,
+		includeHiddenPackages: input.includeHiddenPackages,
 	})
 }
 
@@ -63,6 +65,7 @@ async function runPackageRetrieverSearch(input: {
 	userId: string | null
 	query: string
 	conversationId: string
+	includeHiddenPackages: boolean
 	memoryContext?: z.infer<typeof memoryContextInputField>
 }) {
 	if (!input.userId || !input.query) {
@@ -77,6 +80,7 @@ async function runPackageRetrieverSearch(input: {
 		userId: input.userId,
 		scope: 'search',
 		query: input.query,
+		includeHiddenPackages: input.includeHiddenPackages,
 		memoryContext: resolveSearchMemoryContext({
 			query: input.query,
 			memoryContext: input.memoryContext,
@@ -117,6 +121,12 @@ export const searchCapability = defineDomainCapability(
 				.describe('Max number of ranked results to return. Defaults to 15.'),
 			conversationId: conversationIdInputField,
 			memoryContext: memoryContextInputField,
+			include_hidden: z
+				.boolean()
+				.optional()
+				.describe(
+					'Include hidden packages in search results (hidden packages are excluded by default).',
+				),
 		}),
 		outputSchema: searchOutputSchema,
 		async handler(
@@ -125,6 +135,7 @@ export const searchCapability = defineDomainCapability(
 				limit?: number
 				conversationId?: string
 				memoryContext?: z.infer<typeof memoryContextInputField>
+				include_hidden?: boolean
 			},
 			ctx: CapabilityContext,
 		) {
@@ -134,13 +145,19 @@ export const searchCapability = defineDomainCapability(
 			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
+			const includeHiddenPackages = !!args.include_hidden
 			const [searchRows, retrieverRun] = await Promise.all([
-				loadSearchRows({ ctx, userId }),
+				loadSearchRows({
+					ctx,
+					userId,
+					includeHiddenPackages,
+				}),
 				runPackageRetrieverSearch({
 					ctx,
 					userId,
 					query,
 					conversationId,
+					includeHiddenPackages,
 					memoryContext: args.memoryContext,
 				}),
 			])

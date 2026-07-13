@@ -89,6 +89,7 @@ function toSavedPackageInsertRow(input: {
 		search_text: projection.searchText,
 		source_id: input.sourceId,
 		has_app: projection.hasApp ? 1 : 0,
+		hidden: 0,
 	}
 }
 
@@ -193,6 +194,8 @@ export async function refreshSavedPackageProjection(input: {
 		searchText: row.search_text ?? null,
 		sourceId: row.source_id,
 		hasApp: row.has_app === 1,
+		// Preserve visibility across projection refresh / re-save.
+		hidden: existing?.hidden ?? false,
 		createdAt: existing?.createdAt ?? refreshedAt,
 		updatedAt: refreshedAt,
 	} satisfies SavedPackageRecord
@@ -291,21 +294,7 @@ export async function refreshSavedPackageProjection(input: {
 		userId: input.userId,
 	})
 	return {
-		record:
-			existing ??
-			({
-				id: row.id,
-				userId: row.user_id,
-				name: row.name,
-				kodyId: row.kody_id,
-				description: row.description,
-				tags: parseTagsJson(row.tags_json),
-				searchText: row.search_text ?? null,
-				sourceId: row.source_id,
-				hasApp: row.has_app === 1,
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-			} satisfies SavedPackageRecord),
+		record: savedPackage,
 		manifest: loaded.manifest,
 		...(loadedFiles ? { files: loadedFiles } : {}),
 	}

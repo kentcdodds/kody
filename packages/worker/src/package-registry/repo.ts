@@ -19,6 +19,8 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 		sourceId: String(row['source_id']),
 		hasApp:
 			row['has_app'] === 1 || row['has_app'] === '1' || row['has_app'] === true,
+		hidden:
+			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -35,8 +37,8 @@ export async function insertSavedPackage(
 		.prepare(
 			`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				source_id, has_app, hidden, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -48,6 +50,7 @@ export async function insertSavedPackage(
 			row.search_text ?? null,
 			row.source_id,
 			row.has_app,
+			row.hidden ?? 0,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -66,6 +69,7 @@ export async function updateSavedPackage(
 		searchText?: string | null
 		sourceId?: string
 		hasApp?: boolean
+		hidden?: boolean
 	},
 ) {
 	const assignments: Array<string> = []
@@ -96,6 +100,9 @@ export async function updateSavedPackage(
 	}
 	if (input.hasApp !== undefined) {
 		addAssignment('has_app', input.hasApp ? 1 : 0)
+	}
+	if (input.hidden !== undefined) {
+		addAssignment('hidden', input.hidden ? 1 : 0)
 	}
 
 	addAssignment('updated_at', new Date().toISOString())
@@ -136,7 +143,7 @@ export async function getSavedPackageById(
 	const row = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, created_at, updated_at
+				source_id, has_app, hidden, created_at, updated_at
 			FROM saved_packages
 			WHERE id = ? AND user_id = ?`,
 		)
@@ -155,7 +162,7 @@ export async function getSavedPackageByKodyId(
 	const row = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, created_at, updated_at
+				source_id, has_app, hidden, created_at, updated_at
 			FROM saved_packages
 			WHERE kody_id = ? AND user_id = ?`,
 		)
@@ -174,7 +181,7 @@ export async function getSavedPackageByName(
 	const row = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, created_at, updated_at
+				source_id, has_app, hidden, created_at, updated_at
 			FROM saved_packages
 			WHERE name = ? AND user_id = ?`,
 		)
@@ -192,7 +199,7 @@ export async function listSavedPackagesByUserId(
 	const rows = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, created_at, updated_at
+				source_id, has_app, hidden, created_at, updated_at
 			FROM saved_packages
 			WHERE user_id = ?
 			ORDER BY updated_at DESC`,
@@ -215,7 +222,7 @@ export async function listSavedPackagesPage(
 	const rows = await db
 		.prepare(
 			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, created_at, updated_at
+				source_id, has_app, hidden, created_at, updated_at
 			FROM saved_packages
 			WHERE id > ?
 			ORDER BY id

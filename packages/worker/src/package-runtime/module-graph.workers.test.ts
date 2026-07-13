@@ -41,6 +41,7 @@ async function ensureSavedPackageArtifactSchema() {
 		search_text TEXT,
 		source_id TEXT NOT NULL,
 		has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
+		hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)

@@ -415,3 +415,11 @@ Search returns packages as the saved-entity unit.
 Package detail should expose nested exports, nested jobs, tags, and app
 presence. Search should not frame exports or jobs as separate top-level saved
 entities.
+
+Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
+via **`package_set_hidden`**). Ranked search excludes hidden packages by
+default. The public MCP **search** tool accepts **`includeHiddenPackages`**; the
+**meta** domain **search** capability accepts **`include_hidden`**. Known-id
+entity lookup, **`package_list`**, **`package_get`**, and context-scope package
+retrievers are unaffected. Hiding is not deletion, community delisting, or
+entitlement exclusion.

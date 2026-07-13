@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
@@ -22,6 +23,10 @@ const mockModule = vi.hoisted(() => ({
 	listUserSecretsForSearch: vi.fn(async () => []),
 	listValues: vi.fn(async () => []),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
+	runPackageRetrievers: vi.fn(async () => ({
+		results: [],
+		warnings: [],
+	})),
 	getRemoteConnectorStatus: vi.fn(async () => ({
 		connectorId: 'home',
 		state: 'connected',
@@ -63,6 +68,11 @@ vi.mock('./memory-tool-context.ts', async () => {
 	}
 })
 
+vi.mock('#worker/package-retrievers/service.ts', () => ({
+	runPackageRetrievers: (...args: Array<unknown>) =>
+		mockModule.runPackageRetrievers(...args),
+}))
+
 vi.mock('#worker/remote-connector/status.ts', () => ({
 	getRemoteConnectorStatus: (...args: Array<unknown>) =>
 		mockModule.getRemoteConnectorStatus(...args),
@@ -72,7 +82,39 @@ const { registerSearchTool } = await import('./search.ts')
 
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
-async function getSearchRegistration() {
+type SearchHandler = (input: {
+	query?: string
+	entity?: string
+	limit?: number
+	maxResponseSize?: number
+	conversationId?: string
+	includeHiddenPackages?: boolean
+}) => Promise<{
+	content: Array<{
+		type: 'text'
+		text: string
+	}>
+	structuredContent: {
+		conversationId: string
+		timing: {
+			startedAt: string
+			endedAt: string
+			durationMs: number
+		}
+		error?: string
+		result?: unknown
+	}
+	isError?: boolean
+}>
+
+async function getSearchRegistration(input?: {
+	user?: {
+		userId: string
+		email: string
+		displayName: string
+		username?: string
+	} | null
+}) {
 	const registerTool = vi.fn()
 
 	await registerSearchTool({
@@ -82,7 +124,7 @@ async function getSearchRegistration() {
 		getEnv: vi.fn(() => ({})),
 		getCallerContext: vi.fn(() => ({
 			baseUrl: 'https://example.com',
-			user: null,
+			user: input?.user === undefined ? null : input.user,
 			remoteConnectors: [{ instanceId: 'home' }],
 		})),
 	} as never)
@@ -90,34 +132,45 @@ async function getSearchRegistration() {
 	expect(registerTool).toHaveBeenCalledTimes(1)
 	const [name, , handler] = registerTool.mock.calls[0] ?? []
 	expect(name).toBe('search')
-	return { handler }
+	return { handler: handler as SearchHandler }
 }
 
 async function getSearchHandler() {
 	const { handler } = await getSearchRegistration()
-	return handler as (input: {
-		query?: string
-		entity?: string
-		limit?: number
-		maxResponseSize?: number
-		conversationId?: string
-	}) => Promise<{
-		content: Array<{
-			type: 'text'
-			text: string
-		}>
-		structuredContent: {
-			conversationId: string
-			timing: {
-				startedAt: string
-				endedAt: string
-				durationMs: number
-			}
-			error?: string
-			result?: unknown
-		}
-		isError?: boolean
-	}>
+	return handler
+}
+
+function createSavedPackages() {
+	return [
+		{
+			id: 'pkg-hidden',
+			userId: 'user-1',
+			name: 'hidden-notes-pkg',
+			kodyId: 'hidden-notes-pkg',
+			description: 'hidden notes package',
+			tags: [],
+			searchText: 'hidden notes package',
+			sourceId: 'source-hidden',
+			hasApp: false,
+			hidden: true,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+		{
+			id: 'pkg-visible',
+			userId: 'user-1',
+			name: 'visible-notes-pkg',
+			kodyId: 'visible-notes-pkg',
+			description: 'visible notes package',
+			tags: [],
+			searchText: 'visible notes package',
+			sourceId: 'source-visible',
+			hasApp: false,
+			hidden: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+	]
 }
 
 test('search tool returns compact query markdown while preserving structured auxiliary detail', async () => {
@@ -209,5 +262,68 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(handledErrorResponse.isError).toBe(true)
 	expect(handledErrorResponse.structuredContent.error).toBe(
 		'Registry unavailable',
+	)
+})
+
+test('search tool excludes hidden packages by default and includes them with includeHiddenPackages', async () => {
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	mockModule.listSavedPackagesByUserId.mockResolvedValue(createSavedPackages())
+
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
+	const defaultResponse = await handler({
+		query: 'notes package',
+		conversationId: 'conv-hidden-default',
+	})
+	expect(defaultResponse.isError).toBeUndefined()
+	const defaultResult = defaultResponse.structuredContent.result as {
+		matches: Array<{ type: string; kodyId?: string }>
+	}
+	const defaultPackageIds = defaultResult.matches
+		.filter((match) => match.type === 'package')
+		.map((match) => match.kodyId)
+	expect(defaultPackageIds).toContain('visible-notes-pkg')
+	expect(defaultPackageIds).not.toContain('hidden-notes-pkg')
+	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
+		expect.objectContaining({
+			scope: 'search',
+			includeHiddenPackages: false,
+		}),
+	)
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValue(createSavedPackages())
+	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
+	const includeResponse = await handler({
+		query: 'notes package',
+		conversationId: 'conv-hidden-include',
+		includeHiddenPackages: true,
+	})
+	expect(includeResponse.isError).toBeUndefined()
+	const includeResult = includeResponse.structuredContent.result as {
+		matches: Array<{ type: string; kodyId?: string }>
+	}
+	const includePackageIds = includeResult.matches
+		.filter((match) => match.type === 'package')
+		.map((match) => match.kodyId)
+		.sort()
+	expect(includePackageIds).toEqual(['hidden-notes-pkg', 'visible-notes-pkg'])
+	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
+		expect.objectContaining({
+			scope: 'search',
+			includeHiddenPackages: true,
+		}),
 	)
 })

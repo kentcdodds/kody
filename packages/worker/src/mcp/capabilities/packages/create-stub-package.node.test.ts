@@ -115,6 +115,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 			description: 'Does the thing.',
 			source_id: 'source-new',
 			has_app: 0,
+			hidden: 0,
 		}),
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()

@@ -169,8 +169,9 @@ function createDatabase(
 									search_text: params[6],
 									source_id: params[7],
 									has_app: params[8],
-									created_at: params[9],
-									updated_at: params[10],
+									hidden: params[9],
+									created_at: params[10],
+									updated_at: params[11],
 								})
 								return { meta: { changes: 1 } }
 							}
@@ -240,6 +241,7 @@ function setupPersistenceMocks() {
 				searchText: null,
 				sourceId: `source-${packageId}`,
 				hasApp: false,
+				hidden: false,
 				createdAt: '2026-04-18T00:00:00.000Z',
 				updatedAt: '2026-04-18T00:00:00.000Z',
 			},

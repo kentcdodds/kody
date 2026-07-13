@@ -210,6 +210,7 @@ export type SavedPackageRow = {
 	search_text: string | null
 	source_id: string
 	has_app: 0 | 1
+	hidden: 0 | 1
 	created_at: string
 	updated_at: string
 }
@@ -224,6 +225,7 @@ export type SavedPackageRecord = {
 	searchText: string | null
 	sourceId: string
 	hasApp: boolean
+	hidden: boolean
 	createdAt: string
 	updatedAt: string
 }

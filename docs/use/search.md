@@ -8,6 +8,13 @@ The **search** tool finds **built-in capabilities**, **saved packages**,
 (`community_search`, `community_get`) or the public `/community` pages. See
 [Community packages](./community-packages.md).
 
+**Hidden saved packages** are excluded from ranked **query** results by default.
+Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
+known-id **`entity`** lookups (for example `my-package:package`),
+**`package_list`**, and **`package_get`** still work. Use
+**`package_set_hidden`** to hide or unhide a package. See
+[Packages](./packages.md#hidden-packages).
+
 ## Queries and ranking
 
 Pass a **`query`** string that describes what you want to do. Results are

@@ -182,7 +182,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `entity_sources`: durable mapping from user-facing entities to Artifacts repos
   and their latest published commit
 - `saved_packages`: package metadata/search projection derived from published
-  `package.json` source
+  `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
+  the package from default ranked search while leaving list/get/execute paths
+  intact
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
   package runtimes may use their own package secrets, while user secrets require

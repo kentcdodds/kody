@@ -115,6 +115,7 @@ export async function createStubSavedPackage(input: {
 		search_text: manifest.kody.searchText ?? null,
 		source_id: ensuredSource.id,
 		has_app: 0,
+		hidden: 0,
 		created_at: now,
 		updated_at: now,
 	})

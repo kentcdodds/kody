@@ -215,6 +215,7 @@ function seedPackageResolution() {
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: true,
+		hidden: false,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
 	})
@@ -354,6 +355,7 @@ function createSavedPackage(input: {
 		searchText: null,
 		sourceId: input.sourceId,
 		hasApp: false,
+		hidden: false,
 		createdAt: '2026-05-10T00:00:00.000Z',
 		updatedAt: '2026-05-10T00:00:00.000Z',
 	}
@@ -1871,6 +1873,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: true,
+		hidden: false,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
 	}
