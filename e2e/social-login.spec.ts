@@ -53,19 +53,16 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	await connectionsCard.getByRole('button', { name: 'Connect Google' }).click()
 	await expect(page).toHaveURL(/\/account\?oauthLinked=google$/)
 	await expect(page.getByText('Google connected.')).toBeVisible()
-	await expect(
-		connectionsCard.getByText('Google', { exact: true }),
-	).toBeVisible()
-
-	// With two connections, disconnecting one is allowed again.
 	const googleRow = connectionsCard
 		.getByRole('listitem')
 		.filter({ hasText: 'Google' })
+	await expect(googleRow).toBeVisible()
+	await expect(googleRow.getByText('Connected as mock-google-user')).toBeVisible()
+
+	// With two connections, disconnecting one is allowed again.
 	await googleRow.getByRole('button', { name: 'Disconnect' }).click()
 	await expect(page.getByText('Google disconnected.')).toBeVisible()
-	await expect(
-		connectionsCard.getByText('Google', { exact: true }),
-	).not.toBeVisible()
+	await expect(googleRow).not.toBeVisible()
 	await expect(
 		connectionsCard.getByRole('button', { name: 'Connect Google' }),
 	).toBeVisible()
