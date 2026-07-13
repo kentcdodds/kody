@@ -30,6 +30,7 @@ import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
+	getPrimaryButtonCss,
 	insetCardCss,
 	layoutMaxWidths,
 	mutedLinkCss,
@@ -255,6 +256,20 @@ export function OnboardingRoute(handle: Handle) {
 
 						{renderByokExplainer({ image: 'handoff' })}
 
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>3. Explore community packages</h2>
+							<p mix={css(descriptionCss)}>
+								See what other people have built with Kody — browse community
+								packages for ready-made automations you can fork into your own
+								account.
+							</p>
+							<div>
+								<a href="/community" mix={css(communityCtaCss)}>
+									Browse community packages
+								</a>
+							</div>
+						</section>
+
 						<p mix={css({ margin: 0 })}>
 							<a href="/account" mix={css(mutedLinkCss)}>
 								Back to account
@@ -283,4 +298,10 @@ const codeBlockCss = {
 	fontFamily: typography.fontFamily,
 	fontSize: typography.fontSize.sm,
 	lineHeight: 1.6,
+}
+
+const communityCtaCss = {
+	...getPrimaryButtonCss(),
+	display: 'inline-flex',
+	textDecoration: 'none',
 }
