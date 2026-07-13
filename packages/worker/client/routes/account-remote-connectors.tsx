@@ -1,6 +1,5 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
-import toggle from 'remix/ui/toggle'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -24,7 +23,14 @@ import {
 	AccountManagementSidebar,
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	shadows,
+	spacing,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -259,6 +265,65 @@ function CopyToClipboard(handle: Handle<{ url: string }>) {
 			</button>
 		)
 	}
+}
+
+/**
+ * Theme-aware switch styling for the enabled/attached checkboxes. The
+ * `remix/ui/toggle` mixin ships hardcoded light-mode colors that clash with
+ * the app theme (especially in dark mode), so the track and thumb are built
+ * from the shared design tokens instead.
+ */
+const switchCss = {
+	appearance: 'none' as const,
+	WebkitAppearance: 'none' as const,
+	position: 'relative' as const,
+	flex: 'none',
+	width: '2.75rem',
+	height: '1.5rem',
+	margin: 0,
+	padding: 0,
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.full,
+	backgroundColor: colors.background,
+	cursor: 'pointer',
+	transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
+	'&::before': {
+		content: '""',
+		position: 'absolute' as const,
+		top: '50%',
+		left: '0.125rem',
+		width: '1.125rem',
+		height: '1.125rem',
+		borderRadius: radius.full,
+		backgroundColor: colors.textMuted,
+		boxShadow: shadows.sm,
+		transform: 'translateY(-50%)',
+		transition: `transform ${transitions.normal}, background-color ${transitions.normal}`,
+	},
+	'&:not(:disabled):hover': {
+		borderColor: colors.primary,
+	},
+	'&:checked': {
+		backgroundColor: colors.primary,
+		borderColor: colors.primary,
+	},
+	'&:checked::before': {
+		backgroundColor: colors.onPrimary,
+		transform: 'translateY(-50%) translateX(1.25rem)',
+	},
+	'&:focus-visible': {
+		outline: 'none',
+		boxShadow: `0 0 0 3px ${colors.primarySoftStrong}`,
+	},
+	'&:disabled': {
+		cursor: 'not-allowed',
+		opacity: 0.55,
+	},
+	'@media (prefers-reduced-motion: reduce)': {
+		'&::before': {
+			transition: 'none',
+		},
+	},
 }
 
 const iconButtonCss = {
@@ -828,10 +893,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								<input
 									name="enabled"
 									type="checkbox"
+									role="switch"
 									checked={editorState.enabled}
 									disabled={isMutating}
 									mix={[
-										toggle(),
+										css(switchCss),
 										on('change', (event) => {
 											editorState = {
 												...editorState,
@@ -861,10 +927,11 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								<input
 									name="attached"
 									type="checkbox"
+									role="switch"
 									checked={editorState.attached}
 									disabled={isMutating || !editorState.enabled}
 									mix={[
-										toggle(),
+										css(switchCss),
 										on('change', (event) => {
 											if (!editorState.enabled) {
 												event.currentTarget.checked = editorState.attached
