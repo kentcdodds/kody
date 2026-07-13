@@ -42,6 +42,49 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 const defaultPageSize = 20
 const maxPageSize = 100
 
+type AdminUserListFilters = {
+	query: string
+	role: RoleName | null
+}
+
+/** Read the `q` and `role` filter query params shared by the page and API. */
+function readAdminUserListFilters(url: URL): AdminUserListFilters {
+	const rawRole = url.searchParams.get('role')?.trim() ?? ''
+	return {
+		query: url.searchParams.get('q')?.trim() ?? '',
+		role: isRoleName(rawRole) ? rawRole : null,
+	}
+}
+
+function escapeLikePattern(value: string) {
+	return value.replace(/[\\%_]/g, (char) => `\\${char}`)
+}
+
+/**
+ * Build the WHERE clause shared by the page query and its COUNT so the
+ * reported total always matches the filtered result set.
+ */
+function buildAdminUserListWhereClause(filters: AdminUserListFilters) {
+	const conditions: Array<string> = []
+	const params: Array<string> = []
+	if (filters.query) {
+		const pattern = `%${escapeLikePattern(filters.query)}%`
+		conditions.push(`(username LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')`)
+		params.push(pattern, pattern)
+	}
+	if (filters.role) {
+		conditions.push(
+			`id IN (SELECT ur.user_id FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE r.name = ?)`,
+		)
+		params.push(filters.role)
+	}
+	return {
+		whereClause:
+			conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+		params,
+	}
+}
+
 export async function loadAdminUsersData(
 	env: Env,
 	requestUrl: string,
@@ -51,18 +94,21 @@ export async function loadAdminUsersData(
 		defaultPageSize,
 		maxPageSize,
 	})
+	const filters = readAdminUserListFilters(url)
+	const { whereClause, params } = buildAdminUserListWhereClause(filters)
 
 	const [totalResult, userRows] = await Promise.all([
-		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users`).first<{
-			total: number
-		}>(),
+		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users ${whereClause}`)
+			.bind(...params)
+			.first<{ total: number }>(),
 		env.APP_DB.prepare(
 			`SELECT id, username, email, email_verified_at, plan, created_at, updated_at
 			 FROM users
+			 ${whereClause}
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
 		)
-			.bind(pageSize, offset)
+			.bind(...params, pageSize, offset)
 			.all<AdminUserRow>(),
 	])
 	const total = totalResult?.total ?? 0

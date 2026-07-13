@@ -1,8 +1,14 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
+import { replaceLocation } from '#client/replace-location.ts'
+import {
+	createInfiniteList,
+	type InfiniteListSnapshot,
+} from '#client/infinite-list.ts'
+import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -21,6 +27,7 @@ import {
 	AccountManagementListItemButton,
 	AccountManagementMessage,
 	AccountManagementPanel,
+	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AdminPageHeader,
@@ -42,6 +49,7 @@ import {
 	type AdminPlanName,
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
+	type AdminUsersMutationData,
 	type AdminUserUsageLoaderData,
 } from '#app/loader-data.ts'
 import {
@@ -69,11 +77,18 @@ function isAdminUsersPath(href: string) {
 	return path === '/admin/users' || path === '/admin'
 }
 
-function buildUsersHref(handle: Handle, page: number) {
-	const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
-	if (page <= 1) url.searchParams.delete('page')
-	else url.searchParams.set('page', String(page))
-	return `${url.pathname}${url.search}`
+type AdminUserFilterState = {
+	search: string
+	role: string
+}
+
+/** Read the `q`/`role` filter params the server applies to the list. */
+function readFilterState(href: string): AdminUserFilterState {
+	const url = new URL(href, 'http://localhost')
+	return {
+		search: url.searchParams.get('q')?.trim() ?? '',
+		role: url.searchParams.get('role')?.trim() ?? '',
+	}
 }
 
 export async function adminUsersRouteLoader(
@@ -100,12 +115,19 @@ export async function adminUsersRouteLoader(
 
 export function AdminUsersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
-	let users: Array<AdminUserListItem> = []
 	let availableRoles: Array<RoleName> = []
 	let availablePlans: Array<AdminPlanName> = []
-	let page = 1
 	let pageSize = 20
-	let total = 0
+	let loadedThroughPage = 1
+	const userList = createInfiniteList<AdminUserListItem>({
+		mergeDirection: 'append',
+		getKey: (user) => String(user.id),
+		onSnapshot: (snapshot) => {
+			usersSnapshot = snapshot
+		},
+	})
+	let usersSnapshot: InfiniteListSnapshot<AdminUserListItem> =
+		userList.getSnapshot()
 	let selectedUserId: number | null = null
 	let message: string | null = null
 	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
@@ -127,7 +149,53 @@ export function AdminUsersRoute(handle: Handle) {
 	let usageFailedForUserId: number | null = null
 
 	function getSelectedUser() {
-		return users.find((user) => user.id === selectedUserId) ?? null
+		return (
+			usersSnapshot.items.find((user) => user.id === selectedUserId) ?? null
+		)
+	}
+
+	function ensureSelection() {
+		const users = usersSnapshot.items
+		if (
+			selectedUserId != null &&
+			!users.some((user) => user.id === selectedUserId)
+		) {
+			selectedUserId = users[0]?.id ?? null
+		}
+		if (selectedUserId == null && users.length > 0) {
+			selectedUserId = users[0]?.id ?? null
+		}
+	}
+
+	function seedUsersFromPayload(payload: AdminUsersLoaderData) {
+		availableRoles = payload.availableRoles
+		availablePlans = payload.availablePlans
+		pageSize = payload.pageSize
+		loadedThroughPage = payload.page
+		// reset() invalidates any in-flight load-more so a stale page fetched
+		// for the previous filters can never append into the fresh window.
+		userList.reset()
+		userList.replaceWindow({
+			items: payload.users,
+			hasMore: payload.page * payload.pageSize < payload.total,
+			totalCount: payload.total,
+		})
+		resetPlanDraft()
+		ensureSelection()
+	}
+
+	function buildHrefWithUpdatedFilters(
+		nextFilters: Partial<AdminUserFilterState>,
+	) {
+		const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
+		const filters = { ...readFilterState(url.toString()), ...nextFilters }
+		if (filters.search) url.searchParams.set('q', filters.search)
+		else url.searchParams.delete('q')
+		if (filters.role) url.searchParams.set('role', filters.role)
+		else url.searchParams.delete('role')
+		// Filter changes re-anchor the list at the first page.
+		url.searchParams.delete('page')
+		return `${url.pathname}${url.search}`
 	}
 
 	async function loadUserUsage(userId: number) {
@@ -208,23 +276,8 @@ export function AdminUsersRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load admin users.')
 			}
-			users = payload.users
-			availableRoles = payload.availableRoles
-			availablePlans = payload.availablePlans
-			page = payload.page
-			pageSize = payload.pageSize
-			total = payload.total
-			resetPlanDraft()
+			seedUsersFromPayload(payload)
 			lastLoadedHref = href
-			if (
-				selectedUserId != null &&
-				!users.some((user) => user.id === selectedUserId)
-			) {
-				selectedUserId = users[0]?.id ?? null
-			}
-			if (selectedUserId == null && users.length > 0) {
-				selectedUserId = users[0]?.id ?? null
-			}
 			status = 'ready'
 			message = null
 			lastFailedHref = null
@@ -239,6 +292,54 @@ export function AdminUsersRoute(handle: Handle) {
 		} finally {
 			if (requestId === loadRequestId) loadingForHref = null
 		}
+	}
+
+	async function loadMoreUsers() {
+		if (status !== 'ready') return false
+		const nextPage = loadedThroughPage + 1
+		const loaded = await userList.loadMore(async () => {
+			const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
+			url.searchParams.set('page', String(nextPage))
+			const response = await fetch(`${adminUsersApiPath}${url.search}`, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				throw new Error('Signed out.')
+			}
+			const payload = await readJson<AdminUsersLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load more users.')
+			}
+			return {
+				items: payload.users,
+				hasMore: payload.page * payload.pageSize < payload.total,
+				totalCount: payload.total,
+			}
+		})
+		if (loaded) {
+			loadedThroughPage = nextPage
+		}
+		handle.update()
+		return loaded
+	}
+
+	/**
+	 * Mutation responses carry the refreshed target user; patch it in place
+	 * so a list the admin has scrolled deep into keeps its loaded window and
+	 * selection instead of resetting to the first page.
+	 */
+	function applyMutationPayload(payload: AdminUsersMutationData) {
+		availableRoles = payload.availableRoles
+		availablePlans = payload.availablePlans
+		const updatedUser = payload.updatedUser
+		if (updatedUser) {
+			userList.updateItems((items) =>
+				items.map((item) => (item.id === updatedUser.id ? updatedUser : item)),
+			)
+		}
+		resetPlanDraft()
 	}
 
 	async function submitRoleAction(action: 'assign_role' | 'remove_role') {
@@ -270,18 +371,12 @@ export function AdminUsersRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AdminUsersLoaderData & { ok?: boolean; error?: string }
+				AdminUsersMutationData & { ok?: boolean; error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to update user roles.')
 			}
-			users = payload.users
-			availableRoles = payload.availableRoles
-			availablePlans = payload.availablePlans
-			page = payload.page
-			pageSize = payload.pageSize
-			total = payload.total
-			resetPlanDraft()
+			applyMutationPayload(payload)
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
 			message =
@@ -329,18 +424,12 @@ export function AdminUsersRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AdminUsersLoaderData & { ok?: boolean; error?: string }
+				AdminUsersMutationData & { ok?: boolean; error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to update user plan.')
 			}
-			users = payload.users
-			availableRoles = payload.availableRoles
-			availablePlans = payload.availablePlans
-			page = payload.page
-			pageSize = payload.pageSize
-			total = payload.total
-			resetPlanDraft()
+			applyMutationPayload(payload)
 			invalidateUsage()
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
@@ -363,23 +452,8 @@ export function AdminUsersRoute(handle: Handle) {
 		if (!isAdminUsersPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'adminUsers', href)
 		if (!routeData) return false
-		users = routeData.users
-		availableRoles = routeData.availableRoles
-		availablePlans = routeData.availablePlans
-		page = routeData.page
-		pageSize = routeData.pageSize
-		total = routeData.total
-		resetPlanDraft()
+		seedUsersFromPayload(routeData)
 		lastLoadedHref = href
-		if (
-			selectedUserId != null &&
-			!users.some((user) => user.id === selectedUserId)
-		) {
-			selectedUserId = users[0]?.id ?? null
-		}
-		if (selectedUserId == null && users.length > 0) {
-			selectedUserId = users[0]?.id ?? null
-		}
 		status = 'ready'
 		message = null
 		lastFailedHref = null
@@ -396,7 +470,7 @@ export function AdminUsersRoute(handle: Handle) {
 			lastSeenHref = currentHref
 			lastFailedHref = null
 		}
-		// Consume route-loader data before deriving `totalPages` and
+		// Consume route-loader data before deriving the list snapshot and
 		// `selectedUser`; deriving first would render this pass from the
 		// stale pre-navigation closure state.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
@@ -416,7 +490,9 @@ export function AdminUsersRoute(handle: Handle) {
 			handle.queueTask(loadAdminUsers)
 		}
 
-		const totalPages = Math.max(1, Math.ceil(total / pageSize))
+		const { items: users, hasMore, totalCount, isLoadingMore } = usersSnapshot
+		const filters = readFilterState(currentHref)
+		const hasActiveFilters = Boolean(filters.search || filters.role)
 		const selectedUser = getSelectedUser()
 		const isMutating = actionState !== 'idle'
 
@@ -474,89 +550,130 @@ export function AdminUsersRoute(handle: Handle) {
 							title="Accounts"
 							description="Select a user to review metadata and roles."
 						>
+							<div mix={css({ display: 'grid', gap: spacing.sm })}>
+								<AccountManagementSearchField
+									label="Search"
+									placeholder="Search by username or email"
+									value={filters.search}
+									onInput={(value) => {
+										replaceLocation(
+											buildHrefWithUpdatedFilters({ search: value }),
+										)
+									}}
+								/>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Role</span>
+									<select
+										value={filters.role}
+										aria-label="Filter users by role"
+										mix={[
+											on('change', (event) => {
+												replaceLocation(
+													buildHrefWithUpdatedFilters({
+														role: event.currentTarget.value,
+													}),
+												)
+											}),
+											css(inputCss),
+										]}
+									>
+										<option value="">All roles</option>
+										{availableRoles.map((role) => (
+											<option key={role} value={role}>
+												{role}
+											</option>
+										))}
+									</select>
+								</label>
+							</div>
 							{status === 'ready' && users.length === 0 ? (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No users found.
+									{hasActiveFilters
+										? 'No users match the current filters.'
+										: 'No users found.'}
 								</p>
 							) : (
-								<AccountManagementList maxHeight="min(65vh, 48rem)">
-									{users.map((user) => (
-										<li key={user.id} mix={css({ minWidth: 0 })}>
-											<AccountManagementListItemButton
-												active={selectedUserId === user.id}
-												disabled={isMutating}
-												onClick={() => {
-													if (isMutating) return
-													selectedUserId = user.id
-													message = null
-													handle.update()
-												}}
+								<>
+									<AccountManagementList maxHeight="min(65vh, 48rem)">
+										{users.map((user) => (
+											<li key={user.id} mix={css({ minWidth: 0 })}>
+												<AccountManagementListItemButton
+													active={selectedUserId === user.id}
+													disabled={isMutating}
+													onClick={() => {
+														if (isMutating) return
+														selectedUserId = user.id
+														message = null
+														handle.update()
+													}}
+												>
+													<strong mix={css({ display: 'block' })}>
+														{user.username}
+													</strong>
+													<span
+														mix={css({
+															display: 'block',
+															fontSize: typography.fontSize.sm,
+															color: colors.textMuted,
+														})}
+													>
+														{user.email}
+													</span>
+													<span
+														mix={css({
+															display: 'block',
+															fontSize: typography.fontSize.xs,
+															color: colors.textMuted,
+														})}
+													>
+														{user.roles.length > 0
+															? user.roles.join(', ')
+															: 'No roles'}
+													</span>
+												</AccountManagementListItemButton>
+											</li>
+										))}
+										{hasMore ? (
+											<li
+												key="load-more-sentinel"
+												mix={[
+													infiniteScrollSentinel(loadMoreUsers),
+													css({ display: 'grid' }),
+												]}
 											>
-												<strong mix={css({ display: 'block' })}>
-													{user.username}
-												</strong>
-												<span
-													mix={css({
-														display: 'block',
-														fontSize: typography.fontSize.sm,
-														color: colors.textMuted,
-													})}
+												<button
+													type="button"
+													disabled={isLoadingMore}
+													mix={[
+														on('click', () => void loadMoreUsers()),
+														css(secondaryButtonCss),
+													]}
 												>
-													{user.email}
-												</span>
-												<span
-													mix={css({
-														display: 'block',
-														fontSize: typography.fontSize.xs,
-														color: colors.textMuted,
-													})}
-												>
-													{user.roles.length > 0
-														? user.roles.join(', ')
-														: 'No roles'}
-												</span>
-											</AccountManagementListItemButton>
-										</li>
-									))}
-								</AccountManagementList>
+													{isLoadingMore ? 'Loading more…' : 'Load more'}
+												</button>
+											</li>
+										) : null}
+									</AccountManagementList>
+									{usersSnapshot.error ? (
+										<AccountManagementMessage tone="error">
+											{usersSnapshot.error}
+										</AccountManagementMessage>
+									) : null}
+									{status === 'ready' ? (
+										<p
+											mix={css({
+												margin: 0,
+												marginTop: spacing.sm,
+												color: colors.textMuted,
+												fontSize: typography.fontSize.xs,
+											})}
+										>
+											Showing {users.length} of {totalCount}{' '}
+											{totalCount === 1 ? 'account' : 'accounts'}
+										</p>
+									) : null}
+								</>
 							)}
-							{totalPages > 1 ? (
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										marginTop: spacing.md,
-									})}
-								>
-									<button
-										type="button"
-										disabled={page <= 1 || isMutating}
-										mix={[
-											on('click', () =>
-												navigate(buildUsersHref(handle, page - 1)),
-											),
-											css(secondaryButtonCss),
-										]}
-									>
-										Previous
-									</button>
-									<span mix={css({ color: colors.textMuted })}>
-										Page {page} of {totalPages}
-									</span>
-									<button
-										type="button"
-										disabled={page >= totalPages || isMutating}
-										mix={[
-											on('click', () =>
-												navigate(buildUsersHref(handle, page + 1)),
-											),
-											css(secondaryButtonCss),
-										]}
-									>
-										Next
-									</button>
-								</div>
-							) : null}
 						</AccountManagementSidebar>
 					}
 				>

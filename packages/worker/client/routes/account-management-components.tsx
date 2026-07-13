@@ -11,8 +11,10 @@ import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
+	fieldCss,
 	fieldLabelCss,
 	getSecondaryButtonCss,
+	inputCss,
 	layoutMaxWidths,
 } from '#client/styles/style-primitives.ts'
 
@@ -336,6 +338,45 @@ export function AccountManagementList(
 				{handle.props.children}
 			</ul>
 		</div>
+	)
+}
+
+type AccountManagementSearchFieldProps = {
+	label: string
+	placeholder: string
+	value: string
+	onInput: (value: string) => void
+}
+
+/**
+ * URL-backed search input for sidebar lists (secrets, admin users, ...).
+ * Callers own the URL update — typically `replaceLocation(...)` with the
+ * value written to a `q` query param.
+ */
+export function AccountManagementSearchField(
+	handle: Handle<AccountManagementSearchFieldProps>,
+) {
+	return () => (
+		<label mix={css(fieldCss)}>
+			<span mix={css(fieldLabelCss)}>{handle.props.label}</span>
+			<input
+				type="search"
+				value={handle.props.value}
+				placeholder={handle.props.placeholder}
+				aria-label={handle.props.label}
+				mix={[
+					on('input', (event) =>
+						handle.props.onInput(
+							(event.currentTarget as HTMLInputElement).value,
+						),
+					),
+					css({
+						...inputCss,
+						paddingRight: spacing.xl,
+					}),
+				]}
+			/>
+		</label>
 	)
 }
 

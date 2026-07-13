@@ -7,11 +7,8 @@ import {
 	buildAccountSecretPath,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
-import {
-	navigate,
-	routerEvents,
-	readCurrentRouterHref,
-} from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -57,6 +54,7 @@ import {
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
+	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AccountPageHeader,
@@ -444,16 +442,6 @@ function buildNewSecretHref(search = '') {
 
 function buildBaseSecretsHref(search = '') {
 	return buildSecretsHref(secretsBasePath, search)
-}
-
-function replaceSecretsLocation(to: string) {
-	if (typeof window === 'undefined') return
-	const destination = new URL(to, window.location.href)
-	const nextPath = `${destination.pathname}${destination.search}${destination.hash}`
-	const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
-	if (nextPath === currentPath) return
-	window.history.replaceState({}, '', nextPath)
-	routerEvents.dispatchEvent(new Event('navigate'))
 }
 
 function getDataRefreshKey(href: string) {
@@ -1312,33 +1300,16 @@ export function AccountSecretsRoute(handle: Handle) {
 									gap: spacing.sm,
 								})}
 							>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Search</span>
-									<input
-										type="search"
-										value={filters.search}
-										placeholder="Search secrets"
-										aria-label="Search secrets"
-										mix={[
-											on(
-												'input',
-
-												(event) => {
-													replaceSecretsLocation(
-														buildHrefWithUpdatedFilters({
-															search: event.currentTarget.value,
-														}),
-													)
-												},
-											),
-
-											css({
-												...inputCss,
-												paddingRight: spacing.xl,
-											}),
-										]}
-									/>
-								</label>
+								<AccountManagementSearchField
+									label="Search"
+									placeholder="Search secrets"
+									value={filters.search}
+									onInput={(value) => {
+										replaceLocation(
+											buildHrefWithUpdatedFilters({ search: value }),
+										)
+									}}
+								/>
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Scope</span>
 									<select
@@ -1351,7 +1322,7 @@ export function AccountSecretsRoute(handle: Handle) {
 												(event) => {
 													const nextScope = event.currentTarget
 														.value as SecretFilterScope
-													replaceSecretsLocation(
+													replaceLocation(
 														buildHrefWithUpdatedFilters({
 															scope: nextScope,
 															packageId:
@@ -1378,7 +1349,7 @@ export function AccountSecretsRoute(handle: Handle) {
 											disabled: filters.scope === 'user',
 											options: filterPackageOptions,
 											onChange: (packageId) => {
-												replaceSecretsLocation(
+												replaceLocation(
 													buildHrefWithUpdatedFilters({
 														packageId,
 													}),

@@ -50,6 +50,15 @@ export type AdminUsersLoaderData = {
 	availablePlans: Array<AdminPlanName>
 }
 
+/**
+ * POST (mutation) responses also carry the updated target user so the
+ * client can patch it into an infinite-scroll list that may have scrolled
+ * past the first page.
+ */
+export type AdminUsersMutationData = AdminUsersLoaderData & {
+	updatedUser: AdminUserListItem | null
+}
+
 export type AdminRoleListItem = {
 	name: string
 	description: string

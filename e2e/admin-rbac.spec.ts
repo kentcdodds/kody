@@ -86,6 +86,36 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		),
 	).toBe(true)
 
+	// Server-side search: typing in the accounts search filters the list,
+	// writes `q` to the URL, and the reported total shrinks to match.
+	const usersSearchInput = page.getByLabel('Search', { exact: true })
+	await usersSearchInput.fill(memberUser.username)
+	await expect(page).toHaveURL(new RegExp(`q=${memberUser.username}`))
+	await expect(
+		page.getByRole('button', { name: memberUser.username }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('button', { name: adminUser.username }),
+	).toHaveCount(0)
+	const searchApiResponse = await page.request.get(
+		`/admin/users.json?q=${memberUser.username}`,
+	)
+	expect(searchApiResponse.ok()).toBe(true)
+	const searchPayload = await searchApiResponse.json()
+	expect(searchPayload.total).toBe(1)
+	expect(searchPayload.users[0].email).toBe(memberUser.email)
+
+	await usersSearchInput.fill(`no-user-matches-${runId}`)
+	await expect(
+		page.getByText('No users match the current filters.'),
+	).toBeVisible()
+
+	// Infinite scroll: with a one-user page size the sentinel is visible in
+	// the under-filled list and auto-loads following pages.
+	await page.goto('/admin/users?pageSize=1')
+	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
+	await expect(page.getByText(/Showing ([2-9]|\d{2,}) of \d+/)).toBeVisible()
+
 	const initialUsersApiResponse = await page.request.get(
 		'/admin/users.json?pageSize=100',
 	)
@@ -183,7 +213,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	)
 	expect(memberAfterPlan.plan).toBe('pro')
 
-	const roleSelect = page.getByLabel('Role')
+	const roleSelect = page.getByLabel('Role', { exact: true })
 	await roleSelect.selectOption('admin')
 	await page.getByRole('button', { name: 'Assign', exact: true }).click()
 	await page.context().clearCookies()

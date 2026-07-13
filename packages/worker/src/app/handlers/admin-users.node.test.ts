@@ -70,6 +70,37 @@ function createAdminTestEnv(input: {
 		APP_DB: {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				// Mirrors buildAdminUserListWhereClause: an optional
+				// username/email LIKE pair followed by an optional role
+				// membership param, shared by the page query and its COUNT.
+				function applyListFilters(params: Array<unknown>) {
+					let rows = Array.from(users.values()).sort((a, b) => a.id - b.id)
+					let paramIndex = 0
+					if (normalizedQuery.includes('username like ?')) {
+						const pattern = String(params[paramIndex])
+						paramIndex += 2
+						const needle = pattern
+							.slice(1, -1)
+							.replace(/\\(.)/g, '$1')
+							.toLowerCase()
+						rows = rows.filter(
+							(row) =>
+								row.username.toLowerCase().includes(needle) ||
+								row.email.toLowerCase().includes(needle),
+						)
+					}
+					if (normalizedQuery.includes('where r.name = ?')) {
+						const roleName = String(params[paramIndex])
+						paramIndex += 1
+						rows = rows.filter((row) =>
+							userRoles.some(
+								(role) =>
+									role.user_id === row.id && role.role_name === roleName,
+							),
+						)
+					}
+					return { rows, paramIndex }
+				}
 				const execute = {
 					async all<T>() {
 						if (
@@ -100,11 +131,10 @@ function createAdminTestEnv(input: {
 						return {
 							async all<T>() {
 								if (normalizedQuery.startsWith('select id, username, email')) {
-									const pageSize = Number(params[0])
-									const offset = Number(params[1])
-									const results = Array.from(users.values())
-										.sort((a, b) => a.id - b.id)
-										.slice(offset, offset + pageSize)
+									const { rows, paramIndex } = applyListFilters(params)
+									const pageSize = Number(params[paramIndex])
+									const offset = Number(params[paramIndex + 1])
+									const results = rows.slice(offset, offset + pageSize)
 									return { results: results as Array<T>, meta: { changes: 0 } }
 								}
 								if (normalizedQuery.includes('where ur.user_id in')) {
@@ -124,6 +154,27 @@ function createAdminTestEnv(input: {
 							async first<T>() {
 								if (
 									normalizedQuery.includes(
+										'count(distinct ur.user_id) as count',
+									)
+								) {
+									const roleName = String(params[0])
+									const count = new Set(
+										userRoles
+											.filter((row) => row.role_name === roleName)
+											.map((row) => row.user_id),
+									).size
+									return { count } as T
+								}
+								if (
+									normalizedQuery.startsWith(
+										'select count(*) as total from users',
+									)
+								) {
+									const { rows } = applyListFilters(params)
+									return { total: rows.length } as T
+								}
+								if (
+									normalizedQuery.includes(
 										'select id, email from users where id =',
 									)
 								) {
@@ -137,19 +188,6 @@ function createAdminTestEnv(input: {
 								) {
 									const user = users.get(Number(params[0]))
 									return user ? ({ ...user } as T) : null
-								}
-								if (
-									normalizedQuery.includes(
-										'count(distinct ur.user_id) as count',
-									)
-								) {
-									const roleName = String(params[0])
-									const count = new Set(
-										userRoles
-											.filter((row) => row.role_name === roleName)
-											.map((row) => row.user_id),
-									).size
-									return { count } as T
 								}
 								return null
 							},
@@ -299,6 +337,78 @@ test('admin users list payload exposes only account metadata fields', async () =
 	])
 })
 
+test('admin users list applies q and role filters to the slice and total', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'admin-user',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+			{
+				id: 2,
+				username: 'searchable-member',
+				email: 'member@example.com',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+			{
+				id: 3,
+				username: 'another-member',
+				email: 'searchable@example.com',
+				created_at: '2026-01-05 00:00:00',
+				updated_at: '2026-01-06 00:00:00',
+			},
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'admin' },
+			{ user_id: 2, role_name: 'user' },
+			{ user_id: 3, role_name: 'user' },
+		],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const listUsers = async (search: string) => {
+		const response = await handler.handler({
+			request: new Request(`https://example.com/admin/users.json${search}`, {
+				headers: { Accept: 'application/json' },
+			}),
+			params: {},
+			url: new URL(`https://example.com/admin/users.json${search}`),
+		} as never)
+		expect(response.status).toBe(200)
+		return response.json()
+	}
+
+	// q matches username or email; total reflects the filtered set.
+	const searchPayload = await listUsers('?q=searchable')
+	expect(searchPayload.total).toBe(2)
+	expect(searchPayload.users.map((user: { id: number }) => user.id)).toEqual([
+		2, 3,
+	])
+
+	const rolePayload = await listUsers('?role=admin')
+	expect(rolePayload.total).toBe(1)
+	expect(rolePayload.users.map((user: { id: number }) => user.id)).toEqual([1])
+
+	const combinedPayload = await listUsers('?q=searchable&role=admin')
+	expect(combinedPayload.total).toBe(0)
+	expect(combinedPayload.users).toEqual([])
+
+	// Unknown role values are ignored rather than filtering everything out.
+	const unknownRolePayload = await listUsers('?role=not-a-role')
+	expect(unknownRolePayload.total).toBe(3)
+
+	// Filters and pagination compose.
+	const pagedPayload = await listUsers('?q=searchable&pageSize=1&page=2')
+	expect(pagedPayload.total).toBe(2)
+	expect(pagedPayload.users.map((user: { id: number }) => user.id)).toEqual([3])
+})
+
 test('assign role action updates user roles and logs audit event', async () => {
 	logAuditEventSpy.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
@@ -338,6 +448,14 @@ test('assign role action updates user roles and logs audit event', async () => {
 	expect(response.status).toBe(200)
 	const payload = await response.json()
 	expect(payload.users[0].roles).toContain('admin')
+	// Mutations return the updated target so the client can patch it into
+	// an infinite-scroll window without resetting to the first page.
+	expect(payload.updatedUser).toEqual(
+		expect.objectContaining({
+			id: 2,
+			roles: expect.arrayContaining(['admin', 'user']),
+		}),
+	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({ category: 'admin', action: 'assign_role' }),
 	)
