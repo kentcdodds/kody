@@ -27,6 +27,7 @@
     "croner": "^10.0.1",
     "diff": "^9.0.0",
     "isomorphic-git": "^1.37.6",
+    "marked": "^18.0.6",
     "postal-mime": "^2.7.4",
     "qrcode": "^1.5.4",
     "remix": "^3.0.0-beta.5",

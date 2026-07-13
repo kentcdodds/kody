@@ -12,6 +12,7 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
+import { MarkdownView } from '#client/markdown-view.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, typography } from '#client/styles/tokens.ts'
 import {
@@ -345,7 +346,9 @@ export function CommunityDetailRoute(handle: Handle) {
 						{readmeContent ? (
 							<section mix={css(cardCss)}>
 								<h2 mix={css(cardTitleCss)}>README</h2>
-								<pre mix={css(readmeBlockCss)}>{readmeContent}</pre>
+								<div data-testid="community-readme" mix={css(readmeBlockCss)}>
+									<MarkdownView markdown={readmeContent} />
+								</div>
 							</section>
 						) : null}
 
@@ -434,7 +437,7 @@ const promptBlockCss = {
 }
 
 const readmeBlockCss = {
-	...promptBlockCss,
+	...insetCardCss,
 	maxHeight: '32rem',
 	overflow: 'auto',
 }

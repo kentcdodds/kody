@@ -39,6 +39,15 @@ package-app surfaces:
 7. **Every data path is `userId`-scoped.** New D1 queries, Durable Object names,
    and Vectorize filters must include `userId`. Prefer parameterized SQL
    (`.prepare(...).bind(...)`); never interpolate user input into SQL.
+8. **Untrusted markdown renders through the safe renderer only.** Community
+   READMEs (and any future third-party-authored markdown shown on first-party
+   pages) must go through `packages/worker/client/markdown-view.tsx`, which
+   builds JSX from an allowlist of `marked` lexer tokens: raw HTML renders as
+   escaped text, no resource-loading elements are ever emitted (images become
+   links), and links are restricted to absolute `http:`/`https:`/`mailto:` URLs
+   with `/@...` user-scope paths refused so a README can never point viewers at
+   hosted package endpoints. Never render third-party markdown via an HTML
+   string, `innerHTML`, or a markdown-to-HTML renderer.
 
 ## First-party HTTP security headers
 

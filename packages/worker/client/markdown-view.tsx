@@ -1,0 +1,313 @@
+/**
+ * Safe markdown rendering for untrusted, third-party authored content
+ * (community package READMEs).
+ *
+ * Safety model (do not regress):
+ * - Markdown is parsed with `marked`'s lexer only; its HTML renderer is never
+ *   used. Output is built exclusively from JSX text and an allowlist of token
+ *   types, so every string goes through the framework's escaping.
+ * - Raw HTML tokens (block and inline) are rendered as escaped literal text,
+ *   never as markup.
+ * - No resource-loading elements are emitted (`<img>`, `<iframe>`, media,
+ *   etc.), so a README can never make a viewer's browser issue requests —
+ *   including to hosted package endpoints (`/@username/packages/*`), which
+ *   execute author-controlled code. Images render as plain links instead.
+ * - Links must be absolute `http:`/`https:`/`mailto:` URLs. Relative URLs
+ *   (which would resolve against this origin) and URLs whose path points at a
+ *   user scope (`/@...`) render as plain text. Allowed links open in a new
+ *   tab with `rel="noopener noreferrer nofollow ugc"`.
+ *
+ * The first-party CSP (`security-headers.ts`) blocks off-site scripts,
+ * images, and connections as defense in depth; this module must stay safe
+ * without relying on it.
+ */
+import { lexer, type Token, type Tokens } from 'marked'
+import { type Handle, type RemixNode, css } from 'remix/ui'
+import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+
+const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
+
+/**
+ * Returns a normalized href when the link is safe to emit, otherwise null.
+ * Only absolute http(s)/mailto URLs pass, and any URL whose path enters a
+ * user scope (`/@...`, where hosted package apps live) is refused on every
+ * host so READMEs cannot funnel viewers into author-controlled endpoints.
+ */
+export function getSafeMarkdownLinkHref(href: string): string | null {
+	let url: URL
+	try {
+		url = new URL(href)
+	} catch {
+		return null
+	}
+	if (!allowedLinkProtocols.has(url.protocol)) return null
+	if (url.pathname.startsWith('/@')) return null
+	return url.href
+}
+
+const namedEntities: Record<string, string> = {
+	amp: '&',
+	lt: '<',
+	gt: '>',
+	quot: '"',
+	apos: "'",
+	nbsp: '\u00a0',
+}
+
+/**
+ * Markdown text tokens keep character references (`&amp;`, `&#65;`) verbatim
+ * because marked expects HTML passthrough. We render as JSX text (which
+ * re-escapes), so decode them first to display what the author meant.
+ */
+function decodeCharacterReferences(value: string): string {
+	if (!value.includes('&')) return value
+	return value.replace(
+		/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+		(match, entity: string) => {
+			if (entity.startsWith('#')) {
+				const codePoint =
+					entity[1]?.toLowerCase() === 'x'
+						? Number.parseInt(entity.slice(2), 16)
+						: Number.parseInt(entity.slice(1), 10)
+				if (!Number.isInteger(codePoint) || codePoint <= 0) return match
+				try {
+					return String.fromCodePoint(codePoint)
+				} catch {
+					return match
+				}
+			}
+			return namedEntities[entity.toLowerCase()] ?? match
+		},
+	)
+}
+
+function renderLink(key: number, href: string, children: RemixNode): RemixNode {
+	const safeHref = getSafeMarkdownLinkHref(href)
+	if (!safeHref) return <span key={key}>{children}</span>
+	return (
+		<a
+			key={key}
+			href={safeHref}
+			target="_blank"
+			rel="noopener noreferrer nofollow ugc"
+		>
+			{children}
+		</a>
+	)
+}
+
+function renderTableCell(
+	cell: Tokens.TableCell,
+	key: number,
+	tag: 'th' | 'td',
+): RemixNode {
+	const Tag = tag
+	return (
+		<Tag
+			key={key}
+			mix={cell.align ? css({ textAlign: cell.align }) : undefined}
+		>
+			{renderTokens(cell.tokens)}
+		</Tag>
+	)
+}
+
+function renderToken(token: Token, key: number): RemixNode {
+	switch (token.type) {
+		case 'space':
+		case 'def':
+			return null
+		case 'heading': {
+			// The listing page owns h1/h2, so README headings start at h3.
+			const headingTags = ['h3', 'h4', 'h5', 'h6'] as const
+			const Tag = headingTags[Math.min(token.depth - 1, 3)] ?? 'h6'
+			return <Tag key={key}>{renderTokens(token.tokens)}</Tag>
+		}
+		case 'paragraph':
+			return <p key={key}>{renderTokens(token.tokens)}</p>
+		case 'blockquote':
+			return <blockquote key={key}>{renderTokens(token.tokens)}</blockquote>
+		case 'hr':
+			return <hr key={key} />
+		case 'code':
+			return (
+				<pre key={key}>
+					<code>{token.text}</code>
+				</pre>
+			)
+		case 'list': {
+			// marked's Token union includes a generic catch-all, so `type`
+			// narrowing alone leaves these fields untyped (same for `table`).
+			const listToken = token as Tokens.List
+			const items = listToken.items.map((item, index) =>
+				renderToken(item, index),
+			)
+			if (!listToken.ordered) return <ul key={key}>{items}</ul>
+			const start =
+				typeof listToken.start === 'number' && listToken.start !== 1
+					? listToken.start
+					: undefined
+			return (
+				<ol key={key} start={start}>
+					{items}
+				</ol>
+			)
+		}
+		case 'list_item':
+			return <li key={key}>{renderTokens(token.tokens)}</li>
+		case 'checkbox':
+			return (
+				<input key={key} type="checkbox" disabled checked={token.checked} />
+			)
+		case 'table': {
+			const tableToken = token as Tokens.Table
+			return (
+				<table key={key}>
+					<thead>
+						<tr>
+							{tableToken.header.map((cell, index) =>
+								renderTableCell(cell, index, 'th'),
+							)}
+						</tr>
+					</thead>
+					<tbody>
+						{tableToken.rows.map((row, rowIndex) => (
+							<tr key={rowIndex}>
+								{row.map((cell, cellIndex) =>
+									renderTableCell(cell, cellIndex, 'td'),
+								)}
+							</tr>
+						))}
+					</tbody>
+				</table>
+			)
+		}
+		case 'strong':
+			return <strong key={key}>{renderTokens(token.tokens)}</strong>
+		case 'em':
+			return <em key={key}>{renderTokens(token.tokens)}</em>
+		case 'del':
+			return <del key={key}>{renderTokens(token.tokens)}</del>
+		case 'codespan':
+			return <code key={key}>{token.text}</code>
+		case 'br':
+			return <br key={key} />
+		case 'escape':
+			return token.text
+		case 'link':
+			return renderLink(key, token.href, renderTokens(token.tokens))
+		case 'image':
+			// Never emit <img>: auto-loading author-chosen URLs is exactly what
+			// this renderer exists to prevent. Offer the image as a link instead.
+			return renderLink(key, token.href, token.text || token.href)
+		case 'html':
+			// Escaped literal text, so authors see their markup but it never
+			// becomes part of the document.
+			return token.raw
+		case 'text': {
+			const textToken = token as Tokens.Text
+			if (textToken.tokens?.length) {
+				return <span key={key}>{renderTokens(textToken.tokens)}</span>
+			}
+			return decodeCharacterReferences(textToken.text)
+		}
+		default:
+			// marked's token union is open (extensions add types), so exhaustive
+			// `never` checking is impossible; fall back to escaped raw text.
+			return typeof token.raw === 'string' ? token.raw : null
+	}
+}
+
+function renderTokens(tokens: Array<Token> | undefined): Array<RemixNode> {
+	if (!tokens) return []
+	return tokens.map((token, index) => renderToken(token, index))
+}
+
+/** Parses untrusted markdown and returns safe JSX (see module docs). */
+export function renderMarkdownNodes(markdown: string): Array<RemixNode> {
+	return renderTokens(lexer(markdown))
+}
+
+export type MarkdownViewProps = { markdown: string }
+
+export function MarkdownView(handle: Handle<MarkdownViewProps>) {
+	let renderedForMarkdown: string | null = null
+	let rendered: Array<RemixNode> = []
+
+	return () => {
+		if (handle.props.markdown !== renderedForMarkdown) {
+			renderedForMarkdown = handle.props.markdown
+			rendered = renderMarkdownNodes(handle.props.markdown)
+		}
+		return <div mix={css(markdownCss)}>{rendered}</div>
+	}
+}
+
+const markdownCss = {
+	fontSize: typography.fontSize.sm,
+	lineHeight: 1.6,
+	color: colors.text,
+	overflowWrap: 'break-word' as const,
+	'& > :first-child': {
+		marginTop: 0,
+	},
+	'& > :last-child': {
+		marginBottom: 0,
+	},
+	'& h3, & h4, & h5, & h6': {
+		margin: `${spacing.lg} 0 ${spacing.xs}`,
+		lineHeight: 1.3,
+	},
+	'& h3': {
+		fontSize: typography.fontSize.lg,
+	},
+	'& h4': {
+		fontSize: typography.fontSize.base,
+	},
+	'& p, & blockquote, & pre, & table, & ul, & ol': {
+		margin: `${spacing.sm} 0`,
+	},
+	'& ul, & ol': {
+		paddingLeft: spacing.lg,
+	},
+	'& li': {
+		margin: `${spacing.xs} 0`,
+	},
+	'& blockquote': {
+		borderLeft: `3px solid ${colors.border}`,
+		paddingLeft: spacing.md,
+		color: colors.textMuted,
+	},
+	'& pre': {
+		padding: spacing.md,
+		borderRadius: radius.md,
+		border: `1px solid ${colors.border}`,
+		backgroundColor: colors.background,
+		overflowX: 'auto' as const,
+	},
+	'& code': {
+		fontSize: typography.fontSize.sm,
+	},
+	'& table': {
+		borderCollapse: 'collapse' as const,
+		display: 'block',
+		overflowX: 'auto' as const,
+	},
+	'& th, & td': {
+		border: `1px solid ${colors.border}`,
+		padding: `${spacing.xs} ${spacing.sm}`,
+		textAlign: 'left' as const,
+	},
+	'& th': {
+		fontWeight: typography.fontWeight.semibold,
+	},
+	'& a': {
+		color: colors.primaryText,
+		textDecoration: 'underline',
+	},
+	'& hr': {
+		border: 'none',
+		borderTop: `1px solid ${colors.border}`,
+		margin: `${spacing.lg} 0`,
+	},
+}

@@ -82,6 +82,11 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 		new RegExp(`/community/${alphaListing.listingId}$`),
 	)
 	await expect(page.getByText(alphaListing.description)).toBeVisible()
+	// The README renders as markdown (its `#` title becomes a heading
+	// element via the safe renderer), not as a raw markdown string.
+	await expect(
+		page.getByRole('heading', { name: 'Scroll restoration fixture' }),
+	).toBeVisible()
 	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
 	expect(
 		await page.evaluate(
