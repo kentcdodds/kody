@@ -249,6 +249,12 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		username: 'account-user',
 		displayName: 'account-user',
 	})
+	expect(accountProps.loaderData?.accountConnections).toEqual({
+		ok: true,
+		connections: [],
+		canDisconnect: false,
+		availableProviders: [],
+	})
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
 		mcpServerUrl: '',
@@ -258,6 +264,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		needsOnboarding: true,
 	})
 	expect(accountHtml).toContain('Verify your email')
+	expect(accountHtml).toContain('No accounts connected yet.')
+	expect(accountHtml).not.toContain('Loading connected accounts')
 	expect(accountHtml).not.toContain('Connect your AI agent')
 	expect(accountHtml).toContain('/pending-verification')
 

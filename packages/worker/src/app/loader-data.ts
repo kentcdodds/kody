@@ -325,6 +325,20 @@ export type AccountProfileLoaderData = {
 	displayName: string
 }
 
+export type AccountConnectionListItem = {
+	provider: string
+	label: string
+	displayName: string | null
+	createdAt: string
+}
+
+export type AccountConnectionsLoaderData = {
+	ok: true
+	connections: Array<AccountConnectionListItem>
+	canDisconnect: boolean
+	availableProviders: Array<{ id: string; label: string }>
+}
+
 export type OnboardingLoaderData = {
 	ok: true
 	mcpServerUrl: string
@@ -540,6 +554,7 @@ export type AppLoaderData = {
 	adminInsights?: AdminInsightsLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
+	accountConnections?: AccountConnectionsLoaderData
 	onboarding?: OnboardingLoaderData
 	pendingVerification?: PendingVerificationLoaderData
 	accountTwoFactor?: AccountTwoFactorLoaderData

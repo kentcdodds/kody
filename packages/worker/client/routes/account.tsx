@@ -4,13 +4,15 @@ import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
-import {
-	startSocialSignIn,
-	type AuthProviderInfo,
-} from '#client/social-sign-in.ts'
+import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import {
+	type AccountConnectionListItem,
+	type AccountConnectionsLoaderData,
+	type AccountProfileLoaderData,
+} from '#app/loader-data.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
@@ -49,28 +51,6 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 
-type AccountProfilePayload = {
-	ok: true
-	email: string
-	emailVerified: boolean
-	username: string
-	displayName: string
-}
-
-type AccountConnection = {
-	provider: string
-	label: string
-	displayName: string | null
-	createdAt: string
-}
-
-type AccountConnectionsPayload = {
-	ok: true
-	connections: Array<AccountConnection>
-	canDisconnect: boolean
-	availableProviders: Array<AuthProviderInfo>
-}
-
 const emailChangeApiPath = '/account/email-change.json'
 const connectionsApiPath = '/account/connections.json'
 
@@ -105,23 +85,35 @@ export async function accountRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [profileResponse, onboarding] = await Promise.all([
+	const [profileResponse, connectionsResponse, onboarding] = await Promise.all([
 		fetch(`${accountProfileApiPath}${url.search}`, {
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		}),
+		fetch(connectionsApiPath, {
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
 			signal,
 		}),
 		fetchOnboardingPayload(signal),
 	])
-	if (profileResponse.status === 401) {
+	if (profileResponse.status === 401 || connectionsResponse.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
-	const payload = await readJson<AccountProfilePayload>(profileResponse)
+	const [payload, connectionsPayload] = await Promise.all([
+		readJson<AccountProfileLoaderData>(profileResponse),
+		readJson<AccountConnectionsLoaderData>(connectionsResponse),
+	])
 	if (!profileResponse.ok || !payload?.ok) {
 		throw new Error('Unable to load your account.')
 	}
+	if (!connectionsResponse.ok || !connectionsPayload?.ok) {
+		throw new Error('Unable to load connected accounts.')
+	}
 	return {
 		accountProfile: payload,
+		accountConnections: connectionsPayload,
 		...(onboarding ? { onboarding } : {}),
 	}
 }
@@ -143,55 +135,19 @@ export function AccountRoute(handle: Handle) {
 	let messageTone: 'error' | 'info' = 'info'
 	let emailChangeMessage: string | null = null
 	let emailChangeTone: 'error' | 'info' = 'info'
-	let connectionsStatus: 'idle' | 'loading' | 'ready' | 'error' = 'idle'
 	let connectionsBusy = false
-	let connections: Array<AccountConnection> = []
+	let connections: Array<AccountConnectionListItem> = []
 	let canDisconnect = true
-	let availableProviders: Array<AuthProviderInfo> = []
+	let availableProviders: Array<{ id: string; label: string }> = []
 	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
 	const loadLatch = createRouteLoadLatch()
 
-	function applyConnectionsPayload(payload: AccountConnectionsPayload) {
+	function applyConnectionsPayload(payload: AccountConnectionsLoaderData) {
 		connections = payload.connections
 		canDisconnect = payload.canDisconnect
 		availableProviders = payload.availableProviders
-	}
-
-	async function loadConnections(signal: AbortSignal) {
-		try {
-			const response = await fetch(connectionsApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) {
-				connectionsStatus = 'idle'
-				return
-			}
-			const payload = await readJson<AccountConnectionsPayload>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load connected accounts.')
-			}
-			applyConnectionsPayload(payload)
-			connectionsStatus = 'ready'
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) {
-				connectionsStatus = 'idle'
-				return
-			}
-			connectionsStatus = 'error'
-			connectionsMessage = {
-				text:
-					error instanceof Error
-						? error.message
-						: 'Unable to load connected accounts.',
-				tone: 'error',
-			}
-			handle.update()
-		}
 	}
 
 	async function handleConnectProvider(providerId: string) {
@@ -235,7 +191,7 @@ export function AccountRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountConnectionsPayload & { error?: string }
+				AccountConnectionsLoaderData & { error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to disconnect the account.')
@@ -267,8 +223,13 @@ export function AccountRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		try {
 			const search = new URL(href, 'http://localhost').search
-			const [response, onboarding] = await Promise.all([
+			const [response, connectionsResponse, onboarding] = await Promise.all([
 				fetch(`${accountProfileApiPath}${search}`, {
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+					signal,
+				}),
+				fetch(connectionsApiPath, {
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
 					signal,
@@ -276,15 +237,22 @@ export function AccountRoute(handle: Handle) {
 				fetchOnboardingPayload(signal),
 			])
 			if (signal.aborted) return
-			if (response.status === 401) {
+			if (response.status === 401 || connectionsResponse.status === 401) {
 				window.location.assign('/login')
 				return
 			}
-			const payload = await readJson<AccountProfilePayload>(response)
+			const [payload, connectionsPayload] = await Promise.all([
+				readJson<AccountProfileLoaderData>(response),
+				readJson<AccountConnectionsLoaderData>(connectionsResponse),
+			])
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load your account.')
 			}
+			if (!connectionsResponse.ok || !connectionsPayload?.ok) {
+				throw new Error('Unable to load connected accounts.')
+			}
 			applyOnboardingPayload(onboarding)
+			applyConnectionsPayload(connectionsPayload)
 			email = payload.email
 			emailVerified = payload.emailVerified
 			username = payload.username
@@ -447,7 +415,7 @@ export function AccountRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountProfilePayload & { error?: string }
+				AccountProfileLoaderData & { error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save username.')
@@ -473,11 +441,18 @@ export function AccountRoute(handle: Handle) {
 		if (!isAccountPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'accountProfile', href)
 		if (!routeData) return false
+		const connectionsData = tryConsumeRouteLoaderData(
+			handle,
+			'accountConnections',
+			href,
+		)
+		if (!connectionsData) return false
 		email = routeData.email
 		emailVerified = routeData.emailVerified
 		username = routeData.username
 		draftUsername = routeData.username
 		draftEmail = routeData.email
+		applyConnectionsPayload(connectionsData)
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (onboardingData) {
 			applyOnboardingPayload(onboardingData)
@@ -505,16 +480,10 @@ export function AccountRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadAccountProfile)
 		}
-		if (typeof document !== 'undefined') {
-			if (!consumedCallbackMessage) {
-				consumedCallbackMessage = true
-				connectionsMessage =
-					readConnectionCallbackMessage(currentHref) ?? connectionsMessage
-			}
-			if (connectionsStatus === 'idle') {
-				connectionsStatus = 'loading'
-				handle.queueTask(loadConnections)
-			}
+		if (typeof document !== 'undefined' && !consumedCallbackMessage) {
+			consumedCallbackMessage = true
+			connectionsMessage =
+				readConnectionCallbackMessage(currentHref) ?? connectionsMessage
 		}
 		const isSaving = saveStatus === 'saving'
 		const isSendingEmailChange = emailChangeStatus === 'sending'
@@ -709,110 +678,104 @@ export function AccountRoute(handle: Handle) {
 									{connectionsMessage.text}
 								</p>
 							) : null}
-							{connectionsStatus === 'loading' ? (
-								<p mix={css({ color: colors.textMuted, margin: 0 })}>
-									Loading connected accounts…
-								</p>
-							) : null}
-							{connectionsStatus === 'ready' ? (
-								<div mix={css({ display: 'grid', gap: spacing.md })}>
-									{connections.length > 0 ? (
-										<ul
-											mix={css({
-												listStyle: 'none',
-												padding: 0,
-												margin: 0,
-												display: 'grid',
-												gap: spacing.md,
-											})}
-										>
-											{connections.map((connection) => (
-												<li
-													key={connection.provider}
-													mix={css({
-														display: 'flex',
-														justifyContent: 'space-between',
-														alignItems: 'center',
-														gap: spacing.md,
-														flexWrap: 'wrap',
-													})}
-												>
-													<span mix={css({ display: 'grid', gap: spacing.xs })}>
-														<span
-															mix={css({
-																display: 'inline-flex',
-																alignItems: 'center',
-																gap: spacing.sm,
-																fontWeight: typography.fontWeight.medium,
-																color: colors.text,
-															})}
-														>
-															<ProviderIcon providerId={connection.provider} />
-															{connection.label}
-														</span>
-														<span
-															mix={css({
-																color: colors.textMuted,
-																fontSize: typography.fontSize.sm,
-															})}
-														>
-															{connection.displayName
-																? `Connected as ${connection.displayName}`
-																: 'Connected'}
-														</span>
-													</span>
-													<button
-														type="button"
-														disabled={connectionsBusy || !canDisconnect}
-														title={
-															canDisconnect
-																? undefined
-																: 'This connection is your only way to sign in. Set a password or register a passkey first.'
-														}
-														mix={[
-															css(dangerButtonCss),
-															on('click', () =>
-																handleDisconnectProvider(connection.provider),
-															),
-														]}
+							<div mix={css({ display: 'grid', gap: spacing.md })}>
+								{connections.length > 0 ? (
+									<ul
+										mix={css({
+											listStyle: 'none',
+											padding: 0,
+											margin: 0,
+											display: 'grid',
+											gap: spacing.md,
+										})}
+									>
+										{connections.map((connection) => (
+											<li
+												key={connection.provider}
+												mix={css({
+													display: 'flex',
+													justifyContent: 'space-between',
+													alignItems: 'center',
+													gap: spacing.md,
+													flexWrap: 'wrap',
+												})}
+											>
+												<span mix={css({ display: 'grid', gap: spacing.xs })}>
+													<span
+														mix={css({
+															display: 'inline-flex',
+															alignItems: 'center',
+															gap: spacing.sm,
+															fontWeight: typography.fontWeight.medium,
+															color: colors.text,
+														})}
 													>
-														Disconnect
-													</button>
-												</li>
-											))}
-										</ul>
-									) : (
-										<p mix={css({ color: colors.textMuted, margin: 0 })}>
-											No accounts connected yet.
-										</p>
-									)}
-									{availableProviders.length > 0 ? (
-										<div
-											mix={css({
-												display: 'flex',
-												gap: spacing.md,
-												flexWrap: 'wrap',
-											})}
-										>
-											{availableProviders.map((provider) => (
+														<ProviderIcon providerId={connection.provider} />
+														{connection.label}
+													</span>
+													<span
+														mix={css({
+															color: colors.textMuted,
+															fontSize: typography.fontSize.sm,
+														})}
+													>
+														{connection.displayName
+															? `Connected as ${connection.displayName}`
+															: 'Connected'}
+													</span>
+												</span>
 												<button
 													type="button"
-													disabled={connectionsBusy}
+													disabled={connectionsBusy || !canDisconnect}
+													title={
+														canDisconnect
+															? undefined
+															: 'This connection is your only way to sign in. Set a password or register a passkey first.'
+													}
 													mix={[
-														css(providerConnectButtonCss),
+														css(dangerButtonCss),
 														on('click', () =>
-															handleConnectProvider(provider.id),
+															handleDisconnectProvider(connection.provider),
 														),
 													]}
 												>
-													<ProviderIcon providerId={provider.id} />
-													Connect {provider.label}
+													Disconnect
 												</button>
-											))}
-										</div>
-									) : null}
-								</div>
-							) : null}
+											</li>
+										))}
+									</ul>
+								) : (
+									<p mix={css({ color: colors.textMuted, margin: 0 })}>
+										No accounts connected yet.
+									</p>
+								)}
+								{availableProviders.length > 0 ? (
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.md,
+											flexWrap: 'wrap',
+										})}
+									>
+										{availableProviders.map((provider) => (
+											<button
+												key={provider.id}
+												type="button"
+												disabled={connectionsBusy}
+												mix={[
+													css(providerConnectButtonCss),
+													on('click', () =>
+														handleConnectProvider(provider.id),
+													),
+												]}
+											>
+												<ProviderIcon providerId={provider.id} />
+												Connect {provider.label}
+											</button>
+										))}
+									</div>
+								) : null}
+							</div>
 						</AccountManagementPanel>
 						<AccountManagementPanel
 							title="Your data"

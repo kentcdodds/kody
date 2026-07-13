@@ -1,84 +1,16 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
+import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import {
-	getEnabledOauthProviders,
-	isOauthProviderId,
-	oauthProviderDefinitions,
-} from '#app/oauth-providers.ts'
-import { listPasskeysForUser } from '#app/passkeys.ts'
+import { isOauthProviderId } from '#app/oauth-providers.ts'
 import { type routes } from '#app/routes.ts'
 
 const disconnectSchema = object({
 	intent: string(),
 	provider: string(),
 })
-
-type ConnectionRow = {
-	id: number
-	provider_name: string
-	provider_display_name: string | null
-	created_at: string
-}
-
-async function listConnections(db: D1Database, userId: number) {
-	const result = await db
-		.prepare(
-			`SELECT id, provider_name, provider_display_name, created_at
-			 FROM oauth_connections
-			 WHERE user_id = ?
-			 ORDER BY created_at, id`,
-		)
-		.bind(userId)
-		.all<ConnectionRow>()
-	return result.results ?? []
-}
-
-async function hasUsablePassword(db: D1Database, userId: number) {
-	const row = await db
-		.prepare(`SELECT password_hash FROM users WHERE id = ?`)
-		.bind(userId)
-		.first<{ password_hash: string }>()
-	// Sentinel hashes (admin-created / OAuth-created accounts) never verify,
-	// so only a real PBKDF2 hash counts as a usable password.
-	return row?.password_hash.startsWith('pbkdf2_sha256$') === true
-}
-
-async function loadConnectionsPayload(input: { env: Env; userId: number }) {
-	const { env, userId } = input
-	const [connections, usablePassword, passkeys] = await Promise.all([
-		listConnections(env.APP_DB, userId),
-		hasUsablePassword(env.APP_DB, userId),
-		listPasskeysForUser(env.APP_DB, userId),
-	])
-	// Disconnecting the last connection is only safe when another first
-	// factor (password or passkey) can still sign the account in.
-	const canDisconnect =
-		usablePassword || passkeys.length > 0 || connections.length > 1
-	const connectedProviders = new Set(
-		connections.map((connection) => connection.provider_name),
-	)
-	return {
-		ok: true,
-		connections: connections.map((connection) => ({
-			provider: connection.provider_name,
-			label: isOauthProviderId(connection.provider_name)
-				? oauthProviderDefinitions[connection.provider_name].label
-				: connection.provider_name,
-			displayName: connection.provider_display_name,
-			createdAt: connection.created_at,
-		})),
-		canDisconnect,
-		availableProviders: getEnabledOauthProviders(env)
-			.filter((provider) => !connectedProviders.has(provider))
-			.map((provider) => ({
-				id: provider,
-				label: oauthProviderDefinitions[provider].label,
-			})),
-	}
-}
 
 export function createAccountConnectionsApiHandler(env: Env) {
 	return {
@@ -91,7 +23,7 @@ export function createAccountConnectionsApiHandler(env: Env) {
 
 			if (request.method === 'GET') {
 				return jsonResponse(
-					await loadConnectionsPayload({ env, userId: user.userId }),
+					await loadAccountConnectionsData({ env, userId: user.userId }),
 				)
 			}
 
@@ -161,7 +93,7 @@ export function createAccountConnectionsApiHandler(env: Env) {
 				reason: `provider=${provider}`,
 			})
 			return jsonResponse(
-				await loadConnectionsPayload({ env, userId: user.userId }),
+				await loadAccountConnectionsData({ env, userId: user.userId }),
 			)
 		},
 	} satisfies Action<typeof routes.accountConnectionsApi>

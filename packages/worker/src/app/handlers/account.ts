@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -25,20 +26,22 @@ export function createAccountHandler(env: Env) {
 				return redirectToLoginWhenUnauthenticated(request, env)
 			}
 
-			const [accountProfile, onboarding] = await Promise.all([
-				loadAccountProfileData(user),
-				loadOnboardingData({
-					env,
-					requestUrl: request.url,
-					stableUserId: user.mcpUser.userId,
-					emailVerified: user.emailVerified,
-				}),
-			])
+			const [accountProfile, accountConnections, onboarding] =
+				await Promise.all([
+					loadAccountProfileData(user),
+					loadAccountConnectionsData({ env, userId: user.userId }),
+					loadOnboardingData({
+						env,
+						requestUrl: request.url,
+						stableUserId: user.mcpUser.userId,
+						emailVerified: user.emailVerified,
+					}),
+				])
 			return renderAppPage({
 				request,
 				env,
 				title: 'Account',
-				loaderData: { accountProfile, onboarding },
+				loaderData: { accountProfile, accountConnections, onboarding },
 			})
 		},
 	} satisfies Action<typeof routes.account>
