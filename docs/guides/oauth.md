@@ -25,7 +25,26 @@ Register this redirect URI in the provider console:
 
 `{origin}/connect/oauth`
 
-Use the same origin the user uses to open Kody.
+`{origin}` is the exact origin the user uses to open Kody in their browser —
+scheme, host, and port included. The `/connect/oauth` page displays the exact
+redirect URI for the current origin with a copy button; when in doubt, have the
+user open the page and copy it from there.
+
+Never tell the user to register a `localhost` redirect URI unless the user's
+Kody deployment actually runs on localhost. On a hosted deployment such as
+`https://example.com`, the redirect URI is `https://example.com/connect/oauth` —
+substituting `http://localhost:8787/connect/oauth` or any other invented host
+breaks the flow with a provider-side redirect mismatch error.
+
+## Provider setup checklist
+
+The provider-side setup is the same for every provider:
+
+1. Create an OAuth app in the provider's developer console.
+2. Register the exact redirect URI above.
+3. Enable any APIs and scopes the integration needs.
+4. Paste the client ID (and client secret for confidential flows) into the
+   `/connect/oauth` setup form in Kody.
 
 ## Required query parameters
 
@@ -127,8 +146,10 @@ routes) are for clients authenticating to Kody itself.
 ## Agent checklist
 
 1. Confirm OAuth is the right auth shape.
-2. Build the `/connect/oauth` URL with the required params.
-3. Tell the user the exact redirect URI to register.
+2. Build the `/connect/oauth` URL with the required params on the user's live
+   Kody origin (never a guessed or localhost origin).
+3. Tell the user the exact redirect URI to register: their Kody origin plus
+   `/connect/oauth`. The page shows it with a copy button.
 4. Have the user open the URL while signed in and wait for success.
 5. Run the authenticated smoke test from `integration_bootstrap`.
 6. Continue with the package or package app only after the smoke test passes.

@@ -7,6 +7,7 @@ import {
 	safeParseHost,
 } from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import {
@@ -761,20 +762,51 @@ export function ConnectOauthRoute(handle: Handle) {
 		return
 	}
 
+	const renderRedirectUriCard = () => {
+		const redirectUri = getRedirectUri()
+		if (!redirectUri) return null
+		return (
+			<section mix={css(redirectUriCardCss)}>
+				<h2 mix={css(cardTitleCss)}>Redirect URI</h2>
+				<p mix={css({ margin: 0, color: colors.text })}>
+					Register this exact URL as the redirect (callback) URI in your
+					provider&apos;s OAuth app settings. Copy it as-is — do not substitute
+					localhost or any other host.
+				</p>
+				<pre mix={css(redirectUriValueCss)}>{redirectUri}</pre>
+				<div>
+					<CopyTextButton
+						value={redirectUri}
+						idleLabel="Copy redirect URI"
+						variant="primary"
+					/>
+				</div>
+			</section>
+		)
+	}
+
 	const renderProviderInstructions = () => {
 		if (!config) return null
 		const instructions = config.providerSetupInstructions
-		if (instructions && instructions.trim()) {
-			return (
-				<p mix={css({ ...insetCardCss, margin: 0, whiteSpace: 'pre-wrap' })}>
-					{instructions}
-				</p>
-			)
-		}
 		return (
-			<p mix={css(descriptionCss)}>
-				Create an OAuth app with your provider and enter the Client ID below.
-			</p>
+			<>
+				<ol mix={css(listCss)}>
+					<li>
+						Create an OAuth app in your provider&apos;s developer console.
+					</li>
+					<li>Register the exact redirect URI shown above.</li>
+					<li>Enable any APIs and scopes the integration needs.</li>
+					<li>
+						Paste the client ID
+						{config.flow === 'confidential' ? ' and client secret' : ''} below.
+					</li>
+				</ol>
+				{instructions && instructions.trim() ? (
+					<p mix={css({ ...insetCardCss, margin: 0, whiteSpace: 'pre-wrap' })}>
+						{instructions}
+					</p>
+				) : null}
+			</>
 		)
 	}
 
@@ -950,6 +982,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<h1 mix={css(pageTitleCss)}>Connect OAuth</h1>
 						<p mix={css(pageDescriptionCss)}>{statusMessage}</p>
 					</header>
+					{renderRedirectUriCard()}
 				</section>
 			)
 		}
@@ -977,6 +1010,7 @@ export function ConnectOauthRoute(handle: Handle) {
 					</div>
 					<p mix={css(getStatusMessageCss(statusTone))}>{statusMessage}</p>
 				</section>
+				{renderRedirectUriCard()}
 				<section mix={css(cardCss)}>
 					<h2 mix={css(cardTitleCss)}>Provider details</h2>
 					<div mix={css(detailGridCss)}>
@@ -1735,6 +1769,21 @@ const pageCss = {
 
 const headerCss = pageHeaderCss
 const eyebrowCss = pageEyebrowCss
+
+const redirectUriCardCss = {
+	...cardCss,
+	border: `1px solid ${colors.primary}`,
+}
+
+const redirectUriValueCss = {
+	...insetCardCss,
+	margin: 0,
+	whiteSpace: 'pre-wrap' as const,
+	wordBreak: 'break-all' as const,
+	fontFamily: 'monospace',
+	fontSize: typography.fontSize.base,
+	fontWeight: typography.fontWeight.medium,
+}
 const primaryButtonCss = getPrimaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',

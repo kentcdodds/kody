@@ -132,8 +132,10 @@ Even in that case:
 
 When setup is incomplete, tell the user what must happen next in concrete terms:
 
-- what connect URL to open
-- what provider settings or redirect URI to register
+- what connect URL to open (on the user's live Kody origin, never an assumed
+  localhost)
+- what provider settings or redirect URI to register (the exact
+  `{origin}/connect/oauth` for the origin the user opens Kody on)
 - that you are waiting for confirmation before building the dependent package or
   package app
 - that you will run a minimal authenticated verification step after setup
