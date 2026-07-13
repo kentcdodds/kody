@@ -73,7 +73,7 @@ Account publishing still works so the owner can run the package privately.
 
 ## Community icon
 
-Public community packages may include one root `community-icon.svg`,
+Public community packages should include one root `community-icon.svg`,
 `community-icon.png`, `community-icon.webp`, `community-icon.jpg`, or
 `community-icon.jpeg`. Prefer a square visual with a simple silhouette that
 remains legible at 56 pixels. Keep it under 2 MiB and 16 megapixels. Kody

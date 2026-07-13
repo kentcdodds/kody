@@ -37,7 +37,7 @@ Requirements:
 
 ### Community icon
 
-Add one optional icon at the package root:
+Include an icon at the package root:
 
 - `community-icon.svg`
 - `community-icon.png`
