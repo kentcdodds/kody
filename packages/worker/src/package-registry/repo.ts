@@ -275,7 +275,7 @@ export async function searchSavedPackagesByUserId(
 		db
 			.prepare(
 				`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-					source_id, has_app, created_at, updated_at
+					source_id, has_app, hidden, created_at, updated_at
 				FROM saved_packages
 				${whereClause}
 				ORDER BY ${orderBy}
