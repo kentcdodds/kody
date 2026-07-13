@@ -76,9 +76,11 @@ export function VerifyEmailRoute(handle: Handle) {
 							<a href={ctaHref} mix={css(ctaButtonCss)}>
 								{ctaLabel}
 							</a>
-							<a href="/account" mix={css(mutedLinkCss)}>
-								Account
-							</a>
+							{ctaHref === '/account' ? null : (
+								<a href="/account" mix={css(mutedLinkCss)}>
+									Account
+								</a>
+							)}
 						</div>
 					) : (
 						<a href="/account" mix={css(mutedLinkCss)}>
