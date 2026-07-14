@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
 export const packageFileSchema = z.object({
 	path: z
@@ -26,6 +27,21 @@ export const packageSummarySchema = z.object({
 	created_at: z.string(),
 	updated_at: z.string(),
 })
+
+export function toPackageSummary(savedPackage: SavedPackageRecord) {
+	return {
+		package_id: savedPackage.id,
+		kody_id: savedPackage.kodyId,
+		name: savedPackage.name,
+		description: savedPackage.description,
+		tags: savedPackage.tags,
+		has_app: savedPackage.hasApp,
+		hidden: savedPackage.hidden,
+		source_id: savedPackage.sourceId,
+		created_at: savedPackage.createdAt,
+		updated_at: savedPackage.updatedAt,
+	}
+}
 
 export const packageExportSurfaceSchema = z.object({
 	subpath: z

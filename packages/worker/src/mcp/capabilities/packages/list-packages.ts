@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { packageSummarySchema } from './shared.ts'
+import { packageSummarySchema, toPackageSummary } from './shared.ts'
 
 export const listPackagesCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
@@ -26,18 +26,7 @@ export const listPackagesCapability = defineDomainCapability(
 				userId: user.userId,
 			})
 			return {
-				packages: packages.map((savedPackage) => ({
-					package_id: savedPackage.id,
-					kody_id: savedPackage.kodyId,
-					name: savedPackage.name,
-					description: savedPackage.description,
-					tags: savedPackage.tags,
-					has_app: savedPackage.hasApp,
-					hidden: savedPackage.hidden,
-					source_id: savedPackage.sourceId,
-					created_at: savedPackage.createdAt,
-					updated_at: savedPackage.updatedAt,
-				})),
+				packages: packages.map(toPackageSummary),
 			}
 		},
 	},
