@@ -1,6 +1,11 @@
 {
 	"schemaVersion": 2,
 	"name": "package-discovery-routing",
+	"actionCardinality": {
+		"search": 1,
+		"terminal": 1,
+		"otherAllowedMaximum": 1
+	},
 	"cases": [
 		{
 			"id": "reuse-recurring-email-drafter",

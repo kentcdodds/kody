@@ -29,14 +29,20 @@ required confirmation.
 
 Keep the module focused and return structured evidence. Do not treat the
 ephemeral module as the durable source for behavior that must be maintained,
-reused, or scheduled.
+reused, or evolved.
 
 ### Create a repo-backed package
 
-Create or extend a saved package when behavior is reusable, scheduled, or
-expected to evolve. The repo rooted at `package.json` is the durable source of
-truth. Package exports form the callable surface, while jobs, subscriptions,
-services, retrievers, and apps remain package-owned behavior.
+Create or extend a saved package when behavior is reusable, expected to evolve,
+or needs a named package-owned schedule that evolves with its implementation.
+The repo rooted at `package.json` is the durable source of truth. Package
+exports form the callable surface, while jobs, subscriptions, services,
+retrievers, and apps remain package-owned behavior.
+
+Scheduling alone does not require a package. Use `job_schedule` directly for a
+genuinely ad hoc or one-off job, or for a simple self-contained schedule that is
+not tied to reusable package behavior. `job_schedule_once` is the one-off
+convenience form.
 
 Use `guide: "package_authoring"` for package shape, README `## Intent`, and
 visibility guidance.
@@ -46,15 +52,17 @@ visibility guidance.
 Move the behavior into a package when one or more of these become true:
 
 - the user will run it again or other package code should reuse it
-- it needs a schedule, subscription, service, app, workflow entrypoint, or
-  package-owned storage
+- it needs a named package-owned schedule that should evolve with the
+  implementation, or another durable surface such as a subscription, service,
+  app, workflow entrypoint, or package-owned storage
 - the logic needs tests, multiple files, dependencies, review, or version
   history
 - inputs, output, error handling, or integration behavior will evolve
 - a one-off script has already been copied, repaired, or rerun
 
 Do not create a package merely to wrap one clear call to an existing capability
-or package export.
+or package export, or merely because a simple self-contained job needs a
+schedule.
 
 ## Choose an authoring lane
 

@@ -38,6 +38,13 @@ export const evalSetSchema = z
 	.object({
 		schemaVersion: z.literal(2),
 		name: z.literal('package-discovery-routing'),
+		actionCardinality: z
+			.object({
+				search: z.literal(1),
+				terminal: z.literal(1),
+				otherAllowedMaximum: z.literal(1),
+			})
+			.strict(),
 		cases: z
 			.array(
 				z
@@ -189,16 +196,33 @@ export function loadPackageDiscoveryEval(): EvalSet {
 function scoreCompletedResult(
 	evalCase: EvalSet['cases'][number],
 	result: z.infer<typeof completedResultSchema>,
+	actionCardinality: EvalSet['actionCardinality'],
 ): Array<string> {
 	const errors: Array<string> = []
 	const actions = result.events.map(({ action }) => action)
 	const allowedActions = new Set(evalCase.expected.allowedActions)
+	const actionCounts = new Map<z.infer<typeof actionSchema>, number>()
+	for (const action of actions) {
+		actionCounts.set(action, (actionCounts.get(action) ?? 0) + 1)
+	}
 
 	if (actions[0] !== 'search') {
 		errors.push('first action must be search')
 	}
+	const searchCount = actionCounts.get('search') ?? 0
+	if (searchCount !== actionCardinality.search) {
+		errors.push(
+			`expected exactly ${actionCardinality.search} search action, received ${searchCount}`,
+		)
+	}
 	if (actions.at(-1) !== evalCase.expected.terminalAction) {
 		errors.push(`terminal action must be ${evalCase.expected.terminalAction}`)
+	}
+	const terminalCount = actionCounts.get(evalCase.expected.terminalAction) ?? 0
+	if (terminalCount !== actionCardinality.terminal) {
+		errors.push(
+			`expected exactly ${actionCardinality.terminal} ${evalCase.expected.terminalAction} action, received ${terminalCount}`,
+		)
 	}
 	for (const requiredAction of evalCase.expected.requiredActions) {
 		if (!actions.includes(requiredAction)) {
@@ -208,6 +232,17 @@ function scoreCompletedResult(
 	for (const action of actions) {
 		if (!allowedActions.has(action)) {
 			errors.push(`extraneous action ${action}`)
+		}
+	}
+	for (const action of allowedActions) {
+		if (
+			action !== 'search' &&
+			action !== evalCase.expected.terminalAction &&
+			(actionCounts.get(action) ?? 0) > actionCardinality.otherAllowedMaximum
+		) {
+			errors.push(
+				`allowed action ${action} may appear at most ${actionCardinality.otherAllowedMaximum} time`,
+			)
 		}
 	}
 	if (result.events.some(({ status }) => status === 'failed')) {
@@ -341,7 +376,11 @@ export function scorePackageDiscoveryTranscript(
 			}
 		}
 
-		const errors = scoreCompletedResult(evalCase, result)
+		const errors = scoreCompletedResult(
+			evalCase,
+			result,
+			evalSet.actionCardinality,
+		)
 		return {
 			caseId: evalCase.id,
 			route: evalCase.expected.route,

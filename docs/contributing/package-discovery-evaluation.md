@@ -92,6 +92,11 @@ action with the same `callId`, `input`, and `output`. This lets the scorer
 reject an otherwise hidden extra schedule, execution, or authoring action.
 Include failed tool attempts; the scorer fails traces containing them.
 
+Every case permits exactly one `search` action and exactly one terminal action.
+Any other allowed action, such as `inspect-authoring-guidance`, may occur at
+most once. Repeated successful invocations, executions, schedules, or authoring
+mutations fail; success status does not make a duplicate safe.
+
 A transcript has this machine-readable shape:
 
 ```json
@@ -151,9 +156,10 @@ node tools/evals/package-discovery-routing.ts score path/to/transcript.json
 
 It validates the transcript, requires search first, verifies reuse targets match
 discovery, checks `execute` source for the recorded lifecycle operations,
-rejects failed, wrong, hidden, or extraneous actions, and reports
-passed/failed/skipped totals per route. A controlled-inventory case cannot be
-skipped. The process exits nonzero for invalid schemas or failed cases.
+enforces the evaluation's action cardinality, rejects failed, duplicate, wrong,
+hidden, or extraneous actions, and reports passed/failed/skipped totals per
+route. A controlled-inventory case cannot be skipped. The process exits nonzero
+for invalid schemas or failed cases.
 
 CI runs only the offline schema and scorer fixtures:
 

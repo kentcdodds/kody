@@ -103,6 +103,11 @@ test('routing cases are natural, balanced, and have internally consistent hidden
 		'ad-hoc-job': 2,
 		'package-authoring': 2,
 	})
+	expect(evalSet.actionCardinality).toEqual({
+		search: 1,
+		terminal: 1,
+		otherAllowedMaximum: 1,
+	})
 	expect(
 		evalSet.cases
 			.filter(({ expected }) => expected.route === 'existing')
@@ -195,4 +200,36 @@ test('scorer rejects wrong targets, extraneous actions, failed calls, and invali
 		]),
 	)
 	expect(actionSchema.safeParse('explain-only').success).toBe(false)
+})
+
+test('scorer rejects duplicate successful scheduling mutations', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const transcript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const scheduleResult = transcript.results[4]
+	if (!scheduleResult || scheduleResult.outcome !== 'completed') {
+		throw new Error('Expected a completed scheduling fixture.')
+	}
+	const scheduleEvent = scheduleResult.events[1]
+	if (!scheduleEvent || scheduleEvent.action !== 'schedule-ad-hoc-job') {
+		throw new Error('Expected a scheduling event fixture.')
+	}
+	scheduleResult.events.push({
+		...scheduleEvent,
+		callId: `${scheduleEvent.callId}:duplicate`,
+	})
+
+	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
+	expect(report.ok).toBe(false)
+	expect(report.totals.failed).toBe(1)
+	expect(report.cases[4]?.errors).toContain(
+		'expected exactly 1 schedule-ad-hoc-job action, received 2',
+	)
+	expect(report.byRoute['ad-hoc-job']).toEqual({
+		passed: 1,
+		failed: 1,
+		skipped: 0,
+		total: 2,
+	})
 })
