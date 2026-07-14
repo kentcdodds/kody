@@ -1,71 +1,171 @@
-# Package discovery routing evaluation
+# Package discovery lifecycle evaluation
 
-The repository-owned evaluation set at
 [`tools/evals/package-discovery-routing.json`](../../tools/evals/package-discovery-routing.json)
-checks whether an agent chooses the right lifecycle route after capability and
-package discovery:
+is a host/model evaluation for lifecycle behavior over a real Kody MCP
+connection. Evaluated sessions receive only a case's natural-language `prompt`.
+The inventory preconditions and `expected` actions remain with the evaluator.
 
-- reuse an existing capability or package
-- prototype once with `execute`
-- author a durable package
+The set has two cases for each scored route: reuse a discovered result, perform
+one ephemeral execution, create a direct ad hoc job, and author durable reusable
+source. It includes both one-time and simple recurring ad hoc schedules, plus a
+scheduled workflow whose reusable interface and cross-host use justify durable
+authoring.
 
-The cases cover recurring email drafting, a reusable writing style, a scheduled
-workflow, cross-host reuse, and promotion of a successful script. Discovery
-evidence is part of each case so every host and model receives the same
-inventory state.
+## Account setup
 
-## Run the evaluation
+Use the same disposable Kody account when comparing Warp, Cursor, Claude, and
+ChatGPT. Do not use a production account: schedule and authoring cases mutate
+state.
 
-Connect Kody to the host as described in
-[Connect your agent](../use/connect-your-agent.md), then use the same procedure
-in Warp, Cursor, Claude, and ChatGPT:
+In a separate operator session, create the only required controlled fixture by
+calling `value_set` through `execute` with:
 
-1. Record the host, model name/version, date, and evaluation `schemaVersion`.
-2. Start a fresh conversation. Do not expose the case's `expected` object to the
-   model.
-3. Paste the top-level `instruction`, `routes`, and `reasonCodes`.
-4. Paste `Discovery evidence:`, followed by the case's `discovery.summary`.
-5. Paste `User prompt:`, followed by the case's `prompt`.
-6. Save the returned JSON object and repeat in a fresh conversation for every
-   case.
+```json
+{
+	"name": "project-updates",
+	"value": "Checkout retry shipped; onboarding copy is in review; billing export is blocked on sample data.",
+	"description": "Deterministic lifecycle evaluation fixture.",
+	"scope": "user"
+}
+```
 
-Use a fresh conversation for each case so earlier cases do not teach the model
-the route labels. Use identical case content and model settings when comparing
-hosts. The instruction prevents tool calls and mutations; this evaluation
-measures routing, not live package inventory.
+Before each controlled-inventory case, use a separate operator session to:
 
-Agents can run the same protocol by reading the JSON, sending only
-`instruction`, `routes`, `reasonCodes`, `discovery.summary`, and `prompt` to an
-isolated host session, and recording the structured response. The set does not
-require a repository checkout on the machine running the host.
+1. search for the task described by the case;
+2. confirm there is no exact reusable result that already implements the whole
+   task; and
+3. remove jobs or saved source created by a prior run, or use a clean account.
 
-## Score results
+Apart from `project-updates`, the one-off listing cases require no seeded data.
+The `author-validated-cleanup-automation` prompt contains its validated source.
+Run authoring cases last because they intentionally add searchable inventory.
 
-A case passes when:
+The two `inventory-dependent` reuse cases are a separate cohort. Preflight them
+against each host's Kody account using the case's `eligibility` rule. Run a case
+only when exactly one eligible saved result exists; otherwise record
+`skipped-no-eligible-match`. Do not count a skip as a pass or compare its reuse
+rate across hosts. For deterministic reuse comparisons, provision all hosts with
+the same disposable Kody account and the same eligible saved result before
+running the case.
 
-1. the response is one JSON object;
-2. `route` exactly equals `expected.route`;
-3. `reasonCodes` contains every value in `expected.requiredReasonCodes`; and
-4. every returned reason code occurs in the top-level `reasonCodes` registry.
+## Run in each host
 
-Additional registered reason codes do not fail a case. Report both per-case
-results and the aggregate passed/total count for each host/model pair. This
-scores stable routing categories rather than matching explanatory prose.
+Connect Kody using [Connect your agent](../use/connect-your-agent.md). In Warp,
+Cursor, Claude, and ChatGPT:
 
-The offline schema and coverage check runs with:
+1. Start a fresh session with Kody enabled and record the host and exact model.
+2. Send only the case's `prompt`. Do not paste the case id, inventory metadata,
+   expected route, action names, or this page into the evaluated session.
+3. Allow the agent to use Kody and complete safe mutations requested by the
+   prompt.
+4. Export or copy the Kody `search` and `execute` call inputs and outputs before
+   starting the next case.
+5. Clean up created jobs or saved source from an operator session after its ids
+   have been recorded. Delete the `project-updates` fixture after the suite.
+
+This protocol evaluates MCP instructions and tool behavior. An answer with no
+Kody trace fails because every non-skipped case requires discovery followed by
+the appropriate action.
+
+## Normalize the trace
+
+Create one transcript event for every lifecycle action visible in a Kody tool
+call. Preserve the actual tool input and output in `input` and `output`; redact
+secrets, but do not replace tool names, entity ids, capability names, or source
+metadata.
+
+- A Kody `search` call is `search`. Record `exact-reusable` only when the result
+  implements the whole task; supporting primitives are `no-exact-reusable`.
+- Executing the exact discovered result is `invoke-existing`, with the same
+  entity id recorded as `targetEntityId`.
+- Ephemeral task code that does not persist source or a schedule is
+  `execute-one-off`.
+- An `execute` call to `job_schedule` or `job_schedule_once` is
+  `schedule-ad-hoc-job`.
+- Reading `coding_guide_get` or existing source before authoring is
+  `inspect-authoring-guidance`.
+- Creating or publishing reusable saved source is `author-package`.
+- Any other Kody `execute` call is `other-execute`, which no case allows.
+
+If one `execute` call performs multiple lifecycle actions, emit one event per
+action with the same `callId`, `input`, and `output`. This lets the scorer
+reject an otherwise hidden extra schedule, execution, or authoring action.
+Include failed tool attempts; the scorer fails traces containing them.
+
+A transcript has this machine-readable shape:
+
+```json
+{
+	"schemaVersion": 1,
+	"evalName": "package-discovery-routing",
+	"host": "cursor",
+	"model": "model-name-and-version",
+	"runAt": "2026-07-14T21:00:00.000Z",
+	"results": [
+		{
+			"caseId": "one-off-saved-automation-count",
+			"outcome": "completed",
+			"events": [
+				{
+					"callId": "host-call-1",
+					"action": "search",
+					"toolName": "search",
+					"status": "succeeded",
+					"input": {},
+					"output": {},
+					"match": { "kind": "no-exact-reusable" }
+				},
+				{
+					"callId": "host-call-2",
+					"action": "execute-one-off",
+					"toolName": "execute",
+					"status": "succeeded",
+					"input": {
+						"code": "Actual captured execute module"
+					},
+					"output": {}
+				}
+			]
+		}
+	]
+}
+```
+
+Inventory-dependent cases without an eligible result use:
+
+```json
+{
+	"caseId": "reuse-recurring-email-drafter",
+	"outcome": "skipped-no-eligible-match",
+	"note": "Preflight found no eligible saved result."
+}
+```
+
+## Score
+
+Run the executable scorer:
+
+```sh
+node tools/evals/package-discovery-routing.ts score path/to/transcript.json
+```
+
+It validates the transcript, requires search first, verifies reuse targets match
+discovery, checks `execute` source for the recorded lifecycle operations,
+rejects failed, wrong, hidden, or extraneous actions, and reports
+passed/failed/skipped totals per route. A controlled-inventory case cannot be
+skipped. The process exits nonzero for invalid schemas or failed cases.
+
+CI runs only the offline schema and scorer fixtures:
 
 ```sh
 npx vitest run --project node-unit \
   tools/evals/package-discovery-routing.node.test.ts
 ```
 
-It is also included in `npm run test` and therefore in `npm run validate`.
+CI does **not** connect to Warp, Cursor, Claude, ChatGPT, a model, or a live
+Kody account, and therefore does not run or claim to pass the host/model
+evaluation.
 
-## Scope and limitations
-
-This set isolates the post-discovery lifecycle decision. It does not measure
-search ranking, MCP transport behavior, live inventory differences, quality of
-generated package code, or whether a host honors a later mutation request. Those
-concerns require separate integration evaluations. Add a case when it introduces
-a distinct routing boundary; avoid adding paraphrases that exercise the same
-boundary.
+The scorer consumes this normalized format, not arbitrary host export formats.
+The evaluator remains responsible for faithfully copying every raw Kody call and
+splitting multi-action `execute` calls into events.

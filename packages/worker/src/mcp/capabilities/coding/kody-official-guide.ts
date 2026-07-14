@@ -27,7 +27,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-lifecycle.md',
 		title: 'Durable package lifecycle guide',
 		summary:
-			'Choose between invoking existing behavior, temporary execute exploration, and a durable repo-backed package; test a representative package export before enabling package-owned schedules.',
+			'Choose between invoking existing behavior, temporary execute exploration, and a durable repo-backed package; test the no-input scheduled wrapper before enabling package-owned schedules.',
 	},
 	integration_bootstrap: {
 		file: 'integration-bootstrap.md',
@@ -149,7 +149,7 @@ const guideFieldSchema = z
 		[
 			'Which guide to load.',
 			'`package_authoring`: required package-authoring guidance for README.md Intent sections when creating or materially changing packages.',
-			'`package_lifecycle`: choose existing invocation, temporary execute, or a durable repo-backed package; test package exports before enabling package-owned schedules.',
+			'`package_lifecycle`: choose existing invocation, temporary execute, or a durable repo-backed package; test no-input job wrappers before enabling package-owned schedules.',
 			'`integration_bootstrap`: required sequence before building packages/package apps that depend on a third-party integration.',
 			'`secret_backed_integration`: default non-OAuth recipe after bootstrap when the integration is driven by saved secrets.',
 			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
@@ -187,6 +187,8 @@ const allKeywords = [
 		'temporary execute',
 		'one-off exploration',
 		'package export testing',
+		'job wrapper testing',
+		'no-input entrypoint',
 		'representative input',
 		'dry run',
 		'dryRun',

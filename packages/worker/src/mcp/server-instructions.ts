@@ -57,14 +57,15 @@ https://github.com/kentcdodds/kody/tree/main/docs/use
 Package lifecycle (use this as the primary mental model):
 1. Discover and invoke before building: use \`search\` to find an existing built-in capability, connected capability, or saved package. Inspect the entity detail for its exact call shape, then invoke it rather than reimplementing it.
 2. Explore temporarily: use \`execute\` for quick one-off work, capability composition, authenticated smoke tests, and experiments. Treat execute modules as ephemeral, not as the durable home for behavior.
-3. Create or evolve a repo-backed package: use a package when behavior should be reused, scheduled, maintained, tested, or exposed as an app or service. Search once more before creating one so you extend an existing package when that is the better fit.
+3. Create or evolve a repo-backed package: use a package when behavior should be reused, maintained, tested, exposed as an app or service, or given a package-owned schedule as part of named or evolving behavior. Search once more before creating one so you extend an existing package when that is the better fit.
 
 Signals to escalate from \`execute\` to a package:
-- The user wants to run the behavior again, put it on a schedule, or keep improving it.
+- The user wants reusable named behavior, expects to keep improving it, or wants its schedule to evolve with the implementation.
 - The code is becoming a named workflow or needs multiple files, dependencies, tests, binary assets, version history, or review.
 - The behavior needs a durable surface such as package exports, package-owned jobs, an app, or a service.
 - You are repeating or incrementally editing substantially the same execute module. Stop accumulating ephemeral code and move it into a package.
 - Keep genuinely one-off exploration in \`execute\`; do not create a package merely because a task required code.
+- Scheduling alone does not require a package. Use a package-owned job when the schedule belongs to reusable, evolving, or named package behavior. Use \`job_schedule\` directly for a genuinely ad hoc or one-off job, or a simple self-contained schedule that is not tied to a reusable package.
 
 Choose the package authoring lane before building:
 - Coding agents with local filesystem/git access should use the git lane: \`package_get_git_remote\` (pass \`create: true\` with a new \`kody_id\` to register a stub package and mint its remote in one call), clone into a temporary directory, edit and test normally (binary assets supported), push, then publish with \`package_publish_external_push\`.
@@ -79,13 +80,13 @@ Conventions
 - \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
 - Integration-backed work: use \`search\` and official guides before local repo exploration. For packages, package apps, or workflows that depend on third-party auth, first call \`coding_guide_get\` with \`guide: "integration_bootstrap"\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, run a cheap authenticated \`execute\` smoke test, then build. If setup is missing, load \`oauth\` for \`/connect/oauth\`, \`connect_secret\` for secret collection, and \`secret_backed_integration\` for the default non-OAuth recipe.
 - \`job_list\` / \`job_get\`: inspect the signed-in user's scheduled jobs, recent run outcomes, and current per-user alarm state when debugging scheduling issues. Pass \`includeCode: true\` to \`job_get\` when you need the stored repo-backed job source entrypoint and code.
-- \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. Supports one-off, interval, and cron schedules.
+- \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. It is appropriate for genuinely ad hoc or one-off jobs and simple self-contained schedules not tied to a reusable package. Supports one-off, interval, and cron schedules.
 - \`job_schedule_once\`: compatibility wrapper for one-off repo-backed jobs when you only need a single run time.
 - \`job_update\`: update an existing scheduled job by id. Supports safe mutable fields such as name, code, params, schedule, timezone, enabled, and kill-switch state. Providing \`code\` publishes a new commit on the job's repo-backed source (the simplest way to change the job module for non-package jobs); the replacement must default export a function and read \`params\` from its first argument, not from \`kody:runtime\`.
 - \`job_delete\`: delete one of the signed-in user's scheduled jobs by id.
 - \`job_run_now\`: run an existing scheduled job immediately by id and return the updated job view plus execution result for debugging.
 - \`workflow_run_list\`: inspect recent Cloudflare Workflow runs created through \`kody:runtime\` \`workflows.create\`; use it after durable long-running work such as batch sweeps, migrations, and polling loops.
-- Package jobs are schedules owned by a package. For ad hoc work that is not tied to a package, use \`job_schedule\`. Package apps are optional UI surfaces declared by the package, and packages may also declare headless package services for long-lived background runtimes.
+- Package jobs are schedules owned by reusable, evolving, or named package behavior. For genuinely ad hoc or one-off jobs and simple self-contained schedules not tied to a reusable package, use \`job_schedule\`. Package apps are optional UI surfaces declared by the package, and packages may also declare headless package services for long-lived background runtimes.
 - Package apps can also use Kody-managed realtime websocket sessions through \`session_list\`, \`session_emit\`, and \`session_broadcast\`, and package jobs can emit to those sessions when running under the same package caller context.
 - Package services are inspected and controlled through \`service_list\`, \`service_get\`, \`service_start\`, and \`service_stop\`.
 - Memory writes are verify-first: always run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`. Kody retrieves related memories; the consuming agent decides whether to upsert, delete, both, or do nothing. \`meta_memory_upsert\` creates a new memory when \`memory_id\` is omitted and updates an existing memory when \`memory_id\` is provided.

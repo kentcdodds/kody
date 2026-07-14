@@ -1,108 +1,198 @@
-import { readFileSync } from 'node:fs'
-import { z } from 'zod'
 import { expect, test } from 'vitest'
+import {
+	actionSchema,
+	loadPackageDiscoveryEval,
+	routeSchema,
+	scorePackageDiscoveryTranscript,
+	transcriptSchema,
+} from './package-discovery-routing.ts'
 
-const routeSchema = z.enum([
-	'existing-capability-or-package',
-	'execute-prototype',
-	'package-authoring',
-])
-const reasonCodeSchema = z.enum([
-	'exact-match',
-	'no-match',
-	'one-off',
-	'unproven',
-	'recurring',
-	'scheduled',
-	'durable-reuse',
-	'cross-host',
-	'successful-prototype',
-])
-const themeSchema = z.enum([
-	'recurring-email-drafting',
-	'reusable-writing-style',
-	'scheduled-workflow',
-	'cross-host-reuse',
-	'promote-successful-script',
-])
+const createPassingTranscript = (): unknown => {
+	const evalSet = loadPackageDiscoveryEval()
+	return {
+		schemaVersion: 1 as const,
+		evalName: 'package-discovery-routing' as const,
+		host: 'cursor' as const,
+		model: 'test-model',
+		runAt: '2026-07-14T21:00:00.000Z',
+		results: evalSet.cases.map((evalCase) => {
+			const entityId = `fixture:${evalCase.id}`
+			const searchCall = {
+				callId: `search:${evalCase.id}`,
+				action: 'search' as const,
+				toolName: 'search' as const,
+				status: 'succeeded' as const,
+				input: { query: evalCase.prompt },
+				output: { result: 'captured search output' },
+				match:
+					evalCase.expected.route === 'existing'
+						? ({
+								kind: 'exact-reusable' as const,
+								entityId,
+							} as const)
+						: ({ kind: 'no-exact-reusable' as const } as const),
+			}
+			const terminalAction = evalCase.expected.terminalAction
+			const terminalCall =
+				terminalAction === 'invoke-existing'
+					? ({
+							callId: `execute:${evalCase.id}`,
+							action: terminalAction,
+							toolName: 'execute' as const,
+							status: 'succeeded' as const,
+							input: {
+								code: `import ${JSON.stringify(entityId)}`,
+							},
+							output: { result: 'captured invocation output' },
+							targetEntityId: entityId,
+						} as const)
+					: ({
+							callId: `execute:${evalCase.id}`,
+							action: terminalAction,
+							toolName: 'execute' as const,
+							status: 'succeeded' as const,
+							input: {
+								code:
+									terminalAction === 'schedule-ad-hoc-job'
+										? 'await kody.job_schedule_once({})'
+										: terminalAction === 'author-package'
+											? 'await kody.package_save({})'
+											: 'return await kody.value_list({})',
+							},
+							output: { result: 'captured execution output' },
+						} as const)
+			return {
+				caseId: evalCase.id,
+				outcome: 'completed' as const,
+				events: [searchCall, terminalCall],
+			}
+		}),
+	}
+}
 
-const evalSetSchema = z
-	.object({
-		schemaVersion: z.literal(1),
-		name: z.literal('package-discovery-routing'),
-		instruction: z.string().min(1),
-		routes: z.array(routeSchema).length(routeSchema.options.length),
-		reasonCodes: z
-			.array(reasonCodeSchema)
-			.length(reasonCodeSchema.options.length),
-		cases: z
-			.array(
-				z
-					.object({
-						id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-						theme: themeSchema,
-						discovery: z.discriminatedUnion('status', [
-							z
-								.object({
-									status: z.literal('exact-match'),
-									kind: z.enum(['capability', 'package']),
-									summary: z.string().min(1),
-								})
-								.strict(),
-							z
-								.object({
-									status: z.literal('no-match'),
-									kind: z.literal('none'),
-									summary: z.string().min(1),
-								})
-								.strict(),
-						]),
-						prompt: z.string().min(1),
-						expected: z
-							.object({
-								route: routeSchema,
-								requiredReasonCodes: z.array(reasonCodeSchema).min(1),
-							})
-							.strict(),
-					})
-					.strict(),
-			)
-			.min(1),
-	})
-	.strict()
-
-test('package discovery routing eval has a valid schema and complete routing coverage', () => {
-	const rawEvalSet: unknown = JSON.parse(
-		readFileSync(
-			new URL('./package-discovery-routing.json', import.meta.url),
-			'utf8',
-		),
+test('routing cases are natural, balanced, and have internally consistent hidden expectations', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const routeCounts = Object.fromEntries(
+		evalSet.cases.map(({ expected }) => [expected.route, 0]),
 	)
-	const evalSet = evalSetSchema.parse(rawEvalSet)
 
-	expect(new Set(evalSet.routes)).toEqual(new Set(routeSchema.options))
-	expect(new Set(evalSet.reasonCodes)).toEqual(
-		new Set(reasonCodeSchema.options),
-	)
 	expect(new Set(evalSet.cases.map(({ id }) => id)).size).toBe(
 		evalSet.cases.length,
 	)
-	expect(new Set(evalSet.cases.map(({ theme }) => theme))).toEqual(
-		new Set(themeSchema.options),
-	)
-	expect(new Set(evalSet.cases.map(({ expected }) => expected.route))).toEqual(
-		new Set(routeSchema.options),
-	)
-
 	for (const evalCase of evalSet.cases) {
-		expect(new Set(evalCase.expected.requiredReasonCodes).size).toBe(
-			evalCase.expected.requiredReasonCodes.length,
-		)
-		if (evalCase.discovery.status === 'exact-match') {
-			expect(evalCase.expected.route).toBe('existing-capability-or-package')
-			expect(evalCase.expected.requiredReasonCodes).toContain('exact-match')
-		} else {
-			expect(evalCase.expected.requiredReasonCodes).toContain('no-match')
+		expect(evalCase.prompt).not.toMatch(/\bpackage\b/i)
+		for (const hiddenLabel of [
+			...routeSchema.options,
+			...actionSchema.options,
+		]) {
+			expect(evalCase.prompt).not.toContain(hiddenLabel)
 		}
+		expect(
+			evalCase.expected.requiredActions.every((action) =>
+				evalCase.expected.allowedActions.includes(action),
+			),
+		).toBe(true)
+		expect(evalCase.expected.requiredActions).toContain(
+			evalCase.expected.terminalAction,
+		)
+		routeCounts[evalCase.expected.route] += 1
 	}
+	expect(routeCounts).toEqual({
+		existing: 2,
+		'execute-one-off': 2,
+		'ad-hoc-job': 2,
+		'package-authoring': 2,
+	})
+	expect(
+		evalSet.cases
+			.filter(({ expected }) => expected.route === 'existing')
+			.every(({ inventory }) => inventory.mode === 'inventory-dependent'),
+	).toBe(true)
+})
+
+test('scorer accepts exact traces and reports two passes per route', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const transcript = transcriptSchema.parse(createPassingTranscript())
+	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
+
+	expect(report.ok).toBe(true)
+	expect(report.totals).toEqual({
+		passed: 8,
+		failed: 0,
+		skipped: 0,
+		total: 8,
+	})
+	for (const routeScore of Object.values(report.byRoute)) {
+		expect(routeScore).toEqual({
+			passed: 2,
+			failed: 0,
+			skipped: 0,
+			total: 2,
+		})
+	}
+})
+
+test('scorer rejects wrong targets, extraneous actions, failed calls, and invalid skips', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const transcript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const existingResult = transcript.results[0]
+	const oneOffResult = transcript.results[2]
+	const controlledResult = transcript.results[4]
+	const noTraceResult = transcript.results[5]
+	if (
+		!existingResult ||
+		!oneOffResult ||
+		!controlledResult ||
+		!noTraceResult ||
+		existingResult.outcome !== 'completed' ||
+		oneOffResult.outcome !== 'completed' ||
+		noTraceResult.outcome !== 'completed'
+	) {
+		throw new Error('Expected completed scorer fixtures.')
+	}
+
+	const invocation = existingResult.events[1]
+	if (!invocation || invocation.action !== 'invoke-existing') {
+		throw new Error('Expected an existing-result invocation fixture.')
+	}
+	invocation.targetEntityId = 'fixture:wrong-target'
+	oneOffResult.events.splice(1, 0, {
+		callId: `execute:${oneOffResult.caseId}:wrong`,
+		action: 'author-package',
+		toolName: 'execute',
+		status: 'failed',
+		input: { code: 'await kody.package_save({})' },
+		output: { error: 'failed' },
+	})
+	transcript.results[4] = {
+		caseId: controlledResult.caseId,
+		outcome: 'skipped-no-eligible-match',
+		note: 'incorrect skip',
+	}
+	noTraceResult.events = []
+
+	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
+	expect(report.ok).toBe(false)
+	expect(report.totals.failed).toBe(4)
+	expect(report.cases[0]?.errors).toContain(
+		'invocation target does not match the discovered entity',
+	)
+	expect(report.cases[2]?.errors).toEqual(
+		expect.arrayContaining([
+			'extraneous action author-package',
+			'trace contains a failed tool call',
+		]),
+	)
+	expect(report.cases[4]?.errors).toContain(
+		'controlled-inventory case cannot be skipped',
+	)
+	expect(report.cases[5]?.errors).toEqual(
+		expect.arrayContaining([
+			'first action must be search',
+			'missing required action schedule-ad-hoc-job',
+		]),
+	)
+	expect(actionSchema.safeParse('explain-only').success).toBe(false)
 })

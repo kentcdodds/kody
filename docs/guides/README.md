@@ -8,7 +8,7 @@ available `guide` ids).
 | File                                                                                     | Topic                                                                                                                       |
 | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | [package-authoring.md](./package-authoring.md)                                           | General package-authoring guidance, including the README Intent section                                                     |
-| [package-lifecycle.md](./package-lifecycle.md)                                           | Choose reuse, one-off execute, or a durable package; test package exports before enabling package-owned schedules           |
+| [package-lifecycle.md](./package-lifecycle.md)                                           | Choose reuse, one-off execute, or a durable package; test no-input job wrappers before enabling package-owned schedules     |
 | [integration-bootstrap.md](./integration-bootstrap.md)                                   | **Start here** for third-party integrations that must work before saving a dependent package or package app                 |
 | [openapi-integrations.md](./openapi-integrations.md)                                     | OpenAPI discover → summarize → scaffold or curated `openapi:<name>` binding                                                 |
 | [secret-backed-integration.md](./secret-backed-integration.md)                           | Default recipe for non-OAuth integrations that use one or more saved secrets                                                |

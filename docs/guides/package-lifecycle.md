@@ -86,21 +86,31 @@ If the work needs binary assets, broad refactors, or a substantial local
 build/test loop, explain that it fits a coding-capable agent and confirm before
 continuing in the tool-only lane.
 
-## Test an export before enabling its schedule
+## Test the scheduled wrapper before enabling its schedule
 
-Scheduled behavior should not be its first real execution. Make the package job
-entry callable through `package.json.exports`, and initially declare the
+Scheduled behavior should not be its first real execution. Package job manifests
+do not supply params to their entrypoints, so structure the package with:
+
+- a shared implementation that accepts explicit input
+- an optional callable export that passes representative input to that
+  implementation
+- a no-argument scheduled wrapper that loads its own current configuration and
+  calls the same implementation
+
+Make the no-argument scheduled wrapper callable through `package.json.exports`,
+point the package job entry at that wrapper, and initially declare the
 package-owned job with `"enabled": false`.
 
 After package checks and publishing succeed:
 
-1. Inspect the published package and export contract.
-2. Invoke the export from authenticated `execute` with
-   `packages.invokeChecked(...)`.
-3. Pass representative input: realistic field shapes, boundary values, and the
-   same configuration references the schedule will use. Never put plaintext
-   secrets in params.
-4. Validate the structured result and the intended durable or external effects.
+1. Inspect the published package and export contracts.
+2. Invoke the scheduled wrapper from authenticated `execute` with
+   `packages.invokeChecked(...)` and omit `params`. This verifies the same
+   no-input contract the scheduler uses.
+3. Optionally invoke the underlying callable export with representative input:
+   realistic field shapes, boundary values, and the same configuration
+   references the wrapper will load. Never put plaintext secrets in params.
+4. Validate the structured results and the intended durable or external effects.
    Exercise an expected failure path when the operation is risky.
 5. Only then change the job to `"enabled": true`, publish again, and verify the
    package/job detail reflects the enabled schedule.
@@ -113,11 +123,7 @@ import { packages } from 'kody:runtime'
 export default async function main() {
 	return await packages.invokeChecked({
 		kodyId: 'daily-report',
-		exportName: './run-report',
-		params: {
-			reportDate: '2026-07-14',
-			dryRun: true,
-		},
+		exportName: './scheduled-report',
 	})
 }
 ```
@@ -126,12 +132,17 @@ For exports that send messages, write remote records, charge accounts, or make
 other external mutations, prefer a package-specific `dryRun` input. Implement it
 so the export performs validation and returns a preview while skipping the
 mutation. `dryRun` is a package contract, not an automatic Kody runtime flag;
-test both the dry-run path and one deliberately confirmed live invocation before
-enabling recurring execution.
+test the dry-run path first.
+
+Immediately before any live external mutation, obtain explicit user confirmation
+that identifies the target and scope of the mutation. Do not infer confirmation
+from an earlier request, a successful dry run, or the agent's own assessment.
+After confirmation, perform only the confirmed call, then report the result.
+Require fresh confirmation if the target or scope changes.
 
 Keep the schedule disabled when representative testing is inconclusive,
 credentials or host approval are missing, the result is unexpected, or the live
-mutation has not been confirmed.
+mutation has not been explicitly confirmed by the user.
 
 ## Evolve the durable behavior
 
