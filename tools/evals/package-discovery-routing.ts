@@ -40,9 +40,9 @@ export const evalSetSchema = z
 		name: z.literal('package-discovery-routing'),
 		actionCardinality: z
 			.object({
-				search: z.literal(1),
-				terminal: z.literal(1),
-				otherAllowedMaximum: z.literal(1),
+				searchMinimum: z.literal(1),
+				readOnlyMaximum: z.literal(3),
+				authoringStepMaximum: z.literal(5),
 			})
 			.strict(),
 		cases: z
@@ -193,6 +193,10 @@ export function loadPackageDiscoveryEval(): EvalSet {
 	return evalSetSchema.parse(raw)
 }
 
+function countMatches(value: string, pattern: RegExp): number {
+	return Array.from(value.matchAll(pattern)).length
+}
+
 function scoreCompletedResult(
 	evalCase: EvalSet['cases'][number],
 	result: z.infer<typeof completedResultSchema>,
@@ -210,18 +214,26 @@ function scoreCompletedResult(
 		errors.push('first action must be search')
 	}
 	const searchCount = actionCounts.get('search') ?? 0
-	if (searchCount !== actionCardinality.search) {
+	if (searchCount < actionCardinality.searchMinimum) {
 		errors.push(
-			`expected exactly ${actionCardinality.search} search action, received ${searchCount}`,
+			`expected at least ${actionCardinality.searchMinimum} search action, received ${searchCount}`,
 		)
 	}
 	if (actions.at(-1) !== evalCase.expected.terminalAction) {
 		errors.push(`terminal action must be ${evalCase.expected.terminalAction}`)
 	}
 	const terminalCount = actionCounts.get(evalCase.expected.terminalAction) ?? 0
-	if (terminalCount !== actionCardinality.terminal) {
+	if (evalCase.expected.route !== 'package-authoring' && terminalCount !== 1) {
 		errors.push(
-			`expected exactly ${actionCardinality.terminal} ${evalCase.expected.terminalAction} action, received ${terminalCount}`,
+			`expected exactly 1 ${evalCase.expected.terminalAction} action, received ${terminalCount}`,
+		)
+	}
+	if (
+		evalCase.expected.route === 'package-authoring' &&
+		terminalCount > actionCardinality.authoringStepMaximum
+	) {
+		errors.push(
+			`author-package action may appear at most ${actionCardinality.authoringStepMaximum} times, received ${terminalCount}`,
 		)
 	}
 	for (const requiredAction of evalCase.expected.requiredActions) {
@@ -234,21 +246,20 @@ function scoreCompletedResult(
 			errors.push(`extraneous action ${action}`)
 		}
 	}
-	for (const action of allowedActions) {
-		if (
-			action !== 'search' &&
-			action !== evalCase.expected.terminalAction &&
-			(actionCounts.get(action) ?? 0) > actionCardinality.otherAllowedMaximum
-		) {
-			errors.push(
-				`allowed action ${action} may appear at most ${actionCardinality.otherAllowedMaximum} time`,
-			)
-		}
+	const inspectionCount = actionCounts.get('inspect-authoring-guidance') ?? 0
+	const readOnlyCount = searchCount + inspectionCount
+	if (readOnlyCount > actionCardinality.readOnlyMaximum) {
+		errors.push(
+			`read-only actions may appear at most ${actionCardinality.readOnlyMaximum} times, received ${readOnlyCount}`,
+		)
 	}
 	if (result.events.some(({ status }) => status === 'failed')) {
 		errors.push('trace contains a failed tool call')
 	}
 
+	let authoringTerminalOperationCount = 0
+	let authoringTerminalCallId: string | null = null
+	const countedAuthoringCallIds = new Set<string>()
 	for (const event of result.events) {
 		if (event.toolName !== 'execute') continue
 		const code = event.input.code
@@ -257,10 +268,30 @@ function scoreCompletedResult(
 			continue
 		}
 		const hasScheduleOperation = /\bjob_schedule(?:_once)?\b/.test(code)
+		const authoringInitializationCount = countMatches(
+			code,
+			/\bpackage_get_git_remote\b/g,
+		)
+		const authoringIntermediateCount = countMatches(
+			code,
+			/\brepo_run_commands\b/g,
+		)
+		const eventAuthoringTerminalCount = countMatches(
+			code,
+			/\b(?:package_save|package_publish_external_push|repo_publish_session)\b/g,
+		)
 		const hasAuthorOperation =
-			/\b(?:package_save|package_get_git_remote|package_publish_external_push|repo_run_commands)\b/.test(
-				code,
-			)
+			authoringInitializationCount +
+				authoringIntermediateCount +
+				eventAuthoringTerminalCount >
+			0
+		if (!countedAuthoringCallIds.has(event.callId)) {
+			countedAuthoringCallIds.add(event.callId)
+			authoringTerminalOperationCount += eventAuthoringTerminalCount
+			if (eventAuthoringTerminalCount > 0) {
+				authoringTerminalCallId = event.callId
+			}
+		}
 		const sameCallActions = new Set(
 			result.events
 				.filter(({ callId }) => callId === event.callId)
@@ -299,6 +330,20 @@ function scoreCompletedResult(
 			!code.includes(event.targetEntityId)
 		) {
 			errors.push('invoke-existing evidence does not contain its target id')
+		}
+	}
+	if (evalCase.expected.route === 'package-authoring') {
+		if (authoringTerminalOperationCount !== 1) {
+			errors.push(
+				`expected exactly 1 terminal authoring operation, received ${authoringTerminalOperationCount}`,
+			)
+		}
+		if (
+			authoringTerminalOperationCount === 1 &&
+			(result.events.at(-1)?.action !== 'author-package' ||
+				result.events.at(-1)?.callId !== authoringTerminalCallId)
+		) {
+			errors.push('terminal authoring operation must be the final event')
 		}
 	}
 

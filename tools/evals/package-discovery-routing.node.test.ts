@@ -61,10 +61,25 @@ const createPassingTranscript = (): unknown => {
 							},
 							output: { result: 'captured execution output' },
 						} as const)
+			const searchCalls =
+				evalCase.expected.route === 'existing'
+					? [
+							{
+								...searchCall,
+								callId: `${searchCall.callId}:query`,
+								match: { kind: 'no-exact-reusable' as const },
+							},
+							{
+								...searchCall,
+								callId: `${searchCall.callId}:entity`,
+								input: { entity: entityId },
+							},
+						]
+					: [searchCall]
 			return {
 				caseId: evalCase.id,
 				outcome: 'completed' as const,
-				events: [searchCall, terminalCall],
+				events: [...searchCalls, terminalCall],
 			}
 		}),
 	}
@@ -104,9 +119,9 @@ test('routing cases are natural, balanced, and have internally consistent hidden
 		'package-authoring': 2,
 	})
 	expect(evalSet.actionCardinality).toEqual({
-		search: 1,
-		terminal: 1,
-		otherAllowedMaximum: 1,
+		searchMinimum: 1,
+		readOnlyMaximum: 3,
+		authoringStepMaximum: 5,
 	})
 	expect(
 		evalSet.cases
@@ -158,7 +173,9 @@ test('scorer rejects wrong targets, extraneous actions, failed calls, and invali
 		throw new Error('Expected completed scorer fixtures.')
 	}
 
-	const invocation = existingResult.events[1]
+	const invocation = existingResult.events.find(
+		(event) => event.action === 'invoke-existing',
+	)
 	if (!invocation || invocation.action !== 'invoke-existing') {
 		throw new Error('Expected an existing-result invocation fixture.')
 	}
@@ -227,6 +244,110 @@ test('scorer rejects duplicate successful scheduling mutations', () => {
 		'expected exactly 1 schedule-ad-hoc-job action, received 2',
 	)
 	expect(report.byRoute['ad-hoc-job']).toEqual({
+		passed: 1,
+		failed: 1,
+		skipped: 0,
+		total: 2,
+	})
+})
+
+test('scorer accepts canonical git-lane authoring with repeated discovery and intermediate steps', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const transcript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const authoringResult = transcript.results[6]
+	if (!authoringResult || authoringResult.outcome !== 'completed') {
+		throw new Error('Expected a completed authoring fixture.')
+	}
+	authoringResult.events = [
+		{
+			callId: 'author-search-query',
+			action: 'search',
+			toolName: 'search',
+			status: 'succeeded',
+			input: { query: 'status brief automation' },
+			output: { results: [] },
+			match: { kind: 'no-exact-reusable' },
+		},
+		{
+			callId: 'author-search-guide',
+			action: 'search',
+			toolName: 'search',
+			status: 'succeeded',
+			input: { entity: 'package-authoring-guide' },
+			output: { result: 'guide capability' },
+			match: { kind: 'no-exact-reusable' },
+		},
+		{
+			callId: 'author-inspect',
+			action: 'inspect-authoring-guidance',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.coding_guide_get({})' },
+			output: { guide: 'captured' },
+		},
+		{
+			callId: 'author-initialize',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.package_get_git_remote({})' },
+			output: { remote: 'captured' },
+		},
+		{
+			callId: 'author-edit',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_run_commands({})' },
+			output: { edited: true },
+		},
+		{
+			callId: 'author-publish',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.package_publish_external_push({})' },
+			output: { published: true },
+		},
+	]
+
+	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
+	expect(report.ok).toBe(true)
+	expect(report.totals).toEqual({
+		passed: 8,
+		failed: 0,
+		skipped: 0,
+		total: 8,
+	})
+})
+
+test('scorer rejects duplicate successful package publications', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const transcript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const authoringResult = transcript.results[6]
+	if (!authoringResult || authoringResult.outcome !== 'completed') {
+		throw new Error('Expected a completed authoring fixture.')
+	}
+	authoringResult.events.push({
+		callId: 'author-publish-duplicate',
+		action: 'author-package',
+		toolName: 'execute',
+		status: 'succeeded',
+		input: { code: 'await kody.package_publish_external_push({})' },
+		output: { published: true },
+	})
+
+	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
+	expect(report.ok).toBe(false)
+	expect(report.totals.failed).toBe(1)
+	expect(report.cases[6]?.errors).toContain(
+		'expected exactly 1 terminal authoring operation, received 2',
+	)
+	expect(report.byRoute['package-authoring']).toEqual({
 		passed: 1,
 		failed: 1,
 		skipped: 0,
