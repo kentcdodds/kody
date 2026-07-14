@@ -67,54 +67,10 @@ export async function createTestDatabase() {
 export async function startDevServer(persistDir: string) {
 	await applyMigrations(persistDir)
 	for (let attempt = 1; attempt <= maxPortBindRetries; attempt++) {
-		const mockCloudflarePort = await getPort({ host: localhost })
-		const mockCloudflareOrigin = `http://${localhost}:${mockCloudflarePort}`
-		const mockCloudflareToken = `mock-cloudflare-${crypto.randomUUID()}`
-		const mockCloudflareProc = spawnProcess({
-			cmd: [
-				nodeBin,
-				'--env-file=packages/worker/.env',
-				'./wrangler-env.ts',
-				'dev',
-				'--local',
-				'--config',
-				'packages/mock-servers/cloudflare/wrangler.jsonc',
-				'--port',
-				String(mockCloudflarePort),
-				'--ip',
-				localhost,
-				'--show-interactive-dev-session=false',
-				'--log-level',
-				'error',
-				'--var',
-				`MOCK_API_TOKEN:${mockCloudflareToken}`,
-			],
-			cwd: projectRoot,
-			env: {
-				...process.env,
-				CLOUDFLARE_ENV: 'test',
-			},
-		})
-		const getMockCloudflareStdout = captureOutput(mockCloudflareProc.stdout)
-		const getMockCloudflareStderr = captureOutput(mockCloudflareProc.stderr)
-
-		try {
-			await waitForHttpReady({
-				label: 'Mock Cloudflare worker',
-				url: new URL('/__mocks/meta', mockCloudflareOrigin),
-				isReady: (response) => response.ok,
-				exited: mockCloudflareProc.exited,
-				getStdout: getMockCloudflareStdout,
-				getStderr: getMockCloudflareStderr,
-			})
-		} catch (error) {
-			await stopProcess(mockCloudflareProc).catch(() => undefined)
-			if (isPortAlreadyInUseError(error) && attempt < maxPortBindRetries) {
-				continue
-			}
-			throw error
-		}
-
+		// These smoke tests do not exercise Cloudflare APIs. Leaving that client
+		// unconfigured keeps MCP authentication independent of the email mock;
+		// test-runtime signup deliberately permits a skipped verification send,
+		// and createMcpClient marks the account verified before OAuth begins.
 		const port = await getPort({ host: localhost })
 		const origin = `http://${localhost}:${port}`
 		const proc = spawnProcess({
@@ -133,12 +89,6 @@ export async function startDevServer(persistDir: string) {
 				'--show-interactive-dev-session=false',
 				'--log-level',
 				'error',
-				'--var',
-				`CLOUDFLARE_API_BASE_URL:${mockCloudflareOrigin}`,
-				'--var',
-				`CLOUDFLARE_API_TOKEN:${mockCloudflareToken}`,
-				'--var',
-				'CLOUDFLARE_ACCOUNT_ID:cf_account_mock_123',
 				'--var',
 				`APP_BASE_URL:${origin}`,
 			],
@@ -163,14 +113,10 @@ export async function startDevServer(persistDir: string) {
 			return {
 				origin,
 				async [Symbol.asyncDispose]() {
-					await Promise.allSettled([
-						stopProcess(proc),
-						stopProcess(mockCloudflareProc),
-					])
+					await stopProcess(proc)
 				},
 			}
 		} catch (error) {
-			await stopProcess(mockCloudflareProc).catch(() => undefined)
 			await stopProcess(proc).catch(() => undefined)
 			if (isPortAlreadyInUseError(error) && attempt < maxPortBindRetries) {
 				continue
