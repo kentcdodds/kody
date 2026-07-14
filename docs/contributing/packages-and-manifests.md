@@ -417,9 +417,16 @@ presence. Search should not frame exports or jobs as separate top-level saved
 entities.
 
 Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
-via **`package_set_hidden`**). Ranked search excludes hidden packages by
-default. The public MCP **search** tool and the **meta** domain **search**
-capability both accept **`includeHiddenPackages`**. Known-id entity lookup,
-**`package_list`**, **`package_get`**, and context-scope package retrievers are
-unaffected. Hiding is not deletion, community delisting, or entitlement
-exclusion.
+via **`package_update`** with `changes.hidden`). Ranked search excludes hidden
+packages by default. The public MCP **search** tool and the **meta** domain
+**search** capability both accept **`includeHiddenPackages`**. Exact package
+queries recognize user-owned UUIDs, `kody.id` values, current-origin account
+package URLs, and owner-matching hosted package URLs without mixing in semantic
+capability results. Hidden exact query matches require the opt-in; known-id
+entity lookup by UUID or `kody.id`, **`package_list`**, **`package_get`**, and
+context-scope package retrievers are unaffected. Hiding is not deletion,
+community delisting, or entitlement exclusion.
+
+`package_update` is reserved for mutable package settings. Manifest-derived
+metadata and projections remain canonical in `package.json` and change only
+through save or publish.

@@ -19,9 +19,12 @@ const mockModule = vi.hoisted(() => ({
 			},
 		},
 	})),
+	getSavedPackageById: vi.fn(),
+	getSavedPackageByKodyId: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listUserSecretsForSearch: vi.fn(async () => []),
 	listValues: vi.fn(async () => []),
+	loadPackageSourceBySourceId: vi.fn(),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
 	runPackageRetrievers: vi.fn(async () => ({
 		results: [],
@@ -45,9 +48,17 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageByKodyId: vi.fn(),
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
+	getSavedPackageByKodyId: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByKodyId(...args),
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByUserId(...args),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageSourceBySourceId(...args),
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
@@ -121,7 +132,7 @@ async function getSearchRegistration(input?: {
 		server: {
 			registerTool,
 		} as never,
-		getEnv: vi.fn(() => ({})),
+		getEnv: vi.fn(() => ({ APP_DB: {} })),
 		getCallerContext: vi.fn(() => ({
 			baseUrl: 'https://example.com',
 			user: input?.user === undefined ? null : input.user,
@@ -171,6 +182,25 @@ function createSavedPackages() {
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 	]
+}
+
+const exactPackageId = '550e8400-e29b-41d4-a716-446655440000'
+
+function createExactPackage(hidden: boolean) {
+	return {
+		id: exactPackageId,
+		userId: 'user-1',
+		name: '@user/exact-notes',
+		kodyId: 'exact-notes',
+		description: 'Exact notes package',
+		tags: ['notes'],
+		searchText: 'exact notes package',
+		sourceId: 'source-exact',
+		hasApp: false,
+		hidden,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
 }
 
 test('search tool returns compact query markdown while preserving structured auxiliary detail', async () => {
@@ -326,4 +356,109 @@ test('search tool excludes hidden packages by default and includes them with inc
 			includeHiddenPackages: true,
 		}),
 	)
+})
+
+test('search tool treats exact package identity as authoritative and gates hidden matches', async () => {
+	vi.clearAllMocks()
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createExactPackage(true))
+		.mockResolvedValueOnce(createExactPackage(true))
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
+	const hiddenResponse = await handler({
+		query: exactPackageId,
+		conversationId: 'conv-exact-hidden',
+	})
+	expect(hiddenResponse.isError).toBeUndefined()
+	expect(
+		hiddenResponse.structuredContent.result as { matches: Array<unknown> },
+	).toMatchObject({ matches: [] })
+
+	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
+	const includedResponse = await handler({
+		query: `https://example.com/account/packages/${exactPackageId}`,
+		conversationId: 'conv-exact-included',
+		includeHiddenPackages: true,
+	})
+	expect(includedResponse.isError).toBeUndefined()
+	expect(
+		(
+			includedResponse.structuredContent.result as {
+				matches: Array<Record<string, unknown>>
+			}
+		).matches,
+	).toEqual([
+		expect.objectContaining({
+			type: 'package',
+			packageId: exactPackageId,
+			kodyId: 'exact-notes',
+			hidden: true,
+		}),
+	])
+	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
+	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
+})
+
+test('search entity lookup resolves a hidden package by UUID', async () => {
+	vi.clearAllMocks()
+	mockModule.getSavedPackageById.mockResolvedValueOnce(createExactPackage(true))
+	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name: '@user/exact-notes',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'exact-notes',
+				description: 'Exact notes package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@user/exact-notes',
+				exports: { '.': './index.ts' },
+				kody: {
+					id: 'exact-notes',
+					description: 'Exact notes package',
+				},
+			}),
+			'index.ts': 'export default function main() {}',
+		},
+	})
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+
+	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
+	const response = await handler({
+		entity: `${exactPackageId}:package`,
+		conversationId: 'conv-uuid-entity',
+	})
+	expect(response.isError).toBeUndefined()
+	expect(response.structuredContent.result).toMatchObject({
+		kind: 'entity',
+		type: 'package',
+		packageId: exactPackageId,
+		kodyId: 'exact-notes',
+		hidden: true,
+	})
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			packageId: exactPackageId,
+		},
+	)
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })

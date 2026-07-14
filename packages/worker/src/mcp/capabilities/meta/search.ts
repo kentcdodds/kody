@@ -1,8 +1,12 @@
 import { z } from 'zod'
+import { resolvePublicUsername } from '#app/user-lookup.ts'
+import { isCapabilitySearchOffline } from '#mcp/capabilities/capability-search.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { resolvePackageIdentitySearch } from '#mcp/tools/package-search-identity.ts'
 import {
+	type SearchMatch,
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
@@ -51,6 +55,8 @@ async function loadSearchRows(input: {
 	userId: string | null
 	includeHiddenPackages: boolean
 }) {
+	// Deliberately dynamic: search.ts loads the capability registry, which
+	// includes this meta capability.
 	const { loadSearchRowsAndRegistry } = await import('#mcp/tools/search.ts')
 	return await loadSearchRowsAndRegistry({
 		env: input.ctx.env,
@@ -94,7 +100,7 @@ export const searchCapability = defineDomainCapability(
 	{
 		name: 'search',
 		description:
-			'Search Kody kody, saved packages, values, integrations, and secret references using a natural language query. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
+			'Search Kody capabilities, saved packages, values, integrations, and secret references using natural language or exact user-scoped package identity. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
 		keywords: [
 			'search',
 			'discover',
@@ -111,7 +117,9 @@ export const searchCapability = defineDomainCapability(
 			query: z
 				.string()
 				.min(1)
-				.describe('Natural language description of the capability you need.'),
+				.describe(
+					'Natural language description, or an exact saved-package UUID, kody id, current-origin account package URL, or owner-matching hosted package URL.',
+				),
 			limit: z
 				.number()
 				.int()
@@ -146,35 +154,63 @@ export const searchCapability = defineDomainCapability(
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const includeHiddenPackages = !!args.includeHiddenPackages
-			const [searchRows, retrieverRun] = await Promise.all([
-				loadSearchRows({
-					ctx,
-					userId,
-					includeHiddenPackages,
-				}),
-				runPackageRetrieverSearch({
-					ctx,
-					userId,
-					query,
-					conversationId,
-					includeHiddenPackages,
-					memoryContext: args.memoryContext,
-				}),
-			])
+			const username = await resolvePublicUsername({
+				db: ctx.env.APP_DB,
+				username: ctx.callerContext.user?.username ?? null,
+				email: ctx.callerContext.user?.email ?? null,
+			})
+			const identityResolution = await resolvePackageIdentitySearch({
+				db: ctx.env.APP_DB,
+				userId,
+				query,
+				baseUrl: ctx.callerContext.baseUrl,
+				username,
+				includeHiddenPackages,
+			})
 			const {
 				loadDownRemoteConnectorStatuses,
 				resolveSearchMemoryContext,
 				searchUnified,
 				serializeRemoteConnectorStatus,
 			} = await import('#mcp/tools/search.ts')
-			const result = await searchUnified({
-				env: ctx.env,
-				query,
-				limit: normalizeLimit(args.limit),
-				registry: searchRows.registry,
-				optionalRows: searchRows,
-				retrieverResults: retrieverRun.results,
-			})
+			let warnings: Array<string>
+			let result: {
+				matches: Array<SearchMatch>
+				offline: boolean
+				guidance?: string
+			}
+			if (identityResolution.recognized) {
+				warnings = []
+				result = {
+					matches: identityResolution.match ? [identityResolution.match] : [],
+					offline: isCapabilitySearchOffline(ctx.env),
+				}
+			} else {
+				const [searchRows, retrieverRun] = await Promise.all([
+					loadSearchRows({
+						ctx,
+						userId,
+						includeHiddenPackages,
+					}),
+					runPackageRetrieverSearch({
+						ctx,
+						userId,
+						query,
+						conversationId,
+						includeHiddenPackages,
+						memoryContext: args.memoryContext,
+					}),
+				])
+				result = await searchUnified({
+					env: ctx.env,
+					query,
+					limit: normalizeLimit(args.limit),
+					registry: searchRows.registry,
+					optionalRows: searchRows,
+					retrieverResults: retrieverRun.results,
+				})
+				warnings = [...searchRows.warnings, ...retrieverRun.warnings]
+			}
 			const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
@@ -188,11 +224,7 @@ export const searchCapability = defineDomainCapability(
 					memoryContext: args.memoryContext,
 				}),
 			})
-			const warnings = [
-				...searchRows.warnings,
-				...retrieverRun.warnings,
-				...(memoryToolContext?.retrieverWarnings ?? []),
-			]
+			warnings.push(...(memoryToolContext?.retrieverWarnings ?? []))
 			return {
 				conversationId,
 				matches: toSlimStructuredMatches({

@@ -32,6 +32,7 @@ import {
 import { getValue, listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import {
+	getSavedPackageById,
 	getSavedPackageByKodyId,
 	listSavedPackagesByUserId,
 	savedPackageVectorId,
@@ -87,6 +88,7 @@ import {
 	normalizeSearchText,
 	understandSearchQuery,
 } from './understand-search-query.ts'
+import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -187,6 +189,59 @@ type SearchUnifiedResult = {
 	telemetry: SearchTelemetry
 	phaseTimings: SearchPhaseTimings
 	guidance?: string
+}
+
+function buildExactPackageSearchResult(input: {
+	env: Env
+	query: string
+	match: Extract<SearchMatch, { type: 'package' }> | null
+}): SearchUnifiedResult {
+	const queryUnderstandingStart = performance.now()
+	const intent = understandSearchQuery({
+		query: input.query,
+		entities: [],
+	})
+	const queryUnderstandingMs = Math.max(
+		0,
+		Math.round(performance.now() - queryUnderstandingStart),
+	)
+	const matches = input.match ? [input.match] : []
+	const candidates: Array<SearchCandidate> = input.match
+		? [
+				{
+					match: input.match,
+					type: 'package',
+					id: input.match.kodyId,
+					title: input.match.title,
+					searchFields: [input.match.kodyId, input.match.name],
+					scoreComponents: buildCandidateBaseScore({
+						lexical: 1,
+						vector: 1,
+					}),
+				},
+			]
+		: []
+	const guidance = buildRecommendedNextStep({
+		query: input.query,
+		intent,
+		matches,
+	})
+	return {
+		matches,
+		offline: isCapabilitySearchOffline(input.env),
+		intent,
+		telemetry: buildCandidateTelemetry({
+			intent,
+			candidates,
+			matches,
+		}),
+		phaseTimings: {
+			queryUnderstandingMs,
+			candidateGenerationMs: 0,
+			rerankingMs: 0,
+		},
+		...(guidance ? { guidance } : {}),
+	}
 }
 
 function flattenReferencedTypeFields(
@@ -1622,6 +1677,11 @@ markdown is summary-only: type, title/name, one-line description, and entity ref
 If nothing useful returns, rephrase or call \`meta_list_capabilities\`; \`entity\`
 does not fix an empty ranked list.
 
+An entire saved-package UUID, kody id, current-origin account package URL, or
+owner-matching hosted package URL resolves as exact user-scoped package identity
+without competing semantic matches. Hidden exact queries require
+\`includeHiddenPackages: true\`.
+
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
 | \`integration\` | \`package\` | \`secret\`). Capability detail includes an
 exact \`execute\` module snippet plus TypeScript call-shape definitions by
@@ -1836,10 +1896,15 @@ async function resolveEntityDetail(input: {
 	}
 
 	if (ref.type === 'package') {
-		const record = await getSavedPackageByKodyId(input.agent.getEnv().APP_DB, {
-			userId: input.userId,
-			kodyId: ref.id,
-		})
+		const record =
+			(await getSavedPackageById(input.agent.getEnv().APP_DB, {
+				userId: input.userId,
+				packageId: ref.id,
+			})) ??
+			(await getSavedPackageByKodyId(input.agent.getEnv().APP_DB, {
+				userId: input.userId,
+				kodyId: ref.id,
+			}))
 		if (!record) {
 			throw new Error('Saved package not found for this user.')
 		}
@@ -1948,7 +2013,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.string()
 					.min(1)
 					.optional()
-					.describe('Natural language description of the capability you need.'),
+					.describe(
+						'Natural language description, or an exact saved-package UUID, kody id, current-origin account package URL, or owner-matching hosted package URL.',
+					),
 				entity: z
 					.string()
 					.min(1)
@@ -2043,6 +2110,32 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					username: callerContext.user?.username ?? null,
 					email: callerContext.user?.email ?? null,
 				})
+				if (!args.entity && query) {
+					const identityResolution = await resolvePackageIdentitySearch({
+						db: agent.getEnv().APP_DB,
+						userId,
+						query,
+						baseUrl,
+						username,
+						includeHiddenPackages,
+					})
+					if (identityResolution.recognized) {
+						remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses(
+							{
+								env: agent.getEnv(),
+								callerContext,
+							},
+						)
+						return {
+							mode: 'list' as const,
+							result: buildExactPackageSearchResult({
+								env: agent.getEnv(),
+								query,
+								match: identityResolution.match,
+							}),
+						}
+					}
+				}
 				const retrieverRunPromise =
 					!args.entity && userId && query
 						? (async () => {
@@ -2096,7 +2189,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				warnings.push(...retrieverRun.warnings)
 				const result = await searchUnified({
 					env: agent.getEnv(),
-					query: args.query!,
+					query,
 					limit,
 					registry: searchRows.registry,
 					optionalRows: searchRows,

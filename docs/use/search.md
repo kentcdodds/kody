@@ -11,9 +11,9 @@ The **search** tool finds **built-in capabilities**, **saved packages**,
 **Hidden saved packages** are excluded from ranked **query** results by default.
 Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
 known-id **`entity`** lookups (for example `my-package:package`),
-**`package_list`**, and **`package_get`** still work. Use
-**`package_set_hidden`** to hide or unhide a package. See
-[Packages](./packages.md#hidden-packages).
+**`package_list`**, and **`package_get`** still work. Use **`package_update`**
+with **`changes: { hidden: true }`** to hide a package (or `false` to unhide
+it). See [Packages](./packages.md#hidden-packages).
 
 ## Queries and ranking
 
@@ -21,6 +21,14 @@ Pass a **`query`** string that describes what you want to do. Results are
 ranked; order in the response matters. Query responses are intentionally
 compact: the markdown response is a short list of matches with the result type,
 title, one-line summary, and entity reference when applicable.
+
+An entire saved-package UUID or `kody.id` is treated as an exact package
+identity when it resolves for the signed-in user. Kody also recognizes
+current-origin `/account/packages/:packageId` URLs and owner-matching
+`/@username/packages/:kodyId` URLs. Exact package identities never compete with
+semantic capability results. Hidden exact query matches still require
+`includeHiddenPackages: true`; exact `entity` lookup by UUID or `kody.id`
+ignores the hidden discovery preference.
 
 When a tool call also includes **`memoryContext`**, Kody may include relevant
 long-term memory metadata in structured content, but broad query markdown stays
@@ -48,6 +56,7 @@ Examples:
 - `user:preferred_org:value`
 - `github:integration`
 - `my-package:package`
+- `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
 - `spotify-access-token:secret`
 

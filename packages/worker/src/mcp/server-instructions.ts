@@ -77,7 +77,7 @@ Conventions
 - ${conversationIdGuidance}
 - \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories and suppress repeats within the same \`conversationId\`.
 - Credential setup uses the standard setup pages: \`/connect/oauth\` for OAuth integrations and reconnects, \`/account/secrets/new\` for API keys, PATs, and other user-provided secrets. Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.
-- \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
+- \`package_get\` / \`package_list\` / \`package_update\` / \`package_delete\`: inspect or manage saved packages for the signed-in user. \`package_update({ package_id, changes: { hidden } })\` changes mutable settings; package.json-derived metadata changes through save or publish.
 - Integration-backed work: use \`search\` and official guides before local repo exploration. For packages, package apps, or workflows that depend on third-party auth, first call \`coding_guide_get\` with \`guide: "integration_bootstrap"\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, run a cheap authenticated \`execute\` smoke test, then build. If setup is missing, load \`oauth\` for \`/connect/oauth\`, \`connect_secret\` for secret collection, and \`secret_backed_integration\` for the default non-OAuth recipe.
 - \`job_list\` / \`job_get\`: inspect the signed-in user's scheduled jobs, recent run outcomes, and current per-user alarm state when debugging scheduling issues. Pass \`includeCode: true\` to \`job_get\` when you need the stored repo-backed job source entrypoint and code.
 - \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. It is appropriate for genuinely ad hoc or one-off jobs and simple self-contained schedules not tied to a reusable package. Supports one-off, interval, and cron schedules.
@@ -103,8 +103,8 @@ What shows up in \`search\` (before you search)
 - Result **types**: \`capability\` (built-in or connected remote connector), \`package\` (saved repo-backed package), \`value\` (persisted non-secret config), \`integration\` (saved integration config), \`secret\` (metadata only). Use \`entity: "{id}:{type}"\` for one item’s detail.
 
 search
-- \`query\`: natural language; results are ranked (order matters). Optional \`limit\`, \`maxResponseSize\`.
-- \`entity: "{id}:{type}"\` (\`capability\` | \`package\` | \`value\` | \`integration\` | \`secret\`) for one entity’s detail. Capability detail includes an exact execute snippet and TypeScript call shapes; other entity details include usage. If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
+- \`query\`: natural language results are ranked (order matters). An entire saved-package UUID, kody id, current-origin \`/account/packages/:packageId\` URL, or owner-matching \`/@username/packages/:kodyId\` URL resolves as exact user-scoped package identity instead of competing with semantic results. Hidden exact queries require \`includeHiddenPackages: true\`. Optional \`limit\`, \`maxResponseSize\`.
+- \`entity: "{id}:{type}"\` (\`capability\` | \`package\` | \`value\` | \`integration\` | \`secret\`) for one entity’s detail. Package ids may be UUIDs or kody ids and hidden packages resolve here regardless of \`includeHiddenPackages\`. Capability detail includes an exact execute snippet and TypeScript call shapes; other entity details include usage. If a natural-language \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
 - Examples:
   - search({ query: 'saved package for github automation' })
   - search({ query: 'Cloudflare API zones dns workers d1' })
