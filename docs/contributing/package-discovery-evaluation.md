@@ -88,7 +88,8 @@ metadata.
   `author-package`. The scorer derives the phase from actual `execute` code:
   - `package_get_git_remote` and `repo_open_session` initialize an authoring
     lane;
-  - `repo_write_file` and `repo_run_commands` are edit/check steps;
+  - `repo_write_file`, `repo_run_commands`, and `repo_run_checks` are edit/check
+    steps;
   - `package_save`, `package_publish_external_push`, and `repo_publish_session`
     create or publish source.
 - Any other Kody `execute` call is `other-execute`, which no case allows.

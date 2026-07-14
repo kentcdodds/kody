@@ -406,6 +406,14 @@ test('scorer accepts the full tool-only repo-session authoring flow', () => {
 			output: { committed: true },
 		},
 		{
+			callId: 'tool-only-check',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_run_checks({})' },
+			output: { passed: true },
+		},
+		{
 			callId: 'tool-only-publish',
 			action: 'author-package',
 			toolName: 'execute',
