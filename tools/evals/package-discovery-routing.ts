@@ -42,7 +42,7 @@ export const evalSetSchema = z
 			.object({
 				searchMinimum: z.literal(1),
 				readOnlyMaximum: z.literal(3),
-				authoringStepMaximum: z.literal(5),
+				authoringStepMaximum: z.literal(8),
 			})
 			.strict(),
 		cases: z
@@ -257,8 +257,7 @@ function scoreCompletedResult(
 		errors.push('trace contains a failed tool call')
 	}
 
-	let authoringTerminalOperationCount = 0
-	let authoringTerminalCallId: string | null = null
+	let authoringMutationCount = 0
 	const countedAuthoringCallIds = new Set<string>()
 	for (const event of result.events) {
 		if (event.toolName !== 'execute') continue
@@ -268,29 +267,18 @@ function scoreCompletedResult(
 			continue
 		}
 		const hasScheduleOperation = /\bjob_schedule(?:_once)?\b/.test(code)
-		const authoringInitializationCount = countMatches(
+		const authoringOperationCount = countMatches(
 			code,
-			/\bpackage_get_git_remote\b/g,
+			/\b(?:package_save|package_get_git_remote|package_publish_external_push|repo_open_session|repo_write_file|repo_run_commands|repo_publish_session)\b/g,
 		)
-		const authoringIntermediateCount = countMatches(
+		const eventAuthoringMutationCount = countMatches(
 			code,
-			/\brepo_run_commands\b/g,
+			/\b(?:package_save|package_publish_external_push|repo_write_file|repo_run_commands|repo_publish_session)\b/g,
 		)
-		const eventAuthoringTerminalCount = countMatches(
-			code,
-			/\b(?:package_save|package_publish_external_push|repo_publish_session)\b/g,
-		)
-		const hasAuthorOperation =
-			authoringInitializationCount +
-				authoringIntermediateCount +
-				eventAuthoringTerminalCount >
-			0
+		const hasAuthorOperation = authoringOperationCount > 0
 		if (!countedAuthoringCallIds.has(event.callId)) {
 			countedAuthoringCallIds.add(event.callId)
-			authoringTerminalOperationCount += eventAuthoringTerminalCount
-			if (eventAuthoringTerminalCount > 0) {
-				authoringTerminalCallId = event.callId
-			}
+			authoringMutationCount += eventAuthoringMutationCount
 		}
 		const sameCallActions = new Set(
 			result.events
@@ -333,17 +321,8 @@ function scoreCompletedResult(
 		}
 	}
 	if (evalCase.expected.route === 'package-authoring') {
-		if (authoringTerminalOperationCount !== 1) {
-			errors.push(
-				`expected exactly 1 terminal authoring operation, received ${authoringTerminalOperationCount}`,
-			)
-		}
-		if (
-			authoringTerminalOperationCount === 1 &&
-			(result.events.at(-1)?.action !== 'author-package' ||
-				result.events.at(-1)?.callId !== authoringTerminalCallId)
-		) {
-			errors.push('terminal authoring operation must be the final event')
+		if (authoringMutationCount < 1) {
+			errors.push('package authoring requires at least one mutation')
 		}
 	}
 

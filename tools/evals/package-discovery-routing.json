@@ -4,7 +4,7 @@
 	"actionCardinality": {
 		"searchMinimum": 1,
 		"readOnlyMaximum": 3,
-		"authoringStepMaximum": 5
+		"authoringStepMaximum": 8
 	},
 	"cases": [
 		{

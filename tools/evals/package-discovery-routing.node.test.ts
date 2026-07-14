@@ -121,7 +121,7 @@ test('routing cases are natural, balanced, and have internally consistent hidden
 	expect(evalSet.actionCardinality).toEqual({
 		searchMinimum: 1,
 		readOnlyMaximum: 3,
-		authoringStepMaximum: 5,
+		authoringStepMaximum: 8,
 	})
 	expect(
 		evalSet.cases
@@ -323,7 +323,7 @@ test('scorer accepts canonical git-lane authoring with repeated discovery and in
 	})
 })
 
-test('scorer rejects duplicate successful package publications', () => {
+test('scorer accepts a safe two-publish scheduled package rollout', () => {
 	const evalSet = loadPackageDiscoveryEval()
 	const transcript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
@@ -332,25 +332,95 @@ test('scorer rejects duplicate successful package publications', () => {
 	if (!authoringResult || authoringResult.outcome !== 'completed') {
 		throw new Error('Expected a completed authoring fixture.')
 	}
-	authoringResult.events.push({
-		callId: 'author-publish-duplicate',
-		action: 'author-package',
-		toolName: 'execute',
-		status: 'succeeded',
-		input: { code: 'await kody.package_publish_external_push({})' },
-		output: { published: true },
-	})
+	authoringResult.events = [
+		authoringResult.events[0]!,
+		{
+			callId: 'author-publish-disabled',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.package_save({ enabled: false })' },
+			output: { published: true, enabled: false },
+		},
+		{
+			callId: 'author-test-disabled',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_run_commands({ commands: "test" })' },
+			output: { passed: true },
+		},
+		{
+			callId: 'author-publish-enabled',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.package_save({ enabled: true })' },
+			output: { published: true, enabled: true },
+		},
+	]
 
 	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
-	expect(report.ok).toBe(false)
-	expect(report.totals.failed).toBe(1)
-	expect(report.cases[6]?.errors).toContain(
-		'expected exactly 1 terminal authoring operation, received 2',
-	)
-	expect(report.byRoute['package-authoring']).toEqual({
-		passed: 1,
-		failed: 1,
+	expect(report.ok).toBe(true)
+	expect(report.totals).toEqual({
+		passed: 8,
+		failed: 0,
 		skipped: 0,
-		total: 2,
+		total: 8,
+	})
+})
+
+test('scorer accepts the full tool-only repo-session authoring flow', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const transcript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const authoringResult = transcript.results[7]
+	if (!authoringResult || authoringResult.outcome !== 'completed') {
+		throw new Error('Expected a completed authoring fixture.')
+	}
+	authoringResult.events = [
+		authoringResult.events[0]!,
+		{
+			callId: 'tool-only-open',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_open_session({})' },
+			output: { sessionId: 'repo-session' },
+		},
+		{
+			callId: 'tool-only-write',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_write_file({})' },
+			output: { written: true },
+		},
+		{
+			callId: 'tool-only-commit',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_run_commands({})' },
+			output: { committed: true },
+		},
+		{
+			callId: 'tool-only-publish',
+			action: 'author-package',
+			toolName: 'execute',
+			status: 'succeeded',
+			input: { code: 'await kody.repo_publish_session({})' },
+			output: { published: true },
+		},
+	]
+
+	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
+	expect(report.ok).toBe(true)
+	expect(report.totals).toEqual({
+		passed: 8,
+		failed: 0,
+		skipped: 0,
+		total: 8,
 	})
 })

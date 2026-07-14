@@ -86,10 +86,11 @@ metadata.
   `inspect-authoring-guidance`.
 - Initializing, editing, creating, or publishing reusable saved source is
   `author-package`. The scorer derives the phase from actual `execute` code:
-  - `package_get_git_remote` is initialization;
-  - `repo_run_commands` is an intermediate edit;
+  - `package_get_git_remote` and `repo_open_session` initialize an authoring
+    lane;
+  - `repo_write_file` and `repo_run_commands` are edit/check steps;
   - `package_save`, `package_publish_external_push`, and `repo_publish_session`
-    are terminal create/publish operations.
+    create or publish source.
 - Any other Kody `execute` call is `other-execute`, which no case allows.
 
 If one `execute` call performs multiple lifecycle actions, emit one event per
@@ -102,10 +103,15 @@ Every case requires discovery first. Up to three read-only `search` or
 an entity, and load authoring guidance. Reuse, one-off execution, and ad hoc job
 routes require exactly one terminal action.
 
-Authoring may contain up to five initialization, edit, and publication events,
-but the final event must contain the trace's only terminal create/publish
-operation. Repeated successful invocations, one-off executions, schedules, or
-terminal publications fail; success status does not make a duplicate safe.
+Authoring may contain up to eight initialization, edit, check, create, and
+publication events. It must include at least one mutation and end with an
+`author-package` event whose `execute` code contains a recognized authoring
+operation. Multiple publications are valid because safe rollout may publish a
+disabled schedule, test it, and publish it enabled. Publication safety and
+rollout correctness are outside this routing scorer's scope.
+
+Repeated successful reuse invocations, one-off executions, or ad hoc schedules
+still fail because those duplicate the terminal work selected by the route.
 
 A transcript has this machine-readable shape:
 
@@ -167,10 +173,10 @@ node tools/evals/package-discovery-routing.ts score path/to/transcript.json
 It validates the transcript, requires search first, verifies reuse targets match
 discovery, checks `execute` source for the recorded lifecycle operations,
 enforces route-aware action cardinality, rejects failed, duplicate, wrong,
-hidden, or extraneous mutations, and reports passed/failed/skipped totals per
-route. Read-only discovery may repeat within the bounded allowance. A
-controlled-inventory case cannot be skipped. The process exits nonzero for
-invalid schemas or failed cases.
+hidden, or extraneous non-authoring terminal work, and reports
+passed/failed/skipped totals per route. Read-only discovery and bounded
+multi-step authoring may repeat. A controlled-inventory case cannot be skipped.
+The process exits nonzero for invalid schemas or failed cases.
 
 CI runs only the offline schema and scorer fixtures:
 
