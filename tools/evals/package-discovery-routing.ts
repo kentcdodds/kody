@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 
 export const routeSchema = z.enum([
@@ -143,7 +144,7 @@ export const transcriptSchema = z
 		evalName: z.literal('package-discovery-routing'),
 		host: z.enum(['warp', 'cursor', 'claude', 'chatgpt']),
 		model: z.string().min(1),
-		runAt: z.string().datetime(),
+		runAt: z.iso.datetime(),
 		results: z
 			.array(
 				z.discriminatedUnion('outcome', [
@@ -255,6 +256,22 @@ function scoreCompletedResult(
 	}
 	if (result.events.some(({ status }) => status === 'failed')) {
 		errors.push('trace contains a failed tool call')
+	}
+
+	const payloadsByCallId = new Map<
+		string,
+		{ input: Record<string, unknown>; output: unknown }
+	>()
+	for (const { callId, input, output } of result.events) {
+		const firstPayload = payloadsByCallId.get(callId)
+		if (!firstPayload) {
+			payloadsByCallId.set(callId, { input, output })
+		} else if (
+			!isDeepStrictEqual(firstPayload.input, input) ||
+			!isDeepStrictEqual(firstPayload.output, output)
+		) {
+			errors.push(`${callId} has inconsistent input or output payloads`)
+		}
 	}
 
 	let authoringMutationCount = 0

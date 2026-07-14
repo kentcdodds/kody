@@ -8,10 +8,10 @@ new package behavior.
 
 ### Invoke an existing package or capability
 
-Search first. If a builtin capability or saved package already does the work,
+Search first. If a built-in capability or saved package already does the work,
 invoke it instead of creating another implementation.
 
-- Call discovered builtin capabilities through `kody` in `execute`.
+- Call discovered built-in capabilities through `kody` in `execute`.
 - For a saved package's current published export, use
   `packages.invokeChecked({ kodyId, exportName, params })` from an authenticated
   `execute` call or package runtime.
