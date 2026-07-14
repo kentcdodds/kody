@@ -60,7 +60,7 @@ const tinyPng = Uint8Array.from([
 	0x44, 0xae, 0x42, 0x60, 0x82,
 ])
 
-test('community detail OG image embeds the package icon data URI', async () => {
+test('community detail OG image embeds PNG icons and falls back for WebP', async () => {
 	mocks.getCommunityListingWithAggregates.mockResolvedValue(listing)
 	mocks.getCommunityIconObject.mockResolvedValue({
 		descriptor: {
@@ -78,16 +78,15 @@ test('community detail OG image embeds the package icon data URI', async () => {
 	})
 	mocks.renderCommunityOgImage.mockResolvedValue(tinyPng)
 
-	const response = await createCommunityDetailOgImageHandler({} as Env).handler(
-		{
-			request: new Request('https://example.com/community/listing-1/og.png'),
-			params: { listingId: listing.id },
-			url: new URL('https://example.com/community/listing-1/og.png'),
-		} as never,
-	)
+	const handler = createCommunityDetailOgImageHandler({} as Env)
+	const pngResponse = await handler.handler({
+		request: new Request('https://example.com/community/listing-1/og.png'),
+		params: { listingId: listing.id },
+		url: new URL('https://example.com/community/listing-1/og.png'),
+	} as never)
 
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toBe('image/png')
+	expect(pngResponse.status).toBe(200)
+	expect(pngResponse.headers.get('Content-Type')).toBe('image/png')
 	expect(mocks.renderCommunityOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: listing.name,
@@ -95,10 +94,9 @@ test('community detail OG image embeds the package icon data URI', async () => {
 		}),
 	)
 	expect(mocks.renderCommunityIconFallbackPng).not.toHaveBeenCalled()
-})
 
-test('community detail OG image falls back when the icon is WebP', async () => {
-	mocks.getCommunityListingWithAggregates.mockResolvedValue(listing)
+	mocks.renderCommunityOgImage.mockClear()
+	mocks.renderCommunityIconFallbackPng.mockClear()
 	mocks.getCommunityIconObject.mockResolvedValue({
 		descriptor: {
 			version: 1,
@@ -116,15 +114,13 @@ test('community detail OG image falls back when the icon is WebP', async () => {
 	mocks.renderCommunityIconFallbackPng.mockResolvedValue(tinyPng)
 	mocks.renderCommunityOgImage.mockResolvedValue(tinyPng)
 
-	const response = await createCommunityDetailOgImageHandler({} as Env).handler(
-		{
-			request: new Request('https://example.com/community/listing-1/og.png'),
-			params: { listingId: listing.id },
-			url: new URL('https://example.com/community/listing-1/og.png'),
-		} as never,
-	)
+	const webpResponse = await handler.handler({
+		request: new Request('https://example.com/community/listing-1/og.png'),
+		params: { listingId: listing.id },
+		url: new URL('https://example.com/community/listing-1/og.png'),
+	} as never)
 
-	expect(response.status).toBe(200)
+	expect(webpResponse.status).toBe(200)
 	expect(mocks.renderCommunityIconFallbackPng).toHaveBeenCalledWith(
 		listing.name,
 	)

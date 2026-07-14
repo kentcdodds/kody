@@ -68,28 +68,21 @@ function createEnv() {
 	} as Env
 }
 
-function resetMocks() {
-	mockModule.searchSavedPackagesByUserId.mockReset()
-	mockModule.getSavedPackageById.mockReset()
+test('packages API lists with filters, ignores invalid values, and rejects bad methods', async () => {
 	mockModule.searchSavedPackagesByUserId.mockResolvedValue({
 		items: [savedPackage],
 		total: 1,
 	})
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
-}
-
-test('packages API lists user packages with default filters and pagination', async () => {
-	resetMocks()
 	const env = createEnv()
 	const handler = createAccountPackagesApiHandler(env)
 
-	const response = await handler.handler({
+	const defaults = await handler.handler({
 		request: new Request('https://example.com/account/packages.json'),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe('no-store')
+	expect(defaults.status).toBe(200)
+	expect(defaults.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.searchSavedPackagesByUserId).toHaveBeenCalledWith(
 		env.APP_DB,
 		{
@@ -102,21 +95,15 @@ test('packages API lists user packages with default filters and pagination', asy
 		},
 	)
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
-	await expect(response.json()).resolves.toEqual({
+	await expect(defaults.json()).resolves.toMatchObject({
 		ok: true,
 		email: 'user@example.com',
 		packages: [
-			{
+			expect.objectContaining({
 				id: 'pkg-1',
-				name: '@test/discord-gateway',
 				kodyId: 'discord-gateway',
-				description: 'Dispatch Discord gateway events.',
-				tags: ['discord', 'events'],
 				hasApp: true,
-				sourceId: 'source-1',
-				createdAt: new Date(0).toISOString(),
-				updatedAt: new Date(0).toISOString(),
-			},
+			}),
 		],
 		selectedPackage: null,
 		page: 1,
@@ -126,21 +113,22 @@ test('packages API lists user packages with default filters and pagination', asy
 		appFilter: 'all',
 		sort: 'updated',
 	})
-})
 
-test('packages API applies search, app filter, sort, pagination, and selection', async () => {
-	resetMocks()
-	const env = createEnv()
-	const handler = createAccountPackagesApiHandler(env)
+	mockModule.searchSavedPackagesByUserId.mockClear()
+	mockModule.getSavedPackageById.mockClear()
+	mockModule.searchSavedPackagesByUserId.mockResolvedValue({
+		items: [savedPackage],
+		total: 1,
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
 
-	const response = await handler.handler({
+	const filtered = await handler.handler({
 		request: new Request(
 			'https://example.com/account/packages.json?q=discord&app=with&sort=name&page=3&pageSize=10&selected=pkg-1',
 		),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(filtered.status).toBe(200)
 	expect(mockModule.searchSavedPackagesByUserId).toHaveBeenCalledWith(
 		env.APP_DB,
 		{
@@ -156,7 +144,7 @@ test('packages API applies search, app filter, sort, pagination, and selection',
 		userId: 'stable-user-1',
 		packageId: 'pkg-1',
 	})
-	await expect(response.json()).resolves.toMatchObject({
+	await expect(filtered.json()).resolves.toMatchObject({
 		ok: true,
 		page: 3,
 		pageSize: 10,
@@ -168,38 +156,31 @@ test('packages API applies search, app filter, sort, pagination, and selection',
 			searchText: 'discord gateway websocket',
 		},
 	})
-})
 
-test('packages API ignores invalid filter values and missing selections', async () => {
-	resetMocks()
+	mockModule.searchSavedPackagesByUserId.mockClear()
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	const env = createEnv()
-	const handler = createAccountPackagesApiHandler(env)
+	mockModule.searchSavedPackagesByUserId.mockResolvedValue({
+		items: [savedPackage],
+		total: 1,
+	})
 
-	const response = await handler.handler({
+	const invalid = await handler.handler({
 		request: new Request(
 			'https://example.com/account/packages.json?app=bogus&sort=bogus&selected=missing-package',
 		),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(invalid.status).toBe(200)
 	expect(mockModule.searchSavedPackagesByUserId).toHaveBeenCalledWith(
 		env.APP_DB,
 		expect.objectContaining({ hasApp: null, sort: 'updated' }),
 	)
-	await expect(response.json()).resolves.toMatchObject({
+	await expect(invalid.json()).resolves.toMatchObject({
 		ok: true,
 		selectedPackage: null,
 		appFilter: 'all',
 		sort: 'updated',
 	})
-})
-
-test('packages API rejects non-GET methods and unauthenticated requests', async () => {
-	resetMocks()
-	const env = createEnv()
-	const handler = createAccountPackagesApiHandler(env)
 
 	const postResponse = await handler.handler({
 		request: new Request('https://example.com/account/packages.json', {

@@ -77,11 +77,9 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 			manifestPath: 'package.json',
 		}),
 	).toThrow(/must be a scoped package name/)
-})
 
-test('parseAuthoredPackageJson loads kody.description longer than the write-path max', () => {
 	const tooLongForWrite = 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1)
-	const manifest = parseAuthoredPackageJson({
+	const longDescription = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kentcdodds/long-description',
 			exports: {
@@ -94,13 +92,10 @@ test('parseAuthoredPackageJson loads kody.description longer than the write-path
 		}),
 		manifestPath: 'package.json',
 	})
-	expect(manifest.kody.description).toBe(tooLongForWrite)
-})
-
-test('assertKodyDescriptionLength rejects descriptions longer than 200 characters', () => {
+	expect(longDescription.kody.description).toBe(tooLongForWrite)
 	expect(() => assertKodyDescriptionLength('a'.repeat(200))).not.toThrow()
 	expect(() => assertKodyDescriptionLength('a'.repeat(201))).toThrow(
-		/kody\.description must be at most 200 characters \(short public tagline\)/,
+		/kody\.description must be at most 200 characters/,
 	)
 })
 

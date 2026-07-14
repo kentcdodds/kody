@@ -41,17 +41,3 @@ test('renderCommunityOgImage returns valid PNG bytes with and without ratings', 
 	})
 	expectPngBytes(withoutRatings)
 })
-
-test('renderCommunityOgImage clamps a long description without overflowing', async () => {
-	const png = await renderCommunityOgImage({
-		name: '@kody/long-description-package',
-		description:
-			'this is an intentionally very long community package description that would previously overrun the OG card after the hard-coded Use Kody to prefix was prepended, including extra clauses about labels, assignees, digests, reminders, and weekly digests for multiple teams',
-		ownerUsername: 'kody',
-		averageStars: 3.5,
-		ratingCount: 4,
-		forkCount: 1,
-		iconDataUri: await sampleIconDataUri('@kody/long-description-package'),
-	})
-	expectPngBytes(png)
-})

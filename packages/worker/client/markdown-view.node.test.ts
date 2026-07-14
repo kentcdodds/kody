@@ -60,7 +60,7 @@ test('renders common markdown constructs as HTML elements', async () => {
 	expect(html).toContain('Entities: &amp; A stay characters.')
 })
 
-test('raw HTML is shown as escaped text, never as markup', async () => {
+test('markdown safety escapes raw HTML, never emits images, and drops unsafe links', async () => {
 	const html = await renderMarkdown(
 		[
 			'<script>alert(1)</script>',
@@ -68,33 +68,9 @@ test('raw HTML is shown as escaped text, never as markup', async () => {
 			'inline <img src="https://evil.example/x.png" onerror="alert(1)"> html',
 			'',
 			'<iframe src="https://evil.example"></iframe>',
-		].join('\n'),
-	)
-
-	expect(html).not.toContain('<script')
-	expect(html).not.toContain('<img')
-	expect(html).not.toContain('<iframe')
-	expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
-	expect(html).toContain('&lt;img src=')
-})
-
-test('markdown images never emit <img> and render as links instead', async () => {
-	const html = await renderMarkdown(
-		'![badge](https://img.example/badge.svg) and ![local](/logo.png)',
-	)
-
-	expect(html).not.toContain('<img')
-	expect(html).toContain(
-		'<a href="https://img.example/badge.svg" target="_blank" rel="noopener noreferrer nofollow ugc">badge</a>',
-	)
-	// Relative image URL is unsafe, so only its alt text remains.
-	expect(html).toContain('<span>local</span>')
-	expect(html).not.toContain('/logo.png')
-})
-
-test('unsafe link targets render as plain text without an anchor', async () => {
-	const html = await renderMarkdown(
-		[
+			'',
+			'![badge](https://img.example/badge.svg) and ![local](/logo.png)',
+			'',
 			'[bad-proto](javascript:alert(1))',
 			'',
 			'[data-proto](data:text/html,hi)',
@@ -107,6 +83,16 @@ test('unsafe link targets render as plain text without an anchor', async () => {
 		].join('\n'),
 	)
 
+	expect(html).not.toContain('<script')
+	expect(html).not.toContain('<img')
+	expect(html).not.toContain('<iframe')
+	expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+	expect(html).toContain('&lt;img src=')
+	expect(html).toContain(
+		'<a href="https://img.example/badge.svg" target="_blank" rel="noopener noreferrer nofollow ugc">badge</a>',
+	)
+	expect(html).toContain('<span>local</span>')
+	expect(html).not.toContain('/logo.png')
 	expect(html).not.toContain('javascript:')
 	expect(html).not.toContain('data:text/html')
 	expect(html).not.toContain('/account/secrets')

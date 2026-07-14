@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { beforeAll, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { insertSavedPackage, searchSavedPackagesByUserId } from './repo.ts'
 
 const userId = 'search-user-1'
@@ -58,7 +58,7 @@ function buildRow(input: {
 	}
 }
 
-beforeAll(async () => {
+test('searchSavedPackagesByUserId scopes, sorts, queries, filters, and pages', async () => {
 	await ensureSchema(env.APP_DB)
 	await insertSavedPackage(
 		env.APP_DB,
@@ -109,23 +109,19 @@ beforeAll(async () => {
 			updatedAt: '2026-01-07T00:00:00.000Z',
 		}),
 	)
-})
 
-test('lists only the requesting user packages sorted by most recently updated', async () => {
-	const { items, total } = await searchSavedPackagesByUserId(env.APP_DB, {
+	const byUpdated = await searchSavedPackagesByUserId(env.APP_DB, {
 		userId,
 		limit: 10,
 		offset: 0,
 	})
-	expect(total).toBe(3)
-	expect(items.map((item) => item.id)).toEqual([
+	expect(byUpdated.total).toBe(3)
+	expect(byUpdated.items.map((item) => item.id)).toEqual([
 		'search-pkg-b',
 		'search-pkg-a',
 		'search-pkg-c',
 	])
-})
 
-test('supports created and name sorts', async () => {
 	const byCreated = await searchSavedPackagesByUserId(env.APP_DB, {
 		userId,
 		sort: 'created',
@@ -149,16 +145,14 @@ test('supports created and name sorts', async () => {
 		'@user/beta-notifier',
 		'@user/gamma-sync',
 	])
-})
 
-test('matches queries case-insensitively across name, kody id, description, search text, and tags', async () => {
-	const byName = await searchSavedPackagesByUserId(env.APP_DB, {
+	const byNameQuery = await searchSavedPackagesByUserId(env.APP_DB, {
 		userId,
 		query: 'ALPHA-DASH',
 		limit: 10,
 		offset: 0,
 	})
-	expect(byName.items.map((item) => item.id)).toEqual(['search-pkg-a'])
+	expect(byNameQuery.items.map((item) => item.id)).toEqual(['search-pkg-a'])
 
 	const bySearchText = await searchSavedPackagesByUserId(env.APP_DB, {
 		userId,
@@ -175,9 +169,7 @@ test('matches queries case-insensitively across name, kody id, description, sear
 		offset: 0,
 	})
 	expect(byTag.items.map((item) => item.id)).toEqual(['search-pkg-c'])
-})
 
-test('escapes LIKE wildcards so queries match literally', async () => {
 	const literalPercent = await searchSavedPackagesByUserId(env.APP_DB, {
 		userId,
 		query: '100%',
@@ -193,9 +185,7 @@ test('escapes LIKE wildcards so queries match literally', async () => {
 		offset: 0,
 	})
 	expect(wildcardOnly.total).toBe(1)
-})
 
-test('filters by app declaration and pages with a matching total', async () => {
 	const withApp = await searchSavedPackagesByUserId(env.APP_DB, {
 		userId,
 		hasApp: true,

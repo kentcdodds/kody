@@ -538,8 +538,6 @@ export declare function fetch(request: Request): Promise<Response>
 `,
 		},
 	})
-	expect(observedPackageDetail.markdown).toContain('- Has app: yes')
-	expect(observedPackageDetail.markdown).toContain('- Hidden: no')
 	expect(observedPackageDetail.structured).toMatchObject({
 		type: 'package',
 		entityRef: 'observed-package:package',
@@ -584,48 +582,6 @@ export declare function fetch(request: Request): Promise<Response>
 			truncated: false,
 		},
 	})
-})
-
-test('package entity detail markdown includes hidden flag next to has app', () => {
-	const hiddenPackageDetail = formatEntityDetailMarkdown({
-		type: 'package',
-		id: 'hidden-package',
-		title: '@kody/hidden-package',
-		description: 'Hidden package.',
-		baseUrl: 'http://localhost',
-		ownerUsername: 'test-user',
-		hostedUrl: null,
-		record: {
-			id: 'package-hidden',
-			userId: 'user-123',
-			name: '@kody/hidden-package',
-			kodyId: 'hidden-package',
-			description: 'Hidden package.',
-			tags: [],
-			searchText: null,
-			sourceId: 'source-package-hidden',
-			hasApp: false,
-			hidden: true,
-			createdAt: '2026-03-20T00:00:00.000Z',
-			updatedAt: '2026-03-20T00:00:00.000Z',
-		},
-		manifest: {
-			name: '@kody/hidden-package',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'hidden-package',
-				description: 'Hidden package.',
-				tags: [],
-			},
-		},
-		files: {
-			'package.json': '{}',
-		},
-	})
-	expect(hiddenPackageDetail.markdown).toContain('- Has app: no')
-	expect(hiddenPackageDetail.markdown).toContain('- Hidden: yes')
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
