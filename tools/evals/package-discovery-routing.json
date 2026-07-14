@@ -1,0 +1,102 @@
+{
+	"schemaVersion": 1,
+	"name": "package-discovery-routing",
+	"instruction": "Evaluate the routing decision only. The case includes the result of capability and package discovery, so do not call tools or perform mutations. Return exactly one JSON object shaped as {\"route\":\"<route>\",\"reasonCodes\":[\"<reason-code>\"]}. route must be one value from routes. reasonCodes must be a non-empty array containing only values from reasonCodes.",
+	"routes": [
+		"existing-capability-or-package",
+		"execute-prototype",
+		"package-authoring"
+	],
+	"reasonCodes": [
+		"exact-match",
+		"no-match",
+		"one-off",
+		"unproven",
+		"recurring",
+		"scheduled",
+		"durable-reuse",
+		"cross-host",
+		"successful-prototype"
+	],
+	"cases": [
+		{
+			"id": "recurring-email-drafting-existing-package",
+			"theme": "recurring-email-drafting",
+			"discovery": {
+				"status": "exact-match",
+				"kind": "package",
+				"summary": "A saved package already drafts recurring customer follow-ups in the user's approved voice and exposes the required draft export."
+			},
+			"prompt": "Draft this week's customer follow-ups in my usual voice, and keep using the same approach each week.",
+			"expected": {
+				"route": "existing-capability-or-package",
+				"requiredReasonCodes": ["exact-match", "recurring"]
+			}
+		},
+		{
+			"id": "reusable-writing-style-first-trial",
+			"theme": "reusable-writing-style",
+			"discovery": {
+				"status": "no-match",
+				"kind": "none",
+				"summary": "Discovery found no capability or package that applies this writing style."
+			},
+			"prompt": "Try a warmer writing style on these two paragraphs. I have not decided whether I want to reuse it, so do not save anything yet.",
+			"expected": {
+				"route": "execute-prototype",
+				"requiredReasonCodes": ["no-match", "one-off", "unproven"]
+			}
+		},
+		{
+			"id": "scheduled-workflow-new-recurring-task",
+			"theme": "scheduled-workflow",
+			"discovery": {
+				"status": "no-match",
+				"kind": "none",
+				"summary": "Discovery found scheduling primitives but no existing package that implements this workflow."
+			},
+			"prompt": "Every Monday, gather my open project updates, turn them into a status brief, and keep the workflow available for later changes.",
+			"expected": {
+				"route": "package-authoring",
+				"requiredReasonCodes": [
+					"no-match",
+					"recurring",
+					"scheduled",
+					"durable-reuse"
+				]
+			}
+		},
+		{
+			"id": "cross-host-reuse-new-helper",
+			"theme": "cross-host-reuse",
+			"discovery": {
+				"status": "no-match",
+				"kind": "none",
+				"summary": "Discovery found no existing capability or package for the helper."
+			},
+			"prompt": "Create a release-note helper I can invoke with the same behavior from Warp, Cursor, Claude, and ChatGPT.",
+			"expected": {
+				"route": "package-authoring",
+				"requiredReasonCodes": ["no-match", "durable-reuse", "cross-host"]
+			}
+		},
+		{
+			"id": "promote-successful-script",
+			"theme": "promote-successful-script",
+			"discovery": {
+				"status": "no-match",
+				"kind": "none",
+				"summary": "Discovery found no existing capability or package, but the user has already validated an execute script through repeated successful runs."
+			},
+			"prompt": "That cleanup script has worked well for the last five runs. Save it as a maintained tool I can reuse instead of pasting the script again.",
+			"expected": {
+				"route": "package-authoring",
+				"requiredReasonCodes": [
+					"no-match",
+					"durable-reuse",
+					"successful-prototype"
+				]
+			}
+		}
+	]
+}

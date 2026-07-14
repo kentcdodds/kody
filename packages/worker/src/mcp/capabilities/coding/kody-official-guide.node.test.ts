@@ -15,7 +15,7 @@ const ctx = {
 }
 
 test('coding_guide_get fetches markdown and surfaces fetch failures', async () => {
-	const url = buildKodyOfficialGuideUrlForTest('platform_friction')
+	const url = buildKodyOfficialGuideUrlForTest('package_lifecycle')
 	{
 		using _server = createMswNodeServer([
 			http.get(url, () =>
@@ -25,9 +25,10 @@ test('coding_guide_get fetches markdown and surfaces fetch failures', async () =
 			),
 		])
 		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'platform_friction' },
+			{ guide: 'package_lifecycle' },
 			ctx,
 		)
+		expect(result.title).toBe('Durable package lifecycle guide')
 		expect(result.body).toBe('# Hello\n\nbody')
 	}
 
