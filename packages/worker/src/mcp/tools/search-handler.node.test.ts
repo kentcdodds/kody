@@ -358,11 +358,33 @@ test('search tool excludes hidden packages by default and includes them with inc
 	)
 })
 
-test('search tool treats exact package identity as authoritative and gates hidden matches', async () => {
+test('search tool treats exact package identity as authoritative and still resolves hidden entity lookups', async () => {
 	vi.clearAllMocks()
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createExactPackage(true))
 		.mockResolvedValueOnce(createExactPackage(true))
+		.mockResolvedValueOnce(createExactPackage(true))
+	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name: '@user/exact-notes',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'exact-notes',
+				description: 'Exact notes package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@user/exact-notes',
+				exports: { '.': './index.ts' },
+				kody: {
+					id: 'exact-notes',
+					description: 'Exact notes package',
+				},
+			}),
+			'index.ts': 'export default function main() {}',
+		},
+	})
 	const { handler } = await getSearchRegistration({
 		user: {
 			userId: 'user-1',
@@ -405,48 +427,14 @@ test('search tool treats exact package identity as authoritative and gates hidde
 	])
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
-})
-
-test('search entity lookup resolves a hidden package by UUID', async () => {
-	vi.clearAllMocks()
-	mockModule.getSavedPackageById.mockResolvedValueOnce(createExactPackage(true))
-	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@user/exact-notes',
-			exports: { '.': './index.ts' },
-			kody: {
-				id: 'exact-notes',
-				description: 'Exact notes package',
-			},
-		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@user/exact-notes',
-				exports: { '.': './index.ts' },
-				kody: {
-					id: 'exact-notes',
-					description: 'Exact notes package',
-				},
-			}),
-			'index.ts': 'export default function main() {}',
-		},
-	})
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	})
 
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
-	const response = await handler({
+	const entityResponse = await handler({
 		entity: `${exactPackageId}:package`,
 		conversationId: 'conv-uuid-entity',
 	})
-	expect(response.isError).toBeUndefined()
-	expect(response.structuredContent.result).toMatchObject({
+	expect(entityResponse.isError).toBeUndefined()
+	expect(entityResponse.structuredContent.result).toMatchObject({
 		kind: 'entity',
 		type: 'package',
 		packageId: exactPackageId,

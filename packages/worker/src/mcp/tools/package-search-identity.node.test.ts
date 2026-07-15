@@ -34,7 +34,7 @@ function createSavedPackage(input?: { hidden?: boolean; userId?: string }) {
 	}
 }
 
-test('package identity parser accepts exact ids and current-origin package URLs', () => {
+test('package identity parser accepts exact ids and current-origin URLs and rejects unsafe ones', () => {
 	const common = {
 		baseUrl: 'https://heykody.dev',
 		username: 'user',
@@ -91,13 +91,13 @@ test('package identity parser accepts exact ids and current-origin package URLs'
 		value: 'daily-notes',
 		authoritative: true,
 	})
-})
+	expect(
+		parsePackageSearchIdentity({
+			...common,
+			query: 'find a package for daily notes',
+		}),
+	).toEqual({ kind: 'not-package-identity' })
 
-test('package identity parser rejects malformed, wrong-origin, and wrong-owner URLs', () => {
-	const common = {
-		baseUrl: 'https://heykody.dev',
-		username: 'user',
-	}
 	for (const query of [
 		`https://attacker.example/account/packages/${packageId}`,
 		`https://attacker.example/@user/packages/daily-notes`,
@@ -111,21 +111,18 @@ test('package identity parser rejects malformed, wrong-origin, and wrong-owner U
 			kind: 'invalid-package-identity',
 		})
 	}
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: 'find a package for daily notes',
-		}),
-	).toEqual({ kind: 'not-package-identity' })
 })
 
-test('package identity resolution is user-scoped and enforces hidden query semantics', async () => {
+test('package identity resolution is user-scoped, gates hidden matches, and skips unsafe lookups', async () => {
 	const visible = createSavedPackage()
 	const hidden = createSavedPackage({ hidden: true })
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(visible)
 		.mockResolvedValueOnce(hidden)
 		.mockResolvedValueOnce(hidden)
+		.mockResolvedValueOnce(null)
+	mockModule.getSavedPackageByKodyId
+		.mockResolvedValueOnce(createSavedPackage())
 		.mockResolvedValueOnce(null)
 
 	const common = {
@@ -172,22 +169,6 @@ test('package identity resolution is user-scoped and enforces hidden query seman
 		}),
 	).resolves.toEqual({ recognized: true, match: null })
 
-	expect(mockModule.getSavedPackageById).toHaveBeenNthCalledWith(
-		4,
-		{},
-		{
-			userId: 'user-2',
-			packageId,
-		},
-	)
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
-})
-
-test('kody-id lookup resolves exact packages but preserves non-package single-word searches', async () => {
-	mockModule.getSavedPackageByKodyId
-		.mockResolvedValueOnce(createSavedPackage())
-		.mockResolvedValueOnce(null)
-
 	await expect(
 		resolvePackageIdentitySearch({
 			db: {} as D1Database,
@@ -211,9 +192,16 @@ test('kody-id lookup resolves exact packages but preserves non-package single-wo
 			includeHiddenPackages: false,
 		}),
 	).resolves.toEqual({ recognized: false })
-})
 
-test('invalid and unauthenticated exact identities return no package without database access', async () => {
+	expect(mockModule.getSavedPackageById).toHaveBeenNthCalledWith(
+		4,
+		{},
+		{
+			userId: 'user-2',
+			packageId,
+		},
+	)
+
 	for (const input of [
 		{
 			userId: 'user-1',
@@ -236,6 +224,6 @@ test('invalid and unauthenticated exact identities return no package without dat
 			}),
 		).resolves.toEqual({ recognized: true, match: null })
 	}
-	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(2)
 })

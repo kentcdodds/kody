@@ -94,6 +94,17 @@ function getByCaseId<T extends { caseId: string }>(
 	return item
 }
 
+function requireCompletedResult(
+	transcript: ReturnType<typeof transcriptSchema.parse>,
+	caseId: string,
+) {
+	const result = getByCaseId(transcript.results, caseId)
+	if (result.outcome !== 'completed') {
+		throw new Error(`Expected a completed fixture for ${caseId}.`)
+	}
+	return result
+}
+
 test('routing cases are natural, balanced, and have internally consistent hidden expectations', () => {
 	const evalSet = loadPackageDiscoveryEval()
 	const routeCounts = Object.fromEntries(
@@ -161,34 +172,27 @@ test('scorer accepts exact traces and reports two passes per route', () => {
 	}
 })
 
-test('scorer rejects wrong targets, extraneous actions, failed calls, and invalid skips', () => {
+test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardinality breaches', () => {
 	const evalSet = loadPackageDiscoveryEval()
 	const transcript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const existingResult = getByCaseId(
-		transcript.results,
+	const existingResult = requireCompletedResult(
+		transcript,
 		'reuse-recurring-email-drafter',
 	)
-	const oneOffResult = getByCaseId(
-		transcript.results,
+	const oneOffResult = requireCompletedResult(
+		transcript,
 		'one-off-saved-automation-count',
 	)
 	const controlledResult = getByCaseId(
 		transcript.results,
 		'schedule-single-reminder',
 	)
-	const noTraceResult = getByCaseId(
-		transcript.results,
+	const noTraceResult = requireCompletedResult(
+		transcript,
 		'schedule-simple-recurring-reminder',
 	)
-	if (
-		existingResult.outcome !== 'completed' ||
-		oneOffResult.outcome !== 'completed' ||
-		noTraceResult.outcome !== 'completed'
-	) {
-		throw new Error('Expected completed scorer fixtures.')
-	}
 
 	const invocation = existingResult.events.find(
 		(event) => event.action === 'invoke-existing',
@@ -212,14 +216,14 @@ test('scorer rejects wrong targets, extraneous actions, failed calls, and invali
 	})
 	noTraceResult.events = []
 
-	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
-	expect(report.ok).toBe(false)
-	expect(report.totals.failed).toBe(4)
+	const invalidReport = scorePackageDiscoveryTranscript(evalSet, transcript)
+	expect(invalidReport.ok).toBe(false)
+	expect(invalidReport.totals.failed).toBe(4)
 	expect(
-		getByCaseId(report.cases, 'reuse-recurring-email-drafter').errors,
+		getByCaseId(invalidReport.cases, 'reuse-recurring-email-drafter').errors,
 	).toContain('invocation target does not match the discovered entity')
 	expect(
-		getByCaseId(report.cases, 'one-off-saved-automation-count').errors,
+		getByCaseId(invalidReport.cases, 'one-off-saved-automation-count').errors,
 	).toEqual(
 		expect.arrayContaining([
 			'extraneous action author-package',
@@ -227,10 +231,11 @@ test('scorer rejects wrong targets, extraneous actions, failed calls, and invali
 		]),
 	)
 	expect(
-		getByCaseId(report.cases, 'schedule-single-reminder').errors,
+		getByCaseId(invalidReport.cases, 'schedule-single-reminder').errors,
 	).toContain('controlled-inventory case cannot be skipped')
 	expect(
-		getByCaseId(report.cases, 'schedule-simple-recurring-reminder').errors,
+		getByCaseId(invalidReport.cases, 'schedule-simple-recurring-reminder')
+			.errors,
 	).toEqual(
 		expect.arrayContaining([
 			'first action must be search',
@@ -238,20 +243,14 @@ test('scorer rejects wrong targets, extraneous actions, failed calls, and invali
 		]),
 	)
 	expect(actionSchema.safeParse('explain-only').success).toBe(false)
-})
 
-test('scorer rejects duplicate successful scheduling mutations', () => {
-	const evalSet = loadPackageDiscoveryEval()
-	const transcript = structuredClone(
+	const duplicateTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const scheduleResult = getByCaseId(
-		transcript.results,
+	const scheduleResult = requireCompletedResult(
+		duplicateTranscript,
 		'schedule-single-reminder',
 	)
-	if (scheduleResult.outcome !== 'completed') {
-		throw new Error('Expected a completed scheduling fixture.')
-	}
 	const scheduleEvent = scheduleResult.events[1]
 	if (!scheduleEvent || scheduleEvent.action !== 'schedule-ad-hoc-job') {
 		throw new Error('Expected a scheduling event fixture.')
@@ -260,33 +259,29 @@ test('scorer rejects duplicate successful scheduling mutations', () => {
 		...scheduleEvent,
 		callId: `${scheduleEvent.callId}:duplicate`,
 	})
-
-	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
-	expect(report.ok).toBe(false)
-	expect(report.totals.failed).toBe(1)
+	const duplicateReport = scorePackageDiscoveryTranscript(
+		evalSet,
+		duplicateTranscript,
+	)
+	expect(duplicateReport.ok).toBe(false)
+	expect(duplicateReport.totals.failed).toBe(1)
 	expect(
-		getByCaseId(report.cases, 'schedule-single-reminder').errors,
+		getByCaseId(duplicateReport.cases, 'schedule-single-reminder').errors,
 	).toContain('expected exactly 1 schedule-ad-hoc-job action, received 2')
-	expect(report.byRoute['ad-hoc-job']).toEqual({
+	expect(duplicateReport.byRoute['ad-hoc-job']).toEqual({
 		passed: 1,
 		failed: 1,
 		skipped: 0,
 		total: 2,
 	})
-})
 
-test('scorer rejects different payloads recorded under one call id', () => {
-	const evalSet = loadPackageDiscoveryEval()
-	const transcript = structuredClone(
+	const consistentTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const authoringResult = getByCaseId(
-		transcript.results,
+	const authoringResult = requireCompletedResult(
+		consistentTranscript,
 		'author-reusable-scheduled-brief',
 	)
-	if (authoringResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
 	const authoringEvent = authoringResult.events.at(-1)
 	if (!authoringEvent || authoringEvent.action !== 'author-package') {
 		throw new Error('Expected an authoring event fixture.')
@@ -298,31 +293,23 @@ test('scorer rejects different payloads recorded under one call id', () => {
 		...authoringEvent,
 		action: 'inspect-authoring-guidance',
 	})
-	expect(scorePackageDiscoveryTranscript(evalSet, transcript).ok).toBe(true)
+	expect(
+		scorePackageDiscoveryTranscript(evalSet, consistentTranscript).ok,
+	).toBe(true)
 
-	const inputMismatch = structuredClone(transcript)
-	const inputMismatchResult = getByCaseId(
-		inputMismatch.results,
-		'author-reusable-scheduled-brief',
-	)
-	if (inputMismatchResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
-	inputMismatchResult.events.at(-1)!.input = {
-		code: 'await kody.package_save({})',
-	}
-
-	const outputMismatch = structuredClone(transcript)
-	const outputMismatchResult = getByCaseId(
-		outputMismatch.results,
-		'author-reusable-scheduled-brief',
-	)
-	if (outputMismatchResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
-	outputMismatchResult.events.at(-1)!.output = { result: 'different output' }
-
-	for (const mismatchedTranscript of [inputMismatch, outputMismatch]) {
+	for (const mismatch of ['input', 'output'] as const) {
+		const mismatchedTranscript = structuredClone(consistentTranscript)
+		const mismatchedResult = requireCompletedResult(
+			mismatchedTranscript,
+			'author-reusable-scheduled-brief',
+		)
+		if (mismatch === 'input') {
+			mismatchedResult.events.at(-1)!.input = {
+				code: 'await kody.package_save({})',
+			}
+		} else {
+			mismatchedResult.events.at(-1)!.output = { result: 'different output' }
+		}
 		const report = scorePackageDiscoveryTranscript(
 			evalSet,
 			mismatchedTranscript,
@@ -334,20 +321,14 @@ test('scorer rejects different payloads recorded under one call id', () => {
 			'execute:author-reusable-scheduled-brief has inconsistent input or output payloads',
 		)
 	}
-})
 
-test('scorer rejects read-only and authoring counts above their limits', () => {
-	const evalSet = loadPackageDiscoveryEval()
 	const readOnlyTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const readOnlyResult = getByCaseId(
-		readOnlyTranscript.results,
+	const readOnlyResult = requireCompletedResult(
+		readOnlyTranscript,
 		'author-reusable-scheduled-brief',
 	)
-	if (readOnlyResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
 	readOnlyResult.events.splice(
 		-1,
 		0,
@@ -360,27 +341,22 @@ test('scorer rejects read-only and authoring counts above their limits', () => {
 			output: { guide: 'captured' },
 		})),
 	)
-	const readOnlyReport = scorePackageDiscoveryTranscript(
-		evalSet,
-		readOnlyTranscript,
-	)
-	expect(readOnlyReport.ok).toBe(false)
 	expect(
-		getByCaseId(readOnlyReport.cases, 'author-reusable-scheduled-brief').errors,
+		getByCaseId(
+			scorePackageDiscoveryTranscript(evalSet, readOnlyTranscript).cases,
+			'author-reusable-scheduled-brief',
+		).errors,
 	).toContain('read-only actions may appear at most 3 times, received 4')
 
 	const authoringTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const authoringResult = getByCaseId(
-		authoringTranscript.results,
+	const authoringLimitResult = requireCompletedResult(
+		authoringTranscript,
 		'author-reusable-scheduled-brief',
 	)
-	if (authoringResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
-	authoringResult.events = [
-		authoringResult.events[0]!,
+	authoringLimitResult.events = [
+		authoringLimitResult.events[0]!,
 		...Array.from({ length: 9 }, (_, index) => ({
 			callId: `author-mutation-${index}`,
 			action: 'author-package' as const,
@@ -390,30 +366,30 @@ test('scorer rejects read-only and authoring counts above their limits', () => {
 			output: { saved: true },
 		})),
 	]
-	const authoringReport = scorePackageDiscoveryTranscript(
-		evalSet,
-		authoringTranscript,
-	)
-	expect(authoringReport.ok).toBe(false)
 	expect(
-		getByCaseId(authoringReport.cases, 'author-reusable-scheduled-brief')
-			.errors,
+		getByCaseId(
+			scorePackageDiscoveryTranscript(evalSet, authoringTranscript).cases,
+			'author-reusable-scheduled-brief',
+		).errors,
 	).toContain('author-package action may appear at most 8 times, received 9')
 })
 
-test('scorer accepts canonical git-lane authoring with repeated discovery and intermediate steps', () => {
+test('scorer accepts git-lane, two-publish, and tool-only authoring variants', () => {
 	const evalSet = loadPackageDiscoveryEval()
-	const transcript = structuredClone(
+	const expectedTotals = {
+		passed: 8,
+		failed: 0,
+		skipped: 0,
+		total: 8,
+	}
+
+	const gitLaneTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const authoringResult = getByCaseId(
-		transcript.results,
+	requireCompletedResult(
+		gitLaneTranscript,
 		'author-reusable-scheduled-brief',
-	)
-	if (authoringResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
-	authoringResult.events = [
+	).events = [
 		{
 			callId: 'author-search-query',
 			action: 'search',
@@ -465,31 +441,22 @@ test('scorer accepts canonical git-lane authoring with repeated discovery and in
 			output: { published: true },
 		},
 	]
-
-	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
-	expect(report.ok).toBe(true)
-	expect(report.totals).toEqual({
-		passed: 8,
-		failed: 0,
-		skipped: 0,
-		total: 8,
+	expect(
+		scorePackageDiscoveryTranscript(evalSet, gitLaneTranscript),
+	).toMatchObject({
+		ok: true,
+		totals: expectedTotals,
 	})
-})
 
-test('scorer accepts a safe two-publish scheduled package rollout', () => {
-	const evalSet = loadPackageDiscoveryEval()
-	const transcript = structuredClone(
+	const twoPublishTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const authoringResult = getByCaseId(
-		transcript.results,
+	const twoPublishResult = requireCompletedResult(
+		twoPublishTranscript,
 		'author-reusable-scheduled-brief',
 	)
-	if (authoringResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
-	authoringResult.events = [
-		authoringResult.events[0]!,
+	twoPublishResult.events = [
+		twoPublishResult.events[0]!,
 		{
 			callId: 'author-publish-disabled',
 			action: 'author-package',
@@ -515,31 +482,22 @@ test('scorer accepts a safe two-publish scheduled package rollout', () => {
 			output: { published: true, enabled: true },
 		},
 	]
-
-	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
-	expect(report.ok).toBe(true)
-	expect(report.totals).toEqual({
-		passed: 8,
-		failed: 0,
-		skipped: 0,
-		total: 8,
+	expect(
+		scorePackageDiscoveryTranscript(evalSet, twoPublishTranscript),
+	).toMatchObject({
+		ok: true,
+		totals: expectedTotals,
 	})
-})
 
-test('scorer accepts the full tool-only repo-session authoring flow', () => {
-	const evalSet = loadPackageDiscoveryEval()
-	const transcript = structuredClone(
+	const toolOnlyTranscript = structuredClone(
 		transcriptSchema.parse(createPassingTranscript()),
 	)
-	const authoringResult = getByCaseId(
-		transcript.results,
+	const toolOnlyResult = requireCompletedResult(
+		toolOnlyTranscript,
 		'author-validated-cleanup-automation',
 	)
-	if (authoringResult.outcome !== 'completed') {
-		throw new Error('Expected a completed authoring fixture.')
-	}
-	authoringResult.events = [
-		authoringResult.events[0]!,
+	toolOnlyResult.events = [
+		toolOnlyResult.events[0]!,
 		{
 			callId: 'tool-only-open',
 			action: 'author-package',
@@ -581,13 +539,10 @@ test('scorer accepts the full tool-only repo-session authoring flow', () => {
 			output: { published: true },
 		},
 	]
-
-	const report = scorePackageDiscoveryTranscript(evalSet, transcript)
-	expect(report.ok).toBe(true)
-	expect(report.totals).toEqual({
-		passed: 8,
-		failed: 0,
-		skipped: 0,
-		total: 8,
+	expect(
+		scorePackageDiscoveryTranscript(evalSet, toolOnlyTranscript),
+	).toMatchObject({
+		ok: true,
+		totals: expectedTotals,
 	})
 })

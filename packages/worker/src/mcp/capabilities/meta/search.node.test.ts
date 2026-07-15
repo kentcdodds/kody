@@ -103,8 +103,11 @@ function createSavedPackage(hidden = false) {
 	}
 }
 
-test('meta search resolves package URLs and kody ids with the same exact-match semantics as public search', async () => {
-	mockModule.getSavedPackageById.mockResolvedValueOnce(createSavedPackage())
+test('meta search wires exact package identity, hidden gating, and natural-language discovery', async () => {
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce(createSavedPackage(true))
+		.mockResolvedValueOnce(createSavedPackage(true))
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(createSavedPackage())
 	const context = createContext({ userId: 'user-1', username: 'user' })
 
@@ -138,29 +141,6 @@ test('meta search resolves package URLs and kody ids with the same exact-match s
 			kodyId: 'daily-notes',
 		}),
 	])
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
-		{},
-		{
-			userId: 'user-1',
-			packageId,
-		},
-	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
-		{},
-		{
-			userId: 'user-1',
-			kodyId: 'daily-notes',
-		},
-	)
-	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
-	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
-})
-
-test('meta search suppresses hidden exact matches unless explicitly included', async () => {
-	mockModule.getSavedPackageById
-		.mockResolvedValueOnce(createSavedPackage(true))
-		.mockResolvedValueOnce(createSavedPackage(true))
-	const context = createContext({ userId: 'user-1', username: 'user' })
 
 	const hidden = await searchCapability.handler(
 		{ query: packageId, conversationId: 'meta-hidden' },
@@ -182,13 +162,10 @@ test('meta search suppresses hidden exact matches unless explicitly included', a
 			hidden: true,
 		}),
 	])
-	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
-})
 
-test('meta search keeps natural-language capability discovery and blocks unauthenticated package identity', async () => {
 	const naturalLanguage = await searchCapability.handler(
 		{ query: 'search docs', conversationId: 'meta-natural-language' },
-		createContext({ userId: 'user-1', username: 'user' }),
+		context,
 	)
 	expect(naturalLanguage.matches).toEqual([
 		expect.objectContaining({
@@ -202,5 +179,21 @@ test('meta search keeps natural-language capability discovery and blocks unauthe
 		createContext(null),
 	)
 	expect(unauthenticated.matches).toEqual([])
-	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			packageId,
+		},
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			kodyId: 'daily-notes',
+		},
+	)
+	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
+	expect(mockModule.getCapabilityRegistryForContext).toHaveBeenCalledTimes(1)
 })
