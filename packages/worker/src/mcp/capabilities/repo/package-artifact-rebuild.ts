@@ -1,17 +1,6 @@
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
-import {
-	errorCauseChainIncludes,
-	formatErrorCauseChain,
-} from '@kody-internal/shared/error-message.ts'
-
-function isUnavailableLegacyArtifactRpc(error: unknown) {
-	return errorCauseChainIncludes(
-		error,
-		(message) =>
-			message === "Cannot read properties of undefined (reading 'bind')",
-	)
-}
+import { formatErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 
 function describePackageArtifactTarget(
 	target: PublishedPackageArtifactBuildTarget,
@@ -54,12 +43,6 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 			userId: input.userId,
 		})
 	} catch (error) {
-		// Both artifact RPC methods and the `rebuildPackageArtifacts: false`
-		// publish option were introduced together. A pre-upgrade Durable Object
-		// therefore already rebuilt artifacts inside its successful publish call.
-		// Cloudflare reports a call to its missing follow-up method with this
-		// generic `.bind` TypeError.
-		if (isUnavailableLegacyArtifactRpc(error)) return
 		throw new Error(
 			buildRebuildFailureMessage({
 				sourceId: input.sourceId,
