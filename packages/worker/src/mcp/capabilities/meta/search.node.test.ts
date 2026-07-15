@@ -194,6 +194,12 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			kodyId: 'daily-notes',
 		},
 	)
-	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 	expect(mockModule.getCapabilityRegistryForContext).toHaveBeenCalledTimes(1)
+	expect(mockModule.runPackageRetrievers).toHaveBeenCalledTimes(1)
+	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
+		expect.objectContaining({
+			conversationId: 'meta-natural-language',
+			query: 'search docs',
+		}),
+	)
 })
