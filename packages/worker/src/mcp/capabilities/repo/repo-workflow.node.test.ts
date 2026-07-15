@@ -554,7 +554,7 @@ test('repo open → run commands → publish session workflow', async () => {
 	expect(publishRpc.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 })
 
-test('repo_publish_session covers base_moved repair, artifact rebuild, and rebuild failures', async () => {
+test('repo_publish_session covers base_moved repair, artifact rebuild, legacy RPC compatibility, and rebuild failures', async () => {
 	resetMocks()
 	const baseMovedRpc = createRepoRpc()
 	baseMovedRpc.getSessionInfo.mockResolvedValueOnce({
@@ -665,6 +665,49 @@ test('repo_publish_session covers base_moved repair, artifact rebuild, and rebui
 		},
 		baseUrl: 'https://heykody.dev',
 	})
+
+	resetMocks()
+	const legacyRpc = createRepoRpc()
+	legacyRpc.getSessionInfo.mockResolvedValueOnce({
+		id: 'session-1',
+		source_id: 'source-package-1',
+		source_root: '/',
+		base_commit: 'commit-old',
+		session_branch: 'sessions/session-1',
+		source_branch: 'main',
+		conversation_id: null,
+		last_checkpoint_commit: 'commit-old',
+		last_check_run_id: 'check-1',
+		last_check_tree_hash: 'tree-1',
+		expires_at: null,
+		created_at: '2026-04-18T00:01:00.000Z',
+		updated_at: '2026-04-18T00:02:00.000Z',
+		published_commit: 'commit-old',
+		manifest_path: 'package.json',
+		entity_type: 'package',
+	})
+	legacyRpc.publishSession.mockResolvedValueOnce({
+		status: 'ok',
+		sessionId: 'session-1',
+		publishedCommit: 'commit-new',
+		message: 'Published session.',
+	})
+	legacyRpc.listPublishedPackageArtifactTargets.mockRejectedValueOnce(
+		new TypeError("Cannot read properties of undefined (reading 'bind')"),
+	)
+	mockModule.repoSessionRpc.mockReturnValue(legacyRpc)
+
+	await expect(
+		repoPublishSessionCapability.handler(
+			{ session_id: 'session-1' },
+			createCapabilityContext(),
+		),
+	).resolves.toMatchObject({
+		status: 'ok',
+		session_id: 'session-1',
+		published_commit: 'commit-new',
+	})
+	expect(legacyRpc.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 
 	resetMocks()
 	const rebuildFailureRpc = createRepoRpc()
