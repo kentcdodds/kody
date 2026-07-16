@@ -27,6 +27,7 @@ vi.mock('#worker/community/service.ts', () => ({
 		communityMockModule.searchCommunityListings(...args),
 	getCommunityListingWithAggregates: vi.fn(),
 	reportCommunityListing: vi.fn(),
+	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
 }))
 
 const sampleListing = {

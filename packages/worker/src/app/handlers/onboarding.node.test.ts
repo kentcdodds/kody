@@ -13,6 +13,10 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: vi.fn(async () => new Response('ok')),
 }))
 
+vi.mock('#worker/community/service.ts', () => ({
+	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
+}))
+
 test('onboarding serves public setup content to anonymous visitors', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const env = { COOKIE_SECRET: testCookieSecret } as Env
