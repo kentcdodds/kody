@@ -59,6 +59,15 @@ export function CommunityListingsContent(
 										{listing.name}
 									</a>
 								</h2>
+								{listing.trusted ? (
+									<span
+										data-testid={`community-listing-trusted-${listing.id}`}
+										title="An admin reviewed this exact version and marked it trusted."
+										mix={css(trustedBadgeCss)}
+									>
+										Trusted
+									</span>
+								) : null}
 							</div>
 							<p
 								mix={css(descriptionCss)}
@@ -144,6 +153,17 @@ const tagPillCss = {
 	backgroundColor: colors.primarySoftest,
 	color: colors.primaryText,
 	fontSize: typography.fontSize.sm,
+}
+
+const trustedBadgeCss = {
+	padding: `${spacing.xs} ${spacing.sm}`,
+	borderRadius: radius.full,
+	backgroundColor: colors.primarySoft,
+	color: colors.primaryText,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+	whiteSpace: 'nowrap' as const,
+	marginLeft: 'auto',
 }
 
 const statsCss = {

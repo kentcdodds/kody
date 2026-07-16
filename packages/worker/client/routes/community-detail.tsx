@@ -35,6 +35,7 @@ type CommunityDetailApiPayload = {
 	ok: true
 	listing: PublicCommunityListing
 	loggedIn: boolean
+	viewerIsAdmin: boolean
 	forkPrompt: string
 }
 
@@ -88,6 +89,8 @@ export async function communityDetailRouteLoader(
 			listingId,
 			forkPrompt: payload.forkPrompt,
 			loggedIn: payload.loggedIn,
+			viewerIsAdmin: payload.viewerIsAdmin,
+			trusted: payload.listing.trusted,
 			readmeContent: payload.listing.readmeContent,
 		},
 	}
@@ -100,6 +103,10 @@ function buildReportApiPath(listingId: string) {
 export function CommunityDetailRoute(handle: Handle) {
 	let forkPrompt = ''
 	let loggedIn = false
+	let viewerIsAdmin = false
+	let trusted = false
+	let trustState: 'idle' | 'submitting' | 'error' = 'idle'
+	let trustMessage: string | null = null
 	let readmeContent: string | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
@@ -143,6 +150,10 @@ export function CommunityDetailRoute(handle: Handle) {
 			}
 			forkPrompt = payload.forkPrompt
 			loggedIn = payload.loggedIn
+			viewerIsAdmin = payload.viewerIsAdmin
+			trusted = payload.listing.trusted
+			trustState = 'idle'
+			trustMessage = null
 			readmeContent = payload.listing.readmeContent
 			reportState = 'idle'
 			reportMessage = null
@@ -197,6 +208,50 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
+	async function submitTrust(nextTrusted: boolean) {
+		const listingId = getCurrentListingId(handle)
+		if (!listingId || trustState === 'submitting') return
+
+		trustState = 'submitting'
+		trustMessage = null
+		handle.update()
+
+		try {
+			const response = await fetch(
+				routes.communityTrustApiPost.href({ listingId }),
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({ trusted: nextTrusted }),
+				},
+			)
+			const payload = await readJson<{
+				ok: boolean
+				trusted?: boolean
+				error?: string
+			}>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error ?? 'Unable to update trust.')
+			}
+			trusted = payload.trusted ?? nextTrusted
+			trustState = 'idle'
+			handle.update()
+			// The trusted badge renders inside the server frame; reload it so
+			// the header reflects the new state immediately.
+			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+			if (frame) void frame.reload()
+		} catch (error) {
+			trustState = 'error'
+			trustMessage =
+				error instanceof Error ? error.message : 'Unable to update trust.'
+			handle.update()
+		}
+	}
+
 	async function copyForkPrompt() {
 		if (!forkPrompt) return
 		try {
@@ -244,6 +299,10 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 		forkPrompt = routeData.forkPrompt
 		loggedIn = routeData.loggedIn
+		viewerIsAdmin = routeData.viewerIsAdmin
+		trusted = routeData.trusted
+		trustState = 'idle'
+		trustMessage = null
 		readmeContent = routeData.readmeContent
 		reportState = 'idle'
 		reportMessage = null
@@ -342,6 +401,35 @@ export function CommunityDetailRoute(handle: Handle) {
 								{copyState === 'copied' ? 'Copied' : 'Copy prompt'}
 							</button>
 						</section>
+
+						{viewerIsAdmin ? (
+							<section mix={css(cardCss)} data-testid="community-admin-trust">
+								<h2 mix={css(cardTitleCss)}>Admin: trust</h2>
+								<p mix={css(descriptionCss)}>
+									{trusted
+										? 'This listing is marked trusted at its current version. Revoking removes the badge immediately.'
+										: 'Marking this listing trusted applies to the exact current version only. A republish by the owner drops the mark until it is re-reviewed.'}
+								</p>
+								<button
+									disabled={trustState === 'submitting'}
+									mix={[
+										on('click', () => void submitTrust(!trusted)),
+										css(secondaryButtonCss),
+									]}
+								>
+									{trustState === 'submitting'
+										? 'Saving…'
+										: trusted
+											? 'Revoke trust'
+											: 'Mark as trusted'}
+								</button>
+								{trustMessage ? (
+									<p mix={css({ margin: 0, color: colors.error })} role="alert">
+										{trustMessage}
+									</p>
+								) : null}
+							</section>
+						) : null}
 
 						{readmeContent ? (
 							<section mix={css(cardCss)}>

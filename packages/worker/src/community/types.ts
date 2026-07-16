@@ -16,6 +16,9 @@ export type CommunityListingRow = {
 	license: string
 	pinned_commit: string
 	status: CommunityListingStatus
+	trusted_commit: string | null
+	trusted_by_user_id: string | null
+	trusted_at: string | null
 	created_at: string
 	updated_at: string
 	published_at: string
@@ -43,6 +46,15 @@ export type CommunityListingRecord = {
 	 */
 	iconCommit: string
 	status: CommunityListingStatus
+	/**
+	 * Commit an admin reviewed when marking this listing trusted, or null when
+	 * never trusted (or trust was revoked). Trust follows the reviewed
+	 * content: `trusted` is true only while this matches `pinnedCommit`, so an
+	 * owner republish drops the effective mark until an admin re-reviews.
+	 */
+	trustedCommit: string | null
+	trustedAt: string | null
+	trusted: boolean
 	createdAt: string
 	updatedAt: string
 	publishedAt: string

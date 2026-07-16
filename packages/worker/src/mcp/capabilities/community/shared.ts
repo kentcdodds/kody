@@ -37,6 +37,12 @@ export const communityListingAggregatesSchema = z.object({
 	fork_count: z.number().int().nonnegative(),
 })
 
+export const communityTrustedFieldSchema = z
+	.boolean()
+	.describe(
+		'True when an admin reviewed and trusted the exact pinned commit of this listing.',
+	)
+
 export const communitySearchMatchSchema =
 	communityListingAggregatesSchema.extend({
 		listing_id: z.string(),
@@ -45,6 +51,7 @@ export const communitySearchMatchSchema =
 		description: z.string(),
 		tags: z.array(z.string()),
 		owner_anonymous: z.literal(true),
+		trusted: communityTrustedFieldSchema,
 		public_url: z.string(),
 	})
 

@@ -60,6 +60,9 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			license TEXT NOT NULL,
 			pinned_commit TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'delisted')),
+			trusted_commit TEXT,
+			trusted_by_user_id TEXT,
+			trusted_at TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			published_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)

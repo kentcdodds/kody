@@ -9,6 +9,7 @@ import {
 	communityGetForkInstructions,
 	communityListingAggregatesSchema,
 	communityListingStatusSchema,
+	communityTrustedFieldSchema,
 } from './shared.ts'
 
 export const communityGetCapability = defineDomainCapability(
@@ -33,6 +34,7 @@ export const communityGetCapability = defineDomainCapability(
 			license: z.string(),
 			pinned_commit: z.string(),
 			status: communityListingStatusSchema,
+			trusted: communityTrustedFieldSchema,
 			public_url: z.string(),
 			published_at: z.string(),
 			readme_untrusted: z.string().nullable(),
@@ -58,6 +60,7 @@ export const communityGetCapability = defineDomainCapability(
 				license: listing.license,
 				pinned_commit: listing.pinnedCommit,
 				status: listing.status,
+				trusted: listing.trusted,
 				public_url: buildCommunityPublicUrl(
 					ctx.callerContext.baseUrl,
 					listing.id,

@@ -68,6 +68,7 @@ export const routes = route({
 	communityDetailIcon: '/community/:listingId/icon/:iconCommit',
 	communityDetailOgImage: '/community/:listingId/og.png',
 	communityReportApiPost: post('/community/:listingId/report.json'),
+	communityTrustApiPost: post('/community/:listingId/trust.json'),
 	health: '/health',
 	login: '/login',
 	ogPageImage: '/og/:page.png',

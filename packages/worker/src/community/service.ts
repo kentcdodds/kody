@@ -41,6 +41,7 @@ import {
 	listCommunityReports as listCommunityReportsFromDb,
 	resolveCommunityReportRow,
 	setCommunityListingStatus,
+	setCommunityListingTrustedCommit,
 	updateCommunityListing,
 	upsertCommunityRating,
 	deleteCommunityBan,
@@ -509,6 +510,50 @@ export async function unpublishCommunityListing(input: {
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 	invalidateCommunityPublicCache()
+}
+
+/**
+ * Admin curation: mark a listing's current pinned commit as reviewed and
+ * trusted, or revoke the mark. Trust is stored per commit, so an owner
+ * republish (which moves the pinned commit) automatically drops the
+ * effective trusted state until an admin reviews the new content.
+ */
+export async function setCommunityListingTrusted(input: {
+	env: Env
+	adminUserId: string
+	listingId: string
+	trusted: boolean
+}): Promise<CommunityListingRecord> {
+	const listing = await getCommunityListingById(input.env.APP_DB, {
+		listingId: input.listingId,
+		includeDelisted: true,
+	})
+	if (!listing) {
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
+	}
+	if (input.trusted && listing.status !== 'active') {
+		throw new CommunityActionError(
+			'Delisted community listings cannot be marked trusted.',
+		)
+	}
+	await setCommunityListingTrustedCommit(input.env.APP_DB, {
+		listingId: input.listingId,
+		trustedCommit: input.trusted ? listing.pinnedCommit : null,
+		trustedByUserId: input.trusted ? input.adminUserId : null,
+	})
+	invalidateCommunityPublicCache()
+	const updated = await getCommunityListingById(input.env.APP_DB, {
+		listingId: input.listingId,
+		includeDelisted: true,
+	})
+	if (!updated) {
+		throw new Error(
+			`Community listing "${input.listingId}" could not be loaded.`,
+		)
+	}
+	return updated
 }
 
 export async function getCommunityListingWithAggregates(input: {

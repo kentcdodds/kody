@@ -18,6 +18,9 @@ import {
 function mapCommunityListingRow(
 	row: Record<string, unknown>,
 ): CommunityListingRecord {
+	const pinnedCommit = String(row['pinned_commit'])
+	const trustedCommit =
+		row['trusted_commit'] == null ? null : String(row['trusted_commit'])
 	return {
 		id: String(row['id']),
 		ownerUserId: String(row['owner_user_id']),
@@ -32,12 +35,15 @@ function mapCommunityListingRow(
 		readmeContent:
 			row['readme_content'] == null ? null : String(row['readme_content']),
 		license: String(row['license']),
-		pinnedCommit: String(row['pinned_commit']),
+		pinnedCommit,
 		iconCommit:
 			row['source_published_commit'] == null
-				? String(row['pinned_commit'])
+				? pinnedCommit
 				: String(row['source_published_commit']),
 		status: String(row['status']) as CommunityListingStatus,
+		trustedCommit,
+		trustedAt: row['trusted_at'] == null ? null : String(row['trusted_at']),
+		trusted: trustedCommit != null && trustedCommit === pinnedCommit,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 		publishedAt: String(row['published_at']),
@@ -107,6 +113,8 @@ const communityListingSelectColumns = `community_listings.id, community_listings
 	community_listings.search_text, community_listings.readme_content, community_listings.license,
 	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
 	community_listings.updated_at, community_listings.published_at,
+	community_listings.trusted_commit, community_listings.trusted_by_user_id,
+	community_listings.trusted_at,
 	entity_sources.published_commit AS source_published_commit`
 
 const communityListingSourceJoin = `LEFT JOIN entity_sources
@@ -142,9 +150,16 @@ export function extractCommunityListingLikeTokens(
 
 export async function insertCommunityListing(
 	db: D1Database,
+	// New listings are never trusted; the trust columns start NULL and are
+	// only set through setCommunityListingTrustedCommit.
 	row: Omit<
 		CommunityListingRow,
-		'created_at' | 'updated_at' | 'published_at'
+		| 'created_at'
+		| 'updated_at'
+		| 'published_at'
+		| 'trusted_commit'
+		| 'trusted_by_user_id'
+		| 'trusted_at'
 	> & {
 		created_at?: string
 		updated_at?: string
@@ -372,6 +387,32 @@ export async function deleteCommunityListing(
 	const result = await db
 		.prepare(`DELETE FROM community_listings WHERE id = ? ${ownerClause}`)
 		.bind(...bindings)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function setCommunityListingTrustedCommit(
+	db: D1Database,
+	input: {
+		listingId: string
+		trustedCommit: string | null
+		trustedByUserId: string | null
+	},
+): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await db
+		.prepare(
+			`UPDATE community_listings
+			SET trusted_commit = ?, trusted_by_user_id = ?, trusted_at = ?, updated_at = ?
+			WHERE id = ?`,
+		)
+		.bind(
+			input.trustedCommit,
+			input.trustedCommit == null ? null : input.trustedByUserId,
+			input.trustedCommit == null ? null : now,
+			now,
+			input.listingId,
+		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

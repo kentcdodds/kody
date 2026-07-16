@@ -59,6 +59,7 @@ export const communitySearchCapability = defineDomainCapability(
 					description: listing.description,
 					tags: listing.tags,
 					owner_anonymous: true as const,
+					trusted: listing.trusted,
 					average_stars: listing.averageStars,
 					rating_count: listing.ratingCount,
 					average_adaptation_effort: listing.averageAdaptationEffort,

@@ -135,17 +135,23 @@ async function loadCommunityDetailDataUncached(
 	if (!listing) return null
 
 	const user = await readAuthenticatedAppUser(request, env)
-	return composeCommunityDetailLoaderData(listing, Boolean(user))
+	return composeCommunityDetailLoaderData(
+		listing,
+		Boolean(user),
+		user?.roles.includes('admin') ?? false,
+	)
 }
 
 export function composeCommunityDetailLoaderData(
 	listing: PublicCommunityListing,
 	loggedIn: boolean,
+	viewerIsAdmin = false,
 ): CommunityDetailLoaderData {
 	return {
 		ok: true,
 		listing,
 		loggedIn,
+		viewerIsAdmin,
 		forkPrompt: buildForkPrompt({
 			name: listing.name,
 			listingId: listing.id,

@@ -108,6 +108,21 @@ Your agent should:
 
 Only after publish does the package become a live saved package in your account.
 
+## Trusted listings
+
+Admins can mark a listing as **trusted** after reviewing its content. Trusted
+listings show a **Trusted** badge on `/community` cards and detail pages, and
+`community_search` / `community_get` include a `trusted` field.
+
+Trust is pinned to the **exact reviewed commit**. When the owner republishes the
+listing with new content, the badge disappears until an admin reviews the new
+version and re-trusts it. A trusted badge means an admin reviewed that version —
+it is still your responsibility (and your agent's) to review forked code before
+publishing it into your account.
+
+Admins toggle trust from the listing detail page or with the
+`community_set_trusted` capability.
+
 ## Ratings
 
 After forking, your agent can call `community_rate` with:
@@ -146,6 +161,8 @@ Use the MCP `community` domain:
   published)
 - `community_rate` — rate a listing after forking
 - `community_report` — report a listing (requires login)
+- `community_set_trusted` — admin-only: mark or unmark a listing as trusted at
+  its current pinned commit
 
 ## Privacy and isolation
 

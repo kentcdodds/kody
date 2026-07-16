@@ -11,6 +11,7 @@ export type CommunityDetailLoaderData = {
 	ok: true
 	listing: PublicCommunityListing
 	loggedIn: boolean
+	viewerIsAdmin: boolean
 	forkPrompt: string
 }
 
@@ -20,6 +21,8 @@ export type CommunityDetailShellLoaderData = {
 	listingId: string
 	forkPrompt: string
 	loggedIn: boolean
+	viewerIsAdmin: boolean
+	trusted: boolean
 	readmeContent: string | null
 }
 

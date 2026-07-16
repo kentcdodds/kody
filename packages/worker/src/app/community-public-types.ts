@@ -15,6 +15,8 @@ export type PublicCommunityListing = {
 	pinnedCommit: string
 	publishedAt: string
 	ownerUsername: string
+	/** True when an admin marked the current pinned commit as reviewed. */
+	trusted: boolean
 	averageStars: number | null
 	ratingCount: number
 	averageAdaptationEffort: number | null

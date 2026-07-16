@@ -50,6 +50,17 @@ Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
 owner unpublish. **Hard delete** (admin report action) removes the listing row,
 KV snapshot, and ratings.
 
+Admin **trust** marks live in `trusted_commit` / `trusted_by_user_id` /
+`trusted_at` (migration `0059-community-trusted-listings.sql`). A listing is
+effectively trusted only while `trusted_commit = pinned_commit`, so an owner
+republish (which moves the pinned commit) drops the effective mark without an
+explicit revoke. `setCommunityListingTrusted` in `service.ts` sets or clears the
+mark; delisted listings cannot be trusted. Surfaces: the `Trusted` badge on
+`/community` cards and detail pages, the admin-only toggle on the detail page
+(`POST /community/:listingId/trust.json`, audited), and the admin-only
+`community_set_trusted` capability. `community_search` and `community_get`
+expose the effective `trusted` flag.
+
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
 
@@ -130,6 +141,7 @@ Capabilities:
 - `community_fork`
 - `community_rate`
 - `community_report`
+- `community_set_trusted` (admin-only via `requiredRole`)
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
 builtin domains (see [Adding capabilities](./adding-kody.md)). Do not surface

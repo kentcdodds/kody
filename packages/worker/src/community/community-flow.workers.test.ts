@@ -7,10 +7,13 @@ import { communityPublishCapability } from '#mcp/capabilities/community/publish.
 import { communityRateCapability } from '#mcp/capabilities/community/rate.ts'
 import { communityReportCapability } from '#mcp/capabilities/community/report.ts'
 import { communitySearchCapability } from '#mcp/capabilities/community/search.ts'
+import { communitySetTrustedCapability } from '#mcp/capabilities/community/set-trusted.ts'
 import { communityContentWarning } from '#mcp/capabilities/community/shared.ts'
+import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import {
 	banCommunityUser,
 	resolveCommunityReport,
+	setCommunityListingTrusted,
 } from '#worker/community/service.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -154,6 +157,7 @@ async function seedOwnerPackage(input: {
 		source: entitySource,
 		files,
 	})
+	return { entitySource, files }
 }
 
 test('community package flow works end-to-end through capability handlers', async () => {
@@ -194,7 +198,7 @@ test('community package flow works end-to-end through capability handlers', asyn
 	const kodyId = `community-flow-${unique}`
 	const publishedCommit = `commit-${unique}`
 
-	await seedOwnerPackage({
+	const seeded = await seedOwnerPackage({
 		testEnv,
 		owner,
 		packageId,
@@ -294,6 +298,53 @@ test('community package flow works end-to-end through capability handlers', asyn
 	expect(ratedListing.rating_count).toBe(1)
 	expect(ratedListing.average_stars).toBe(5)
 
+	// Admin curation: trust pins to the reviewed commit and the effective
+	// mark drops as soon as the owner republishes new content.
+	expect(ratedListing.trusted).toBe(false)
+	const trustedListing = await setCommunityListingTrusted({
+		env: testEnv,
+		adminUserId: admin.userId,
+		listingId,
+		trusted: true,
+	})
+	expect(trustedListing.trusted).toBe(true)
+	expect(trustedListing.trustedCommit).toBe(publishedCommit)
+	const trustedGet = await communityGetCapability.handler(
+		{ listing_id: listingId },
+		forkerCtx,
+	)
+	expect(trustedGet.trusted).toBe(true)
+
+	const republishedCommit = `commit-republished-${unique}`
+	await writePublishedSourceSnapshot({
+		env: testEnv,
+		source: { ...seeded.entitySource, published_commit: republishedCommit },
+		files: seeded.files,
+	})
+	await runSql(
+		`UPDATE entity_sources SET published_commit = ? WHERE id = ?`,
+		republishedCommit,
+		sourceId,
+	)
+	const republishResult = await communityPublishCapability.handler(
+		{ package_id: packageId },
+		ownerCtx,
+	)
+	expect(republishResult.pinned_commit).toBe(republishedCommit)
+	const afterRepublish = await communityGetCapability.handler(
+		{ listing_id: listingId },
+		forkerCtx,
+	)
+	expect(afterRepublish.trusted).toBe(false)
+
+	// Access control: only admins may reach community_set_trusted.
+	expect(
+		callerCanAccessCapability(
+			forkerCtx.callerContext,
+			communitySetTrustedCapability,
+		),
+	).toBe(false)
+
 	const reportResult = await communityReportCapability.handler(
 		{
 			listing_id: listingId,
@@ -318,6 +369,15 @@ test('community package flow works end-to-end through capability handlers', asyn
 	await expect(
 		communityPublishCapability.handler({ package_id: packageId }, ownerCtx),
 	).rejects.toThrow('was delisted by an admin and cannot be re-published')
+
+	await expect(
+		setCommunityListingTrusted({
+			env: testEnv,
+			adminUserId: admin.userId,
+			listingId,
+			trusted: true,
+		}),
+	).rejects.toThrow('Delisted community listings cannot be marked trusted.')
 
 	await banCommunityUser({
 		env: testEnv,
