@@ -128,6 +128,16 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'banned_by_user_id',
 		value: 'deleted-user',
 	},
+	// Trust marks record which admin reviewed a listing. When that admin's
+	// account is deleted the mark itself stays valid (the review happened);
+	// only the attribution is anonymized, matching community_bans.
+	{
+		kind: 'replace_user_column',
+		table: 'community_listings',
+		matchColumn: 'trusted_by_user_id',
+		setColumn: 'trusted_by_user_id',
+		value: 'deleted-user',
+	},
 	{
 		kind: 'user_columns',
 		table: 'community_listings',
