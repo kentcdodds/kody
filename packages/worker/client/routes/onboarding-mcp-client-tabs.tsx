@@ -1,6 +1,6 @@
 import { type Handle, css } from 'remix/ui'
-import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { on } from '#client/event-mixin.ts'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
@@ -9,33 +9,70 @@ import {
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
 	codingAgentPackageHint,
+	type McpClientKind,
 	mcpClientTabs,
 	nonCodingAgentNote,
 } from '#client/routes/onboarding-mcp-clients.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	mq,
+	radius,
+	spacing,
+	typography,
+} from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
-	insetCardCss,
+	getSecondaryButtonCss,
+	pageEyebrowCss,
 } from '#client/styles/style-primitives.ts'
 
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
 }
 
-function ConfigSnippet(handle: Handle<{ value: string; idleLabel: string }>) {
+function tabButtonId(id: McpClientKind) {
+	return `onboarding-mcp-client-tab-${id}`
+}
+
+function tabPanelId(id: McpClientKind) {
+	return `onboarding-mcp-client-panel-${id}`
+}
+
+type CopyCardProps = {
+	label: string
+	value: string
+	copyLabel: string
+	variant?: 'primary' | 'secondary'
+}
+
+/**
+ * Framed code block with a header row showing the file/target label on the
+ * left and a matching copy button on the right. On narrow viewports the
+ * header stacks and the copy button goes full width.
+ */
+function CopyCard(handle: Handle<CopyCardProps>) {
 	return () => (
-		<div mix={css(snippetWrapCss)}>
+		<div mix={css(copyCardCss)}>
+			<div mix={css(copyCardHeaderCss)}>
+				<span mix={css(copyCardLabelCss)}>{handle.props.label}</span>
+				<div mix={css(copyCardActionCss)}>
+					<CopyTextButton
+						value={handle.props.value}
+						idleLabel={handle.props.copyLabel}
+						variant={handle.props.variant ?? 'secondary'}
+					/>
+				</div>
+			</div>
 			<pre mix={css(codeBlockCss)}>{handle.props.value}</pre>
-			<CopyTextButton
-				value={handle.props.value}
-				idleLabel={handle.props.idleLabel}
-				variant="secondary"
-			/>
 		</div>
 	)
 }
 
-function ClientNote(handle: Handle<{ children: string }>) {
+type ClientNoteProps = {
+	children: string
+}
+
+function ClientNote(handle: Handle<ClientNoteProps>) {
 	return () => (
 		<p mix={css(noteCss)} role="note">
 			{handle.props.children}
@@ -43,64 +80,49 @@ function ClientNote(handle: Handle<{ children: string }>) {
 	)
 }
 
-export function OnboardingMcpClientTabs(
-	handle: Handle<OnboardingMcpClientTabsProps>,
-) {
-	return () => {
-		const mcpServerUrl = handle.props.mcpServerUrl
-		const cursorJson = buildCursorMcpJson(mcpServerUrl)
-		const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
-		const claudeCodeCommand = buildClaudeCodeAddCommand(mcpServerUrl)
-		const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
-		const openCodeJson = buildOpenCodeMcpJson(mcpServerUrl)
-		const codexToml = buildCodexMcpToml(mcpServerUrl)
-
-		return (
-			<Tabs defaultActiveTab="cursor">
-				<TabList aria-label="MCP client setup instructions">
-					{mcpClientTabs.map((tab) => (
-						<Tab name={tab.id}>{tab.label}</Tab>
-					))}
-				</TabList>
-
-				<TabPanel name="cursor">
+function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
+	switch (kind) {
+		case 'cursor': {
+			const cursorJson = buildCursorMcpJson(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						In Cursor, open <strong>Customize</strong> and add a remote MCP
 						server with this URL, or merge the JSON below into{' '}
 						<code>~/.cursor/mcp.json</code> (global) or{' '}
 						<code>.cursor/mcp.json</code> (project).
 					</p>
-					<pre mix={css(codeBlockCss)}>{mcpServerUrl}</pre>
-					<div mix={css(buttonRowCss)}>
-						<CopyTextButton
-							value={mcpServerUrl}
-							idleLabel="Copy MCP URL"
-							variant="primary"
-						/>
-					</div>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="primary"
+					/>
 					<p mix={css(descriptionCss)}>
 						JSON config (merge under your existing <code>mcpServers</code> if
 						you already have one):
 					</p>
-					<ConfigSnippet value={cursorJson} idleLabel="Copy JSON" />
+					<CopyCard label="mcp.json" value={cursorJson} copyLabel="Copy JSON" />
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
-				</TabPanel>
-
-				<TabPanel name="codex-chatgpt">
+				</>
+			)
+		}
+		case 'codex-chatgpt': {
+			const codexToml = buildCodexMcpToml(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						<strong>ChatGPT (web)</strong>: turn on Developer mode under
 						Settings → Security and login, then create a developer-mode app /
 						connector pointed at the MCP URL below. Complete OAuth when
 						prompted.
 					</p>
-					<pre mix={css(codeBlockCss)}>{mcpServerUrl}</pre>
-					<div mix={css(buttonRowCss)}>
-						<CopyTextButton
-							value={mcpServerUrl}
-							idleLabel="Copy MCP URL"
-							variant="primary"
-						/>
-					</div>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="primary"
+					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 					<p mix={css(descriptionCss)}>
 						<strong>Codex</strong> (ChatGPT desktop, Codex CLI, and the IDE
@@ -108,123 +130,295 @@ export function OnboardingMcpClientTabs(
 						streamable HTTP entry, then run <code>codex mcp login kody</code> if
 						OAuth does not start automatically:
 					</p>
-					<ConfigSnippet value={codexToml} idleLabel="Copy TOML" />
-				</TabPanel>
-
-				<TabPanel name="claude-desktop">
+					<CopyCard
+						label="config.toml"
+						value={codexToml}
+						copyLabel="Copy TOML"
+					/>
+				</>
+			)
+		}
+		case 'claude-desktop':
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						In Claude Desktop, open <strong>Settings → Connectors</strong> (or
 						Customize → Connectors), add a custom connector, and paste this MCP
 						URL. Claude Desktop handles remote OAuth through that UI — do not
 						put the remote URL into <code>claude_desktop_config.json</code>.
 					</p>
-					<pre mix={css(codeBlockCss)}>{mcpServerUrl}</pre>
-					<div mix={css(buttonRowCss)}>
-						<CopyTextButton
-							value={mcpServerUrl}
-							idleLabel="Copy MCP URL"
-							variant="primary"
-						/>
-					</div>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="primary"
+					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
-				</TabPanel>
-
-				<TabPanel name="claude-code">
+				</>
+			)
+		case 'claude-code': {
+			const claudeCodeCommand = buildClaudeCodeAddCommand(mcpServerUrl)
+			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						Prefer the CLI (user scope, all projects):
 					</p>
-					<ConfigSnippet value={claudeCodeCommand} idleLabel="Copy command" />
+					<CopyCard
+						label="claude CLI"
+						value={claudeCodeCommand}
+						copyLabel="Copy command"
+					/>
 					<p mix={css(descriptionCss)}>
 						Or merge this into a project <code>.mcp.json</code> (or the
 						user-scoped <code>mcpServers</code> block). Claude Code requires{' '}
 						<code>type: &quot;http&quot;</code> for remote servers:
 					</p>
-					<ConfigSnippet value={claudeCodeJson} idleLabel="Copy JSON" />
+					<CopyCard
+						label=".mcp.json"
+						value={claudeCodeJson}
+						copyLabel="Copy JSON"
+					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
-				</TabPanel>
-
-				<TabPanel name="opencode">
+				</>
+			)
+		}
+		case 'opencode': {
+			const openCodeJson = buildOpenCodeMcpJson(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						Add this to your OpenCode config (<code>opencode.json</code> in the
 						project, or your global OpenCode config). OpenCode uses{' '}
 						<code>type: &quot;remote&quot;</code> and will start OAuth when
 						needed:
 					</p>
-					<ConfigSnippet value={openCodeJson} idleLabel="Copy JSON" />
+					<CopyCard
+						label="opencode.json"
+						value={openCodeJson}
+						copyLabel="Copy JSON"
+					/>
 					<p mix={css(descriptionCss)}>
 						You can also run <code>opencode mcp add</code> and paste the URL
 						interactively, then <code>opencode mcp auth kody</code> if prompted.
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
-				</TabPanel>
-
-				<TabPanel name="vscode">
+				</>
+			)
+		}
+		case 'vscode': {
+			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						Create or edit <code>.vscode/mcp.json</code> in your workspace (or
 						open user MCP config via the{' '}
 						<strong>MCP: Open User Configuration</strong> command). VS Code uses
 						the root key <code>servers</code>, not <code>mcpServers</code>:
 					</p>
-					<ConfigSnippet value={vsCodeJson} idleLabel="Copy JSON" />
+					<CopyCard
+						label=".vscode/mcp.json"
+						value={vsCodeJson}
+						copyLabel="Copy JSON"
+					/>
 					<p mix={css(descriptionCss)}>
 						Use Agent mode in Copilot Chat so MCP tools are available, then
 						complete OAuth when VS Code opens it.
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
-				</TabPanel>
-
-				<TabPanel name="other">
+				</>
+			)
+		}
+		case 'other':
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
 						Any MCP-capable host that supports remote / streamable HTTP servers
 						can connect to Kody. Add a remote MCP server pointed at this URL and
 						complete the OAuth flow when the host opens it:
 					</p>
-					<pre mix={css(codeBlockCss)}>{mcpServerUrl}</pre>
-					<div mix={css(buttonRowCss)}>
-						<CopyTextButton
-							value={mcpServerUrl}
-							idleLabel="Copy MCP URL"
-							variant="primary"
-						/>
-					</div>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="primary"
+					/>
 					<p mix={css(descriptionCss)}>
 						Config file shapes differ by host. If your client expects a JSON{' '}
 						<code>mcpServers</code> map with a <code>url</code> field, start
 						from the Cursor snippet; if it uses <code>servers</code> with{' '}
 						<code>type: &quot;http&quot;</code>, use the VS Code snippet.
 					</p>
-				</TabPanel>
-			</Tabs>
+				</>
+			)
+		default: {
+			const exhaustive: never = kind
+			return exhaustive
+		}
+	}
+}
+
+export function OnboardingMcpClientTabs(
+	handle: Handle<OnboardingMcpClientTabsProps>,
+) {
+	let selectedTab: McpClientKind = 'cursor'
+	const secondaryButtonCss = getSecondaryButtonCss()
+
+	function selectTab(id: McpClientKind) {
+		if (selectedTab === id) return
+		selectedTab = id
+		handle.update()
+	}
+
+	return () => {
+		const mcpServerUrl = handle.props.mcpServerUrl
+		const activeTab = selectedTab
+
+		return (
+			<div mix={css(tabsRootCss)}>
+				<div mix={css(tabPickerCss)}>
+					<p mix={css(pageEyebrowCss)}>Choose your client</p>
+					<div
+						role="tablist"
+						aria-label="MCP client setup instructions"
+						mix={css(tabListCss)}
+					>
+						{mcpClientTabs.map((tab) => {
+							const isActive = tab.id === activeTab
+							return (
+								<button
+									key={tab.id}
+									type="button"
+									role="tab"
+									id={tabButtonId(tab.id)}
+									aria-selected={isActive}
+									aria-controls={tabPanelId(tab.id)}
+									tabIndex={isActive ? 0 : -1}
+									mix={[
+										on('click', () => selectTab(tab.id)),
+										css({
+											...secondaryButtonCss,
+											...tabPillCss,
+											...(isActive
+												? {
+														borderColor: colors.primary,
+														backgroundColor: colors.primarySoftest,
+														color: colors.primaryText,
+														fontWeight: typography.fontWeight.medium,
+													}
+												: {}),
+										}),
+									]}
+								>
+									{tab.label}
+								</button>
+							)
+						})}
+					</div>
+				</div>
+
+				<div
+					role="tabpanel"
+					id={tabPanelId(activeTab)}
+					aria-labelledby={tabButtonId(activeTab)}
+					mix={css(tabPanelCss)}
+				>
+					{renderPanelContent(activeTab, mcpServerUrl)}
+				</div>
+			</div>
 		)
 	}
 }
 
-const codeBlockCss = {
-	...insetCardCss,
-	margin: 0,
-	whiteSpace: 'pre-wrap' as const,
-	wordBreak: 'break-word' as const,
-	fontFamily: typography.fontFamily,
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.6,
+const tabsRootCss = {
+	display: 'grid',
+	gap: spacing.lg,
 }
 
-const snippetWrapCss = {
+const tabPickerCss = {
 	display: 'grid',
 	gap: spacing.sm,
 }
 
-const buttonRowCss = {
+const tabListCss = {
 	display: 'flex',
 	gap: spacing.sm,
 	flexWrap: 'wrap' as const,
+}
+
+const tabPillCss = {
+	[mq.mobile]: {
+		padding: `${spacing.xs} ${spacing.sm}`,
+		fontSize: typography.fontSize.sm,
+	},
+}
+
+const tabPanelCss = {
+	display: 'grid',
+	gap: spacing.md,
+	minWidth: 0,
+}
+
+const copyCardCss = {
+	display: 'grid',
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.background,
+	overflow: 'hidden' as const,
+	minWidth: 0,
+}
+
+const copyCardHeaderCss = {
+	display: 'flex',
+	alignItems: 'center',
+	justifyContent: 'space-between',
+	gap: spacing.sm,
+	padding: `${spacing.sm} ${spacing.md}`,
+	borderBottom: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	flexWrap: 'wrap' as const,
+	[mq.mobile]: {
+		flexDirection: 'column' as const,
+		alignItems: 'stretch',
+	},
+}
+
+const copyCardActionCss = {
+	[mq.mobile]: {
+		display: 'grid',
+		width: '100%',
+		'& > button': {
+			width: '100%',
+		},
+	},
+}
+
+const copyCardLabelCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+	textTransform: 'uppercase' as const,
+	letterSpacing: '0.08em',
+}
+
+const codeBlockCss = {
+	margin: 0,
+	padding: spacing.md,
+	whiteSpace: 'pre-wrap' as const,
+	wordBreak: 'break-word' as const,
+	fontFamily:
+		'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+	fontSize: typography.fontSize.sm,
+	lineHeight: 1.6,
+	color: colors.text,
 }
 
 const noteCss = {
 	...descriptionCss,
 	margin: 0,
 	padding: spacing.md,
-	borderRadius: 'var(--radius-md)',
+	borderRadius: radius.md,
 	border: `1px solid ${colors.border}`,
 	background: colors.primarySoftest,
 }
