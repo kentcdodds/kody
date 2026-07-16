@@ -28,14 +28,19 @@ async function waitForCloudflareMock(
 		)
 		const origin = readyMatch?.[1]
 		if (origin) {
+			let response: Response | undefined
 			try {
-				const response = await fetch(`${origin}/__mocks/meta`)
+				const remainingTime = Math.max(1, deadline - Date.now())
+				response = await fetch(`${origin}/__mocks/meta`, {
+					signal: AbortSignal.timeout(Math.min(1_000, remainingTime)),
+				})
 				if (response.ok) {
-					await response.body?.cancel()
 					return origin
 				}
 			} catch {
 				/* retry */
+			} finally {
+				await response?.body?.cancel()
 			}
 		}
 
