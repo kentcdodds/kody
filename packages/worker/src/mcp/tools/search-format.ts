@@ -123,6 +123,7 @@ export type SlimSearchMatch =
 			mcpServer?: CapabilitySpec['mcpServer']
 			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string
+			inputTypeDefinitionTruncated?: boolean
 	  }
 	| {
 			type: 'package'
@@ -760,6 +761,9 @@ export function toSlimStructuredMatches(input: {
 				...(match.inputTypeDefinition
 					? { inputTypeDefinition: match.inputTypeDefinition }
 					: {}),
+				...(match.inputTypeDefinitionTruncated
+					? { inputTypeDefinitionTruncated: true }
+					: {}),
 			}
 		}
 		if (match.type === 'package') {
@@ -929,10 +933,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			for (const related of relatedOperations) {
 				const openApiSuffix =
 					related.method && related.path
-						? ` — \`${related.method.toUpperCase()} ${related.path}\``
+						? ` — ${formatMarkdownInlineCode(`${related.method.toUpperCase()} ${related.path}`)}`
 						: ''
 				lines.push(
-					`- \`${related.name}\`${openApiSuffix} — ${escapeMarkdownText(formatOneLineSentence(related.description))} Entity: \`${related.entityRef}\``,
+					`- ${formatMarkdownInlineCode(related.name)}${openApiSuffix} — ${escapeMarkdownText(formatOneLineSentence(related.description))} Entity: ${formatMarkdownInlineCode(related.entityRef)}`,
 				)
 			}
 		}

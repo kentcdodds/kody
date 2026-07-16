@@ -1169,7 +1169,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 
 	const result = await searchUnified({
 		env: {} as Env,
-		query: 'widget export job',
+		query: 'create widget export job',
 		limit: 10,
 		registry,
 		optionalRows: emptyOptionalSearchRows,
@@ -1196,11 +1196,28 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 	expect(capabilityMatches[3]).toMatchObject({ type: 'capability' })
 	expect(capabilityMatches[3]).not.toHaveProperty('inputTypeDefinition')
 
-	const truncated = withShapes.find(
-		(match) =>
-			match.type === 'capability' && match.inputTypeDefinitionTruncated,
-	)
-	expect(truncated).toBeDefined()
-	expect(truncated?.inputTypeDefinition?.endsWith('...')).toBe(true)
-	expect(result.guidance).toMatch(/inlined call shape/i)
+	const [topMatch] = capabilityMatches
+	expect(topMatch).toMatchObject({
+		type: 'capability',
+		name: 'openapi:widgets:createwidget',
+		inputTypeDefinitionTruncated: true,
+	})
+	expect(topMatch?.inputTypeDefinition?.endsWith('...')).toBe(true)
+	expect(result.guidance).toMatch(/Inspect capability detail/i)
+	expect(result.guidance).not.toMatch(/inlined call shape/i)
+
+	const nonTruncatedTop = await searchUnified({
+		env: {} as Env,
+		query: 'list widget export jobs',
+		limit: 10,
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+	const [listTop] = nonTruncatedTop.matches
+	expect(listTop).toMatchObject({
+		type: 'capability',
+		name: 'openapi:widgets:listwidgets',
+	})
+	expect(listTop).not.toHaveProperty('inputTypeDefinitionTruncated')
+	expect(nonTruncatedTop.guidance).toMatch(/inlined call shape/i)
 })

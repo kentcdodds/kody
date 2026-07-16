@@ -68,6 +68,10 @@ import {
 	resolveConversationId,
 } from './tool-call-context.ts'
 import {
+	escapeMarkdownText,
+	formatMarkdownInlineCode,
+} from './markdown-safety.ts'
+import {
 	type PackageActionMatch,
 	type RelatedCapabilityOperation,
 	type SearchEntityDetailStructured,
@@ -407,7 +411,10 @@ function buildRecommendedNextStep(
 	}
 	if (topMatch?.type === 'capability') {
 		const accessor = buildKodyCapabilityAccessor(topMatch)
-		if (topMatch.inputTypeDefinition) {
+		if (
+			topMatch.inputTypeDefinition &&
+			!topMatch.inputTypeDefinitionTruncated
+		) {
 			return `Call \`${accessor}(args)\` from \`execute\` using the inlined call shape above. Use \`search({ entity: "${topMatch.name}:capability" })\` only if you need the full type definitions.`
 		}
 		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
@@ -2398,12 +2405,34 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 								error: entry.error,
 							})
 							markdownParts.push(
-								`Error resolving \`${entry.entityRef}\`: ${entry.error}`,
+								`Error resolving ${formatMarkdownInlineCode(entry.entityRef)}: ${escapeMarkdownText(entry.error)}`,
+							)
+							continue
+						}
+						const entityResult = formatEntityDetailMarkdown(entry.detail)
+						const candidateStructured = [
+							...structuredResults,
+							entityResult.structured,
+						]
+						const hasFullDetail = structuredResults.some(
+							(result) => 'kind' in result && result.kind === 'entity',
+						)
+						if (
+							hasFullDetail &&
+							JSON.stringify(candidateStructured).length > maxChars
+						) {
+							const overflowError =
+								'Omitted from batch response (exceeds size budget). Look up individually with search({ entity }).'
+							structuredResults.push({
+								entityRef: entry.entityRef,
+								error: overflowError,
+							})
+							markdownParts.push(
+								`Error resolving ${formatMarkdownInlineCode(entry.entityRef)}: ${escapeMarkdownText(overflowError)}`,
 							)
 							continue
 						}
 						successCount += 1
-						const entityResult = formatEntityDetailMarkdown(entry.detail)
 						structuredResults.push(entityResult.structured)
 						markdownParts.push(entityResult.markdown)
 					}

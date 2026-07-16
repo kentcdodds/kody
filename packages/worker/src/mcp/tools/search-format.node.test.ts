@@ -941,9 +941,11 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	expect(slimTruncated).toMatchObject({
 		type: 'capability',
 		inputTypeDefinition: compact.definition,
+		inputTypeDefinitionTruncated: true,
 	})
 	expect(slimWithoutShape).toMatchObject({ type: 'capability' })
 	expect(slimWithoutShape).not.toHaveProperty('inputTypeDefinition')
+	expect(slimWithoutShape).not.toHaveProperty('inputTypeDefinitionTruncated')
 
 	const openApiDetail = formatEntityDetailMarkdown({
 		type: 'capability',

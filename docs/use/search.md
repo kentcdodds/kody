@@ -47,11 +47,11 @@ response must stay small.
 
 ## Entity detail
 
-To get **full markdown and call shapes for one hit** (for example a capability’s
-ready-to-run **execute** snippet plus `inputTypeDefinition` /
-`outputTypeDefinition`), call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `value`, `integration`,
-`package`, or `secret`.
+To get **full markdown detail for one hit**, call **search** again with
+**`entity`** set to `"{id}:{type}"` where **`type`** is `capability`, `value`,
+`integration`, `package`, or `secret`. Capability entities additionally include
+a ready-to-run **execute** snippet plus `inputTypeDefinition` /
+`outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll OpenAPI pair). Each ref resolves independently:
