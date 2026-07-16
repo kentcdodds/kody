@@ -72,8 +72,10 @@ export function readHostnameFromFetchInput(input: RequestInfo | URL) {
 }
 
 /**
- * Wrap an outbound Fetcher so each ad hoc execute raw `fetch` records its
- * literal hostname before the request reaches the fetch gateway.
+ * Test/helper wrapper that records literal hostnames from fetch inputs.
+ * Do not pass the result to WorkerLoader `globalOutbound` — LOADER requires a
+ * real Fetcher binding. Production counting wraps `globalThis.fetch` inside
+ * the execute sandbox instead (see `#mcp/executor.ts`).
  */
 export function wrapOutboundFetcherRecordingHosts(
 	outbound: Fetcher,

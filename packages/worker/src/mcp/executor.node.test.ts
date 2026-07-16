@@ -293,8 +293,12 @@ test('generated kody provider source avoids bundle-scoped __name helpers', () =>
 		],
 		shadowGlobalThis: false,
 		timeoutMs: 1_000,
+		excludedHostname: 'heykody.dev',
 	})
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
+	expect(moduleSource).toContain('rawFetchHosts: __kodyRawFetchHosts')
+	expect(moduleSource).toContain('heykody.dev')
+	expect(moduleSource).toContain('__kodyNativeFetch')
 })
 
 test('generated kody provider source wires remote proxy dispatch', async () => {

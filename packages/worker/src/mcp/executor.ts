@@ -13,7 +13,6 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 import {
 	readBaseUrlHostname,
-	wrapOutboundFetcherRecordingHosts,
 	type RawFetchHostSink,
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
@@ -53,7 +52,7 @@ const dynamicWorkerCompatibilityDate = '2025-06-01'
 const dynamicWorkerCompatibilityFlags = ['nodejs_compat'] as const
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'kody-'
-const dynamicWorkerCacheKeyVersion = 2
+const dynamicWorkerCacheKeyVersion = 3
 const reservedProviderNames = new Set(['__dispatchers', '__logs'])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const javascriptReservedWords = new Set([
@@ -116,6 +115,7 @@ type DynamicWorkerExecutorInput = {
 	gatewayProps: FetchGatewayProps
 	appCommitSha?: string | null
 	usageEnv: UsageEnv
+	rawFetchHostSink?: RawFetchHostSink
 }
 
 type DynamicWorkerExecutorOptions = {
@@ -131,6 +131,7 @@ type DynamicWorkerEntrypoint = {
 		result: unknown
 		error?: string
 		logs?: Array<string>
+		rawFetchHosts?: Array<string>
 	}>
 }
 
@@ -221,8 +222,9 @@ export function createExecuteExecutor(input: {
 	timeoutMs?: number | null
 	/**
 	 * Optional sink for literal hostnames observed on ad hoc execute raw
-	 * `fetch` traffic (before the fetch gateway). Package-context runs should
-	 * omit this so saved-package outbound requests are not counted.
+	 * `fetch` traffic. Counting happens inside the sandbox (so LOADER keeps a
+	 * real Fetcher for globalOutbound). Package-context runs should omit this
+	 * so saved-package outbound requests are not counted.
 	 */
 	rawFetchHostSink?: RawFetchHostSink
 }) {
@@ -236,26 +238,17 @@ export function createExecuteExecutor(input: {
 		input.timeoutMs === null
 			? maxSupportedExecutorTimeoutMs
 			: (input.timeoutMs ?? 90_000)
-	const gatewayOutbound = loopbackExports.KodyFetchGateway({
-		props: input.gatewayProps,
-	})
-	const globalOutbound = input.rawFetchHostSink
-		? wrapOutboundFetcherRecordingHosts(
-				gatewayOutbound,
-				input.rawFetchHostSink,
-				{
-					excludedHostname: readBaseUrlHostname(input.gatewayProps.baseUrl),
-				},
-			)
-		: gatewayOutbound
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
-		globalOutbound,
+		globalOutbound: loopbackExports.KodyFetchGateway({
+			props: input.gatewayProps,
+		}),
 		modules: input.modules,
 		gatewayProps: input.gatewayProps,
 		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
 		usageEnv: input.env,
+		rawFetchHostSink: input.rawFetchHostSink,
 	})
 }
 
@@ -273,11 +266,13 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					error: validationError,
 				}
 			}
+			const excludedHostname = readBaseUrlHostname(input.gatewayProps.baseUrl)
 			const executorModule = createExecutorModule({
 				code,
 				providers,
 				shadowGlobalThis: Object.keys(modules).length === 0,
 				timeoutMs: input.timeout,
+				excludedHostname,
 			})
 			const workerOptions = {
 				compatibilityDate: dynamicWorkerCompatibilityDate,
@@ -304,6 +299,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					.get(workerId, () => workerOptions)
 					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
 				const response = await entrypoint.evaluate(dispatchers)
+				if (input.rawFetchHostSink) {
+					for (const hostname of response.rawFetchHosts ?? []) {
+						input.rawFetchHostSink.add(hostname)
+					}
+				}
 				if (response.error) {
 					outcome = 'error'
 					return {
@@ -359,8 +359,10 @@ function createExecutorModule(input: {
 	providers: Array<ResolvedProvider>
 	shadowGlobalThis: boolean
 	timeoutMs: number
+	excludedHostname?: string
 }) {
 	const normalized = normalizeCode(input.code)
+	const excludedHostname = JSON.stringify(input.excludedHostname ?? '')
 	const sandboxGlobalLines = input.shadowGlobalThis
 		? [
 				'    const __kodySandboxGlobalValues = Object.create(null);',
@@ -391,6 +393,24 @@ function createExecutorModule(input: {
 		'export default class CodeExecutor extends WorkerEntrypoint {',
 		'  async evaluate(__dispatchers = {}) {',
 		'    const __logs = [];',
+		'    const __kodyRawFetchHosts = [];',
+		`    const __kodyExcludedFetchHost = ${excludedHostname};`,
+		'    const __kodyNativeFetch = globalThis.fetch.bind(globalThis);',
+		'    globalThis.fetch = (input, init) => {',
+		'      try {',
+		'        let url = "";',
+		'        if (typeof input === "string") url = input;',
+		'        else if (input instanceof URL) url = input.toString();',
+		'        else if (input && typeof input.url === "string") url = input.url;',
+		'        const hostname = new URL(url).hostname.trim().toLowerCase();',
+		'        if (hostname && hostname !== __kodyExcludedFetchHost) {',
+		'          __kodyRawFetchHosts.push(hostname);',
+		'        }',
+		'      } catch {',
+		'        // Ignore unparseable / relative URLs; only literal hosts count.',
+		'      }',
+		'      return __kodyNativeFetch(input, init);',
+		'    };',
 		'    const console = {',
 		'      log: (...a) => { __logs.push(a.map(String).join(" ")); },',
 		'      warn: (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); },',
@@ -411,9 +431,9 @@ function createExecutorModule(input: {
 		...userCodeInvocation,
 		'        __timeoutPromise',
 		'      ]);',
-		'      return { result, logs: __logs };',
+		'      return { result, logs: __logs, rawFetchHosts: __kodyRawFetchHosts };',
 		'    } catch (err) {',
-		'      return { result: undefined, error: err.message, logs: __logs };',
+		'      return { result: undefined, error: err.message, logs: __logs, rawFetchHosts: __kodyRawFetchHosts };',
 		'    } finally {',
 		'      clearTimeout(__timeoutId);',
 		'    }',
@@ -427,6 +447,7 @@ export function createExecutorModuleSource(input: {
 	providers: Array<ResolvedProvider>
 	shadowGlobalThis: boolean
 	timeoutMs: number
+	excludedHostname?: string
 }) {
 	return createExecutorModule(input)
 }
