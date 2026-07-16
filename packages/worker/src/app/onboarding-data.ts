@@ -52,6 +52,25 @@ export async function userHasMcpOAuthGrants(
 	}
 }
 
+export function loadPublicOnboardingData(input: {
+	env: Pick<OnboardingEnv, 'APP_BASE_URL'>
+	requestUrl: string | URL
+}): OnboardingLoaderData {
+	return {
+		ok: true,
+		loggedIn: false,
+		mcpServerUrl: buildMcpServerUrl({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}),
+		setupPrompt: buildOnboardingSetupPrompt(),
+		hasMcpClient: false,
+		emailVerified: false,
+		needsOnboarding: true,
+		featuredListings: [],
+	}
+}
+
 export async function loadOnboardingData(input: {
 	env: OnboardingEnv
 	requestUrl: string | URL
@@ -82,6 +101,7 @@ export async function loadOnboardingData(input: {
 	const setupPrompt = input.emailVerified ? buildOnboardingSetupPrompt() : ''
 	return {
 		ok: true,
+		loggedIn: true,
 		mcpServerUrl,
 		setupPrompt,
 		hasMcpClient,

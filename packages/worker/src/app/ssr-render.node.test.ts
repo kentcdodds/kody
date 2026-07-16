@@ -260,6 +260,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	})
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
+		loggedIn: true,
 		mcpServerUrl: '',
 		setupPrompt: '',
 		hasMcpClient: false,
@@ -311,10 +312,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		createOnboardingHandler(env),
 		new Request('https://example.com/onboarding'),
 	)
-	expect(anonymousOnboardingResponse.status).toBe(302)
-	expect(anonymousOnboardingResponse.headers.get('Location')).toBe(
-		'https://example.com/login?redirectTo=%2Fonboarding',
-	)
+	expect(anonymousOnboardingResponse.status).toBe(200)
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),

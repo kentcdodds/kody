@@ -25,7 +25,6 @@ import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import {
 	onboardingPath,
-	resolveOnboardingLoginPath,
 	resolveOnboardingPendingVerificationPath,
 } from '#client/routes/onboarding-redirect.ts'
 import { colors, typography } from '#client/styles/tokens.ts'
@@ -42,6 +41,7 @@ import {
 
 export type OnboardingPayload = {
 	ok: true
+	loggedIn: boolean
 	mcpServerUrl: string
 	setupPrompt: string
 	hasMcpClient: boolean
@@ -73,14 +73,11 @@ export async function onboardingRouteLoader(
 		credentials: 'include',
 		signal,
 	})
-	if (response.status === 401) {
-		return routeLoaderRedirect(resolveOnboardingLoginPath(redirectTo))
-	}
 	const payload = await readJson<OnboardingPayload>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load onboarding.')
 	}
-	if (!payload.emailVerified) {
+	if (payload.loggedIn && !payload.emailVerified) {
 		return routeLoaderRedirect(
 			resolveOnboardingPendingVerificationPath(redirectTo),
 		)
@@ -94,7 +91,6 @@ export async function fetchOnboardingPayload(signal?: AbortSignal) {
 		credentials: 'include',
 		signal,
 	})
-	if (response.status === 401) return null
 	const payload = await readJson<OnboardingPayload>(response)
 	if (!response.ok || !payload?.ok) return null
 	return payload
@@ -103,6 +99,7 @@ export async function fetchOnboardingPayload(signal?: AbortSignal) {
 export function OnboardingRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let message: string | null = null
+	let loggedIn = false
 	let mcpServerUrl = ''
 	let setupPrompt = ''
 	let hasMcpClient = false
@@ -110,6 +107,7 @@ export function OnboardingRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: OnboardingPayload) {
+		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
 		hasMcpClient = payload.hasMcpClient
@@ -128,15 +126,11 @@ export function OnboardingRoute(handle: Handle) {
 				signal,
 			})
 			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign(resolveOnboardingLoginPath(redirectTo))
-				return
-			}
 			const payload = await readJson<OnboardingPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load onboarding.')
 			}
-			if (!payload.emailVerified) {
+			if (payload.loggedIn && !payload.emailVerified) {
 				window.location.assign(
 					resolveOnboardingPendingVerificationPath(redirectTo),
 				)
@@ -159,7 +153,7 @@ export function OnboardingRoute(handle: Handle) {
 		if (!isOnboardingPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
-		if (!routeData.emailVerified) {
+		if (routeData.loggedIn && !routeData.emailVerified) {
 			window.location.assign(
 				resolveOnboardingPendingVerificationPath(
 					readOnboardingRedirectTo(handle),
@@ -301,17 +295,31 @@ export function OnboardingRoute(handle: Handle) {
 						)}
 
 						<p mix={css({ margin: 0 })}>
-							<a href="/account" mix={css(mutedLinkCss)}>
-								Back to account
-							</a>
-							{' · '}
-							<a href="/account/secrets" mix={css(primaryLinkCss)}>
-								Secrets
-							</a>
-							{' · '}
-							<a href="/account/integrations" mix={css(primaryLinkCss)}>
-								Integrations
-							</a>
+							{loggedIn ? (
+								<>
+									<a href="/account" mix={css(mutedLinkCss)}>
+										Back to account
+									</a>
+									{' · '}
+									<a href="/account/secrets" mix={css(primaryLinkCss)}>
+										Secrets
+									</a>
+									{' · '}
+									<a href="/account/integrations" mix={css(primaryLinkCss)}>
+										Integrations
+									</a>
+								</>
+							) : (
+								<>
+									<a href="/signup" mix={css(primaryLinkCss)}>
+										Sign up
+									</a>
+									{' · '}
+									<a href="/login" mix={css(mutedLinkCss)}>
+										Log in
+									</a>
+								</>
+							)}
 						</p>
 					</>
 				) : null}

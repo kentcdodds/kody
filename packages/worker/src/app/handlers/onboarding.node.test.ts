@@ -1,101 +1,39 @@
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
-import {
-	createAuthCookie,
-	setAuthSessionSecret,
-	type AuthSession,
-} from '#app/auth-session.ts'
+import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
 } from '#app/handlers/onboarding.ts'
+import { buildOnboardingSetupPrompt } from '#app/onboarding-data.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
-
-vi.mock('#app/onboarding-data.ts', () => ({
-	loadOnboardingData: vi.fn(async () => ({
-		ok: true,
-		mcpServerUrl: 'https://example.com/mcp',
-		setupPrompt: 'Help me get started with Kody.',
-		hasMcpClient: false,
-		emailVerified: true,
-		needsOnboarding: true,
-	})),
-}))
 
 vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: vi.fn(async () => new Response('ok')),
 }))
 
-function createStaleSessionTestEnv() {
-	return {
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: {
-			prepare(query: string) {
-				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
-					bind() {
-						return {
-							async all() {
-								if (
-									normalizedQuery.startsWith('select') &&
-									normalizedQuery.includes('from "users"')
-								) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								if (normalizedQuery.includes('from user_roles ur')) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								return { results: [], meta: { changes: 0 } }
-							},
-							async first() {
-								return null
-							},
-							async run() {
-								return { meta: { changes: 0 } }
-							},
-						}
-					},
-				}
-			},
-			async exec() {
-				return
-			},
-		} as unknown as D1Database,
-	} as Env
-}
-
-test('onboarding routes require a live session and reject anonymous API access', async () => {
+test('onboarding serves public setup content to anonymous visitors', async () => {
 	setAuthSessionSecret(testCookieSecret)
-	const env = createStaleSessionTestEnv()
-	const session: AuthSession = {
-		id: '99',
-		email: 'missing@example.com',
-		rememberMe: false,
-	}
-	const cookie = await createAuthCookie(session, false)
+	const env = { COOKIE_SECRET: testCookieSecret } as Env
 
-	const staleSessionResponse = await createOnboardingHandler(env).handler(
-		new RequestContext(
-			new Request('https://example.com/onboarding', {
-				headers: { Cookie: cookie },
-			}),
-		),
+	const anonymousPageResponse = await createOnboardingHandler(env).handler(
+		new RequestContext(new Request('https://example.com/onboarding')),
 	)
-	expect(staleSessionResponse.status).toBe(302)
-	expect(staleSessionResponse.headers.get('Location')).toBe(
-		'https://example.com/login?redirectTo=%2Fonboarding',
-	)
-	const setCookie = staleSessionResponse.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('kody_session=')
-	expect(setCookie).toContain('Max-Age=0')
+	expect(anonymousPageResponse.status).toBe(200)
 
 	const anonymousApiResponse = await createOnboardingApiHandler(env).handler(
 		new RequestContext(new Request('https://example.com/onboarding.json')),
 	)
-	expect(anonymousApiResponse.status).toBe(401)
+	expect(anonymousApiResponse.status).toBe(200)
 	await expect(anonymousApiResponse.json()).resolves.toEqual({
-		ok: false,
-		error: 'Unauthorized.',
+		ok: true,
+		loggedIn: false,
+		mcpServerUrl: 'https://example.com/mcp',
+		setupPrompt: buildOnboardingSetupPrompt(),
+		hasMcpClient: false,
+		emailVerified: false,
+		needsOnboarding: true,
+		featuredListings: [],
 	})
 })

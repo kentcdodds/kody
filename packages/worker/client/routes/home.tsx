@@ -76,12 +76,14 @@ export async function homeRouteLoader(
 export function HomeRoute(handle: Handle) {
 	let needsOnboarding = false
 	let emailVerified = false
+	let loggedIn = false
 	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
 	const loadLatch = createRouteLoadLatch()
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		needsOnboarding = payload?.needsOnboarding === true
 		emailVerified = payload?.emailVerified === true
+		loggedIn = payload?.loggedIn === true
 		onboardingStatus = 'ready'
 	}
 
@@ -160,6 +162,7 @@ export function HomeRoute(handle: Handle) {
 					<div>
 						{onboardingStatus === 'ready' &&
 						needsOnboarding &&
+						loggedIn &&
 						!emailVerified ? (
 							<a href={pendingVerificationPath} mix={css(heroCtaCss)}>
 								Verify your email

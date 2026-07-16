@@ -348,6 +348,7 @@ export type AccountConnectionsLoaderData = {
 
 export type OnboardingLoaderData = {
 	ok: true
+	loggedIn: boolean
 	mcpServerUrl: string
 	setupPrompt: string
 	hasMcpClient: boolean

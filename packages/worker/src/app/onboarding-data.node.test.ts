@@ -3,6 +3,7 @@ import {
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
 	loadOnboardingData,
+	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 
 test('onboarding data builds the MCP URL and derives incomplete setup from verification plus grants', async () => {
@@ -25,6 +26,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(withoutClient).toEqual({
 		ok: true,
+		loggedIn: true,
 		mcpServerUrl: 'https://heykody.dev/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
 		hasMcpClient: false,
@@ -86,4 +88,22 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)
 	expect(whenProviderListingFails.needsOnboarding).toBe(true)
+})
+
+test('public onboarding data exposes setup content without an authenticated user', () => {
+	expect(
+		loadPublicOnboardingData({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
+	).toEqual({
+		ok: true,
+		loggedIn: false,
+		mcpServerUrl: 'https://heykody.dev/mcp',
+		setupPrompt: buildOnboardingSetupPrompt(),
+		hasMcpClient: false,
+		emailVerified: false,
+		needsOnboarding: true,
+		featuredListings: [],
+	})
 })
