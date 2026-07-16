@@ -167,7 +167,7 @@ function setupDefaultMocks() {
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('saved package embed')
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.buildPublishedPackageArtifacts.mockResolvedValue(undefined)
-	mockModule.syncPackageJobsForPackage.mockResolvedValue(undefined)
+	mockModule.syncPackageJobsForPackage.mockResolvedValue(false)
 	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
 	mockModule.refreshPackageRetrieverManifestCache.mockResolvedValue(undefined)
 	mockModule.removePackageRetrieverManifestCacheEntries.mockResolvedValue(
@@ -195,6 +195,7 @@ function setupDefaultMocks() {
 
 test('refreshSavedPackageProjection resyncs the job manager after syncing package jobs', async () => {
 	setupDefaultMocks()
+	mockModule.syncPackageJobsForPackage.mockResolvedValue(true)
 	const env = createEnv()
 	const manifest = {
 		name: '@kentcdodds/shade-automation',
@@ -305,6 +306,31 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 	)
 })
 
+test('refreshSavedPackageProjection skips job manager sync for a jobless first projection', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	const manifest = {
+		name: '@kentcdodds/cloudflare',
+		kody: {
+			id: 'cloudflare',
+			description: 'Inert community fork',
+		},
+	}
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest,
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
+})
+
 test('refreshSavedPackageProjection omits files when artifact rebuild is skipped', async () => {
 	setupDefaultMocks()
 	const env = createEnv()
@@ -409,10 +435,7 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 		sourceId: 'source-1',
 		manifest,
 	})
-	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env: envAfterRetrieverFailure,
-		userId: 'user-1',
-	})
+	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 	// The swallowed retriever-cache failure is still logged for operators.
 	expect(consoleError).toHaveBeenCalledTimes(1)
 
@@ -443,10 +466,7 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 		packageId: 'package-1',
 		sourceId: 'source-1',
 	})
-	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env: envAfterServiceFailure,
-		userId: 'user-1',
-	})
+	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 })
 
 test('deleteSavedPackageProjection resyncs the job manager after removing package jobs', async () => {
@@ -580,10 +600,7 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 		env,
 		'package-1',
 	)
-	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId: 'user-1',
-	})
+	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 	// The swallowed entity source cleanup failure is still logged.
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
@@ -606,10 +623,7 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 		env,
 		'package-1',
 	)
-	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId: 'user-1',
-	})
+	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 
 	setupDefaultMocks()
 	mockModule.getSavedPackageById.mockResolvedValue({

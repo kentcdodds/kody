@@ -262,7 +262,7 @@ export async function refreshSavedPackageProjection(input: {
 		})
 	}
 	const { syncPackageJobsForPackage } = await import('#worker/jobs/service.ts')
-	await syncPackageJobsForPackage({
+	const schedulerStateChanged = await syncPackageJobsForPackage({
 		env: input.env,
 		userId: input.userId,
 		baseUrl: input.baseUrl,
@@ -289,10 +289,12 @@ export async function refreshSavedPackageProjection(input: {
 			// Auto-start failures should not block package job sync/alarm refresh.
 		}
 	}
-	await syncJobManagerAlarm({
-		env: input.env,
-		userId: input.userId,
-	})
+	if (schedulerStateChanged) {
+		await syncJobManagerAlarm({
+			env: input.env,
+			userId: input.userId,
+		})
+	}
 	return {
 		record: savedPackage,
 		manifest: loaded.manifest,
@@ -309,6 +311,7 @@ export async function deleteSavedPackageProjection(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
+	let packageJobsRemoved = false
 	if (savedPackage) {
 		const listedServices = await listSavedPackageServices({
 			env: input.env,
@@ -367,6 +370,7 @@ export async function deleteSavedPackageProjection(input: {
 		for (const row of packageRows) {
 			await deleteJobRow(input.env.APP_DB, input.userId, row.id)
 		}
+		packageJobsRemoved = packageRows.length > 0
 	}
 	await deleteAllPackageScopedSecrets({
 		env: input.env,
@@ -396,8 +400,10 @@ export async function deleteSavedPackageProjection(input: {
 		})
 	}
 	await deleteSavedPackageVector(input.env, input.packageId)
-	await syncJobManagerAlarm({
-		env: input.env,
-		userId: input.userId,
-	})
+	if (packageJobsRemoved) {
+		await syncJobManagerAlarm({
+			env: input.env,
+			userId: input.userId,
+		})
+	}
 }

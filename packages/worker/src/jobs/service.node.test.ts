@@ -16,8 +16,11 @@ import {
 	getJobInspection,
 	inspectJobsForUser,
 	runJobNow,
+	syncPackageJobsForPackage,
 	updateJob,
 } from './service.ts'
+import { listJobRowsByUserId } from './repo.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -1080,6 +1083,92 @@ function createBaseCallerContext(): PersistedJobCallerContext {
 		},
 	}) as PersistedJobCallerContext
 }
+
+test('package job sync reports scheduler changes for add, update, and remove only', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	const input = {
+		env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	}
+	const createManifest = (jobs: Record<string, unknown>) =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/cloudflare',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'cloudflare',
+					description: 'Cloudflare package',
+					jobs,
+				},
+			}),
+		})
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest({}),
+		}),
+	).toBe(false)
+
+	const intervalJob = {
+		'event-runner': {
+			entry: './src/jobs/event-runner.ts',
+			schedule: { type: 'interval', every: '1m' },
+			timezone: 'America/Denver',
+			enabled: true,
+		},
+	}
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest(intervalJob),
+		}),
+	).toBe(true)
+	const rowsAfterAdd = await listJobRowsByUserId(env.APP_DB, input.userId)
+	expect(rowsAfterAdd).toHaveLength(1)
+	const nextRunAtAfterAdd = rowsAfterAdd[0]?.record.nextRunAt
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest(intervalJob),
+		}),
+	).toBe(false)
+	const rowsAfterNoOp = await listJobRowsByUserId(env.APP_DB, input.userId)
+	expect(rowsAfterNoOp[0]?.record.nextRunAt).toBe(nextRunAtAfterAdd)
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest({
+				'event-runner': {
+					...intervalJob['event-runner'],
+					schedule: { type: 'interval', every: '5m' },
+				},
+			}),
+		}),
+	).toBe(true)
+	const rowsAfterUpdate = await listJobRowsByUserId(env.APP_DB, input.userId)
+	expect(rowsAfterUpdate[0]?.record.schedule).toEqual({
+		type: 'interval',
+		every: '5m',
+	})
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest({}),
+		}),
+	).toBe(true)
+	expect(await listJobRowsByUserId(env.APP_DB, input.userId)).toEqual([])
+})
 
 test('create, update, and delete jobs sync the job manager alarm', async () => {
 	const env = {
