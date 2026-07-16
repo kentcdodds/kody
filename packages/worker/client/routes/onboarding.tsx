@@ -20,12 +20,13 @@ import {
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
+import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import {
 	onboardingPath,
 	resolveOnboardingLoginPath,
 	resolveOnboardingPendingVerificationPath,
 } from '#client/routes/onboarding-redirect.ts'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -215,28 +216,12 @@ export function OnboardingRoute(handle: Handle) {
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>1. Add Kody as an MCP server</h2>
 							<p mix={css(descriptionCss)}>
-								In Cursor, Claude Desktop, or any other AI agent that supports
-								MCP, add a remote MCP server pointed at this URL:
+								Pick your MCP client below for host-specific setup. When the
+								agent connects, it starts an OAuth flow — sign in to Kody if
+								needed, approve the request, and the agent receives a token
+								scoped to your account.
 							</p>
-							<pre mix={css(codeBlockCss)}>{mcpServerUrl}</pre>
-							<div
-								mix={css({
-									display: 'flex',
-									gap: spacing.sm,
-									flexWrap: 'wrap',
-								})}
-							>
-								<CopyTextButton
-									value={mcpServerUrl}
-									idleLabel="Copy MCP URL"
-									variant="primary"
-								/>
-							</div>
-							<p mix={css(descriptionCss)}>
-								When your agent connects, it starts an OAuth flow. Sign in to
-								Kody if needed, approve the request, and the agent receives a
-								token scoped to your account.
-							</p>
+							<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
 						</section>
 
 						<section mix={css(cardCss)}>
