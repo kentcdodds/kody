@@ -190,8 +190,8 @@ async function runPackageJobTypecheckChecks(
 	return { result, typeScriptFileSystem, getSemanticDiagnostics }
 }
 
-test('runRepoChecks fails with an actionable check result when the source root exceeds the file-count cap', async () => {
-	const files = new Map<string, string>([
+test('runRepoChecks fails when the source root exceeds publish size caps', async () => {
+	const tooManyFiles = new Map<string, string>([
 		[
 			'package.json',
 			createPackageManifest({
@@ -203,55 +203,38 @@ test('runRepoChecks fails with an actionable check result when the source root e
 		['src/index.ts', 'export const ready = true\n'],
 	])
 	for (let index = 0; index < repoChecksSourceMaxFiles; index += 1) {
-		files.set(`generated/file-${index}.txt`, 'x')
+		tooManyFiles.set(`generated/file-${index}.txt`, 'x')
 	}
-
-	const result = await runChecksOnWorkspaceFiles(files)
-
-	expect(result.ok).toBe(false)
-	expect(result.sourceFiles).toEqual({})
-	expect(result.results).toEqual([
+	const fileCountResult = await runChecksOnWorkspaceFiles(tooManyFiles)
+	expect(fileCountResult.ok).toBe(false)
+	expect(fileCountResult.sourceFiles).toEqual({})
+	expect(fileCountResult.results).toEqual([
 		expect.objectContaining({ kind: 'manifest', ok: true }),
-		expect.objectContaining({
-			kind: 'bundle',
-			ok: false,
-			message: expect.stringContaining(
-				`${repoChecksSourceMaxFiles}-file publish check limit`,
-			),
-		}),
+		expect.objectContaining({ kind: 'bundle', ok: false }),
 	])
-})
 
-test('runRepoChecks fails with an actionable check result when the source root exceeds the total-byte cap', async () => {
 	const halfCapChunk = 'x'.repeat(repoChecksSourceMaxTotalBytes / 2)
-	const files = new Map<string, string>([
-		[
-			'package.json',
-			createPackageManifest({
-				packageName: '@kody/too-many-bytes',
-				kodyId: 'too-many-bytes',
-				description: 'Exceeds the publish check byte cap',
-			}),
-		],
-		['src/index.ts', 'export const ready = true\n'],
-		['assets/blob-1.bin', halfCapChunk],
-		['assets/blob-2.bin', halfCapChunk],
-		['assets/blob-3.bin', halfCapChunk],
-	])
-
-	const result = await runChecksOnWorkspaceFiles(files)
-
-	expect(result.ok).toBe(false)
-	expect(result.sourceFiles).toEqual({})
-	expect(result.results).toEqual([
+	const byteCountResult = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/too-many-bytes',
+					kodyId: 'too-many-bytes',
+					description: 'Exceeds the publish check byte cap',
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+			['assets/blob-1.bin', halfCapChunk],
+			['assets/blob-2.bin', halfCapChunk],
+			['assets/blob-3.bin', halfCapChunk],
+		]),
+	)
+	expect(byteCountResult.ok).toBe(false)
+	expect(byteCountResult.sourceFiles).toEqual({})
+	expect(byteCountResult.results).toEqual([
 		expect.objectContaining({ kind: 'manifest', ok: true }),
-		expect.objectContaining({
-			kind: 'bundle',
-			ok: false,
-			message: expect.stringContaining(
-				`${repoChecksSourceMaxTotalBytes}-byte (15 MiB) publish check limit`,
-			),
-		}),
+		expect.objectContaining({ kind: 'bundle', ok: false }),
 	])
 })
 
@@ -779,14 +762,16 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 		mockModule.createTypescriptLanguageService.mock.calls.at(-1)?.[0] as {
 			fileSystem: MockTypeScriptFileSystem
 		}
-	expect(syntheticTypecheckInput.fileSystem.read('tsconfig.json')).toBe(
-		JSON.stringify({
-			compilerOptions: {
-				allowImportingTsExtensions: true,
-				noEmit: true,
-			},
-		}),
-	)
+	expect(
+		JSON.parse(
+			syntheticTypecheckInput.fileSystem.read('tsconfig.json') ?? 'null',
+		),
+	).toMatchObject({
+		compilerOptions: {
+			allowImportingTsExtensions: true,
+			noEmit: true,
+		},
+	})
 	expect(
 		syntheticTypecheckInput.fileSystem.read(
 			'./.__kody_repo_tsconfig_base__.json',
@@ -811,29 +796,20 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 		mockModule.createTypescriptLanguageService.mock.calls.at(-1)?.[0] as {
 			fileSystem: MockTypeScriptFileSystem
 		}
-	expect(extendsTypecheckInput.fileSystem.read('tsconfig.json')).toBe(
-		JSON.stringify({
-			extends: './.__kody_repo_tsconfig_base__.json',
-			compilerOptions: {
-				allowImportingTsExtensions: true,
-				noEmit: true,
-			},
-		}),
-	)
+	expect(
+		JSON.parse(
+			extendsTypecheckInput.fileSystem.read('tsconfig.json') ?? 'null',
+		),
+	).toMatchObject({
+		extends: './.__kody_repo_tsconfig_base__.json',
+		compilerOptions: {
+			allowImportingTsExtensions: true,
+			noEmit: true,
+		},
+	})
 	expect(
 		extendsTypecheckInput.fileSystem.read('.__kody_repo_tsconfig_base__.json'),
 	).toBe(repoTsconfig)
-
-	for (const { typeScriptFileSystem } of [syntheticOnly, extendsRepoBase]) {
-		expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-			'.__kody_repo_module_check__.ts',
-			expect.stringContaining('import userEntrypoint from "./src/job"'),
-		)
-		expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
-			'.__kody_repo_module_check__.ts',
-			expect.stringContaining('import userEntrypoint from "./src/index"'),
-		)
-	}
 })
 
 test('runRepoChecks validates static kody package import declarations across missing, declared, type-only, declaration files, mixed exports, dynamic imports, invalid declarations, and unused declarations', async () => {

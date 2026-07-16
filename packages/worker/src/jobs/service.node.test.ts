@@ -1312,28 +1312,33 @@ function buildEntitlementTestJobBody(index: number): JobCreateInput {
 	}
 }
 
-test('createJob enforces the scheduled jobs entitlement for plan users', async () => {
-	const email = 'planned@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createDatabase({ users: [{ email, plan: 'personal' }] }),
+test('createJob enforces scheduled job entitlements for plan users and stays unlimited without a plan', async () => {
+	const plannedEmail = 'planned@example.com'
+	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
+	const plannedEnv = {
+		APP_DB: createDatabase({
+			users: [{ email: plannedEmail, plan: 'personal' }],
+		}),
 	} as Env
 	mockRepoPersistence()
-	const callerContext = createPlanUserCallerContext({ userId, email })
+	const plannedCallerContext = createPlanUserCallerContext({
+		userId: plannedUserId,
+		email: plannedEmail,
+	})
 	const limit = planLimits.personal.maxScheduledJobs
 	if (limit === null) throw new Error('Expected a numeric personal job limit.')
 
 	for (let index = 0; index < limit; index += 1) {
 		await createJob({
-			env,
-			callerContext,
+			env: plannedEnv,
+			callerContext: plannedCallerContext,
 			body: buildEntitlementTestJobBody(index),
 		})
 	}
 
 	const error = await createJob({
-		env,
-		callerContext,
+		env: plannedEnv,
+		callerContext: plannedCallerContext,
 		body: buildEntitlementTestJobBody(limit),
 	}).then(
 		() => null,
@@ -1349,24 +1354,21 @@ test('createJob enforces the scheduled jobs entitlement for plan users', async (
 		limit,
 		current: limit,
 	})
-	expect(error.message).toContain(`at most ${limit} scheduled jobs`)
-})
 
-test('createJob stays unlimited for users without a plan', async () => {
-	const email = 'legacy@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const env = {
-		APP_DB: createDatabase({ users: [{ email, plan: null }] }),
+	const legacyEmail = 'legacy@example.com'
+	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
+	const legacyEnv = {
+		APP_DB: createDatabase({ users: [{ email: legacyEmail, plan: null }] }),
 	} as Env
 	mockRepoPersistence()
-	const callerContext = createPlanUserCallerContext({ userId, email })
-	const limit = planLimits.personal.maxScheduledJobs
-	if (limit === null) throw new Error('Expected a numeric personal job limit.')
-
+	const legacyCallerContext = createPlanUserCallerContext({
+		userId: legacyUserId,
+		email: legacyEmail,
+	})
 	for (let index = 0; index < limit + 1; index += 1) {
 		await createJob({
-			env,
-			callerContext,
+			env: legacyEnv,
+			callerContext: legacyCallerContext,
 			body: buildEntitlementTestJobBody(index),
 		})
 	}

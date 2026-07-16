@@ -372,6 +372,73 @@ function createEnv() {
 	} as Env
 }
 
+function stubPackageSourceForOpenSession({
+	repoId = 'package-event-runner',
+	publishedCommit = 'commit-base',
+	indexedCommit = publishedCommit,
+	remoteNamespace = 'default',
+	defaultBranch = 'main',
+	headCommit = publishedCommit,
+	createToken = true,
+}: {
+	repoId?: string
+	publishedCommit?: string
+	indexedCommit?: string
+	remoteNamespace?: string
+	defaultBranch?: string
+	headCommit?: string | null
+	createToken?: boolean
+} = {}) {
+	const remote = `https://acct.artifacts.cloudflare.net/git/${remoteNamespace}/${repoId}.git`
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: repoId,
+		published_commit: publishedCommit,
+		indexed_commit: indexedCommit,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	})
+	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			id: 'source-repo-1',
+			name: repoId,
+			description: null,
+			defaultBranch: 'main',
+			createdAt: '2026-04-16T00:00:00.000Z',
+			updatedAt: '2026-04-16T00:00:00.000Z',
+			lastPushAt: null,
+			source: null,
+			readOnly: false,
+			remote,
+		})),
+		createToken: createToken
+			? vi.fn(async () => ({
+					id: 'token-1',
+					plaintext: 'art_source_secret?expires=1760000200',
+					scope: 'write',
+					expiresAt: '2026-10-09T08:16:40.000Z',
+				}))
+			: vi.fn(),
+	})
+	if (headCommit === null) {
+		mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce(null)
+	} else {
+		mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+			defaultBranch,
+			commit: headCommit,
+			remote,
+		})
+	}
+	return { remote }
+}
+
 function setCommonSessionFixtures() {
 	restoreRepoSessionMockBaseline()
 	mockModule.getRepoSessionById.mockResolvedValue({
@@ -835,48 +902,7 @@ test('publishSession handles snapshot collection and persistence failures withou
 
 test('openSession sanitizes repo names, persists namespace metadata, and rejects stale package source heads', async () => {
 	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue(null)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-event-runner',
-		published_commit: 'commit-base',
-		indexed_commit: 'commit-base',
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
-	})
-	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'source-repo-1',
-			name: 'package-event-runner',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
-		})),
-		createToken: vi.fn(async () => ({
-			id: 'token-1',
-			plaintext: 'art_source_secret?expires=1760000200',
-			scope: 'write',
-			expiresAt: '2026-10-09T08:16:40.000Z',
-		})),
-	})
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
-		defaultBranch: 'main',
-		commit: 'commit-base',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
-	})
+	const { remote: defaultRemote } = stubPackageSourceForOpenSession()
 	mockModule.git.clone.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
@@ -892,7 +918,7 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	expect(opened.session_branch).not.toContain(':')
 	expect(mockModule.git.clone).toHaveBeenCalledWith(
 		expect.objectContaining({
-			url: 'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
+			url: defaultRemote,
 		}),
 	)
 	expect(mockModule.git.push).toHaveBeenCalledWith(
@@ -903,47 +929,9 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	)
 
 	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue(null)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-event-runner',
-		published_commit: 'commit-release',
-		indexed_commit: 'commit-release',
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
-	})
-	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'source-repo-1',
-			name: 'package-event-runner',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
-		})),
-		createToken: vi.fn(async () => ({
-			id: 'token-1',
-			plaintext: 'art_source_secret?expires=1760000200',
-			scope: 'write',
-			expiresAt: '2026-10-09T08:16:40.000Z',
-		})),
-	})
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
+	stubPackageSourceForOpenSession({
+		publishedCommit: 'commit-release',
 		defaultBranch: 'release',
-		commit: 'commit-release',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/package-event-runner.git',
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
 		defaultBranch: 'release',
@@ -977,48 +965,7 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	).rejects.toThrow(/published from "release"/)
 
 	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue(null)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-event-runner',
-		published_commit: 'commit-base',
-		indexed_commit: 'commit-base',
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
-	})
-	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'source-repo-1',
-			name: 'package-event-runner',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/preview/package-event-runner.git',
-		})),
-		createToken: vi.fn(async () => ({
-			id: 'token-1',
-			plaintext: 'art_source_secret?expires=1760000200',
-			scope: 'write',
-			expiresAt: '2026-10-09T08:16:40.000Z',
-		})),
-	})
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
-		defaultBranch: 'main',
-		commit: 'commit-base',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/preview/package-event-runner.git',
-	})
+	stubPackageSourceForOpenSession({ remoteNamespace: 'preview' })
 	vi.mocked(insertRepoSession).mockClear()
 	await new RepoSession(createDurableObjectState(), {
 		APP_DB: {},
@@ -1058,41 +1005,13 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		}),
 	).rejects.toThrow(/is discarded/)
 
-	const packageSource = {
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-package-1',
-		published_commit: 'commit-base',
-		indexed_commit: 'commit-base',
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		created_at: '2026-04-16T00:00:00.000Z',
-		updated_at: '2026-04-16T00:00:00.000Z',
-	}
 	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue(null)
-	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
-	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'source-repo-1',
-			name: 'package-package-1',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
-		})),
-		createToken: vi.fn(),
+	stubPackageSourceForOpenSession({
+		repoId: 'package-package-1',
+		headCommit: null,
+		createToken: false,
 	})
 	mockModule.resolveArtifactSourceRepo.mockClear()
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce(null)
 	await expect(
 		new RepoSession(createDurableObjectState(), createEnv()).openSession({
 			sessionId: 'session-empty-source-head',
@@ -1105,33 +1024,11 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	expect(mockModule.resolveArtifactSourceRepo).not.toHaveBeenCalled()
 
 	restoreRepoSessionMockBaseline()
-	mockModule.getRepoSessionById.mockResolvedValue(null)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		...packageSource,
-		published_commit: 'commit-published',
-		indexed_commit: 'commit-published',
-	})
-	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			id: 'source-repo-1',
-			name: 'package-package-1',
-			description: null,
-			defaultBranch: 'main',
-			createdAt: '2026-04-16T00:00:00.000Z',
-			updatedAt: '2026-04-16T00:00:00.000Z',
-			lastPushAt: null,
-			source: null,
-			readOnly: false,
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
-		})),
-		createToken: vi.fn(),
-	})
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
-		defaultBranch: 'main',
-		commit: 'commit-unpublished',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+	stubPackageSourceForOpenSession({
+		repoId: 'package-package-1',
+		publishedCommit: 'commit-published',
+		headCommit: 'commit-unpublished',
+		createToken: false,
 	})
 	await expect(
 		new RepoSession(createDurableObjectState(), createEnv()).openSession({

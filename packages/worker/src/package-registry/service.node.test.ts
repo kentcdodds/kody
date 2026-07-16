@@ -193,7 +193,7 @@ function setupDefaultMocks() {
 	})
 }
 
-test('refreshSavedPackageProjection resyncs the job manager after syncing package jobs', async () => {
+test('refreshSavedPackageProjection syncs the job manager only when package jobs change', async () => {
 	setupDefaultMocks()
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(true)
 	const env = createEnv()
@@ -304,12 +304,10 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 	).toBeGreaterThan(
 		mockModule.syncPackageJobsForPackage.mock.invocationCallOrder[0],
 	)
-})
 
-test('refreshSavedPackageProjection skips job manager sync for a jobless first projection', async () => {
 	setupDefaultMocks()
-	const env = createEnv()
-	const manifest = {
+	mockModule.syncPackageJobsForPackage.mockResolvedValue(false)
+	const joblessManifest = {
 		name: '@kentcdodds/cloudflare',
 		kody: {
 			id: 'cloudflare',
@@ -317,7 +315,7 @@ test('refreshSavedPackageProjection skips job manager sync for a jobless first p
 		},
 	}
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		manifest,
+		manifest: joblessManifest,
 		files: { 'package.json': '{}' },
 	})
 	mockModule.getSavedPackageById.mockResolvedValue(null)
