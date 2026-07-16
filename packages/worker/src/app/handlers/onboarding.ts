@@ -35,10 +35,7 @@ export function createOnboardingHandler(env: Env) {
 						env,
 						requestUrl: request.url,
 					}),
-					featuredListings: await loadOnboardingFeaturedListings(
-						env,
-						request,
-					),
+					featuredListings: await loadOnboardingFeaturedListings(env, request),
 				}
 				const origin = getAppBaseUrl({ env, requestUrl: request.url })
 				return renderAppPage({
@@ -88,10 +85,7 @@ export function createOnboardingApiHandler(env: Env) {
 						env,
 						requestUrl: request.url,
 					}),
-					featuredListings: await loadOnboardingFeaturedListings(
-						env,
-						request,
-					),
+					featuredListings: await loadOnboardingFeaturedListings(env, request),
 				})
 			}
 
