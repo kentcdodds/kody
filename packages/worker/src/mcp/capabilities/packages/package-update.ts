@@ -26,7 +26,7 @@ export const packageUpdateCapability = defineDomainCapability(
 	{
 		name: 'package_update',
 		description:
-			'Update mutable settings for a saved package. Currently supports hidden search-discovery state. Canonical package metadata such as name, description, tags, kody id, app projection, and source remains derived from package.json and must change through package save or publish.',
+			'Update mutable settings for a saved package. Supports hidden search-discovery state. Canonical package metadata such as name, description, tags, kody id, app projection, and source remains derived from package.json and must change through package save or publish.',
 		keywords: ['package', 'update', 'hidden', 'visibility', 'search'],
 		readOnly: false,
 		idempotent: true,
