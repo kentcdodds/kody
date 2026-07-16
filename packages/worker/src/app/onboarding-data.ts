@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
 import { type OnboardingLoaderData } from '#app/loader-data.ts'
 
 const mcpServerPath = '/mcp'
@@ -56,6 +57,11 @@ export async function loadOnboardingData(input: {
 	requestUrl: string | URL
 	stableUserId: string
 	emailVerified: boolean
+	/**
+	 * Featured starter packages loaded by the handler (which has the full
+	 * worker Env); this module stays narrow so it is trivially testable.
+	 */
+	featuredListings?: Array<OnboardingFeaturedListing>
 }): Promise<OnboardingLoaderData> {
 	const hasMcpClient = await userHasMcpOAuthGrants(
 		input.env,
@@ -81,5 +87,6 @@ export async function loadOnboardingData(input: {
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,
+		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
 	}
 }

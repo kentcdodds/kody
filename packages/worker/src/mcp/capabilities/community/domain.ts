@@ -6,6 +6,7 @@ import { communityPublishCapability } from './publish.ts'
 import { communityRateCapability } from './rate.ts'
 import { communityReportCapability } from './report.ts'
 import { communitySearchCapability } from './search.ts'
+import { communitySetFeaturedCapability } from './set-featured.ts'
 import { communitySetTrustedCapability } from './set-trusted.ts'
 import { communityUnpublishCapability } from './unpublish.ts'
 
@@ -33,5 +34,6 @@ export const communityDomain = defineDomain({
 		communityRateCapability,
 		communityReportCapability,
 		communitySetTrustedCapability,
+		communitySetFeaturedCapability,
 	],
 })

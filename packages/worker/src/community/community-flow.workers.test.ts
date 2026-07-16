@@ -7,12 +7,15 @@ import { communityPublishCapability } from '#mcp/capabilities/community/publish.
 import { communityRateCapability } from '#mcp/capabilities/community/rate.ts'
 import { communityReportCapability } from '#mcp/capabilities/community/report.ts'
 import { communitySearchCapability } from '#mcp/capabilities/community/search.ts'
+import { communitySetFeaturedCapability } from '#mcp/capabilities/community/set-featured.ts'
 import { communitySetTrustedCapability } from '#mcp/capabilities/community/set-trusted.ts'
 import { communityContentWarning } from '#mcp/capabilities/community/shared.ts'
 import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import {
 	banCommunityUser,
+	listFeaturedCommunityListingsWithAggregates,
 	resolveCommunityReport,
+	setCommunityListingFeatured,
 	setCommunityListingTrusted,
 } from '#worker/community/service.ts'
 import { installCommunityListing } from '#worker/community/install.ts'
@@ -306,6 +309,15 @@ test('community package flow works end-to-end through capability handlers', asyn
 	// Admin curation: trust pins to the reviewed commit and the effective
 	// mark drops as soon as the owner republishes new content.
 	expect(ratedListing.trusted).toBe(false)
+	// Featuring requires trust, so it is rejected while the listing is
+	// untrusted.
+	await expect(
+		setCommunityListingFeatured({
+			env: testEnv,
+			listingId,
+			featured: true,
+		}),
+	).rejects.toThrow('Only trusted community listings can be featured')
 	const trustedListing = await setCommunityListingTrusted({
 		env: testEnv,
 		adminUserId: admin.userId,
@@ -319,6 +331,26 @@ test('community package flow works end-to-end through capability handlers', asyn
 		forkerCtx,
 	)
 	expect(trustedGet.trusted).toBe(true)
+
+	// Once trusted, featuring works and the listing shows up in the
+	// onboarding starter list.
+	const featuredListing = await setCommunityListingFeatured({
+		env: testEnv,
+		listingId,
+		featured: true,
+	})
+	expect(featuredListing.featured).toBe(true)
+	expect(featuredListing.featuredAt).toBeTruthy()
+	const featuredRows = await listFeaturedCommunityListingsWithAggregates({
+		env: testEnv,
+		limit: 10,
+	})
+	expect(featuredRows.some((row) => row.id === listingId)).toBe(true)
+	const featuredGet = await communityGetCapability.handler(
+		{ listing_id: listingId },
+		forkerCtx,
+	)
+	expect(featuredGet.featured).toBe(true)
 
 	const republishedCommit = `commit-republished-${unique}`
 	await writePublishedSourceSnapshot({
@@ -341,12 +373,47 @@ test('community package flow works end-to-end through capability handlers', asyn
 		forkerCtx,
 	)
 	expect(afterRepublish.trusted).toBe(false)
+	// The republish also pulls the listing from onboarding: the featured mark
+	// stays stored but is no longer effective without trust.
+	expect(afterRepublish.featured).toBe(false)
+	const featuredAfterRepublish =
+		await listFeaturedCommunityListingsWithAggregates({
+			env: testEnv,
+			limit: 10,
+		})
+	expect(featuredAfterRepublish.some((row) => row.id === listingId)).toBe(false)
+	// Re-trusting the republished commit restores the stored featured mark.
+	await setCommunityListingTrusted({
+		env: testEnv,
+		adminUserId: admin.userId,
+		listingId,
+		trusted: true,
+	})
+	const afterRetrust = await communityGetCapability.handler(
+		{ listing_id: listingId },
+		forkerCtx,
+	)
+	expect(afterRetrust.featured).toBe(true)
+	// Removing the mark takes the listing out of onboarding while trusted.
+	const unfeatured = await setCommunityListingFeatured({
+		env: testEnv,
+		listingId,
+		featured: false,
+	})
+	expect(unfeatured.featured).toBe(false)
+	expect(unfeatured.featuredAt).toBeNull()
 
-	// Access control: only admins may reach community_set_trusted.
+	// Access control: only admins may reach the curation capabilities.
 	expect(
 		callerCanAccessCapability(
 			forkerCtx.callerContext,
 			communitySetTrustedCapability,
+		),
+	).toBe(false)
+	expect(
+		callerCanAccessCapability(
+			forkerCtx.callerContext,
+			communitySetFeaturedCapability,
 		),
 	).toBe(false)
 
@@ -383,6 +450,14 @@ test('community package flow works end-to-end through capability handlers', asyn
 			trusted: true,
 		}),
 	).rejects.toThrow('Delisted community listings cannot be marked trusted.')
+
+	await expect(
+		setCommunityListingFeatured({
+			env: testEnv,
+			listingId,
+			featured: true,
+		}),
+	).rejects.toThrow('Delisted community listings cannot be featured.')
 
 	await banCommunityUser({
 		env: testEnv,

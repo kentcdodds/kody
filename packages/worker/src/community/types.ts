@@ -19,6 +19,7 @@ export type CommunityListingRow = {
 	trusted_commit: string | null
 	trusted_by_user_id: string | null
 	trusted_at: string | null
+	featured_at: string | null
 	created_at: string
 	updated_at: string
 	published_at: string
@@ -55,6 +56,15 @@ export type CommunityListingRecord = {
 	trustedCommit: string | null
 	trustedAt: string | null
 	trusted: boolean
+	/**
+	 * When an admin marked this listing as an onboarding starter package, or
+	 * null when never featured (or the mark was removed). The mark survives
+	 * republishes, but the listing is only *effectively* featured while it is
+	 * also effectively trusted, so `featured` drops with `trusted` and comes
+	 * back if the same commit is re-trusted.
+	 */
+	featuredAt: string | null
+	featured: boolean
 	createdAt: string
 	updatedAt: string
 	publishedAt: string

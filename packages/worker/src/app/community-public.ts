@@ -1,8 +1,14 @@
-import { type PublicCommunityListing } from '#app/community-public-types.ts'
+import {
+	type OnboardingFeaturedListing,
+	type PublicCommunityListing,
+} from '#app/community-public-types.ts'
 import { routes } from '#app/routes.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
-export { type PublicCommunityListing } from '#app/community-public-types.ts'
+export {
+	type OnboardingFeaturedListing,
+	type PublicCommunityListing,
+} from '#app/community-public-types.ts'
 
 const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
@@ -43,10 +49,27 @@ export function toPublicCommunityListing(
 		publishedAt: listing.publishedAt,
 		ownerUsername: getOwnerUsernameFromListingName(listing.name),
 		trusted: listing.trusted,
+		featured: listing.featured,
 		averageStars: listing.averageStars,
 		ratingCount: listing.ratingCount,
 		averageAdaptationEffort: listing.averageAdaptationEffort,
 		forkCount: listing.forkCount,
+	}
+}
+
+export function toOnboardingFeaturedListing(
+	listing: CommunityListingWithAggregates,
+): OnboardingFeaturedListing {
+	return {
+		id: listing.id,
+		kodyId: listing.kodyId,
+		name: listing.name,
+		description: listing.description,
+		iconUrl: buildCommunityIconUrl({
+			listingId: listing.id,
+			iconCommit: listing.iconCommit,
+		}),
+		tags: listing.tags,
 	}
 }
 

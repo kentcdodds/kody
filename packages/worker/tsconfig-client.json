@@ -23,6 +23,7 @@
 		"./src/app/routes.ts",
 		"./src/app/frame-constants.ts",
 		"./src/app/community-frame-constants.ts",
+		"./src/app/community-listing-icon.tsx",
 		"./src/app/community-public-types.ts",
 		"./src/app/loader-data.ts",
 		"./src/app/safe-redirect.ts"

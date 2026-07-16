@@ -8,6 +8,7 @@ import {
 } from '#app/auth-redirect.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { loadOnboardingFeaturedListings } from '#app/community-data.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { createPageOgHeadNode } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -48,6 +49,7 @@ export function createOnboardingHandler(env: Env) {
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
 				emailVerified: user.emailVerified,
+				featuredListings: await loadOnboardingFeaturedListings(env, request),
 			})
 			const origin = getAppBaseUrl({ env, requestUrl: request.url })
 			return renderAppPage({
@@ -75,13 +77,17 @@ export function createOnboardingApiHandler(env: Env) {
 			}
 
 			// Unverified callers still get a payload so clients can detect the
-			// gate; MCP URL/setup fields stay empty until verification succeeds.
+			// gate; MCP URL/setup and featured fields stay empty until
+			// verification succeeds.
 			return jsonResponse(
 				await loadOnboardingData({
 					env,
 					requestUrl: request.url,
 					stableUserId: user.mcpUser.userId,
 					emailVerified: user.emailVerified,
+					featuredListings: user.emailVerified
+						? await loadOnboardingFeaturedListings(env, request)
+						: [],
 				}),
 			)
 		},

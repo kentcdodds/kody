@@ -151,6 +151,19 @@ publishing it into your account.
 Admins toggle trust from the listing detail page or with the
 `community_set_trusted` capability.
 
+## Featured listings
+
+Admins can additionally mark trusted listings as **featured**. Featured listings
+appear on the onboarding page (`/onboarding`) as starter packages new users can
+one-click install. Only trusted listings can be featured, and a listing is only
+_shown_ in onboarding while it remains effectively trusted: when the owner
+republishes, it silently drops out of onboarding until an admin re-trusts the
+new version (the featured mark itself is kept, so re-trusting restores it).
+
+Featured listings show a **Featured** badge on their detail page. Admins toggle
+featuring from the listing detail page or with the `community_set_featured`
+capability.
+
 ## Ratings
 
 After forking, your agent can call `community_rate` with:
@@ -191,6 +204,8 @@ Use the MCP `community` domain:
 - `community_report` — report a listing (requires login)
 - `community_set_trusted` — admin-only: mark or unmark a listing as trusted at
   its current pinned commit
+- `community_set_featured` — admin-only: feature or unfeature a trusted listing
+  as an onboarding starter package
 
 ## Privacy and isolation
 

@@ -61,6 +61,19 @@ mark; delisted listings cannot be trusted. Surfaces: the `Trusted` badge on
 `community_set_trusted` capability. `community_search` and `community_get`
 expose the effective `trusted` flag.
 
+Admin **featured** marks live in `featured_at` (migration
+`0060-community-featured-listings.sql`) and highlight onboarding starter
+packages. `setCommunityListingFeatured` in `service.ts` requires the listing to
+be effectively trusted before featuring; the effective `featured` flag
+(`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`, so an owner
+republish that drops trust also pulls the listing from onboarding while keeping
+the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
+`OnboardingFeaturedListing` shapes, capped at 6). Surfaces: the `Featured` badge
+on the detail page, the admin-only toggle
+(`POST /community/:listingId/feature.json`, audited), the admin-only
+`community_set_featured` capability, and the onboarding "Install a starter
+package" step. `community_get` exposes the effective `featured` flag.
+
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
 
@@ -155,6 +168,7 @@ Capabilities:
 - `community_rate`
 - `community_report`
 - `community_set_trusted` (admin-only via `requiredRole`)
+- `community_set_featured` (admin-only via `requiredRole`)
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
 builtin domains (see [Adding capabilities](./adding-kody.md)). Do not surface

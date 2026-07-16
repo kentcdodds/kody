@@ -87,6 +87,7 @@ export function createCommunityDetailHandler(env: Env) {
 						loggedIn: detail.loggedIn,
 						viewerIsAdmin: detail.viewerIsAdmin,
 						trusted: detail.listing.trusted,
+						featured: detail.listing.featured,
 						readmeContent: detail.listing.readmeContent,
 					},
 				},

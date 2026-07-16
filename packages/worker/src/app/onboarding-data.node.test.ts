@@ -30,6 +30,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
+		featuredListings: [],
 	})
 
 	const withClient = await loadOnboardingData({

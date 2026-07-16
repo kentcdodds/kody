@@ -39,7 +39,9 @@ import {
 	extractCommunityListingLikeTokens,
 	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
+	listFeaturedCommunityListings as listFeaturedCommunityListingsFromDb,
 	resolveCommunityReportRow,
+	setCommunityListingFeaturedAt,
 	setCommunityListingStatus,
 	setCommunityListingTrustedCommit,
 	updateCommunityListing,
@@ -554,6 +556,68 @@ export async function setCommunityListingTrusted(input: {
 		)
 	}
 	return updated
+}
+
+/**
+ * Admin curation: mark a listing as an onboarding starter package, or remove
+ * the mark. Featuring requires the listing to be effectively trusted at its
+ * current commit, because onboarding presents featured listings for one-click
+ * install. The mark itself survives republishes; the effective `featured`
+ * flag drops with trust and returns when the same commit is re-trusted.
+ */
+export async function setCommunityListingFeatured(input: {
+	env: Env
+	listingId: string
+	featured: boolean
+}): Promise<CommunityListingRecord> {
+	const listing = await getCommunityListingById(input.env.APP_DB, {
+		listingId: input.listingId,
+		includeDelisted: true,
+	})
+	if (!listing) {
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
+	}
+	if (input.featured && listing.status !== 'active') {
+		throw new CommunityActionError(
+			'Delisted community listings cannot be featured.',
+		)
+	}
+	if (input.featured && !listing.trusted) {
+		throw new CommunityActionError(
+			'Only trusted community listings can be featured in onboarding. Mark the listing trusted first.',
+		)
+	}
+	await setCommunityListingFeaturedAt(input.env.APP_DB, {
+		listingId: input.listingId,
+		featured: input.featured,
+	})
+	invalidateCommunityPublicCache()
+	const updated = await getCommunityListingById(input.env.APP_DB, {
+		listingId: input.listingId,
+		includeDelisted: true,
+	})
+	if (!updated) {
+		throw new Error(
+			`Community listing "${input.listingId}" could not be loaded.`,
+		)
+	}
+	return updated
+}
+
+/**
+ * Onboarding starter packages: featured listings that are still effectively
+ * trusted, with rating/fork aggregates attached for public display.
+ */
+export async function listFeaturedCommunityListingsWithAggregates(input: {
+	env: Env
+	limit: number
+}): Promise<Array<CommunityListingWithAggregates>> {
+	const listings = await listFeaturedCommunityListingsFromDb(input.env.APP_DB, {
+		limit: input.limit,
+	})
+	return await attachListingAggregatesBatch(input.env.APP_DB, listings)
 }
 
 export async function getCommunityListingWithAggregates(input: {

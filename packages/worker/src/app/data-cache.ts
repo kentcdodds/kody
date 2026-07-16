@@ -42,6 +42,10 @@ export function buildCommunityDetailListingCacheKey(listingId: string) {
 	return `community-detail-listing:v${communityPublicCacheVersion}:id=${listingId}`
 }
 
+export function buildCommunityFeaturedCacheKey(limit: number) {
+	return `community-featured:v${communityPublicCacheVersion}:limit=${limit}`
+}
+
 function sweepExpiredEntries(now = Date.now()) {
 	for (const [key, entry] of store) {
 		if (entry.expiresAt <= now) {

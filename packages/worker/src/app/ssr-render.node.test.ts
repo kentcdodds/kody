@@ -265,6 +265,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
+		featuredListings: [],
 	})
 	expect(accountHtml).toContain('Verify your email')
 	expect(accountHtml).toContain('No accounts connected yet.')

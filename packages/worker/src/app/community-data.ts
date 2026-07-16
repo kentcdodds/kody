@@ -1,11 +1,14 @@
 import { readPositiveInt } from '#app/query-params.ts'
 import {
 	buildForkPrompt,
+	toOnboardingFeaturedListing,
 	toPublicCommunityListing,
+	type OnboardingFeaturedListing,
 	type PublicCommunityListing,
 } from '#app/community-public.ts'
 import {
 	buildCommunityDetailListingCacheKey,
+	buildCommunityFeaturedCacheKey,
 	buildCommunityIndexCacheKey,
 	getOrSetDataCache,
 } from '#app/data-cache.ts'
@@ -17,11 +20,13 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
 import {
 	listCommunityListingsWithAggregates,
+	listFeaturedCommunityListingsWithAggregates,
 	searchCommunityListings,
 	getCommunityListingWithAggregates,
 } from '#worker/community/service.ts'
 
 const defaultCommunityListLimit = 50
+const onboardingFeaturedListingLimit = 6
 
 function isCommunityDataCacheEnabled(env: Env) {
 	const sentryEnv = (env as { SENTRY_ENVIRONMENT?: string }).SENTRY_ENVIRONMENT
@@ -82,6 +87,31 @@ export async function loadCommunityIndexData(
 		ok: true,
 		listings,
 		query: query || null,
+	}
+}
+
+/**
+ * Featured starter packages for the onboarding page. Fails open to an empty
+ * list: onboarding must render even if the community tables are unavailable.
+ */
+export async function loadOnboardingFeaturedListings(
+	env: Env,
+	request: Request,
+): Promise<Array<OnboardingFeaturedListing>> {
+	const cacheKey = buildCommunityFeaturedCacheKey(
+		onboardingFeaturedListingLimit,
+	)
+	try {
+		return await loadWithCommunityCache(env, request, cacheKey, async () => {
+			const rows = await listFeaturedCommunityListingsWithAggregates({
+				env,
+				limit: onboardingFeaturedListingLimit,
+			})
+			return rows.map(toOnboardingFeaturedListing)
+		})
+	} catch (error) {
+		console.error('Failed to load onboarding featured listings:', error)
+		return []
 	}
 }
 

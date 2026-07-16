@@ -6,6 +6,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	buildCommunityPublicUrl,
 	communityContentWarning,
+	communityFeaturedFieldSchema,
 	communityGetForkInstructions,
 	communityListingAggregatesSchema,
 	communityListingStatusSchema,
@@ -35,6 +36,7 @@ export const communityGetCapability = defineDomainCapability(
 			pinned_commit: z.string(),
 			status: communityListingStatusSchema,
 			trusted: communityTrustedFieldSchema,
+			featured: communityFeaturedFieldSchema,
 			public_url: z.string(),
 			published_at: z.string(),
 			readme_untrusted: z.string().nullable(),
@@ -61,6 +63,7 @@ export const communityGetCapability = defineDomainCapability(
 				pinned_commit: listing.pinnedCommit,
 				status: listing.status,
 				trusted: listing.trusted,
+				featured: listing.featured,
 				public_url: buildCommunityPublicUrl(
 					ctx.callerContext.baseUrl,
 					listing.id,

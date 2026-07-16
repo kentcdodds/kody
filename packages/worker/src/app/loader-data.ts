@@ -1,4 +1,7 @@
-import { type PublicCommunityListing } from '#app/community-public-types.ts'
+import {
+	type OnboardingFeaturedListing,
+	type PublicCommunityListing,
+} from '#app/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 
 export type CommunityIndexLoaderData = {
@@ -23,6 +26,7 @@ export type CommunityDetailShellLoaderData = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	trusted: boolean
+	featured: boolean
 	readmeContent: string | null
 }
 
@@ -349,6 +353,8 @@ export type OnboardingLoaderData = {
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
+	/** Admin-featured trusted listings offered as one-click starter installs. */
+	featuredListings: Array<OnboardingFeaturedListing>
 }
 
 export type AccountTwoFactorLoaderData = {

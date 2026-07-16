@@ -211,14 +211,16 @@ primitives:
       deployment; inert forks, one-click install (UI-only fork + publish checks
       + immediate activation, with an acknowledgement gate for untrusted
       listings), ratings, user reports, admin moderation at
-      /admin/community-reports, commit-pinned admin trust marks, /community
-      routes, and lazily derived package icons that track the owner package's
-      current published commit.
+      /admin/community-reports, commit-pinned admin trust marks, admin featured
+      marks that surface trusted listings as onboarding starter packages,
+      /community routes, and lazily derived package icons that track the owner
+      package's current published commit.
     code:
       - packages/worker/src/community/
       - packages/worker/src/mcp/capabilities/community/
       - packages/worker/migrations/0045-community-listings.sql
       - packages/worker/migrations/0059-community-trusted-listings.sql
+      - packages/worker/migrations/0060-community-featured-listings.sql
       - packages/worker/src/app/handlers/community*
       - packages/worker/src/app/handlers/admin-community-reports*
       - packages/worker/client/routes/community*

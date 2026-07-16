@@ -21,6 +21,9 @@ function mapCommunityListingRow(
 	const pinnedCommit = String(row['pinned_commit'])
 	const trustedCommit =
 		row['trusted_commit'] == null ? null : String(row['trusted_commit'])
+	const trusted = trustedCommit != null && trustedCommit === pinnedCommit
+	const featuredAt =
+		row['featured_at'] == null ? null : String(row['featured_at'])
 	return {
 		id: String(row['id']),
 		ownerUserId: String(row['owner_user_id']),
@@ -43,7 +46,12 @@ function mapCommunityListingRow(
 		status: String(row['status']) as CommunityListingStatus,
 		trustedCommit,
 		trustedAt: row['trusted_at'] == null ? null : String(row['trusted_at']),
-		trusted: trustedCommit != null && trustedCommit === pinnedCommit,
+		trusted,
+		featuredAt,
+		// Featured is an onboarding placement, so it never outlives trust: a
+		// republish (or trust revocation) pulls the listing from onboarding
+		// even though featured_at stays set.
+		featured: featuredAt != null && trusted,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 		publishedAt: String(row['published_at']),
@@ -114,7 +122,7 @@ const communityListingSelectColumns = `community_listings.id, community_listings
 	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
 	community_listings.updated_at, community_listings.published_at,
 	community_listings.trusted_commit, community_listings.trusted_by_user_id,
-	community_listings.trusted_at,
+	community_listings.trusted_at, community_listings.featured_at,
 	entity_sources.published_commit AS source_published_commit`
 
 const communityListingSourceJoin = `LEFT JOIN entity_sources
@@ -150,8 +158,9 @@ export function extractCommunityListingLikeTokens(
 
 export async function insertCommunityListing(
 	db: D1Database,
-	// New listings are never trusted; the trust columns start NULL and are
-	// only set through setCommunityListingTrustedCommit.
+	// New listings are never trusted or featured; those columns start NULL
+	// and are only set through setCommunityListingTrustedCommit /
+	// setCommunityListingFeaturedAt.
 	row: Omit<
 		CommunityListingRow,
 		| 'created_at'
@@ -160,6 +169,7 @@ export async function insertCommunityListing(
 		| 'trusted_commit'
 		| 'trusted_by_user_id'
 		| 'trusted_at'
+		| 'featured_at'
 	> & {
 		created_at?: string
 		updated_at?: string
@@ -415,6 +425,53 @@ export async function setCommunityListingTrustedCommit(
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
+}
+
+export async function setCommunityListingFeaturedAt(
+	db: D1Database,
+	input: {
+		listingId: string
+		featured: boolean
+	},
+): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await db
+		.prepare(
+			`UPDATE community_listings
+			SET featured_at = ?, updated_at = ?
+			WHERE id = ?`,
+		)
+		.bind(input.featured ? now : null, now, input.listingId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+/**
+ * Listings that should be offered as onboarding starter packages: featured
+ * by an admin AND still effectively trusted (the trusted commit matches the
+ * pinned commit). Ordered by when they were featured so the curated order
+ * stays stable as new packages are added.
+ */
+export async function listFeaturedCommunityListings(
+	db: D1Database,
+	input: {
+		limit: number
+	},
+): Promise<Array<CommunityListingRecord>> {
+	const rows = await db
+		.prepare(
+			`SELECT ${communityListingSelectColumns}
+			FROM community_listings
+			${communityListingSourceJoin}
+			WHERE community_listings.status = 'active'
+				AND community_listings.featured_at IS NOT NULL
+				AND community_listings.trusted_commit = community_listings.pinned_commit
+			ORDER BY community_listings.featured_at ASC
+			LIMIT ?`,
+		)
+		.bind(input.limit)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapCommunityListingRow)
 }
 
 export async function setCommunityListingStatus(

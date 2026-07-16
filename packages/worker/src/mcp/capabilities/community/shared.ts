@@ -43,6 +43,12 @@ export const communityTrustedFieldSchema = z
 		'True when an admin reviewed and trusted the exact pinned commit of this listing.',
 	)
 
+export const communityFeaturedFieldSchema = z
+	.boolean()
+	.describe(
+		'True when an admin featured this trusted listing as an onboarding starter package.',
+	)
+
 export const communitySearchMatchSchema =
 	communityListingAggregatesSchema.extend({
 		listing_id: z.string(),

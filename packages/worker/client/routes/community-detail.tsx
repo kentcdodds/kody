@@ -109,6 +109,7 @@ export async function communityDetailRouteLoader(
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,
 			trusted: payload.listing.trusted,
+			featured: payload.listing.featured,
 			readmeContent: payload.listing.readmeContent,
 		},
 	}
@@ -125,6 +126,9 @@ export function CommunityDetailRoute(handle: Handle) {
 	let trusted = false
 	let trustState: 'idle' | 'submitting' | 'error' = 'idle'
 	let trustMessage: string | null = null
+	let featured = false
+	let featureState: 'idle' | 'submitting' | 'error' = 'idle'
+	let featureMessage: string | null = null
 	let installState: 'idle' | 'confirming' | 'submitting' | 'error' = 'idle'
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
@@ -178,6 +182,9 @@ export function CommunityDetailRoute(handle: Handle) {
 			trusted = payload.listing.trusted
 			trustState = 'idle'
 			trustMessage = null
+			featured = payload.listing.featured
+			featureState = 'idle'
+			featureMessage = null
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
@@ -266,6 +273,9 @@ export function CommunityDetailRoute(handle: Handle) {
 			}
 			trusted = payload.trusted ?? nextTrusted
 			trustState = 'idle'
+			// Featuring is only effective while the listing is trusted, so
+			// revoking trust also pulls it from onboarding immediately.
+			if (!trusted) featured = false
 			handle.update()
 			// The trusted badge renders inside the server frame; reload it so
 			// the header reflects the new state immediately.
@@ -275,6 +285,50 @@ export function CommunityDetailRoute(handle: Handle) {
 			trustState = 'error'
 			trustMessage =
 				error instanceof Error ? error.message : 'Unable to update trust.'
+			handle.update()
+		}
+	}
+
+	async function submitFeature(nextFeatured: boolean) {
+		const listingId = getCurrentListingId(handle)
+		if (!listingId || featureState === 'submitting') return
+
+		featureState = 'submitting'
+		featureMessage = null
+		handle.update()
+
+		try {
+			const response = await fetch(
+				routes.communityFeatureApiPost.href({ listingId }),
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({ featured: nextFeatured }),
+				},
+			)
+			const payload = await readJson<{
+				ok: boolean
+				featured?: boolean
+				error?: string
+			}>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error ?? 'Unable to update featuring.')
+			}
+			featured = payload.featured ?? nextFeatured
+			featureState = 'idle'
+			handle.update()
+			// The featured badge renders inside the server frame; reload it so
+			// the header reflects the new state immediately.
+			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+			if (frame) void frame.reload()
+		} catch (error) {
+			featureState = 'error'
+			featureMessage =
+				error instanceof Error ? error.message : 'Unable to update featuring.'
 			handle.update()
 		}
 	}
@@ -421,6 +475,9 @@ export function CommunityDetailRoute(handle: Handle) {
 		trusted = routeData.trusted
 		trustState = 'idle'
 		trustMessage = null
+		featured = routeData.featured
+		featureState = 'idle'
+		featureMessage = null
 		installState = 'idle'
 		installMessage = null
 		installOutcome = null
@@ -699,6 +756,39 @@ export function CommunityDetailRoute(handle: Handle) {
 								{trustMessage ? (
 									<p mix={css({ margin: 0, color: colors.error })} role="alert">
 										{trustMessage}
+									</p>
+								) : null}
+							</section>
+						) : null}
+
+						{viewerIsAdmin ? (
+							<section mix={css(cardCss)} data-testid="community-admin-feature">
+								<h2 mix={css(cardTitleCss)}>Admin: onboarding</h2>
+								<p mix={css(descriptionCss)}>
+									{featured
+										? 'This listing is featured as an onboarding starter package. Removing it hides it from onboarding immediately.'
+										: trusted
+											? 'Featuring offers this listing for one-click install during onboarding. A republish by the owner drops it from onboarding until the new version is re-trusted.'
+											: 'Only trusted listings can be featured in onboarding. Mark the listing trusted first.'}
+								</p>
+								<button
+									disabled={
+										featureState === 'submitting' || (!featured && !trusted)
+									}
+									mix={[
+										on('click', () => void submitFeature(!featured)),
+										css(secondaryButtonCss),
+									]}
+								>
+									{featureState === 'submitting'
+										? 'Saving…'
+										: featured
+											? 'Remove from onboarding'
+											: 'Feature in onboarding'}
+								</button>
+								{featureMessage ? (
+									<p mix={css({ margin: 0, color: colors.error })} role="alert">
+										{featureMessage}
 									</p>
 								) : null}
 							</section>

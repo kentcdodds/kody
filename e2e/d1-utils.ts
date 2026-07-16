@@ -120,6 +120,9 @@ export async function seedCommunityListingInE2eDatabase(input: {
 	readmeContent?: string | null
 	sourceId?: string
 	trusted?: boolean
+	/** Implies nothing about trust: pass `trusted: true` too for an
+	 * effectively featured (onboarding-visible) listing. */
+	featured?: boolean
 }) {
 	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
 	const tagsJson = JSON.stringify(input.tags ?? [])
@@ -134,6 +137,7 @@ export async function seedCommunityListingInE2eDatabase(input: {
 		? quoteSqlString('e2e-seeded-admin')
 		: 'NULL'
 	const trustedAt = input.trusted ? 'CURRENT_TIMESTAMP' : 'NULL'
+	const featuredAt = input.featured ? 'CURRENT_TIMESTAMP' : 'NULL'
 	const sql = `
 INSERT INTO community_listings (
 	id,
@@ -150,7 +154,8 @@ INSERT INTO community_listings (
 	status,
 	trusted_commit,
 	trusted_by_user_id,
-	trusted_at
+	trusted_at,
+	featured_at
 ) VALUES (
 	${quoteSqlString(input.listingId)},
 	${quoteSqlString(ownerUserId)},
@@ -166,7 +171,8 @@ INSERT INTO community_listings (
 	'active',
 	${trustedCommit},
 	${trustedByUserId},
-	${trustedAt}
+	${trustedAt},
+	${featuredAt}
 )
 ON CONFLICT(id) DO UPDATE SET
 	owner_user_id = excluded.owner_user_id,
@@ -178,6 +184,7 @@ ON CONFLICT(id) DO UPDATE SET
 	trusted_commit = excluded.trusted_commit,
 	trusted_by_user_id = excluded.trusted_by_user_id,
 	trusted_at = excluded.trusted_at,
+	featured_at = excluded.featured_at,
 	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
 	// Icon requests resolve through the listing's KV snapshot; without one the

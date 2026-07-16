@@ -52,6 +52,15 @@ export function CommunityDetailContent(
 							Trusted
 						</span>
 					) : null}
+					{listing.featured ? (
+						<span
+							data-testid="community-detail-featured-badge"
+							title="An admin featured this package as an onboarding starter install."
+							mix={css(trustedBadgeCss)}
+						>
+							Featured
+						</span>
+					) : null}
 				</div>
 			</header>
 
