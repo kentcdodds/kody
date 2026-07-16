@@ -208,7 +208,9 @@ primitives:
     name: Community package listings
     summary:
       Public pinned snapshots of published saved packages on the same
-      deployment; inert forks, ratings, user reports, admin moderation at
+      deployment; inert forks, one-click install (UI-only fork + publish checks
+      + immediate activation, with an acknowledgement gate for untrusted
+      listings), ratings, user reports, admin moderation at
       /admin/community-reports, commit-pinned admin trust marks, /community
       routes, and lazily derived package icons that track the owner package's
       current published commit.
@@ -576,9 +578,12 @@ invariants:
     summary:
       Public read is deliberate for active community listings only; forks are
       inert entity sources without a saved_packages row until the forker
-      publishes through a repo session; ratings require a prior fork;
-      cross-scope kody imports never resolve across users; community listings
-      are excluded from general MCP search.
+      publishes through a repo session or a one-click install passes the same
+      publish checks (untrusted listings additionally require an explicit user
+      acknowledgement, and install has no MCP capability so agents cannot
+      trigger it); ratings require a prior fork; cross-scope kody imports never
+      resolve across users; community listings are excluded from general MCP
+      search.
     docs:
       - docs/use/community-packages.md
       - docs/contributing/community-packages.md

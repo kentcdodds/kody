@@ -51,12 +51,16 @@ function executeE2eKvPut(key: string, value: string) {
 export function seedCommunitySnapshotInE2eKv(input: {
 	listingId: string
 	pinnedCommit: string
+	files?: Record<string, string>
 }) {
 	const snapshot: CommunitySnapshot = {
 		version: 1,
 		listingId: input.listingId,
 		pinnedCommit: input.pinnedCommit,
-		files: { 'community-icon.svg': e2eCommunityIconSvg },
+		files: {
+			'community-icon.svg': e2eCommunityIconSvg,
+			...input.files,
+		},
 		communityIconPath: 'community-icon.svg',
 		createdAt: new Date().toISOString(),
 	}

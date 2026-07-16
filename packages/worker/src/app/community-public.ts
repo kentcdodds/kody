@@ -53,3 +53,14 @@ export function toPublicCommunityListing(
 export function buildForkPrompt(input: { name: string; listingId: string }) {
 	return `Use Kody to fork the community package "${input.name}" (listing id: ${input.listingId}). Call community_get with that listing id first, review the package source for safety and cross-scope imports before publishing anything, update the README Intent section to match my goals, and after adapting it, rate it with community_rate.`
 }
+
+export function buildInstallSuccessPrompt(input: { targetName: string }) {
+	return `I just one-click installed the community package "${input.targetName}" into my Kody account. Call package_get for it and read its README, then walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
+}
+
+export function buildInstallAdaptPrompt(input: {
+	targetName: string
+	sourceId: string
+}) {
+	return `I one-click installed the community package "${input.targetName}" on Kody, but it needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repo_open_session, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repo_publish_session.`
+}

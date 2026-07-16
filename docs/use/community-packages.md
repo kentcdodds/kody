@@ -108,6 +108,34 @@ Your agent should:
 
 Only after publish does the package become a live saved package in your account.
 
+## One-click install
+
+Each listing detail page has an **Install** button for signed-in users. Install
+forks the listing into your account and, when the fork passes the same publish
+checks a repo session would run, publishes it immediately as a live saved
+package. **Publishing activates the package right away** — declared jobs are
+scheduled and `autoStart` services start.
+
+- **Untrusted listings** show a warning first: no admin has reviewed the code,
+  and installing runs it in your account. You must explicitly confirm. Direct
+  API calls need the same acknowledgement (`acknowledged_untrusted: true`), or
+  the endpoint responds `409`.
+- **Trusted listings** install without the warning step.
+
+When checks fail — most commonly because the package imports code from the
+original author's scope (`kody:@originuser/...`) — nothing is published. The
+fork stays **inert** exactly as a manual `community_fork` would, and the page
+gives you a copyable prompt so your agent can review, adapt, and publish it
+through a repo session.
+
+After a successful install the page shows a copyable prompt for your agent to
+finish setup: required secrets, OAuth connections, package secret-access
+approval, and a first test run.
+
+One-click install is deliberately a **UI-only** flow. Agents use
+`community_fork` plus a repo session instead, which keeps a human review step
+between community content and live code.
+
 ## Trusted listings
 
 Admins can mark a listing as **trusted** after reviewing its content. Trusted

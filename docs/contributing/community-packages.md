@@ -110,6 +110,7 @@ Core logic: `packages/worker/src/community/`
 | Module         | Role                                                                |
 | -------------- | ------------------------------------------------------------------- |
 | `service.ts`   | Publish, unpublish, search, fork, rate, report, admin resolution    |
+| `install.ts`   | One-click install: fork + publish checks + projection publish       |
 | `repo.ts`      | D1 queries                                                          |
 | `snapshot.ts`  | KV snapshot I/O                                                     |
 | `fork-scan.ts` | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
@@ -127,6 +128,18 @@ id to the forker's scope, scans cross-scope references, calls
 `rateCommunityListing` requires a prior fork row for the rater and rejects
 ratings from the listing owner. `reportCommunityListing` stores denormalized
 listing metadata for the admin queue.
+
+`installCommunityListing` (one-click install) composes `forkCommunityListing`
+with `runRepoChecks` over the fork's rewritten snapshot files and, when checks
+pass, `refreshSavedPackageProjection` — the same projection step
+`repo_publish_session` ends with, so declared jobs are scheduled and `autoStart`
+services start immediately. When checks fail (typically cross-scope imports),
+the fork stays inert and the failing checks are returned for agent follow-up.
+The HTTP surface is `POST /community/:listingId/install.json` (authenticated);
+untrusted listings require `acknowledged_untrusted: true` or the handler
+responds `409`. There is intentionally **no** MCP capability for install: agents
+must go through `community_fork` + repo-session review, so a prompt-injected
+agent cannot silently activate community code.
 
 ## MCP capabilities
 
@@ -155,8 +168,9 @@ og:image).
 Client routes: `packages/worker/client/routes/community*`
 
 - `/community` — searchable index of active listings
-- `/community/:listingId` — metadata, ratings, README, fork prompt, report link
-  (report requires login)
+- `/community/:listingId` — metadata, ratings, README, one-click install
+  (requires login; untrusted listings require a confirmed warning), fork prompt,
+  report link (report requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
   rejects stale commit URLs

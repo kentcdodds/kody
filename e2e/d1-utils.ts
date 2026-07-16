@@ -119,6 +119,7 @@ export async function seedCommunityListingInE2eDatabase(input: {
 	packageId?: string
 	readmeContent?: string | null
 	sourceId?: string
+	trusted?: boolean
 }) {
 	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
 	const tagsJson = JSON.stringify(input.tags ?? [])
@@ -126,6 +127,13 @@ export async function seedCommunityListingInE2eDatabase(input: {
 	const packageId = input.packageId ?? `pkg-${input.listingId}`
 	const readmeContent = input.readmeContent ?? null
 	const sourceId = input.sourceId ?? `src-${input.listingId}`
+	const trustedCommit = input.trusted
+		? quoteSqlString(e2eCommunityPinnedCommit)
+		: 'NULL'
+	const trustedByUserId = input.trusted
+		? quoteSqlString('e2e-seeded-admin')
+		: 'NULL'
+	const trustedAt = input.trusted ? 'CURRENT_TIMESTAMP' : 'NULL'
 	const sql = `
 INSERT INTO community_listings (
 	id,
@@ -139,7 +147,10 @@ INSERT INTO community_listings (
 	readme_content,
 	license,
 	pinned_commit,
-	status
+	status,
+	trusted_commit,
+	trusted_by_user_id,
+	trusted_at
 ) VALUES (
 	${quoteSqlString(input.listingId)},
 	${quoteSqlString(ownerUserId)},
@@ -152,7 +163,10 @@ INSERT INTO community_listings (
 	${readmeContent === null ? 'NULL' : quoteSqlString(readmeContent)},
 	'MIT',
 	${quoteSqlString(e2eCommunityPinnedCommit)},
-	'active'
+	'active',
+	${trustedCommit},
+	${trustedByUserId},
+	${trustedAt}
 )
 ON CONFLICT(id) DO UPDATE SET
 	owner_user_id = excluded.owner_user_id,
@@ -161,14 +175,45 @@ ON CONFLICT(id) DO UPDATE SET
 	tags_json = excluded.tags_json,
 	readme_content = excluded.readme_content,
 	status = excluded.status,
+	trusted_commit = excluded.trusted_commit,
+	trusted_by_user_id = excluded.trusted_by_user_id,
+	trusted_at = excluded.trusted_at,
 	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
 	// Icon requests resolve through the listing's KV snapshot; without one the
-	// worker logs `community-icon-load-failed` on every page view.
+	// worker logs `community-icon-load-failed` on every page view. The
+	// snapshot also carries a minimal installable package source so install
+	// and fork flows exercise the real snapshot-read path.
 	seedCommunitySnapshotInE2eKv({
 		listingId: input.listingId,
 		pinnedCommit: e2eCommunityPinnedCommit,
+		files: buildE2eCommunityPackageFiles({ name: input.name, kodyId }),
 	})
+}
+
+function buildE2eCommunityPackageFiles(input: {
+	name: string
+	kodyId: string
+}) {
+	return {
+		'package.json': `${JSON.stringify(
+			{
+				name: input.name,
+				license: 'MIT',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					id: input.kodyId,
+					description: 'Package seeded for community e2e tests',
+				},
+			},
+			null,
+			'\t',
+		)}\n`,
+		'README.md':
+			'# E2E Community Package\n\n## Intent\n\nExercise community flows in e2e tests.\n',
+		'src/index.ts':
+			'export default async function main() {\n\treturn { ok: true }\n}\n',
+	}
 }
 
 export function updateCommunityListingDescriptionInE2eDatabase(input: {

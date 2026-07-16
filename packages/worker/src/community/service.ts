@@ -780,6 +780,7 @@ export async function forkCommunityListing(input: {
 			originCommit: listing.pinnedCommit,
 			crossScopeReferences,
 			filesCount: Object.keys(rewrittenFiles).length,
+			files: rewrittenFiles,
 		}
 	} catch (error) {
 		await cleanupFailedCommunityFork({

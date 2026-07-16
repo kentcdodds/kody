@@ -188,6 +188,12 @@ export type ForkCommunityListingResult = {
 	originCommit: string
 	crossScopeReferences: Array<CrossScopeReference>
 	filesCount: number
+	/**
+	 * The rewritten snapshot files that were synced into the fork's source.
+	 * One-click install runs publish checks against these without re-reading
+	 * the snapshot; capability results must never expose them directly.
+	 */
+	files: Record<string, string>
 }
 
 export type CommunityReportResolutionAction = 'dismiss' | 'delist' | 'delete'

@@ -15,12 +15,14 @@ import {
 	resolveCommunityReport,
 	setCommunityListingTrusted,
 } from '#worker/community/service.ts'
+import { installCommunityListing } from '#worker/community/install.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { insertEntitySource } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createArtifactsMswHandlers } from '#worker/test-support/artifacts-msw-handlers.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 
@@ -98,6 +100,7 @@ async function seedOwnerPackage(input: {
 	sourceId: string
 	kodyId: string
 	publishedCommit: string
+	indexTs?: string
 }) {
 	const packageName = `@${input.owner.username}/${input.kodyId}`
 	const packageJson = `${JSON.stringify(
@@ -115,7 +118,9 @@ async function seedOwnerPackage(input: {
 	)}\n`
 	const readme =
 		'# Community Flow Package\n\n## Intent\n\nDemonstrate community publishing and forking.\n'
-	const indexTs = `import { value } from 'kody:@usera/shared-utils/index'\n\nexport default async function main() {\n\treturn { ok: true, value }\n}\n`
+	const indexTs =
+		input.indexTs ??
+		`import { value } from 'kody:@usera/shared-utils/index'\n\nexport default async function main() {\n\treturn { ok: true, value }\n}\n`
 	const files = {
 		'package.json': packageJson,
 		'README.md': readme,
@@ -395,4 +400,122 @@ test('community package flow works end-to-end through capability handlers', asyn
 			reporterCtx,
 		),
 	).rejects.toThrow('banned from community participation')
+}, 120_000)
+
+test('one-click install publishes clean listings and keeps unresolvable forks inert', async () => {
+	// Publish checks and artifact rebuilds run the real worker bundler, which
+	// warns that it is experimental.
+	silenceIncidentalRuntimeWarnings()
+	using _artifactsMock = createMswNodeServer(
+		createArtifactsMswHandlers({
+			accountId: mockAccountId,
+			apiBaseUrl: artifactsApiBaseUrl,
+		}),
+		{ onUnhandledRequest: 'bypass' },
+	)
+	const testEnv = {
+		...env,
+		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
+		CLOUDFLARE_API_TOKEN: 'artifacts-test-token',
+		CLOUDFLARE_API_BASE_URL: artifactsApiBaseUrl,
+	} as Env
+
+	const unique = crypto.randomUUID()
+	const owner = await insertTestUser({
+		email: `install-owner-${unique}@example.com`,
+		username: 'installowner',
+	})
+	const installer = await insertTestUser({
+		email: `installer-${unique}@example.com`,
+		username: 'installer',
+	})
+	const ownerCtx = createCapabilityContext(testEnv, owner)
+
+	// A listing with no cross-scope imports installs end-to-end: the fork
+	// passes publish checks and immediately becomes a live saved package.
+	const cleanKodyId = `install-clean-${unique}`
+	await seedOwnerPackage({
+		testEnv,
+		owner,
+		packageId: `package-clean-${unique}`,
+		sourceId: `source-clean-${unique}`,
+		kodyId: cleanKodyId,
+		publishedCommit: `commit-clean-${unique}`,
+		indexTs:
+			'export default async function main() {\n\treturn { ok: true }\n}\n',
+	})
+	const cleanListing = await communityPublishCapability.handler(
+		{ package_id: `package-clean-${unique}` },
+		ownerCtx,
+	)
+
+	const installed = await installCommunityListing({
+		env: testEnv,
+		baseUrl,
+		userId: installer.userId,
+		userEmail: installer.email,
+		expectedPackageScope: installer.username,
+		listingId: cleanListing.listing_id,
+	})
+	expect(installed.status).toBe('installed')
+	expect(installed.targetName).toBe(`@installer/${cleanKodyId}`)
+	expect(await countSavedPackagesForUser(installer.userId)).toBe(1)
+	const savedRow = await env.APP_DB.prepare(
+		`SELECT name, kody_id, source_id
+			FROM saved_packages
+			WHERE user_id = ?`,
+	)
+		.bind(installer.userId)
+		.first<{ name: string; kody_id: string; source_id: string }>()
+	expect(savedRow).toEqual({
+		name: `@installer/${cleanKodyId}`,
+		kody_id: cleanKodyId,
+		source_id: installed.sourceId,
+	})
+
+	// A listing whose code imports another user's scope cannot auto-publish:
+	// the fork stays inert with the failing checks reported for follow-up.
+	const messyKodyId = `install-messy-${unique}`
+	await seedOwnerPackage({
+		testEnv,
+		owner,
+		packageId: `package-messy-${unique}`,
+		sourceId: `source-messy-${unique}`,
+		kodyId: messyKodyId,
+		publishedCommit: `commit-messy-${unique}`,
+	})
+	const messyListing = await communityPublishCapability.handler(
+		{ package_id: `package-messy-${unique}` },
+		ownerCtx,
+	)
+
+	const adaptationRequired = await installCommunityListing({
+		env: testEnv,
+		baseUrl,
+		userId: installer.userId,
+		userEmail: installer.email,
+		expectedPackageScope: installer.username,
+		listingId: messyListing.listing_id,
+	})
+	expect(adaptationRequired.status).toBe('adaptation_required')
+	if (adaptationRequired.status !== 'adaptation_required') return
+	expect(adaptationRequired.crossScopeReferences).toEqual(
+		expect.arrayContaining([
+			{ file: 'src/index.ts', specifier: 'kody:@usera/' },
+		]),
+	)
+	expect(adaptationRequired.failedChecks.map((check) => check.kind)).toContain(
+		'bundle',
+	)
+	// Only the clean install produced a live package; the messy fork is inert.
+	expect(await countSavedPackagesForUser(installer.userId)).toBe(1)
+	const inertSource = await env.APP_DB.prepare(
+		`SELECT id, user_id FROM entity_sources WHERE id = ?`,
+	)
+		.bind(adaptationRequired.sourceId)
+		.first<{ id: string; user_id: string }>()
+	expect(inertSource).toEqual({
+		id: adaptationRequired.sourceId,
+		user_id: installer.userId,
+	})
 }, 120_000)

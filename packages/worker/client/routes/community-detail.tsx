@@ -21,6 +21,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
+	getDangerButtonCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	insetCardCss,
@@ -37,6 +38,22 @@ type CommunityDetailApiPayload = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
+}
+
+type CommunityInstallApiPayload = {
+	ok: boolean
+	status?: 'installed' | 'adaptation_required'
+	targetName?: string
+	agentPrompt?: string
+	failedChecks?: Array<{ kind: string; message: string }>
+	error?: string
+}
+
+type CommunityInstallOutcome = {
+	status: 'installed' | 'adaptation_required'
+	targetName: string
+	agentPrompt: string
+	failedChecks: Array<{ kind: string; message: string }>
 }
 
 function getListingIdFromPathname(pathname: string) {
@@ -107,6 +124,12 @@ export function CommunityDetailRoute(handle: Handle) {
 	let trusted = false
 	let trustState: 'idle' | 'submitting' | 'error' = 'idle'
 	let trustMessage: string | null = null
+	let installState: 'idle' | 'confirming' | 'submitting' | 'error' = 'idle'
+	let installMessage: string | null = null
+	let installOutcome: CommunityInstallOutcome | null = null
+	let installPromptCopyState: 'idle' | 'copied' = 'idle'
+	let installPromptCopyTimerId: ReturnType<typeof window.setTimeout> | null =
+		null
 	let readmeContent: string | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
@@ -154,6 +177,9 @@ export function CommunityDetailRoute(handle: Handle) {
 			trusted = payload.listing.trusted
 			trustState = 'idle'
 			trustMessage = null
+			installState = 'idle'
+			installMessage = null
+			installOutcome = null
 			readmeContent = payload.listing.readmeContent
 			reportState = 'idle'
 			reportMessage = null
@@ -252,6 +278,84 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
+	async function submitInstall() {
+		const listingId = getCurrentListingId(handle)
+		if (!listingId || installState === 'submitting') return
+
+		installState = 'submitting'
+		installMessage = null
+		handle.update()
+
+		try {
+			const response = await fetch(
+				routes.communityInstallApiPost.href({ listingId }),
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					// Reaching this point means the user either saw the untrusted
+					// warning and confirmed, or the listing is trusted.
+					body: JSON.stringify({ acknowledged_untrusted: !trusted }),
+				},
+			)
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<CommunityInstallApiPayload>(response)
+			if (
+				!response.ok ||
+				!payload?.ok ||
+				!payload.status ||
+				!payload.targetName ||
+				!payload.agentPrompt
+			) {
+				throw new Error(
+					payload?.error ?? 'Unable to install this community package.',
+				)
+			}
+			installOutcome = {
+				status: payload.status,
+				targetName: payload.targetName,
+				agentPrompt: payload.agentPrompt,
+				failedChecks: payload.failedChecks ?? [],
+			}
+			installState = 'idle'
+			handle.update()
+		} catch (error) {
+			installState = 'error'
+			installMessage =
+				error instanceof Error
+					? error.message
+					: 'Unable to install this community package.'
+			handle.update()
+		}
+	}
+
+	async function copyInstallPrompt() {
+		if (!installOutcome) return
+		try {
+			await writeClipboardText(installOutcome.agentPrompt)
+			if (installPromptCopyTimerId != null) {
+				window.clearTimeout(installPromptCopyTimerId)
+			}
+			installPromptCopyState = 'copied'
+			handle.update()
+			installPromptCopyTimerId = window.setTimeout(() => {
+				installPromptCopyTimerId = null
+				if (handle.signal.aborted) return
+				installPromptCopyState = 'idle'
+				handle.update()
+			}, 2000)
+		} catch {
+			installPromptCopyState = 'idle'
+			handle.update()
+		}
+	}
+
 	async function copyForkPrompt() {
 		if (!forkPrompt) return
 		try {
@@ -303,6 +407,9 @@ export function CommunityDetailRoute(handle: Handle) {
 		trusted = routeData.trusted
 		trustState = 'idle'
 		trustMessage = null
+		installState = 'idle'
+		installMessage = null
+		installOutcome = null
 		readmeContent = routeData.readmeContent
 		reportState = 'idle'
 		reportMessage = null
@@ -313,6 +420,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
+	const dangerButtonCss = getDangerButtonCss()
 
 	return () => {
 		const listingId = getCurrentListingId(handle)
@@ -385,6 +493,157 @@ export function CommunityDetailRoute(handle: Handle) {
 
 				{showShellReady ? (
 					<>
+						<section mix={css(cardCss)} data-testid="community-install">
+							<h2 mix={css(cardTitleCss)}>One-click install</h2>
+							{installOutcome ? (
+								<>
+									{installOutcome.status === 'installed' ? (
+										<>
+											<p
+												mix={css(descriptionCss)}
+												data-testid="community-install-success"
+												role="status"
+											>
+												Installed as {installOutcome.targetName}. Any jobs or
+												auto-start services the package declares are now active.
+											</p>
+											<p mix={css({ margin: 0 })}>
+												<a
+													href={routes.accountPackages.href()}
+													mix={css(mutedLinkCss)}
+												>
+													View it in your packages
+												</a>
+											</p>
+											<p mix={css(descriptionCss)}>
+												Give this prompt to your agent to finish any remaining
+												setup (secrets, connections, a first test run):
+											</p>
+										</>
+									) : (
+										<>
+											<p
+												mix={css(descriptionCss)}
+												data-testid="community-install-adaptation"
+												role="status"
+											>
+												Forked as {installOutcome.targetName}, but it needs
+												adaptation before it can run in your account.
+											</p>
+											{installOutcome.failedChecks.length > 0 ? (
+												<ul mix={css(checkListCss)}>
+													{installOutcome.failedChecks.map((check) => (
+														<li key={check.kind}>
+															{check.kind}: {check.message}
+														</li>
+													))}
+												</ul>
+											) : null}
+											<p mix={css(descriptionCss)}>
+												Give this prompt to your agent to adapt and publish it:
+											</p>
+										</>
+									)}
+									<pre mix={css(promptBlockCss)}>
+										{installOutcome.agentPrompt}
+									</pre>
+									<button
+										mix={[
+											on('click', () => void copyInstallPrompt()),
+											css(primaryButtonCss),
+										]}
+									>
+										{installPromptCopyState === 'copied'
+											? 'Copied'
+											: 'Copy prompt'}
+									</button>
+								</>
+							) : (
+								<>
+									<p mix={css(descriptionCss)}>
+										Install forks this package into your account and publishes
+										it right away when it passes the standard package checks.
+										{trusted
+											? ' An admin reviewed and trusted this exact version.'
+											: ' This listing has not been reviewed by an admin.'}
+									</p>
+									{loggedIn ? (
+										installState === 'confirming' ? (
+											<div
+												mix={css(warningCardCss)}
+												data-testid="community-install-warning"
+												role="alert"
+											>
+												<p mix={css({ margin: 0 })}>
+													This package is not trusted: no admin has reviewed its
+													code, and it was written by another user. Installing
+													publishes it into your account and can activate its
+													scheduled jobs and services immediately. Only continue
+													if you accept that risk.
+												</p>
+												<div mix={css(buttonRowCss)}>
+													<button
+														mix={[
+															on('click', () => void submitInstall()),
+															css(dangerButtonCss),
+														]}
+													>
+														Install anyway
+													</button>
+													<button
+														mix={[
+															on('click', () => {
+																installState = 'idle'
+																handle.update()
+															}),
+															css(secondaryButtonCss),
+														]}
+													>
+														Cancel
+													</button>
+												</div>
+											</div>
+										) : (
+											<button
+												disabled={installState === 'submitting'}
+												mix={[
+													on('click', () => {
+														if (trusted) {
+															void submitInstall()
+															return
+														}
+														installState = 'confirming'
+														installMessage = null
+														handle.update()
+													}),
+													css(primaryButtonCss),
+												]}
+											>
+												{installState === 'submitting'
+													? 'Installing…'
+													: 'Install'}
+											</button>
+										)
+									) : (
+										<p mix={css(descriptionCss)}>
+											<a href="/login" mix={css(mutedLinkCss)}>
+												Log in
+											</a>{' '}
+											to install this package.
+										</p>
+									)}
+									{installMessage ? (
+										<p
+											mix={css({ margin: 0, color: colors.error })}
+											role="alert"
+										>
+											{installMessage}
+										</p>
+									) : null}
+								</>
+							)}
+						</section>
+
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Fork with your agent</h2>
 							<p mix={css(descriptionCss)}>
@@ -528,4 +787,28 @@ const readmeBlockCss = {
 	...insetCardCss,
 	maxHeight: '32rem',
 	overflow: 'auto',
+}
+
+const warningCardCss = {
+	...insetCardCss,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.75rem',
+	borderColor: colors.danger,
+}
+
+const buttonRowCss = {
+	display: 'flex',
+	gap: '0.5rem',
+	flexWrap: 'wrap' as const,
+}
+
+const checkListCss = {
+	margin: 0,
+	paddingLeft: '1.25rem',
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.25rem',
 }
