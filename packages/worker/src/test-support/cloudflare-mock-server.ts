@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { stripVTControlCharacters } from 'node:util'
 import {
 	captureOutput,
 	spawnProcess,
@@ -22,7 +23,9 @@ async function waitForCloudflareMock(
 	)
 	while (Date.now() < deadline) {
 		const output = `${readStdout()}\n${readStderr()}`
-		const readyMatch = output.match(/\bReady on (http:\/\/127\.0\.0\.1:\d+)\b/)
+		const readyMatch = stripVTControlCharacters(output).match(
+			/\bReady on (http:\/\/127\.0\.0\.1:\d+)\b/,
+		)
 		const origin = readyMatch?.[1]
 		if (origin) {
 			try {
