@@ -143,7 +143,12 @@ test('admin invite signup and email verification happy path', async ({
 	await expect(
 		page.getByRole('heading', { name: 'Add Kody as an MCP server' }),
 	).toBeVisible()
-	await expect(page.getByText(/\/mcp/)).toBeVisible()
+	await expect(
+		page.getByRole('tablist', { name: 'MCP client setup instructions' }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('button', { name: 'Copy MCP URL' }).first(),
+	).toBeVisible()
 
 	await page.goto('/account')
 	await expect(
