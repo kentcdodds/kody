@@ -8,10 +8,8 @@ import {
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
-import {
-	createEphemeralGitWorkspace,
-	createIsomorphicGitFs,
-} from './ephemeral-git-workspace.ts'
+import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
+import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
 import { entityKindValues, type EntityKind } from './types.ts'
 
 export const kodyPublishGitNoteVersion = 1 as const

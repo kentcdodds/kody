@@ -775,7 +775,6 @@ export async function syncPackageJobsForPackage(input: {
 	)
 	const desiredNames = new Set(Object.keys(desiredJobs))
 	const now = new Date().toISOString()
-	let schedulerStateChanged = false
 
 	for (const [jobName, definition] of Object.entries(desiredJobs)) {
 		const existing = existingByName.get(jobName)
@@ -783,11 +782,6 @@ export async function syncPackageJobsForPackage(input: {
 		const timezone = normalizeJobTimezone(definition.timezone)
 		const enabled = definition.enabled ?? true
 		if (existing) {
-			const schedulerStateMatches =
-				JSON.stringify(existing.record.schedule) === JSON.stringify(schedule) &&
-				existing.record.timezone === timezone &&
-				existing.record.enabled === enabled
-			if (schedulerStateMatches) continue
 			const updated: JobRecord = {
 				...existing.record,
 				name: jobName,
@@ -813,7 +807,6 @@ export async function syncPackageJobsForPackage(input: {
 					}),
 				),
 			})
-			schedulerStateChanged = true
 			continue
 		}
 
@@ -854,16 +847,13 @@ export async function syncPackageJobsForPackage(input: {
 				}),
 			),
 		})
-		schedulerStateChanged = true
 	}
 
 	for (const row of packageRows) {
 		if (desiredNames.has(row.name)) continue
 		await deleteJobRow(input.env.APP_DB, input.userId, row.id)
 		await deleteJobVector(input.env, row.id)
-		schedulerStateChanged = true
 	}
-	return schedulerStateChanged
 }
 
 export async function deletePackageJobsForSourceId(input: {

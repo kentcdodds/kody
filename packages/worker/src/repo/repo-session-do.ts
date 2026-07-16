@@ -82,6 +82,7 @@ import {
 	type RepoRunCommandsResult,
 	parseRepoGitCommands,
 } from './repo-session-commands.ts'
+import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -193,6 +194,8 @@ class RepoSessionBase extends DurableObject<Env> {
 	})
 
 	readonly fileSystem = new WorkspaceFileSystem(this.workspace)
+
+	readonly rawGitFileSystem = createIsomorphicGitFs(this.fileSystem)
 
 	readonly state = createWorkspaceStateBackend(this.workspace)
 
@@ -437,7 +440,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	}) {
 		const auth = buildArtifactsGitAuth({ token: input.token })
 		return rawGit.push({
-			fs: this.fileSystem as unknown as RawGitPushInput['fs'],
+			fs: this.rawGitFileSystem as RawGitPushInput['fs'],
 			http,
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
@@ -452,7 +455,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async deleteRemoteBranch(input: { branch: string; token: string }) {
 		const auth = buildArtifactsGitAuth({ token: input.token })
 		return rawGit.push({
-			fs: this.fileSystem as unknown as RawGitPushInput['fs'],
+			fs: this.rawGitFileSystem as RawGitPushInput['fs'],
 			http,
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',

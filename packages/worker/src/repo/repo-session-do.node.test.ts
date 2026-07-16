@@ -475,6 +475,12 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	)
 	expect(mockModule.rawPush).toHaveBeenCalledWith(
 		expect.objectContaining({
+			fs: expect.objectContaining({
+				promises: expect.objectContaining({
+					rmdir: expect.any(Function),
+					unlink: expect.any(Function),
+				}),
+			}),
 			remote: 'origin',
 			ref: 'sessions/session1',
 			remoteRef: 'main',
@@ -483,6 +489,20 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	for (const call of mockModule.git.push.mock.calls) {
 		expect(call[0]).not.toHaveProperty('token')
 	}
+
+	mockModule.rawPush.mockClear()
+	await repoSession.cleanupSessionBranch({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		reason: 'expired',
+	})
+	expect(mockModule.rawPush).toHaveBeenCalledWith(
+		expect.objectContaining({
+			remote: 'origin',
+			ref: 'sessions/session1',
+			delete: true,
+		}),
+	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('publish_git_note'),
 		expect.anything(),
