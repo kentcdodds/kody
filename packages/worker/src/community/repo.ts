@@ -435,13 +435,16 @@ export async function setCommunityListingFeaturedAt(
 	},
 ): Promise<boolean> {
 	const now = new Date().toISOString()
+	// Re-featuring keeps the original timestamp (COALESCE) so idempotent
+	// retries never reshuffle the featured_at-ordered onboarding list.
 	const result = await db
 		.prepare(
 			`UPDATE community_listings
-			SET featured_at = ?, updated_at = ?
+			SET featured_at = CASE WHEN ? THEN COALESCE(featured_at, ?) ELSE NULL END,
+				updated_at = ?
 			WHERE id = ?`,
 		)
-		.bind(input.featured ? now : null, now, input.listingId)
+		.bind(input.featured ? 1 : 0, now, now, input.listingId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

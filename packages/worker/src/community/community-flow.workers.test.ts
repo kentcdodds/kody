@@ -341,6 +341,14 @@ test('community package flow works end-to-end through capability handlers', asyn
 	})
 	expect(featuredListing.featured).toBe(true)
 	expect(featuredListing.featuredAt).toBeTruthy()
+	// Re-featuring is idempotent: the original featured_at is preserved so
+	// retries never reshuffle the onboarding order.
+	const refeatured = await setCommunityListingFeatured({
+		env: testEnv,
+		listingId,
+		featured: true,
+	})
+	expect(refeatured.featuredAt).toBe(featuredListing.featuredAt)
 	const featuredRows = await listFeaturedCommunityListingsWithAggregates({
 		env: testEnv,
 		limit: 10,
