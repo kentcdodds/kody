@@ -69,9 +69,13 @@ import {
 } from './tool-call-context.ts'
 import {
 	type PackageActionMatch,
+	type RelatedCapabilityOperation,
+	type SearchEntityDetailStructured,
 	type SearchMatch,
 	type SearchResultStructuredContent,
+	buildKodyCapabilityAccessor,
 	buildPackageActionImportUsage,
+	compactCapabilityInputTypeDefinition,
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
 	getPrimaryPackageActionFunction,
@@ -95,6 +99,9 @@ const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
+const topCapabilityInlineCallShapeCount = 3
+const maxRelatedCapabilityOperations = 20
+const maxBatchEntityRefs = 10
 /** Upper bound on package candidates kept after lexical/vector rank fusion. */
 const maxFusedPackageCandidates = 100
 
@@ -399,31 +406,11 @@ function buildRecommendedNextStep(
 		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'capability') {
-		if (topMatch.source === 'remote-connector' && topMatch.remoteConnector) {
-			const connectorName = topMatch.remoteConnector.connectorName
-			const toolName = topMatch.remoteConnector.toolName
-			const accessor = /^[A-Za-z_$][\w$]*$/.test(toolName)
-				? `kody.remote[${JSON.stringify(connectorName)}].${toolName}`
-				: `kody.remote[${JSON.stringify(connectorName)}][${JSON.stringify(toolName)}]`
-			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
+		const accessor = buildKodyCapabilityAccessor(topMatch)
+		if (topMatch.inputTypeDefinition) {
+			return `Call \`${accessor}(args)\` from \`execute\` using the inlined call shape above. Use \`search({ entity: "${topMatch.name}:capability" })\` only if you need the full type definitions.`
 		}
-		if (topMatch.source === 'mcp-server' && topMatch.mcpServer) {
-			const serverName = topMatch.mcpServer.kodyName
-			const toolName = topMatch.mcpServer.toolName
-			const accessor = /^[A-Za-z_$][\w$]*$/.test(toolName)
-				? `kody.mcp[${JSON.stringify(serverName)}].${toolName}`
-				: `kody.mcp[${JSON.stringify(serverName)}][${JSON.stringify(toolName)}]`
-			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
-		}
-		if (topMatch.source === 'openapi' && topMatch.openApi) {
-			const providerName = topMatch.openApi.kodyName
-			const operationSlug = topMatch.openApi.operationSlug
-			const accessor = /^[A-Za-z_$][\w$]*$/.test(operationSlug)
-				? `kody.openapi[${JSON.stringify(providerName)}].${operationSlug}`
-				: `kody.openapi[${JSON.stringify(providerName)}][${JSON.stringify(operationSlug)}]`
-			return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
-		}
-		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`kody.${topMatch.name}(args)\`.`
+		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
 	}
 	return undefined
 }
@@ -1411,6 +1398,92 @@ function capabilityMatchToCandidate(
 }
 
 /**
+ * Attaches a compact call shape (accessor + collapsed input type) to the top
+ * capability matches only, so query responses stay lean while still letting
+ * agents call without an immediate entity round trip.
+ */
+function attachTopCapabilityCallShapes(input: {
+	matches: Array<SearchMatch>
+	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	limit?: number
+}): void {
+	const limit = input.limit ?? topCapabilityInlineCallShapeCount
+	let attached = 0
+	for (const match of input.matches) {
+		if (attached >= limit) break
+		if (match.type !== 'capability') continue
+		const spec = input.registry.capabilitySpecs[match.name]
+		if (!spec?.inputTypeDefinition) continue
+		const compact = compactCapabilityInputTypeDefinition(
+			spec.inputTypeDefinition,
+		)
+		match.inputTypeDefinition = compact.definition
+		if (compact.truncated) {
+			match.inputTypeDefinitionTruncated = true
+		}
+		attached += 1
+	}
+}
+
+function sameSynthesizedProvider(
+	left: Awaited<
+		ReturnType<typeof getCapabilityRegistryForContext>
+	>['capabilitySpecs'][string],
+	right: Awaited<
+		ReturnType<typeof getCapabilityRegistryForContext>
+	>['capabilitySpecs'][string],
+): boolean {
+	if (left.source !== right.source) return false
+	if (left.source === 'openapi' && left.openApi && right.openApi) {
+		return left.openApi.kodyName === right.openApi.kodyName
+	}
+	if (left.source === 'mcp-server' && left.mcpServer && right.mcpServer) {
+		return left.mcpServer.kodyName === right.mcpServer.kodyName
+	}
+	if (
+		left.source === 'remote-connector' &&
+		left.remoteConnector &&
+		right.remoteConnector
+	) {
+		return (
+			left.remoteConnector.connectorName === right.remoteConnector.connectorName
+		)
+	}
+	return false
+}
+
+function collectRelatedCapabilityOperations(input: {
+	spec: Awaited<
+		ReturnType<typeof getCapabilityRegistryForContext>
+	>['capabilitySpecs'][string]
+	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+}): Array<RelatedCapabilityOperation> {
+	const { spec, registry } = input
+	if (
+		spec.source !== 'openapi' &&
+		spec.source !== 'mcp-server' &&
+		spec.source !== 'remote-connector'
+	) {
+		return []
+	}
+	return Object.values(registry.capabilitySpecs)
+		.filter(
+			(other) =>
+				other.name !== spec.name && sameSynthesizedProvider(spec, other),
+		)
+		.sort((left, right) => left.name.localeCompare(right.name))
+		.slice(0, maxRelatedCapabilityOperations)
+		.map((other) => ({
+			name: other.name,
+			entityRef: `${other.name}:capability`,
+			description: other.description,
+			...(other.openApi
+				? { method: other.openApi.method, path: other.openApi.path }
+				: {}),
+		}))
+}
+
+/**
  * Loads README snippets and export metadata for the bounded set of package
  * matches actually being returned (at most `limit` rows), instead of loading
  * every saved package's full source up front.
@@ -1552,6 +1625,10 @@ export async function searchUnified(input: {
 		limit,
 	})
 	const matches = reranked.map((candidate) => candidate.match)
+	attachTopCapabilityCallShapes({
+		matches,
+		registry: input.registry,
+	})
 	await hydrateTopPackageMatches({
 		query: intent.normalizedQuery,
 		matches,
@@ -1683,9 +1760,11 @@ without competing semantic matches. Hidden exact queries require
 \`includeHiddenPackages: true\`.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
-| \`integration\` | \`package\` | \`secret\`). Capability detail includes an
-exact \`execute\` module snippet plus TypeScript call-shape definitions by
-default.
+| \`integration\` | \`package\` | \`secret\`), or an array of 1–10 refs to batch
+related lookups in one call. Capability detail includes an exact \`execute\`
+module snippet plus TypeScript call-shape definitions by default. Synthesized
+provider capabilities (OpenAPI, MCP server, remote connector) also list related
+operations from the same provider.
 
 Packages: \`package_list\` and \`package_get\` to inspect. Coding agents with
 local filesystem/git access author via \`package_get_git_remote\`
@@ -1716,6 +1795,7 @@ Example arguments:
 - \`{ "query": "preferred org value or saved integration", "limit": 10 }\`
 - \`{ "query": "package with worker app ui", "limit": 10 }\`
 - \`{ "entity": "coding_guide_get:capability" }\`
+- \`{ "entity": ["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"] }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:integration" }\`
 
@@ -1882,12 +1962,17 @@ async function resolveEntityDetail(input: {
 		if (!spec) {
 			throw new Error('Capability not found.')
 		}
+		const relatedOperations = collectRelatedCapabilityOperations({
+			spec,
+			registry: input.searchRows.registry,
+		})
 		return {
 			type: 'capability' as const,
 			id: ref.id,
 			title: spec.name,
 			description: spec.description,
 			spec,
+			...(relatedOperations.length > 0 ? { relatedOperations } : {}),
 		}
 	}
 
@@ -2017,11 +2102,13 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						'Natural language description, or an exact saved-package UUID, kody id, current-origin account package URL, or owner-matching hosted package URL.',
 					),
 				entity: z
-					.string()
-					.min(1)
+					.union([
+						z.string().min(1),
+						z.array(z.string().min(1)).min(1).max(maxBatchEntityRefs),
+					])
 					.optional()
 					.describe(
-						'Optional exact entity reference in the format "{id}:{type}" where type is capability, package, secret, value, or integration.',
+						'Optional exact entity reference "{id}:{type}" (capability, package, secret, value, or integration), or an array of 1–10 refs to batch related detail lookups.',
 					),
 				limit: z
 					.number()
@@ -2051,7 +2138,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 		},
 		async (args: {
 			query?: string
-			entity?: string
+			entity?: string | Array<string>
 			limit?: number
 			maxResponseSize?: number
 			conversationId?: string
@@ -2172,6 +2259,39 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				warnings = searchRows.warnings
 
 				if (args.entity) {
+					if (Array.isArray(args.entity)) {
+						const batchResults = await Promise.all(
+							args.entity.map(async (entityRef) => {
+								try {
+									const detail = await resolveEntityDetail({
+										agent,
+										callerContext,
+										userId,
+										username,
+										entity: entityRef,
+										searchRows,
+									})
+									return {
+										ok: true as const,
+										entityRef,
+										detail,
+									}
+								} catch (cause) {
+									const error =
+										cause instanceof Error ? cause : new Error(String(cause))
+									return {
+										ok: false as const,
+										entityRef,
+										error: error.message,
+									}
+								}
+							}),
+						)
+						return {
+							mode: 'entity-batch' as const,
+							results: batchResults,
+						}
+					}
 					return {
 						mode: 'entity' as const,
 						detail: await resolveEntityDetail({
@@ -2211,6 +2331,21 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					| {
 							mode: 'entity'
 							detail: Awaited<ReturnType<typeof resolveEntityDetail>>
+					  }
+					| {
+							mode: 'entity-batch'
+							results: Array<
+								| {
+										ok: true
+										entityRef: string
+										detail: Awaited<ReturnType<typeof resolveEntityDetail>>
+								  }
+								| {
+										ok: false
+										entityRef: string
+										error: string
+								  }
+							>
 					  } = await Sentry.startSpan(
 					{
 						name: 'mcp.tool.search',
@@ -2246,6 +2381,63 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							timing,
 							result: entityResult.structured,
 						},
+					}
+				}
+
+				if (outcome.mode === 'entity-batch') {
+					const timing = finishToolTiming(timingStart)
+					const structuredResults: Array<
+						SearchEntityDetailStructured | { entityRef: string; error: string }
+					> = []
+					const markdownParts: Array<string> = []
+					let successCount = 0
+					for (const entry of outcome.results) {
+						if (!entry.ok) {
+							structuredResults.push({
+								entityRef: entry.entityRef,
+								error: entry.error,
+							})
+							markdownParts.push(
+								`Error resolving \`${entry.entityRef}\`: ${entry.error}`,
+							)
+							continue
+						}
+						successCount += 1
+						const entityResult = formatEntityDetailMarkdown(entry.detail)
+						structuredResults.push(entityResult.structured)
+						markdownParts.push(entityResult.markdown)
+					}
+					const allFailed = successCount === 0
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'search',
+						toolName: 'search',
+						outcome: allFailed ? 'failure' : 'success',
+						durationMs: timing.durationMs,
+						baseUrl,
+						hasUser,
+						...(allFailed
+							? {
+									sandboxError: false,
+									errorName: 'EntityBatchError',
+									errorMessage: 'All entity lookups failed.',
+								}
+							: {}),
+					})
+					return {
+						content: prependToolMetadataContent(conversationId, [
+							{
+								type: 'text',
+								text: truncateSearchText(markdownParts.join('\n\n---\n\n')),
+							},
+						]),
+						structuredContent: {
+							conversationId,
+							timing,
+							result: structuredResults,
+							...(allFailed ? { error: 'All entity lookups failed.' } : {}),
+						},
+						...(allFailed ? { isError: true } : {}),
 					}
 				}
 
