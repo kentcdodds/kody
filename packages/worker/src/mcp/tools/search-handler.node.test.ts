@@ -95,7 +95,7 @@ const mockPerformanceNow = vi.spyOn(performance, 'now')
 
 type SearchHandler = (input: {
 	query?: string
-	entity?: string
+	entity?: string | Array<string>
 	limit?: number
 	maxResponseSize?: number
 	conversationId?: string
@@ -449,4 +449,176 @@ test('search tool treats exact package identity as authoritative and still resol
 		},
 	)
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+})
+
+test('search tool batches entity detail with per-ref isolation and preserves single-entity shape', async () => {
+	vi.clearAllMocks()
+	mockModule.getCapabilityRegistryForContext.mockResolvedValue({
+		capabilitySpecs: {
+			search_docs: {
+				name: 'search_docs',
+				description: 'Search docs capability',
+				domain: 'meta',
+				keywords: [],
+				inputFields: [],
+				requiredInputFields: [],
+				outputFields: [],
+				readOnly: true,
+				idempotent: true,
+				destructive: false,
+				source: 'builtin',
+				inputSchema: { type: 'object', properties: {} },
+				inputTypeDefinition: 'type SearchDocsInput = Record<string, never>',
+			},
+			'openapi:widgets:createwidget': {
+				name: 'openapi:widgets:createwidget',
+				description: 'Create a widget.',
+				domain: 'openapi:widgets',
+				keywords: [],
+				inputFields: ['name'],
+				requiredInputFields: ['name'],
+				outputFields: [],
+				readOnly: false,
+				idempotent: false,
+				destructive: false,
+				source: 'openapi',
+				openApi: {
+					bindingName: 'widgets',
+					kodyName: 'widgets',
+					operationSlug: 'createwidget',
+					method: 'post',
+					path: '/widgets',
+				},
+				inputSchema: {
+					type: 'object',
+					properties: { name: { type: 'string' } },
+					required: ['name'],
+				},
+				inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
+			},
+			'openapi:widgets:getwidget': {
+				name: 'openapi:widgets:getwidget',
+				description: 'Get a widget.',
+				domain: 'openapi:widgets',
+				keywords: [],
+				inputFields: ['id'],
+				requiredInputFields: ['id'],
+				outputFields: [],
+				readOnly: true,
+				idempotent: true,
+				destructive: false,
+				source: 'openapi',
+				openApi: {
+					bindingName: 'widgets',
+					kodyName: 'widgets',
+					operationSlug: 'getwidget',
+					method: 'get',
+					path: '/widgets/{id}',
+				},
+				inputSchema: {
+					type: 'object',
+					properties: { id: { type: 'string' } },
+					required: ['id'],
+				},
+				inputTypeDefinition: 'type GetWidgetInput = { id: string }',
+			},
+		},
+	})
+
+	const handler = await getSearchHandler()
+
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(110)
+	const singleResponse = await handler({
+		entity: 'search_docs:capability',
+		conversationId: 'conv-single-entity',
+	})
+	expect(singleResponse.isError).toBeUndefined()
+	expect(singleResponse.structuredContent.result).toMatchObject({
+		kind: 'entity',
+		type: 'capability',
+		id: 'search_docs',
+		entityRef: 'search_docs:capability',
+	})
+	expect(singleResponse.structuredContent.result).not.toHaveProperty(
+		'relatedOperations',
+	)
+	expect(Array.isArray(singleResponse.structuredContent.result)).toBe(false)
+
+	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
+	const batchSuccess = await handler({
+		entity: [
+			'openapi:widgets:createwidget:capability',
+			'openapi:widgets:getwidget:capability',
+		],
+		conversationId: 'conv-batch-success',
+	})
+	expect(batchSuccess.isError).toBeUndefined()
+	expect(batchSuccess.structuredContent.result).toEqual([
+		expect.objectContaining({
+			kind: 'entity',
+			type: 'capability',
+			id: 'openapi:widgets:createwidget',
+			relatedOperations: [
+				expect.objectContaining({
+					name: 'openapi:widgets:getwidget',
+					method: 'get',
+					path: '/widgets/{id}',
+				}),
+			],
+		}),
+		expect.objectContaining({
+			kind: 'entity',
+			type: 'capability',
+			id: 'openapi:widgets:getwidget',
+			relatedOperations: [
+				expect.objectContaining({
+					name: 'openapi:widgets:createwidget',
+				}),
+			],
+		}),
+	])
+	const batchText = batchSuccess.content.map((item) => item.text).join('\n')
+	expect(batchText).toContain('---')
+	expect(batchText).toContain('## Related operations (same provider)')
+
+	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
+	const partialFailure = await handler({
+		entity: [
+			'openapi:widgets:createwidget:capability',
+			'missing_thing:capability',
+		],
+		conversationId: 'conv-batch-partial',
+	})
+	expect(partialFailure.isError).toBeUndefined()
+	expect(partialFailure.structuredContent.result).toEqual([
+		expect.objectContaining({
+			kind: 'entity',
+			type: 'capability',
+			id: 'openapi:widgets:createwidget',
+		}),
+		expect.objectContaining({
+			entityRef: 'missing_thing:capability',
+			error: expect.stringMatching(/not found/i),
+		}),
+	])
+
+	mockPerformanceNow.mockReturnValueOnce(400).mockReturnValueOnce(410)
+	const allFailed = await handler({
+		entity: ['missing_a:capability', 'missing_b:capability'],
+		conversationId: 'conv-batch-all-failed',
+	})
+	expect(allFailed.isError).toBe(true)
+	expect(allFailed.structuredContent.error).toMatch(
+		/all entity lookups failed/i,
+	)
+	expect(allFailed.structuredContent.result).toEqual([
+		expect.objectContaining({
+			entityRef: 'missing_a:capability',
+			error: expect.any(String),
+		}),
+		expect.objectContaining({
+			entityRef: 'missing_b:capability',
+			error: expect.any(String),
+		}),
+	])
 })

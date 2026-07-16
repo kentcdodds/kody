@@ -20,7 +20,10 @@ it). See [Packages](./packages.md#hidden-packages).
 Pass a **`query`** string that describes what you want to do. Results are
 ranked; order in the response matters. Query responses are intentionally
 compact: the markdown response is a short list of matches with the result type,
-title, one-line summary, and entity reference when applicable.
+title, one-line summary, and entity reference when applicable. The top few
+capability hits also include a compact inlined call shape (runtime accessor plus
+a whitespace-collapsed input type, truncated when long) so you can often call
+from **execute** without an immediate entity round trip.
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user. Kody also recognizes
@@ -42,7 +45,7 @@ Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches against the compact list when the
 response must stay small.
 
-## Single-entity detail
+## Entity detail
 
 To get **full markdown and call shapes for one hit** (for example a capability’s
 ready-to-run **execute** snippet plus `inputTypeDefinition` /
@@ -50,9 +53,15 @@ ready-to-run **execute** snippet plus `inputTypeDefinition` /
 `"{id}:{type}"` where **`type`** is `capability`, `value`, `integration`,
 `package`, or `secret`.
 
+Pass an **array of 1–10 entity refs** when you need several related details at
+once (for example a create/poll OpenAPI pair). Each ref resolves independently:
+failures become per-entity error lines without aborting the whole batch. If
+every ref fails, the tool returns an error result.
+
 Examples:
 
 - `coding_guide_get:capability`
+- `["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"]`
 - `user:preferred_org:value`
 - `github:integration`
 - `my-package:package`
@@ -60,12 +69,23 @@ Examples:
 - `spotify:integration`
 - `spotify-access-token:secret`
 
-There is **no separate `detail` flag** on search. Deeper inspection of one
-entity uses **`entity`**, not a different mode of the same ranked query.
+There is **no separate `detail` flag** on search. Deeper inspection uses
+**`entity`**, not a different mode of the same ranked query.
 
 Top-level ranked result cards include an explicit entity ref for each hit when
 applicable, using that same `"{id}:{type}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
+
+For synthesized provider capabilities (OpenAPI bindings, connected MCP servers,
+and remote connectors), capability detail also lists **related operations from
+the same provider** so create/poll pairs and sibling tools are visible without a
+second lookup. Built-in capabilities skip that section to keep common lookups
+lean.
+
+Package detail includes a short **Maintain** pointer: the git lane
+(`package_get_git_remote` → clone/edit/push → `package_publish_external_push`)
+and the tool-only alternative (`package_save` / repo sessions, with
+`coding_guide_get({ guide: "package_authoring" })` for the full guide).
 
 Capability detail shows the exact runtime pattern for **execute**:
 

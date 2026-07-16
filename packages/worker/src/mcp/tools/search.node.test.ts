@@ -1060,3 +1060,147 @@ test('down remote connector statuses surface only disconnected connectors for si
 	})
 	expect(anonymous).toEqual([])
 })
+
+test('searchUnified inlines call shapes for the top three capability matches only', async () => {
+	const longTypeBody = Array.from(
+		{ length: 40 },
+		(_, index) => `field${String(index)}: string`,
+	).join('; ')
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'openapi:widgets',
+			description: 'Widget OpenAPI ops',
+			capabilities: [
+				{
+					name: 'openapi:widgets:createwidget',
+					domain: 'openapi:widgets',
+					description: 'Create a widget export job.',
+					keywords: ['widget', 'create', 'export'],
+					readOnly: false,
+					idempotent: false,
+					destructive: false,
+					source: 'openapi',
+					openApi: {
+						bindingName: 'widgets',
+						kodyName: 'widgets',
+						operationSlug: 'createwidget',
+						method: 'post',
+						path: '/widgets',
+					},
+					inputSchema: {
+						type: 'object',
+						properties: { name: { type: 'string' } },
+						required: ['name'],
+					},
+					inputTypeDefinition: `type CreateWidgetInput = { ${longTypeBody} }`,
+					handler: async () => null,
+				},
+				{
+					name: 'openapi:widgets:getwidget',
+					domain: 'openapi:widgets',
+					description: 'Get a widget export job.',
+					keywords: ['widget', 'get', 'export'],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					source: 'openapi',
+					openApi: {
+						bindingName: 'widgets',
+						kodyName: 'widgets',
+						operationSlug: 'getwidget',
+						method: 'get',
+						path: '/widgets/{id}',
+					},
+					inputSchema: {
+						type: 'object',
+						properties: { id: { type: 'string' } },
+						required: ['id'],
+					},
+					inputTypeDefinition: 'type GetWidgetInput = { id: string }',
+					handler: async () => null,
+				},
+				{
+					name: 'openapi:widgets:listwidgets',
+					domain: 'openapi:widgets',
+					description: 'List widget export jobs.',
+					keywords: ['widget', 'list', 'export'],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					source: 'openapi',
+					openApi: {
+						bindingName: 'widgets',
+						kodyName: 'widgets',
+						operationSlug: 'listwidgets',
+						method: 'get',
+						path: '/widgets',
+					},
+					inputSchema: { type: 'object', properties: {} },
+					inputTypeDefinition: 'type ListWidgetsInput = Record<string, never>',
+					handler: async () => null,
+				},
+				{
+					name: 'openapi:widgets:deletewidget',
+					domain: 'openapi:widgets',
+					description: 'Delete a widget export job.',
+					keywords: ['widget', 'delete', 'export'],
+					readOnly: false,
+					idempotent: true,
+					destructive: true,
+					source: 'openapi',
+					openApi: {
+						bindingName: 'widgets',
+						kodyName: 'widgets',
+						operationSlug: 'deletewidget',
+						method: 'delete',
+						path: '/widgets/{id}',
+					},
+					inputSchema: {
+						type: 'object',
+						properties: { id: { type: 'string' } },
+						required: ['id'],
+					},
+					inputTypeDefinition: 'type DeleteWidgetInput = { id: string }',
+					handler: async () => null,
+				},
+			],
+		},
+	])
+
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'widget export job',
+		limit: 10,
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+
+	const capabilityMatches = result.matches.filter(
+		(match) => match.type === 'capability',
+	)
+	expect(capabilityMatches.length).toBeGreaterThanOrEqual(4)
+
+	const withShapes = capabilityMatches.filter(
+		(match) => match.type === 'capability' && match.inputTypeDefinition,
+	)
+	expect(withShapes).toHaveLength(3)
+	expect(
+		capabilityMatches
+			.slice(0, 3)
+			.every(
+				(match) =>
+					match.type === 'capability' &&
+					typeof match.inputTypeDefinition === 'string',
+			),
+	).toBe(true)
+	expect(capabilityMatches[3]).toMatchObject({ type: 'capability' })
+	expect(capabilityMatches[3]).not.toHaveProperty('inputTypeDefinition')
+
+	const truncated = withShapes.find(
+		(match) =>
+			match.type === 'capability' && match.inputTypeDefinitionTruncated,
+	)
+	expect(truncated).toBeDefined()
+	expect(truncated?.inputTypeDefinition?.endsWith('...')).toBe(true)
+	expect(result.guidance).toMatch(/inlined call shape/i)
+})

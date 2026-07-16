@@ -1,8 +1,10 @@
 import { Script, createContext } from 'node:vm'
 import { expect, test } from 'vitest'
 import {
+	compactCapabilityInputTypeDefinition,
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
+	inlineCapabilityInputTypeMaxLength,
 	parseEntityRef,
 	toSlimStructuredMatches,
 } from './search-format.ts'
@@ -840,4 +842,258 @@ test('search markdown summarizes broad results safely and only suggests entity d
 			retrieverKey: 'notes',
 		}),
 	])
+})
+
+test('search formatting inlines top capability call shapes, related ops, and package maintain pointers', () => {
+	const longInputType = `type LongInput = {\n\t${'field: string\n\t'.repeat(40)}}`
+	const compact = compactCapabilityInputTypeDefinition(longInputType)
+	expect(compact.truncated).toBe(true)
+	expect(compact.definition.length).toBeLessThanOrEqual(
+		inlineCapabilityInputTypeMaxLength,
+	)
+	expect(compact.definition.endsWith('...')).toBe(true)
+
+	const listMarkdown = formatSearchMarkdown({
+		matches: [
+			{
+				type: 'capability',
+				name: 'openapi:widgets:createwidget',
+				description: 'Create a widget.',
+				source: 'openapi',
+				openApi: {
+					bindingName: 'widgets',
+					kodyName: 'widgets',
+					operationSlug: 'createwidget',
+					method: 'post',
+					path: '/widgets',
+				},
+				inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
+			},
+			{
+				type: 'capability',
+				name: 'openapi:widgets:listwidgets',
+				description: 'List widgets.',
+				source: 'openapi',
+				openApi: {
+					bindingName: 'widgets',
+					kodyName: 'widgets',
+					operationSlug: 'listwidgets',
+					method: 'get',
+					path: '/widgets',
+				},
+				inputTypeDefinition: compact.definition,
+				inputTypeDefinitionTruncated: true,
+			},
+			{
+				type: 'capability',
+				name: 'fourth_capability',
+				description: 'Beyond the top inline set.',
+				source: 'builtin',
+			},
+		],
+		includePreamble: false,
+	})
+	expect(listMarkdown).toContain('kody.openapi["widgets"].createwidget(args)')
+	expect(listMarkdown).toContain('type CreateWidgetInput = { name: string }')
+	expect(listMarkdown).toContain('use entity detail for the full definition')
+	expect(listMarkdown).not.toMatch(
+		/fourth_capability[\s\S]*kody\.fourth_capability\(args\)/,
+	)
+
+	const [slimWithShape, slimTruncated, slimWithoutShape] =
+		toSlimStructuredMatches({
+			baseUrl: 'http://localhost',
+			matches: [
+				{
+					type: 'capability',
+					name: 'openapi:widgets:createwidget',
+					description: 'Create a widget.',
+					source: 'openapi',
+					openApi: {
+						bindingName: 'widgets',
+						kodyName: 'widgets',
+						operationSlug: 'createwidget',
+						method: 'post',
+						path: '/widgets',
+					},
+					inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
+				},
+				{
+					type: 'capability',
+					name: 'openapi:widgets:listwidgets',
+					description: 'List widgets.',
+					source: 'openapi',
+					inputTypeDefinition: compact.definition,
+					inputTypeDefinitionTruncated: true,
+				},
+				{
+					type: 'capability',
+					name: 'fourth_capability',
+					description: 'Beyond the top inline set.',
+					source: 'builtin',
+				},
+			],
+		})
+	expect(slimWithShape).toMatchObject({
+		type: 'capability',
+		inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
+	})
+	expect(slimTruncated).toMatchObject({
+		type: 'capability',
+		inputTypeDefinition: compact.definition,
+	})
+	expect(slimWithoutShape).toMatchObject({ type: 'capability' })
+	expect(slimWithoutShape).not.toHaveProperty('inputTypeDefinition')
+
+	const openApiDetail = formatEntityDetailMarkdown({
+		type: 'capability',
+		id: 'openapi:widgets:createwidget',
+		title: 'openapi:widgets:createwidget',
+		description: 'Create a widget.',
+		spec: {
+			name: 'openapi:widgets:createwidget',
+			domain: 'openapi:widgets',
+			description: 'Create a widget.',
+			keywords: [],
+			readOnly: false,
+			idempotent: false,
+			destructive: false,
+			source: 'openapi',
+			openApi: {
+				bindingName: 'widgets',
+				kodyName: 'widgets',
+				operationSlug: 'createwidget',
+				method: 'post',
+				path: '/widgets',
+			},
+			inputFields: ['name'],
+			requiredInputFields: ['name'],
+			outputFields: [],
+			inputSchema: {
+				type: 'object',
+				properties: { name: { type: 'string' } },
+				required: ['name'],
+			},
+			inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
+		},
+		relatedOperations: [
+			{
+				name: 'openapi:widgets:listwidgets',
+				entityRef: 'openapi:widgets:listwidgets:capability',
+				description: 'List widgets',
+				method: 'get',
+				path: '/widgets',
+			},
+			{
+				name: 'openapi:widgets:getwidget',
+				entityRef: 'openapi:widgets:getwidget:capability',
+				description: 'Get one widget.',
+				method: 'get',
+				path: '/widgets/{id}',
+			},
+		],
+	})
+	expect(openApiDetail.markdown).toContain(
+		'## Related operations (same provider)',
+	)
+	expect(openApiDetail.markdown).toContain('GET /widgets')
+	expect(openApiDetail.markdown).toContain(
+		'openapi:widgets:listwidgets:capability',
+	)
+	expect(openApiDetail.structured).toMatchObject({
+		type: 'capability',
+		relatedOperations: [
+			expect.objectContaining({
+				name: 'openapi:widgets:listwidgets',
+				method: 'get',
+				path: '/widgets',
+			}),
+			expect.objectContaining({
+				name: 'openapi:widgets:getwidget',
+			}),
+		],
+	})
+
+	const builtinDetail = formatEntityDetailMarkdown({
+		type: 'capability',
+		id: 'coding_guide_get',
+		title: 'coding_guide_get',
+		description: 'Load an official guide.',
+		spec: {
+			name: 'coding_guide_get',
+			domain: 'coding',
+			description: 'Load an official guide.',
+			keywords: [],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			source: 'builtin',
+			inputFields: ['guide'],
+			requiredInputFields: ['guide'],
+			outputFields: [],
+			inputSchema: {
+				type: 'object',
+				properties: { guide: { type: 'string' } },
+				required: ['guide'],
+			},
+			inputTypeDefinition: 'type CodingGuideGetInput = { guide: string }',
+		},
+	})
+	expect(builtinDetail.markdown).not.toContain(
+		'## Related operations (same provider)',
+	)
+	expect(builtinDetail.structured).not.toHaveProperty('relatedOperations')
+
+	const packageDetail = formatEntityDetailMarkdown({
+		type: 'package',
+		id: 'notes-helper',
+		title: '@user/notes-helper',
+		description: 'Notes helper package.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'user',
+		hostedUrl: null,
+		record: {
+			id: 'package-notes',
+			userId: 'user-1',
+			name: '@user/notes-helper',
+			kodyId: 'notes-helper',
+			description: 'Notes helper package.',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-notes',
+			hasApp: false,
+			hidden: false,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@user/notes-helper',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'notes-helper',
+				description: 'Notes helper package.',
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'index.ts': 'export default function main() {}',
+		},
+	})
+	expect(packageDetail.markdown).toContain('## Maintain')
+	expect(packageDetail.markdown).toContain(
+		'package_get_git_remote({ kody_id: "notes-helper" })',
+	)
+	expect(packageDetail.markdown).toContain(
+		'package_publish_external_push({ kody_id: "notes-helper" })',
+	)
+	expect(packageDetail.markdown).toContain(
+		'coding_guide_get({ guide: "package_authoring" })',
+	)
+	expect(packageDetail.structured).toMatchObject({
+		type: 'package',
+		maintain: {
+			gitLane: 'package_get_git_remote({ kody_id: "notes-helper" })',
+			publish: 'package_publish_external_push({ kody_id: "notes-helper" })',
+		},
+	})
 })
