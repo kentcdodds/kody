@@ -50,7 +50,13 @@ export function createCommunityTrustApiPostHandler(env: Env) {
 					path: new URL(request.url).pathname,
 					reason: `listing_id=${listing.id};trusted=${parsed.data.trusted}`,
 				})
-				return jsonResponse({ ok: true, trusted: listing.trusted })
+				// Featured is derived from trust (featured_at survives revocation),
+				// so the client needs the recomputed flag to stay in sync.
+				return jsonResponse({
+					ok: true,
+					trusted: listing.trusted,
+					featured: listing.featured,
+				})
 			} catch (error) {
 				if (error instanceof CommunityActionError) {
 					return jsonResponse({ ok: false, error: error.message }, 400)

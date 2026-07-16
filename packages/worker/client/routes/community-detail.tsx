@@ -266,6 +266,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			const payload = await readJson<{
 				ok: boolean
 				trusted?: boolean
+				featured?: boolean
 				error?: string
 			}>(response)
 			if (!response.ok || !payload?.ok) {
@@ -273,9 +274,10 @@ export function CommunityDetailRoute(handle: Handle) {
 			}
 			trusted = payload.trusted ?? nextTrusted
 			trustState = 'idle'
-			// Featuring is only effective while the listing is trusted, so
-			// revoking trust also pulls it from onboarding immediately.
-			if (!trusted) featured = false
+			// Featuring is only effective while the listing is trusted: revoking
+			// trust pulls it from onboarding, and re-trusting a listing whose
+			// featured mark survived restores it. Sync from the server response.
+			featured = payload.featured ?? (trusted ? featured : false)
 			handle.update()
 			// The trusted badge renders inside the server frame; reload it so
 			// the header reflects the new state immediately.

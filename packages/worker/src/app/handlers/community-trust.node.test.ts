@@ -65,10 +65,17 @@ test('community trust POST enforces admin role, validation, and error mapping', 
 	mockModule.setCommunityListingTrusted.mockResolvedValue({
 		id: 'listing-1',
 		trusted: true,
+		featured: true,
 	})
 	const success = await handler.handler(buildTrustRequest({ trusted: true }))
 	expect(success.status).toBe(200)
-	expect(await success.json()).toEqual({ ok: true, trusted: true })
+	// featured is derived from trust, so the recomputed flag rides along for
+	// client-side state sync.
+	expect(await success.json()).toEqual({
+		ok: true,
+		trusted: true,
+		featured: true,
+	})
 	expect(mockModule.setCommunityListingTrusted).toHaveBeenCalledWith({
 		env,
 		adminUserId: 'stable-admin-id',
