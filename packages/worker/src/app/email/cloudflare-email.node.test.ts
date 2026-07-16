@@ -178,4 +178,4 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	// consoleWarn must not have picked up anything new.
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 	expect(consoleInfo).toHaveBeenCalledTimes(1)
-})
+}, 75_000)

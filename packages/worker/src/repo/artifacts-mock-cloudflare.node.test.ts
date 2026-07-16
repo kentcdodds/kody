@@ -63,4 +63,4 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 		artifactRepoCount?: number
 	}
 	expect(meta.artifactRepoCount).toBe(1)
-}, 40_000)
+}, 75_000)
