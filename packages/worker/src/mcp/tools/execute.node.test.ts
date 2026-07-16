@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 			coding_guide_get: true,
 		},
 	})),
+	listOpenApiBindings: vi.fn(async () => []),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -29,6 +30,11 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
 		mockModule.createExecutePackageInvokeTools(...args),
+}))
+
+vi.mock('#worker/openapi/binding-service.ts', () => ({
+	listOpenApiBindings: (...args: Array<unknown>) =>
+		mockModule.listOpenApiBindings(...args),
 }))
 
 const { registerExecuteTool } = await import('./execute.ts')
@@ -56,6 +62,10 @@ async function getExecuteHandler(
 		baseUrl: 'https://example.com',
 		user: null,
 	},
+	agentExtras: {
+		state?: Record<string, unknown>
+		setState?: (state: Record<string, unknown>) => void
+	} = {},
 ) {
 	vi.clearAllMocks()
 	const registerTool = vi.fn()
@@ -68,6 +78,7 @@ async function getExecuteHandler(
 		getCallerContext: vi.fn(() => callerContext),
 		requireDomain: vi.fn(),
 		getLoopbackExports: vi.fn(),
+		...agentExtras,
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
@@ -86,6 +97,7 @@ async function getExecuteHandler(
 			returnedBytes: number
 			truncated?: boolean
 			note?: string
+			warnings?: Array<string>
 			timing: {
 				startedAt: string
 				endedAt: string
@@ -532,4 +544,105 @@ test('execute passes through downstream MCP image content with structured data a
 	expect(tooManyBlocksResponse.structuredContent.error).toContain(
 		'too many MCP content blocks',
 	)
+})
+
+test('execute tool nudges repeated raw-fetch hosts once per conversation and skips OpenAPI-covered hosts', async () => {
+	const agentState: Record<string, unknown> = {}
+	const setState = vi.fn((next: Record<string, unknown>) => {
+		for (const key of Object.keys(agentState)) {
+			delete agentState[key]
+		}
+		Object.assign(agentState, next)
+	})
+	const handler = await getExecuteHandler(
+		{
+			baseUrl: 'https://example.com',
+			user: { userId: 'user-1', email: 'user@example.com' },
+		},
+		{
+			state: agentState,
+			setState,
+		},
+	)
+
+	mockModule.runModuleWithRegistry.mockImplementation(
+		async (
+			_env,
+			_ctx,
+			_code,
+			_params,
+			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
+		) => {
+			options.rawFetchHostSink?.add('api.notion.com')
+			options.rawFetchHostSink?.add('api.notion.com')
+			return { result: { ok: true }, logs: [] }
+		},
+	)
+	mockPerformanceSequence(1, 2)
+	const below = await handler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-nudge',
+	})
+	expect(below.structuredContent.warnings).toBeUndefined()
+	expect(
+		below.content.some(
+			(block) =>
+				block.type === 'text' &&
+				'text' in block &&
+				block.text.includes('Raw-fetched'),
+		),
+	).toBe(false)
+
+	mockPerformanceSequence(3, 4)
+	const tipped = await handler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-nudge',
+	})
+	expect(tipped.structuredContent.warnings).toHaveLength(1)
+	expect(tipped.structuredContent.warnings?.[0]).toContain('api.notion.com')
+	expect(
+		tipped.content.some(
+			(block) =>
+				block.type === 'text' &&
+				'text' in block &&
+				typeof block.text === 'string' &&
+				block.text.includes('api.notion.com'),
+		),
+	).toBe(true)
+	expect(setState).toHaveBeenCalled()
+	expect(mockModule.listOpenApiBindings).toHaveBeenCalled()
+
+	mockPerformanceSequence(5, 6)
+	const again = await handler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-nudge',
+	})
+	expect(again.structuredContent.warnings).toBeUndefined()
+
+	mockModule.listOpenApiBindings.mockResolvedValueOnce([
+		{
+			name: 'kit',
+			apiBaseUrl: 'https://api.kit.com/v4',
+		},
+	])
+	mockModule.runModuleWithRegistry.mockImplementationOnce(
+		async (
+			_env,
+			_ctx,
+			_code,
+			_params,
+			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
+		) => {
+			options.rawFetchHostSink?.add('api.kit.com')
+			options.rawFetchHostSink?.add('api.kit.com')
+			options.rawFetchHostSink?.add('api.kit.com')
+			return { result: { ok: true }, logs: [] }
+		},
+	)
+	mockPerformanceSequence(7, 8)
+	const covered = await handler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-covered',
+	})
+	expect(covered.structuredContent.warnings).toBeUndefined()
 })

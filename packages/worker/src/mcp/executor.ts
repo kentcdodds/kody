@@ -11,6 +11,11 @@ import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
+import {
+	readBaseUrlHostname,
+	wrapOutboundFetcherRecordingHosts,
+	type RawFetchHostSink,
+} from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
@@ -214,6 +219,12 @@ export function createExecuteExecutor(input: {
 	gatewayProps: FetchGatewayProps
 	modules?: WorkerLoaderModules
 	timeoutMs?: number | null
+	/**
+	 * Optional sink for literal hostnames observed on ad hoc execute raw
+	 * `fetch` traffic (before the fetch gateway). Package-context runs should
+	 * omit this so saved-package outbound requests are not counted.
+	 */
+	rawFetchHostSink?: RawFetchHostSink
 }) {
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.KodyFetchGateway) {
@@ -225,12 +236,22 @@ export function createExecuteExecutor(input: {
 		input.timeoutMs === null
 			? maxSupportedExecutorTimeoutMs
 			: (input.timeoutMs ?? 90_000)
+	const gatewayOutbound = loopbackExports.KodyFetchGateway({
+		props: input.gatewayProps,
+	})
+	const globalOutbound = input.rawFetchHostSink
+		? wrapOutboundFetcherRecordingHosts(
+				gatewayOutbound,
+				input.rawFetchHostSink,
+				{
+					excludedHostname: readBaseUrlHostname(input.gatewayProps.baseUrl),
+				},
+			)
+		: gatewayOutbound
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
-		globalOutbound: loopbackExports.KodyFetchGateway({
-			props: input.gatewayProps,
-		}),
+		globalOutbound,
 		modules: input.modules,
 		gatewayProps: input.gatewayProps,
 		appCommitSha: input.env.APP_COMMIT_SHA ?? null,

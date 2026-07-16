@@ -19,9 +19,11 @@ import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.
 import { remoteConnectorDomainId } from '#worker/remote-connector/remote-domain-id.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
+	rawFetchHostNudges?: RawFetchHostNudgeState
 }
 export type Props = McpServerProps
 
@@ -58,6 +60,10 @@ async function loadRemoteConnectorInstructionSummaries(input: {
 class MCPBase extends McpAgent<Env, State, Props> {
 	initialState: State = {
 		searchConversationIdsWithPreamble: [],
+		rawFetchHostNudges: {
+			conversationOrder: [],
+			byConversation: {},
+		},
 	}
 	declare server: McpServer
 	async init() {

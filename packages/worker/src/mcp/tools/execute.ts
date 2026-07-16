@@ -39,6 +39,15 @@ import {
 import { repoRunCommandsExecuteSummary } from '#mcp/capabilities/repo/repo-run-commands-text.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
+import {
+	applyRawFetchHostCounts,
+	createRawFetchHostSink,
+	listHostsApproachingRawFetchNudge,
+	readLiteralRequestHostname,
+	type RawFetchHostNudgeState,
+} from '#mcp/raw-fetch-host-nudge.ts'
+import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
+import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -237,6 +246,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				const registeredCapabilityCount = Object.keys(
 					registry.capabilityHandlers,
 				).length
+				const rawFetchHosts = createRawFetchHostSink()
 				const result = await Sentry.startSpan(
 					{
 						name: 'mcp.tool.execute',
@@ -273,6 +283,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 											}
 										: undefined,
 									packageInvokeTools,
+									rawFetchHostSink: rawFetchHosts.sink,
 								},
 							)
 						} catch (cause) {
@@ -290,6 +301,13 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				)
 				const timing = finishToolTiming(timingStart)
 				const durationMs = timing.durationMs
+				const rawFetchHostNudges = await resolveRawFetchHostNudges({
+					agent,
+					env,
+					callerContext,
+					conversationId: resolvedConversationId,
+					hostCounts: rawFetchHosts.hostCounts(),
+				})
 
 				if (result.error) {
 					const errorDetails = getExecutionErrorDetails(result.error)
@@ -314,6 +332,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								type: 'text',
 								text: formatExecutionOutput(result),
 							},
+							...formatRawFetchHostNudgeContent(rawFetchHostNudges),
 							...formatSurfacedMemoriesMarkdown(surfacedMemories),
 						]),
 						structuredContent: {
@@ -324,6 +343,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							error: errorMessage,
 							errorDetails,
 							logs: result.logs ?? [],
+							...(rawFetchHostNudges.length > 0
+								? { warnings: rawFetchHostNudges }
+								: {}),
 							...buildMemoryStructuredContent(surfacedMemories),
 						},
 						isError: true,
@@ -422,6 +444,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					return {
 						content: prependToolMetadataContent(resolvedConversationId, [
 							...contentLimited.blocks,
+							...formatRawFetchHostNudgeContent(rawFetchHostNudges),
 							...formatSurfacedMemoriesMarkdown(surfacedMemories),
 						]),
 						structuredContent: {
@@ -441,6 +464,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								? companionLimited.value
 								: (passthrough?.structuredResult ?? null),
 							logs: result.logs ?? [],
+							...(rawFetchHostNudges.length > 0
+								? { warnings: rawFetchHostNudges }
+								: {}),
 							...buildMemoryStructuredContent(surfacedMemories),
 						},
 						isError: passthrough?.isError ?? false,
@@ -474,6 +500,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								displayText: structuredResultValue.displayText,
 							}),
 						},
+						...formatRawFetchHostNudgeContent(rawFetchHostNudges),
 						...formatSurfacedMemoriesMarkdown(surfacedMemories),
 					]),
 					structuredContent: {
@@ -489,6 +516,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							: {}),
 						result: structuredResultValue.value,
 						logs: result.logs ?? [],
+						...(rawFetchHostNudges.length > 0
+							? { warnings: rawFetchHostNudges }
+							: {}),
 						...buildMemoryStructuredContent(surfacedMemories),
 					},
 					isError: markerOnlyPassthrough?.isError ?? false,
@@ -496,4 +526,90 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			}
 		},
 	)
+}
+
+function formatRawFetchHostNudgeContent(nudges: Array<string>) {
+	if (nudges.length === 0) return []
+	return [
+		{
+			type: 'text' as const,
+			text: nudges.join('\n'),
+		},
+	]
+}
+
+async function resolveRawFetchHostNudges(input: {
+	agent: McpRegistrationAgent
+	env: Env
+	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
+	conversationId: string
+	hostCounts: ReadonlyMap<string, number>
+}): Promise<Array<string>> {
+	if (input.hostCounts.size === 0) return []
+
+	const statefulAgent = input.agent as McpRegistrationAgent & {
+		state?: {
+			rawFetchHostNudges?: RawFetchHostNudgeState
+		}
+		setState?: (state: {
+			rawFetchHostNudges?: RawFetchHostNudgeState
+			[key: string]: unknown
+		}) => void
+	}
+	const approaching = listHostsApproachingRawFetchNudge({
+		state: statefulAgent.state?.rawFetchHostNudges,
+		conversationId: input.conversationId,
+		hostCounts: input.hostCounts,
+	})
+	const coveredHosts =
+		approaching.length > 0
+			? await listOpenApiBindingHosts({
+					env: input.env,
+					callerContext: input.callerContext,
+				})
+			: new Set<string>()
+	const applied = applyRawFetchHostCounts({
+		state: statefulAgent.state?.rawFetchHostNudges,
+		conversationId: input.conversationId,
+		hostCounts: input.hostCounts,
+		coveredHosts,
+	})
+	if (typeof statefulAgent.setState === 'function') {
+		statefulAgent.setState({
+			...(statefulAgent.state ?? {}),
+			rawFetchHostNudges: applied.state,
+		})
+	}
+	return applied.nudges
+}
+
+async function listOpenApiBindingHosts(input: {
+	env: Env
+	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
+}): Promise<Set<string>> {
+	const userId = input.callerContext.user?.userId
+	if (!userId) return new Set()
+	try {
+		const bindings = await listOpenApiBindings({
+			env: input.env,
+			userId,
+			storageContext: {
+				sessionId: input.callerContext.storageContext?.sessionId ?? null,
+				appId: input.callerContext.storageContext?.appId ?? null,
+				storageId: input.callerContext.storageContext?.storageId ?? null,
+			},
+		})
+		const hosts = new Set<string>()
+		for (const binding of bindings) {
+			const hostname = normalizeHost(
+				readLiteralRequestHostname(binding.apiBaseUrl),
+			)
+			if (hostname) hosts.add(hostname)
+		}
+		return hosts
+	} catch {
+		// Binding lookup is best-effort on this hot path; skip exclusion rather
+		// than failing the execute response.
+		return new Set()
+	}
 }

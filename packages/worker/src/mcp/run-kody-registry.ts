@@ -11,6 +11,7 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
+import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import {
 	getAdditionalPropertiesSchema,
 	getArrayItemSchema,
@@ -925,6 +926,7 @@ export async function runKodyWithRegistry(
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
+		rawFetchHostSink?: RawFetchHostSink
 	},
 ): Promise<ExecuteResult> {
 	const moduleSource = stripCodeFences(code.trim())
@@ -944,6 +946,7 @@ export async function runKodyWithRegistry(
 			packageEventTools: options?.packageEventTools,
 			executorTimeoutMs: options?.executorTimeoutMs,
 			capabilityRegistry: options?.capabilityRegistry,
+			rawFetchHostSink: options?.rawFetchHostSink,
 		})
 	}
 	const secretRedactor = createExecutionSecretRedactor()
@@ -960,6 +963,10 @@ export async function runKodyWithRegistry(
 			storageContext: normalizedStorageContext,
 		},
 		modules: options?.executorModules,
+		// Package-context runs are saved-package code; do not count their fetch hosts.
+		rawFetchHostSink: options?.packageContext
+			? undefined
+			: options?.rawFetchHostSink,
 	})
 	const workflowTools = createWorkflowTools({
 		env,
@@ -1079,6 +1086,7 @@ export async function runModuleWithRegistry(
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
+		rawFetchHostSink?: RawFetchHostSink
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -1151,6 +1159,7 @@ export async function runBundledModuleWithRegistry(
 		executorTimeoutMs?: number | null
 		runtimeDebug?: PackageRuntimeDebugContext | null
 		capabilityRegistry?: BuiltCapabilityRegistry
+		rawFetchHostSink?: RawFetchHostSink
 	},
 ): Promise<ExecuteResult> {
 	const secretRedactor = createExecutionSecretRedactor()
@@ -1207,6 +1216,10 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? '',
 				modules: bundle.modules,
 			}),
+			// Package-context runs are saved-package code; do not count their fetch hosts.
+			rawFetchHostSink: options?.packageContext
+				? undefined
+				: options?.rawFetchHostSink,
 		})
 		const workflowTools =
 			options?.workflowTools ??
