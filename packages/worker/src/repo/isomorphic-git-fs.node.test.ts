@@ -4,6 +4,7 @@ import { expect, test } from 'vitest'
 import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
 
 type RawGitInitFs = Parameters<typeof rawGit.init>[0]['fs']
+type RawGitPushHttp = Parameters<typeof rawGit.push>[0]['http']
 
 test('workspace filesystem adapter supports raw isomorphic-git operations', async () => {
 	const workspaceFileSystem = new InMemoryFs()
@@ -26,6 +27,29 @@ test('workspace filesystem adapter supports raw isomorphic-git operations', asyn
 	expect(await rawGit.resolveRef({ fs, dir: '/session', ref: 'HEAD' })).toBe(
 		commit,
 	)
+
+	await rawGit.addRemote({
+		fs,
+		dir: '/session',
+		remote: 'origin',
+		url: 'https://artifacts.invalid/repo.git',
+	})
+	const transportReached = new Error('raw Git push reached HTTP transport')
+	const http = {
+		request: async () => {
+			throw transportReached
+		},
+	} as RawGitPushHttp
+
+	await expect(
+		rawGit.push({
+			fs,
+			http,
+			dir: '/session',
+			remote: 'origin',
+			ref: 'main',
+		}),
+	).rejects.toBe(transportReached)
 })
 
 test('workspace filesystem adapter implements isomorphic-git deletion methods', async () => {
