@@ -202,6 +202,7 @@ const formCss = {
 	alignItems: 'stretch',
 	gap: spacing.xs,
 	flexWrap: 'wrap' as const,
+	marginBottom: 0,
 	[mq.mobile]: {
 		width: '100%',
 	},
