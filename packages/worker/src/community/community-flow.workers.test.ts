@@ -449,6 +449,20 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		ownerCtx,
 	)
 
+	// A stale acknowledgement (from before a hypothetical republish) is
+	// rejected before anything is forked.
+	await expect(
+		installCommunityListing({
+			env: testEnv,
+			baseUrl,
+			userId: installer.userId,
+			userEmail: installer.email,
+			expectedPackageScope: installer.username,
+			listingId: cleanListing.listing_id,
+			expectedPinnedCommit: 'stale-commit-from-before-republish',
+		}),
+	).rejects.toThrow('republished after you confirmed')
+
 	const installed = await installCommunityListing({
 		env: testEnv,
 		baseUrl,
@@ -456,6 +470,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		userEmail: installer.email,
 		expectedPackageScope: installer.username,
 		listingId: cleanListing.listing_id,
+		expectedPinnedCommit: cleanListing.pinned_commit,
 	})
 	expect(installed.status).toBe('installed')
 	expect(installed.targetName).toBe(`@installer/${cleanKodyId}`)
@@ -496,6 +511,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		userEmail: installer.email,
 		expectedPackageScope: installer.username,
 		listingId: messyListing.listing_id,
+		expectedPinnedCommit: messyListing.pinned_commit,
 	})
 	expect(adaptationRequired.status).toBe('adaptation_required')
 	if (adaptationRequired.status !== 'adaptation_required') return

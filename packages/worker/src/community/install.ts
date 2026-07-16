@@ -55,6 +55,12 @@ export async function installCommunityListing(input: {
 	expectedPackageScope: string
 	listingId: string
 	kodyId?: string
+	/**
+	 * The pinned commit the caller's trust/acknowledgement decision was made
+	 * against; the fork rejects when an owner republish moved the listing to
+	 * different content in the meantime.
+	 */
+	expectedPinnedCommit: string
 }): Promise<InstallCommunityListingResult> {
 	const fork = await forkCommunityListing({
 		env: input.env,
@@ -63,6 +69,7 @@ export async function installCommunityListing(input: {
 		expectedPackageScope: input.expectedPackageScope,
 		listingId: input.listingId,
 		kodyId: input.kodyId,
+		expectedPinnedCommit: input.expectedPinnedCommit,
 	})
 	const summary: InstallForkSummary = {
 		forkId: fork.forkId,

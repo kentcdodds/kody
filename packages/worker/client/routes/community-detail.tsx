@@ -42,6 +42,7 @@ type CommunityDetailApiPayload = {
 
 type CommunityInstallApiPayload = {
 	ok: boolean
+	requiresAcknowledgement?: boolean
 	status?: 'installed' | 'adaptation_required'
 	targetName?: string
 	agentPrompt?: string
@@ -306,6 +307,18 @@ export function CommunityDetailRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<CommunityInstallApiPayload>(response)
+			// A late response for a previous listing must not overwrite the
+			// state of the listing currently on screen.
+			if (getCurrentListingId(handle) !== listingId) return
+			if (response.status === 409 && payload?.requiresAcknowledgement) {
+				// Trust was revoked after this page loaded; surface the warning
+				// so the retry carries an explicit acknowledgement.
+				trusted = false
+				installState = 'confirming'
+				installMessage = null
+				handle.update()
+				return
+			}
 			if (
 				!response.ok ||
 				!payload?.ok ||
@@ -326,6 +339,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			installState = 'idle'
 			handle.update()
 		} catch (error) {
+			if (getCurrentListingId(handle) !== listingId) return
 			installState = 'error'
 			installMessage =
 				error instanceof Error

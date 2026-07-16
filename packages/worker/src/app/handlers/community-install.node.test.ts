@@ -69,6 +69,7 @@ test('community install POST enforces auth, listing state, and the untrusted ack
 	mockModule.getCommunityListingById.mockResolvedValue({
 		id: 'listing-1',
 		trusted: false,
+		pinnedCommit: 'commit-1',
 	})
 	const unacknowledged = await handler.handler(buildInstallRequest({}))
 	expect(unacknowledged.status).toBe(409)
@@ -94,6 +95,7 @@ test('community install POST installs and maps service outcomes and errors', asy
 	mockModule.getCommunityListingById.mockResolvedValue({
 		id: 'listing-1',
 		trusted: false,
+		pinnedCommit: 'commit-1',
 	})
 	mockModule.installCommunityListing.mockResolvedValue({
 		status: 'installed',
@@ -124,6 +126,9 @@ test('community install POST installs and maps service outcomes and errors', asy
 			userEmail: 'userb@example.com',
 			expectedPackageScope: 'userb',
 			listingId: 'listing-1',
+			// The acknowledgement is bound to the commit the listing pinned
+			// when the handler checked trust.
+			expectedPinnedCommit: 'commit-1',
 		}),
 	)
 
@@ -131,6 +136,7 @@ test('community install POST installs and maps service outcomes and errors', asy
 	mockModule.getCommunityListingById.mockResolvedValue({
 		id: 'listing-1',
 		trusted: true,
+		pinnedCommit: 'commit-1',
 	})
 	mockModule.installCommunityListing.mockResolvedValue({
 		status: 'adaptation_required',

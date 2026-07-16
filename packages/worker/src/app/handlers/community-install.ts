@@ -78,6 +78,10 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					expectedPackageScope,
 					listingId: listing.id,
 					kodyId: parsed.data.kody_id,
+					// Bind the install to the commit the trust/acknowledgement
+					// decision was made against so a concurrent republish cannot
+					// activate content the user never saw.
+					expectedPinnedCommit: listing.pinnedCommit,
 				})
 				if (result.status === 'adaptation_required') {
 					return jsonResponse({

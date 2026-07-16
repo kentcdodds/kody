@@ -211,10 +211,11 @@ Forks create an **`entity_sources`** row and Artifacts snapshot but **no**
 - `kody:@…` imports from the fork do not execute
 - search and execute cannot treat the fork as a live saved package
 
-Activation happens only when the forker runs `repo_publish_session`, which
-inserts `saved_packages` through the normal publish transaction. Repo checks
-reject publishes that still contain cross-scope static imports or foreign
-`kody.dependencies` entries (`fork-scan.ts` surfaces these at fork time).
+Activation happens through two paths: the forker runs `repo_publish_session`, or
+a one-click `installCommunityListing` whose publish checks pass — both end in
+the same saved-package projection. Repo checks reject publishes that still
+contain cross-scope static imports or foreign `kody.dependencies` entries
+(`fork-scan.ts` surfaces these at fork time).
 
 ## Search ranking
 

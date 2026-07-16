@@ -664,6 +664,13 @@ export async function forkCommunityListing(input: {
 	expectedPackageScope: string
 	listingId: string
 	kodyId?: string
+	/**
+	 * When set, the fork is rejected unless the snapshot still pins this
+	 * commit. One-click install passes the commit the user saw (and, for
+	 * untrusted listings, acknowledged), so an owner republish between the
+	 * confirmation and the fork cannot swap in unreviewed content.
+	 */
+	expectedPinnedCommit?: string
 }): Promise<ForkCommunityListingResult> {
 	await assertNotCommunityBanned(input.env.APP_DB, input.userId)
 
@@ -682,6 +689,14 @@ export async function forkCommunityListing(input: {
 	if (!snapshot) {
 		throw new Error(
 			`Community listing snapshot for "${input.listingId}" was not found.`,
+		)
+	}
+	if (
+		input.expectedPinnedCommit &&
+		snapshot.pinnedCommit !== input.expectedPinnedCommit
+	) {
+		throw new CommunityActionError(
+			'This listing was republished after you confirmed the install. Review the updated listing and try again.',
 		)
 	}
 

@@ -49,6 +49,7 @@ function installInput() {
 		userEmail: 'userb@example.com',
 		expectedPackageScope: 'userb',
 		listingId: 'listing-1',
+		expectedPinnedCommit: 'commit-1',
 	}
 }
 
@@ -70,6 +71,11 @@ test('install publishes the fork when checks pass', async () => {
 		targetName: '@userb/demo',
 		originCommit: 'commit-1',
 	})
+	// The user's trust/acknowledgement decision is pinned to the commit they
+	// saw, so a concurrent republish cannot swap in unreviewed content.
+	expect(mockModule.forkCommunityListing).toHaveBeenCalledWith(
+		expect.objectContaining({ expectedPinnedCommit: 'commit-1' }),
+	)
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
 		expect.objectContaining({
 			manifestPath: 'package.json',
