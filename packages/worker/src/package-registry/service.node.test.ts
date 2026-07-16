@@ -307,6 +307,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 
 	setupDefaultMocks()
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(false)
+	mockModule.syncJobManagerAlarm.mockClear()
 	const joblessManifest = {
 		name: '@kentcdodds/cloudflare',
 		kody: {
