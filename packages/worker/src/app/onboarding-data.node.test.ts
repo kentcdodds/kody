@@ -14,6 +14,22 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toBe('https://preview.example/mcp')
 
+	expect(
+		loadPublicOnboardingData({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
+	).toEqual({
+		ok: true,
+		loggedIn: false,
+		mcpServerUrl: 'https://heykody.dev/mcp',
+		setupPrompt: buildOnboardingSetupPrompt(),
+		hasMcpClient: false,
+		emailVerified: false,
+		needsOnboarding: true,
+		featuredListings: [],
+	})
+
 	const withoutClient = await loadOnboardingData({
 		env: {
 			OAUTH_PROVIDER: {
@@ -88,22 +104,4 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)
 	expect(whenProviderListingFails.needsOnboarding).toBe(true)
-})
-
-test('public onboarding data exposes setup content without an authenticated user', () => {
-	expect(
-		loadPublicOnboardingData({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
-	).toEqual({
-		ok: true,
-		loggedIn: false,
-		mcpServerUrl: 'https://heykody.dev/mcp',
-		setupPrompt: buildOnboardingSetupPrompt(),
-		hasMcpClient: false,
-		emailVerified: false,
-		needsOnboarding: true,
-		featuredListings: [],
-	})
 })

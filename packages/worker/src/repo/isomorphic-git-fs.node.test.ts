@@ -50,18 +50,11 @@ test('workspace filesystem adapter supports raw isomorphic-git operations', asyn
 			ref: 'main',
 		}),
 	).rejects.toBe(transportReached)
-})
-
-test('workspace filesystem adapter implements isomorphic-git deletion methods', async () => {
-	const workspaceFileSystem = new InMemoryFs()
-	const fs = createIsomorphicGitFs(workspaceFileSystem)
 
 	await workspaceFileSystem.writeFile('/remove-me.txt', 'temporary')
 	await workspaceFileSystem.mkdir('/remove-me')
-
 	await fs.promises.unlink('/remove-me.txt')
 	await fs.promises.rmdir('/remove-me')
-
 	await expect(workspaceFileSystem.stat('/remove-me.txt')).rejects.toThrow()
 	await expect(workspaceFileSystem.stat('/remove-me')).rejects.toThrow()
 })

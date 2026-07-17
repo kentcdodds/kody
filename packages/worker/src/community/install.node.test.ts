@@ -53,7 +53,7 @@ function installInput() {
 	}
 }
 
-test('install publishes the fork when checks pass', async () => {
+test('install publishes clean forks, keeps failed checks inert, and propagates errors', async () => {
 	mockModule.forkCommunityListing.mockResolvedValue(forkResult())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
@@ -61,8 +61,8 @@ test('install publishes the fork when checks pass', async () => {
 	})
 	mockModule.refreshSavedPackageProjection.mockResolvedValue(undefined)
 
-	const result = await installCommunityListing(installInput())
-	expect(result).toEqual({
+	const installed = await installCommunityListing(installInput())
+	expect(installed).toEqual({
 		status: 'installed',
 		forkId: 'fork-1',
 		packageId: 'package-1',
@@ -107,9 +107,7 @@ test('install publishes the fork when checks pass', async () => {
 		packageId: 'package-1',
 		sourceId: 'source-1',
 	})
-})
 
-test('install keeps the fork inert and reports failed checks when checks fail', async () => {
 	mockModule.forkCommunityListing.mockResolvedValue({
 		...forkResult(),
 		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
@@ -123,8 +121,8 @@ test('install keeps the fork inert and reports failed checks when checks fail', 
 	})
 	mockModule.refreshSavedPackageProjection.mockClear()
 
-	const result = await installCommunityListing(installInput())
-	expect(result).toEqual({
+	const adaptationRequired = await installCommunityListing(installInput())
+	expect(adaptationRequired).toEqual({
 		status: 'adaptation_required',
 		forkId: 'fork-1',
 		packageId: 'package-1',
@@ -138,9 +136,7 @@ test('install keeps the fork inert and reports failed checks when checks fail', 
 		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
 	})
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
-})
 
-test('install propagates fork and projection failures', async () => {
 	mockModule.forkCommunityListing.mockRejectedValueOnce(
 		new Error('banned from community participation'),
 	)

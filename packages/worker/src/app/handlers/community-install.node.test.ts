@@ -53,7 +53,7 @@ function authenticatedUser() {
 	}
 }
 
-test('community install POST enforces auth, listing state, and the untrusted acknowledgement gate', async () => {
+test('community install POST enforces gates and maps install outcomes', async () => {
 	const handler = createCommunityInstallApiPostHandler(env)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -84,19 +84,9 @@ test('community install POST enforces auth, listing state, and the untrusted ack
 	)
 	expect(invalidBody.status).toBe(400)
 	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
-})
 
-test('community install POST installs and maps service outcomes and errors', async () => {
-	const handler = createCommunityInstallApiPostHandler(env)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(authenticatedUser())
 	mockModule.getMcpUserPackageScope.mockResolvedValue('userb')
-
 	// Untrusted listings install once the caller acknowledged the warning.
-	mockModule.getCommunityListingById.mockResolvedValue({
-		id: 'listing-1',
-		trusted: false,
-		pinnedCommit: 'commit-1',
-	})
 	mockModule.installCommunityListing.mockResolvedValue({
 		status: 'installed',
 		forkId: 'fork-1',
@@ -118,7 +108,8 @@ test('community install POST installs and maps service outcomes and errors', asy
 		sourceId: 'source-1',
 		targetName: '@userb/demo',
 	})
-	expect(installedPayload.agentPrompt).toContain('@userb/demo')
+	expect(typeof installedPayload.agentPrompt).toBe('string')
+	expect(String(installedPayload.agentPrompt)).toContain('@userb/demo')
 	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
 		expect.objectContaining({
 			env,
@@ -158,7 +149,8 @@ test('community install POST installs and maps service outcomes and errors', asy
 		sourceId: 'source-1',
 		failedChecks: [{ kind: 'bundle', message: 'unresolved' }],
 	})
-	expect(adaptationPayload.agentPrompt).toContain('source-1')
+	expect(typeof adaptationPayload.agentPrompt).toBe('string')
+	expect(String(adaptationPayload.agentPrompt)).toContain('source-1')
 
 	mockModule.installCommunityListing.mockRejectedValue(
 		new CommunityActionError(
