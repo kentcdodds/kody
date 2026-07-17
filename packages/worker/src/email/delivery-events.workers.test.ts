@@ -105,6 +105,35 @@ test('provider delivery events are idempotent, ordered, and user scoped', async 
 	})
 	expect(duplicate.outcome).toBe('duplicate')
 
+	const conflictingDuplicate = await processCloudflareEmailDeliveryEvent({
+		db: env.APP_DB,
+		body: createDeliveryEvent({
+			eventId: 'event-delivered',
+			messageId: providerMessageId,
+			status: 'bounced',
+			eventTimestamp: '2026-07-17T20:05:00.000Z',
+		}),
+	})
+	expect(conflictingDuplicate.outcome).toBe('duplicate')
+	expect(
+		await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId: message.id,
+		}),
+	).toMatchObject({
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: '2026-07-17T20:02:00.000Z',
+	})
+	expect(
+		await listEmailDeliveryEvents({
+			db: env.APP_DB,
+			userId,
+			messageId: message.id,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+
 	const olderDeferred = createDeliveryEvent({
 		eventId: 'event-deferred',
 		messageId: providerMessageId,

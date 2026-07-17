@@ -283,22 +283,30 @@ async function cloudflareApiRequest<T>(input: {
 	accountId: string
 	apiToken: string
 	pathname: string
-	method?: 'GET' | 'POST' | 'DELETE'
+	method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
 	body?: Record<string, unknown>
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
 }) {
 	const baseUrl = input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'
 	const url = `${baseUrl.replace(/\/$/, '')}/accounts/${encodeURIComponent(input.accountId)}${input.pathname}`
-	const response = await (input.fetcher ?? fetch)(url, {
-		method: input.method ?? 'GET',
-		headers: {
-			Authorization: `Bearer ${input.apiToken}`,
-			Accept: 'application/json',
-			...(input.body ? { 'Content-Type': 'application/json' } : {}),
-		},
-		...(input.body ? { body: JSON.stringify(input.body) } : {}),
-	})
+	const abortController = new AbortController()
+	const timeout = setTimeout(() => abortController.abort(), 30_000)
+	let response: Response
+	try {
+		response = await (input.fetcher ?? fetch)(url, {
+			method: input.method ?? 'GET',
+			headers: {
+				Authorization: `Bearer ${input.apiToken}`,
+				Accept: 'application/json',
+				...(input.body ? { 'Content-Type': 'application/json' } : {}),
+			},
+			...(input.body ? { body: JSON.stringify(input.body) } : {}),
+			signal: abortController.signal,
+		})
+	} finally {
+		clearTimeout(timeout)
+	}
 	const payload = (await response.json()) as CloudflareApiEnvelope<T>
 	if (
 		!response.ok ||
@@ -423,24 +431,50 @@ export async function ensureEmailSendingEventSubscription(input: {
 		(subscription) => subscription.name === input.name,
 	)
 	const events = [...emailSendingEventTypes]
+	const sourceIsCurrent =
+		existing?.source['type'] === 'email.sending' &&
+		existing.source['domain'] === input.domain
 	const isCurrent =
 		existing?.enabled === true &&
 		existing.destination.type === 'queues.queue' &&
 		existing.destination.queue_id === input.queueId &&
-		existing.source['type'] === 'email.sending' &&
-		existing.source['domain'] === input.domain &&
+		sourceIsCurrent &&
 		sameStringSet(existing.events, events)
 	if (existing && isCurrent) {
 		console.error(`Email event subscription exists: ${existing.name}`)
 		return { id: existing.id, name: existing.name }
 	}
 	if (existing) {
+		const pathname = `/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`
+		if (sourceIsCurrent) {
+			const payload = await cloudflareApiRequest<CloudflareEventSubscription>({
+				...input,
+				pathname,
+				method: 'PATCH',
+				body: {
+					name: input.name,
+					enabled: true,
+					destination: {
+						type: 'queues.queue',
+						queue_id: input.queueId,
+					},
+					events,
+				},
+			})
+			console.error(`Updated Email event subscription: ${existing.name}`)
+			return {
+				id: payload.result?.id ?? existing.id,
+				name: payload.result?.name ?? existing.name,
+			}
+		}
 		await cloudflareApiRequest<CloudflareEventSubscription>({
 			...input,
-			pathname: `/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
+			pathname,
 			method: 'DELETE',
 		})
-		console.error(`Deleted stale Email event subscription: ${existing.name}`)
+		console.error(
+			`Deleted Email event subscription with stale source: ${existing.name}`,
+		)
 	}
 	const payload = await cloudflareApiRequest<CloudflareEventSubscription>({
 		...input,

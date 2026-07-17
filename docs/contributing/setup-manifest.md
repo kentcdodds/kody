@@ -191,12 +191,14 @@ How to get/set each value:
     deploy, rather than syncing it as a Worker secret.
   - Request-scoped MCP/app URLs use the inbound request origin so OAuth resource
     metadata matches the host the client connected to.
-- `USER_EMAIL_DOMAIN` (optional GitHub Actions **variable**; overrides
-  `inbox.<APP_BASE_URL hostname>` for user inboxes, outbound senders, and the
-  Email Sending event subscription).
   - Do not also upload `APP_BASE_URL` through `wrangler secret bulk` or pass it
     as a deploy-time `--var`, because Wrangler treats that as a conflicting
     binding name.
+- `USER_EMAIL_DOMAIN` (optional GitHub Actions **variable**; overrides
+  `inbox.<APP_BASE_URL hostname>` for user inboxes, outbound senders, and the
+  Email Sending event subscription).
+  - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
+    it only when the production user email domain differs from the default.
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
     gateway ID. The Worker uses this for Workers AI embedding calls when set;

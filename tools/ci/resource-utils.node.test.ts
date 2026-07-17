@@ -219,15 +219,6 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 				},
 			}),
 		)
-		.mockResolvedValueOnce(
-			Response.json({
-				success: true,
-				result: {
-					id: 'subscription-new',
-					name: 'kody-email-delivery-events',
-				},
-			}),
-		)
 	const subscription = await ensureEmailSendingEventSubscription({
 		accountId: 'account-1',
 		apiToken: 'token-1',
@@ -238,15 +229,60 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		fetcher: subscriptionFetch,
 	})
 	expect(subscription).toEqual({
-		id: 'subscription-new',
+		id: 'subscription-old',
 		name: 'kody-email-delivery-events',
 	})
 	expect(subscriptionFetch).toHaveBeenNthCalledWith(
 		2,
 		'https://api.cloudflare.com/client/v4/accounts/account-1/event_subscriptions/subscriptions/subscription-old',
-		expect.objectContaining({ method: 'DELETE' }),
+		expect.objectContaining({
+			method: 'PATCH',
+			signal: expect.any(AbortSignal),
+		}),
 	)
-	const createCall = subscriptionFetch.mock.calls[2]
+	const updateBody = JSON.parse(
+		String(
+			(subscriptionFetch.mock.calls[1]?.[1] as RequestInit | undefined)?.body,
+		),
+	) as Record<string, unknown>
+	expect(updateBody).toMatchObject({
+		name: 'kody-email-delivery-events',
+		destination: {
+			type: 'queues.queue',
+			queue_id: 'queue-1',
+		},
+		events: [...emailSendingEventTypes],
+	})
+	expect(updateBody).not.toHaveProperty('source')
+
+	const createSubscriptionFetch = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: [],
+				result_info: { total_pages: 1 },
+			}),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: {
+					id: 'subscription-new',
+					name: 'kody-email-delivery-events',
+				},
+			}),
+		)
+	await ensureEmailSendingEventSubscription({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		name: 'kody-email-delivery-events',
+		queueId: queue.id,
+		domain: 'inbox.example.com',
+		dryRun: false,
+		fetcher: createSubscriptionFetch,
+	})
+	const createCall = createSubscriptionFetch.mock.calls[1]
 	expect(createCall?.[0]).toBe(
 		'https://api.cloudflare.com/client/v4/accounts/account-1/event_subscriptions/subscriptions',
 	)

@@ -1380,7 +1380,7 @@ export async function recordProviderEmailDeliveryEvent(input: {
 					AND EXISTS (
 						SELECT 1
 						FROM email_delivery_events
-						WHERE provider_event_id = ?
+						WHERE id = ?
 							AND message_id = ?
 					)`,
 			)
@@ -1390,7 +1390,7 @@ export async function recordProviderEmailDeliveryEvent(input: {
 				nowIso(),
 				message.id,
 				input.eventTimestamp,
-				input.providerEventId,
+				eventId,
 				message.id,
 			),
 	])

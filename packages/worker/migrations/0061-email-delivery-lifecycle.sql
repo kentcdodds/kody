@@ -15,9 +15,28 @@ CHECK (
 ALTER TABLE email_messages
 ADD COLUMN delivery_status_at TEXT;
 
-CREATE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
+UPDATE email_messages
+SET provider_message_id = NULL
+WHERE id IN (
+	SELECT id
+	FROM (
+		SELECT
+			id,
+			ROW_NUMBER() OVER (
+				PARTITION BY provider_message_id
+				ORDER BY created_at ASC, id ASC
+			) AS provider_id_ordinal
+		FROM email_messages
+		WHERE direction = 'outbound'
+			AND provider_message_id IS NOT NULL
+	)
+	WHERE provider_id_ordinal > 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
 ON email_messages(provider_message_id)
-WHERE provider_message_id IS NOT NULL;
+WHERE direction = 'outbound'
+	AND provider_message_id IS NOT NULL;
 
 CREATE TABLE email_delivery_events_next (
 	id TEXT PRIMARY KEY,

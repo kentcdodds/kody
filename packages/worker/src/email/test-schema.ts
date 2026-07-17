@@ -134,9 +134,10 @@ ON email_sender_identities(user_id, email);`,
 	detail_json TEXT NOT NULL DEFAULT '{}',
 	created_at TEXT NOT NULL
 );`,
-		`CREATE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
 ON email_messages(provider_message_id)
-WHERE provider_message_id IS NOT NULL;`,
+WHERE direction = 'outbound'
+	AND provider_message_id IS NOT NULL;`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_provider_event_id
 ON email_delivery_events(provider_event_id)
 WHERE provider_event_id IS NOT NULL;`,

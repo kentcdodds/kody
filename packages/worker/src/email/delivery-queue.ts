@@ -6,7 +6,7 @@ const unmatchedRetryDelaySeconds = 30
 export async function handleEmailDeliveryQueue(
 	batch: MessageBatch<unknown>,
 	env: Env,
-	ctx: ExecutionContext,
+	_ctx: ExecutionContext,
 ) {
 	for (const queueMessage of batch.messages) {
 		try {
@@ -26,18 +26,13 @@ export async function handleEmailDeliveryQueue(
 					queueMessage.retry({ delaySeconds: unmatchedRetryDelaySeconds })
 					break
 				case 'duplicate':
-					queueMessage.ack()
-					break
 				case 'recorded': {
-					queueMessage.ack()
-					const dispatch = dispatchEmailDeliverySubscriptionEvents({
+					await dispatchEmailDeliverySubscriptionEvents({
 						env,
 						message: result.message,
 						providerEvent: result.event,
-					}).catch((error: unknown) => {
-						console.error('email-delivery-subscription-dispatch-failed', error)
 					})
-					ctx.waitUntil(dispatch)
+					queueMessage.ack()
 					break
 				}
 				default: {

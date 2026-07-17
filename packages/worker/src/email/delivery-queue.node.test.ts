@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	processCloudflareEmailDeliveryEvent: vi.fn(),
@@ -31,10 +34,14 @@ function createQueueMessage(id: string, body: unknown) {
 
 test('email delivery Queue acknowledges permanent outcomes and retries unmatched messages', async () => {
 	consoleWarn.mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
 	const recorded = createQueueMessage('queue-recorded', { kind: 'recorded' })
 	const duplicate = createQueueMessage('queue-duplicate', { kind: 'duplicate' })
 	const invalid = createQueueMessage('queue-invalid', { kind: 'invalid' })
 	const unmatched = createQueueMessage('queue-unmatched', { kind: 'unmatched' })
+	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
+		kind: 'dispatch-failure',
+	})
 	const providerEvent = {
 		payload: { eventId: 'event-1', messageId: 'provider-1' },
 	}
@@ -60,6 +67,15 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 			event: providerEvent,
 			message: null,
 		})
+		.mockResolvedValueOnce({
+			outcome: 'recorded',
+			event: providerEvent,
+			message: storedMessage,
+		})
+	mocks.dispatchEmailDeliverySubscriptionEvents
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([])
+		.mockRejectedValueOnce(new Error('dispatch failed'))
 	const waitUntilPromises: Array<Promise<unknown>> = []
 	const ctx = {
 		waitUntil(promise: Promise<unknown>) {
@@ -71,7 +87,7 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	await handleEmailDeliveryQueue(
 		{
 			queue: 'kody-email-delivery',
-			messages: [recorded, duplicate, invalid, unmatched],
+			messages: [recorded, duplicate, invalid, unmatched, dispatchFailure],
 			ackAll() {},
 			retryAll() {},
 		} as unknown as MessageBatch<unknown>,
@@ -85,13 +101,23 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	expect(invalid.ack).toHaveBeenCalledTimes(1)
 	expect(unmatched.ack).not.toHaveBeenCalled()
 	expect(unmatched.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
-	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledWith({
-		env: expect.anything(),
-		message: storedMessage,
-		providerEvent,
-	})
+	expect(dispatchFailure.ack).not.toHaveBeenCalled()
+	expect(dispatchFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
+	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledTimes(3)
+	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenNthCalledWith(
+		1,
+		{
+			env: expect.anything(),
+			message: storedMessage,
+			providerEvent,
+		},
+	)
 	expect(consoleWarn).toHaveBeenCalledWith('email-delivery-event-unmatched', {
 		queueMessageId: 'queue-unmatched',
 		providerMessageId: 'provider-1',
 	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'email-delivery-event-processing-failed',
+		expect.objectContaining({ message: 'dispatch failed' }),
+	)
 })
