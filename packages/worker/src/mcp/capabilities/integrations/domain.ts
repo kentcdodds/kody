@@ -12,7 +12,7 @@ import { openapiSpecSummarizeCapability } from './openapi-spec-summarize.ts'
 export const integrationsDomain = defineDomain({
 	name: capabilityDomainNames.integrations,
 	description:
-		'Saved OAuth integration configurations for the signed-in user: save, inspect, list, and delete per-provider integration configs that reference client-id values and token secrets. Integration configs are non-secret; credentials stay in the secret store. Also includes integrations.sh registry-backed discovery and OpenAPI spec summarization to research provider auth contracts and API surfaces before saving integrations.',
+		'Saved OAuth integration configs for the signed-in user (non-secret; credentials stay in the secret store), plus registry-backed provider discovery and OpenAPI spec summarization for researching provider auth contracts.',
 	keywords: [
 		'integration',
 		'oauth',

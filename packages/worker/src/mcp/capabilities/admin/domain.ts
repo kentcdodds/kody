@@ -12,7 +12,7 @@ import { adminUserUpdateCapability } from './admin-user-update.ts'
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator capabilities for account metadata and system email. System email is operator-owned mail for reserved platform addresses; this domain never exposes user-owned content such as packages, secrets, memories, jobs, or user inbox email.',
+		'Admin-only operator capabilities for account metadata and operator-owned system email; never exposes user-owned content such as packages, secrets, memories, jobs, or user inbox email.',
 	keywords: [
 		'admin',
 		'rbac',

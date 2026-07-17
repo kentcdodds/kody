@@ -13,7 +13,7 @@ import { communityUnpublishCapability } from './unpublish.ts'
 export const communityDomain = defineDomain({
 	name: capabilityDomainNames.community,
 	description:
-		'Public community package listings on this deployment: publish saved packages, search and inspect listings, fork into your scope, rate after forking, and report issues. Forked code is untrusted third-party content that requires agent review before publish. Ratings require a prior fork. Community results are deliberately excluded from the general `search` tool.',
+		'Public community package listings: publish, search, fork into your scope, rate after forking, and report issues. Forked code is untrusted third-party content; community results are deliberately excluded from the general `search` tool.',
 	keywords: [
 		'community',
 		'package',
