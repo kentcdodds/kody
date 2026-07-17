@@ -32,11 +32,22 @@ and normal code review; it never replaces reading the diff.
    `git diff <base>...HEAD` (plus `git diff --stat`) against the PR base branch.
    Session context may explain intent, but every claim about what changed must
    be checkable against the diff.
-2. **Classification is checked against the primitives map.** Read
+2. **Classification uses the primitives taxonomy.** Read
    [`docs/contributing/architecture/primitives.yaml`](../../../docs/contributing/architecture/primitives.yaml)
-   before classifying. Use its `id` values verbatim in the block.
-3. **The map stays current.** If the PR adds, removes, or materially reshapes a
-   primitive, update `primitives.yaml` in the same PR and say so in the block.
+   for stable `id` / `name` / `group` values. Prefer the classifier script over
+   hand-matching paths:
+
+   ```bash
+   node .agents/skills/visual-recap/scripts/classify-primitives.mjs --base <base> --head HEAD
+   # or: git diff --name-only <base>...HEAD | node .../classify-primitives.mjs --stdin --json
+   ```
+
+3. **The taxonomy is not a feature changelog.** Update `primitives.yaml` only
+   when this PR **adds, removes, or materially reshapes** a primitive (new `id`,
+   renamed meaning, or ownership roots that must change). Do **not** edit
+   `summary` for ordinary feature work — put behavioral detail in the linked
+   architecture docs under `docs:`. Run `npm run primitives:check` after map
+   edits.
 
 ## Risk classification
 
@@ -51,6 +62,10 @@ overall classification (`adds` > `extends` > `composes`):
 
 A change touching invariants from `primitives.yaml` (for example per-user
 isolation) is called out explicitly regardless of classification.
+
+The classifier reports which primitives' `code` roots the diff touches; you
+still decide `composes` vs `extends` from the diff (and `adds` when you create a
+new map entry).
 
 ## Block format
 
@@ -157,13 +172,19 @@ Format rules:
 
 ### Recap mode (PR create/update)
 
-1. Read `docs/contributing/architecture/primitives.yaml`.
-2. Get the facts: `gh pr view <n> --json baseRefName,headRefName`, then
-   `git diff <base>...HEAD --stat` and the full diff for anything you did not
-   author this session.
-3. Map changed paths to primitives via the map's `code` entries; classify each;
-   roll up the overall classification.
-4. Author the block following the format above.
+1. Resolve base/head (`gh pr view <n> --json baseRefName,headRefName`).
+2. Classify paths:
+
+   ```bash
+   node .agents/skills/visual-recap/scripts/classify-primitives.mjs --base <base> --head HEAD --json
+   ```
+
+3. Read the full diff for anything you did not author this session; decide
+   composes/extends/adds per matched primitive (and note important unmatched
+   paths if they introduce a new surface).
+4. Author the block following the format above. Use map `name` for diagram
+   labels; pull behavioral detail from architecture docs / the diff, not by
+   rewriting map summaries.
 5. Upsert it into the PR description:
 
    ```bash

@@ -67,6 +67,8 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 - PR system recaps (visual plan/recap blocks in PR descriptions):
   - [.agents/skills/visual-recap/SKILL.md](./.agents/skills/visual-recap/SKILL.md)
   - [docs/contributing/architecture/primitives.yaml](./docs/contributing/architecture/primitives.yaml)
+    (stable taxonomy — classify with `npm run primitives:classify`, check with
+    `npm run primitives:check`; do not treat the map as a feature changelog)
 
 ## Cursor Cloud-specific instructions
 

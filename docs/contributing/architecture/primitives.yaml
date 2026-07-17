@@ -1,17 +1,22 @@
-# Kody system primitives map
+# Kody system primitives map (taxonomy)
 #
-# Machine-readable baseline for the visual-recap skill
-# (.agents/skills/visual-recap/SKILL.md). Plan and recap blocks in PR
-# descriptions classify every change against this map:
+# Stable vocabulary for the visual-recap skill
+# (.agents/skills/visual-recap/SKILL.md). This is NOT a living feature
+# changelog and NOT derived source-of-truth for behavior — architecture
+# docs under `docs:` are. Code is the truth for implementation.
 #
-#   composes - wires existing primitives together without changing them
-#   extends  - changes the behavior, shape, or contract of a primitive
+# Risk labels used in PR recaps:
+#   composes - wires existing primitives without changing them
+#   extends  - changes a primitive's behavior, shape, or contract
 #   adds     - introduces a new primitive (update this file in the same PR)
 #
-# Keep this map coarse: one entry per primitive, not per capability or per
-# file. `code` paths are starting points, not exhaustive listings. When a PR
-# adds, removes, or materially reshapes a primitive, update this file as part
-# of that PR so the map never drifts from reality.
+# Update this file only when adding, removing, or materially reshaping a
+# primitive (id, name, group, code roots, or meaning). Do NOT edit `summary`
+# for ordinary feature work — put that in the linked architecture docs.
+#
+# `code` entries are coarse ownership roots for
+# `classify-primitives.mjs` (longest-prefix match). Prefer directories over
+# file lists. Keep the map small.
 
 version: 1
 
@@ -32,10 +37,9 @@ primitives:
   - id: app-ui
     group: surfaces
     name: Browser app (Remix 3)
-    summary:
-      Server-first Remix 3 UI and app routes (home, auth, account, onboarding,
-      session, admin, community, privacy, health) served by the Worker.
+    summary: Server-first Remix UI and Worker-served app routes.
     code:
+      - packages/worker/client/
       - packages/worker/src/app/
     docs:
       - docs/contributing/architecture/request-lifecycle.md
@@ -43,22 +47,17 @@ primitives:
   - id: mcp-server
     group: surfaces
     name: MCP endpoint (/mcp)
-    summary:
-      OAuth-protected MCP server with a deliberately compact tool surface
-      (search and execute, plus package/job/meta tools) hosted in the MCP
-      Durable Object.
+    summary: OAuth-protected MCP server with a compact search/execute surface.
     code:
       - packages/worker/src/mcp/
     docs:
       - docs/contributing/project-intent.md
-      - docs/contributing/adding-kody.md
+      - docs/contributing/adding-capabilities.md
 
   - id: connector-ingress
     group: surfaces
     name: Remote connector ingress
-    summary:
-      Username-scoped WebSocket route /@{username}/connectors/{kind}/{id} that
-      terminates outbound connector sockets in a session Durable Object.
+    summary: Username-scoped WebSocket ingress for outbound connector sockets.
     code:
       - packages/worker/src/remote-connector/
     docs:
@@ -67,12 +66,7 @@ primitives:
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
-    summary:
-      Worker cron entry point with independently isolated lanes (time-budgeted
-      Artifacts push reconcile, hourly retention pruning, hourly usage rollup
-      aggregation, system-email retention, daily stale-token cleanup around
-      03:00 UTC, and abandoned repo-session branch cleanup); one failing lane
-      never aborts the others.
+    summary: Worker cron entry with isolated maintenance lanes.
     code:
       - packages/worker/src/index.ts
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
@@ -86,20 +80,7 @@ primitives:
   - id: app-sessions
     group: auth
     name: Browser sessions
-    summary:
-      Signed kody_session cookie auth for browser users; production signup
-      invite-gated with a Kit-backed public waiting list on /signup
-      (non-production signup open), account email verification surfaced in
-      session state and a dedicated `/pending-verification` experience after
-      password signup, best-effort Kit `signed_up::kody` tagging when the signup
-      email already exists in Kit, MCP OAuth authorize gated until verified,
-      social login and invite-gated social signup (GitHub/Google/X OAuth
-      connections in oauth_connections, invite code carried in the signed OAuth
-      state cookie, mockable via MOCK_ client ids on non-production runtimes),
-      and opt-in second factors — TOTP two-factor (verifications table, pending
-      kody_verify cookie gates password/social login until /verify) and passkeys
-      (WebAuthn sign-in with required user verification; treated as
-      MFA-complete, so TOTP is skipped).
+    summary: Cookie sessions, signup/login, invites, verification, and 2FA.
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
@@ -108,27 +89,20 @@ primitives:
       - packages/worker/src/app/kit-waitlist.ts
       - packages/worker/src/app/kit-signup.ts
       - packages/worker/src/app/handlers/account-connections.ts
-      - packages/worker/src/app/oauth-providers.ts
-      - packages/worker/src/app/oauth-login-state.ts
-      - packages/worker/src/app/oauth-login-errors.ts
-      - packages/worker/migrations/0056-oauth-connections.sql
-      - packages/worker/src/app/handlers/verify-email.ts
+      - packages/worker/src/app/oauth-
+      - packages/worker/src/app/handlers/verify
       - packages/worker/src/app/handlers/pending-verification.ts
-      - packages/worker/src/app/handlers/admin-invites.ts
+      - packages/worker/src/app/handlers/webauthn.ts
+      - packages/worker/src/app/handlers/account-two-factor.ts
+      - packages/worker/src/app/handlers/account-passkeys.ts
       - packages/worker/src/app/invites.ts
       - packages/worker/src/app/email-verification.ts
       - packages/worker/src/app/onboarding-data.ts
-      - packages/worker/src/oauth-handlers.ts
       - packages/worker/src/app/two-factor.ts
       - packages/worker/src/app/verify-session.ts
       - packages/worker/src/app/passkeys.ts
       - packages/worker/src/app/webauthn.ts
-      - packages/worker/src/app/handlers/verify.ts
-      - packages/worker/src/app/handlers/webauthn.ts
-      - packages/worker/src/app/handlers/account-two-factor.ts
-      - packages/worker/src/app/handlers/account-passkeys.ts
-      - packages/worker/migrations/0046-invites-email-verification.sql
-      - packages/worker/migrations/0053-two-factor-passkeys.sql
+      - packages/worker/src/oauth-handlers.ts
     docs:
       - docs/contributing/architecture/authentication.md
       - docs/contributing/social-login.md
@@ -136,9 +110,7 @@ primitives:
   - id: mcp-oauth
     group: auth
     name: MCP OAuth
-    summary:
-      '@cloudflare/workers-oauth-provider integration issuing bearer tokens for
-      /mcp; caller identity travels as McpCallerContext props.'
+    summary: Bearer tokens for /mcp via workers-oauth-provider.
     code:
       - packages/worker/src/oauth-handlers.ts
       - packages/worker/src/mcp-auth.ts
@@ -148,18 +120,10 @@ primitives:
   - id: rbac
     group: auth
     name: Role-based access control
-    summary:
-      Typed action:entity:access permissions, user/admin roles, server guards
-      for /admin/* metadata routes, and the admin MCP domain for account
-      metadata plus sanitized audit logs. Never exposes user content.
+    summary: Permissions, roles, admin route guards, and admin MCP metadata.
     code:
-      - packages/worker/src/app/permissions.ts
-      - packages/worker/src/app/permissions-db.ts
-      - packages/worker/src/app/permissions-server.ts
-      - packages/worker/src/app/handlers/admin-users.ts
-      - packages/worker/src/app/handlers/admin-roles.ts
-      - packages/worker/src/app/handlers/admin-invites.ts
-      - packages/worker/src/app/handlers/admin-community-reports.ts
+      - packages/worker/src/app/permissions
+      - packages/worker/src/app/handlers/admin-
       - packages/worker/src/mcp/capabilities/admin/
       - packages/worker/src/mcp/capabilities/meta/require-permission.ts
     docs:
@@ -168,15 +132,9 @@ primitives:
   - id: entitlements
     group: auth
     name: Plans & entitlements
-    summary:
-      Per-user plan column (users.plan) with per-plan resource limits and the
-      shared assertWithinEntitlement guard; row-count limits query source
-      tables, rate limits use entitlement_daily_counters, and NULL plan means
-      legacy/unlimited with enforcement disabled.
+    summary: Per-user plans and assertWithinEntitlement enforcement.
     code:
       - packages/worker/src/entitlements/
-      - packages/worker/migrations/0046-invites-email-verification.sql
-      - packages/worker/migrations/0048-user-plans-and-entitlement-counters.sql
     docs:
       - docs/contributing/architecture/entitlements.md
 
@@ -184,23 +142,16 @@ primitives:
   - id: capability-registry
     group: assistant
     name: Capability registry
-    summary:
-      Builtin capability domains (account, admin, apps, coding, community,
-      email, integrations, jobs, mcp_servers, meta, openapi, packages, repo,
-      secrets, services, storage, values) merged with synthesized
-      remote-connector, MCP server, and OpenAPI binding domains behind
-      search/execute.
+    summary: Builtin and synthesized capability domains behind search/execute.
     code:
       - packages/worker/src/mcp/capabilities/
     docs:
-      - docs/contributing/adding-kody.md
+      - docs/contributing/adding-capabilities.md
 
   - id: saved-packages
     group: assistant
     name: Saved packages
-    summary:
-      Repo-backed packages rooted at package.json; the only top-level persisted
-      primitive. Exports, tags, and surfaces declared under package.json#kody.
+    summary: Repo-backed packages rooted at package.json.
     code:
       - packages/worker/src/mcp/capabilities/packages/
       - packages/worker/src/package-registry/
@@ -210,24 +161,13 @@ primitives:
   - id: community-listings
     group: assistant
     name: Community package listings
-    summary:
-      Public pinned snapshots of published saved packages on the same
-      deployment; inert forks, one-click install (UI-only fork + publish checks
-      + immediate activation, with an acknowledgement gate for untrusted
-      listings), ratings, user reports, admin moderation at
-      /admin/community-reports, commit-pinned admin trust marks, admin featured
-      marks that surface trusted listings as onboarding starter packages,
-      /community routes, and lazily derived package icons that track the owner
-      package's current published commit.
+    summary: Public pinned package listings, forks, ratings, and moderation.
     code:
       - packages/worker/src/community/
       - packages/worker/src/mcp/capabilities/community/
-      - packages/worker/migrations/0045-community-listings.sql
-      - packages/worker/migrations/0059-community-trusted-listings.sql
-      - packages/worker/migrations/0060-community-featured-listings.sql
-      - packages/worker/src/app/handlers/community*
-      - packages/worker/src/app/handlers/admin-community-reports*
-      - packages/worker/client/routes/community*
+      - packages/worker/src/app/handlers/community
+      - packages/worker/src/app/handlers/admin-community-reports
+      - packages/worker/client/routes/community
     docs:
       - docs/use/community-packages.md
       - docs/contributing/community-packages.md
@@ -235,8 +175,7 @@ primitives:
   - id: package-apps
     group: assistant
     name: Package apps
-    summary:
-      Optional package-declared UI surfaces hosted at the package app route.
+    summary: Optional package-declared hosted UI surfaces.
     code:
       - packages/worker/src/package-runtime/package-app.ts
     docs:
@@ -245,9 +184,7 @@ primitives:
   - id: package-services
     group: assistant
     name: Package services
-    summary:
-      Long-lived headless package-owned runtimes hosted in the
-      PackageServiceInstance Durable Object.
+    summary: Long-lived headless package-owned runtimes.
     code:
       - packages/worker/src/package-runtime/package-service.ts
     docs:
@@ -256,9 +193,7 @@ primitives:
   - id: jobs
     group: assistant
     name: Scheduled jobs
-    summary:
-      Repo-backed one-off, interval, and cron jobs; JobManager Durable Object
-      (one per user) dispatches due jobs from D1 metadata.
+    summary: Repo-backed one-off, interval, and cron jobs.
     code:
       - packages/worker/src/jobs/
     docs:
@@ -267,9 +202,7 @@ primitives:
   - id: workflows
     group: assistant
     name: Workflows
-    summary:
-      Shared DynamicCallableWorkflow hub queuing inline-code or saved-package
-      export invocations from every runtime context.
+    summary: Durable DynamicCallableWorkflow hub for long-running work.
     code:
       - packages/worker/src/package-runtime/package-workflows.ts
     docs:
@@ -278,19 +211,14 @@ primitives:
   - id: values
     group: assistant
     name: Values
-    summary:
-      Readable persisted non-secret configuration scoped to user, app, or
-      session.
+    summary: Readable persisted non-secret configuration.
     code:
       - packages/worker/src/mcp/capabilities/values/
 
   - id: secrets
     group: assistant
     name: Secret references
-    summary:
-      User- or package-owned server-side secret references resolved through
-      package-aware mounts, fetch placeholders, and capability inputs; raw
-      values never enter prompts or results.
+    summary: Server-side secret references; raw values never enter prompts.
     code:
       - packages/worker/src/mcp/capabilities/secrets/
       - packages/worker/src/security/
@@ -298,19 +226,14 @@ primitives:
   - id: memories
     group: assistant
     name: Memories
-    summary:
-      Long-term per-user memories with a verify-first write workflow
-      (meta_memory_verify before upsert or delete).
+    summary: Long-term per-user memories with verify-first writes.
     code:
       - packages/worker/src/mcp/capabilities/meta/
 
   - id: account-export
     group: assistant
     name: Account data export
-    summary: >-
-      User-facing export inventory for portability: account route plus account
-      MCP domain capabilities that read D1 rows, KV pointers, vectors, and
-      Durable Object export snapshots without exporting secret values.
+    summary: User-facing export inventory without secret values.
     code:
       - packages/worker/src/app/account-export.ts
       - packages/worker/src/app/handlers/account-export.ts
@@ -321,11 +244,7 @@ primitives:
   - id: email
     group: assistant
     name: Email
-    summary:
-      Automatic per-user inbox at {username}@<platform domain>, operator-owned
-      system inboxes for configured reserved locals, inbound message storage,
-      and platform-addressed outbound send backed by Cloudflare email
-      primitives.
+    summary: Per-user and operator system inboxes on the platform domain.
     code:
       - packages/worker/src/email/
       - packages/worker/src/mcp/capabilities/email/
@@ -333,44 +252,29 @@ primitives:
   - id: remote-connectors
     group: assistant
     name: Remote connectors
-    summary:
-      Outbound-WebSocket MCP-style tool servers (per user, kind, and instance)
-      with D1-backed settings, account UI at /account/remote-connectors, and
-      synthesized capability domains for attached MCP/chat refs.
+    summary: Outbound-WebSocket tool servers with account UI and settings.
     code:
       - packages/worker/src/remote-connector/
       - packages/worker/src/app/handlers/account-remote-connectors.ts
-      - packages/worker/migrations/0034-remote-connector-settings.sql
     docs:
       - docs/contributing/architecture/remote-connectors.md
 
   - id: mcp-client-servers
     group: assistant
     name: MCP client servers
-    summary:
-      User-added remote MCP servers Kody connects to as a client via the Agents
-      SDK MCPClientManager in the per-user McpClientHub Durable Object (OAuth
-      tokens in DO storage), with D1-backed settings, account UI at
-      /account/mcp-servers, the mcp_servers capability domain, and synthesized
-      mcp:<server> capability domains callable via kody.mcp[...].
+    summary: User-added remote MCP servers Kody connects to as a client.
     code:
       - packages/worker/src/mcp-client/
       - packages/worker/src/mcp/capabilities/mcp-server/
       - packages/worker/src/mcp/capabilities/mcp-servers/
       - packages/worker/src/app/handlers/account-mcp-servers.ts
-      - packages/worker/migrations/0053-mcp-server-settings.sql
     docs:
       - docs/contributing/architecture/mcp-client-servers.md
 
   - id: openapi-bindings
     group: assistant
     name: OpenAPI provider bindings
-    summary:
-      User-scoped curated OpenAPI bindings (spec URL, apiBaseUrl, auth
-      reference, operation selection) stored as non-secret values-store config,
-      with openapi domain management capabilities, runtime-synthesized
-      openapi:<name> domains callable via kody.openapi[...], and host approval
-      never widened by untrusted spec servers.
+    summary: Curated OpenAPI bindings with synthesized openapi domains.
     code:
       - packages/worker/src/openapi/
       - packages/worker/src/mcp/capabilities/openapi/
@@ -382,29 +286,14 @@ primitives:
   - id: realtime-sessions
     group: assistant
     name: Realtime sessions
-    summary:
-      Kody-managed websocket sessions for package apps hosted in the
-      PackageRealtimeSession Durable Object.
+    summary: Package-app websocket sessions in PackageRealtimeSession.
     code:
       - packages/worker/src/package-runtime/realtime-session.ts
-
-  - id: chat
-    group: assistant
-    name: Chat threads & agent turns
-    summary:
-      Chat threads with agent turns executed in the AgentTurnRunner Durable
-      Object, keyed by (userId, sessionId).
-    code:
-      - packages/worker/src/app/
-    docs:
-      - docs/contributing/architecture/data-storage.md
 
   - id: durable-storage
     group: assistant
     name: Durable storage buckets
-    summary:
-      Isolated per-storage-id SQLite state in the StorageRunner Durable Object,
-      bindable to execute calls, jobs, and services.
+    summary: Isolated per-storage-id SQLite in StorageRunner.
     code:
       - packages/worker/src/storage-runner.ts
       - packages/worker/src/mcp/capabilities/storage/
@@ -413,9 +302,7 @@ primitives:
   - id: capabilities-execute
     group: runtime
     name: Capabilities execute runtime
-    summary:
-      Sandboxed ESM module execution with the kody:runtime virtual module;
-      per-request runtime isolation via AsyncLocalStorage.
+    summary: Sandboxed ESM execution with kody:runtime.
     code:
       - packages/worker/src/mcp/execute-modules/
       - packages/worker/src/mcp/run-kody-registry.ts
@@ -425,9 +312,7 @@ primitives:
   - id: package-runtime
     group: runtime
     name: Package runtime
-    summary:
-      Module graph, bundle hydration, and loaders powering every saved package
-      surface (exports, apps, jobs, services, subscriptions, workflows).
+    summary: Module graph and loaders for saved-package surfaces.
     code:
       - packages/worker/src/package-runtime/
     docs:
@@ -436,9 +321,7 @@ primitives:
   - id: repo-sessions
     group: runtime
     name: Repo sessions
-    summary:
-      RepoSession Durable Object editing forks with constrained git command
-      workflows, repo checks, and the publish transaction.
+    summary: RepoSession DO editing forks and publish transaction.
     code:
       - packages/worker/src/repo/
     docs:
@@ -448,11 +331,7 @@ primitives:
   - id: d1-app-db
     group: storage
     name: D1 app database
-    summary:
-      APP_DB relational metadata and projections (users, RBAC, invites, email
-      verification, jobs, entity_sources, saved_packages, community, email,
-      secrets/values, remote connector settings, usage_rollups, and
-      entitlement_daily_counters); never canonical package source.
+    summary: APP_DB relational metadata and projections.
     code:
       - packages/worker/migrations/
       - packages/worker/src/db.ts
@@ -462,9 +341,7 @@ primitives:
   - id: artifacts-repos
     group: storage
     name: Artifacts repos
-    summary:
-      Cloudflare Artifacts git repos holding the canonical published source for
-      packages, apps, and jobs; reached through the REST API.
+    summary: Canonical published git source for packages and jobs.
     code:
       - packages/worker/src/repo/artifacts.ts
     docs:
@@ -473,10 +350,7 @@ primitives:
   - id: bundle-artifacts-kv
     group: storage
     name: Bundle artifacts KV
-    summary:
-      Published source snapshots, manifest snapshots, package retriever caches,
-      community snapshots, and bundle artifacts keyed by source_id plus
-      published commit or user-scoped cache keys.
+    summary: Published snapshots and package/community caches in KV.
     code:
       - packages/worker/src/package-runtime/published-bundle-artifacts.ts
     docs:
@@ -485,9 +359,7 @@ primitives:
   - id: vectorize-search
     group: storage
     name: Vectorize search
-    summary:
-      Capability and package vector search filtered by userId; offline ranker
-      substitutes in local dev.
+    summary: Capability and package vector search filtered by userId.
     code:
       - packages/worker/src/mcp/capabilities/capability-search.ts
       - packages/worker/src/mcp/capabilities/vector-ids.ts
@@ -497,30 +369,16 @@ primitives:
   - id: usage-metering
     group: storage
     name: Usage metering
-    summary:
-      Per-user usage events recorded at runtime chokepoints via recordUsage();
-      raw events go to the USAGE_EVENTS Analytics Engine dataset and D1
-      usage_rollups is a derived aggregate recomputed hourly from the AE SQL API
-      (direct D1 upserts only in local dev without the AE binding).
-      Observability only; entitlements use separate source-table counts and
-      daily counters.
+    summary: recordUsage() events and derived D1 usage_rollups.
     code:
-      - packages/worker/src/usage/record-usage.ts
-      - packages/worker/src/usage/aggregate-rollups.ts
-      - packages/worker/migrations/0047-usage-rollups.sql
+      - packages/worker/src/usage/
     docs:
       - docs/contributing/architecture/usage-metering.md
 
   - id: email-blobs-r2
     group: storage
     name: Email blob storage (R2)
-    summary:
-      EMAIL_BLOBS R2 bucket holding raw email MIME under the frozen key contract
-      email-raw:v1:{userId}/{messageId} and standalone outbound attachment bytes
-      under email-attachment:v1:{userId}/{messageId}/{attachmentId}
-      (storage_kind 'external'); D1 email_messages keeps metadata plus
-      raw_mime_key, with inline raw_mime as the fallback when the binding is
-      unavailable. Covered by account deletion and retention.
+    summary: EMAIL_BLOBS R2 for raw MIME and outbound attachments.
     code:
       - packages/worker/src/email/repo.ts
     docs:
@@ -529,13 +387,7 @@ primitives:
   - id: community-assets-r2
     group: storage
     name: Community asset storage (R2)
-    summary:
-      COMMUNITY_ASSETS R2 bucket holding validated, lazily derived community
-      icon bytes under community-icon:v1/{listingId}/{commit}/asset, keyed by
-      the listing's pinned or current icon commit. Cachified descriptors live in
-      Bundle artifacts KV; public reads remain gated by an active listing,
-      package publish prunes superseded commits, and account deletion removes
-      owner assets.
+    summary: COMMUNITY_ASSETS R2 for derived listing icons.
     code:
       - packages/worker/src/community/community-icon.ts
       - packages/worker/src/app/handlers/community-icon.ts
@@ -545,59 +397,35 @@ primitives:
 
 invariants:
   - id: per-user-isolation
-    summary:
-      Every read/write path is scoped by userId, every user-owned Durable Object
-      id is user-namespaced, and every search/vector path filters by userId.
-      Cross-user data sharing is a bug. RBAC provides a narrow exception for
-      account administration (permissions with access=any on user/role entities,
-      behind explicit guards), and system email uses the reserved system:email
-      owner id for operator-owned reserved-address mail — never for user
-      content.
+    summary: userId scopes every read/write, DO id, and vector path.
     docs:
       - docs/contributing/project-intent.md
       - docs/contributing/architecture/data-storage.md
       - docs/contributing/architecture/authorization.md
 
   - id: integration-host-allowlist
-    summary:
-      Any code path that materializes an integration OAuth token must enforce
-      the integration host allowlist before attaching the token to an outbound
-      request.
+    summary: Enforce integration host allowlists before attaching OAuth tokens.
     docs:
       - docs/contributing/architecture/index.md
 
   - id: canonical-repo-source
-    summary:
-      Published Artifacts repo source is the only canonical source for saved
-      packages, package apps, and jobs; D1 holds metadata and projections only.
+    summary: Artifacts repos are canonical package/job source; D1 is metadata.
     docs:
       - docs/contributing/architecture/data-storage.md
 
   - id: compact-mcp-surface
-    summary:
-      The public MCP tool surface stays small; new functionality lands as
-      capabilities behind search/execute, not as new top-level MCP tools.
+    summary: Keep public MCP tools small; add capabilities via search/execute.
     docs:
       - docs/contributing/project-intent.md
 
   - id: community-listing-isolation
     summary:
-      Public read is deliberate for active community listings only; forks are
-      inert entity sources without a saved_packages row until the forker
-      publishes through a repo session or a one-click install passes the same
-      publish checks (untrusted listings additionally require an explicit user
-      acknowledgement, and install has no MCP capability so agents cannot
-      trigger it); ratings require a prior fork; cross-scope kody imports never
-      resolve across users; community listings are excluded from general MCP
-      search.
+      Public community reads are deliberate; forks stay inert until publish.
     docs:
       - docs/use/community-packages.md
       - docs/contributing/community-packages.md
 
   - id: no-secrets-in-chat
-    summary:
-      Raw secret values never appear in prompts, chat, execute results, or
-      package app source; credential setup goes through the standard setup
-      pages.
+    summary: Raw secrets never appear in prompts, chat, results, or app source.
     docs:
       - docs/contributing/architecture/data-storage.md

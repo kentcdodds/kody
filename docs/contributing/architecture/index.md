@@ -24,11 +24,14 @@ to become.
   Objects.
 - [Usage Metering](./usage-metering.md): per-user usage events, the
   `recordUsage()` helper contract, and the D1 rollup table.
-- [Primitives map](./primitives.yaml): machine-readable map of system primitives
-  and invariants, used by the visual-recap skill
-  (`.agents/skills/visual-recap/SKILL.md`) to classify PR risk. Update it in the
-  same PR whenever a primitive is added, removed, or reshaped. PR recaps use the
-  map's `name` and `summary` fields for system-map node labels and edge text.
+- [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
+  invariants for the visual-recap skill
+  (`.agents/skills/visual-recap/SKILL.md`). It is not a living feature changelog
+  and not derived from source — architecture docs and code remain the truth for
+  behavior. Update the map only when adding, removing, or reshaping a primitive.
+  Classify PR paths with
+  `node .agents/skills/visual-recap/scripts/classify-primitives.mjs`; validate
+  with `npm run primitives:check`.
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers
