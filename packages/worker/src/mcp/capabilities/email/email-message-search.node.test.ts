@@ -107,6 +107,7 @@ test('email_message_search requires a signed-in, verified user and forwards the 
 		inboxId: 'inbox-1',
 		direction: 'inbound',
 		processingStatus: null,
+		deliveryStatus: null,
 		limit: 10,
 	})
 	expect(result.messages).toEqual([

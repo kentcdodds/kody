@@ -3,8 +3,10 @@ import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import {
 	type EmailAttachmentRecord,
+	type EmailDeliveryEventRecord,
 	type EmailDirection,
 	type EmailDeliveryEventType,
+	type EmailDeliveryStatus,
 	type EmailInboxAddressRecord,
 	type EmailInboxRecord,
 	type EmailMessageRecord,
@@ -214,11 +216,42 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 			row['provider_message_id'] == null
 				? null
 				: String(row['provider_message_id']),
+		deliveryStatus:
+			row['delivery_status'] == null
+				? null
+				: (String(row['delivery_status']) as EmailDeliveryStatus),
+		deliveryStatusAt:
+			row['delivery_status_at'] == null
+				? null
+				: String(row['delivery_status_at']),
 		error: row['error'] == null ? null : String(row['error']),
 		receivedAt: row['received_at'] == null ? null : String(row['received_at']),
 		sentAt: row['sent_at'] == null ? null : String(row['sent_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapDeliveryEventRow(
+	row: Record<string, unknown>,
+): EmailDeliveryEventRecord {
+	return {
+		id: String(row['id']),
+		messageId: row['message_id'] == null ? null : String(row['message_id']),
+		userId: row['user_id'] == null ? null : String(row['user_id']),
+		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
+		eventType: String(row['event_type']) as EmailDeliveryEventType,
+		provider: row['provider'] == null ? null : String(row['provider']),
+		providerMessageId:
+			row['provider_message_id'] == null
+				? null
+				: String(row['provider_message_id']),
+		providerEventId:
+			row['provider_event_id'] == null
+				? null
+				: String(row['provider_event_id']),
+		detailJson: String(row['detail_json'] ?? '{}'),
+		createdAt: String(row['created_at']),
 	}
 }
 
@@ -773,6 +806,29 @@ export async function getEmailMessageById(input: {
 	return row ? mapMessageRow(row) : null
 }
 
+export async function getOutboundEmailMessageByProviderMessageId(input: {
+	db: D1Database
+	providerMessageId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_messages
+			WHERE direction = 'outbound'
+				AND provider_message_id = ?
+			LIMIT 2`,
+		)
+		.bind(input.providerMessageId)
+		.all<Record<string, unknown>>()
+	const rows = result.results ?? []
+	if (rows.length > 1) {
+		throw new Error(
+			`Multiple outbound email messages share provider id: ${input.providerMessageId}`,
+		)
+	}
+	return rows[0] ? mapMessageRow(rows[0]) : null
+}
+
 export async function getEmailMessageWithAttachmentsById(input: {
 	db: D1Database
 	userId: string
@@ -814,6 +870,7 @@ export async function listEmailMessages(input: {
 	inboxId?: string | null
 	direction?: EmailDirection | null
 	processingStatus?: EmailProcessingStatus | null
+	deliveryStatus?: EmailDeliveryStatus | null
 	limit: number
 }) {
 	const result = await input.db
@@ -824,6 +881,7 @@ export async function listEmailMessages(input: {
 				AND (? IS NULL OR inbox_id = ?)
 				AND (? IS NULL OR direction = ?)
 				AND (? IS NULL OR processing_status = ?)
+				AND (? IS NULL OR delivery_status = ?)
 			ORDER BY created_at DESC, id DESC
 			LIMIT ?`,
 		)
@@ -835,10 +893,41 @@ export async function listEmailMessages(input: {
 			input.direction ?? null,
 			input.processingStatus ?? null,
 			input.processingStatus ?? null,
+			input.deliveryStatus ?? null,
+			input.deliveryStatus ?? null,
 			input.limit,
 		)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map(mapMessageRow)
+}
+
+export async function listEmailDeliveryEvents(input: {
+	db: D1Database
+	userId: string
+	messageId?: string | null
+	eventType?: EmailDeliveryEventType | null
+	limit: number
+}) {
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_delivery_events
+			WHERE user_id = ?
+				AND (? IS NULL OR message_id = ?)
+				AND (? IS NULL OR event_type = ?)
+			ORDER BY created_at DESC, id DESC
+			LIMIT ?`,
+		)
+		.bind(
+			input.userId,
+			input.messageId ?? null,
+			input.messageId ?? null,
+			input.eventType ?? null,
+			input.eventType ?? null,
+			input.limit,
+		)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map(mapDeliveryEventRow)
 }
 
 /** Escape LIKE wildcards so user queries match literally. */
@@ -862,6 +951,7 @@ export async function searchEmailMessages(input: {
 	inboxId?: string | null
 	direction?: EmailDirection | null
 	processingStatus?: EmailProcessingStatus | null
+	deliveryStatus?: EmailDeliveryStatus | null
 	limit: number
 }) {
 	const pattern = `%${escapeLikePattern(input.query.trim().toLowerCase())}%`
@@ -873,6 +963,7 @@ export async function searchEmailMessages(input: {
 				AND (? IS NULL OR inbox_id = ?)
 				AND (? IS NULL OR direction = ?)
 				AND (? IS NULL OR processing_status = ?)
+				AND (? IS NULL OR delivery_status = ?)
 				AND (
 					LOWER(subject) LIKE ? ESCAPE '\\'
 					OR LOWER(from_address) LIKE ? ESCAPE '\\'
@@ -889,6 +980,8 @@ export async function searchEmailMessages(input: {
 			input.direction ?? null,
 			input.processingStatus ?? null,
 			input.processingStatus ?? null,
+			input.deliveryStatus ?? null,
+			input.deliveryStatus ?? null,
 			pattern,
 			pattern,
 			pattern,
@@ -1214,14 +1307,16 @@ export async function insertEmailDeliveryEvent(input: {
 	eventType: EmailDeliveryEventType
 	provider?: string | null
 	providerMessageId?: string | null
+	providerEventId?: string | null
 	detail?: Record<string, unknown> | null
+	createdAt?: string
 }) {
 	await input.db
 		.prepare(
 			`INSERT INTO email_delivery_events (
 				id, message_id, user_id, inbox_id, event_type, provider,
-				provider_message_id, detail_json, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				provider_message_id, provider_event_id, detail_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			crypto.randomUUID(),
@@ -1231,8 +1326,102 @@ export async function insertEmailDeliveryEvent(input: {
 			input.eventType,
 			input.provider ?? null,
 			input.providerMessageId ?? null,
+			input.providerEventId ?? null,
 			JSON.stringify(input.detail ?? {}),
-			nowIso(),
+			input.createdAt ?? nowIso(),
 		)
 		.run()
+}
+
+export async function recordProviderEmailDeliveryEvent(input: {
+	db: D1Database
+	providerMessageId: string
+	providerEventId: string
+	deliveryStatus: EmailDeliveryStatus
+	eventTimestamp: string
+	detail: Record<string, unknown>
+}) {
+	const message = await getOutboundEmailMessageByProviderMessageId({
+		db: input.db,
+		providerMessageId: input.providerMessageId,
+	})
+	if (!message) {
+		return { outcome: 'unmatched' as const, message: null }
+	}
+
+	const eventId = crypto.randomUUID()
+	const statements = await input.db.batch([
+		input.db
+			.prepare(
+				`INSERT OR IGNORE INTO email_delivery_events (
+					id, message_id, user_id, inbox_id, event_type, provider,
+					provider_message_id, provider_event_id, detail_json, created_at
+				) VALUES (?, ?, ?, ?, ?, 'cloudflare-email', ?, ?, ?, ?)`,
+			)
+			.bind(
+				eventId,
+				message.id,
+				message.userId,
+				message.inboxId,
+				input.deliveryStatus,
+				input.providerMessageId,
+				input.providerEventId,
+				JSON.stringify(input.detail),
+				input.eventTimestamp,
+			),
+		input.db
+			.prepare(
+				`UPDATE email_messages
+				SET delivery_status = ?,
+					delivery_status_at = ?,
+					updated_at = ?
+				WHERE id = ?
+					AND (delivery_status_at IS NULL OR delivery_status_at <= ?)
+					AND EXISTS (
+						SELECT 1
+						FROM email_delivery_events
+						WHERE provider_event_id = ?
+							AND message_id = ?
+					)`,
+			)
+			.bind(
+				input.deliveryStatus,
+				input.eventTimestamp,
+				nowIso(),
+				message.id,
+				input.eventTimestamp,
+				input.providerEventId,
+				message.id,
+			),
+	])
+	if (Number(statements[0]?.meta.changes ?? 0) === 0) {
+		return { outcome: 'duplicate' as const, message }
+	}
+
+	const updatedMessage = await getEmailMessageById({
+		db: input.db,
+		userId: message.userId,
+		messageId: message.id,
+	})
+	if (!updatedMessage) {
+		throw new Error(
+			`Email message disappeared after delivery event: ${message.id}`,
+		)
+	}
+	return {
+		outcome: 'recorded' as const,
+		message: updatedMessage,
+		event: {
+			id: eventId,
+			messageId: message.id,
+			userId: message.userId,
+			inboxId: message.inboxId,
+			eventType: input.deliveryStatus,
+			provider: 'cloudflare-email',
+			providerMessageId: input.providerMessageId,
+			providerEventId: input.providerEventId,
+			detailJson: JSON.stringify(input.detail),
+			createdAt: input.eventTimestamp,
+		} satisfies EmailDeliveryEventRecord,
+	}
 }

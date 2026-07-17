@@ -524,8 +524,11 @@ on write unless a migration backfills existing rows.
   invocation routing and cached response projections.
 - `email_messages.*_addresses_json`, `email_messages.references_json`,
   `email_messages.headers_json`, and `email_delivery_events.detail_json`
-  (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`) store parsed
-  email metadata; `detail_json` is write-mostly audit detail.
+  (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`,
+  `0061-email-delivery-lifecycle.sql`) store parsed email metadata and provider
+  delivery details. Provider event ids are unique for idempotent Queue
+  ingestion; `email_messages.delivery_status` is the latest provider state,
+  separate from send-request `processing_status`.
 - `system_email_daily_counters` (`0051-system-email-daily-counters.sql`) stores
   fixed per-local daily receive counters for operator-owned system inboxes.
   These counters are not user entitlements and are pruned by the system-email

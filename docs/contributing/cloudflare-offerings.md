@@ -37,11 +37,12 @@ Cloudflare's API token UI changes over time, but the shape is stable:
 - You grant **Read**/**Edit** per product area
 - Wrangler deploys, creates resources, and sets secrets via the API token
 
-Recommended baseline permissions for this repo (deploy + existing D1/KV):
+Recommended baseline permissions for this repo:
 
 - `Workers Scripts:Edit` (deploy, update, delete preview Workers)
 - `Workers KV Storage:Edit` (OAuth/session KV)
 - `D1:Edit` (migrations, database operations)
+- `Workers Queues:Edit` (email delivery Queue, DLQ, and event subscription)
 
 Add these permissions when you add the corresponding offering:
 

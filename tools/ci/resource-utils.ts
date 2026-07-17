@@ -25,6 +25,39 @@ type KvNamespaceListEntry = {
 	title: string
 }
 
+type CloudflareApiEnvelope<T> = {
+	success?: boolean
+	result?: T
+	errors?: Array<{ code?: number | string; message?: string }>
+	result_info?: { total_pages?: number }
+}
+
+type CloudflareQueue = {
+	queue_id: string
+	queue_name: string
+}
+
+type CloudflareEventSubscription = {
+	id: string
+	name: string
+	enabled: boolean
+	events: Array<string>
+	source: Record<string, unknown>
+	destination: {
+		type: string
+		queue_id: string
+	}
+}
+
+export const emailSendingEventTypes = [
+	'message.delivered',
+	'message.deferred',
+	'message.bounced',
+	'message.failed',
+	'message.rejected',
+	'message.complained',
+] as const
+
 export function fail(message: string): never {
 	console.error(message)
 	process.exit(1)
@@ -244,6 +277,196 @@ export function deleteR2Bucket({
 		return
 	}
 	console.error(`Deleted R2 bucket: ${name}`)
+}
+
+async function cloudflareApiRequest<T>(input: {
+	accountId: string
+	apiToken: string
+	pathname: string
+	method?: 'GET' | 'POST' | 'DELETE'
+	body?: Record<string, unknown>
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	const baseUrl = input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'
+	const url = `${baseUrl.replace(/\/$/, '')}/accounts/${encodeURIComponent(input.accountId)}${input.pathname}`
+	const response = await (input.fetcher ?? fetch)(url, {
+		method: input.method ?? 'GET',
+		headers: {
+			Authorization: `Bearer ${input.apiToken}`,
+			Accept: 'application/json',
+			...(input.body ? { 'Content-Type': 'application/json' } : {}),
+		},
+		...(input.body ? { body: JSON.stringify(input.body) } : {}),
+	})
+	const payload = (await response.json()) as CloudflareApiEnvelope<T>
+	if (
+		!response.ok ||
+		payload.success !== true ||
+		payload.result === undefined
+	) {
+		const error = payload.errors?.[0]
+		throw new Error(
+			`Cloudflare API request failed (${response.status}): ${error?.message ?? error?.code ?? input.pathname}`,
+		)
+	}
+	return payload
+}
+
+async function listCloudflareQueues(input: {
+	accountId: string
+	apiToken: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	const queues: Array<CloudflareQueue> = []
+	let page = 1
+	let totalPages = 1
+	do {
+		const payload = await cloudflareApiRequest<Array<CloudflareQueue>>({
+			...input,
+			pathname: `/queues?page=${page}&per_page=100`,
+		})
+		queues.push(...(payload.result ?? []))
+		totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
+		page += 1
+	} while (page <= totalPages)
+	return queues
+}
+
+export async function ensureCloudflareQueue(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	if (input.dryRun) {
+		console.error(`[dry-run] ensure Queue: ${input.name}`)
+		return { id: `dry-run-${input.name}`, name: input.name }
+	}
+	const existing = (await listCloudflareQueues(input)).find(
+		(queue) => queue.queue_name === input.name,
+	)
+	if (existing) {
+		console.error(`Queue exists: ${existing.queue_name} (${existing.queue_id})`)
+		return { id: existing.queue_id, name: existing.queue_name }
+	}
+	const payload = await cloudflareApiRequest<CloudflareQueue>({
+		...input,
+		pathname: '/queues',
+		method: 'POST',
+		body: { queue_name: input.name },
+	})
+	if (!payload.result?.queue_id || !payload.result.queue_name) {
+		throw new Error(`Cloudflare created Queue without an id: ${input.name}`)
+	}
+	console.error(
+		`Created Queue: ${payload.result.queue_name} (${payload.result.queue_id})`,
+	)
+	return { id: payload.result.queue_id, name: payload.result.queue_name }
+}
+
+async function listCloudflareEventSubscriptions(input: {
+	accountId: string
+	apiToken: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	const subscriptions: Array<CloudflareEventSubscription> = []
+	let page = 1
+	let totalPages = 1
+	do {
+		const payload = await cloudflareApiRequest<
+			Array<CloudflareEventSubscription>
+		>({
+			...input,
+			pathname: `/event_subscriptions/subscriptions?page=${page}&per_page=100`,
+		})
+		subscriptions.push(...(payload.result ?? []))
+		totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
+		page += 1
+	} while (page <= totalPages)
+	return subscriptions
+}
+
+function sameStringSet(
+	left: ReadonlyArray<string>,
+	right: ReadonlyArray<string>,
+) {
+	return (
+		left.length === right.length &&
+		new Set(left).size === new Set(right).size &&
+		left.every((value) => right.includes(value))
+	)
+}
+
+export async function ensureEmailSendingEventSubscription(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	queueId: string
+	domain: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	if (input.dryRun) {
+		console.error(
+			`[dry-run] ensure Email Sending event subscription: ${input.name} (${input.domain})`,
+		)
+		return { id: `dry-run-${input.name}`, name: input.name }
+	}
+	const subscriptions = await listCloudflareEventSubscriptions(input)
+	const existing = subscriptions.find(
+		(subscription) => subscription.name === input.name,
+	)
+	const events = [...emailSendingEventTypes]
+	const isCurrent =
+		existing?.enabled === true &&
+		existing.destination.type === 'queues.queue' &&
+		existing.destination.queue_id === input.queueId &&
+		existing.source['type'] === 'email.sending' &&
+		existing.source['domain'] === input.domain &&
+		sameStringSet(existing.events, events)
+	if (existing && isCurrent) {
+		console.error(`Email event subscription exists: ${existing.name}`)
+		return { id: existing.id, name: existing.name }
+	}
+	if (existing) {
+		await cloudflareApiRequest<CloudflareEventSubscription>({
+			...input,
+			pathname: `/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
+			method: 'DELETE',
+		})
+		console.error(`Deleted stale Email event subscription: ${existing.name}`)
+	}
+	const payload = await cloudflareApiRequest<CloudflareEventSubscription>({
+		...input,
+		pathname: '/event_subscriptions/subscriptions',
+		method: 'POST',
+		body: {
+			name: input.name,
+			enabled: true,
+			source: {
+				type: 'email.sending',
+				domain: input.domain,
+			},
+			destination: {
+				type: 'queues.queue',
+				queue_id: input.queueId,
+			},
+			events,
+		},
+	})
+	if (!payload.result?.id || !payload.result.name) {
+		throw new Error(
+			`Cloudflare created Email event subscription without an id: ${input.name}`,
+		)
+	}
+	console.error(`Created Email event subscription: ${payload.result.name}`)
+	return { id: payload.result.id, name: payload.result.name }
 }
 
 function stripJsonc(source: string) {

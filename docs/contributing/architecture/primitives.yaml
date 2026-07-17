@@ -384,6 +384,18 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: email-delivery-queue
+    group: storage
+    name: Email delivery event queue
+    summary:
+      Cloudflare Queue ingestion for outbound Email Sending lifecycle events.
+    code:
+      - packages/worker/src/email/delivery-
+      - tools/ci/production-resources.ts
+    docs:
+      - docs/use/email-primitives.md
+      - docs/contributing/setup-manifest.md
+
   - id: community-assets-r2
     group: storage
     name: Community asset storage (R2)

@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { searchEmailMessages } from '#worker/email/repo.ts'
 import {
+	emailDeliveryStatusValues,
 	emailDirectionValues,
 	emailProcessingStatusValues,
 } from '#worker/email/types.ts'
@@ -31,6 +32,7 @@ export const emailMessageSearchCapability = defineDomainCapability(
 			inbox_id: z.string().min(1).optional(),
 			direction: z.enum(emailDirectionValues).optional(),
 			processing_status: z.enum(emailProcessingStatusValues).optional(),
+			delivery_status: z.enum(emailDeliveryStatusValues).optional(),
 			limit: z.number().int().positive().max(100).default(25),
 		}),
 		outputSchema: z.object({
@@ -45,6 +47,7 @@ export const emailMessageSearchCapability = defineDomainCapability(
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,
 				processingStatus: args.processing_status ?? null,
+				deliveryStatus: args.delivery_status ?? null,
 				limit: args.limit,
 			})
 			return { messages: messages.map(toMessageSummary) }

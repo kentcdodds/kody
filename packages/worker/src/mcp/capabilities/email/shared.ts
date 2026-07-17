@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+	emailDeliveryStatusValues,
 	type EmailMessageRecord,
 	emailDirectionValues,
 	emailProcessingStatusValues,
@@ -38,6 +39,8 @@ export const emailMessageSummarySchema = z.object({
 	message_id_header: z.string().nullable(),
 	processing_status: z.enum(emailProcessingStatusValues),
 	provider_message_id: z.string().nullable(),
+	delivery_status: z.enum(emailDeliveryStatusValues).nullable(),
+	delivery_status_at: z.string().nullable(),
 	error: z.string().nullable(),
 	received_at: z.string().nullable(),
 	sent_at: z.string().nullable(),
@@ -88,6 +91,8 @@ export function toMessageSummary(message: EmailMessageRecord) {
 		message_id_header: message.messageIdHeader,
 		processing_status: message.processingStatus,
 		provider_message_id: message.providerMessageId,
+		delivery_status: message.deliveryStatus ?? null,
+		delivery_status_at: message.deliveryStatusAt ?? null,
 		error: message.error,
 		received_at: message.receivedAt,
 		sent_at: message.sentAt,

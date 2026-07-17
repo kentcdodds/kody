@@ -100,11 +100,12 @@ jobs:
       - name: 📝 Prepare worker env
         run: cp packages/worker/.env.example packages/worker/.env
 
-      - name: 🧱 Ensure production resources (D1 + KV)
+      - name: 🧱 Ensure production resources
         id: resources
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          USER_EMAIL_DOMAIN: ${{ vars.USER_EMAIL_DOMAIN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail

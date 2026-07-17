@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import {
+	ensureCloudflareQueue,
+	ensureEmailSendingEventSubscription,
 	ensureR2Bucket,
 	fail,
 	listD1Databases,
@@ -30,6 +32,8 @@ type ResolvedProductionBindings = {
 	bundleArtifactsKvConfiguredId: string
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
+	emailDeliveryQueueName: string
+	emailDeliveryDeadLetterQueueName: string
 }
 
 function parseArgs(argv: Array<string>): {
@@ -104,6 +108,21 @@ function defaultOauthKvTitle(workerName: string) {
 
 function defaultBundleArtifactsKvTitle(workerName: string) {
 	return truncateWithSuffix(workerName, '-bundle-artifacts', 63)
+}
+
+function resolveEmailSendingDomain(dryRun: boolean) {
+	const configured = process.env.USER_EMAIL_DOMAIN?.trim()
+		.toLowerCase()
+		.replace(/\.$/, '')
+	if (configured) return configured
+	const appBaseUrl = process.env.APP_BASE_URL?.trim()
+	if (!appBaseUrl) {
+		if (dryRun) return 'inbox.example.com'
+		fail(
+			'Missing APP_BASE_URL or USER_EMAIL_DOMAIN; cannot configure Email Sending event subscription.',
+		)
+	}
+	return `inbox.${new URL(appBaseUrl).hostname.toLowerCase()}`
 }
 
 function ensureD1Database({
@@ -354,6 +373,32 @@ async function resolveProductionBindings({
 		)
 	}
 
+	const queues = (productionEnv as Record<string, unknown>).queues
+	if (!queues || typeof queues !== 'object' || Array.isArray(queues)) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" is missing "env.production.queues".`,
+		)
+	}
+	const consumers = (queues as Record<string, unknown>).consumers
+	if (!Array.isArray(consumers) || consumers.length !== 1) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" must define one production Queue consumer.`,
+		)
+	}
+	const consumer = consumers[0] as Record<string, unknown>
+	const emailDeliveryQueueName = consumer.queue
+	const emailDeliveryDeadLetterQueueName = consumer.dead_letter_queue
+	if (
+		typeof emailDeliveryQueueName !== 'string' ||
+		!emailDeliveryQueueName ||
+		typeof emailDeliveryDeadLetterQueueName !== 'string' ||
+		!emailDeliveryDeadLetterQueueName
+	) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" has invalid production email Queue names.`,
+		)
+	}
+
 	const resolved: ResolvedProductionBindings = {
 		workerName,
 		d1DatabaseName,
@@ -364,6 +409,8 @@ async function resolveProductionBindings({
 		bundleArtifactsKvConfiguredId,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		emailDeliveryQueueName,
+		emailDeliveryDeadLetterQueueName,
 	}
 
 	return resolved
@@ -402,6 +449,34 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.communityAssetsBucketName,
 		dryRun: options.dryRun,
 	})
+	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+	if ((!accountId || !apiToken) && !options.dryRun) {
+		fail(
+			'Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN for Queue provisioning.',
+		)
+	}
+	const emailDeliveryQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.emailDeliveryQueueName,
+		dryRun: options.dryRun,
+	})
+	await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.emailDeliveryDeadLetterQueueName,
+		dryRun: options.dryRun,
+	})
+	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
+	const emailEventSubscription = await ensureEmailSendingEventSubscription({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: truncateWithSuffix(bindings.workerName, '-email-delivery-events', 63),
+		queueId: emailDeliveryQueue.id,
+		domain: emailSendingDomain,
+		dryRun: options.dryRun,
+	})
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
@@ -417,6 +492,7 @@ async function ensureProductionResources(options: CliOptions) {
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+			USER_EMAIL_DOMAIN: process.env.USER_EMAIL_DOMAIN,
 		},
 	})
 
@@ -430,6 +506,8 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
+	console.log(`email_delivery_queue_name=${emailDeliveryQueue.name}`)
+	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
 }
 
 async function main() {

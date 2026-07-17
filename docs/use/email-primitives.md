@@ -55,10 +55,12 @@ Use the MCP `email` domain:
 - `email_message_list` lists stored inbound and outbound messages.
 - `email_message_search` searches stored messages by case-insensitive substring
   match against the subject, header `From`, and envelope sender. It accepts the
-  same `inbox_id` / `direction` / `processing_status` filters and limit caps as
-  `email_message_list`.
+  same `inbox_id` / `direction` / `processing_status` / `delivery_status`
+  filters and limit caps as `email_message_list`.
 - `email_message_get` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
+- `email_delivery_event_list` lists stored delivery history, including final
+  Email Sending outcomes, SMTP responses, bounces, rejections, and complaints.
 - `email_usage_get` returns the signed-in user's email usage and limits: stored
   message count, today's send and receive counts, the applicable caps, and the
   plan name.
@@ -105,6 +107,10 @@ Inbound storage is quota-gated per user:
   recipients, and only recipients taken from stored inbound mail.
 - Outbound sends consume a per-day entitlement. Users without a plan are capped
   by a global daily backstop instead of sending unlimited mail.
+- A successful send request has `processing_status: "sent"`. Cloudflare delivery
+  events independently populate `delivery_status` with `delivered`, `deferred`,
+  `bounced`, `failed`, `rejected`, or `complained`; use
+  `email_delivery_event_list` for the event history and SMTP details.
 - System inbox mail is not gated by a user plan or account-verification state.
   It has fixed platform caps and retention: messages are pruned after 90 days
   and the stored system inbox is capped so arbitrary sender traffic cannot grow
@@ -185,6 +191,62 @@ when the handler needs them with `email_message_get`, `email_attachment_get`, or
 the package runtime `email` helper. Use `package_subscriptions_list` with
 `topic: "email.message.received"` to discover which saved packages subscribe for
 the signed-in user.
+
+## `email.message.delivery.updated` package subscription
+
+Cloudflare Email Sending lifecycle events dispatch
+`email.message.delivery.updated` after Kody correlates the provider message id,
+stores the event idempotently, and updates the outbound message's latest
+delivery status. Email Routing events are not part of this topic.
+
+The metadata-first payload contains the owned Kody message and the provider
+delivery event:
+
+```ts
+type EmailMessageDeliveryUpdatedEvent = {
+	event: 'email.message.delivery.updated'
+	message: {
+		id: string
+		inbox_id: string | null
+		thread_id: string | null
+		from_address: string | null
+		to_addresses: Array<string>
+		subject: string | null
+		processing_status: 'stored' | 'sent' | 'failed'
+		provider_message_id: string | null
+		delivery_status:
+			| 'delivered'
+			| 'deferred'
+			| 'bounced'
+			| 'failed'
+			| 'rejected'
+			| 'complained'
+			| null
+		delivery_status_at: string | null
+		sent_at: string | null
+		created_at: string
+	}
+	delivery: {
+		event_id: string
+		status: NonNullable<
+			EmailMessageDeliveryUpdatedEvent['message']['delivery_status']
+		>
+		terminal: boolean
+		sender: string
+		recipient: string
+		delivery: Record<string, unknown>
+		bounce: Record<string, unknown> | null
+		failure: Record<string, unknown> | null
+		rejection: Record<string, unknown> | null
+		complaint: Record<string, unknown> | null
+		occurred_at: string
+	}
+}
+```
+
+`deferred` means Cloudflare still has delivery retries pending; handlers should
+not independently resend the message. Cloudflare automatically suppresses hard
+bounces and spam complaints.
 
 ## `email.system-message.received` package subscription (admins)
 

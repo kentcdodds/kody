@@ -4,6 +4,16 @@ export type EmailDirection = (typeof emailDirectionValues)[number]
 export const emailProcessingStatusValues = ['stored', 'sent', 'failed'] as const
 export type EmailProcessingStatus = (typeof emailProcessingStatusValues)[number]
 
+export const emailDeliveryStatusValues = [
+	'delivered',
+	'deferred',
+	'bounced',
+	'failed',
+	'rejected',
+	'complained',
+] as const
+export type EmailDeliveryStatus = (typeof emailDeliveryStatusValues)[number]
+
 export const emailDeliveryEventTypeValues = [
 	'receive_started',
 	'received',
@@ -11,6 +21,10 @@ export const emailDeliveryEventTypeValues = [
 	'send_requested',
 	'sent',
 	'failed',
+	'delivered',
+	'deferred',
+	'bounced',
+	'complained',
 ] as const
 export type EmailDeliveryEventType =
 	(typeof emailDeliveryEventTypeValues)[number]
@@ -121,6 +135,8 @@ export type EmailMessageRecord = {
 	rawSize: number | null
 	processingStatus: EmailProcessingStatus
 	providerMessageId: string | null
+	deliveryStatus: EmailDeliveryStatus | null
+	deliveryStatusAt: string | null
 	error: string | null
 	receivedAt: string | null
 	sentAt: string | null
@@ -149,6 +165,7 @@ export type EmailDeliveryEventRecord = {
 	eventType: EmailDeliveryEventType
 	provider: string | null
 	providerMessageId: string | null
+	providerEventId: string | null
 	detailJson: string
 	createdAt: string
 }

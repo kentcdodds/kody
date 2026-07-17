@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 import { listEmailMessages } from '#worker/email/repo.ts'
+import { emailDeliveryStatusValues } from '#worker/email/types.ts'
 import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
 export const emailMessageListCapability = defineDomainCapability(
@@ -19,6 +20,7 @@ export const emailMessageListCapability = defineDomainCapability(
 			inbox_id: z.string().min(1).optional(),
 			direction: z.enum(['inbound', 'outbound']).optional(),
 			processing_status: z.enum(['stored', 'sent', 'failed']).optional(),
+			delivery_status: z.enum(emailDeliveryStatusValues).optional(),
 			limit: z.number().int().positive().max(100).default(25),
 		}),
 		outputSchema: z.object({
@@ -32,6 +34,7 @@ export const emailMessageListCapability = defineDomainCapability(
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,
 				processingStatus: args.processing_status ?? null,
+				deliveryStatus: args.delivery_status ?? null,
 				limit: args.limit,
 			})
 			return { messages: messages.map(toMessageSummary) }

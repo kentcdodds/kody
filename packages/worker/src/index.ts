@@ -53,6 +53,7 @@ import {
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
+import { handleEmailDeliveryQueue } from '#worker/email/delivery-queue.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
@@ -497,6 +498,9 @@ const workerHandler = {
 		ctx: ExecutionContext,
 	) {
 		await handleInboundEmail(message, env, ctx)
+	},
+	async queue(batch: MessageBatch<unknown>, env: Env, ctx: ExecutionContext) {
+		await handleEmailDeliveryQueue(batch, env, ctx)
 	},
 	async scheduled(
 		controller: ScheduledController,

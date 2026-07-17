@@ -91,6 +91,12 @@ ON email_sender_identities(user_id, email);`,
 	raw_size INTEGER NOT NULL DEFAULT 0,
 	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed')),
 	provider_message_id TEXT,
+	delivery_status TEXT CHECK (
+		delivery_status IS NULL OR delivery_status IN (
+			'delivered', 'deferred', 'bounced', 'failed', 'rejected', 'complained'
+		)
+	),
+	delivery_status_at TEXT,
 	error TEXT,
 	received_at TEXT,
 	sent_at TEXT,
@@ -116,12 +122,24 @@ ON email_sender_identities(user_id, email);`,
 	message_id TEXT,
 	user_id TEXT,
 	inbox_id TEXT,
-	event_type TEXT NOT NULL CHECK (event_type IN ('receive_started', 'received', 'rejected', 'send_requested', 'sent', 'failed')),
+	event_type TEXT NOT NULL CHECK (
+		event_type IN (
+			'receive_started', 'received', 'rejected', 'send_requested', 'sent',
+			'failed', 'delivered', 'deferred', 'bounced', 'complained'
+		)
+	),
 	provider TEXT NOT NULL DEFAULT 'kody',
 	provider_message_id TEXT,
+	provider_event_id TEXT,
 	detail_json TEXT NOT NULL DEFAULT '{}',
 	created_at TEXT NOT NULL
 );`,
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
+ON email_messages(provider_message_id)
+WHERE provider_message_id IS NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_provider_event_id
+ON email_delivery_events(provider_event_id)
+WHERE provider_event_id IS NOT NULL;`,
 		`CREATE TABLE IF NOT EXISTS system_email_daily_counters (
 	local_part TEXT NOT NULL,
 	day TEXT NOT NULL,

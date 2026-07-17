@@ -101,6 +101,19 @@ bodies, parsed headers beyond the event metadata, or attachment bytes only when
 the handler needs them with `email_message_get`, `email_attachment_get`, or the
 package runtime `email` helper.
 
+## `email.message.delivery.updated`
+
+Outbound Email Sending lifecycle changes dispatch
+`email.message.delivery.updated`. The payload contains metadata for the owned
+Kody message plus the provider event id, delivery status, terminal flag,
+recipient, SMTP delivery fields, optional bounce/failure/rejection/complaint
+details, and provider event timestamp.
+
+Use this topic for delivery notifications and bounce or complaint workflows. Do
+not resend on `deferred`: Cloudflare still has provider retries pending.
+Provider event ids are stored idempotently, so duplicate Queue delivery does not
+dispatch duplicate package invocations.
+
 ## `email.system-message.received` (admins)
 
 Mail stored in the operator-owned system inbox (`kody@<apex>`, `support@<apex>`,

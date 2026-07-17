@@ -1136,6 +1136,8 @@ async function invokeSavedPackageModule(input: {
 							raw_size: loaded.message.rawSize,
 							processing_status: loaded.message.processingStatus,
 							provider_message_id: loaded.message.providerMessageId,
+							delivery_status: loaded.message.deliveryStatus,
+							delivery_status_at: loaded.message.deliveryStatusAt,
 							error: loaded.message.error,
 							received_at: loaded.message.receivedAt,
 							sent_at: loaded.message.sentAt,

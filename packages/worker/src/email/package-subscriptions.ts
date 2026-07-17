@@ -6,11 +6,13 @@ import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { listEmailAttachmentsForMessage } from './repo.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
 const inboundEmailReceiptTopic = 'email.message.received'
 const systemInboundEmailReceiptTopic = 'email.system-message.received'
+export const emailDeliveryUpdatedTopic = 'email.message.delivery.updated'
 
 type EmailReceiptSubscriptionEnvelope = {
 	event: typeof inboundEmailReceiptTopic | typeof systemInboundEmailReceiptTopic
@@ -194,6 +196,64 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 						packageId: savedPackage.id,
 						topic: inboundEmailReceiptTopic,
 					}),
+					source: 'email',
+				}),
+		),
+	)
+}
+
+export async function dispatchEmailDeliverySubscriptionEvents(input: {
+	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
+	message: EmailMessageRecord
+	providerEvent: CloudflareEmailDeliveryEvent
+}) {
+	const baseUrl = getAppBaseUrl({ env: input.env })
+	const subscriptions = await loadMatchingEmailSubscriptions({
+		env: input.env,
+		baseUrl,
+		userId: input.message.userId,
+		topic: emailDeliveryUpdatedTopic,
+	})
+	const payload = {
+		event: emailDeliveryUpdatedTopic,
+		message: {
+			id: input.message.id,
+			inbox_id: input.message.inboxId,
+			thread_id: input.message.threadId,
+			from_address: input.message.fromAddress,
+			to_addresses: stringArray(input.message.toAddresses),
+			subject: input.message.subject,
+			processing_status: input.message.processingStatus,
+			provider_message_id: input.message.providerMessageId,
+			delivery_status: input.message.deliveryStatus,
+			delivery_status_at: input.message.deliveryStatusAt,
+			sent_at: input.message.sentAt,
+			created_at: input.message.createdAt,
+		},
+		delivery: {
+			event_id: input.providerEvent.payload.eventId,
+			status: input.providerEvent.payload.delivery.status,
+			terminal: input.providerEvent.payload.terminal,
+			sender: input.providerEvent.payload.sender,
+			recipient: input.providerEvent.payload.recipient,
+			delivery: input.providerEvent.payload.delivery,
+			bounce: input.providerEvent.payload.bounce ?? null,
+			failure: input.providerEvent.payload.failure ?? null,
+			rejection: input.providerEvent.payload.rejection ?? null,
+			complaint: input.providerEvent.payload.complaint ?? null,
+			occurred_at: input.providerEvent.metadata.eventTimestamp,
+		},
+	}
+	return await Promise.all(
+		subscriptions.map(
+			async ({ savedPackage }) =>
+				await invokePackageSubscription({
+					env: input.env as Env,
+					baseUrl,
+					savedPackage,
+					topic: emailDeliveryUpdatedTopic,
+					params: payload,
+					idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
 					source: 'email',
 				}),
 		),

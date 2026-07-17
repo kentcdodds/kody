@@ -160,6 +160,17 @@
 					"name": "EMAIL",
 				},
 			],
+			"queues": {
+				"consumers": [
+					{
+						"queue": "kody-email-delivery",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"dead_letter_queue": "kody-email-delivery-dlq",
+					},
+				],
+			},
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
