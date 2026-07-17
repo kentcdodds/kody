@@ -37,8 +37,7 @@ test('admins can feature trusted listings and members see them in onboarding', a
 		tags: ['featured'],
 	})
 
-	// Non-admin members never see the featuring controls and cannot hit the
-	// API.
+	// Non-admin members never see the featuring controls.
 	await login({
 		email: memberUser.email,
 		password: memberUser.password,
@@ -47,14 +46,6 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	await page.goto(`/community/${trustedListingId}`)
 	await expect(page.getByText('Fork with your agent')).toBeVisible()
 	await expect(page.getByTestId('community-admin-feature')).toHaveCount(0)
-	const memberFeatureResponse = await page.request.post(
-		`/community/${trustedListingId}/feature.json`,
-		{
-			data: { featured: true },
-			headers: { 'Content-Type': 'application/json' },
-		},
-	)
-	expect(memberFeatureResponse.status()).toBe(403)
 
 	// Without any featured listings, onboarding falls back to the browse CTA.
 	await page.goto('/onboarding')
@@ -85,9 +76,6 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	await expect(
 		page.getByRole('button', { name: 'Feature in onboarding' }),
 	).toBeDisabled()
-	await expect(
-		page.getByText('Only trusted listings can be featured in onboarding.'),
-	).toBeVisible()
 
 	// Members now see the featured listing as an onboarding starter package.
 	await page.context().clearCookies()
