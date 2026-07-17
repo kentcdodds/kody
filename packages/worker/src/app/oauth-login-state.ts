@@ -6,8 +6,9 @@ import {
 
 /**
  * Short-lived signed cookie that carries the social-login round-trip state:
- * the CSRF `state` value, the PKCE code verifier, and the post-login
- * redirect target. Written when the flow starts and cleared by the callback.
+ * the CSRF `state` value, the PKCE code verifier, the post-login redirect
+ * target, and an optional invite code for production social signup. Written
+ * when the flow starts and cleared by the callback.
  */
 const oauthLoginStateMaxAgeSeconds = 60 * 10
 
@@ -16,6 +17,7 @@ export type OauthLoginState = {
 	state: string
 	codeVerifier: string
 	redirectTo: string | null
+	inviteCode: string | null
 }
 
 let stateCookie: ReturnType<typeof createCookie> | null = null
@@ -53,6 +55,10 @@ function getStateCookie() {
 function isOauthLoginState(value: unknown): value is OauthLoginState {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
+	const inviteCodeOk =
+		record.inviteCode === undefined ||
+		record.inviteCode === null ||
+		typeof record.inviteCode === 'string'
 	return (
 		typeof record.provider === 'string' &&
 		isOauthProviderId(record.provider) &&
@@ -60,15 +66,29 @@ function isOauthLoginState(value: unknown): value is OauthLoginState {
 		record.state.length > 0 &&
 		typeof record.codeVerifier === 'string' &&
 		record.codeVerifier.length > 0 &&
-		(record.redirectTo === null || typeof record.redirectTo === 'string')
+		(record.redirectTo === null || typeof record.redirectTo === 'string') &&
+		inviteCodeOk
 	)
+}
+
+function normalizeOauthLoginState(value: OauthLoginState): OauthLoginState {
+	return {
+		...value,
+		inviteCode:
+			typeof value.inviteCode === 'string' && value.inviteCode.length > 0
+				? value.inviteCode
+				: null,
+	}
 }
 
 export async function createOauthLoginStateCookie(
 	state: OauthLoginState,
 	secure: boolean,
 ) {
-	return getStateCookie().serialize(JSON.stringify(state), { secure })
+	return getStateCookie().serialize(
+		JSON.stringify(normalizeOauthLoginState(state)),
+		{ secure },
+	)
 }
 
 export async function destroyOauthLoginStateCookie(secure: boolean) {
@@ -91,7 +111,7 @@ export async function readOauthLoginState(
 	try {
 		const parsed = JSON.parse(stored)
 		if (isOauthLoginState(parsed)) {
-			return parsed
+			return normalizeOauthLoginState(parsed)
 		}
 	} catch {
 		return null

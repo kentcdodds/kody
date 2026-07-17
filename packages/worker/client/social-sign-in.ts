@@ -3,10 +3,14 @@ export type AuthProviderInfo = { id: string; label: string }
 export function buildProviderStartPath(
 	providerId: string,
 	redirectTo: string | null,
+	inviteCode: string | null = null,
 ) {
-	return redirectTo
-		? `/auth/${providerId}?redirectTo=${encodeURIComponent(redirectTo)}`
-		: `/auth/${providerId}`
+	const params = new URLSearchParams()
+	if (redirectTo) params.set('redirectTo', redirectTo)
+	const trimmedInvite = inviteCode?.trim()
+	if (trimmedInvite) params.set('inviteCode', trimmedInvite)
+	const query = params.toString()
+	return query ? `/auth/${providerId}?${query}` : `/auth/${providerId}`
 }
 
 /**
@@ -42,16 +46,23 @@ export async function fetchEnabledAuthProviders(
  * `form-action` and `connect-src` to 'self', so neither a form-POST redirect
  * nor a fetch-followed redirect may leave the origin — a top-level JS
  * navigation may. Returns an error message, or null when navigation started.
+ *
+ * Pass `inviteCode` when starting from the invite signup panel so production
+ * can create the account on callback.
  */
 export async function startSocialSignIn(
 	providerId: string,
 	redirectTo: string | null,
+	inviteCode: string | null = null,
 ): Promise<string | null> {
-	const response = await fetch(buildProviderStartPath(providerId, redirectTo), {
-		method: 'POST',
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-	})
+	const response = await fetch(
+		buildProviderStartPath(providerId, redirectTo, inviteCode),
+		{
+			method: 'POST',
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+		},
+	)
 	const payload = await response.json().catch(() => null)
 	if (
 		!response.ok ||

@@ -756,3 +756,170 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 	expect(user).toBeTruthy()
 	expect(user.username).toBe('mock-github-user')
 })
+
+function seedInvite(sqlite: DatabaseSync, code: string, maxUses = 1) {
+	sqlite.exec(`
+		INSERT INTO invites (code, created_by, note, max_uses, use_count)
+		VALUES (${quoteSqlString(code)}, NULL, '', ${maxUses}, 0);
+	`)
+}
+
+function mockGithubProfileExchange(email = 'octo@example.com') {
+	msw.use(
+		http.post('https://github.com/login/oauth/access_token', async () =>
+			HttpResponse.json({ access_token: 'github-access-token' }),
+		),
+		http.get('https://api.github.com/user', () =>
+			HttpResponse.json({
+				id: 99001,
+				login: 'octo-cat',
+				name: 'Octo Cat',
+				email: null,
+			}),
+		),
+		http.get('https://api.github.com/user/emails', () =>
+			HttpResponse.json([{ email, primary: true, verified: true }]),
+		),
+	)
+}
+
+test('production OAuth signup requires an invite code', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, { SENTRY_ENVIRONMENT: 'production' })
+	mockGithubProfileExchange()
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/login?oauthError=invite-required',
+	)
+	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
+		count: 0,
+	})
+})
+
+test('production OAuth signup succeeds with a valid invite code', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, { SENTRY_ENVIRONMENT: 'production' })
+	seedInvite(sqlite, 'SOCIAL-INVITE')
+	mockGithubProfileExchange('social-invited@example.com')
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github?inviteCode=social-invite',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe('/account')
+	const user = sqlite
+		.prepare(`SELECT * FROM users WHERE email = ?`)
+		.get('social-invited@example.com') as Record<string, unknown>
+	expect(user).toBeTruthy()
+	expect(user.email_verified_at).toBeTruthy()
+	expect(
+		sqlite
+			.prepare(`SELECT use_count FROM invites WHERE code = ?`)
+			.get('SOCIAL-INVITE'),
+	).toEqual({ use_count: 1 })
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_signup',
+			result: 'success',
+		}),
+	)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'invite_use',
+			result: 'success',
+			reason: expect.stringContaining('invite_code=SOCIAL-INVITE'),
+		}),
+	)
+})
+
+test('production OAuth signup rejects an invalid invite code', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, { SENTRY_ENVIRONMENT: 'production' })
+	mockGithubProfileExchange()
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github?inviteCode=not-a-real-invite',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/login?oauthError=invite-invalid',
+	)
+	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
+		count: 0,
+	})
+})
+
+test('production OAuth login still works without an invite for existing connections', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, { SENTRY_ENVIRONMENT: 'production' })
+	await seedUser(sqlite, {
+		id: 11,
+		email: 'existing-oauth@example.com',
+		username: 'existing-oauth',
+	})
+	sqlite.exec(`
+		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
+		VALUES ('github', '99001', 11, 'existing-oauth');
+	`)
+	mockGithubProfileExchange('existing-oauth@example.com')
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe('/account')
+	expect(
+		callbackResponse.headers
+			.getSetCookie()
+			.some((cookie) => cookie.startsWith('kody_session=')),
+	).toBe(true)
+	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
+		count: 1,
+	})
+})

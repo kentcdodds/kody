@@ -14,7 +14,11 @@ export const oauthLoginErrorMessages = {
 	'no-verified-email':
 		'The provider did not share a verified email for your account. Sign in another way first, then connect the provider from this screen while signed in.',
 	'invite-required':
-		'New accounts need an invite code. Sign up with your invite first, then sign in with this provider using the same email.',
+		'New accounts need an invite code. Open Sign up, enter your invite, then continue with this provider.',
+	'invite-invalid': 'That invite code is invalid.',
+	'invite-revoked': 'That invite code has been revoked.',
+	'invite-expired': 'That invite code has expired.',
+	'invite-exhausted': 'That invite code has already been used.',
 	'connection-conflict':
 		'That provider account is already connected to a different user.',
 	'account-error': 'We could not create your account. Please try again.',

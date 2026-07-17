@@ -335,12 +335,12 @@ sign-in. Provider identities live in the `oauth_connections` table; handlers
 live in `packages/worker/src/app/handlers/auth-provider.ts` with the provider
 definitions in `packages/worker/src/app/oauth-providers.ts`.
 
-- `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier in the
-  signed `kody_oauth_login` cookie); `GET /auth/:provider/callback` completes it
-  and issues the normal `kody_session` cookie. The first-party UI fetches the
-  start endpoint with `Accept: application/json` and navigates to the returned
-  authorize URL itself, because the CSP locks `form-action` and `connect-src` to
-  `'self'`
+- `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier + optional
+  invite code in the signed `kody_oauth_login` cookie);
+  `GET /auth/:provider/callback` completes it and issues the normal
+  `kody_session` cookie. The first-party UI fetches the start endpoint with
+  `Accept: application/json` and navigates to the returned authorize URL itself,
+  because the CSP locks `form-action` and `connect-src` to `'self'`
 - Existing connections sign in directly; the two-factor gate applies exactly as
   for password logins (passkey sign-in skips TOTP)
 - A signed-in user hitting the callback links the provider identity to their
@@ -348,7 +348,8 @@ definitions in `packages/worker/src/app/oauth-providers.ts`.
   `/account/connections.json` (disconnect is refused when the connection is the
   only sign-in method); a provider-verified email matching an existing account
   auto-links and signs in; otherwise account creation follows the signup posture
-  (production stays invite-gated, so OAuth signup is non-production only)
+  (production requires a valid invite code carried from the invite signup panel;
+  non-production remains open without one)
 - Buttons only render for providers whose client id/secret env vars are set;
   `MOCK_`-prefixed client ids activate an in-worker mock flow on non-production
   runtimes for dev and E2E tests

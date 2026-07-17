@@ -11,6 +11,12 @@ import {
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { getAvailableUsernameFromBase } from '#app/generated-username.ts'
+import {
+	consumeInviteCode,
+	type InviteConsumeFailureReason,
+	normalizeInviteCode,
+	releaseInviteUse,
+} from '#app/invites.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import {
 	oauthLoginErrorMessages,
@@ -94,6 +100,31 @@ function prefersJsonResponse(request: Request) {
 	)
 }
 
+function isInviteRequiredForSignup(env: Env) {
+	return !isNonProductionRuntime(env)
+}
+
+function inviteFailureToOauthError(
+	reason: InviteConsumeFailureReason,
+): OauthLoginErrorCode {
+	switch (reason) {
+		case 'missing':
+			return 'invite-required'
+		case 'not_found':
+			return 'invite-invalid'
+		case 'revoked':
+			return 'invite-revoked'
+		case 'expired':
+			return 'invite-expired'
+		case 'exhausted':
+			return 'invite-exhausted'
+		default: {
+			const unreachable: never = reason
+			return unreachable
+		}
+	}
+}
+
 export function createAuthProvidersApiHandler(env: Env) {
 	return {
 		middleware: [],
@@ -115,6 +146,7 @@ export function createAuthProviderStartHandler(env: Env) {
 		async handler({ request, url, params }) {
 			const wantsJson = prefersJsonResponse(request)
 			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
+			const inviteCode = normalizeInviteCode(url.searchParams.get('inviteCode'))
 
 			function startError(code: OauthLoginErrorCode) {
 				if (wantsJson) {
@@ -145,7 +177,13 @@ export function createAuthProviderStartHandler(env: Env) {
 				redirectUri: getCallbackRedirectUri(env, url, providerParam),
 			})
 			const stateCookie = await createOauthLoginStateCookie(
-				{ provider: providerParam, state, codeVerifier, redirectTo },
+				{
+					provider: providerParam,
+					state,
+					codeVerifier,
+					redirectTo,
+					inviteCode,
+				},
 				isSecureRequest(request),
 			)
 			// JSON mode: the CSP (`form-action`/`connect-src` locked to 'self')
@@ -389,11 +427,34 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				return issueLogin(existingUser)
 			}
 
-			// 4. New account. Production signups require an invite code, which
-			// the provider redirect cannot carry, so OAuth signup stays limited
-			// to non-production runtimes (mirrors password signup gating).
-			if (!isNonProductionRuntime(env)) {
-				return fail('invite-required', 'invite_required')
+			// 4. New account. Production requires a valid invite carried in the
+			// signed OAuth state cookie (started from the invite signup panel).
+			// Non-production stays open without an invite, but still consumes
+			// one when supplied — same posture as password signup.
+			let consumedInviteCode: string | null = null
+			async function releaseConsumedInvite() {
+				if (!consumedInviteCode) return
+				await releaseInviteUse({
+					db: env.APP_DB,
+					code: consumedInviteCode,
+				})
+				consumedInviteCode = null
+			}
+
+			const inviteRequired = isInviteRequiredForSignup(env)
+			const inviteCodeFromState = loginState.inviteCode
+			if (inviteRequired || normalizeInviteCode(inviteCodeFromState)) {
+				const inviteResult = await consumeInviteCode({
+					db: env.APP_DB,
+					code: inviteCodeFromState,
+				})
+				if (!inviteResult.ok) {
+					return fail(
+						inviteFailureToOauthError(inviteResult.reason),
+						`invite_${inviteResult.reason}`,
+					)
+				}
+				consumedInviteCode = inviteResult.invite.code
 			}
 
 			const username = await getAvailableUsernameFromBase(
@@ -416,6 +477,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				)
 				newUser = { id: createdUser.id }
 			} catch (error) {
+				await releaseConsumedInvite()
 				if (getUniqueConstraintField(error)) {
 					return fail('account-error', 'user_create_conflict')
 				}
@@ -430,6 +492,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				} catch (error) {
 					console.error('Failed to roll back OAuth-created user row:', error)
 				}
+				await releaseConsumedInvite()
 			}
 
 			let assigned = false
@@ -484,6 +547,17 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				path: url.pathname,
 				reason: `provider=${provider}`,
 			})
+			if (consumedInviteCode) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'invite_use',
+					result: 'success',
+					email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider}`,
+				})
+			}
 			return issueLogin({ id: newUser.id, email })
 		},
 	} satisfies Action<typeof routes.authProviderCallback>

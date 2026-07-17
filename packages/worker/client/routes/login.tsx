@@ -290,9 +290,19 @@ export function LoginRoute(handle: Handle) {
 	async function handleProviderSignIn(providerId: string) {
 		setState('submitting')
 		try {
+			// Carry the invite code from the invite signup panel so production
+			// social signup can consume it on the OAuth callback.
+			let inviteCode: string | null = null
+			if (getCurrentAuthMode(handle) === 'signup') {
+				const inviteInput = document.querySelector('input[name="inviteCode"]')
+				if (inviteInput instanceof HTMLInputElement) {
+					inviteCode = inviteInput.value.trim() || null
+				}
+			}
 			const errorMessage = await startSocialSignIn(
 				providerId,
 				getCurrentRedirectTo(handle),
+				inviteCode,
 			)
 			if (errorMessage) {
 				setState('error', errorMessage)
@@ -421,7 +431,7 @@ export function LoginRoute(handle: Handle) {
 		const description = showWaitingList
 			? 'Kody is invite-only. Leave your name and email and we will let you know when a spot opens.'
 			: isSignup
-				? 'Sign up with your invite code to start using kody.'
+				? 'Sign up with your invite code (password or social) to start using kody.'
 				: 'Log in to continue to kody.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const toggleLabel = isSignup

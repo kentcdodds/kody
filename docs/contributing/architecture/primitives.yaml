@@ -92,11 +92,13 @@ primitives:
       (non-production signup open), account email verification surfaced in
       session state and a dedicated `/pending-verification` experience after
       password signup, MCP OAuth authorize gated until verified, social login
-      (GitHub/Google/X OAuth connections in oauth_connections, mockable via
-      MOCK_ client ids on non-production runtimes), and opt-in second factors —
-      TOTP two-factor (verifications table, pending kody_verify cookie gates
-      password/social login until /verify) and passkeys (WebAuthn sign-in with
-      required user verification; treated as MFA-complete, so TOTP is skipped).
+      and invite-gated social signup (GitHub/Google/X OAuth connections in
+      oauth_connections, invite code carried in the signed OAuth state cookie,
+      mockable via MOCK_ client ids on non-production runtimes), and opt-in
+      second factors — TOTP two-factor (verifications table, pending kody_verify
+      cookie gates password/social login until /verify) and passkeys (WebAuthn
+      sign-in with required user verification; treated as MFA-complete, so TOTP
+      is skipped).
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
