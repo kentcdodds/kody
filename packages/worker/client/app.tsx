@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
 import {
+	listenToRouterMutations,
 	listenToRouterNavigation,
 	registerRouteLoaders,
 	Router,
@@ -42,12 +43,14 @@ export function App(handle: Handle<AppProps>) {
 	let sessionRefreshInFlight = false
 	let sessionRefreshQueued = false
 	let lastSessionRefreshAt = 0
+	let sessionMaybeStale = false
 	let currentPathname = readRouterPathname(handle)
 
 	// Navigation-triggered refreshes are throttled: auth rarely changes
 	// mid-session and every SPA navigation was previously a /session round
-	// trip (2 D1 queries). Explicit refreshes (login/logout/profile updates
-	// via setSessionRefreshHandler) always bypass the throttle.
+	// trip (2 D1 queries). Refreshes after mutations (router form POSTs such
+	// as logout) and explicit refreshes (profile updates via
+	// setSessionRefreshHandler) always bypass the throttle.
 	const sessionRefreshThrottleMs = 30_000
 
 	function queueSessionRefresh() {
@@ -80,11 +83,13 @@ export function App(handle: Handle<AppProps>) {
 
 	function queueThrottledSessionRefresh() {
 		if (
+			!sessionMaybeStale &&
 			sessionStatus === 'ready' &&
 			Date.now() - lastSessionRefreshAt < sessionRefreshThrottleMs
 		) {
 			return
 		}
+		sessionMaybeStale = false
 		queueSessionRefresh()
 	}
 
@@ -100,6 +105,14 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname = readRouterPathname(handle)
 			queueThrottledSessionRefresh()
 			handle.update()
+		})
+		// Router form POSTs mutate server state, which may include auth (e.g.
+		// logout destroys the session cookie), so the next navigation must
+		// bypass the refresh throttle. The refresh cannot start here: the
+		// follow-up redirect navigation re-renders the shell, which aborts
+		// in-flight queued tasks and would silently drop the refresh.
+		listenToRouterMutations(handle, () => {
+			sessionMaybeStale = true
 		})
 	}
 

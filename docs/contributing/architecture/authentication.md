@@ -279,9 +279,17 @@ Related handlers:
 ### Client session refresh behavior
 
 The app shell (`packages/worker/client/app.tsx`) refreshes session state after
-initial load and on client-side navigation events. If an in-flight refresh is
-aborted, the client keeps the last known ready session instead of overwriting it
-with `null`. This prevents transient logged-out UI during concurrent re-renders.
+initial load and on client-side navigation events. Navigation-triggered
+refreshes are throttled (30s) to avoid a `/session` round trip on every SPA
+navigation, but the throttle never applies to refreshes that follow a mutation:
+the client router (`packages/worker/client/client-router.tsx`) emits a
+`mutation` event after every form POST it submits (exposed as
+`listenToRouterMutations`), and the shell marks its session state stale so the
+follow-up redirect navigation refreshes it regardless of the throttle —
+auth-changing POSTs like `/logout` update the top nav immediately. If an
+in-flight refresh is aborted, the client keeps the last known ready session
+instead of overwriting it with `null`. This prevents transient logged-out UI
+during concurrent re-renders.
 
 ## Password reset
 

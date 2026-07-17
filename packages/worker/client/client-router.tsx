@@ -600,6 +600,11 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 		}
 
 		const response = await fetch(details.action.toString(), init)
+		// The server processed the mutation no matter which navigation follows
+		// (even if a newer navigation aborted this one). Tell listeners that
+		// server-derived state they cache — like the shell's session info —
+		// may now be stale.
+		routerEvents.dispatchEvent(new Event('mutation'))
 		if (signal.aborted) return
 
 		if (response.redirected) {
@@ -702,6 +707,23 @@ export function listenToRouterNavigation(
 	ensureRouter()
 	addEventListeners(routerEvents, handle.signal, {
 		navigate: () => listener(),
+	})
+}
+
+/**
+ * Fires after the router submits a non-GET form (a mutation, e.g. logout).
+ * Listeners that cache or throttle server-derived state must revalidate:
+ * the follow-up redirect is a SPA navigation, so nothing else re-fetches
+ * state the mutation may have changed.
+ */
+export function listenToRouterMutations(
+	handle: Pick<Handle, 'signal' | 'update'>,
+	listener: () => void,
+) {
+	if (typeof document === 'undefined') return
+	ensureRouter()
+	addEventListeners(routerEvents, handle.signal, {
+		mutation: () => listener(),
 	})
 }
 

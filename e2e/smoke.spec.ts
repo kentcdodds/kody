@@ -38,7 +38,18 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 	await expect(page.getByText('Failed to fetch')).not.toBeVisible()
 
-	await page.context().clearCookies()
+	// Log out through the top nav. The router intercepts the form POST and
+	// SPA-navigates to /login, so the shell must refresh its session state
+	// without a full document reload (regression: the throttled refresh kept
+	// the username and Log out button visible after logging out).
+	await page.getByRole('button', { name: 'Log out' }).click()
+	await expect(page).toHaveURL(/\/login$/)
+	await expect(page.getByRole('link', { name: 'Login' })).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Log out' })).not.toBeVisible()
+	await expect(
+		page.getByRole('link', { name: primaryTestUser.username }),
+	).not.toBeVisible()
+
 	await page.goto('/privacy')
 	await expect(page.getByRole('heading', { name: 'Privacy' })).toBeVisible()
 	await expect(
