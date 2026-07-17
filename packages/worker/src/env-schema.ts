@@ -198,9 +198,13 @@ export const EnvSchema = object({
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	// Kit (kit.com) waitlist — optional; production waiting-list submits fail
 	// closed without KIT_API_KEY. Non-production skips Kit when unset.
+	// Account signup also uses KIT_API_KEY to best-effort tag existing Kit
+	// subscribers with signed_up::kody (never creates subscribers; never fails
+	// signup when Kit is unset or errors).
 	KIT_API_KEY: optionalNonEmptyStringSchema,
 	KIT_WAITLIST_TAG_ID: optionalNonEmptyStringSchema,
 	KIT_WAITLIST_SEQUENCE_ID: optionalNonEmptyStringSchema,
+	KIT_SIGNED_UP_TAG_ID: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

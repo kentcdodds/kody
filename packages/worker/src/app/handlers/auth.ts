@@ -34,6 +34,7 @@ import {
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
+import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -396,6 +397,13 @@ export function createAuthHandler(env: Env) {
 						)
 					}
 				}
+
+				// Best-effort: if this email is already in Kit (e.g. waitlist),
+				// add signed_up::kody without removing other tags.
+				await maybeTagKitSubscriberOnSignup({
+					env,
+					email: normalizedEmail,
+				})
 
 				const cookie = await createAuthCookie(
 					{

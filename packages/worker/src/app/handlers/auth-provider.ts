@@ -10,6 +10,7 @@ import {
 } from '#app/auth-session.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
+import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { getAvailableUsernameFromBase } from '#app/generated-username.ts'
 import {
 	consumeInviteCode,
@@ -541,6 +542,13 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					)
 				}
 			}
+
+			// Best-effort: if this email is already in Kit (e.g. waitlist),
+			// add signed_up::kody without removing other tags.
+			await maybeTagKitSubscriberOnSignup({
+				env,
+				email,
+			})
 
 			void logAuditEvent({
 				category: 'auth',

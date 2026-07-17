@@ -79,6 +79,14 @@ Waiting-list Kit integration:
   `first_name`
 - Rate-limited per client IP (5 requests / 15 minutes)
 
+Account signup Kit tagging (password and OAuth signup):
+
+- When `KIT_API_KEY` is set and the new account email already exists in Kit,
+  apply `signed_up::kody` (optional override `KIT_SIGNED_UP_TAG_ID`)
+- Does not create Kit subscribers for people who were never on the list
+- Leaves existing tags alone (including `waitlist::kody`)
+- Best-effort only: Kit errors or a missing key never fail account creation
+
 The `invites` table stores operator-created invite codes:
 
 - `code` is the primary key shown to the invited user

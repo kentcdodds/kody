@@ -98,6 +98,9 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
   `waitlist::kody` tag).
 - `KIT_WAITLIST_SEQUENCE_ID` — optional override for the welcome sequence id
   (defaults to "Kody Waitlist Welcome", from `hello@kentcdodds.com`).
+- `KIT_SIGNED_UP_TAG_ID` — optional override for the Kit tag applied on account
+  signup when the email already exists in Kit (defaults to `signed_up::kody`).
+  Signup never creates Kit subscribers and never fails when Kit is unset.
 
 See [`architecture/authentication.md`](./architecture/authentication.md).
 
