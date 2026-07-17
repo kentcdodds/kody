@@ -8,7 +8,6 @@ import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import {
 	buildMcpServerInstructions,
-	conversationIdGuidance,
 	type RemoteConnectorInstructionSummary,
 } from './server-instructions.ts'
 import { registerTools } from './register-tools.ts'
@@ -26,8 +25,6 @@ export type State = {
 	rawFetchHostNudges?: RawFetchHostNudgeState
 }
 export type Props = McpServerProps
-
-export { conversationIdGuidance }
 
 async function loadRemoteConnectorInstructionSummaries(input: {
 	env: Env

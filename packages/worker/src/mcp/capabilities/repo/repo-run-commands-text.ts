@@ -42,7 +42,3 @@ export const repoRunCommandsCommandsFieldDescription = [
 	repoRunCommandsUnsupportedSyntaxDescription,
 	repoRunCommandsSupportedFormsDescription,
 ].join('\n')
-
-export const repoRunCommandsExecuteSummary = [
-	'commands are newline-separated, parsed, git-only workflows, not shell execution',
-].join(' ')

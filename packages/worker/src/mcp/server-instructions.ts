@@ -40,9 +40,6 @@ ${lines.join('\n')}
 `
 }
 
-export const conversationIdGuidance =
-	'The public MCP tools accept optional `conversationId` and `memoryContext` fields. `conversationId` ties related calls together. If you already have a `conversationId` from an earlier response in the same conversation, pass it back unchanged. Otherwise omit this field to receive a server-generated ID, then reuse the returned `conversationId` on subsequent calls - this enables optimizations like reduced response size. Do not invent your own `conversationId`.'
-
 export function buildBaseMcpServerInstructions(
 	input: {
 		domains?: ReadonlyArray<CapabilityDomainMetadata>
@@ -55,66 +52,31 @@ End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use
 
 Package lifecycle (use this as the primary mental model):
-1. Discover and invoke before building: use \`search\` to find an existing built-in capability, connected capability, or saved package. Inspect the entity detail for its exact call shape, then invoke it rather than reimplementing it.
-2. Explore temporarily: use \`execute\` for quick one-off work, capability composition, authenticated smoke tests, and experiments. Treat execute modules as ephemeral, not as the durable home for behavior.
-3. Create or evolve a repo-backed package: use a package when behavior should be reused, maintained, tested, exposed as an app or service, or given a package-owned schedule as part of named or evolving behavior. Search once more before creating one so you extend an existing package when that is the better fit.
+1. Discover and invoke before building: use \`search\` to find an existing built-in capability, connected capability, or saved package, inspect the entity detail for its exact call shape, then invoke it rather than reimplementing it.
+2. Explore temporarily: use \`execute\` for quick one-off work, capability composition, authenticated smoke tests, and experiments. Execute modules are ephemeral, not the durable home for behavior.
+3. Create or evolve a repo-backed package when behavior should be reused, maintained, tested, exposed as an app or service, or given a package-owned schedule. Search once more before creating one so you extend an existing package when that is the better fit.
 
-Signals to escalate from \`execute\` to a package:
-- The user wants reusable named behavior, expects to keep improving it, or wants its schedule to evolve with the implementation.
-- The code is becoming a named workflow or needs multiple files, dependencies, tests, binary assets, version history, or review.
-- The behavior needs a durable surface such as package exports, package-owned jobs, an app, or a service.
-- You are repeating or incrementally editing substantially the same execute module. Stop accumulating ephemeral code and move it into a package.
-- Keep genuinely one-off exploration in \`execute\`; do not create a package merely because a task required code.
-- Scheduling alone does not require a package. Use a package-owned job when the schedule belongs to reusable, evolving, or named package behavior. Use \`job_schedule\` directly for a genuinely ad hoc or one-off job, or a simple self-contained schedule that is not tied to a reusable package.
+Escalate from \`execute\` to a package when the user wants reusable named behavior they expect to keep improving, when the code needs multiple files, dependencies, tests, binary assets, version history, or review, when the behavior needs a durable surface (package exports, package-owned jobs, an app, or a service), or when you are repeatedly editing substantially the same execute module. Keep genuinely one-off exploration in \`execute\`. Scheduling alone does not require a package: use \`job_schedule\` for ad hoc or simple self-contained schedules and package-owned jobs when the schedule belongs to reusable, evolving package behavior. Load \`coding_guide_get({ guide: "package_lifecycle" })\` when the escalation call is unclear.
 
-Choose the package authoring lane before building:
-- Coding agents with local filesystem/git access should use the git lane: \`package_get_git_remote\` (pass \`create: true\` with a new \`kody_id\` to register a stub package and mint its remote in one call), clone into a temporary directory, edit and test normally (binary assets supported), push, then publish with \`package_publish_external_push\`.
-- Tool-only agents should use \`package_save\` and repo sessions. \`package_save\` creates or replaces a repo-backed package rooted at \`package.json\` from the complete UTF-8 text file set.
-- If package work needs binary assets, many-file changes, or local build/test loops and you lack local filesystem/git access, tell the user it fits a coding-capable agent better and confirm before proceeding tool-only.
-- Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs. When creating or materially changing a package, keep a root \`README.md\` \`## Intent\` section with the user's goal; ask the user if unclear and update it when scope expands.
+Package authoring lanes:
+- Coding agents with local filesystem/git access: \`package_get_git_remote\` (pass \`create: true\` with a new \`kody_id\` to register a stub package and mint its remote in one call), clone into a temporary directory, edit and test normally (binary assets supported), push, then publish with \`package_publish_external_push\`.
+- Tool-only agents: \`package_save\` (creates or replaces a repo-backed package rooted at \`package.json\` from the complete UTF-8 text file set) plus \`repo_*\` sessions. If the work needs binary assets, many-file changes, or local build/test loops, tell the user it fits a coding-capable agent better and confirm before proceeding tool-only.
+- When creating or materially changing a package, load \`coding_guide_get({ guide: "package_authoring" })\` and keep a root \`README.md\` \`## Intent\` section with the user's goal; ask the user if unclear and update it when scope expands.
 
-Conventions
-- ${conversationIdGuidance}
-- \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories and suppress repeats within the same \`conversationId\`.
+Conventions:
+- Both tools accept optional \`conversationId\` and \`memoryContext\` fields (documented in their input schemas); reuse the returned \`conversationId\` across related calls.
 - Credential setup uses the standard setup pages: \`/connect/oauth\` for OAuth integrations and reconnects, \`/account/secrets/new\` for API keys, PATs, and other user-provided secrets. Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat.
-- \`package_get\` / \`package_list\` / \`package_update\` / \`package_delete\`: inspect or manage saved packages for the signed-in user. \`package_update({ package_id, changes: { hidden } })\` changes mutable settings; package.json-derived metadata changes through save or publish.
-- Integration-backed work: use \`search\` and official guides before local repo exploration. For packages, package apps, or workflows that depend on third-party auth, first call \`coding_guide_get\` with \`guide: "integration_bootstrap"\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, run a cheap authenticated \`execute\` smoke test, then build. If setup is missing, load \`oauth\` for \`/connect/oauth\`, \`connect_secret\` for secret collection, and \`secret_backed_integration\` for the default non-OAuth recipe.
-- \`job_list\` / \`job_get\`: inspect the signed-in user's scheduled jobs, recent run outcomes, and current per-user alarm state when debugging scheduling issues. Pass \`includeCode: true\` to \`job_get\` when you need the stored repo-backed job source entrypoint and code.
-- \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. It is appropriate for genuinely ad hoc or one-off jobs and simple self-contained schedules not tied to a reusable package. Supports one-off, interval, and cron schedules.
-- \`job_schedule_once\`: compatibility wrapper for one-off repo-backed jobs when you only need a single run time.
-- \`job_update\`: update an existing scheduled job by id. Supports safe mutable fields such as name, code, params, schedule, timezone, enabled, and kill-switch state. Providing \`code\` publishes a new commit on the job's repo-backed source (the simplest way to change the job module for non-package jobs); the replacement must default export a function and read \`params\` from its first argument, not from \`kody:runtime\`.
-- \`job_delete\`: delete one of the signed-in user's scheduled jobs by id.
-- \`job_run_now\`: run an existing scheduled job immediately by id and return the updated job view plus execution result for debugging.
-- \`workflow_run_list\`: inspect recent Cloudflare Workflow runs created through \`kody:runtime\` \`workflows.create\`; use it after durable long-running work such as batch sweeps, migrations, and polling loops.
-- Package jobs are schedules owned by reusable, evolving, or named package behavior. For genuinely ad hoc or one-off jobs and simple self-contained schedules not tied to a reusable package, use \`job_schedule\`. Package apps are optional UI surfaces declared by the package, and packages may also declare headless package services for long-lived background runtimes.
-- Package apps can also use Kody-managed realtime websocket sessions through \`session_list\`, \`session_emit\`, and \`session_broadcast\`, and package jobs can emit to those sessions when running under the same package caller context.
-- Package services are inspected and controlled through \`service_list\`, \`service_get\`, \`service_start\`, and \`service_stop\`.
-- Memory writes are verify-first: always run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`. Kody retrieves related memories; the consuming agent decides whether to upsert, delete, both, or do nothing. \`meta_memory_upsert\` creates a new memory when \`memory_id\` is omitted and updates an existing memory when \`memory_id\` is provided.
-- User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions (reconnect to refresh what the host shows).
-- Kody friction: when capabilities, packages, memories, or guides create avoidable friction, call \`coding_guide_get\` with \`guide: "platform_friction"\`; mention the friction to the user, ask before memory changes, and make obvious local docs/package improvements when already in scope.
+- Integration-backed work: before building packages, package apps, or workflows that depend on third-party auth, call \`coding_guide_get({ guide: "integration_bootstrap" })\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, and run a cheap authenticated \`execute\` smoke test. Do not present auth-dependent work as complete until that smoke test succeeds.
+- Jobs, workflows, sessions, services, values, storage, and the other capability groups below are individual capabilities: discover them with \`search\`, whose entity detail includes each capability's exact call shape.
+- Memory writes are verify-first: run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`.
+- User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions.
+- When Kody capabilities, packages, memories, or guides create avoidable friction, load \`coding_guide_get({ guide: "platform_friction" })\`, mention the friction to the user, and ask before memory changes.
 
 Kody repository (for contributors): https://github.com/kentcdodds/kody
 
 Domains (builtin capability groups)
 ${domainInstructions}
 ${formatRemoteConnectorInstructions(input.remoteConnectors)}
-
-What shows up in \`search\` (before you search)
-- Result **types**: \`capability\` (built-in or connected remote connector), \`package\` (saved repo-backed package), \`value\` (persisted non-secret config), \`integration\` (saved integration config), \`secret\` (metadata only). Use \`entity: "{id}:{type}"\` for one item’s detail.
-
-search
-- \`query\`: natural language results are ranked (order matters). An entire saved-package UUID, kody id, current-origin \`/account/packages/:packageId\` URL, or owner-matching \`/@username/packages/:kodyId\` URL resolves as exact user-scoped package identity instead of competing with semantic results. Hidden exact queries require \`includeHiddenPackages: true\`. Optional \`limit\`, \`maxResponseSize\`.
-- \`entity: "{id}:{type}"\` (\`capability\` | \`package\` | \`value\` | \`integration\` | \`secret\`) for one entity’s detail. Package ids may be UUIDs or kody ids and hidden packages resolve here regardless of \`includeHiddenPackages\`. Capability detail includes an exact execute snippet and TypeScript call shapes; other entity details include usage. If a natural-language \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
-- Examples:
-  - search({ query: 'saved package for github automation' })
-  - search({ query: 'Cloudflare API zones dns workers d1' })
-  - search({ entity: 'coding_guide_get:capability' })
-
-execute
-- Single ESM module string with a default export such as \`export default async function main(input = {}) { ... }\`; \`params\` are passed as the first argument. Import runtime APIs from \`kody:runtime\`. Example: \`import { kody, refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials, secretHeaders, workflows } from 'kody:runtime'\`. Built-in capabilities returned by \`search\` are available through \`kody\`: use \`await kody.capability_id(input)\` for valid identifier names or \`await kody["capability-id"](input)\` for non-identifier ids. Remote connector capabilities are deliberately separate: use \`await kody.remote["name"].capability_name(input)\` (for example \`kody.remote["home"].set_pin({ pin })\`), never a flat \`kody.kind_instance_capability(...)\` call. Tools from user-added MCP servers follow the same pattern through \`await kody.mcp["server-name"].tool_name(input)\`; manage those servers with the \`mcp_servers\` capabilities or /account/mcp-servers. Curated OpenAPI provider operations use \`await kody.openapi["name"].operation_slug(input)\`; manage bindings with the \`openapi\` domain (\`openapi_binding_save\` / list / get / delete / refresh). \`workflows.create\` can queue inline \`code\` or a saved-package \`exportName\`; prefer it for durable, retryable, inspectable work that may outlive execute's timeout, while plain execute is for quick single operations. Use \`secretHeaders.basic(...)\` or \`oauthClientCredentials(...)\` for client-credentials Basic Auth instead of asking users to precompute a Basic header. Prefer one \`execute\` when the plan is clear. Full rules for \`fetch\`, placeholders, \`secret_list\` / \`value_get\`, and \`x-kody-secret\`: see the \`execute\` tool description.
-- Cross-package imports use specifiers such as \`kody:@scope/my-package/export-name\`. For dynamic current-version calls inside package runtime code or authenticated execute calls, prefer \`packages.invokeChecked({ kodyId, exportName, params })\` or \`packages.check(...)\` followed by \`packages.invoke(check.invoke)\`; use static imports for library-like bundled snapshots. Saved package names must be scoped (\`@scope/<leaf>\`) and the leaf segment must match \`kody.id\`. Package jobs are owned by packages, ad hoc jobs can be scheduled with \`job_schedule\`, and package apps are optional package surfaces.
-- Official how-to guides from the Kody repo: when creating or materially changing a package, call \`coding_guide_get\` with \`guide: "package_authoring"\`. If the package, package app, or workflow depends on a third-party integration, secrets, or OAuth, call \`guide: "integration_bootstrap"\` before building the dependent package. If unsure, \`search\` for this capability and load the right guide before implementing.
-- Do not save or present an auth-dependent package as complete until \`search\` shows the required integration or secret reference exists and a minimal authenticated \`execute\` smoke test succeeds.
 	`.trim()
 }
 

@@ -36,7 +36,6 @@ import {
 	formatSurfacedMemoriesMarkdown,
 	surfaceToolMemories,
 } from './memory-tool-context.ts'
-import { repoRunCommandsExecuteSummary } from '#mcp/capabilities/repo/repo-run-commands-text.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import {
@@ -57,36 +56,24 @@ Run one ephemeral ESM module string with a default export. Imports may be arbitr
 
 Projection rule: you write the code -- if a call returns a large response, project the fields you need before returning. Never return raw API responses; extract a slim shape (e.g. \`{ id, subject, snippet }\`) or a summary.
 
-Saved package surface:
-- \`package_save\`, \`package_get\`, \`package_list\`, \`package_delete\`
-- repo-backed package editing with \`repo_run_commands\`; ${repoRunCommandsExecuteSummary}
-- cross-package imports with specifiers such as
-   \`kody:@scope/my-package/export-name\`
-- When creating or materially changing a package, load \`coding_guide_get({ guide: 'package_authoring' })\` and keep a root \`README.md\` \`## Intent\` section with the user-defined goal.
-
 Sandbox surface:
 - Import runtime helpers from \`kody:runtime\`.
 - \`import { kody } from 'kody:runtime'\` for builtin capabilities discovered by \`search\`; call valid identifier names as \`await kody.capability_id(input)\`. If a capability id is not a valid JavaScript identifier, use bracket notation: \`await kody["capability-id"](input)\`. Capability detail from \`search({ entity: "{name}:capability" })\` includes the exact snippet.
+- Remote connector, user-added MCP server, and curated OpenAPI capabilities use namespaced accessors: \`await kody.remote["name"].capability_name(input)\`, \`await kody.mcp["server-name"].tool_name(input)\`, and \`await kody.openapi["name"].operation_slug(input)\` — never a flat \`kody.kind_instance_capability(...)\` call.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`. \`storage.sql\` returns \`{ columns, rows, rowCount, rowsRead, rowsWritten }\`; read query rows from \`.rows\`.
-- \`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials, secretHeaders } from 'kody:runtime'\` for OAuth integrations and secret-derived auth headers. Integration \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`integration_list\` first when the task involves a provider that may have multiple accounts connected. For APIs such as PayPal that require client-credentials Basic Auth, save the client id and client secret separately and use \`secretHeaders.basic({ usernameSecret: 'paypalClientId', passwordSecret: 'paypalClientSecret', scope: 'user' })\` in the Authorization header, or \`oauthClientCredentials(...)\` for the token request. Do not ask users to precompute or save a derived Basic header.
+- \`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials, secretHeaders } from 'kody:runtime'\` for OAuth integrations and secret-derived auth headers. Integration \`name\` may be account-specific (e.g. \`google-personal\`, \`google-business\`); call \`integration_list\` first when a provider may have multiple accounts connected. For client-credentials Basic Auth, save the id and secret separately and use \`secretHeaders.basic({ usernameSecret, passwordSecret, scope })\` in the Authorization header, or \`oauthClientCredentials(...)\` for the token request; do not ask users to precompute a derived Basic header.
 - \`import { workflows } from 'kody:runtime'\` for durable Cloudflare Workflows. \`workflows.create\` accepts either inline \`code\` or a saved-package \`exportName\`; use \`workflow_run_list\` to inspect recent runs.
 - Execute has a hard timeout (~90s by default). For batch sweeps, migrations, polling loops, or work likely to run >~60s, submit one durable \`workflows.create({ code, params })\` from a single execute call instead of chaining many MCP round-trips.
 - Optional \`params\` are passed as the first argument to the module default export. Prefer \`export default async function main(input = {}) { ... }\`; pass \`input\` to shared helpers explicitly.
 - \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.
-- \`import { packages } from 'kody:runtime'\` exposes \`packages.check(...)\`, \`packages.invoke(...)\`, and \`packages.invokeChecked(...)\` in saved package runtime contexts and authenticated ad hoc execute calls. Prefer \`invokeChecked\` for dynamic current-version package calls unless you already called \`check\` and pass \`check.invoke\` to \`invoke\`.
-- \`fetch(...)\` is the host-provided network global; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` work in URL, headers, or body on approved hosts only. \`secretHeaders.basic(...)\` returns an opaque placeholder for fetch headers; the gateway resolves both referenced secrets, enforces host approval for both, and sends only the derived Basic header.
+- \`import { packages } from 'kody:runtime'\` exposes \`packages.check(...)\`, \`packages.invoke(...)\`, and \`packages.invokeChecked(...)\` in saved package runtime contexts and authenticated ad hoc execute calls. Prefer \`invokeChecked\` for dynamic current-version package calls. Static cross-package imports such as \`kody:@scope/my-package/export-name\` bundle a published snapshot.
+- \`fetch(...)\` is the host-provided network global; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` work in URL, headers, or body on approved hosts only. \`secretHeaders.basic(...)\` returns an opaque placeholder for fetch headers; the gateway resolves both referenced secrets, enforces host approval for both, and sends only the derived Basic header. For host approval failures, use the error’s approval path.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
-- Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
-- Never place placeholder text into user-visible or third-party-visible content such as issue bodies, comments, prompts, logs, or returned strings. If you need to describe a placeholder literally, obfuscate it instead of embedding the exact \`{{secret:...}}\` token into content that may be sent over \`fetch\`.
-- \`await kody.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only.
-- No \`secret_get\` / \`secrets\` helpers in the sandbox.
+- Placeholders are not general string interpolation (they do not resolve in arbitrary return values). Never place placeholder text into user-visible or third-party-visible content such as issue bodies, comments, prompts, logs, or returned strings; obfuscate the \`{{secret:...}}\` token if you must describe it literally.
+- \`await kody.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only. No \`secret_get\` / \`secrets\` helpers in the sandbox.
 - \`value_get\` / \`value_list\` for non-secret persisted config.
 
-Credential collection and rotation use standard Kody setup pages: \`/connect/oauth\` for OAuth integrations and \`/account/secrets/new\` for API keys, PATs, and other user-provided secrets. Never ask users to paste secrets, tokens, API keys, passwords, or credentials into chat. For host approval failures, use the error’s approval path.
-
 Prefer one \`execute\` when the workflow is clear; split calls when you need new user input or a changed plan.
-
-For integration-backed packages, package apps, or workflows, use \`search\` and \`coding_guide_get({ guide: 'integration_bootstrap' })\` before building. Confirm the needed \`integration\` or \`secret\` entity exists, then run a cheap read-only authenticated smoke test in \`execute\` (for example a profile/viewer endpoint) before \`package_save\`, package app work, or workflow scheduling. If credentials are missing, load the matching official guide: \`oauth\`, \`connect_secret\`, or \`secret_backed_integration\`.
 
 Example:
 

@@ -1771,27 +1771,10 @@ without competing semantic matches. Hidden exact queries require
 related lookups in one call. Capability detail includes an exact \`execute\`
 module snippet plus TypeScript call-shape definitions by default. Synthesized
 provider capabilities (OpenAPI, MCP server, remote connector) also list related
-operations from the same provider.
+operations from the same provider. Package ids may be UUIDs or kody ids, and
+hidden packages resolve here regardless of \`includeHiddenPackages\`.
 
-Packages: \`package_list\` and \`package_get\` to inspect. Coding agents with
-local filesystem/git access author via \`package_get_git_remote\`
-(\`create: true\` for new packages) + clone-edit-push +
-\`package_publish_external_push\`; tool-only agents use \`package_save\` and
-\`repo_*\`. For package creation or material updates, load \`coding_guide_get\`
-with \`guide: "package_authoring"\` and maintain a root README.md Intent section.
-Open package apps through their hosted package URLs.
-Secrets: results expose metadata; use \`kody.secret_list\` during execute,
-\`/account/secrets/new\` for API key/PAT entry and rotation, and
-\`/connect/oauth\` for OAuth integrations.
-Persisted values use \`kody.value_get\` / \`kody.value_list\`. Integrations
-use \`kody.integration_get\` / \`kody.integration_list\`.
-
-Integration-backed packages, package apps, and workflows: search for the provider
-and \`coding_guide_get\`, inspect exact \`integration\` or \`secret\` entities,
-load \`guide: "integration_bootstrap"\`, and continue only after a cheap
-authenticated \`execute\` smoke test succeeds. If setup is missing, use the guide
-that matches the auth path: \`oauth\`, \`connect_secret\`, or
-\`secret_backed_integration\`.
+Secret results expose metadata only; credential values never appear.
 
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_list_remote_connector_status\` (remote connectors).
@@ -1799,8 +1782,6 @@ If results look incomplete: \`meta_list_capabilities\` (full registry) or
 Optional **limit** (default 15) and **maxResponseSize** trim low-ranked results.
 Example arguments:
 - \`{ "query": "saved github automation package", "limit": 10 }\`
-- \`{ "query": "preferred org value or saved integration", "limit": 10 }\`
-- \`{ "query": "package with worker app ui", "limit": 10 }\`
 - \`{ "entity": "coding_guide_get:capability" }\`
 - \`{ "entity": ["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"] }\`
 - \`{ "entity": "user:preferred_org:value" }\`
