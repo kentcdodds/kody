@@ -200,6 +200,7 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 						source: {
 							type: 'email.sending',
 							domain: 'inbox.example.com',
+							zone_id: 'zone-1',
 						},
 						destination: {
 							type: 'queues.queue',
@@ -225,6 +226,7 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		name: 'kody-email-delivery-events',
 		queueId: queue.id,
 		domain: 'inbox.example.com',
+		zoneId: 'zone-1',
 		dryRun: false,
 		fetcher: subscriptionFetch,
 	})
@@ -279,6 +281,7 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		name: 'kody-email-delivery-events',
 		queueId: queue.id,
 		domain: 'inbox.example.com',
+		zoneId: 'zone-1',
 		dryRun: false,
 		fetcher: createSubscriptionFetch,
 	})
@@ -294,6 +297,7 @@ test('Queue and Email Sending subscription ensure creates and reconciles Cloudfl
 		source: {
 			type: 'email.sending',
 			domain: 'inbox.example.com',
+			zone_id: 'zone-1',
 		},
 		destination: {
 			type: 'queues.queue',

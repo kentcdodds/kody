@@ -130,6 +130,11 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account; also reused for remote AI and Cloudflare API workflows that run with
   account secrets + package workflows)
+- `CLOUDFLARE_ACCOUNT_ID` (required GitHub Actions **variable** for Cloudflare
+  resource provisioning and Email Service)
+- `CLOUDFLARE_ZONE_ID` (required GitHub Actions **variable** for the zone that
+  owns the user email sending domain; Email Sending event subscriptions require
+  both this zone id and the domain)
 - `COOKIE_SECRET` (same format as local)
 - `SECRET_STORE_KEY` (same format as local; required for deploys)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
@@ -194,6 +199,11 @@ How to get/set each value:
   - Do not also upload `APP_BASE_URL` through `wrangler secret bulk` or pass it
     as a deploy-time `--var`, because Wrangler treats that as a conflicting
     binding name.
+- `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ZONE_ID`
+  - Copy both identifiers from the Cloudflare dashboard overview for the
+    production zone.
+  - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
+    each under its exact name.
 - `USER_EMAIL_DOMAIN` (optional GitHub Actions **variable**; overrides
   `inbox.<APP_BASE_URL hostname>` for user inboxes, outbound senders, and the
   Email Sending event subscription).

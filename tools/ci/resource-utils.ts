@@ -416,6 +416,7 @@ export async function ensureEmailSendingEventSubscription(input: {
 	name: string
 	queueId: string
 	domain: string
+	zoneId: string
 	dryRun: boolean
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
@@ -433,7 +434,8 @@ export async function ensureEmailSendingEventSubscription(input: {
 	const events = [...emailSendingEventTypes]
 	const sourceIsCurrent =
 		existing?.source['type'] === 'email.sending' &&
-		existing.source['domain'] === input.domain
+		existing.source['domain'] === input.domain &&
+		existing.source['zone_id'] === input.zoneId
 	const isCurrent =
 		existing?.enabled === true &&
 		existing.destination.type === 'queues.queue' &&
@@ -486,6 +488,7 @@ export async function ensureEmailSendingEventSubscription(input: {
 			source: {
 				type: 'email.sending',
 				domain: input.domain,
+				zone_id: input.zoneId,
 			},
 			destination: {
 				type: 'queues.queue',

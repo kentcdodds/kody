@@ -451,9 +451,10 @@ async function ensureProductionResources(options: CliOptions) {
 	})
 	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
-	if ((!accountId || !apiToken) && !options.dryRun) {
+	const zoneId = process.env.CLOUDFLARE_ZONE_ID?.trim()
+	if ((!accountId || !apiToken || !zoneId) && !options.dryRun) {
 		fail(
-			'Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN for Queue provisioning.',
+			'Missing CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID, or CLOUDFLARE_API_TOKEN for Queue provisioning.',
 		)
 	}
 	const emailDeliveryQueue = await ensureCloudflareQueue({
@@ -475,6 +476,7 @@ async function ensureProductionResources(options: CliOptions) {
 		name: truncateWithSuffix(bindings.workerName, '-email-delivery-events', 63),
 		queueId: emailDeliveryQueue.id,
 		domain: emailSendingDomain,
+		zoneId: zoneId ?? 'dry-run-zone',
 		dryRun: options.dryRun,
 	})
 
