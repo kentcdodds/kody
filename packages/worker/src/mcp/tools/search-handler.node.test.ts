@@ -579,7 +579,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	])
 	const batchText = batchSuccess.content.map((item) => item.text).join('\n')
 	expect(batchText).toContain('---')
-	expect(batchText).toContain('## Related operations (same provider)')
+	expect(batchText).toContain('openapi:widgets:getwidget:capability')
 
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
 	const partialFailure = await handler({

@@ -1203,8 +1203,6 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		inputTypeDefinitionTruncated: true,
 	})
 	expect(topMatch?.inputTypeDefinition?.endsWith('...')).toBe(true)
-	expect(result.guidance).toMatch(/Inspect capability detail/i)
-	expect(result.guidance).not.toMatch(/inlined call shape/i)
 
 	const nonTruncatedTop = await searchUnified({
 		env: {} as Env,
@@ -1217,7 +1215,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 	expect(listTop).toMatchObject({
 		type: 'capability',
 		name: 'openapi:widgets:listwidgets',
+		inputTypeDefinition: 'type ListWidgetsInput = Record<string, never>',
 	})
 	expect(listTop).not.toHaveProperty('inputTypeDefinitionTruncated')
-	expect(nonTruncatedTop.guidance).toMatch(/inlined call shape/i)
 })

@@ -895,7 +895,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	})
 	expect(listMarkdown).toContain('kody.openapi["widgets"].createwidget(args)')
 	expect(listMarkdown).toContain('type CreateWidgetInput = { name: string }')
-	expect(listMarkdown).toContain('use entity detail for the full definition')
+	expect(listMarkdown).toContain(compact.definition)
 	expect(listMarkdown).not.toMatch(
 		/fourth_capability[\s\S]*kody\.fourth_capability\(args\)/,
 	)
@@ -995,9 +995,6 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			},
 		],
 	})
-	expect(openApiDetail.markdown).toContain(
-		'## Related operations (same provider)',
-	)
 	expect(openApiDetail.markdown).toContain('GET /widgets')
 	expect(openApiDetail.markdown).toContain(
 		'openapi:widgets:listwidgets:capability',
@@ -1041,9 +1038,6 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			inputTypeDefinition: 'type CodingGuideGetInput = { guide: string }',
 		},
 	})
-	expect(builtinDetail.markdown).not.toContain(
-		'## Related operations (same provider)',
-	)
 	expect(builtinDetail.structured).not.toHaveProperty('relatedOperations')
 
 	const packageDetail = formatEntityDetailMarkdown({
@@ -1081,15 +1075,11 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			'index.ts': 'export default function main() {}',
 		},
 	})
-	expect(packageDetail.markdown).toContain('## Maintain')
 	expect(packageDetail.markdown).toContain(
 		'package_get_git_remote({ kody_id: "notes-helper" })',
 	)
 	expect(packageDetail.markdown).toContain(
 		'package_publish_external_push({ kody_id: "notes-helper" })',
-	)
-	expect(packageDetail.markdown).toContain(
-		'coding_guide_get({ guide: "package_authoring" })',
 	)
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',

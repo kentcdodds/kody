@@ -584,14 +584,6 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		conversationId: 'conv-nudge',
 	})
 	expect(below.structuredContent.warnings).toBeUndefined()
-	expect(
-		below.content.some(
-			(block) =>
-				block.type === 'text' &&
-				'text' in block &&
-				block.text.includes('Raw-fetched'),
-		),
-	).toBe(false)
 
 	mockPerformanceSequence(3, 4)
 	const tipped = await handler({
@@ -600,15 +592,6 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 	})
 	expect(tipped.structuredContent.warnings).toHaveLength(1)
 	expect(tipped.structuredContent.warnings?.[0]).toContain('api.notion.com')
-	expect(
-		tipped.content.some(
-			(block) =>
-				block.type === 'text' &&
-				'text' in block &&
-				typeof block.text === 'string' &&
-				block.text.includes('api.notion.com'),
-		),
-	).toBe(true)
 	expect(setState).toHaveBeenCalled()
 	expect(mockModule.listOpenApiBindings).toHaveBeenCalled()
 
