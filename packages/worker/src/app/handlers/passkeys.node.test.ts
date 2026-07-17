@@ -12,7 +12,6 @@ import {
 	createWebauthnAuthenticationHandler,
 	createWebauthnRegistrationHandler,
 } from '#app/handlers/webauthn.ts'
-import { setVerifySessionSecret } from '#app/verify-session.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 
@@ -190,7 +189,6 @@ async function runHandler(
 
 function initTestSecrets() {
 	setAuthSessionSecret(testCookieSecret)
-	setVerifySessionSecret(testCookieSecret)
 }
 
 const userOneSession: AuthSession = {

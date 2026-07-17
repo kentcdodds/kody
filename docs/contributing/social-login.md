@@ -38,7 +38,7 @@ Callback resolution order:
    switch; callback errors for signed-in users redirect to
    `/account?oauthError=<code>`.
 2. A known connection signs in its user (the two-factor gate applies exactly as
-   it does for password and passkey logins).
+   it does for password logins; passkey sign-in skips TOTP).
 3. A **provider-verified** email matching an existing account links the identity
    and signs that account in (this also marks the account email verified, since
    the provider asserted ownership of the same address).

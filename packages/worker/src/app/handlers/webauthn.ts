@@ -12,7 +12,6 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import {
 	createAuthCookie,
-	destroyAuthCookie,
 	isSecureRequest,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
@@ -24,11 +23,6 @@ import {
 	updatePasskeyCounter,
 } from '#app/passkeys.ts'
 import { type routes } from '#app/routes.ts'
-import { isTwoFactorEnabled } from '#app/two-factor.ts'
-import {
-	createVerifySessionCookie,
-	setVerifySessionSecret,
-} from '#app/verify-session.ts'
 import {
 	createWebAuthnChallengeCookie,
 	destroyWebAuthnChallengeCookie,
@@ -66,9 +60,9 @@ export function createWebauthnRegistrationHandler(env: Env) {
 					excludeCredentials: existingPasskeys.map((passkey) => ({
 						id: passkey.id,
 					})),
-					// Passkeys act as a full first factor here, so user verification
-					// is required end-to-end (matching requireUserVerification below;
-					// `preferred` could register credentials the server then rejects).
+					// Passkeys are MFA-complete here, so user verification is required
+					// end-to-end (matching requireUserVerification below; `preferred`
+					// could register credentials the server then rejects).
 					authenticatorSelection: {
 						residentKey: 'preferred',
 						userVerification: 'required',
@@ -205,7 +199,6 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 		async handler({ request, url }) {
 			setWebAuthnChallengeSecret(env.COOKIE_SECRET)
 			setAuthSessionSecret(env.COOKIE_SECRET)
-			setVerifySessionSecret(env.COOKIE_SECRET)
 
 			const config = getWebAuthnConfig(request)
 			const secure = isSecureRequest(request)
@@ -329,38 +322,9 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 			})
 			headers.append('Set-Cookie', clearChallengeCookie)
 
-			// Passkeys are an alternative first factor: accounts with TOTP
-			// enabled still get the second-factor challenge (Epic Stack parity).
-			if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
-				headers.append(
-					'Set-Cookie',
-					await createVerifySessionCookie(
-						{
-							id: String(userRecord.id),
-							email: userRecord.email,
-							rememberMe,
-						},
-						secure,
-					),
-				)
-				// A pre-existing session must not stay usable while the second
-				// factor is still pending for this new login.
-				headers.append('Set-Cookie', await destroyAuthCookie(secure))
-				void logAuditEvent({
-					category: 'auth',
-					action: 'login_2fa_challenge',
-					result: 'success',
-					email: userRecord.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'passkey',
-				})
-				return new Response(
-					JSON.stringify({ ok: true, requiresTwoFactor: true }),
-					{ status: 200, headers },
-				)
-			}
-
+			// A verified passkey assertion already satisfies MFA (possession +
+			// user verification), so skip the TOTP challenge even when 2FA is
+			// enabled. Password and social logins still require it.
 			headers.append(
 				'Set-Cookie',
 				await createAuthCookie(

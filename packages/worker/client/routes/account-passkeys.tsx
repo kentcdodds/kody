@@ -292,8 +292,8 @@ export function AccountPasskeysRoute(handle: Handle) {
 							<h2 mix={css(cardTitleCss)}>Register a passkey</h2>
 							<p mix={css(descriptionCss)}>
 								Your browser will prompt you to create a passkey with your
-								device. Accounts with two-factor authentication enabled still
-								require a code when signing in with a passkey.
+								device. Passkey sign-in skips the two-factor code because the
+								passkey itself already satisfies multi-factor authentication.
 							</p>
 							<div>
 								<button

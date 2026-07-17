@@ -69,7 +69,7 @@ test('passkey lifecycle: register, sign in, delete', async ({
 	).toBeVisible()
 })
 
-test('passkey sign-in still challenges accounts with two-factor enabled', async ({
+test('passkey sign-in skips TOTP when two-factor is enabled', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -102,17 +102,11 @@ test('passkey sign-in still challenges accounts with two-factor enabled', async 
 	await page.getByRole('button', { name: 'Register a passkey' }).click()
 	await expect(page.getByText('Passkey registered.')).toBeVisible()
 
-	// Passkey sign-in must still require the TOTP second factor.
+	// A verified passkey already satisfies MFA, so skip the TOTP challenge.
 	await page.context().clearCookies()
 	clearAuthRateLimitsInE2eDatabase()
 	await page.goto(localhostUrl(baseURL, '/login'))
 	await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
-	await expect(page).toHaveURL(/\/verify$/)
-
-	await page
-		.getByLabel('Verification code')
-		.fill((await generateTOTP({ secret })).otp)
-	await page.getByRole('button', { name: 'Verify' }).click()
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(page.getByText(`Email: ${user.email}`)).toBeVisible()
 })

@@ -206,12 +206,14 @@ Both are opt-in and adapted from the Epic Stack.
   holds a pending setup that only activates once the user confirms a generated
   code at `/account/two-factor` (managed by
   `packages/worker/src/app/handlers/account-two-factor.ts`).
-- When a 2FA account logs in (password or passkey), the handler does **not**
-  issue `kody_session`. It sets the short-lived signed `kody_verify` cookie
-  (`packages/worker/src/app/verify-session.ts`, 10 minutes) and the client
-  redirects to `/verify`. `POST /verify/2fa.json`
+- When a 2FA account logs in with a password (or social login), the handler does
+  **not** issue `kody_session`. It sets the short-lived signed `kody_verify`
+  cookie (`packages/worker/src/app/verify-session.ts`, 10 minutes) and the
+  client redirects to `/verify`. `POST /verify/2fa.json`
   (`packages/worker/src/app/handlers/verify.ts`) checks the TOTP code and only
-  then issues the real session cookie.
+  then issues the real session cookie. Passkey sign-in skips this step: a
+  verified WebAuthn assertion already requires possession of the authenticator
+  plus user verification (biometric/PIN), so it is treated as MFA-complete.
 - Disabling 2FA requires a fresh code. The inline OAuth password form
   (`packages/worker/src/oauth-handlers.ts`) rejects 2FA accounts and directs
   them to establish a browser session first, since that flow has no TOTP step.
@@ -227,8 +229,9 @@ Both are opt-in and adapted from the Epic Stack.
   registrable domain, so Playwright passkey tests navigate via `localhost`
   rather than `127.0.0.1`.
 - Passkeys are stored per user in the `passkeys` table and managed at
-  `/account/passkeys`. Passkey sign-in is an alternative first factor: accounts
-  with TOTP enabled still get the `/verify` challenge.
+  `/account/passkeys`. Passkey sign-in is MFA-complete on its own
+  (`userVerification: 'required'`): accounts with TOTP enabled go straight to a
+  session and do not visit `/verify`.
 - `POST /verify/2fa.json`, `POST /account/two-factor.json`, and
   `POST /webauthn/authentication` share the per-IP auth rate-limit bucket with
   the other credential-accepting endpoints (`packages/worker/src/index.ts`).
@@ -339,7 +342,7 @@ definitions in `packages/worker/src/app/oauth-providers.ts`.
   authorize URL itself, because the CSP locks `form-action` and `connect-src` to
   `'self'`
 - Existing connections sign in directly; the two-factor gate applies exactly as
-  for password and passkey logins
+  for password logins (passkey sign-in skips TOTP)
 - A signed-in user hitting the callback links the provider identity to their
   account, managed from the `/account` "Connected accounts" card backed by
   `/account/connections.json` (disconnect is refused when the connection is the
