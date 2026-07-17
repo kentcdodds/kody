@@ -112,7 +112,8 @@ details, and provider event timestamp.
 Use this topic for delivery notifications and bounce or complaint workflows. Do
 not resend on `deferred`: Cloudflare still has provider retries pending.
 Provider event ids are stored idempotently, so duplicate Queue delivery does not
-dispatch duplicate package invocations.
+dispatch duplicate package invocations. Out-of-order events remain available in
+delivery history but do not dispatch after a newer status.
 
 ## `email.system-message.received` (admins)
 

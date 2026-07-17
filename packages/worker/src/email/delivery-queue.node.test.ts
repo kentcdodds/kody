@@ -38,6 +38,7 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	const recorded = createQueueMessage('queue-recorded', { kind: 'recorded' })
 	const duplicate = createQueueMessage('queue-duplicate', { kind: 'duplicate' })
 	const invalid = createQueueMessage('queue-invalid', { kind: 'invalid' })
+	const stale = createQueueMessage('queue-stale', { kind: 'stale' })
 	const unmatched = createQueueMessage('queue-unmatched', { kind: 'unmatched' })
 	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
 		kind: 'dispatch-failure',
@@ -61,6 +62,11 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 			outcome: 'invalid',
 			event: null,
 			message: null,
+		})
+		.mockResolvedValueOnce({
+			outcome: 'stale',
+			event: providerEvent,
+			message: storedMessage,
 		})
 		.mockResolvedValueOnce({
 			outcome: 'unmatched',
@@ -87,7 +93,14 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	await handleEmailDeliveryQueue(
 		{
 			queue: 'kody-email-delivery',
-			messages: [recorded, duplicate, invalid, unmatched, dispatchFailure],
+			messages: [
+				recorded,
+				duplicate,
+				invalid,
+				stale,
+				unmatched,
+				dispatchFailure,
+			],
 			ackAll() {},
 			retryAll() {},
 		} as unknown as MessageBatch<unknown>,
@@ -99,6 +112,7 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	expect(recorded.ack).toHaveBeenCalledTimes(1)
 	expect(duplicate.ack).toHaveBeenCalledTimes(1)
 	expect(invalid.ack).toHaveBeenCalledTimes(1)
+	expect(stale.ack).toHaveBeenCalledTimes(1)
 	expect(unmatched.ack).not.toHaveBeenCalled()
 	expect(unmatched.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(dispatchFailure.ack).not.toHaveBeenCalled()

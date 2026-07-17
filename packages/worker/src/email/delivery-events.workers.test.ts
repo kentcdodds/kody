@@ -114,7 +114,7 @@ test('provider delivery events are idempotent, ordered, and user scoped', async 
 			eventTimestamp: '2026-07-17T20:05:00.000Z',
 		}),
 	})
-	expect(conflictingDuplicate.outcome).toBe('duplicate')
+	expect(conflictingDuplicate.outcome).toBe('stale')
 	expect(
 		await getEmailMessageById({
 			db: env.APP_DB,
@@ -147,7 +147,7 @@ test('provider delivery events are idempotent, ordered, and user scoped', async 
 				body: olderDeferred,
 			})
 		).outcome,
-	).toBe('recorded')
+	).toBe('stale')
 
 	const stored = await getEmailMessageById({
 		db: env.APP_DB,

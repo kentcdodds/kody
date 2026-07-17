@@ -25,6 +25,9 @@ export async function handleEmailDeliveryQueue(
 					})
 					queueMessage.retry({ delaySeconds: unmatchedRetryDelaySeconds })
 					break
+				case 'stale':
+					queueMessage.ack()
+					break
 				case 'duplicate':
 				case 'recorded': {
 					await dispatchEmailDeliverySubscriptionEvents({

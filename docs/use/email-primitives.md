@@ -246,7 +246,8 @@ type EmailMessageDeliveryUpdatedEvent = {
 
 `deferred` means Cloudflare still has delivery retries pending; handlers should
 not independently resend the message. Cloudflare automatically suppresses hard
-bounces and spam complaints.
+bounces and spam complaints. Out-of-order events remain in delivery history but
+do not dispatch after a newer delivery state has already been stored.
 
 ## `email.system-message.received` package subscription (admins)
 

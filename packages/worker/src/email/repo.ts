@@ -1394,8 +1394,19 @@ export async function recordProviderEmailDeliveryEvent(input: {
 				message.id,
 			),
 	])
-	if (Number(statements[0]?.meta.changes ?? 0) === 0) {
-		return { outcome: 'duplicate' as const, message }
+	const inserted = Number(statements[0]?.meta.changes ?? 0) > 0
+	const updatedLatestStatus = Number(statements[1]?.meta.changes ?? 0) > 0
+	if (!inserted) {
+		const duplicateIsCurrent =
+			message.deliveryStatus === input.deliveryStatus &&
+			message.deliveryStatusAt === input.eventTimestamp
+		return {
+			outcome: duplicateIsCurrent ? ('duplicate' as const) : ('stale' as const),
+			message,
+		}
+	}
+	if (!updatedLatestStatus) {
+		return { outcome: 'stale' as const, message }
 	}
 
 	const updatedMessage = await getEmailMessageById({
