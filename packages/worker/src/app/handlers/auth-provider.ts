@@ -457,13 +457,17 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				consumedInviteCode = inviteResult.invite.code
 			}
 
-			const username = await getAvailableUsernameFromBase(
-				env.APP_DB,
-				profile.username ?? usernameFromEmail(email),
-			)
-			const stableUserId = await createStableUserIdFromEmail(email)
+			// Username / stable-id lookup must share the create try/catch so a
+			// transient failure after consumeInviteCode still releases the invite.
+			let username: string
+			let stableUserId: string
 			let newUser: { id: number } | null = null
 			try {
+				username = await getAvailableUsernameFromBase(
+					env.APP_DB,
+					profile.username ?? usernameFromEmail(email),
+				)
+				stableUserId = await createStableUserIdFromEmail(email)
 				const createdUser = await db.create(
 					usersTable,
 					{
