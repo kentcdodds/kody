@@ -7,7 +7,7 @@ import {
 	pathMatchesRoot,
 } from './primitives-map.mjs'
 
-test('parsePrimitivesMap reads taxonomy fields', () => {
+test('parsePrimitivesMap reads taxonomy fields and oxfmt-folded summaries', () => {
 	const map = parsePrimitivesMap(`
 version: 1
 groups:
@@ -22,13 +22,18 @@ primitives:
       - packages/worker/src/app/handlers/auth.ts
     docs:
       - docs/contributing/architecture/authentication.md
+  - id: folded
+    group: auth
+    name: Folded
+    summary:
+      Folded onto the next indented line.
 invariants:
   - id: per-user-isolation
     summary: userId scopes every path.
 `)
 	expect(map.version).toBe(1)
 	expect(map.groups).toEqual([{ id: 'auth', name: 'Identity & auth' }])
-	expect(map.primitives).toHaveLength(1)
+	expect(map.primitives).toHaveLength(2)
 	expect(map.primitives[0]).toMatchObject({
 		id: 'app-sessions',
 		group: 'auth',
@@ -37,10 +42,11 @@ invariants:
 		code: ['packages/worker/src/app/handlers/auth.ts'],
 		docs: ['docs/contributing/architecture/authentication.md'],
 	})
+	expect(map.primitives[1]?.summary).toBe('Folded onto the next indented line.')
 	expect(map.invariants[0]?.id).toBe('per-user-isolation')
 })
 
-test('pathMatchesRoot distinguishes directory roots from prefix roots', () => {
+test('classifyPaths longest-prefix match respects directory and prefix roots', () => {
 	expect(
 		pathMatchesRoot(
 			'packages/worker/src/app/handlers/auth.ts',
@@ -62,9 +68,7 @@ test('pathMatchesRoot distinguishes directory roots from prefix roots', () => {
 			'packages/worker/src/mcp/',
 		),
 	).toBe(false)
-})
 
-test('classifyPaths uses longest-prefix match', () => {
 	const map = parsePrimitivesMap(`
 version: 1
 groups:
@@ -105,23 +109,6 @@ primitives:
 	expect(packages?.files).toEqual([
 		'packages/worker/src/mcp/capabilities/packages/save.ts',
 	])
-})
-
-test('parsePrimitivesMap accepts oxfmt-folded summary lines', () => {
-	const map = parsePrimitivesMap(`
-version: 1
-groups:
-  - id: auth
-    name: Auth
-primitives:
-  - id: example
-    group: auth
-    name: Example
-    summary:
-      Folded onto the next indented line.
-invariants: []
-`)
-	expect(map.primitives[0]?.summary).toBe('Folded onto the next indented line.')
 })
 
 test('committed primitives map passes path checks', () => {

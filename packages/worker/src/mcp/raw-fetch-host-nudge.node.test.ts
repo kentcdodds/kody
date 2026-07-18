@@ -150,7 +150,10 @@ test('raw-fetch host nudge counts hosts, tips at threshold once, excludes covere
 		conversationId: 'conv-burst',
 		hostCounts: { 'api.notion.com': 3 },
 	})
-	expect(sameRunTip.nudges).toHaveLength(1)
-	expect(sameRunTip.nudges[0]).toContain('api.notion.com')
-	expect(sameRunTip.nudges[0]).toContain('3x')
+	expect(sameRunTip.nudges).toEqual([
+		formatRawFetchHostNudge({
+			hostname: 'api.notion.com',
+			count: 3,
+		}),
+	])
 })

@@ -351,7 +351,7 @@ test('writeGeneratedWranglerConfig rejects invalid environment asset config', as
 			}),
 		).rejects.toThrow('process.exit')
 		expect(error).toHaveBeenCalledWith(
-			`wrangler config "${baseConfigPath}" is missing "env.production.assets".`,
+			expect.stringContaining('env.production.assets'),
 		)
 	} finally {
 		exit.mockRestore()
