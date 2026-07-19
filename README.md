@@ -2,7 +2,7 @@
   <img src="./packages/worker/public/logo.png" alt="kody logo" width="400" />
 
   <p>
-    <strong>An open-source personal assistant platform built on Cloudflare Workers and MCP</strong>
+    <strong>An open-source personal assistant platform for builders, powered by Cloudflare Workers and MCP</strong>
   </p>
 
   <p>

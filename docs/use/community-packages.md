@@ -4,6 +4,9 @@ Kody users on the same deployment can share **saved packages** with everyone
 through **community listings**. A listing is a pinned public snapshot of a
 published package — not a live link to the owner's private copy.
 
+A successful one-click install creates and publishes a fork you own. Open it,
+change it, schedule it, or publish your own version back to the community.
+
 Community listings are **public**: `/community` (searchable index) and
 `/community/:listingId` (detail) work without a Kody account. Forking, rating,
 and reporting require a signed-in MCP user.
