@@ -13,10 +13,17 @@ vi.mock('#app/permissions-server.ts', () => ({
 		mockModule.requireUserWithRole(...args),
 }))
 
-vi.mock('#app/admin-platform-feedback-data.ts', () => ({
-	loadAdminPlatformFeedbackData: (...args: Array<unknown>) =>
-		mockModule.loadAdminPlatformFeedbackData(...args),
-}))
+vi.mock('#app/admin-platform-feedback-data.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#app/admin-platform-feedback-data.ts')
+		>()
+	return {
+		...actual,
+		loadAdminPlatformFeedbackData: (...args: Array<unknown>) =>
+			mockModule.loadAdminPlatformFeedbackData(...args),
+	}
+})
 
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
