@@ -59,6 +59,8 @@ export const routes = route({
 	adminUserUsageApi: '/admin/users/usage.json',
 	adminInsights: '/admin/insights',
 	adminInsightsApi: '/admin/insights.json',
+	adminPlatformFeedback: '/admin/platform-feedback',
+	adminPlatformFeedbackApi: '/admin/platform-feedback.json',
 	adminSystemEmail: '/admin/system-email',
 	adminSystemEmailApi: '/admin/system-email.json',
 	community: '/community',

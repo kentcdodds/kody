@@ -41,6 +41,10 @@ import {
 	adminInsightsRouteLoader,
 } from './admin-insights.tsx'
 import { AdminInvitesRoute, adminInvitesRouteLoader } from './admin-invites.tsx'
+import {
+	AdminPlatformFeedbackRoute,
+	adminPlatformFeedbackRouteLoader,
+} from './admin-platform-feedback.tsx'
 import { AdminRolesRoute, adminRolesRouteLoader } from './admin-roles.tsx'
 import {
 	AdminSystemEmailRoute,
@@ -98,6 +102,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/admin/roles': adminRolesRouteLoader,
 	'/admin/community-reports': adminCommunityReportsRouteLoader,
 	'/admin/insights': adminInsightsRouteLoader,
+	'/admin/platform-feedback': adminPlatformFeedbackRouteLoader,
 	'/admin/system-email': adminSystemEmailRouteLoader,
 	'/community': communityRouteLoader,
 	'/community/:listingId': communityDetailRouteLoader,
@@ -137,6 +142,7 @@ export const clientRoutes = {
 	'/admin/roles': <AdminRolesRoute />,
 	'/admin/community-reports': <AdminCommunityReportsRoute />,
 	'/admin/insights': <AdminInsightsRoute />,
+	'/admin/platform-feedback': <AdminPlatformFeedbackRoute />,
 	'/admin/system-email': <AdminSystemEmailRoute />,
 	'/community': <CommunityRoute />,
 	'/community/:listingId': <CommunityDetailRoute />,

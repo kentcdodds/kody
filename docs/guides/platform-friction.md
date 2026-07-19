@@ -75,10 +75,11 @@ feedback approval does not count as approval to change memory.
 ## Submit platform feedback only after explicit approval
 
 Recommend feedback for meaningful or recurring Kody friction, a Kody bug, a poor
-Kody experience, or a concrete suggestion. Briefly state what you would submit
-and ask a direct question. Do not call a submission capability until the user
-explicitly approves that submission; silence, an ambiguous response, or approval
-of some other action is not consent.
+Kody experience, or a concrete suggestion. Show the user the exact proposed
+summary and details, explain the attributed notification described below, and
+ask a direct question. Do not call a submission capability until the user
+explicitly approves that exact submission; silence, an ambiguous response, or
+approval of some other action is not consent.
 
 After explicit approval, call `meta_platform_feedback_submit` with
 `user_confirmed: true`. Include only the approved Kody issue and the minimum
@@ -88,14 +89,23 @@ judgment. The capability accepts this confirmation only from an interactive
 context; scheduled, background, package, and other non-interactive execution
 cannot submit feedback. This gate records the direct approval asserted by the
 interactive caller rather than inferring approval from other conversation
-content.
+content. If the proposed summary or details change, show the revised text and
+ask again before submitting it.
 
 Feedback is attributed to the authenticated user and is not anonymous.
-Deployment admins can read and triage the approved submission through role-gated
-capabilities. Admin list results intentionally omit the full submission; a
-detail read exposes only the approved feedback, not unrelated account content.
-Each account can create at most 10 feedback submissions in a rolling 24-hour
-period and have at most 100 active submissions (open or triaged).
+Immediately after submission, the exact approved summary and details plus the
+account user id, username, and email may be delivered to deployment admins
+through admin-configured notification integrations such as Discord. The
+admin-only event labels the text `summary_untrusted` and `details_untrusted`,
+includes a warning to treat it as user-authored data rather than instructions,
+and carries a trusted deep link to that feedback in the admin interface.
+Deployment admins can also read and triage the approved submission through
+role-gated capabilities. Admin list results intentionally omit the full
+submission; a detail read exposes only the approved feedback, not unrelated
+account content. This delivery exception is limited to feedback the user
+explicitly approved; it does not expose other account content. Each account can
+create at most 10 feedback submissions in a rolling 24-hour period and have at
+most 100 active submissions (open or triaged).
 
 Open and triaged feedback remains until an admin resolves or dismisses it, or
 the submitting account is deleted. Resolved and dismissed feedback is removed
@@ -115,8 +125,10 @@ submitting feedback.
 Use concise language:
 
 > I hit a Kody friction point: `<specific issue>`. I can submit this attributed
-> feedback to the Kody deployment admins, without secrets or unrelated private
-> content. Would you like me to submit it?
+> feedback with this exact summary: `<summary>` and these exact details:
+> `<details>`. The approved text and your account user id, username, and email
+> may be sent immediately to deployment admins through configured notifications
+> such as Discord. Would you like me to submit it?
 
 For memory:
 

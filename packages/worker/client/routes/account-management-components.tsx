@@ -1,4 +1,5 @@
 import { css, type Handle } from 'remix/ui'
+import { routes } from '#app/routes.ts'
 import { on } from '#client/event-mixin.ts'
 import {
 	colors,
@@ -106,6 +107,11 @@ const adminNavItems = [
 		href: '/admin/community-reports',
 		label: 'Community reports',
 		paths: ['/admin/community-reports'],
+	},
+	{
+		href: routes.adminPlatformFeedback.href(),
+		label: 'Platform feedback',
+		paths: [routes.adminPlatformFeedback.href()],
 	},
 	{
 		href: '/admin/system-email',

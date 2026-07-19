@@ -75,13 +75,13 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-subscriptions.md',
 		title: 'Package subscription guide',
 		summary:
-			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email plus durable, opaque admin-only platform.feedback.submitted guidance.',
+			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email plus consent-gated admin-only platform.feedback.submitted notification guidance.',
 	},
 	platform_friction: {
 		file: 'platform-friction.md',
 		title: 'Kody platform friction guide',
 		summary:
-			'Use for meaningful Kody friction, bugs, poor experiences, or suggestions: choose an inline fix, an approved memory workflow, or explicitly approved attributed platform feedback.',
+			'Use for meaningful Kody friction, bugs, poor experiences, or suggestions: show the exact proposal and account-identity notification disclosure before asking for explicit approval.',
 	},
 } as const
 
@@ -157,8 +157,8 @@ const guideFieldSchema = z
 			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
 			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
-			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, metadata-first email payloads, and admin-only platform.feedback.submitted notifications.',
-			'`platform_friction`: choose an inline fix, an approved memory workflow, or attributed platform feedback submitted only after explicit user approval.',
+			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, metadata-first email payloads, and consent-gated admin-only platform.feedback.submitted notifications with untrusted text, submitter identity, and an admin deep link.',
+			'`platform_friction`: choose an inline fix, an approved memory workflow, or attributed platform feedback after showing the exact proposal and notification disclosure and receiving explicit user approval.',
 		].join(' '),
 	)
 
@@ -246,7 +246,9 @@ const allKeywords = [
 		'email message received',
 		'platform.feedback.submitted',
 		'platform feedback submitted',
-		'opaque feedback event',
+		'feedback notification event',
+		'untrusted feedback',
+		'admin feedback deep link',
 		'feedback dispatch queue',
 		'metadata-first payload',
 		'event handler',

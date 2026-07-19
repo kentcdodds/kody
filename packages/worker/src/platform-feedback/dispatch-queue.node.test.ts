@@ -23,7 +23,7 @@ const openFeedback = {
 	submitterUserId: 'submitter-1',
 	category: 'bug' as const,
 	summary: 'The button does not save',
-	details: 'Full user-authored details stay in D1.',
+	details: 'The save button closes the form without saving the change.',
 	status: 'open' as const,
 	reviewedByUserId: null,
 	reviewedAt: null,
@@ -68,22 +68,43 @@ test('platform feedback queue dispatches valid and duplicate messages while ackn
 	const deleted = createQueueMessage('queue-deleted', {
 		feedbackId: 'feedback-deleted',
 	})
+	const identityMissingFeedback = {
+		...openFeedback,
+		id: 'feedback-missing-identity',
+		submitterUserId: 'deleted-account',
+	}
+	const identityMissing = createQueueMessage('queue-missing-identity', {
+		feedbackId: identityMissingFeedback.id,
+	})
 	mocks.getPlatformFeedbackForAdmin.mockImplementation(
-		async (input: { feedbackId: string }) =>
-			input.feedbackId === 'feedback-deleted' ? null : openFeedback,
+		async (input: { feedbackId: string }) => {
+			if (input.feedbackId === 'feedback-deleted') return null
+			if (input.feedbackId === identityMissingFeedback.id) {
+				return identityMissingFeedback
+			}
+			return openFeedback
+		},
 	)
 	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockResolvedValue([])
 
 	await handlePlatformFeedbackDispatchQueue(
-		createBatch([first, duplicate, missing, invalid, extraFields, deleted]),
+		createBatch([
+			first,
+			duplicate,
+			missing,
+			invalid,
+			extraFields,
+			deleted,
+			identityMissing,
+		]),
 		{ APP_DB: {} } as Env,
 		{} as ExecutionContext,
 	)
 
-	expect(mocks.getPlatformFeedbackForAdmin).toHaveBeenCalledTimes(3)
+	expect(mocks.getPlatformFeedbackForAdmin).toHaveBeenCalledTimes(4)
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenCalledTimes(2)
+	).toHaveBeenCalledTimes(3)
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).toHaveBeenNthCalledWith(1, {
@@ -96,6 +117,12 @@ test('platform feedback queue dispatches valid and duplicate messages while ackn
 		env: expect.anything(),
 		feedback: openFeedback,
 	})
+	expect(
+		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	).toHaveBeenNthCalledWith(3, {
+		env: expect.anything(),
+		feedback: identityMissingFeedback,
+	})
 	for (const message of [
 		first,
 		duplicate,
@@ -103,6 +130,7 @@ test('platform feedback queue dispatches valid and duplicate messages while ackn
 		invalid,
 		extraFields,
 		deleted,
+		identityMissing,
 	]) {
 		expect(message.ack).toHaveBeenCalledTimes(1)
 		expect(message.retry).not.toHaveBeenCalled()

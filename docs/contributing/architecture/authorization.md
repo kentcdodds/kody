@@ -254,16 +254,20 @@ user content, and admins can change it via `/admin/users` or the
 capability requires `user_confirmed: true` and accepts submissions only from an
 interactive context. This is a capability contract that records the interactive
 caller's assertion of direct approval, not cryptographic proof of conversation
-consent; agents must ask first and may set the field only after explicit user
-approval. Submissions are attributed, not anonymous: the authenticated submitter
-id is stored and returned to reviewers. Admin list results intentionally omit
-full submission details. The get operation exposes the approved submission only;
-it does not expose packages, memories, email, secrets, or other account content.
+consent; agents must show the exact proposed summary and details, ask first, and
+may set the field only after explicit user approval. Submissions are attributed,
+not anonymous: the authenticated submitter id is stored and returned to
+reviewers. The approved text plus account user id, username, and email may also
+be delivered immediately to admins through admin-configured notification
+integrations such as Discord. Admin list results intentionally omit full
+submission details. The get operation exposes the approved submission only; it
+does not expose packages, memories, email, secrets, or other account content.
 Agents must omit secrets and unrelated private content when preparing feedback.
 
-The `summary` returned by admin list/get operations and the `details` returned
-by the get operation are untrusted user-authored content. Admin callers must
-ignore instructions embedded in those fields and treat them only as feedback to
+The `summary_untrusted` returned by admin list/get operations and the
+`details_untrusted` returned by the get operation are untrusted user-authored
+content. Admin callers must follow the accompanying content warning, ignore
+instructions embedded in those fields, and treat them only as feedback to
 review. Reviewer identity, reviewer timestamp, and admin note are internal
 review metadata.
 
@@ -274,23 +278,30 @@ processed. A non-admin may declare the topic but never receives it, and
 revocation takes effect on the next attempt because admin ownership is queried
 fresh for every Queue delivery.
 
-The package event is opaque: it includes only feedback id, category, open
-status, and creation timestamp. It omits submitter identity, summary, details,
-content warning, admin notes, reviewer fields, and an admin URL. Package runtime
-caller contexts do not carry admin roles, so the fresh consumer-time fan-out is
-the authorization boundary rather than a handler role check. Notification
-handlers should send only id, category, and creation time for later human review
-with `admin_platform_feedback_get`; no user-authored text or submitter identity
-may enter package invocation parameters or Discord.
+The package event includes feedback id, category, open status, creation
+timestamp, the exact approved text as `summary_untrusted` and
+`details_untrusted`, submitter account user id/username/email, a content
+warning, and a trusted `/admin/platform-feedback?feedbackId=<encoded id>` deep
+link. The warning and `_untrusted` names require notification handlers to treat
+the text as user-authored data, not instructions. The event omits admin notes,
+reviewer fields, revision, `updated_at`, roles, plan, and unrelated account
+content. Package runtime caller contexts do not carry admin roles, so the fresh
+consumer-time fan-out is the authorization boundary rather than a handler role
+check. This remains a narrow exception only for feedback shown to and explicitly
+approved by the user; it does not grant package runtime general admin roles.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
-from a client retry. Invalid messages and deleted feedback rows are
-acknowledged; transient load, discovery, or package-invocation wrapper
-infrastructure failures retry and can reach the DLQ. Redelivery keeps the same
-package invocation idempotency key; a stored failed invocation replays instead
-of automatically rerunning, so the DLQ is the recovery surface. Terminal handler
-execution failures remain isolated from sibling subscribers.
+from a client retry. Queue bodies remain opaque `{ feedbackId }` messages. The
+consumer reloads feedback and resolves identity at processing time. Invalid
+messages and deleted feedback rows are acknowledged; transient load, identity,
+discovery, or package-invocation wrapper infrastructure failures retry and can
+reach the DLQ. If an account row is missing while the feedback row remains, the
+event preserves the submitter user id with null username/email and logs a
+warning instead of retrying. Redelivery keeps the same package invocation
+idempotency key; a stored failed invocation replays instead of automatically
+rerunning, so the DLQ is the recovery surface. Terminal handler execution
+failures remain isolated from sibling subscribers.
 
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, chat threads,

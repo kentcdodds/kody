@@ -70,7 +70,7 @@ Conventions:
 - Jobs, workflows, sessions, services, values, storage, and the other capability groups below are individual capabilities: discover them with \`search\`, whose entity detail includes each capability's exact call shape.
 - Memory writes are verify-first: run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`.
 - User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions.
-- For meaningful or recurring Kody friction, bugs, poor experiences, or suggestions, load \`coding_guide_get({ guide: "platform_friction" })\`. Briefly tell the user and ask whether to submit feedback; call \`meta_platform_feedback_submit\` with \`user_confirmed: true\` only after explicit approval.
+- For meaningful or recurring Kody friction, bugs, poor experiences, or suggestions, load \`coding_guide_get({ guide: "platform_friction" })\`. Show the exact proposed feedback and explain the attributed admin-notification disclosure before asking; call \`meta_platform_feedback_submit\` with \`user_confirmed: true\` only after explicit approval of that exact text.
 
 Kody repository (for contributors): https://github.com/kentcdodds/kody
 

@@ -35,10 +35,15 @@ Normal third-party or authentication failures do not automatically become
 platform feedback, though you can ask to submit any Kody-related issue.
 
 Feedback is attributed to your authenticated account and is not anonymous. Admin
-list results intentionally omit the full submission. An admin can open the
-approved submission to read and triage it, but that does not grant access to
-your packages, memories, email, secrets, or other account content. Agents must
-omit secrets and unrelated private content from the feedback they prepare.
+list results intentionally omit the full submission. Once you approve, the exact
+approved summary and details and your account user id, username, and email may
+be delivered immediately to admin review tools and admin-configured
+notifications such as Discord. No unrelated account content is delivered.
+Notifications can deep-link an admin to the read-only platform-feedback review
+surface. An admin can open the approved submission to read and triage it, but
+that does not grant access to your packages, memories, email, secrets, or other
+account content. Agents must omit secrets and unrelated private content from the
+feedback they prepare.
 
 Each account can create at most 10 feedback submissions in a rolling 24-hour
 period and have at most 100 active submissions (open or triaged). Open and

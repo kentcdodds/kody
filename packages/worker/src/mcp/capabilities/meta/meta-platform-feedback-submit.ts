@@ -14,7 +14,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	{
 		name: 'meta_platform_feedback_submit',
 		description:
-			'Submit platform feedback only from an interactive MCP agent flow after asking the user and receiving explicit consent. Non-interactive package code and package apps cannot submit. The submission is attributed to the signed-in user and visible to deployment admins. Do not include secrets or unrelated private content.',
+			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notification integrations such as Discord. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
 		keywords: [
 			'platform feedback',
 			'friction',
@@ -46,7 +46,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			user_confirmed: z
 				.literal(true)
 				.describe(
-					'Must be true only after the user explicitly confirms this attributed admin-visible submission.',
+					'Must be true only after the agent shows the exact proposed summary and details and the user explicitly approves sending them, with the account user id, username, and email, immediately to deployment admins through admin-configured notification integrations such as Discord.',
 				),
 		}),
 		outputSchema: z.object({

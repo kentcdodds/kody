@@ -20,7 +20,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 	{
 		name: 'package_subscriptions_list',
 		description:
-			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, or admin platform-feedback subscribers before debugging dispatch or building fan-out. Declaring an admin-only topic does not grant delivery; dispatch checks the package owner role.',
+			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, or admin platform-feedback notification subscribers before debugging dispatch or building fan-out. The admin-only platform.feedback.submitted event carries explicitly approved untrusted feedback, submitter account identity, and a trusted admin deep link for integrations such as Discord. Declaring an admin-only topic does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
 		keywords: [
 			'package',
 			'package.json#kody.subscriptions',

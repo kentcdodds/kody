@@ -58,9 +58,14 @@ export function PrivacyRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					An agent may briefly describe Kody friction and ask whether you want
 					it submitted. Nothing is submitted unless you explicitly approve.
-					Feedback is attributed to your account and is not anonymous. Admins
-					can read and triage only the approved submission, and agents must omit
-					secrets and unrelated private content.
+					Feedback is attributed to your account and is not anonymous. Once you
+					approve, the exact approved summary and details and your account user
+					id, username, and email may be delivered immediately to admin review
+					tools and admin-configured notifications such as Discord. No unrelated
+					account content is delivered. Notifications can deep-link an admin to
+					the read-only platform-feedback review surface. Admins can read and
+					triage only the approved submission, and agents must omit secrets and
+					unrelated private content.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Each account can create at most 10 feedback submissions in a rolling

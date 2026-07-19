@@ -22,6 +22,10 @@ import {
 	createAdminInsightsHandler,
 } from '#app/handlers/admin-insights.ts'
 import {
+	createAdminPlatformFeedbackApiHandler,
+	createAdminPlatformFeedbackHandler,
+} from '#app/handlers/admin-platform-feedback.ts'
+import {
 	createAdminSystemEmailApiHandler,
 	createAdminSystemEmailHandler,
 } from '#app/handlers/admin-system-email.ts'
@@ -208,6 +212,8 @@ export function createAppRouter(env: Env) {
 			adminUserUsageApi: createAdminUserUsageApiHandler(env),
 			adminInsights: createAdminInsightsHandler(env),
 			adminInsightsApi: createAdminInsightsApiHandler(env),
+			adminPlatformFeedback: createAdminPlatformFeedbackHandler(env),
+			adminPlatformFeedbackApi: createAdminPlatformFeedbackApiHandler(env),
 			adminSystemEmail: createAdminSystemEmailHandler(env),
 			adminSystemEmailApi: createAdminSystemEmailApiHandler(env),
 			community: createCommunityHandler(env),

@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { dispatchAdminPackageSubscriptionEvent } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { platformFeedbackContentWarning } from './content-warning.ts'
 import {
 	buildPlatformFeedbackSubmittedEvent,
 	platformFeedbackSubmittedTopic,
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	listAdminAccountRows: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
+	resolvePlatformFeedbackSubmitterIdentity: vi.fn(),
 }))
 
 vi.mock('#app/permissions-db.ts', () => ({
@@ -29,6 +31,11 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
 }))
 
+vi.mock('./submitter-identity.ts', () => ({
+	resolvePlatformFeedbackSubmitterIdentity:
+		mocks.resolvePlatformFeedbackSubmitterIdentity,
+}))
+
 const { dispatchPlatformFeedbackSubmittedSubscriptionEvent } =
 	await import('./package-subscriptions.ts')
 
@@ -37,13 +44,33 @@ const openFeedback = {
 	submitterUserId: 'submitter-1',
 	category: 'friction' as const,
 	summary: 'The setup path is confusing',
-	details: 'Full feedback details must not enter the subscription payload.',
+	details: 'The setup flow does not explain which action comes next.',
 	status: 'open' as const,
 	reviewedByUserId: null,
 	reviewedAt: null,
 	adminNote: null,
 	createdAt: '2026-07-19T00:00:00.000Z',
 	updatedAt: '2026-07-19T00:00:00.000Z',
+}
+
+const submitterIdentity = {
+	userId: openFeedback.submitterUserId,
+	username: 'feedback-author',
+	email: 'feedback-author@example.com',
+}
+
+function buildExpectedEvent(feedback = openFeedback) {
+	return buildPlatformFeedbackSubmittedEvent({
+		baseUrl: 'https://heykody.dev',
+		feedback,
+		submitter: submitterIdentity,
+	})
+}
+
+function mockResolvedSubmitterIdentity() {
+	mocks.resolvePlatformFeedbackSubmitterIdentity.mockResolvedValue(
+		submitterIdentity,
+	)
 }
 
 function createSavedPackage(input: {
@@ -89,32 +116,68 @@ function createManifest(packageId: string, subscribed = true) {
 	}
 }
 
-test('platform feedback submitted payload is exact and opaque', () => {
-	const payload = buildPlatformFeedbackSubmittedEvent(openFeedback)
+test('platform feedback submitted payload contains exactly the approved event fields and encoded admin URL', () => {
+	const feedback = {
+		...openFeedback,
+		id: 'feedback /?#1',
+	}
+	const payload = buildPlatformFeedbackSubmittedEvent({
+		baseUrl: 'https://kody.example.com',
+		feedback,
+		submitter: submitterIdentity,
+	})
 
 	expect(payload).toEqual({
 		event: 'platform.feedback.submitted',
+		content_warning: platformFeedbackContentWarning,
+		admin_url:
+			'https://kody.example.com/admin/platform-feedback?feedbackId=feedback%20%2F%3F%231',
 		feedback: {
-			id: 'feedback-1',
+			id: 'feedback /?#1',
 			category: 'friction',
 			status: 'open',
 			created_at: '2026-07-19T00:00:00.000Z',
+			summary_untrusted: 'The setup path is confusing',
+			details_untrusted:
+				'The setup flow does not explain which action comes next.',
+		},
+		submitter: {
+			user_id: 'submitter-1',
+			username: 'feedback-author',
+			email: 'feedback-author@example.com',
 		},
 	})
 	expect(Object.keys(payload.feedback).sort()).toEqual(
-		['category', 'created_at', 'id', 'status'].sort(),
+		[
+			'category',
+			'created_at',
+			'details_untrusted',
+			'id',
+			'status',
+			'summary_untrusted',
+		].sort(),
 	)
-	expect(payload.feedback).not.toHaveProperty('submitter_user_id')
-	expect(payload.feedback).not.toHaveProperty('summary_untrusted')
+	expect(payload.feedback).not.toHaveProperty('summary')
 	expect(payload.feedback).not.toHaveProperty('details')
-	expect(payload.feedback).not.toHaveProperty('admin_note')
-	expect(payload.feedback).not.toHaveProperty('reviewed_by_user_id')
-	expect(payload).not.toHaveProperty('content_warning')
-	expect(payload).not.toHaveProperty('admin_url')
+	for (const deniedField of [
+		'admin_note',
+		'reviewed_by_user_id',
+		'reviewed_at',
+		'revision',
+		'updated_at',
+		'roles',
+		'plan',
+		'packages',
+	]) {
+		expect(payload).not.toHaveProperty(deniedField)
+		expect(payload.feedback).not.toHaveProperty(deniedField)
+		expect(payload.submitter).not.toHaveProperty(deniedField)
+	}
 })
 
 test('platform feedback attempts discovered siblings before rejecting a manifest failure', async () => {
 	consoleWarn.mockImplementation(() => {})
+	mockResolvedSubmitterIdentity()
 	const first = createSavedPackage({
 		id: 'package-first',
 		userId: 'admin-stable-1',
@@ -194,7 +257,7 @@ test('platform feedback attempts discovered siblings before rejecting a manifest
 			expect.objectContaining({
 				savedPackage: first,
 				topic: platformFeedbackSubmittedTopic,
-				params: buildPlatformFeedbackSubmittedEvent(openFeedback),
+				params: buildExpectedEvent(),
 				idempotencyKey:
 					'platform-feedback:feedback-1:package-first:platform.feedback.submitted',
 				source: 'platform-feedback',
@@ -203,7 +266,7 @@ test('platform feedback attempts discovered siblings before rejecting a manifest
 			expect.objectContaining({
 				savedPackage: second,
 				topic: platformFeedbackSubmittedTopic,
-				params: buildPlatformFeedbackSubmittedEvent(openFeedback),
+				params: buildExpectedEvent(),
 				idempotencyKey:
 					'platform-feedback:feedback-1:package-second:platform.feedback.submitted',
 				source: 'platform-feedback',
@@ -229,6 +292,67 @@ test('platform feedback attempts discovered siblings before rejecting a manifest
 		},
 	)
 	expect(consoleWarn).toHaveBeenCalledTimes(2)
+	expect(mocks.resolvePlatformFeedbackSubmitterIdentity).toHaveBeenCalledWith(
+		expect.anything(),
+		openFeedback.submitterUserId,
+	)
+})
+
+test('platform feedback dispatch preserves submitter id and warns without retrying when the account identity is missing', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const subscribed = createSavedPackage({
+		id: 'package-subscriber',
+		userId: 'admin-stable-1',
+		sourceId: 'source-subscriber',
+	})
+	const missingIdentity = {
+		userId: openFeedback.submitterUserId,
+		username: null,
+		email: null,
+	}
+	mocks.resolvePlatformFeedbackSubmitterIdentity.mockResolvedValue(
+		missingIdentity,
+	)
+	mocks.listAdminAccountRows.mockResolvedValue([
+		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
+	])
+	mocks.listSavedPackagesByUserId.mockResolvedValue([subscribed])
+	mocks.loadPackageManifestBySourceId.mockResolvedValue(
+		createManifest(subscribed.id),
+	)
+	mocks.invokePackageSubscription.mockResolvedValue({
+		status: 200,
+		body: { ok: true },
+	})
+
+	await expect(
+		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+			env: {
+				APP_DB: {} as D1Database,
+				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+				APP_BASE_URL: 'https://heykody.dev',
+			},
+			feedback: openFeedback,
+		}),
+	).resolves.toEqual([{ status: 200, body: { ok: true } }])
+
+	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
+		expect.objectContaining({
+			params: buildPlatformFeedbackSubmittedEvent({
+				baseUrl: 'https://heykody.dev',
+				feedback: openFeedback,
+				submitter: missingIdentity,
+			}),
+		}),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'platform-feedback-submitter-identity-missing',
+		{
+			feedbackId: openFeedback.id,
+			submitterUserId: openFeedback.submitterUserId,
+		},
+	)
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
 })
 
 test('generic admin fan-out defaults to skipping manifest and invocation failures', async () => {
@@ -303,6 +427,7 @@ test('generic admin fan-out defaults to skipping manifest and invocation failure
 
 test('platform feedback isolates terminal execution failures', async () => {
 	consoleWarn.mockImplementation(() => {})
+	mockResolvedSubmitterIdentity()
 	const failed = createSavedPackage({
 		id: 'package-execution-failed',
 		userId: 'admin-stable-1',
@@ -350,6 +475,7 @@ test.each([
 	'platform feedback rejects retryable invocation infrastructure response %s after attempting siblings',
 	async (code, status) => {
 		consoleWarn.mockImplementation(() => {})
+		mockResolvedSubmitterIdentity()
 		const retryable = createSavedPackage({
 			id: 'package-retryable',
 			userId: 'admin-stable-1',

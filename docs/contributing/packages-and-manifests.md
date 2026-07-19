@@ -268,21 +268,32 @@ Successful consent-gated platform-feedback inserts enqueue
 `platform.feedback.submitted` for durable package-subscription delivery. Fan-out
 selects only packages whose owners hold the admin role when the Queue message is
 processed; non-admin declarations are inert, and role revocation applies to the
-next attempt. The opaque payload contains only feedback id, category, open
-status, and creation timestamp. It deliberately omits submitter identity, all
-user-authored text, content warnings, admin notes, reviewer fields, and an admin
-URL. Handlers should notify with the id, category, and creation time, then use
-`admin_platform_feedback_get` for human review. No user-authored text or
-submitter identity should enter package invocation parameters or Discord.
+next attempt. The event contains the feedback id, category, open status,
+creation timestamp, exact approved text as `summary_untrusted` and
+`details_untrusted`, submitter account user id/username/email, a content
+warning, and a trusted `/admin/platform-feedback?feedbackId=<encoded id>` deep
+link. Admin notification packages may use these fields for integrations such as
+Discord. They must treat the `_untrusted` fields as user-authored data, never as
+instructions.
+
+The event deliberately omits admin notes, reviewer fields, revision,
+`updated_at`, roles, plan, and unrelated account content. This is a narrow
+exception for feedback shown to and explicitly approved by the user before
+submission; it does not grant package runtime general admin roles or access to
+other user data. If the submitter account lookup no longer resolves while the
+feedback row remains, the event preserves the submitter user id with null
+username/email and dispatch logs a stable warning rather than retrying.
 
 The feedback row is authoritative: submission awaits only Queue enqueue after
 persistence, and enqueue failure is logged without changing the successful
-response. The consumer acknowledges invalid messages and deleted rows, retries
-transient load/discovery and package-invocation wrapper infrastructure failures,
-and routes exhausted messages to the DLQ. Redelivery uses the same idempotency
-key; stored failed invocations replay instead of automatically rerunning, making
-the DLQ the recovery surface. Terminal handler execution failures remain
-isolated from sibling subscribers, and fan-out uses bounded concurrency.
+response. Queue bodies remain opaque `{ feedbackId }` messages. The consumer
+reloads the feedback, resolves submitter identity, acknowledges invalid messages
+and deleted feedback rows, retries transient load/identity/discovery and
+package-invocation wrapper infrastructure failures, and routes exhausted
+messages to the DLQ. Redelivery uses the same idempotency key; stored failed
+invocations replay instead of automatically rerunning, making the DLQ the
+recovery surface. Terminal handler execution failures remain isolated from
+sibling subscribers, and fan-out uses bounded concurrency.
 
 ## Package-owned workflows
 
