@@ -56,8 +56,8 @@ Migration `packages/worker/migrations/0043-rbac.sql` seeds two roles with
 Role names are typed: `roleNames = ['user', 'admin']` in `permissions.ts`.
 
 Migration `packages/worker/migrations/0044-rbac-backfill-user-role.sql`
-backfills the `user` role for accounts created before RBAC existed, so every
-account has the default role regardless of when it signed up.
+backfills the `user` role onto accounts that lack a role assignment, so every
+account has the default role.
 
 There is no runtime path that grants `admin`. The first admin is bootstrapped
 with SQL (see [First admin bootstrap](#first-admin-bootstrap) below).

@@ -171,8 +171,8 @@ to `/admin/platform-feedback?feedbackId=<encoded id>`, making it suitable for an
 admin Discord notifier. The event also includes the submitter's account user id,
 username, and email snapshot stored with the submission. Retries never resolve
 mutable live profile data, so an intervening account profile change cannot alter
-the payload or its request hash. Rows created before snapshots were added retain
-null `username`/`email`.
+the payload or its request hash. Rows without submitter snapshots retain null
+`username`/`email`.
 
 The event deliberately omits admin notes, reviewer fields, revision and update
 metadata, roles, plan, and unrelated account content. This narrow delivery

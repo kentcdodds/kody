@@ -120,9 +120,8 @@ export function PrivacyRoute(_handle: Handle) {
 					Role-based access controls the application surface. Whoever operates
 					the deployment — holding the Cloudflare account, D1 database access,
 					and <code>SECRET_STORE_KEY</code> — sits outside any application-level
-					control, exactly as before admin roles existed. The admin role grants
-					no infrastructure access, and infrastructure access requires no admin
-					role.
+					control. The admin role grants no infrastructure access, and
+					infrastructure access requires no admin role.
 				</p>
 			</section>
 
