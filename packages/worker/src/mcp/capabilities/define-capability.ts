@@ -48,6 +48,7 @@ export function defineCapability<
 		...(definition.requiredPermission
 			? { requiredPermission: definition.requiredPermission }
 			: {}),
+		...(definition.featureFlag ? { featureFlag: definition.featureFlag } : {}),
 		source,
 		...(definition.remoteConnector
 			? { remoteConnector: definition.remoteConnector }
@@ -71,7 +72,9 @@ export function defineCapability<
 		async handler(args, ctx) {
 			const startedAt = performance.now()
 			const { baseUrl, hasUser } = callerContextFields(ctx.callerContext)
-			assertCallerCanAccessCapability(ctx.callerContext, definition)
+			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
+				env: ctx.env,
+			})
 
 			let parsedArgs: InferCapabilitySchema<TInputSchema>
 			try {

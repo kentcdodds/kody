@@ -2,7 +2,11 @@ import {
 	buildCapabilityRegistry,
 	type BuiltCapabilityRegistry,
 } from './build-capability-registry.ts'
-import { filterCapabilityRegistryForCaller } from './access-control.ts'
+import {
+	filterCapabilityRegistryForCaller,
+	resolveCallerFeatureFlags,
+	type CallerFeatureFlags,
+} from './access-control.ts'
 import { builtinDomains } from './builtin-domains.ts'
 import { synthesizeRemoteToolDomain } from './remote-connector/index.ts'
 import { synthesizeMcpServerToolDomain } from './mcp-server/index.ts'
@@ -187,8 +191,13 @@ async function buildCapabilityRegistryForDynamicSources(input: {
 function filterRegistryForContext(input: {
 	registry: BuiltCapabilityRegistry
 	callerContext: McpCallerContext
+	featureFlags: CallerFeatureFlags
 }) {
-	return filterCapabilityRegistryForCaller(input.registry, input.callerContext)
+	return filterCapabilityRegistryForCaller(
+		input.registry,
+		input.callerContext,
+		input.featureFlags,
+	)
 }
 
 async function loadEnabledMcpServerRefs(input: {
@@ -252,10 +261,15 @@ export async function getCapabilityRegistryForContext(input: {
 }): Promise<BuiltCapabilityRegistry> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
 	const userId = input.callerContext.user?.userId ?? null
+	const featureFlags = await resolveCallerFeatureFlags(
+		input.env,
+		input.callerContext,
+	)
 	if (!userId) {
 		return filterRegistryForContext({
 			registry: getStaticRegistry(),
 			callerContext: input.callerContext,
+			featureFlags,
 		})
 	}
 	const [mcpServerRefs, openApiBindings] = await Promise.all([
@@ -276,6 +290,7 @@ export async function getCapabilityRegistryForContext(input: {
 		return filterRegistryForContext({
 			registry: getStaticRegistry(),
 			callerContext: input.callerContext,
+			featureFlags,
 		})
 	}
 	const [snapshots, mcpServerSnapshots] = await Promise.all([
@@ -318,6 +333,7 @@ export async function getCapabilityRegistryForContext(input: {
 	return filterRegistryForContext({
 		registry,
 		callerContext: input.callerContext,
+		featureFlags,
 	})
 }
 

@@ -105,6 +105,9 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 					...(capability.requiredPermission
 						? { requiredPermission: capability.requiredPermission }
 						: {}),
+					...(capability.featureFlag
+						? { featureFlag: capability.featureFlag }
+						: {}),
 					source: capability.source ?? 'builtin',
 					...(capability.remoteConnector
 						? { remoteConnector: capability.remoteConnector }

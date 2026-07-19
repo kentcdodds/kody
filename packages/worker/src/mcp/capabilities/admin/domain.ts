@@ -1,6 +1,9 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
+import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
+import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
+import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
 import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
@@ -15,7 +18,7 @@ import { adminUserUpdateCapability } from './admin-user-update.ts'
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator capabilities for account metadata, operator-owned system email, and attributed platform feedback users explicitly submit for admin review; never exposes unrelated user content such as packages, secrets, memories, jobs, or user inbox email.',
+		'Admin-only operator capabilities for account metadata, feature flags, operator-owned system email, and attributed platform feedback users explicitly submit for admin review; never exposes unrelated user content such as packages, secrets, memories, jobs, or user inbox email.',
 	keywords: [
 		'admin',
 		'rbac',
@@ -24,6 +27,7 @@ export const adminDomain = defineDomain({
 		'roles',
 		'plans',
 		'audit',
+		'feature flags',
 		'system email',
 		'platform feedback',
 	],
@@ -34,6 +38,9 @@ export const adminDomain = defineDomain({
 		adminUserUpdateCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
+		adminFeatureFlagListCapability,
+		adminFeatureFlagSetCapability,
+		adminFeatureFlagOverrideCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
 		adminPlatformFeedbackListCapability,

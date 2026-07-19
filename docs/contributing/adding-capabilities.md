@@ -94,6 +94,10 @@ Optional fields:
 - `requiredRole`: RBAC role required to see or execute the capability
 - `requiredPermission`: RBAC permission string required to see or execute the
   capability
+- `featureFlag`: optional feature-flag key from
+  `#worker/feature-flags/registry.ts`; when set, the capability is hidden from
+  search and denied at execute time unless the flag evaluates enabled for the
+  calling user
 
 `defineDomainCapability` delegates to `defineCapability()`, which:
 
@@ -141,6 +145,35 @@ current request. Do **not** cache role or permission decisions into Vectorize
 metadata, OAuth grants, package state, or session-scoped data; role revocation
 must take effect on the next request.
 
+### Feature-flag-gated capabilities
+
+When a capability should only appear while a typed feature flag is enabled for
+the caller, set `featureFlag` to a key from
+`packages/worker/src/feature-flags/registry.ts`:
+
+```ts
+export const exampleFlaggedCapability = defineDomainCapability(
+	capabilityDomainNames.example,
+	{
+		name: 'example_flagged_action',
+		description: 'Only available when the demo-indicator flag is on.',
+		featureFlag: 'demo-indicator',
+		inputSchema: z.object({}),
+		async handler(args, ctx) {
+			void args
+			void ctx
+			return { ok: true }
+		},
+	},
+)
+```
+
+`getCapabilityRegistryForContext` resolves the caller's evaluated flag map once
+per request (via `getFeatureFlagsForUser`) and passes it into the same access
+filter used for `requiredRole` / `requiredPermission`. Execute-time assertions
+reload that map when needed. Do **not** cache flag decisions into Vectorize
+metadata or session-scoped data.
+
 ### Admin domain
 
 The `admin` domain is for MCP-accessible account administration and the narrow
@@ -172,6 +205,9 @@ Current admin capabilities:
 - `admin_user_create`
 - `admin_user_update`
 - `admin_audit_log_query`
+- `admin_feature_flag_list`
+- `admin_feature_flag_set`
+- `admin_feature_flag_override`
 - `admin_platform_feedback_list`
 - `admin_platform_feedback_get`
 - `admin_platform_feedback_update`

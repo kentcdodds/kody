@@ -5,13 +5,21 @@ import {
 	userHasPermission,
 	userHasRole,
 } from '#app/permissions.ts'
+import {
+	type FeatureFlagKey,
+	featureFlagKeys,
+} from '#worker/feature-flags/registry.ts'
+import { getFeatureFlagsForUser } from '#worker/feature-flags/service.ts'
+import { findUserRowByStableUserId } from '#worker/user-id.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 
 type CapabilityAccessRequirement = Pick<
 	Capability | CapabilitySpec,
-	'name' | 'requiredRole' | 'requiredPermission'
+	'name' | 'requiredRole' | 'requiredPermission' | 'featureFlag'
 >
+
+export type CallerFeatureFlags = Readonly<Record<FeatureFlagKey, boolean>>
 
 type McpUserAccessContext = {
 	roles?: Array<string>
@@ -36,31 +44,93 @@ function hasRequiredPermission(
 	)
 }
 
+function disabledFeatureFlags(): CallerFeatureFlags {
+	return Object.fromEntries(
+		featureFlagKeys.map((key) => [key, false]),
+	) as Record<FeatureFlagKey, boolean>
+}
+
+async function resolveFeatureFlagUserId(
+	db: D1Database,
+	callerContext: McpCallerContext,
+): Promise<number | null> {
+	const user = callerContext.user
+	if (!user?.userId) return null
+	const row = await findUserRowByStableUserId<{
+		id: number
+		email: string
+		stable_user_id: string | null
+	}>({
+		db,
+		stableUserId: user.userId,
+		select: 'SELECT id, email, stable_user_id FROM users',
+	})
+	return row?.id ?? null
+}
+
+/**
+ * Resolve the caller's evaluated feature-flag map once per request. Used by
+ * registry filtering (search/list) so access checks stay synchronous.
+ */
+export async function resolveCallerFeatureFlags(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<CallerFeatureFlags> {
+	if (!env.APP_DB) return disabledFeatureFlags()
+	try {
+		const userId = await resolveFeatureFlagUserId(env.APP_DB, callerContext)
+		return await getFeatureFlagsForUser(env.APP_DB, userId)
+	} catch {
+		// Fail closed: gated capabilities stay hidden when evaluation fails.
+		return disabledFeatureFlags()
+	}
+}
+
 export function callerCanAccessCapability(
 	callerContext: McpCallerContext,
 	capability: CapabilityAccessRequirement,
+	featureFlags?: CallerFeatureFlags | null,
 ) {
 	const requiredRole = capability.requiredRole
 	const requiredPermission = capability.requiredPermission
-	if (!requiredRole && !requiredPermission) return true
+	const requiredFeatureFlag = capability.featureFlag
+	if (!requiredRole && !requiredPermission && !requiredFeatureFlag) {
+		return true
+	}
 
 	const user = getUserAccessContext(callerContext)
-	if (!user) return false
+	if ((requiredRole || requiredPermission) && !user) return false
 	if (requiredRole && !hasRequiredRole(user, requiredRole)) return false
 	if (requiredPermission && !hasRequiredPermission(user, requiredPermission)) {
 		return false
 	}
+	if (requiredFeatureFlag) {
+		// Fail closed when the per-request flag map was not resolved.
+		if (!featureFlags) return false
+		if (featureFlags[requiredFeatureFlag] !== true) return false
+	}
 	return true
 }
 
-export function assertCallerCanAccessCapability(
+export async function assertCallerCanAccessCapability(
 	callerContext: McpCallerContext,
 	capability: CapabilityAccessRequirement,
+	options: {
+		featureFlags?: CallerFeatureFlags | null
+		env?: Env
+	} = {},
 ) {
-	if (callerCanAccessCapability(callerContext, capability)) return
+	let featureFlags = options.featureFlags
+	if (capability.featureFlag && featureFlags == null && options.env) {
+		featureFlags = await resolveCallerFeatureFlags(options.env, callerContext)
+	}
+
+	if (callerCanAccessCapability(callerContext, capability, featureFlags)) {
+		return
+	}
 
 	const user = getUserAccessContext(callerContext)
-	if (!user) {
+	if ((capability.requiredRole || capability.requiredPermission) && !user) {
 		throw new Error(
 			`Authenticated MCP user is required to execute capability "${capability.name}".`,
 		)
@@ -81,15 +151,21 @@ export function assertCallerCanAccessCapability(
 			`MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
 		)
 	}
+	if (capability.featureFlag) {
+		throw new Error(
+			`MCP user lacks required feature flag "${capability.featureFlag}" for capability "${capability.name}".`,
+		)
+	}
 	throw new Error(`MCP user cannot access capability "${capability.name}".`)
 }
 
 export function filterCapabilityRegistryForCaller(
 	registry: BuiltCapabilityRegistry,
 	callerContext: McpCallerContext,
+	featureFlags?: CallerFeatureFlags | null,
 ): BuiltCapabilityRegistry {
 	const capabilityList = registry.capabilityList.filter((capability) =>
-		callerCanAccessCapability(callerContext, capability),
+		callerCanAccessCapability(callerContext, capability, featureFlags),
 	)
 	if (capabilityList.length === registry.capabilityList.length) {
 		return registry

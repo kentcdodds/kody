@@ -423,7 +423,9 @@ async function buildKodyToolContext(
 		Object.entries(capabilityMap).map(([capabilityName, capability]) => [
 			capabilityName,
 			async (args: unknown) => {
-				assertCallerCanAccessCapability(callerContext, capability)
+				await assertCallerCanAccessCapability(callerContext, capability, {
+					env,
+				})
 				const resolveSecretValue =
 					options?.resolveSecretValue ??
 					createCapabilityInputSecretResolver(
