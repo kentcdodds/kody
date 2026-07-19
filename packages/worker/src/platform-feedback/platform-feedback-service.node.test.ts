@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	getPlatformFeedbackByIdForAdmin,
 	updatePlatformFeedbackStatusForAdmin,
@@ -394,4 +394,44 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			)
 			.get(),
 	).toEqual({ total: 100 })
+})
+
+test('platform feedback rolling rate limit retries when the oldest submission expires', async () => {
+	vi.useFakeTimers()
+	try {
+		const now = new Date('2026-07-19T12:00:00.000Z')
+		vi.setSystemTime(now)
+		const { sqlite, db } = createPlatformFeedbackDb()
+		const createdAt = new Date(
+			now.getTime() - 23 * 60 * 60 * 1_000,
+		).toISOString()
+		const insertFeedback = sqlite.prepare(
+			`INSERT INTO platform_feedback (
+				id, submitter_user_id, category, summary, details, created_at, updated_at
+			) VALUES (?, 'rate-limited-user', 'friction', ?, ?, ?, ?)`,
+		)
+		for (let index = 0; index < 10; index += 1) {
+			insertFeedback.run(
+				`feedback-${index}`,
+				`Feedback ${index}`,
+				`Feedback details ${index}`,
+				createdAt,
+				createdAt,
+			)
+		}
+
+		await expect(
+			submitPlatformFeedback({
+				db,
+				submitterUserId: 'rate-limited-user',
+				category: 'friction',
+				summary: 'Feedback 11',
+				details: 'This submission exceeds the rolling limit.',
+			}),
+		).rejects.toThrow(
+			'Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after 3600 seconds.',
+		)
+	} finally {
+		vi.useRealTimers()
+	}
 })

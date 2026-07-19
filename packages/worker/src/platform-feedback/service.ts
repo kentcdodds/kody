@@ -33,6 +33,26 @@ const submissionRateLimitWindowSeconds = 24 * 60 * 60
 const submissionRateLimitWindowMs = submissionRateLimitWindowSeconds * 1_000
 const submissionInsertAttempts = 2
 
+function getSubmissionRateLimitRetryAfterSeconds(
+	oldestCreatedAt: string | null,
+	now: string,
+) {
+	const oldestCreatedAtMs = Date.parse(oldestCreatedAt ?? '')
+	const nowMs = Date.parse(now)
+	if (!Number.isFinite(oldestCreatedAtMs) || !Number.isFinite(nowMs)) {
+		return submissionRateLimitWindowSeconds
+	}
+	return Math.min(
+		submissionRateLimitWindowSeconds,
+		Math.max(
+			1,
+			Math.ceil(
+				(oldestCreatedAtMs + submissionRateLimitWindowMs - nowMs) / 1_000,
+			),
+		),
+	)
+}
+
 function toPlatformFeedbackRecord({
 	revision: _revision,
 	...record
@@ -198,7 +218,10 @@ export async function submitPlatformFeedback(input: {
 		)
 		if (limitCounts.rollingCount >= submissionRateLimit) {
 			throw new PlatformFeedbackSubmissionRateLimitError(
-				submissionRateLimitWindowSeconds,
+				getSubmissionRateLimitRetryAfterSeconds(
+					limitCounts.oldestCreatedAt,
+					now,
+				),
 			)
 		}
 		if (limitCounts.activeCount >= activeQueueLimit) {

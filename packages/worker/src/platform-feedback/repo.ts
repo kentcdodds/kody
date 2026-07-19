@@ -114,27 +114,39 @@ export async function getPlatformFeedbackSubmissionLimitCounts(
 	const counts = await db
 		.prepare(
 			`SELECT
-				(
-					SELECT COUNT(*)
-					FROM platform_feedback
-					WHERE submitter_user_id = ?
-						AND created_at > ?
-				) AS rolling_count,
+				rolling.rolling_count,
+				rolling.oldest_created_at,
 				(
 					SELECT COUNT(*)
 					FROM platform_feedback
 					WHERE submitter_user_id = ?
 						AND status IN ('open', 'triaged')
-				) AS active_count`,
+				) AS active_count
+			FROM (
+				SELECT
+					COUNT(*) AS rolling_count,
+					MIN(created_at) AS oldest_created_at
+				FROM platform_feedback
+				WHERE submitter_user_id = ?
+					AND created_at > ?
+			) AS rolling`,
 		)
 		.bind(
 			input.submitterUserId,
-			input.rollingWindowStart,
 			input.submitterUserId,
+			input.rollingWindowStart,
 		)
-		.first<{ rolling_count: number; active_count: number }>()
+		.first<{
+			rolling_count: number
+			oldest_created_at: string | null
+			active_count: number
+		}>()
 	return {
 		rollingCount: Number(counts?.rolling_count ?? 0),
+		oldestCreatedAt:
+			typeof counts?.oldest_created_at === 'string'
+				? counts.oldest_created_at
+				: null,
 		activeCount: Number(counts?.active_count ?? 0),
 	}
 }
