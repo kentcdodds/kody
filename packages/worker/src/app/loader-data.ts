@@ -346,8 +346,8 @@ export type AdminPlatformFeedbackLoaderData = {
 	page: number
 	pageSize: number
 	total: number
-	statusFilter: PlatformFeedbackStatus | null
-	categoryFilter: PlatformFeedbackCategory | null
+	statusFilter: AdminPlatformFeedbackListItem['status'] | null
+	categoryFilter: AdminPlatformFeedbackListItem['category'] | null
 }
 
 export type AdminCreatedUserSetup = {
