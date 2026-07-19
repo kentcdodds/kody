@@ -20,7 +20,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 	{
 		name: 'package_subscriptions_list',
 		description:
-			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt or delivery-update subscribers before debugging dispatch or building fan-out.',
+			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, or admin platform-feedback subscribers before debugging dispatch or building fan-out.',
 		keywords: [
 			'package',
 			'package.json#kody.subscriptions',
@@ -35,6 +35,8 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 			'email delivery updated',
 			'email.system-message.received',
 			'system email',
+			'platform.feedback.submitted',
+			'platform feedback submitted',
 			'inbound email',
 			'list',
 			'discover',
@@ -49,7 +51,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional exact event topic filter such as "email.message.received" or "email.message.delivery.updated".',
+					'Optional exact event topic filter such as "email.message.received", "email.message.delivery.updated", or "platform.feedback.submitted".',
 				),
 		}),
 		outputSchema: z.object({

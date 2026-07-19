@@ -6,6 +6,7 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { adminPlatformFeedbackGetCapability } from './admin/admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin/admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin/admin-platform-feedback-update.ts'
@@ -15,8 +16,14 @@ import { metaPlatformFeedbackSubmitCapability } from './meta/meta-platform-feedb
 const mockModule = vi.hoisted(() => ({
 	getPlatformFeedbackForAdmin: vi.fn(),
 	listPlatformFeedbackForAdmin: vi.fn(),
+	dispatchPlatformFeedbackSubmittedSubscriptionEvent: vi.fn(),
 	submitPlatformFeedback: vi.fn(),
 	updatePlatformFeedbackForAdmin: vi.fn(),
+}))
+
+vi.mock('#worker/platform-feedback/package-subscriptions.ts', () => ({
+	dispatchPlatformFeedbackSubmittedSubscriptionEvent:
+		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 }))
 
 vi.mock('#worker/platform-feedback/service.ts', async (importOriginal) => {
@@ -76,7 +83,7 @@ function createCapabilityContext(input?: {
 	}
 }
 
-test('meta platform feedback submission requires auth, consent, and a trusted interactive origin', async () => {
+test('meta platform feedback submission gates consent and isolates post-persistence dispatch failures', async () => {
 	mockModule.submitPlatformFeedback.mockResolvedValue(openFeedback)
 	const input = {
 		category: 'friction' as const,
@@ -136,6 +143,25 @@ test('meta platform feedback submission requires auth, consent, and a trusted in
 		'only available from an interactive MCP agent flow after explicit user approval',
 	)
 	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
+	expect(
+		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	).not.toHaveBeenCalled()
+
+	mockModule.submitPlatformFeedback.mockRejectedValueOnce(
+		new Error('active queue limit'),
+	)
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			input,
+			createCapabilityContext({
+				userId: 'user-1',
+				executionOrigin: 'interactive',
+			}),
+		),
+	).rejects.toThrow('active queue limit')
+	expect(
+		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	).not.toHaveBeenCalled()
 
 	const result = await metaPlatformFeedbackSubmitCapability.handler(
 		input,
@@ -151,11 +177,43 @@ test('meta platform feedback submission requires auth, consent, and a trusted in
 		summary: 'Setup is confusing',
 		details: 'The setup flow does not explain the next action.',
 	})
+	expect(
+		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	).toHaveBeenCalledWith({
+		env: expect.anything(),
+		feedback: openFeedback,
+	})
 	expect(result).toEqual({
 		feedback_id: 'feedback-1',
 		status: 'open',
 		created_at: '2026-07-19T00:00:00.000Z',
 	})
+
+	consoleError.mockImplementation(() => {})
+	mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockClear()
+	mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockRejectedValueOnce(
+		new Error('subscriber discovery unavailable'),
+	)
+	const resultAfterDispatchFailure =
+		await metaPlatformFeedbackSubmitCapability.handler(
+			input,
+			createCapabilityContext({
+				userId: 'user-1',
+				executionOrigin: 'interactive',
+			}),
+		)
+	expect(resultAfterDispatchFailure).toEqual(result)
+	expect(
+		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	).toHaveBeenCalledWith({
+		env: expect.anything(),
+		feedback: openFeedback,
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'platform-feedback-package-subscription-dispatch-failed',
+		expect.any(Error),
+	)
+	expect(consoleError).toHaveBeenCalledTimes(1)
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })
 

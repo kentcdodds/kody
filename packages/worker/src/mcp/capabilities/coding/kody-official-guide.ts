@@ -75,7 +75,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-subscriptions.md',
 		title: 'Package subscription guide',
 		summary:
-			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email.message.received payload guidance.',
+			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email and admin-only platform.feedback.submitted payload guidance.',
 	},
 	platform_friction: {
 		file: 'platform-friction.md',
@@ -157,7 +157,7 @@ const guideFieldSchema = z
 			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
 			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
-			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, and email.message.received metadata-first handler payloads.',
+			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, metadata-first email payloads, and admin-only platform.feedback.submitted notifications.',
 			'`platform_friction`: choose an inline fix, an approved memory workflow, or attributed platform feedback submitted only after explicit user approval.',
 		].join(' '),
 	)
@@ -244,6 +244,8 @@ const allKeywords = [
 		'package.json#kody.subscriptions',
 		'email.message.received',
 		'email message received',
+		'platform.feedback.submitted',
+		'platform feedback submitted',
 		'metadata-first payload',
 		'event handler',
 		'background service',

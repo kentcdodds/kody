@@ -264,6 +264,22 @@ plus an `admin_url` link to the message in `/admin/system-email`. Handlers run
 as the admin package owner (not the system owner), so user-scoped email reads do
 not apply to the system message.
 
+Successful consent-gated platform-feedback inserts dispatch
+`platform.feedback.submitted` through the same package subscription runtime.
+Fan-out selects only packages whose owners hold the admin role when that event
+is dispatched; non-admin declarations are inert, and role revocation applies to
+the next submission. The payload contains only the feedback id, submitter id,
+category, untrusted summary, open status, creation timestamp, and content
+warning. It deliberately omits full details, admin notes, reviewer fields, and
+an admin URL. Handlers should notify with the feedback id and use
+`admin_platform_feedback_get` for later review instead of copying full feedback
+text into the notification.
+
+The feedback row is authoritative: dispatch is awaited after persistence but is
+best-effort, so discovery or handler failures are logged and do not roll back a
+successful submission. Per-package manifest and invocation failures are isolated
+from sibling subscribers.
+
 ## Package-owned workflows
 
 Packages declare workflow entrypoints in runtime code, not in

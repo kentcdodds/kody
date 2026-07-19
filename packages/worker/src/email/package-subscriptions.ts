@@ -1,11 +1,10 @@
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { listAdminAccountRows } from '#app/permissions-db.ts'
+import { dispatchAdminPackageSubscriptionEvent } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
 import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { listEmailAttachmentsForMessage } from './repo.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
@@ -260,29 +259,6 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 	)
 }
 
-async function listAdminStableUserIds(db: D1Database) {
-	const rows = await listAdminAccountRows(db)
-	// One unresolvable admin row (for example corrupt account data) must not
-	// block dispatch to the remaining admins.
-	const settled = await Promise.allSettled(
-		rows.map(async (row) => await resolveUserStableId(row)),
-	)
-	const stableIds = new Set<string>()
-	for (const result of settled) {
-		if (result.status === 'fulfilled' && result.value) {
-			stableIds.add(result.value)
-			continue
-		}
-		if (result.status === 'rejected') {
-			console.warn(
-				'Failed to resolve admin stable user id for system email dispatch',
-				result.reason,
-			)
-		}
-	}
-	return Array.from(stableIds)
-}
-
 /**
  * Fan a stored system-inbox message (`system:email` owner) out to packages
  * saved by users who hold the admin role at dispatch time. The payload is the
@@ -299,50 +275,34 @@ export async function dispatchSystemInboundEmailSubscriptionEvents(input: {
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 	})
-	const adminUserIds = await listAdminStableUserIds(input.env.APP_DB)
-	if (adminUserIds.length === 0) return []
-	const attachments = await listEmailAttachmentsForMessage({
-		db: input.env.APP_DB,
-		messageId: input.message.id,
+	return await dispatchAdminPackageSubscriptionEvent({
+		env: input.env,
+		baseUrl,
+		topic: systemInboundEmailReceiptTopic,
+		async getParams() {
+			const attachments = await listEmailAttachmentsForMessage({
+				db: input.env.APP_DB,
+				messageId: input.message.id,
+			})
+			const eventPayload = {
+				...buildEmailEventPayload({
+					event: systemInboundEmailReceiptTopic,
+					message: input.message,
+					attachments,
+				}),
+				event: systemInboundEmailReceiptTopic,
+				admin_url: `${baseUrl}/admin/system-email?messageId=${encodeURIComponent(
+					input.message.id,
+				)}`,
+			} satisfies SystemEmailReceiptSubscriptionEnvelope
+			return eventPayload as Record<string, unknown>
+		},
+		source: 'email',
+		buildIdempotencyKey: (savedPackage) =>
+			buildSubscriptionIdempotencyKey({
+				messageId: input.message.id,
+				packageId: savedPackage.id,
+				topic: systemInboundEmailReceiptTopic,
+			}),
 	})
-	const eventPayload = {
-		...buildEmailEventPayload({
-			event: systemInboundEmailReceiptTopic,
-			message: input.message,
-			attachments,
-		}),
-		event: systemInboundEmailReceiptTopic,
-		admin_url: `${baseUrl}/admin/system-email?messageId=${encodeURIComponent(
-			input.message.id,
-		)}`,
-	} satisfies SystemEmailReceiptSubscriptionEnvelope
-	const subscriptionGroups = await Promise.all(
-		adminUserIds.map(
-			async (userId) =>
-				await loadMatchingEmailSubscriptions({
-					env: input.env,
-					baseUrl,
-					userId,
-					topic: systemInboundEmailReceiptTopic,
-				}),
-		),
-	)
-	return await Promise.all(
-		subscriptionGroups.flat().map(
-			async ({ savedPackage }) =>
-				await invokePackageSubscription({
-					env: input.env as Env,
-					baseUrl,
-					savedPackage,
-					topic: systemInboundEmailReceiptTopic,
-					params: eventPayload as Record<string, unknown>,
-					idempotencyKey: buildSubscriptionIdempotencyKey({
-						messageId: input.message.id,
-						packageId: savedPackage.id,
-						topic: systemInboundEmailReceiptTopic,
-					}),
-					source: 'email',
-				}),
-		),
-	)
 }

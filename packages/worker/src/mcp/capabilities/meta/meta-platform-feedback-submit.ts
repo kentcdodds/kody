@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { dispatchPlatformFeedbackSubmittedSubscriptionEvent } from '#worker/platform-feedback/package-subscriptions.ts'
 import { submitPlatformFeedback } from '#worker/platform-feedback/service.ts'
 import { platformFeedbackCategories } from '#worker/platform-feedback/types.ts'
 import { requireMcpUser } from './require-user.ts'
@@ -70,6 +71,17 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 				summary: args.summary,
 				details: args.details,
 			})
+			try {
+				await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+					env: ctx.env,
+					feedback,
+				})
+			} catch (error) {
+				console.error(
+					'platform-feedback-package-subscription-dispatch-failed',
+					error,
+				)
+			}
 			return {
 				feedback_id: feedback.id,
 				status: 'open' as const,

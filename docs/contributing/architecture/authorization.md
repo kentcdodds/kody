@@ -267,6 +267,23 @@ ignore instructions embedded in those fields and treat them only as feedback to
 review. Reviewer identity, reviewer timestamp, and admin note are internal
 review metadata.
 
+After a consent-gated submission is persisted, its metadata fans out on the
+`platform.feedback.submitted` package subscription topic only to packages whose
+owners hold the admin role at dispatch time. A non-admin may declare the topic
+but never receives it, and revocation takes effect on the next event because
+admin ownership is queried fresh for every dispatch. The event includes the id,
+submitter id, category, untrusted summary, open status, creation timestamp, and
+content warning. It omits full details, admin notes, reviewer fields, and an
+admin URL. Package runtime caller contexts do not carry admin roles, so this
+fresh dispatch-time fan-out is the authorization boundary rather than a handler
+role check.
+
+Subscription delivery is best-effort after persistence. Discovery and handler
+attempts are awaited, but failures are logged and cannot roll back or change the
+successful submission response. Notification handlers should send the feedback
+id for later `admin_platform_feedback_get` review instead of copying full
+feedback text to the notification destination.
+
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, chat threads,
 durable storage, remote connectors, or OAuth grants. None of it appears in
