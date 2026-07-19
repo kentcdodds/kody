@@ -155,7 +155,12 @@ function createFeatureFlagsTestDb(
 						params[2] === null || params[2] === undefined
 							? null
 							: Number(params[2])
-					const note = String(params[3] ?? '')
+					// Emulates COALESCE(?, '') on insert / COALESCE(?, note) on update.
+					const noteParam =
+						params[3] === null || params[3] === undefined
+							? null
+							: String(params[3])
+					const note = noteParam ?? globals.get(key)?.note ?? ''
 					const updatedBy = Number(params[4])
 					const updatedAt = nextTimestamp()
 					globals.set(key, {
@@ -353,6 +358,34 @@ test('global on/off and percentage rollout evaluation', async () => {
 			updatedBy: 9,
 		}),
 	).rejects.toThrow(/note must be at most 500 characters/)
+})
+
+test('omitting note preserves the existing operator note; empty string clears it', async () => {
+	const db = createFeatureFlagsTestDb()
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: null,
+		note: 'keep me',
+		updatedBy: 9,
+	})
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: false,
+		rolloutPercent: null,
+		updatedBy: 9,
+	})
+	expect(db.globals.get('demo-indicator')?.note).toBe('keep me')
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: false,
+		rolloutPercent: null,
+		note: '',
+		updatedBy: 9,
+	})
+	expect(db.globals.get('demo-indicator')?.note).toBe('')
 })
 
 test('computeRolloutBucket is deterministic and spreads across 0-99', () => {

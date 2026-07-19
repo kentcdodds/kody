@@ -74,9 +74,9 @@ function assertValidRolloutPercent(rolloutPercent: number | null) {
 	}
 }
 
-function normalizeFeatureFlagNote(note: unknown): string {
+function normalizeFeatureFlagNote(note: unknown): string | null {
 	if (note === undefined) {
-		return ''
+		return null
 	}
 	if (typeof note !== 'string') {
 		throw new Error('note must be a string.')
@@ -194,15 +194,17 @@ export async function setFeatureFlagGlobalState(
 	},
 ): Promise<void> {
 	assertValidRolloutPercent(input.rolloutPercent)
+	// null note = "leave unchanged" on update ('' on first insert); callers
+	// omit the field to preserve an existing operator note.
 	const note = normalizeFeatureFlagNote(input.note)
 	await db
 		.prepare(
 			`INSERT INTO feature_flags (key, enabled, rollout_percent, note, updated_by, updated_at)
-			 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			 VALUES (?, ?, ?, COALESCE(?, ''), ?, CURRENT_TIMESTAMP)
 			 ON CONFLICT(key) DO UPDATE SET
 				enabled = excluded.enabled,
 				rollout_percent = excluded.rollout_percent,
-				note = excluded.note,
+				note = COALESCE(?, feature_flags.note),
 				updated_by = excluded.updated_by,
 				updated_at = CURRENT_TIMESTAMP`,
 		)
@@ -212,6 +214,7 @@ export async function setFeatureFlagGlobalState(
 			input.rolloutPercent,
 			note,
 			input.updatedBy,
+			note,
 		)
 		.run()
 }
