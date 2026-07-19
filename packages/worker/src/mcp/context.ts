@@ -21,9 +21,7 @@ export function createMcpCallerContext(input: {
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
-		...(input.executionOrigin === undefined
-			? {}
-			: { executionOrigin: input.executionOrigin }),
+		executionOrigin: input.executionOrigin,
 		user: input.user ?? null,
 		remoteConnectors: input.remoteConnectors ?? null,
 		storageContext: input.storageContext ?? null,
