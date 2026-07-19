@@ -6,9 +6,7 @@ import {
 	type PlatformFeedbackRecord,
 } from '#worker/platform-feedback/types.ts'
 
-export const platformFeedbackCategorySchema = z.enum(
-	platformFeedbackCategories,
-)
+export const platformFeedbackCategorySchema = z.enum(platformFeedbackCategories)
 
 export const platformFeedbackStatusSchema = z.enum(platformFeedbackStatuses)
 

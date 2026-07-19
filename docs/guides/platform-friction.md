@@ -5,9 +5,9 @@ capabilities, saved packages, package apps, jobs, memories, values,
 integrations, or official Kody guides.
 
 The goal is small, user-approved improvement: resolve what can be fixed in the
-current task, remember durable user-specific context when appropriate, and
-offer to submit useful platform feedback without turning the user's task into
-platform maintenance.
+current task, remember durable user-specific context when appropriate, and offer
+to submit useful platform feedback without turning the user's task into platform
+maintenance.
 
 ## What counts as Kody friction
 
@@ -22,9 +22,9 @@ Treat these as friction points:
 
 Do not recommend platform feedback for every normal third-party API failure,
 provider outage, authentication failure, or credentials setup step. Use
-`integration_bootstrap`, `oauth`, or `connect_secret` for those workflows.
-Offer feedback when Kody made that experience meaningfully worse, or when the
-same Kody friction is likely to recur.
+`integration_bootstrap`, `oauth`, or `connect_secret` for those workflows. Offer
+feedback when Kody made that experience meaningfully worse, or when the same
+Kody friction is likely to recur.
 
 ## Core rule
 
@@ -33,16 +33,16 @@ improvement, tell the user briefly. Then choose the smallest relevant path:
 
 1. Fix obvious, low-risk friction inline when it is already within the work.
 2. Propose memory only for durable user-specific context.
-3. Offer to submit meaningful platform feedback for Kody bugs, poor
-   experiences, recurring friction, or suggestions.
+3. Offer to submit meaningful platform feedback for Kody bugs, poor experiences,
+   recurring friction, or suggestions.
 
 Keep any follow-up separate from the user's main task. Do not block a successful
 result on memory or feedback unless the friction prevents completion.
 
 ## Fix friction inline
 
-If the improvement is obvious, low-risk, and already within the authorized
-work, you may make it directly. Examples:
+If the improvement is obvious, low-risk, and already within the authorized work,
+you may make it directly. Examples:
 
 - fix a typo or stale setup step in a package README you are already editing
 - clarify a package `## Intent` section after the user expanded the package
@@ -50,9 +50,8 @@ work, you may make it directly. Examples:
 - add a missing usage note to package docs after you verified the behavior
 
 Still mention the improvement in your final response so the user can see what
-changed. Ask before changing package behavior, adding jobs, changing
-visibility, broadening scope, or making any other change that needs separate
-authorization.
+changed. Ask before changing package behavior, adding jobs, changing visibility,
+broadening scope, or making any other change that needs separate authorization.
 
 ## Memory changes require approval
 
@@ -75,11 +74,11 @@ feedback approval does not count as approval to change memory.
 
 ## Submit platform feedback only after explicit approval
 
-Recommend feedback for meaningful or recurring Kody friction, a Kody bug, a
-poor Kody experience, or a concrete suggestion. Briefly state what you would
-submit and ask a direct question. Do not call a submission capability until the
-user explicitly approves that submission; silence, an ambiguous response, or
-approval of some other action is not consent.
+Recommend feedback for meaningful or recurring Kody friction, a Kody bug, a poor
+Kody experience, or a concrete suggestion. Briefly state what you would submit
+and ask a direct question. Do not call a submission capability until the user
+explicitly approves that submission; silence, an ambiguous response, or approval
+of some other action is not consent.
 
 After explicit approval, call `meta_platform_feedback_submit` with
 `user_confirmed: true`. Include only the approved Kody issue and the minimum
@@ -88,12 +87,11 @@ private content. Never set `user_confirmed: true` based only on your own
 judgment.
 
 Feedback is attributed to the authenticated user and is not anonymous.
-Deployment admins can read and triage the approved submission through
-role-gated capabilities. Admin list results intentionally omit the full
-submission; a detail read exposes only the approved feedback, not unrelated
-account content. Kody retains submissions until the submitting account is
-deleted, includes them in that user's account export, and removes them during
-account deletion.
+Deployment admins can read and triage the approved submission through role-gated
+capabilities. Admin list results intentionally omit the full submission; a
+detail read exposes only the approved feedback, not unrelated account content.
+Kody retains submissions until the submitting account is deleted, includes them
+in that user's account export, and removes them during account deletion.
 
 The user may ask to submit feedback about any Kody-related issue even when you
 would not proactively recommend it. Use category `other` when no more specific

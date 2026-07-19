@@ -78,7 +78,7 @@ function planTransition(input: {
 				case 'triaged':
 					return null
 				case 'resolved':
-				return invalidTransition(input)
+					return invalidTransition(input)
 				case 'dismissed':
 					return invalidTransition(input)
 				default: {
@@ -230,7 +230,7 @@ export async function updatePlatformFeedbackForAdmin(input: {
 			feedbackId: input.feedbackId,
 			expectedStatus: existing.status,
 			status: nextStatus,
-			reviewedByUserId,
+			reviewedByUserId: reviewerUserId,
 			reviewedAt,
 			adminNote,
 		})

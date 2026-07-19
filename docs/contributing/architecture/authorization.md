@@ -236,8 +236,8 @@ const user = requireMcpUserWithPermission(ctx, 'read:user:any')
 Admin MCP capabilities declare `requiredRole: 'admin'` or an explicit
 `requiredPermission` in their capability definition. Registry filtering keeps
 ineligible capabilities out of discovery, and the normalized execute-time guard
-is the security boundary. The platform-feedback review capabilities use the
-role gate; they do not create a general-purpose cross-user query helper.
+is the security boundary. The platform-feedback review capabilities use the role
+gate; they do not create a general-purpose cross-user query helper.
 
 ## Privacy boundary
 
@@ -303,8 +303,8 @@ This boundary is enforced structurally:
 Platform feedback remains user-owned for account lifecycle operations. Account
 export includes the authenticated user's own submissions. Deleting the
 submitting account removes its submissions; deleting an admin account clears
-that reviewer's attribution on surviving submissions instead of deleting
-another user's feedback.
+that reviewer's attribution on surviving submissions instead of deleting another
+user's feedback.
 
 The public `/privacy` page and `docs/use/privacy.md` describe this boundary for
 end users. RBAC governs the application surface only; deployment operators with

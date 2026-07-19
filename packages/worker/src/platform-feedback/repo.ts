@@ -26,8 +26,7 @@ function mapPlatformFeedbackRow(
 			row['reviewed_by_user_id'] == null
 				? null
 				: String(row['reviewed_by_user_id']),
-		reviewedAt:
-			row['reviewed_at'] == null ? null : String(row['reviewed_at']),
+		reviewedAt: row['reviewed_at'] == null ? null : String(row['reviewed_at']),
 		adminNote: row['admin_note'] == null ? null : String(row['admin_note']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
@@ -47,8 +46,7 @@ function mapPlatformFeedbackListRow(
 			row['reviewed_by_user_id'] == null
 				? null
 				: String(row['reviewed_by_user_id']),
-		reviewedAt:
-			row['reviewed_at'] == null ? null : String(row['reviewed_at']),
+		reviewedAt: row['reviewed_at'] == null ? null : String(row['reviewed_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -128,11 +126,7 @@ export async function listPlatformFeedbackRowsForAdmin(
 			ORDER BY created_at DESC, id DESC
 			LIMIT ? OFFSET ?`,
 		)
-		.bind(
-			...bindings,
-			input.pageSize,
-			(input.page - 1) * input.pageSize,
-		)
+		.bind(...bindings, input.pageSize, (input.page - 1) * input.pageSize)
 		.all<Record<string, unknown>>()
 	return {
 		total: Number(countRow?.total ?? 0),

@@ -18,11 +18,7 @@ export const platformFeedbackStatuses = [
 
 export type PlatformFeedbackStatus = (typeof platformFeedbackStatuses)[number]
 
-export const platformFeedbackActions = [
-	'triage',
-	'resolve',
-	'dismiss',
-] as const
+export const platformFeedbackActions = ['triage', 'resolve', 'dismiss'] as const
 
 export type PlatformFeedbackAction = (typeof platformFeedbackActions)[number]
 

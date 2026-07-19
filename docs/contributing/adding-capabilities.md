@@ -152,12 +152,11 @@ explicitly approved for admin review.
 
 Within the built-in `admin` MCP domain, platform feedback is the only capability
 surface that reviews user-authored content. Its list capability returns triage
-summaries without full submission details, while its get capability returns
-only the approved submission. Admin feedback capabilities must not join or
-expose unrelated account content. All other admin capabilities must never
-return or join against user content tables such as packages, secrets, values,
-memories, jobs, email, chat threads, storage buckets, OAuth grants, or remote
-connectors.
+summaries without full submission details, while its get capability returns only
+the approved submission. Admin feedback capabilities must not join or expose
+unrelated account content. All other admin capabilities must never return or
+join against user content tables such as packages, secrets, values, memories,
+jobs, email, chat threads, storage buckets, OAuth grants, or remote connectors.
 
 Current admin capabilities:
 

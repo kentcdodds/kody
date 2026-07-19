@@ -47,10 +47,10 @@ Optimize for:
   durable-object, vectorize, and runtime layers. Three narrow, documented
   exceptions exist: RBAC account administration (`access = 'any'`, limited to
   `user` and `role` entities), operator-owned system email for reserved platform
-  addresses stored under `system:email`, and attributed platform feedback that
-  a user explicitly approved for role-gated admin review. The feedback
-  exception covers only the approved submission and never unrelated user
-  content. See [Authorization](./architecture/authorization.md).
+  addresses stored under `system:email`, and attributed platform feedback that a
+  user explicitly approved for role-gated admin review. The feedback exception
+  covers only the approved submission and never unrelated user content. See
+  [Authorization](./architecture/authorization.md).
 - Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
 

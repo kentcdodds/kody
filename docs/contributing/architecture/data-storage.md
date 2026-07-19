@@ -5,8 +5,8 @@ This project uses several Cloudflare storage systems for different purposes.
 ## Per-user isolation invariant
 
 Kody is multi-user with strict per-user isolation. Every user-owned storage
-layer described below is scoped by `user_id` (D1 columns, Vectorize metadata,
-KV key prefixes, Durable Object names), and every owner read/write path takes a
+layer described below is scoped by `user_id` (D1 columns, Vectorize metadata, KV
+key prefixes, Durable Object names), and every owner read/write path takes a
 `userId` argument. Two users with the same logical identifier (for example the
 same `kind`/`instanceId` pair on a remote connector, the same package id, or the
 same storage id) land on different durable objects and different rows. Any new

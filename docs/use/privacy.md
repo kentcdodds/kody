@@ -8,8 +8,8 @@ Each signed-in user gets a fully isolated assistant. Kody stores account profile
 information (email and username), secrets, values, memories, packages and their
 source, jobs, email inboxes and messages, chat threads, durable storage, remote
 connector configuration, OAuth grants, package invocation tokens, and any
-platform feedback you approve for submission. All of this remains scoped to
-your account except for the narrow admin review of approved platform feedback
+platform feedback you approve for submission. All of this remains scoped to your
+account except for the narrow admin review of approved platform feedback
 described below.
 
 ## What a deployment admin can see
@@ -30,16 +30,16 @@ you want it submitted. The agent submits nothing unless you explicitly approve.
 Normal third-party or authentication failures do not automatically become
 platform feedback, though you can ask to submit any Kody-related issue.
 
-Feedback is attributed to your authenticated account and is not anonymous.
-Admin list results intentionally omit the full submission. An admin can open
-the approved submission to read and triage it, but that does not grant access to
+Feedback is attributed to your authenticated account and is not anonymous. Admin
+list results intentionally omit the full submission. An admin can open the
+approved submission to read and triage it, but that does not grant access to
 your packages, memories, email, secrets, or other account content. Agents must
 omit secrets and unrelated private content from the feedback they prepare.
 
-Kody stores approved feedback until your account is deleted. Your account
-export includes your own submissions, and account deletion removes them. If an
-admin who reviewed your feedback deletes their account, Kody clears that
-reviewer's attribution while retaining your submission.
+Kody stores approved feedback until your account is deleted. Your account export
+includes your own submissions, and account deletion removes them. If an admin
+who reviewed your feedback deletes their account, Kody clears that reviewer's
+attribution while retaining your submission.
 
 ## What an admin can never see
 
