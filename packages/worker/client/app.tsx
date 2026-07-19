@@ -10,6 +10,7 @@ import { AppLoaderDataProvider } from './loader-data-context.tsx'
 import { NavigationProgress } from './navigation-progress.tsx'
 import { readRouterPathname, readRouterSearch } from './router-location.tsx'
 import { ScrollRestoration } from './scroll-restoration.tsx'
+import { isFeatureFlagEnabled } from './feature-flags.ts'
 import {
 	fetchSessionInfo,
 	getSessionDisplayName,
@@ -159,6 +160,7 @@ export function App(handle: Handle<AppProps>) {
 		const showAuthLinks = isSessionReady && !isLoggedIn
 		const showAdminLink =
 			isLoggedIn && session != null && userHasRole(session, 'admin')
+		const showDemoIndicator = isFeatureFlagEnabled(session, 'demo-indicator')
 		const oauthRedirectTo =
 			currentPathname === '/oauth/authorize'
 				? `${currentPathname}${readRouterSearch(handle)}`
@@ -252,6 +254,24 @@ export function App(handle: Handle<AppProps>) {
 										<a href="/account" mix={css(primaryLinkCss)}>
 											{sessionDisplayName}
 										</a>
+										{showDemoIndicator ? (
+											<span
+												data-testid="demo-indicator"
+												mix={css({
+													fontSize: typography.fontSize.xs,
+													fontWeight: typography.fontWeight.medium,
+													color: colors.textMuted,
+													border: `1px solid ${colors.border}`,
+													borderRadius: '0.375rem',
+													padding: `0 ${spacing.xs}`,
+													lineHeight: 1.6,
+													letterSpacing: '0.02em',
+													textTransform: 'uppercase',
+												})}
+											>
+												Demo
+											</span>
+										) : null}
 										<form
 											method="post"
 											action="/logout"

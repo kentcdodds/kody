@@ -11,7 +11,8 @@
 		"baseUrl": ".",
 		"paths": {
 			"#app/*": ["./src/app/*"],
-			"#client/*": ["./client/*"]
+			"#client/*": ["./client/*"],
+			"#worker/*": ["./src/*"]
 		}
 	},
 	"include": [
@@ -26,7 +27,8 @@
 		"./src/app/community-listing-icon.tsx",
 		"./src/app/community-public-types.ts",
 		"./src/app/loader-data.ts",
-		"./src/app/safe-redirect.ts"
+		"./src/app/safe-redirect.ts",
+		"./src/feature-flags/registry.ts"
 	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
 }

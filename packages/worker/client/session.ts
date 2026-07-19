@@ -6,6 +6,10 @@ import {
 	type PermissionString,
 	type RoleName,
 } from '#app/permissions.ts'
+import {
+	featureFlagKeys,
+	type FeatureFlagKey,
+} from '#worker/feature-flags/registry.ts'
 
 export type SessionInfo = {
 	email: string
@@ -13,6 +17,7 @@ export type SessionInfo = {
 	username: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
+	featureFlags: Record<FeatureFlagKey, boolean>
 }
 
 export type SessionStatus = 'idle' | 'loading' | 'ready'
@@ -54,8 +59,11 @@ export async function fetchSessionInfo(
 				: ''
 		const roles = readRoleNames(payload?.session?.roles)
 		const permissions = readPermissionStrings(payload?.session?.permissions)
+		const featureFlags = readFeatureFlags(payload?.session?.featureFlags)
 		const emailVerified = payload?.session?.emailVerified === true
-		return email ? { email, emailVerified, username, roles, permissions } : null
+		return email
+			? { email, emailVerified, username, roles, permissions, featureFlags }
+			: null
 	} catch {
 		return null
 	}
@@ -93,4 +101,16 @@ function readPermissionStrings(value: unknown) {
 		(entry): entry is PermissionString =>
 			typeof entry === 'string' && isPermissionString(entry),
 	)
+}
+
+function readFeatureFlags(value: unknown): Record<FeatureFlagKey, boolean> {
+	const source =
+		value && typeof value === 'object'
+			? (value as Record<string, unknown>)
+			: null
+	const flags = {} as Record<FeatureFlagKey, boolean>
+	for (const key of featureFlagKeys) {
+		flags[key] = source?.[key] === true
+	}
+	return flags
 }

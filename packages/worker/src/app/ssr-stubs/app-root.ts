@@ -8,6 +8,7 @@ export type AppRootProps = {
 		username: string
 		roles: Array<string>
 		permissions: Array<string>
+		featureFlags: Record<string, boolean>
 	} | null
 	loaderData?: AppLoaderData
 	notFound?: boolean

@@ -1,5 +1,8 @@
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
-
+import {
+	loadRequestFeatureFlags,
+	type EvaluatedFeatureFlags,
+} from '#app/request-feature-flags-cache.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 
 export type SessionInfo = {
@@ -8,6 +11,7 @@ export type SessionInfo = {
 	username: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
+	featureFlags: EvaluatedFeatureFlags
 }
 
 export type LoadedSessionResult = {
@@ -27,6 +31,12 @@ export async function loadSessionInfo(
 		}
 	}
 
+	const featureFlags = await loadRequestFeatureFlags(
+		request,
+		env,
+		resolved.user.userId,
+	)
+
 	return {
 		session: {
 			email: resolved.user.email,
@@ -34,6 +44,7 @@ export async function loadSessionInfo(
 			username: resolved.user.username,
 			roles: resolved.user.roles,
 			permissions: resolved.user.permissions,
+			featureFlags,
 		},
 		setCookie: resolved.setCookie,
 	}

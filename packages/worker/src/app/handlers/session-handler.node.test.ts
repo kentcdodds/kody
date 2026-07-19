@@ -142,6 +142,9 @@ test('session handler only renews remembered sessions after the renewal window',
 				username: 'session-user',
 				roles: [],
 				permissions: [],
+				featureFlags: {
+					'demo-indicator': false,
+				},
 			},
 		})
 		if (scenario.expectSetCookie) {
