@@ -1,9 +1,15 @@
 import { expect, test } from 'vitest'
-import { consumeInviteCode, type InviteRecord } from './invites.ts'
+import {
+	consumeInviteCode,
+	createInvite,
+	getInviteByCode,
+	listInvites,
+	type InviteRecord,
+} from './invites.ts'
 
 type InviteFixture = InviteRecord
 
-function createInviteDb(invites: Array<InviteFixture>) {
+function createInviteDb(invites: Array<InviteFixture> = []) {
 	const records = new Map(invites.map((invite) => [invite.code, { ...invite }]))
 	const db = {
 		prepare(query: string) {
@@ -12,6 +18,22 @@ function createInviteDb(invites: Array<InviteFixture>) {
 				bind(...params: Array<unknown>) {
 					return {
 						async run() {
+							if (normalizedQuery.startsWith('insert into invites')) {
+								const [code, createdBy, note, maxUses, expiresAt, plan] = params
+								const invite: InviteFixture = {
+									code: String(code),
+									created_by: createdBy == null ? null : Number(createdBy),
+									note: String(note ?? ''),
+									max_uses: Number(maxUses),
+									use_count: 0,
+									expires_at: expiresAt == null ? null : String(expiresAt),
+									revoked_at: null,
+									created_at: '2026-07-05T00:00:00.000Z',
+									plan: plan == null ? null : String(plan),
+								}
+								records.set(invite.code, invite)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							if (
 								normalizedQuery.startsWith('update invites') &&
 								normalizedQuery.includes('set use_count = use_count + 1')
@@ -36,6 +58,30 @@ function createInviteDb(invites: Array<InviteFixture>) {
 							const invite = records.get(code)
 							return invite ? { ...invite } : null
 						},
+						async all() {
+							if (
+								normalizedQuery.startsWith('select') &&
+								normalizedQuery.includes('from invites') &&
+								normalizedQuery.includes('order by')
+							) {
+								const results = Array.from(records.values())
+									.map((invite) => ({ ...invite }))
+									.sort((left, right) => {
+										if (left.created_at !== right.created_at) {
+											return right.created_at.localeCompare(left.created_at)
+										}
+										return left.code.localeCompare(right.code)
+									})
+								return {
+									results,
+									meta: { changes: 0, last_row_id: 0 },
+								}
+							}
+							return {
+								results: [],
+								meta: { changes: 0, last_row_id: 0 },
+							}
+						},
 					}
 				},
 			}
@@ -55,6 +101,7 @@ function invite(overrides: Partial<InviteFixture> = {}): InviteFixture {
 		expires_at: null,
 		revoked_at: null,
 		created_at: '2026-07-05T00:00:00.000Z',
+		plan: null,
 		...overrides,
 	}
 }
@@ -110,4 +157,49 @@ test('consumeInviteCode atomically prevents concurrent overuse', async () => {
 		{ ok: false, reason: 'exhausted' },
 	])
 	expect(db.records.get('LAUNCH-ONE')?.use_count).toBe(1)
+})
+
+test('createInvite stores plan and roundtrips through getInviteByCode and listInvites', async () => {
+	const db = createInviteDb()
+	const created = await createInvite({
+		db,
+		code: 'PLAN-PERSONAL',
+		createdBy: 7,
+		note: 'personal cohort',
+		maxUses: 3,
+		plan: 'personal',
+	})
+
+	expect(created.plan).toBe('personal')
+	await expect(getInviteByCode(db, 'PLAN-PERSONAL')).resolves.toEqual(
+		expect.objectContaining({
+			code: 'PLAN-PERSONAL',
+			plan: 'personal',
+			max_uses: 3,
+		}),
+	)
+	await expect(listInvites(db)).resolves.toEqual([
+		expect.objectContaining({
+			code: 'PLAN-PERSONAL',
+			plan: 'personal',
+		}),
+	])
+})
+
+test('createInvite without plan stores null', async () => {
+	const db = createInviteDb()
+	const created = await createInvite({
+		db,
+		code: 'PLAN-NONE',
+		createdBy: 7,
+		maxUses: 1,
+	})
+
+	expect(created.plan).toBeNull()
+	await expect(getInviteByCode(db, 'PLAN-NONE')).resolves.toEqual(
+		expect.objectContaining({
+			code: 'PLAN-NONE',
+			plan: null,
+		}),
+	)
 })

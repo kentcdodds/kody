@@ -25,6 +25,7 @@ import { assignUserRole } from '#app/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -198,6 +199,7 @@ export function createAuthHandler(env: Env) {
 
 				const passwordHash = await createPasswordHash(normalizedPassword)
 				let consumedInviteCode: string | null = null
+				let consumedInvitePlan: PlanName | null = null
 				async function releaseConsumedInvite() {
 					if (!consumedInviteCode) return
 					await releaseInviteUse({
@@ -205,6 +207,7 @@ export function createAuthHandler(env: Env) {
 						code: consumedInviteCode,
 					})
 					consumedInviteCode = null
+					consumedInvitePlan = null
 				}
 
 				const inviteRequired = isInviteRequiredForSignup(env)
@@ -234,6 +237,7 @@ export function createAuthHandler(env: Env) {
 						)
 					}
 					consumedInviteCode = inviteResult.invite.code
+					consumedInvitePlan = parsePlanName(inviteResult.invite.plan)
 				}
 
 				let record: { id: number } | null = null
@@ -247,6 +251,7 @@ export function createAuthHandler(env: Env) {
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
+							...(consumedInvitePlan ? { plan: consumedInvitePlan } : {}),
 						},
 						{
 							returnRow: true,
@@ -429,7 +434,7 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 						ip: requestIp,
 						path: url.pathname,
-						reason: `invite_code=${consumedInviteCode};user_id=${record.id}`,
+						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${consumedInvitePlan ?? 'none'}`,
 					})
 				}
 				return Response.json(

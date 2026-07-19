@@ -4,6 +4,7 @@ import {
 	entitlementResourceLabels,
 	isEmailFallbackResource,
 	parsePlanName,
+	resolveEffectivePlan,
 	resolveEmailResourceLimit,
 	resolvePlanLimit,
 	type EntitlementResource,
@@ -57,6 +58,7 @@ type AdminUserUsageUserRow = {
 	username: string
 	email: string
 	plan: string | null
+	stripe_plan: string | null
 	stable_user_id?: string | null
 }
 
@@ -83,13 +85,13 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, plan, stable_user_id FROM users WHERE id = ?`,
+		`SELECT id, username, email, plan, stripe_plan, stable_user_id FROM users WHERE id = ?`,
 	)
 		.bind(userId)
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
-	const plan = parsePlanName(row.plan)
+	const plan = resolveEffectivePlan(parsePlanName(row.plan), row.stripe_plan)
 	const usageUserId = await resolveUserStableId(row)
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)

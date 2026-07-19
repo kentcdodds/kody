@@ -9,13 +9,15 @@ import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-sta
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parsePlanName,
+	resolveEffectivePlan,
 	resolvePlanLimit,
 	type EntitlementResource,
 	type PlanName,
 } from './plans.ts'
 
 /**
- * Resolve the plan for a user, or null when the user is legacy/unlimited.
+ * Resolve the effective plan for a user, or null when the user is
+ * legacy/unlimited.
  *
  * The MCP `userId` is the account's stored stable id, falling back to the
  * legacy SHA-256 email hash when a stored id has not been materialized yet.
@@ -25,6 +27,11 @@ import {
  * test fixtures), the lookup short-circuits to null without touching D1 —
  * which also means enforcement is skipped, matching the invariant that
  * enforcement only activates for users with a verified plan.
+ *
+ * Effective plan = f(manual users.plan, users.stripe_plan): a NULL manual
+ * plan always wins (legacy/unlimited); otherwise the higher-ranked of the
+ * manual grant and Stripe subscription plan is returned. Signature stays
+ * `(db, { userId, email })` so enforcement call sites are unchanged.
  */
 export async function getUserPlan(
 	db: D1Database,
@@ -38,21 +45,28 @@ export async function getUserPlan(
 		// test fixtures) may be treated as "no stored plan"; any other D1
 		// failure must propagate instead of silently disabling enforcement.
 		const storedMatch = await db
-			.prepare(`SELECT plan FROM users WHERE email = ? AND stable_user_id = ?`)
+			.prepare(
+				`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
+			)
 			.bind(email, input.userId)
-			.first<{ plan: string | null }>()
+			.first<{ plan: string | null; stripe_plan: string | null }>()
 			.catch((error: unknown) => {
 				if (isMissingStableUserIdColumnError(error)) return null
 				throw error
 			})
-		return storedMatch ? parsePlanName(storedMatch.plan) : null
+		return storedMatch
+			? resolveEffectivePlan(
+					parsePlanName(storedMatch.plan),
+					storedMatch.stripe_plan,
+				)
+			: null
 	}
 	const row = await db
-		.prepare(`SELECT plan FROM users WHERE email = ?`)
+		.prepare(`SELECT plan, stripe_plan FROM users WHERE email = ?`)
 		.bind(email)
-		.first<{ plan: string | null }>()
+		.first<{ plan: string | null; stripe_plan: string | null }>()
 	if (!row) return null
-	return parsePlanName(row?.plan)
+	return resolveEffectivePlan(parsePlanName(row.plan), row.stripe_plan)
 }
 
 /**

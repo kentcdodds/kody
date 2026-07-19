@@ -64,6 +64,12 @@ import {
 	createAccountTwoFactorApiHandler,
 	createAccountTwoFactorHandler,
 } from '#app/handlers/account-two-factor.ts'
+import {
+	createAccountBillingApiHandler,
+	createAccountBillingHandler,
+	createAccountBillingPortalHandler,
+	createAccountBillingSuccessHandler,
+} from '#app/handlers/account-billing.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
@@ -187,6 +193,10 @@ export function createAppRouter(env: Env) {
 			accountTwoFactor: createAccountTwoFactorHandler(env),
 			accountTwoFactorApi: createAccountTwoFactorApiHandler(env),
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
+			accountBilling: createAccountBillingHandler(env),
+			accountBillingApi: createAccountBillingApiHandler(env),
+			accountBillingSuccess: createAccountBillingSuccessHandler(env),
+			accountBillingPortal: createAccountBillingPortalHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),

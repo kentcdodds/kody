@@ -26,6 +26,7 @@ import {
 import {
 	type AdminCreatedUserSetup,
 	type AdminInvitesLoaderData,
+	type AdminPlanName,
 } from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
@@ -74,6 +75,7 @@ export async function adminInvitesRouteLoader(
 export function AdminInvitesRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
 	let invites: Array<AdminInviteListItem> = []
+	let availablePlans: Array<AdminPlanName> = []
 	let createdUser: AdminCreatedUserSetup | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
@@ -85,6 +87,7 @@ export function AdminInvitesRoute(handle: Handle) {
 
 	function applyData(payload: AdminInvitesLoaderData) {
 		invites = payload.invites
+		availablePlans = payload.availablePlans
 		status = 'ready'
 		message = null
 		messageTone = 'info'
@@ -198,6 +201,7 @@ export function AdminInvitesRoute(handle: Handle) {
 			note: String(formData.get('note') ?? '').trim(),
 			maxUses: String(formData.get('maxUses') ?? '1').trim(),
 			expiresAt: String(formData.get('expiresAt') ?? '').trim(),
+			plan: String(formData.get('plan') ?? '').trim(),
 		})
 		event.currentTarget.reset()
 	}
@@ -345,7 +349,7 @@ export function AdminInvitesRoute(handle: Handle) {
 					<div
 						mix={css({
 							display: 'grid',
-							gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto',
+							gridTemplateColumns: 'repeat(5, minmax(0, 1fr)) auto',
 							gap: spacing.md,
 							alignItems: 'end',
 							[mq.tablet]: {
@@ -387,6 +391,17 @@ export function AdminInvitesRoute(handle: Handle) {
 								disabled={isMutating}
 								mix={css(inputCss)}
 							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Plan</span>
+							<select name="plan" disabled={isMutating} mix={css(inputCss)}>
+								<option value="">Legacy / tierless (free)</option>
+								{availablePlans.map((plan) => (
+									<option key={plan} value={plan}>
+										{plan}
+									</option>
+								))}
+							</select>
 						</label>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Expires</span>
@@ -476,6 +491,10 @@ export function AdminInvitesRoute(handle: Handle) {
 										{
 											label: 'Uses',
 											value: `${invite.useCount} / ${invite.maxUses}`,
+										},
+										{
+											label: 'Plan',
+											value: invite.plan ?? 'legacy',
 										},
 										{
 											label: 'Expires',

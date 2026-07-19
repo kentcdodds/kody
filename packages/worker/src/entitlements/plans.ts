@@ -7,7 +7,7 @@
  * NULL (unlimited) so adding or renaming plans never locks users out.
  */
 
-export const planNames = ['partner', 'personal', 'pro'] as const
+export const planNames = ['free', 'partner', 'personal', 'pro'] as const
 
 export type PlanName = (typeof planNames)[number]
 
@@ -16,6 +16,47 @@ export function parsePlanName(value: unknown): PlanName | null {
 		(planNames as ReadonlyArray<string>).includes(value)
 		? (value as PlanName)
 		: null
+}
+
+/**
+ * Rank order for comparing manual grants vs Stripe subscription plans.
+ * Higher rank wins. free(0) < personal(1) < pro(2) < partner(3).
+ */
+export function getPlanRank(plan: PlanName): number {
+	switch (plan) {
+		case 'free':
+			return 0
+		case 'personal':
+			return 1
+		case 'pro':
+			return 2
+		case 'partner':
+			return 3
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown plan: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Effective plan for entitlement enforcement.
+ *
+ * - Manual plan NULL → effective NULL (legacy/unlimited always wins; a Stripe
+ *   subscription never downgrades a plan-less account into enforcement).
+ * - Otherwise the higher-ranked of manual and stripe plans.
+ * - Unknown/NULL stripe_plan contributes nothing.
+ */
+export function resolveEffectivePlan(
+	manualPlan: PlanName | null,
+	stripePlan: string | null,
+): PlanName | null {
+	if (!manualPlan) return null
+	const parsedStripe = parsePlanName(stripePlan)
+	if (!parsedStripe) return manualPlan
+	return getPlanRank(parsedStripe) > getPlanRank(manualPlan)
+		? parsedStripe
+		: manualPlan
 }
 
 export type PlanLimits = {
@@ -56,6 +97,20 @@ export type PlanLimits = {
  * available, and are deliberately not tied to any billing integration.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
+	free: {
+		maxSavedPackages: 5,
+		maxScheduledJobs: 3,
+		maxPackageServices: 1,
+		packageServicePersistentAllowed: false,
+		maxRepoSessions: 2,
+		maxEmailSendsPerDay: 5,
+		maxEmailReceivesPerDay: 50,
+		maxStoredEmailMessages: 500,
+		maxEmailMessageBytes: 256 * 1024,
+		maxSecrets: 5,
+		maxStorageBytes: 64 * 1024 * 1024,
+		maxConcurrentWorkflows: 3,
+	},
 	personal: {
 		maxSavedPackages: 20,
 		maxScheduledJobs: 10,
