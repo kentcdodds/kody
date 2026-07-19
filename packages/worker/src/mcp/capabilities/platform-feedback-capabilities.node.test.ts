@@ -1,0 +1,230 @@
+import type * as PlatformFeedbackService from '#worker/platform-feedback/service.ts'
+import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { PlatformFeedbackInvalidTransitionError } from '#worker/platform-feedback/errors.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
+import { adminPlatformFeedbackGetCapability } from './admin/admin-platform-feedback-get.ts'
+import { adminPlatformFeedbackListCapability } from './admin/admin-platform-feedback-list.ts'
+import { adminPlatformFeedbackUpdateCapability } from './admin/admin-platform-feedback-update.ts'
+import { metaPlatformFeedbackSubmitCapability } from './meta/meta-platform-feedback-submit.ts'
+
+const mockModule = vi.hoisted(() => ({
+	getPlatformFeedbackForAdmin: vi.fn(),
+	listPlatformFeedbackForAdmin: vi.fn(),
+	submitPlatformFeedback: vi.fn(),
+	updatePlatformFeedbackForAdmin: vi.fn(),
+}))
+
+vi.mock('#worker/platform-feedback/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof PlatformFeedbackService>()
+	return {
+		...actual,
+		getPlatformFeedbackForAdmin: (...args: Array<unknown>) =>
+			mockModule.getPlatformFeedbackForAdmin(...args),
+		listPlatformFeedbackForAdmin: (...args: Array<unknown>) =>
+			mockModule.listPlatformFeedbackForAdmin(...args),
+		submitPlatformFeedback: (...args: Array<unknown>) =>
+			mockModule.submitPlatformFeedback(...args),
+		updatePlatformFeedbackForAdmin: (...args: Array<unknown>) =>
+			mockModule.updatePlatformFeedbackForAdmin(...args),
+	}
+})
+
+const openFeedback = {
+	id: 'feedback-1',
+	submitterUserId: 'user-1',
+	category: 'friction' as const,
+	summary: 'Setup is confusing',
+	details: 'The setup flow does not explain the next action.',
+	status: 'open' as const,
+	reviewedByUserId: null,
+	reviewedAt: null,
+	adminNote: null,
+	createdAt: '2026-07-19T00:00:00.000Z',
+	updatedAt: '2026-07-19T00:00:00.000Z',
+}
+
+function createCapabilityContext(input?: {
+	userId?: string
+	roles?: Array<string>
+}) {
+	return {
+		env: { APP_DB: {} as D1Database } as Env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			...(input
+				? {
+						user: {
+							userId: input.userId ?? 'user-1',
+							email: `${input.userId ?? 'user-1'}@example.com`,
+							roles: input.roles,
+						},
+					}
+				: {}),
+		}),
+	}
+}
+
+test('meta platform feedback submission requires auth and literal user consent', async () => {
+	mockModule.submitPlatformFeedback.mockResolvedValue(openFeedback)
+	const input = {
+		category: 'friction' as const,
+		summary: '  Setup is confusing  ',
+		details: '  The setup flow does not explain the next action.  ',
+		user_confirmed: true as const,
+	}
+
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			input,
+			createCapabilityContext(),
+		),
+	).rejects.toThrow('Authenticated MCP user is required')
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			{ ...input, user_confirmed: false } as never,
+			createCapabilityContext({ userId: 'user-1' }),
+		),
+	).rejects.toThrow()
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			{ ...input, metadata: { conversation: 'private' } } as never,
+			createCapabilityContext({ userId: 'user-1' }),
+		),
+	).rejects.toThrow()
+	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
+
+	const result = await metaPlatformFeedbackSubmitCapability.handler(
+		input,
+		createCapabilityContext({ userId: 'user-1' }),
+	)
+	expect(mockModule.submitPlatformFeedback).toHaveBeenCalledWith({
+		db: expect.anything(),
+		submitterUserId: 'user-1',
+		category: 'friction',
+		summary: 'Setup is confusing',
+		details: 'The setup flow does not explain the next action.',
+	})
+	expect(result).toEqual({
+		feedback_id: 'feedback-1',
+		status: 'open',
+		created_at: '2026-07-19T00:00:00.000Z',
+	})
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
+})
+
+test('admin platform feedback capabilities enforce role access, redact lists, paginate, and audit', async () => {
+	await expect(
+		adminPlatformFeedbackListCapability.handler(
+			{},
+			createCapabilityContext({ userId: 'member-1', roles: ['user'] }),
+		),
+	).rejects.toThrow('lacks required role "admin"')
+	expect(mockModule.listPlatformFeedbackForAdmin).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
+
+	mockModule.listPlatformFeedbackForAdmin.mockResolvedValue({
+		total: 3,
+		page: 2,
+		pageSize: 1,
+		items: [openFeedback],
+	})
+	mockModule.getPlatformFeedbackForAdmin.mockResolvedValue(openFeedback)
+	const triagedFeedback = {
+		...openFeedback,
+		status: 'triaged' as const,
+		reviewedByUserId: 'admin-1',
+		reviewedAt: '2026-07-19T01:00:00.000Z',
+		adminNote: 'Needs setup review.',
+		updatedAt: '2026-07-19T01:00:00.000Z',
+	}
+	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValue(triagedFeedback)
+	const adminContext = createCapabilityContext({
+		userId: 'admin-1',
+		roles: ['admin'],
+	})
+
+	const list = await adminPlatformFeedbackListCapability.handler(
+		{ page: 2, pageSize: 1, status: 'open', category: 'friction' },
+		adminContext,
+	)
+	expect(mockModule.listPlatformFeedbackForAdmin).toHaveBeenCalledWith({
+		db: expect.anything(),
+		page: 2,
+		pageSize: 1,
+		status: 'open',
+		category: 'friction',
+	})
+	expect(list).toMatchObject({ total: 3, page: 2, pageSize: 1 })
+	expect(list.feedback).toEqual([
+		{
+			id: 'feedback-1',
+			submitter_user_id: 'user-1',
+			category: 'friction',
+			summary: 'Setup is confusing',
+			status: 'open',
+			reviewed_by_user_id: null,
+			reviewed_at: null,
+			created_at: '2026-07-19T00:00:00.000Z',
+			updated_at: '2026-07-19T00:00:00.000Z',
+		},
+	])
+	expect(list.feedback[0]).not.toHaveProperty('details')
+	expect(list.feedback[0]).not.toHaveProperty('admin_note')
+
+	const get = await adminPlatformFeedbackGetCapability.handler(
+		{ id: 'feedback-1' },
+		adminContext,
+	)
+	expect(get.feedback).toMatchObject({
+		id: 'feedback-1',
+		details: 'The setup flow does not explain the next action.',
+		admin_note: null,
+	})
+
+	const updated = await adminPlatformFeedbackUpdateCapability.handler(
+		{
+			id: 'feedback-1',
+			action: 'triage',
+			admin_note: 'Needs setup review.',
+		},
+		adminContext,
+	)
+	expect(mockModule.updatePlatformFeedbackForAdmin).toHaveBeenCalledWith({
+		db: expect.anything(),
+		feedbackId: 'feedback-1',
+		reviewerUserId: 'admin-1',
+		action: 'triage',
+		adminNote: 'Needs setup review.',
+	})
+	expect(updated.feedback).toMatchObject({
+		id: 'feedback-1',
+		status: 'triaged',
+		reviewed_by_user_id: 'admin-1',
+		admin_note: 'Needs setup review.',
+	})
+	mockModule.updatePlatformFeedbackForAdmin.mockRejectedValueOnce(
+		new PlatformFeedbackInvalidTransitionError({
+			feedbackId: 'feedback-1',
+			status: 'resolved',
+			action: 'dismiss',
+		}),
+	)
+	await expect(
+		adminPlatformFeedbackUpdateCapability.handler(
+			{ id: 'feedback-1', action: 'dismiss' },
+			adminContext,
+		),
+	).rejects.toThrow(
+		'Cannot dismiss platform feedback "feedback-1" from status "resolved".',
+	)
+	expect(auditEventSummaries()).toEqual([
+		'admin_platform_feedback_list:success',
+		'admin_platform_feedback_get:success',
+		'admin_platform_feedback_update:success',
+		'admin_platform_feedback_update:failure',
+	])
+})

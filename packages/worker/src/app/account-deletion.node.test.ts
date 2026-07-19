@@ -600,6 +600,29 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ user_id: userAaa, resource: 'email_sends_per_day', day: '2026-07-05' },
 			{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 		],
+		platform_feedback: [
+			{
+				id: 'feedback-submitted-by-a',
+				submitter_user_id: userAaa,
+				reviewed_by_user_id: userBbb,
+				reviewed_at: '2026-07-05',
+				admin_note: 'Reviewed by B.',
+			},
+			{
+				id: 'feedback-reviewed-by-a',
+				submitter_user_id: userBbb,
+				reviewed_by_user_id: userAaa,
+				reviewed_at: '2026-07-05',
+				admin_note: 'Private admin note from A.',
+			},
+			{
+				id: 'feedback-unrelated',
+				submitter_user_id: userBbb,
+				reviewed_by_user_id: userBbb,
+				reviewed_at: '2026-07-05',
+				admin_note: 'Reviewed by B.',
+			},
+		],
 		community_listings: [
 			{
 				id: 'listing-1',
@@ -791,6 +814,22 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.entitlement_daily_counters).toEqual([
 		{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 	])
+	expect(rows.platform_feedback).toEqual([
+		{
+			id: 'feedback-reviewed-by-a',
+			submitter_user_id: userBbb,
+			reviewed_by_user_id: null,
+			reviewed_at: null,
+			admin_note: null,
+		},
+		{
+			id: 'feedback-unrelated',
+			submitter_user_id: userBbb,
+			reviewed_by_user_id: userBbb,
+			reviewed_at: '2026-07-05',
+			admin_note: 'Reviewed by B.',
+		},
+	])
 	expect(rows.package_runtime_runs).toEqual([
 		{
 			id: 'run-3',
@@ -885,6 +924,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_reports).toBe(1)
 	expect(result.deletedRowCounts.community_bans).toBe(1)
 	expect(result.updatedRowCounts.community_bans).toBe(1)
+	expect(result.deletedRowCounts.platform_feedback).toBe(1)
+	expect(result.updatedRowCounts.platform_feedback).toBe(1)
 	expect(result.deletedKvKeys).toBe(13)
 	expect(result.deletedCommunityAssets).toBe(2)
 	expect(result.deletedEmailBlobs).toBe(1)

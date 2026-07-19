@@ -385,6 +385,12 @@ function buildD1TableConditions(input: {
 	}
 	add('users', { condition: `users.id = ?`, params: [input.dbUserId] })
 	for (const target of accountUserDataTargets) {
+		if (
+			target.kind === 'null_user_column' &&
+			target.includeInExport === false
+		) {
+			continue
+		}
 		const built = buildConditionForTarget({
 			target,
 			mcpUserId: input.mcpUserId,

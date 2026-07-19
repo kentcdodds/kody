@@ -230,6 +230,19 @@ primitives:
     code:
       - packages/worker/src/mcp/capabilities/meta/
 
+  - id: platform-feedback
+    group: assistant
+    name: Platform feedback
+    summary: Consent-gated attributed submissions and role-gated admin triage.
+    code:
+      - packages/worker/src/platform-feedback
+      - packages/worker/src/mcp/capabilities/meta/meta-platform-feedback
+      - packages/worker/src/mcp/capabilities/admin/admin-platform-feedback
+      - packages/worker/src/mcp/capabilities/admin/platform-feedback-shared.ts
+    docs:
+      - docs/contributing/architecture/authorization.md
+      - docs/contributing/architecture/data-storage.md
+
   - id: account-export
     group: assistant
     name: Account data export

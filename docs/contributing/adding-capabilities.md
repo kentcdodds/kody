@@ -143,12 +143,21 @@ must take effect on the next request.
 
 ### Admin domain
 
-The `admin` domain is for MCP-accessible account administration. Capabilities in
-this domain must set `requiredRole: 'admin'` and must preserve the RBAC privacy
-boundary from [Authorization](./architecture/authorization.md): admin access is
-limited to user/role account metadata and sanitized audit metadata. Never return
-or join against user content tables such as packages, secrets, values, memories,
-jobs, email, chat threads, storage buckets, OAuth grants, or remote connectors.
+The `admin` domain is for MCP-accessible account administration and the narrow
+platform-feedback reviewer surface. Capabilities in this domain must set
+`requiredRole: 'admin'` and must preserve the RBAC privacy boundary from
+[Authorization](./architecture/authorization.md). Admin access is limited to
+user/role account metadata, sanitized audit metadata, and feedback that a user
+explicitly approved for admin review.
+
+Within the built-in `admin` MCP domain, platform feedback is the only capability
+surface that reviews user-authored content. Its list capability returns triage
+summaries without full submission details, while its get capability returns
+only the approved submission. Admin feedback capabilities must not join or
+expose unrelated account content. All other admin capabilities must never
+return or join against user content tables such as packages, secrets, values,
+memories, jobs, email, chat threads, storage buckets, OAuth grants, or remote
+connectors.
 
 Current admin capabilities:
 
@@ -157,6 +166,9 @@ Current admin capabilities:
 - `admin_user_create`
 - `admin_user_update`
 - `admin_audit_log_query`
+- `admin_platform_feedback_list`
+- `admin_platform_feedback_get`
+- `admin_platform_feedback_update`
 
 When adding more admin actions, expose service-layer functions by adding new
 `admin/*` capability files that call those service functions directly, set

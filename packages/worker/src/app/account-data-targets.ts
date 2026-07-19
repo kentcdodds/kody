@@ -10,6 +10,7 @@ export type UserScopedDataTarget =
 			table: string
 			matchColumn: string
 			nullColumns: ReadonlyArray<string>
+			includeInExport?: boolean
 	  }
 	| {
 			kind: 'replace_user_column'
@@ -34,9 +35,11 @@ export const accountUserDataExcludedOwnerIds = [
 
 /**
  * Tables that are scoped by `user_id` (directly or transitively) and should
- * be included in per-user account operations. The list is intentionally
- * explicit so adding a new user-scoped table requires a deliberate update here
- * and a corresponding deletion/export guardrail test update.
+ * be included in per-user account operations. A cleanup-only reviewer target
+ * can opt out of export so it does not disclose another user's content. The
+ * list is intentionally explicit so adding a new user-scoped table requires a
+ * deliberate update here and a corresponding deletion/export guardrail test
+ * update.
  * Rows owned by accountUserDataExcludedOwnerIds are operator/platform data,
  * not user data; tests assert those owner ids stay deliberately excluded from
  * user account operations.
@@ -84,6 +87,21 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_inboxes' },
 	{ kind: 'user_id', table: 'email_sender_identities' },
 	{ kind: 'user_id', table: 'entitlement_daily_counters' },
+	{
+		kind: 'user_columns',
+		table: 'platform_feedback',
+		columns: ['submitter_user_id'],
+	},
+	// Feedback is owned by its submitter. A reviewer relationship is cleanup
+	// metadata only: deleting that reviewer anonymizes the surviving review,
+	// but account export must not expose another user's feedback to the reviewer.
+	{
+		kind: 'null_user_column',
+		table: 'platform_feedback',
+		matchColumn: 'reviewed_by_user_id',
+		nullColumns: ['reviewed_by_user_id', 'reviewed_at', 'admin_note'],
+		includeInExport: false,
+	},
 	{
 		kind: 'community_listing_child',
 		table: 'community_ratings',

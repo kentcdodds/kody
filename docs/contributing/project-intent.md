@@ -44,11 +44,13 @@ shared state between users.
 Optimize for:
 
 - Per-user isolation as a first-class invariant, enforced at the storage,
-  durable-object, vectorize, and runtime layers. Two narrow, documented
+  durable-object, vectorize, and runtime layers. Three narrow, documented
   exceptions exist: RBAC account administration (`access = 'any'`, limited to
-  `user` and `role` entities — never user content) and operator-owned system
-  email for reserved platform addresses stored under `system:email`. See
-  [Authorization](./architecture/authorization.md).
+  `user` and `role` entities), operator-owned system email for reserved platform
+  addresses stored under `system:email`, and attributed platform feedback that
+  a user explicitly approved for role-gated admin review. The feedback
+  exception covers only the approved submission and never unrelated user
+  content. See [Authorization](./architecture/authorization.md).
 - Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
 
@@ -85,8 +87,10 @@ When working in this repo, do not assume:
   direction; treat any code path that reads or writes data without a `userId`
   (or that shares a Durable Object id across users) as a bug. The intentional
   cross-user boundaries are RBAC account administration (`:any` on `user`/`role`
-  only, behind explicit guards) and operator-owned system email for reserved
-  platform addresses — see [Authorization](./architecture/authorization.md).
+  only, behind explicit guards), operator-owned system email for reserved
+  platform addresses, and explicitly approved, attributed platform feedback
+  exposed through role-gated admin review capabilities — see
+  [Authorization](./architecture/authorization.md).
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes
@@ -112,8 +116,9 @@ If you are an agent working in this repo:
 - Per-user isolation is a hard invariant. Any new feature that touches data must
   be scoped by `userId` at the data layer, by user-namespaced Durable Object ids
   at the runtime layer, and by user-aware filters at the search/vector layer.
-  Cross-user access requires an explicit `:any` permission guard and is limited
-  to account administration — see
+  Cross-user access requires an explicit guard and one of the documented narrow
+  boundaries: account administration, operator-owned system email, or
+  user-approved platform feedback — see
   [Authorization](./architecture/authorization.md).
 - Avoid proposing a large static MCP tool catalog as the default direction.
 - Keep interoperability with MCP hosts in mind, especially around compact tool

@@ -7,19 +7,44 @@ How Kody stores your data and what a deployment admin can see.
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
 information (email and username), secrets, values, memories, packages and their
 source, jobs, email inboxes and messages, chat threads, durable storage, remote
-connector configuration, OAuth grants, and package invocation tokens. All of
-this is scoped to your account and is not shared with other users.
+connector configuration, OAuth grants, package invocation tokens, and any
+platform feedback you approve for submission. All of this remains scoped to
+your account except for the narrow admin review of approved platform feedback
+described below.
 
 ## What a deployment admin can see
 
 On shared deployments, operators can grant an admin role for account
-administration. Admins see account metadata only: user id, username, email,
-created and updated timestamps, and role assignments. The admin UI lists users
-and roles; it does not expose user content.
+administration. Admins see account metadata: user id, username, email, created
+and updated timestamps, and role assignments. The account-administration UI
+lists users and roles; it does not expose account content.
+
+Platform feedback you explicitly approve for admin review is a narrow
+user-content exception.
+
+## Platform feedback
+
+When an agent encounters meaningful Kody friction, a Kody bug, a poor
+experience, or a suggestion, it may briefly explain the issue and ask whether
+you want it submitted. The agent submits nothing unless you explicitly approve.
+Normal third-party or authentication failures do not automatically become
+platform feedback, though you can ask to submit any Kody-related issue.
+
+Feedback is attributed to your authenticated account and is not anonymous.
+Admin list results intentionally omit the full submission. An admin can open
+the approved submission to read and triage it, but that does not grant access to
+your packages, memories, email, secrets, or other account content. Agents must
+omit secrets and unrelated private content from the feedback they prepare.
+
+Kody stores approved feedback until your account is deleted. Your account
+export includes your own submissions, and account deletion removes them. If an
+admin who reviewed your feedback deletes their account, Kody clears that
+reviewer's attribution while retaining your submission.
 
 ## What an admin can never see
 
-The admin role is not a data-access role. Admins cannot see:
+The admin role is not a general data-access role. Approving platform feedback
+does not let admins browse:
 
 - Secret values or secret metadata (names, scopes, allowlists)
 - Package invocation tokens
@@ -33,8 +58,8 @@ The admin role is not a data-access role. Admins cannot see:
 - Remote connector configuration
 - OAuth grants
 
-None of this appears in any admin endpoint, page, or API payload — not even in
-redacted or count form.
+None of these stores appears in an admin endpoint, page, or API payload — not
+even in redacted or count form.
 
 ## Deployment operator access
 

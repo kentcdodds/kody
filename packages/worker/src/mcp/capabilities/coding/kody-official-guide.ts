@@ -81,7 +81,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'platform-friction.md',
 		title: 'Kody platform friction guide',
 		summary:
-			'Use when Kody capabilities, packages, memories, or guides create avoidable friction: mention it, ask before memory changes, and make obvious local docs/package improvements.',
+			'Use for meaningful Kody friction, bugs, poor experiences, or suggestions: choose an inline fix, an approved memory workflow, or explicitly approved attributed platform feedback.',
 	},
 } as const
 
@@ -137,7 +137,7 @@ function buildCapabilityDescription(): string {
 		'Use `guide: "package_authoring"` for package creation or material package updates, and `guide: "integration_bootstrap"` before building integration-dependent packages, package apps, or workflows.',
 		'Use `guide: "package_lifecycle"` to choose reuse vs temporary execute vs direct job scheduling vs a durable package, and before enabling package-owned schedules.',
 		'Integration bootstrap covers checking saved `integration` / `secret` entities and running a cheap authenticated smoke test before building.',
-		'Use `guide: "platform_friction"` when Kody itself creates avoidable friction and you can propose a docs, package, or memory follow-up.',
+		'Use `guide: "platform_friction"` for meaningful Kody friction, bugs, poor experiences, or suggestions; it distinguishes inline fixes, approved memory changes, and consent-gated attributed feedback.',
 		'',
 		'The `guide` input describes each available guide and when to use it. If you are unsure, call this capability instead of guessing.',
 	].join('\n')
@@ -158,7 +158,7 @@ const guideFieldSchema = z
 			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
 			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, and email.message.received metadata-first handler payloads.',
-			'`platform_friction`: self-improvement workflow for Kody capability/package/memory/guide friction; ask before memory mutations.',
+			'`platform_friction`: choose an inline fix, an approved memory workflow, or attributed platform feedback submitted only after explicit user approval.',
 		].join(' '),
 	)
 
@@ -230,6 +230,11 @@ const allKeywords = [
 		'package subscription',
 		'package subscriptions',
 		'platform friction',
+		'platform feedback',
+		'feedback submission',
+		'bug report',
+		'poor experience',
+		'suggestion',
 		'self improvement',
 		'self-improvement',
 		'friction',

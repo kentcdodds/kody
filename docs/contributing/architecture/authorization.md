@@ -9,6 +9,11 @@ stored under the reserved `system:email` owner id, not any human account. See
 [Project intent](../project-intent.md) and the `per-user-isolation` invariant in
 [Primitives map](./primitives.yaml).
 
+User-approved platform feedback is a third narrow exception. A submission
+crosses into the admin review surface only after the user explicitly approves
+it. The exception covers that attributed submission and its triage state, never
+unrelated user content.
+
 For browser and MCP authentication mechanics, see
 [Authentication](./authentication.md).
 
@@ -228,23 +233,37 @@ For capability guards, use `requireMcpUserWithPermission` in
 const user = requireMcpUserWithPermission(ctx, 'read:user:any')
 ```
 
-No existing MCP capabilities use this helper yet — every current capability is
-`own`-scoped by construction. The helper exists for future admin capabilities
-behind `search`/`execute`.
+Admin MCP capabilities declare `requiredRole: 'admin'` or an explicit
+`requiredPermission` in their capability definition. Registry filtering keeps
+ineligible capabilities out of discovery, and the normalized execute-time guard
+is the security boundary. The platform-feedback review capabilities use the
+role gate; they do not create a general-purpose cross-user query helper.
 
 ## Privacy boundary
 
-The admin role is an **account-administration** role, not a data-access role.
+The admin role is an **account-administration** role, not a general data-access
+role. User-approved platform feedback is a narrow user-content exception.
 
-**Admins can see** account metadata only: user id, username, email,
+**For account administration, admins can see only** user id, username, email,
 email-verification state, entitlement plan, `created_at`, `updated_at`, and role
 assignments. The plan is account metadata (it drives quota enforcement), not
 user content, and admins can change it via `/admin/users` or the
 `admin_user_update` MCP capability.
 
-**Admins cannot see** user content (secrets, values, memories, packages, jobs,
-user inbox email, chat threads, durable storage, remote connectors, OAuth
-grants, and so on). None of it appears in admin endpoints, pages, or payloads.
+**Admins can see and triage user-approved platform feedback.** The submit
+capability requires `user_confirmed: true`, which the agent may set only after
+explicit user approval. Submissions are attributed, not anonymous: the
+authenticated submitter id is stored and returned to reviewers. Admin list
+results intentionally omit full submission details. The get operation exposes
+the approved submission only; it does not expose packages, memories, email,
+secrets, or other account content. Agents must omit secrets and unrelated
+private content when preparing feedback.
+
+**Platform-feedback review does not expose unrelated account content** such as
+secrets, values, memories, packages, jobs, user inbox email, chat threads,
+durable storage, remote connectors, or OAuth grants. None of it appears in
+platform-feedback admin payloads. Text a user explicitly approves as part of a
+feedback submission is visible only through the dedicated feedback exception.
 
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
@@ -259,21 +278,33 @@ immediately.
 
 This boundary is enforced structurally:
 
-1. **The permission vocabulary cannot express user content access.**
+1. **The permission vocabulary cannot express general user content access.**
    `permissionEntities` contains only `user` and `role`, so a guard like
    `requireUserWithPermission(..., 'read:secret:any')` is a compile error.
 2. **Admin account queries touch identity tables only.** `/admin/users*.json`
    and role handlers select explicit column lists from `users`, `user_roles`,
    and `roles`. They never join user content tables. `/admin/system-email*.json`
    is separate and filters email rows by `user_id = 'system:email'`.
-3. **A shape test pins the admin users API payload.**
+3. **Platform feedback has a dedicated role-gated service boundary.** Submit
+   writes are scoped to the authenticated user and require
+   `user_confirmed: true` at the capability boundary. Admin list reads use a
+   summary projection that omits full details; get and triage operations address
+   only the selected approved submission. They never join unrelated user-content
+   tables.
+4. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
    (`id`, `username`, `email`, `email_verified`, `email_verified_at`, `plan`,
    `created_at`, `updated_at`, `roles`). The unit test in
    `admin-users.node.test.ts` asserts every user object in the list response has
    exactly those keys — an accidental widening fails `npm run validate`.
-4. **Existing owner-only paths take no admin bypass.** Secret reveal remains
+5. **Existing owner-only paths take no admin bypass.** Secret reveal remains
    session-authenticated and owner-only.
+
+Platform feedback remains user-owned for account lifecycle operations. Account
+export includes the authenticated user's own submissions. Deleting the
+submitting account removes its submissions; deleting an admin account clears
+that reviewer's attribution on surviving submissions instead of deleting
+another user's feedback.
 
 The public `/privacy` page and `docs/use/privacy.md` describe this boundary for
 end users. RBAC governs the application surface only; deployment operators with

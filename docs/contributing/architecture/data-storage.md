@@ -4,14 +4,15 @@ This project uses several Cloudflare storage systems for different purposes.
 
 ## Per-user isolation invariant
 
-Kody is multi-user with strict per-user isolation. Every storage layer described
-below is scoped by `user_id` (D1 columns, Vectorize metadata, KV key prefixes,
-Durable Object names) and every read/write path takes a `userId` argument. Two
-users with the same logical identifier (for example the same `kind`/`instanceId`
-pair on a remote connector, the same package id, or the same storage id) land on
-different durable objects and different rows. Any new persistence layer added to
-the project must follow the same convention; user-scoped tests should exercise
-both the "happy" path and a cross-user denial path.
+Kody is multi-user with strict per-user isolation. Every user-owned storage
+layer described below is scoped by `user_id` (D1 columns, Vectorize metadata,
+KV key prefixes, Durable Object names), and every owner read/write path takes a
+`userId` argument. Two users with the same logical identifier (for example the
+same `kind`/`instanceId` pair on a remote connector, the same package id, or the
+same storage id) land on different durable objects and different rows. Any new
+persistence layer added to the project must follow the same convention;
+user-scoped tests should exercise both the "happy" path and a cross-user denial
+path.
 
 The deliberate storage exception is **operator-owned system email** for reserved
 platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
@@ -22,6 +23,12 @@ Account deletion and export treat `system:email` rows as platform/operator
 content, not user data; the exclusion is listed in
 `accountUserDataExcludedOwnerIds` with a reason and is covered by guardrail
 tests.
+
+Platform feedback remains user-owned and user-scoped in storage, but has a
+narrow cross-user read and triage path. Only feedback the submitting user
+explicitly approved enters that role-gated admin surface. The stored submitter
+id makes feedback attributed rather than anonymous; the exception never grants
+admins access to unrelated account data.
 
 ## Account deletion inventory
 
@@ -40,6 +47,11 @@ System email rows owned by `system:email` are intentionally excluded from
 account deletion. They are operator-owned inbound mail for reserved platform
 addresses, not portable user content, and are bounded by fixed system caps plus
 the scheduled system-email retention prune.
+
+Platform-feedback rows follow two account-deletion behaviors. Deleting the
+submitting account deletes its submissions. When a deleted account was an admin
+reviewer for another user's surviving submission, deletion clears the reviewer
+reference so the row does not retain attribution to a nonexistent account.
 
 Deletion must cover these user-owned surfaces:
 
@@ -90,6 +102,10 @@ System email rows owned by `system:email` are intentionally absent from account
 exports for the same reason they are absent from deletion: they belong to the
 operator inbox surface, not to the exporting user. The export manifest lists
 this under `excludedD1Surfaces` so the omission is explicit.
+
+Platform-feedback submissions are included in the submitting user's own D1
+export section. An export never includes submissions owned by other users,
+including feedback the exporter may have reviewed as an admin.
 
 Exports are versioned JSON documents:
 
@@ -176,6 +192,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   fall back to a scan-and-hash that self-heals by writing the computed id back,
   and the `POST /__maintenance/backfill-stable-user-ids` endpoint backfills all
   remaining legacy rows in one pass.
+- `platform_feedback`: attributed, user-approved Kody feedback and admin triage
+  state. Submitter identity remains on the row; optional reviewer attribution is
+  cleared if that admin account is deleted. Rows persist until the submitting
+  account is deleted.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history
@@ -725,3 +745,6 @@ Documented exemptions: `archived_job_artifacts` is exempt because job artifact
 cleanup is driven by each row's `retain_until` value, and `mcp_memories` is
 exempt because memories are durable user-curated content removed by explicit
 user action or account deletion rather than by time-based retention.
+`platform_feedback` is exempt because approved submissions are durable
+user-owned records kept until the submitting account is deleted, not
+automatically pruned by age.

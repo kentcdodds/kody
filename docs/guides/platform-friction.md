@@ -4,8 +4,10 @@ Use this guide when Kody itself creates friction while you are using built-in
 capabilities, saved packages, package apps, jobs, memories, values,
 integrations, or official Kody guides.
 
-The goal is small, user-approved self-improvement: reduce repeated friction
-without turning the user's task into platform maintenance.
+The goal is small, user-approved improvement: resolve what can be fixed in the
+current task, remember durable user-specific context when appropriate, and
+offer to submit useful platform feedback without turning the user's task into
+platform maintenance.
 
 ## What counts as Kody friction
 
@@ -16,19 +18,31 @@ Treat these as friction points:
 - capability descriptions, schemas, or guide text that caused a wrong turn
 - recurring user-specific preferences or workarounds that Kody could remember
 - reproducible Kody bugs, misleading errors, or missing troubleshooting steps
+- a poor Kody experience or a concrete suggestion for improving Kody
 
-Do not use this guide for normal product scope decisions, third-party API
-failures, or credentials setup. Use `integration_bootstrap`, `oauth`, or
-`connect_secret` for those workflows.
+Do not recommend platform feedback for every normal third-party API failure,
+provider outage, authentication failure, or credentials setup step. Use
+`integration_bootstrap`, `oauth`, or `connect_secret` for those workflows.
+Offer feedback when Kody made that experience meaningfully worse, or when the
+same Kody friction is likely to recur.
 
 ## Core rule
 
 When you notice a Kody friction point and you can suggest a concrete
-improvement, tell the user briefly and ask whether they want you to smooth it
-out.
+improvement, tell the user briefly. Then choose the smallest relevant path:
 
-If the improvement is obvious, low-risk, and already within the work you are
-doing, you may make it directly. Examples:
+1. Fix obvious, low-risk friction inline when it is already within the work.
+2. Propose memory only for durable user-specific context.
+3. Offer to submit meaningful platform feedback for Kody bugs, poor
+   experiences, recurring friction, or suggestions.
+
+Keep any follow-up separate from the user's main task. Do not block a successful
+result on memory or feedback unless the friction prevents completion.
+
+## Fix friction inline
+
+If the improvement is obvious, low-risk, and already within the authorized
+work, you may make it directly. Examples:
 
 - fix a typo or stale setup step in a package README you are already editing
 - clarify a package `## Intent` section after the user expanded the package
@@ -36,7 +50,9 @@ doing, you may make it directly. Examples:
 - add a missing usage note to package docs after you verified the behavior
 
 Still mention the improvement in your final response so the user can see what
-changed.
+changed. Ask before changing package behavior, adding jobs, changing
+visibility, broadening scope, or making any other change that needs separate
+authorization.
 
 ## Memory changes require approval
 
@@ -54,35 +70,45 @@ Before any memory mutation:
 4. Only then run `meta_memory_upsert` or `meta_memory_delete` if the
    verification result supports the change.
 
-## Package or docs improvements
+Memory approval does not count as approval to submit platform feedback, and
+feedback approval does not count as approval to change memory.
 
-When the friction is in a saved package or package-facing documentation:
+## Submit platform feedback only after explicit approval
 
-1. Identify the smallest improvement that would have avoided the friction.
-2. Prefer README, guide, or capability-description text over new primitives.
-3. Make obvious, local documentation fixes when you are already modifying that
-   package or repo.
-4. Ask the user before changing package behavior, adding jobs, changing
-   visibility, or broadening scope.
+Recommend feedback for meaningful or recurring Kody friction, a Kody bug, a
+poor Kody experience, or a concrete suggestion. Briefly state what you would
+submit and ask a direct question. Do not call a submission capability until the
+user explicitly approves that submission; silence, an ambiguous response, or
+approval of some other action is not consent.
 
-## Platform bugs and larger improvements
+After explicit approval, call `meta_platform_feedback_submit` with
+`user_confirmed: true`. Include only the approved Kody issue and the minimum
+useful reproduction context. Omit secrets, credentials, tokens, and unrelated
+private content. Never set `user_confirmed: true` based only on your own
+judgment.
 
-For Kody platform issues that you cannot fix in the current context:
+Feedback is attributed to the authenticated user and is not anonymous.
+Deployment admins can read and triage the approved submission through
+role-gated capabilities. Admin list results intentionally omit the full
+submission; a detail read exposes only the approved feedback, not unrelated
+account content. Kody retains submissions until the submitting account is
+deleted, includes them in that user's account export, and removes them during
+account deletion.
 
-1. Tell the user what went wrong and what workaround you used.
-2. Suggest the smallest follow-up, such as a docs clarification, package update,
-   or bug report.
-3. Ask whether they want you to take that follow-up.
+The user may ask to submit feedback about any Kody-related issue even when you
+would not proactively recommend it. Use category `other` when no more specific
+category fits, while keeping the same approval and privacy rules.
 
-Keep this separate from the user's main task. Do not block a successful result
-on filing a bug or improving docs unless the friction prevents completion.
+If the user declines or does not answer, continue the main task without
+submitting feedback.
 
 ## Suggested phrasing
 
 Use concise language:
 
-> I hit a Kody friction point: `<specific issue>`. A small improvement would be
-> `<proposed fix>`. Would you like me to make that smoother?
+> I hit a Kody friction point: `<specific issue>`. I can submit this attributed
+> feedback to the Kody deployment admins, without secrets or unrelated private
+> content. Would you like me to submit it?
 
 For memory:
 

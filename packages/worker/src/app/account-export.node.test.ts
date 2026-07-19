@@ -143,6 +143,63 @@ test('account export documents and excludes operator-owned system email rows', a
 	])
 })
 
+test('account export includes submitted feedback but excludes reviewer-only relationships', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO platform_feedback (
+			id, submitter_user_id, category, summary, details, status,
+			reviewed_by_user_id, reviewed_at, admin_note, created_at, updated_at
+		) VALUES
+			(
+				'feedback-submitted-by-a',
+				'user-aaa',
+				'friction',
+				'Setup is confusing',
+				'The setup flow needs clearer guidance.',
+				'triaged',
+				'admin-other',
+				'2026-07-05',
+				'Needs setup review.',
+				'2026-07-04',
+				'2026-07-05'
+			),
+			(
+				'feedback-reviewed-by-a',
+				'user-bbb',
+				'bug',
+				'Private feedback from B',
+				'This record belongs only in user B exports.',
+				'triaged',
+				'user-aaa',
+				'2026-07-05',
+				'Reviewer-only relationship.',
+				'2026-07-04',
+				'2026-07-05'
+			);
+	`)
+
+	const page = await readAccountExportSection({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'd1_table',
+		table: 'platform_feedback',
+	})
+
+	expect(page.items).toEqual([
+		expect.objectContaining({
+			id: 'feedback-submitted-by-a',
+			submitter_user_id: 'user-aaa',
+			admin_note: 'Needs setup review.',
+		}),
+	])
+	expect(
+		(page.items as Array<{ id: string }>).some(
+			(row) => row.id === 'feedback-reviewed-by-a',
+		),
+	).toBe(false)
+})
+
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`

@@ -185,6 +185,11 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 			reason:
 				'Memories are durable user-curated content removed by explicit user action or account deletion, not by time-based retention.',
 		},
+		{
+			table: 'platform_feedback',
+			reason:
+				'Platform feedback is durable user-authored content retained for deployment-admin follow-up until the submitter deletes their account; v1 has no time-based pruning.',
+		},
 	] as const
 
 export type RetentionPruneResult = {
