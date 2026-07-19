@@ -5,7 +5,7 @@ import {
 	type PlatformFeedbackListItem,
 	type PlatformFeedbackRecord,
 } from '#worker/platform-feedback/types.ts'
-export { platformFeedbackContentWarning } from '#worker/platform-feedback/subscription-event.ts'
+export { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 
 export const platformFeedbackCategorySchema = z.enum(platformFeedbackCategories)
 

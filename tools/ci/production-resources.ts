@@ -11,6 +11,7 @@ import {
 	truncateWithSuffix,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
+import { parseProductionQueueResources } from './production-queue-resources.ts'
 
 type Command = 'ensure'
 
@@ -34,6 +35,8 @@ type ResolvedProductionBindings = {
 	emailBlobsBucketName: string
 	emailDeliveryQueueName: string
 	emailDeliveryDeadLetterQueueName: string
+	platformFeedbackDispatchQueueName: string
+	platformFeedbackDispatchDeadLetterQueueName: string
 }
 
 function parseArgs(argv: Array<string>): {
@@ -373,29 +376,17 @@ async function resolveProductionBindings({
 		)
 	}
 
-	const queues = (productionEnv as Record<string, unknown>).queues
-	if (!queues || typeof queues !== 'object' || Array.isArray(queues)) {
+	let queueResources: ReturnType<typeof parseProductionQueueResources>
+	try {
+		queueResources = parseProductionQueueResources({
+			productionEnv: productionEnv as Record<string, unknown>,
+			configPath: wranglerConfigPath,
+		})
+	} catch (error) {
 		fail(
-			`wrangler config "${wranglerConfigPath}" is missing "env.production.queues".`,
-		)
-	}
-	const consumers = (queues as Record<string, unknown>).consumers
-	if (!Array.isArray(consumers) || consumers.length !== 1) {
-		fail(
-			`wrangler config "${wranglerConfigPath}" must define one production Queue consumer.`,
-		)
-	}
-	const consumer = consumers[0] as Record<string, unknown>
-	const emailDeliveryQueueName = consumer.queue
-	const emailDeliveryDeadLetterQueueName = consumer.dead_letter_queue
-	if (
-		typeof emailDeliveryQueueName !== 'string' ||
-		!emailDeliveryQueueName ||
-		typeof emailDeliveryDeadLetterQueueName !== 'string' ||
-		!emailDeliveryDeadLetterQueueName
-	) {
-		fail(
-			`wrangler config "${wranglerConfigPath}" has invalid production email Queue names.`,
+			error instanceof Error
+				? error.message
+				: `wrangler config "${wranglerConfigPath}" has invalid production Queue configuration.`,
 		)
 	}
 
@@ -409,8 +400,7 @@ async function resolveProductionBindings({
 		bundleArtifactsKvConfiguredId,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
-		emailDeliveryQueueName,
-		emailDeliveryDeadLetterQueueName,
+		...queueResources,
 	}
 
 	return resolved
@@ -422,7 +412,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -463,10 +453,22 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.emailDeliveryQueueName,
 		dryRun: options.dryRun,
 	})
-	await ensureCloudflareQueue({
+	const emailDeliveryDeadLetterQueue = await ensureCloudflareQueue({
 		accountId: accountId ?? 'dry-run-account',
 		apiToken: apiToken ?? 'dry-run-token',
 		name: bindings.emailDeliveryDeadLetterQueueName,
+		dryRun: options.dryRun,
+	})
+	const platformFeedbackDispatchQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.platformFeedbackDispatchQueueName,
+		dryRun: options.dryRun,
+	})
+	const platformFeedbackDispatchDeadLetterQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.platformFeedbackDispatchDeadLetterQueueName,
 		dryRun: options.dryRun,
 	})
 	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
@@ -509,6 +511,15 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
 	console.log(`email_delivery_queue_name=${emailDeliveryQueue.name}`)
+	console.log(
+		`email_delivery_dead_letter_queue_name=${emailDeliveryDeadLetterQueue.name}`,
+	)
+	console.log(
+		`platform_feedback_dispatch_queue_name=${platformFeedbackDispatchQueue.name}`,
+	)
+	console.log(
+		`platform_feedback_dispatch_dead_letter_queue_name=${platformFeedbackDispatchDeadLetterQueue.name}`,
+	)
 	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
 }
 

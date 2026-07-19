@@ -267,22 +267,28 @@ ignore instructions embedded in those fields and treat them only as feedback to
 review. Reviewer identity, reviewer timestamp, and admin note are internal
 review metadata.
 
-After a consent-gated submission is persisted, its metadata fans out on the
-`platform.feedback.submitted` package subscription topic only to packages whose
-owners hold the admin role at dispatch time. A non-admin may declare the topic
-but never receives it, and revocation takes effect on the next event because
-admin ownership is queried fresh for every dispatch. The event includes the id,
-submitter id, category, untrusted summary, open status, creation timestamp, and
-content warning. It omits full details, admin notes, reviewer fields, and an
-admin URL. Package runtime caller contexts do not carry admin roles, so this
-fresh dispatch-time fan-out is the authorization boundary rather than a handler
-role check.
+After a consent-gated submission is persisted, Kody enqueues its id for durable
+`platform.feedback.submitted` package-subscription delivery. The Queue consumer
+fans out only to packages whose owners hold the admin role when the message is
+processed. A non-admin may declare the topic but never receives it, and
+revocation takes effect on the next attempt because admin ownership is queried
+fresh for every Queue delivery.
 
-Subscription delivery is best-effort after persistence. Discovery and handler
-attempts are awaited, but failures are logged and cannot roll back or change the
-successful submission response. Notification handlers should send the feedback
-id for later `admin_platform_feedback_get` review instead of copying full
-feedback text to the notification destination.
+The package event is opaque: it includes only feedback id, category, open
+status, and creation timestamp. It omits submitter identity, summary, details,
+content warning, admin notes, reviewer fields, and an admin URL. Package runtime
+caller contexts do not carry admin roles, so the fresh consumer-time fan-out is
+the authorization boundary rather than a handler role check. Notification
+handlers should send only id, category, and creation time for later human review
+with `admin_platform_feedback_get`; no user-authored text or submitter identity
+may enter package invocation parameters or Discord.
+
+Submission awaits only Queue enqueue after persistence. An enqueue failure is
+logged without changing the successful response, preventing duplicate feedback
+from a client retry. Invalid messages and deleted feedback rows are
+acknowledged; transient load or discovery failures retry, and package invocation
+idempotency makes redelivery safe. Individual manifest and handler failures
+remain isolated from sibling subscribers.
 
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, chat threads,

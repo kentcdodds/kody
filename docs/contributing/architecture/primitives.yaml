@@ -409,6 +409,20 @@ primitives:
       - docs/use/email-primitives.md
       - docs/contributing/setup-manifest.md
 
+  - id: platform-feedback-dispatch-queue
+    group: storage
+    name: Platform feedback dispatch queue
+    summary:
+      Durable opaque event delivery from persisted feedback to admin packages.
+    code:
+      - packages/worker/src/platform-feedback/dispatch-queue
+      - packages/worker/src/queue-handler
+      - tools/ci/production-queue-resources
+    docs:
+      - docs/contributing/setup-manifest.md
+      - docs/contributing/architecture/authorization.md
+      - docs/guides/package-subscriptions.md
+
   - id: community-assets-r2
     group: storage
     name: Community asset storage (R2)

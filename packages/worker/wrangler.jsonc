@@ -161,6 +161,12 @@
 				},
 			],
 			"queues": {
+				"producers": [
+					{
+						"binding": "PLATFORM_FEEDBACK_DISPATCH_QUEUE",
+						"queue": "kody-platform-feedback-dispatch",
+					},
+				],
 				"consumers": [
 					{
 						"queue": "kody-email-delivery",
@@ -168,6 +174,13 @@
 						"max_batch_timeout": 5,
 						"max_retries": 3,
 						"dead_letter_queue": "kody-email-delivery-dlq",
+					},
+					{
+						"queue": "kody-platform-feedback-dispatch",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"dead_letter_queue": "kody-platform-feedback-dispatch-dlq",
 					},
 				],
 			},

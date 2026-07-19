@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	buildPlatformFeedbackSubmittedEvent,
-	platformFeedbackContentWarning,
 	platformFeedbackSubmittedTopic,
 } from './subscription-event.ts'
 
@@ -89,24 +88,27 @@ function createManifest(packageId: string, subscribed = true) {
 	}
 }
 
-test('platform feedback submitted payload is exact and metadata-only', () => {
+test('platform feedback submitted payload is exact and opaque', () => {
 	const payload = buildPlatformFeedbackSubmittedEvent(openFeedback)
 
 	expect(payload).toEqual({
 		event: 'platform.feedback.submitted',
 		feedback: {
 			id: 'feedback-1',
-			submitter_user_id: 'submitter-1',
 			category: 'friction',
-			summary_untrusted: 'The setup path is confusing',
 			status: 'open',
 			created_at: '2026-07-19T00:00:00.000Z',
 		},
-		content_warning: platformFeedbackContentWarning,
 	})
+	expect(Object.keys(payload.feedback).sort()).toEqual(
+		['category', 'created_at', 'id', 'status'].sort(),
+	)
+	expect(payload.feedback).not.toHaveProperty('submitter_user_id')
+	expect(payload.feedback).not.toHaveProperty('summary_untrusted')
 	expect(payload.feedback).not.toHaveProperty('details')
 	expect(payload.feedback).not.toHaveProperty('admin_note')
 	expect(payload.feedback).not.toHaveProperty('reviewed_by_user_id')
+	expect(payload).not.toHaveProperty('content_warning')
 	expect(payload).not.toHaveProperty('admin_url')
 })
 

@@ -278,7 +278,7 @@ export default async function main(input = {}) {
 	return { packageId }
 }
 
-test('platform feedback dispatch invokes every admin subscriber and excludes non-admin packages', async () => {
+test('platform feedback dispatch is opaque, idempotent, and limited to every admin subscriber', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	await ensureRbacTestSchema(env.APP_DB)
@@ -341,6 +341,10 @@ test('platform feedback dispatch invokes every admin subscriber and excludes non
 	})
 
 	try {
+		await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+			env: { ...env, APP_BASE_URL: platformBaseUrl },
+			feedback: openFeedback,
+		})
 		await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
 			env: { ...env, APP_BASE_URL: platformBaseUrl },
 			feedback: openFeedback,

@@ -2,6 +2,7 @@ import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 
 const unmatchedRetryDelaySeconds = 30
+export const emailDeliveryQueueName = 'kody-email-delivery'
 
 export async function handleEmailDeliveryQueue(
 	batch: MessageBatch<unknown>,

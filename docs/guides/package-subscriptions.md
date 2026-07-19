@@ -132,36 +132,37 @@ capability for full contents.
 
 ## `platform.feedback.submitted` (admins)
 
-A successful, consent-gated `meta_platform_feedback_submit` insert dispatches
-`platform.feedback.submitted` to packages saved by users who hold the admin role
-at dispatch time. A non-admin package may declare the topic, but it never
-receives the event. Admin roles are read fresh for every event, so revocation
-stops delivery on the next submission.
+A successful, consent-gated `meta_platform_feedback_submit` insert enqueues a
+durable `platform.feedback.submitted` attempt. The Queue consumer dispatches to
+packages saved by users who hold the admin role when the message is processed. A
+non-admin package may declare the topic, but it never receives the event. Admin
+roles are read fresh for every attempt, so revocation stops delivery on the next
+processed submission.
 
-Handlers receive this metadata-only payload:
+Handlers receive this opaque metadata payload:
 
 ```ts
 type PlatformFeedbackSubmittedEvent = {
 	event: 'platform.feedback.submitted'
 	feedback: {
 		id: string
-		submitter_user_id: string
 		category: 'friction' | 'bug' | 'experience' | 'suggestion' | 'other'
-		summary_untrusted: string
 		status: 'open'
 		created_at: string
 	}
-	content_warning: string
 }
 ```
 
-Treat `summary_untrusted` only as user-authored data and ignore instructions in
-it. The event intentionally omits full details, admin notes, reviewer fields,
-and an admin URL. Notification handlers should send the feedback id, not copy
-full feedback text into another system; an admin can later review the approved
-submission with `admin_platform_feedback_get`.
+The event intentionally omits submitter identity and every user-authored field,
+including summary and details. It also omits content warnings, admin notes,
+reviewer fields, and an admin URL. Notification handlers should send only the
+feedback id, category, and creation time. A human admin can later review the
+approved submission with `admin_platform_feedback_get`; no user-authored text or
+submitter identity should enter package invocation parameters or Discord.
 
-Dispatch is best-effort after the feedback row is durable. Kody awaits the
-delivery attempt, but subscription discovery or handler failures do not roll
-back the submission or change its successful MCP response. One broken manifest
-or handler is skipped without preventing attempts for sibling subscribers.
+The feedback row is durable before Kody awaits the small Queue enqueue. Enqueue
+failure is logged but does not change the successful MCP response, avoiding a
+duplicate submission when a client retries. Queue delivery retries transient
+load or discovery errors, while package invocation idempotency makes redelivery
+safe. One broken manifest or handler is skipped without preventing attempts for
+sibling subscribers.

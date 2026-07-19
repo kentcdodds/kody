@@ -75,7 +75,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-subscriptions.md',
 		title: 'Package subscription guide',
 		summary:
-			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email and admin-only platform.feedback.submitted payload guidance.',
+			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email plus durable, opaque admin-only platform.feedback.submitted guidance.',
 	},
 	platform_friction: {
 		file: 'platform-friction.md',
@@ -246,6 +246,8 @@ const allKeywords = [
 		'email message received',
 		'platform.feedback.submitted',
 		'platform feedback submitted',
+		'opaque feedback event',
+		'feedback dispatch queue',
 		'metadata-first payload',
 		'event handler',
 		'background service',

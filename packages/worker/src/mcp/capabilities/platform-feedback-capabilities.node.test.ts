@@ -16,15 +16,23 @@ import { metaPlatformFeedbackSubmitCapability } from './meta/meta-platform-feedb
 const mockModule = vi.hoisted(() => ({
 	getPlatformFeedbackForAdmin: vi.fn(),
 	listPlatformFeedbackForAdmin: vi.fn(),
-	dispatchPlatformFeedbackSubmittedSubscriptionEvent: vi.fn(),
+	queueSend: vi.fn(),
 	submitPlatformFeedback: vi.fn(),
 	updatePlatformFeedbackForAdmin: vi.fn(),
 }))
 
-vi.mock('#worker/platform-feedback/package-subscriptions.ts', () => ({
-	dispatchPlatformFeedbackSubmittedSubscriptionEvent:
-		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+const synchronousFanOutModule = vi.hoisted(() => ({
+	loaded: false,
+	dispatchPlatformFeedbackSubmittedSubscriptionEvent: vi.fn(),
 }))
+
+vi.mock('#worker/platform-feedback/package-subscriptions.ts', () => {
+	synchronousFanOutModule.loaded = true
+	return {
+		dispatchPlatformFeedbackSubmittedSubscriptionEvent:
+			synchronousFanOutModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	}
+})
 
 vi.mock('#worker/platform-feedback/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof PlatformFeedbackService>()
@@ -62,7 +70,12 @@ function createCapabilityContext(input?: {
 	executionOrigin?: 'interactive' | 'background'
 }) {
 	return {
-		env: { APP_DB: {} as D1Database } as Env,
+		env: {
+			APP_DB: {} as D1Database,
+			PLATFORM_FEEDBACK_DISPATCH_QUEUE: {
+				send: mockModule.queueSend,
+			},
+		} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: input?.executionOrigin,
@@ -83,7 +96,7 @@ function createCapabilityContext(input?: {
 	}
 }
 
-test('meta platform feedback submission gates consent and isolates post-persistence dispatch failures', async () => {
+test('meta platform feedback submission gates consent and isolates post-persistence enqueue failures', async () => {
 	mockModule.submitPlatformFeedback.mockResolvedValue(openFeedback)
 	const input = {
 		category: 'friction' as const,
@@ -143,8 +156,10 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 		'only available from an interactive MCP agent flow after explicit user approval',
 	)
 	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
+	expect(mockModule.queueSend).not.toHaveBeenCalled()
+	expect(synchronousFanOutModule.loaded).toBe(false)
 	expect(
-		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+		synchronousFanOutModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).not.toHaveBeenCalled()
 
 	mockModule.submitPlatformFeedback.mockRejectedValueOnce(
@@ -159,9 +174,7 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 			}),
 		),
 	).rejects.toThrow('active queue limit')
-	expect(
-		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).not.toHaveBeenCalled()
+	expect(mockModule.queueSend).not.toHaveBeenCalled()
 
 	const result = await metaPlatformFeedbackSubmitCapability.handler(
 		input,
@@ -177,11 +190,8 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 		summary: 'Setup is confusing',
 		details: 'The setup flow does not explain the next action.',
 	})
-	expect(
-		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenCalledWith({
-		env: expect.anything(),
-		feedback: openFeedback,
+	expect(mockModule.queueSend).toHaveBeenCalledWith({
+		feedbackId: openFeedback.id,
 	})
 	expect(result).toEqual({
 		feedback_id: 'feedback-1',
@@ -190,11 +200,9 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 	})
 
 	consoleError.mockImplementation(() => {})
-	mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockClear()
-	mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockRejectedValueOnce(
-		new Error('subscriber discovery unavailable'),
-	)
-	const resultAfterDispatchFailure =
+	mockModule.queueSend.mockClear()
+	mockModule.queueSend.mockRejectedValueOnce(new Error('Queue unavailable'))
+	const resultAfterEnqueueFailure =
 		await metaPlatformFeedbackSubmitCapability.handler(
 			input,
 			createCapabilityContext({
@@ -202,18 +210,16 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 				executionOrigin: 'interactive',
 			}),
 		)
-	expect(resultAfterDispatchFailure).toEqual(result)
-	expect(
-		mockModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenCalledWith({
-		env: expect.anything(),
-		feedback: openFeedback,
+	expect(resultAfterEnqueueFailure).toEqual(result)
+	expect(mockModule.queueSend).toHaveBeenCalledWith({
+		feedbackId: openFeedback.id,
 	})
 	expect(consoleError).toHaveBeenCalledWith(
-		'platform-feedback-package-subscription-dispatch-failed',
+		'platform-feedback-dispatch-enqueue-failed',
 		expect.any(Error),
 	)
 	expect(consoleError).toHaveBeenCalledTimes(1)
+	expect(synchronousFanOutModule.loaded).toBe(false)
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })
 

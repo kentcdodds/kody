@@ -264,21 +264,23 @@ plus an `admin_url` link to the message in `/admin/system-email`. Handlers run
 as the admin package owner (not the system owner), so user-scoped email reads do
 not apply to the system message.
 
-Successful consent-gated platform-feedback inserts dispatch
-`platform.feedback.submitted` through the same package subscription runtime.
-Fan-out selects only packages whose owners hold the admin role when that event
-is dispatched; non-admin declarations are inert, and role revocation applies to
-the next submission. The payload contains only the feedback id, submitter id,
-category, untrusted summary, open status, creation timestamp, and content
-warning. It deliberately omits full details, admin notes, reviewer fields, and
-an admin URL. Handlers should notify with the feedback id and use
-`admin_platform_feedback_get` for later review instead of copying full feedback
-text into the notification.
+Successful consent-gated platform-feedback inserts enqueue
+`platform.feedback.submitted` for durable package-subscription delivery. Fan-out
+selects only packages whose owners hold the admin role when the Queue message is
+processed; non-admin declarations are inert, and role revocation applies to the
+next attempt. The opaque payload contains only feedback id, category, open
+status, and creation timestamp. It deliberately omits submitter identity, all
+user-authored text, content warnings, admin notes, reviewer fields, and an admin
+URL. Handlers should notify with the id, category, and creation time, then use
+`admin_platform_feedback_get` for human review. No user-authored text or
+submitter identity should enter package invocation parameters or Discord.
 
-The feedback row is authoritative: dispatch is awaited after persistence but is
-best-effort, so discovery or handler failures are logged and do not roll back a
-successful submission. Per-package manifest and invocation failures are isolated
-from sibling subscribers.
+The feedback row is authoritative: submission awaits only Queue enqueue after
+persistence, and enqueue failure is logged without changing the successful
+response. The consumer acknowledges invalid messages and deleted rows, retries
+transient load/discovery failures, and relies on package invocation idempotency
+for safe redelivery. Per-package manifest and invocation failures are isolated
+from sibling subscribers and processed with bounded concurrency.
 
 ## Package-owned workflows
 

@@ -25,6 +25,16 @@ This project uses the following resources:
     user email domain.
   - The API token needs `Workers Queues:Edit`; the domain must already be
     enabled for Cloudflare Email Sending.
+- Cloudflare Queue for durable platform-feedback subscription dispatch
+  - Producer binding: `PLATFORM_FEEDBACK_DISPATCH_QUEUE`
+  - Queue: `kody-platform-feedback-dispatch`
+  - Dead-letter queue: `kody-platform-feedback-dispatch-dlq`
+  - The production consumer batches at most 10 messages for 5 seconds, retries
+    three times, and routes exhausted messages to the dedicated dead-letter
+    queue. Production CI ensures both resources.
+  - Queue messages contain only `{ feedbackId }`. The consumer reloads current
+    feedback metadata, acknowledges invalid or deleted ids, and retries
+    transient load or subscription-discovery failures.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
   - Preview: `kody-capabilities-preview`

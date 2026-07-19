@@ -15,6 +15,7 @@ declare namespace Cloudflare {
 		CAPABILITY_VECTOR_INDEX: VectorizeIndex;
 		EMAIL: SendEmail;
 		USAGE_EVENTS: AnalyticsEngineDataset;
+		PLATFORM_FEEDBACK_DISPATCH_QUEUE: Queue;
 		LOADER: WorkerLoader;
 		APP_LOADER: WorkerLoader;
 		AI: Ai;
