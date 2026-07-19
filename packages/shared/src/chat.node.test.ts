@@ -28,9 +28,7 @@ test('mcp context schemas accept valid user and caller payloads', () => {
 	if (callerContext.success) {
 		expect(callerContext.value.executionOrigin).toBe('interactive')
 	}
-})
 
-test('mcp caller context accepts legacy missing origins and validates marked origins', () => {
 	expect(
 		parseSafe(mcpCallerContextSchema, {
 			baseUrl: 'https://example.com',

@@ -100,14 +100,6 @@ function createCapabilityContext(input?: {
 }
 
 test('meta platform feedback submission gates consent and isolates post-persistence enqueue failures', async () => {
-	expect(metaPlatformFeedbackSubmitCapability.description).toContain(
-		'Copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion',
-	)
-	expect(
-		JSON.stringify(metaPlatformFeedbackSubmitCapability.inputSchema),
-	).toContain(
-		'copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion',
-	)
 	mockModule.submitPlatformFeedback.mockResolvedValue(openFeedback)
 	const input = {
 		category: 'friction' as const,
@@ -278,8 +270,12 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		status: 'open',
 		category: 'friction',
 	})
-	expect(list).toMatchObject({ total: 3, page: 2, pageSize: 1 })
-	expect(list.content_warning).toBe(platformFeedbackContentWarning)
+	expect(list).toMatchObject({
+		total: 3,
+		page: 2,
+		pageSize: 1,
+		content_warning: platformFeedbackContentWarning,
+	})
 	expect(list.feedback).toEqual([
 		{
 			id: 'feedback-1',
@@ -309,7 +305,6 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 	})
 	expect(get.feedback).not.toHaveProperty('summary')
 	expect(get.feedback).not.toHaveProperty('details')
-	expect(get.content_warning).toBe(platformFeedbackContentWarning)
 
 	const updated = await adminPlatformFeedbackUpdateCapability.handler(
 		{

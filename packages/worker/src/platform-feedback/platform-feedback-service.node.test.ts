@@ -87,7 +87,7 @@ function createPlatformFeedbackDb() {
 }
 
 test('platform feedback workflow submits, lists, reads, transitions, and preserves submitter attribution', async () => {
-	const { sqlite, db } = createPlatformFeedbackDb()
+	const { sqlite, db, queries } = createPlatformFeedbackDb()
 	const first = await submitPlatformFeedback({
 		db,
 		submitterUserId: 'user-a',
@@ -148,6 +148,22 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		expect(item).not.toHaveProperty('submitterUsername')
 		expect(item).not.toHaveProperty('submitterEmail')
 	}
+	queries.length = 0
+	const clampedPage = await listPlatformFeedbackForAdmin({
+		db,
+		page: 99,
+		pageSize: 2,
+	})
+	expect(clampedPage).toMatchObject({ total: 3, page: 2, pageSize: 2 })
+	expect(clampedPage.items).toHaveLength(1)
+	expect(
+		queries.filter((query) => query.startsWith('SELECT COUNT(*) AS total')),
+	).toHaveLength(1)
+	expect(
+		queries.filter((query) =>
+			query.startsWith('SELECT id, submitter_user_id, category, summary'),
+		),
+	).toHaveLength(2)
 	const bugFeedback = await listPlatformFeedbackForAdmin({
 		db,
 		status: 'open',
@@ -298,37 +314,6 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	])
 })
 
-test('platform feedback pagination clamps to the last nonempty page', async () => {
-	const { db, queries } = createPlatformFeedbackDb()
-	for (let index = 0; index < 3; index += 1) {
-		await submitPlatformFeedback({
-			db,
-			submitterUserId: `user-${index}`,
-			category: 'friction',
-			summary: `Feedback ${index}`,
-			details: `Feedback details ${index}`,
-		})
-	}
-
-	queries.length = 0
-	const page = await listPlatformFeedbackForAdmin({
-		db,
-		page: 99,
-		pageSize: 2,
-	})
-
-	expect(page).toMatchObject({ total: 3, page: 2, pageSize: 2 })
-	expect(page.items).toHaveLength(1)
-	expect(
-		queries.filter((query) => query.startsWith('SELECT COUNT(*) AS total')),
-	).toHaveLength(1)
-	expect(
-		queries.filter((query) =>
-			query.startsWith('SELECT id, submitter_user_id, category, summary'),
-		),
-	).toHaveLength(2)
-})
-
 test('platform feedback admin note updates reject the same stale revision', async () => {
 	const { db } = createPlatformFeedbackDb()
 	const submitted = await submitPlatformFeedback({
@@ -406,6 +391,44 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			.get(),
 	).toEqual({ total: 10 })
 
+	vi.useFakeTimers()
+	try {
+		const now = new Date('2026-07-19T12:00:00.000Z')
+		vi.setSystemTime(now)
+		const { sqlite, db } = createPlatformFeedbackDb()
+		const createdAt = new Date(
+			now.getTime() - 23 * 60 * 60 * 1_000,
+		).toISOString()
+		const insertFeedback = sqlite.prepare(
+			`INSERT INTO platform_feedback (
+				id, submitter_user_id, category, summary, details, created_at, updated_at
+			) VALUES (?, 'rate-limited-user', 'friction', ?, ?, ?, ?)`,
+		)
+		for (let index = 0; index < 10; index += 1) {
+			insertFeedback.run(
+				`feedback-${index}`,
+				`Feedback ${index}`,
+				`Feedback details ${index}`,
+				createdAt,
+				createdAt,
+			)
+		}
+
+		await expect(
+			submitPlatformFeedback({
+				db,
+				submitterUserId: 'rate-limited-user',
+				category: 'friction',
+				summary: 'Feedback 11',
+				details: 'This submission exceeds the rolling limit.',
+			}),
+		).rejects.toThrow(
+			'Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after 3600 seconds.',
+		)
+	} finally {
+		vi.useRealTimers()
+	}
+
 	const queueLimited = createPlatformFeedbackDb()
 	const insertQueued = queueLimited.sqlite.prepare(
 		`INSERT INTO platform_feedback (
@@ -466,44 +489,4 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			)
 			.get(),
 	).toEqual({ total: 100 })
-})
-
-test('platform feedback rolling rate limit retries when the oldest submission expires', async () => {
-	vi.useFakeTimers()
-	try {
-		const now = new Date('2026-07-19T12:00:00.000Z')
-		vi.setSystemTime(now)
-		const { sqlite, db } = createPlatformFeedbackDb()
-		const createdAt = new Date(
-			now.getTime() - 23 * 60 * 60 * 1_000,
-		).toISOString()
-		const insertFeedback = sqlite.prepare(
-			`INSERT INTO platform_feedback (
-				id, submitter_user_id, category, summary, details, created_at, updated_at
-			) VALUES (?, 'rate-limited-user', 'friction', ?, ?, ?, ?)`,
-		)
-		for (let index = 0; index < 10; index += 1) {
-			insertFeedback.run(
-				`feedback-${index}`,
-				`Feedback ${index}`,
-				`Feedback details ${index}`,
-				createdAt,
-				createdAt,
-			)
-		}
-
-		await expect(
-			submitPlatformFeedback({
-				db,
-				submitterUserId: 'rate-limited-user',
-				category: 'friction',
-				summary: 'Feedback 11',
-				details: 'This submission exceeds the rolling limit.',
-			}),
-		).rejects.toThrow(
-			'Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after 3600 seconds.',
-		)
-	} finally {
-		vi.useRealTimers()
-	}
 })

@@ -36,7 +36,8 @@ function createBatch(messages: Array<ReturnType<typeof createQueueMessage>>) {
 	} as unknown as MessageBatch<unknown>
 }
 
-test('platform feedback queue dispatches valid duplicates and acknowledges permanent deletion cancellation', async () => {
+test('platform feedback queue acks valid, invalid, and cancelled messages and retries transient failures', async () => {
+	consoleError.mockImplementation(() => {})
 	const first = createQueueMessage('queue-valid', {
 		feedbackId,
 	})
@@ -52,24 +53,39 @@ test('platform feedback queue dispatches valid duplicates and acknowledges perma
 	const deleted = createQueueMessage('queue-deleted', {
 		feedbackId: 'feedback-deleted',
 	})
-	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockImplementation(
-		async (input: { feedbackId: string }) => {
-			if (input.feedbackId === 'feedback-deleted') {
-				throw new PlatformFeedbackDispatchCancelledError(input.feedbackId)
-			}
-			return []
-		},
-	)
+	const loadFailure = createQueueMessage('queue-load-failure', {
+		feedbackId: 'feedback-load-failure',
+	})
+	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
+		feedbackId,
+	})
+	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([])
+		.mockRejectedValueOnce(
+			new PlatformFeedbackDispatchCancelledError('feedback-deleted'),
+		)
+		.mockRejectedValueOnce(new Error('D1 lookup unavailable'))
+		.mockRejectedValueOnce(new Error('subscription wrapper unavailable'))
 
 	await handlePlatformFeedbackDispatchQueue(
-		createBatch([first, duplicate, missing, invalid, extraFields, deleted]),
+		createBatch([
+			first,
+			duplicate,
+			missing,
+			invalid,
+			extraFields,
+			deleted,
+			loadFailure,
+			dispatchFailure,
+		]),
 		{ APP_DB: {} } as Env,
 		{} as ExecutionContext,
 	)
 
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
-	).toHaveBeenCalledTimes(3)
+	).toHaveBeenCalledTimes(5)
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).toHaveBeenNthCalledWith(1, {
@@ -99,26 +115,6 @@ test('platform feedback queue dispatches valid duplicates and acknowledges perma
 		expect(message.ack).toHaveBeenCalledTimes(1)
 		expect(message.retry).not.toHaveBeenCalled()
 	}
-})
-
-test('platform feedback queue retries lookup and subscription wrapper failures after thirty seconds', async () => {
-	consoleError.mockImplementation(() => {})
-	const loadFailure = createQueueMessage('queue-load-failure', {
-		feedbackId: 'feedback-load-failure',
-	})
-	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
-		feedbackId,
-	})
-	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent
-		.mockRejectedValueOnce(new Error('D1 lookup unavailable'))
-		.mockRejectedValueOnce(new Error('subscription wrapper unavailable'))
-
-	await handlePlatformFeedbackDispatchQueue(
-		createBatch([loadFailure, dispatchFailure]),
-		{ APP_DB: {} } as Env,
-		{} as ExecutionContext,
-	)
-
 	for (const message of [loadFailure, dispatchFailure]) {
 		expect(message.ack).not.toHaveBeenCalled()
 		expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
