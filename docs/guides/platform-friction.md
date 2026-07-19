@@ -130,6 +130,37 @@ category fits, while keeping the same approval and privacy rules.
 If the user declines or does not answer, continue the main task without
 submitting feedback.
 
+## Write feedback admins can act on
+
+Submit one issue per call. Unrelated problems get separate submissions. Each
+account already has the 10-per-24h and 100-active limits above, so prioritize
+the most useful reports.
+
+Write a summary that names the affected area and the specific symptom or need so
+an admin can triage from the list view alone (list results intentionally show
+only the summary). Good:
+`package_save rejects README-only updates with a misleading validation error`.
+Vague: `packages are broken`.
+
+In details, capture the firsthand context you uniquely have while it is still in
+the conversation:
+
+- what the user was trying to accomplish
+- exact capability, package, or guide names and non-secret inputs involved
+- minimal reproduction steps
+- expected vs actual behavior
+- verbatim error text quoted as text
+- frequency (always / intermittent, plus conditions)
+- impact (blocked vs degraded, and any workaround plus its cost)
+
+For `suggestion` feedback, lead with the underlying problem and the cost of the
+current workaround; present a proposed change as one possible approach rather
+than the requirement. Separate observed facts from diagnosis: label suspected
+root causes as suspicion.
+
+Keep omitting secrets and unrelated private content. Quote the relevant excerpt
+rather than pasting long transcripts or logs.
+
 ## Suggested phrasing
 
 Use concise language:

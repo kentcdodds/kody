@@ -28,20 +28,24 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 		inputSchema: z.strictObject({
 			category: z
 				.enum(platformFeedbackCategories)
-				.describe('Stable feedback category.'),
+				.describe(
+					'Stable feedback category: "bug" for reproducible defects, "friction" for capability/guide/package text that caused a wrong turn, "experience" for a poor overall experience, "suggestion" for a problem-first improvement idea, "other" when nothing fits.',
+				),
 			summary: z
 				.string()
 				.trim()
 				.min(1)
 				.max(200)
-				.describe('Concise feedback summary (1–200 characters).'),
+				.describe(
+					'Specific, scannable summary naming the affected area and symptom or need (1–200 characters); admins triage from this line alone, so avoid vague summaries like "search is broken".',
+				),
 			details: z
 				.string()
 				.trim()
 				.min(1)
 				.max(8000)
 				.describe(
-					'Feedback details (1–8000 characters). Do not include secrets or unrelated private content.',
+					'Feedback details (1–8000 characters), one issue per submission: goal context, exact capability or package names, minimal reproduction steps, expected vs actual behavior, verbatim error text, frequency, impact, and any workaround. Do not include secrets or unrelated private content.',
 				),
 			user_confirmed: z
 				.literal(true)
