@@ -102,6 +102,11 @@ const adminNavItems = [
 	{ href: '/admin/users', label: 'Users', paths: ['/admin', '/admin/users'] },
 	{ href: '/admin/insights', label: 'Insights', paths: ['/admin/insights'] },
 	{ href: '/admin/invites', label: 'Invites', paths: ['/admin/invites'] },
+	{
+		href: '/admin/feature-flags',
+		label: 'Feature flags',
+		paths: ['/admin/feature-flags'],
+	},
 	{ href: '/admin/roles', label: 'Roles', paths: ['/admin/roles'] },
 	{
 		href: '/admin/community-reports',

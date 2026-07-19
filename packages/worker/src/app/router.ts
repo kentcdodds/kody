@@ -14,6 +14,10 @@ import {
 	createAdminInvitesHandler,
 } from '#app/handlers/admin-invites.ts'
 import {
+	createAdminFeatureFlagsApiHandler,
+	createAdminFeatureFlagsHandler,
+} from '#app/handlers/admin-feature-flags.ts'
+import {
 	createAdminRolesApiHandler,
 	createAdminRolesHandler,
 } from '#app/handlers/admin-roles.ts'
@@ -204,6 +208,9 @@ export function createAppRouter(env: Env) {
 			adminInvites: createAdminInvitesHandler(env),
 			adminInvitesApi: createAdminInvitesApiHandler(env),
 			adminInvitesApiPost: createAdminInvitesApiHandler(env),
+			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
+			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
+			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
 			adminRoles: createAdminRolesHandler(env),
 			adminRolesApi: createAdminRolesApiHandler(env),
 			adminCommunityReports: createAdminCommunityReportsHandler(env),

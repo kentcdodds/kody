@@ -113,6 +113,31 @@ export type AdminInvitesLoaderData = {
 	invites: Array<AdminInviteListItem>
 }
 
+export type AdminFeatureFlag = {
+	key: string
+	description: string | null
+	defaultEnabled: boolean | null
+	stale: boolean
+	global: {
+		enabled: boolean
+		rolloutPercent: number | null
+		note: string
+		updatedBy: number | null
+		updatedAt: string
+	} | null
+	overrides: Array<{
+		userId: number
+		username: string
+		enabled: boolean
+		updatedAt: string
+	}>
+}
+
+export type AdminFeatureFlagsLoaderData = {
+	ok: true
+	featureFlags: Array<AdminFeatureFlag>
+}
+
 export type AdminUsageMetric =
 	| 'execute'
 	| 'package_export'
@@ -628,6 +653,7 @@ export type AppLoaderData = {
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
+	adminFeatureFlags?: AdminFeatureFlagsLoaderData
 	adminInsights?: AdminInsightsLoaderData
 	adminPlatformFeedback?: AdminPlatformFeedbackLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
