@@ -163,6 +163,6 @@ submitter identity should enter package invocation parameters or Discord.
 The feedback row is durable before Kody awaits the small Queue enqueue. Enqueue
 failure is logged but does not change the successful MCP response, avoiding a
 duplicate submission when a client retries. Queue delivery retries transient
-load or discovery errors, while package invocation idempotency makes redelivery
-safe. One broken manifest or handler is skipped without preventing attempts for
-sibling subscribers.
+load, discovery, or pre-execution package-invocation infrastructure errors,
+while package invocation idempotency makes redelivery safe. Terminal handler
+failures are isolated without preventing attempts for sibling subscribers.

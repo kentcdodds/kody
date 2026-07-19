@@ -34,7 +34,8 @@ This project uses the following resources:
     queue. Production CI ensures both resources.
   - Queue messages contain only `{ feedbackId }`. The consumer reloads current
     feedback metadata, acknowledges invalid or deleted ids, and retries
-    transient load or subscription-discovery failures.
+    transient load, subscription-discovery, or pre-execution package-invocation
+    infrastructure failures. Terminal handler failures remain isolated.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
   - Preview: `kody-capabilities-preview`

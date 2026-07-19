@@ -278,9 +278,10 @@ submitter identity should enter package invocation parameters or Discord.
 The feedback row is authoritative: submission awaits only Queue enqueue after
 persistence, and enqueue failure is logged without changing the successful
 response. The consumer acknowledges invalid messages and deleted rows, retries
-transient load/discovery failures, and relies on package invocation idempotency
-for safe redelivery. Per-package manifest and invocation failures are isolated
-from sibling subscribers and processed with bounded concurrency.
+transient load/discovery and pre-execution package-invocation infrastructure
+failures, and relies on package invocation idempotency for safe redelivery.
+Terminal handler failures remain isolated from sibling subscribers, and fan-out
+uses bounded concurrency.
 
 ## Package-owned workflows
 

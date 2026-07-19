@@ -286,9 +286,10 @@ may enter package invocation parameters or Discord.
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
 from a client retry. Invalid messages and deleted feedback rows are
-acknowledged; transient load or discovery failures retry, and package invocation
-idempotency makes redelivery safe. Individual manifest and handler failures
-remain isolated from sibling subscribers.
+acknowledged; transient load, discovery, or pre-execution package-invocation
+infrastructure failures retry, and package invocation idempotency makes
+redelivery safe. Terminal handler failures remain isolated from sibling
+subscribers.
 
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, chat threads,

@@ -13,6 +13,26 @@ type LoadedAdminPackageSubscription = {
 }
 
 const adminPackageSubscriptionConcurrency = 5
+const retryablePackageInvocationInfrastructureCodes = new Set([
+	'idempotency_lookup_failed',
+	'idempotency_persistence_failed',
+	'idempotency_conflict_unresolved',
+	'invocation_in_progress',
+])
+
+function readRetryablePackageInvocationInfrastructureCode(response: {
+	status: number
+	body: Record<string, unknown>
+}) {
+	if (response.status >= 200 && response.status < 300) return null
+	const error = response.body['error']
+	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
+	const code = (error as Record<string, unknown>)['code']
+	return typeof code === 'string' &&
+		retryablePackageInvocationInfrastructureCodes.has(code)
+		? code
+		: null
+}
 
 async function mapSettledInChunks<T, TResult>(
 	items: ReadonlyArray<T>,
@@ -109,8 +129,8 @@ async function loadMatchingSubscriptions(input: {
 
 /**
  * Fans an event out only to packages whose owners hold the admin role at
- * dispatch time. Discovery and invocation failures are isolated so one admin
- * package cannot prevent delivery attempts to its siblings.
+ * dispatch time. Failures are isolated while sibling attempts finish, then
+ * retryable discovery or invocation infrastructure failures reject dispatch.
  */
 export async function dispatchAdminPackageSubscriptionEvent(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
@@ -176,22 +196,43 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 					status: response.status,
 				})
 			}
-			return response
+			return {
+				response,
+				retryableInfrastructureCode:
+					readRetryablePackageInvocationInfrastructureCode(response),
+			}
 		},
 	)
+	const invocationInfrastructureErrors: Array<unknown> = []
 	const responses = invoked.map((result, index) => {
-		if (result.status === 'fulfilled') return result.value
+		if (result.status === 'fulfilled') {
+			if (result.value.retryableInfrastructureCode) {
+				invocationInfrastructureErrors.push(
+					new Error(
+						`Retryable package invocation infrastructure response: ${result.value.retryableInfrastructureCode}.`,
+					),
+				)
+			}
+			return result.value.response
+		}
 		console.warn('admin-package-subscription-invocation-failed', {
 			topic: input.topic,
 			packageId: subscriptions[index]?.savedPackage.id,
 			error: result.reason,
 		})
+		invocationInfrastructureErrors.push(result.reason)
 		return null
 	})
 	if (discoveryErrors.length > 0) {
 		throw new Error('Admin package subscription discovery failed.', {
 			cause: discoveryErrors[0],
 		})
+	}
+	if (invocationInfrastructureErrors.length > 0) {
+		throw new Error(
+			'Admin package subscription dispatch encountered retryable package invocation infrastructure errors.',
+			{ cause: invocationInfrastructureErrors[0] },
+		)
 	}
 	return responses
 }
