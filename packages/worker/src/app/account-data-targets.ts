@@ -170,6 +170,10 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'db_user_id', table: 'user_roles' },
 	{ kind: 'db_user_id', table: 'passkeys' },
 	{ kind: 'db_user_id', table: 'oauth_connections' },
+	// Feature-flag overrides use the integer users.id FK (with ON DELETE
+	// CASCADE), but account deletion still issues an explicit DELETE so the
+	// cascade stays self-contained when FK enforcement is disabled.
+	{ kind: 'db_user_id', table: 'feature_flag_user_overrides' },
 	// Two-factor verification rows are keyed by `target` = stringified db user
 	// id rather than a user_id column, so they need the dedicated kind.
 	{ kind: 'db_user_target', table: 'verifications' },

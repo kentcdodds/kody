@@ -133,14 +133,14 @@ async function handleSetGlobalAction(input: {
 		)
 	}
 
-	const note = readOptionalString(input.body, 'note')
+	const bodyRecord = input.body as Record<string, unknown>
 
 	try {
 		await setFeatureFlagGlobalState(input.env.APP_DB, {
 			key,
 			enabled,
 			rolloutPercent,
-			note: note ?? undefined,
+			...(Object.hasOwn(bodyRecord, 'note') ? { note: bodyRecord.note } : {}),
 			updatedBy: input.actor.userId,
 		})
 	} catch (error) {
@@ -198,19 +198,17 @@ async function handleSetUserOverrideAction(input: {
 		input.env.APP_DB,
 		input.body,
 	)
-	if (resolvedUserId === null) {
-		return jsonResponse(
-			{ ok: false, error: 'userId or username is required.' },
-			400,
-		)
+	if (resolvedUserId.status === 'invalid') {
+		return jsonResponse({ ok: false, error: resolvedUserId.error }, 400)
 	}
-	if (resolvedUserId === false) {
+	if (resolvedUserId.status === 'not_found') {
 		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
 	}
+	const targetUserId = resolvedUserId.userId
 
 	await setFeatureFlagUserOverride(input.env.APP_DB, {
 		key,
-		userId: resolvedUserId,
+		userId: targetUserId,
 		enabled,
 		updatedBy: input.actor.userId,
 	})
@@ -225,7 +223,7 @@ async function handleSetUserOverrideAction(input: {
 		path: input.url.pathname,
 		reason: [
 			`key=${key}`,
-			`target_user_id=${resolvedUserId}`,
+			`target_user_id=${targetUserId}`,
 			`enabled=${enabled}`,
 		].join(';'),
 	})
@@ -325,39 +323,65 @@ async function handleDeleteStaleAction(input: {
 	return jsonResponse(await loadAdminFeatureFlagsData(input.env))
 }
 
+type ResolveOverrideUserIdResult =
+	| { status: 'ok'; userId: number }
+	| { status: 'invalid'; error: string }
+	| { status: 'not_found' }
+
 async function resolveOverrideUserId(
 	db: D1Database,
 	body: object,
-): Promise<number | null | false> {
+): Promise<ResolveOverrideUserIdResult> {
 	const record = body as Record<string, unknown>
-	const userIdValue = record.userId
-	if (
-		typeof userIdValue === 'number' &&
-		Number.isInteger(userIdValue) &&
-		userIdValue > 0
-	) {
-		return userIdValue
+	const hasUserId = Object.hasOwn(record, 'userId') && record.userId != null
+	const username = readString(body, 'username')
+	const hasUsername = username !== null
+
+	if (!hasUserId && !hasUsername) {
+		return {
+			status: 'invalid',
+			error: 'Provide either userId or username.',
+		}
 	}
-	if (typeof userIdValue === 'string' && userIdValue.trim()) {
-		const parsed = Number(userIdValue.trim())
-		if (Number.isInteger(parsed) && parsed > 0) {
-			return parsed
+	if (hasUserId && hasUsername) {
+		return {
+			status: 'invalid',
+			error: 'Provide either userId or username, not both.',
 		}
 	}
 
-	const username = readString(body, 'username')
-	if (!username) {
-		return null
+	if (hasUserId) {
+		const userId = readPositiveIntField(body, 'userId')
+		if (userId === null) {
+			return {
+				status: 'invalid',
+				error: 'userId must be a positive integer.',
+			}
+		}
+		const row = await db
+			.prepare(`SELECT id FROM users WHERE id = ?`)
+			.bind(userId)
+			.first<{ id: number }>()
+		if (!row) {
+			return { status: 'not_found' }
+		}
+		return { status: 'ok', userId: row.id }
 	}
 
+	if (!username) {
+		return {
+			status: 'invalid',
+			error: 'Provide either userId or username.',
+		}
+	}
 	const row = await db
 		.prepare(`SELECT id FROM users WHERE username = ?`)
 		.bind(username)
 		.first<{ id: number }>()
 	if (!row) {
-		return false
+		return { status: 'not_found' }
 	}
-	return row.id
+	return { status: 'ok', userId: row.id }
 }
 
 function readRolloutPercent(body: object): number | null | false {
@@ -401,12 +425,6 @@ function readPositiveIntField(body: object, key: string): number | null {
 		}
 	}
 	return null
-}
-
-function readOptionalString(body: object, key: string): string | null {
-	const value = (body as Record<string, unknown>)[key]
-	if (typeof value !== 'string') return null
-	return value
 }
 
 function readString(body: object, key: string) {

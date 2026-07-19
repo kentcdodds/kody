@@ -68,48 +68,63 @@ type TestUser = {
 
 function createUserTestDb(users: Array<TestUser>) {
 	const userRecords = new Map(users.map((user) => [user.id, { ...user }]))
+
+	function createStatement(query: string, params: Array<unknown> = []) {
+		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+		const executeAll = async () => {
+			if (
+				normalizedQuery.startsWith('select') &&
+				normalizedQuery.includes('from "users"') &&
+				/"id"\s*=/.test(normalizedQuery)
+			) {
+				const user = userRecords.get(Number(params[0]))
+				return {
+					results: user ? [{ ...user }] : [],
+					meta: { changes: 0, last_row_id: 0 },
+				}
+			}
+			if (normalizedQuery.includes('from user_roles')) {
+				return {
+					results: [],
+					meta: { changes: 0, last_row_id: 0 },
+				}
+			}
+			// Feature-flag evaluation during SSR session load; empty state uses
+			// registry defaults without throwing.
+			if (
+				normalizedQuery.includes('from feature_flags') ||
+				normalizedQuery.includes('from feature_flag_user_overrides')
+			) {
+				return {
+					results: [],
+					meta: { changes: 0, last_row_id: 0 },
+				}
+			}
+			return {
+				results: [],
+				meta: { changes: 0, last_row_id: 0 },
+			}
+		}
+		return {
+			bind(...nextParams: Array<unknown>) {
+				return createStatement(query, nextParams)
+			},
+			async all() {
+				return executeAll()
+			},
+			async first() {
+				const result = await executeAll()
+				return result.results[0] ?? null
+			},
+			async run() {
+				return { meta: { changes: 0, last_row_id: 0 } }
+			},
+		}
+	}
+
 	return {
 		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					const executeAll = async () => {
-						if (
-							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"') &&
-							/"id"\s*=/.test(normalizedQuery)
-						) {
-							const user = userRecords.get(Number(params[0]))
-							return {
-								results: user ? [{ ...user }] : [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
-						if (normalizedQuery.includes('from user_roles')) {
-							return {
-								results: [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
-						return {
-							results: [],
-							meta: { changes: 0, last_row_id: 0 },
-						}
-					}
-					return {
-						async all() {
-							return executeAll()
-						},
-						async first() {
-							const result = await executeAll()
-							return result.results[0] ?? null
-						},
-						async run() {
-							return { meta: { changes: 0, last_row_id: 0 } }
-						},
-					}
-				},
-			}
+			return createStatement(query)
 		},
 		async exec() {
 			return

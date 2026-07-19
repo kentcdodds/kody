@@ -108,10 +108,15 @@ export const adminFeatureFlagOverrideCapability = defineDomainCapability(
 					})
 					const clear = args.clear === true
 					if (clear) {
-						await clearFeatureFlagUserOverride(ctx.env.APP_DB, {
+						const cleared = await clearFeatureFlagUserOverride(ctx.env.APP_DB, {
 							key,
 							userId: targetUserId,
 						})
+						if (!cleared) {
+							throw new Error(
+								`No override exists for feature flag "${key}" and userId ${targetUserId}.`,
+							)
+						}
 					} else {
 						const updatedBy = await resolveActingAdminUserId(ctx)
 						await setFeatureFlagUserOverride(ctx.env.APP_DB, {

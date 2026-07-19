@@ -3,6 +3,9 @@ import {
 	type PublicCommunityListing,
 } from '#app/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
+
+export type { AdminFeatureFlag }
 
 export type CommunityIndexLoaderData = {
 	ok: true
@@ -111,26 +114,6 @@ export type AdminInviteListItem = {
 export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
-}
-
-export type AdminFeatureFlag = {
-	key: string
-	description: string | null
-	defaultEnabled: boolean | null
-	stale: boolean
-	global: {
-		enabled: boolean
-		rolloutPercent: number | null
-		note: string
-		updatedBy: number | null
-		updatedAt: string
-	} | null
-	overrides: Array<{
-		userId: number
-		username: string
-		enabled: boolean
-		updatedAt: string
-	}>
 }
 
 export type AdminFeatureFlagsLoaderData = {

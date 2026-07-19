@@ -224,6 +224,15 @@ function createFeatureFlagsTestDb(
 		prepare(query: string) {
 			return createStatement(query)
 		},
+		async batch(
+			statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>,
+		) {
+			const results = []
+			for (const statement of statements) {
+				results.push(await statement.run())
+			}
+			return results
+		},
 		globals,
 		overrides,
 	} as unknown as D1Database & {
@@ -325,6 +334,25 @@ test('global on/off and percentage rollout evaluation', async () => {
 			updatedBy: 9,
 		}),
 	).rejects.toThrow(/rolloutPercent/)
+
+	await expect(
+		setFeatureFlagGlobalState(db, {
+			key: 'demo-indicator',
+			enabled: true,
+			rolloutPercent: null,
+			note: 42,
+			updatedBy: 9,
+		}),
+	).rejects.toThrow(/note must be a string/)
+	await expect(
+		setFeatureFlagGlobalState(db, {
+			key: 'demo-indicator',
+			enabled: true,
+			rolloutPercent: null,
+			note: 'x'.repeat(501),
+			updatedBy: 9,
+		}),
+	).rejects.toThrow(/note must be at most 500 characters/)
 })
 
 test('computeRolloutBucket is deterministic and spreads across 0-99', () => {

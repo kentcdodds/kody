@@ -5,10 +5,15 @@
  * evaluation happens at most once per HTTP request. API handlers that only
  * need auth should keep using `loadResolvedRequestAuth` /
  * `readAuthenticatedAppUser` and will not hit this path.
+ *
+ * On evaluation failure for an authenticated user, every flag is forced off
+ * (fail closed) so a default-on registry flag cannot bypass a kill switch when
+ * D1 is unavailable. Anonymous requests still use registry defaults.
  */
 
 import {
 	featureFlagDefinitions,
+	featureFlagKeys,
 	type FeatureFlagKey,
 } from '#worker/feature-flags/registry.ts'
 import { getFeatureFlagsForUser } from '#worker/feature-flags/service.ts'
@@ -28,6 +33,14 @@ function defaultFeatureFlags(): EvaluatedFeatureFlags {
 	return flags
 }
 
+function disabledFeatureFlags(): EvaluatedFeatureFlags {
+	const flags = {} as EvaluatedFeatureFlags
+	for (const key of featureFlagKeys) {
+		flags[key] = false
+	}
+	return flags
+}
+
 async function resolveRequestFeatureFlags(
 	env: Env,
 	userId: number | null,
@@ -39,7 +52,7 @@ async function resolveRequestFeatureFlags(
 		return await getFeatureFlagsForUser(env.APP_DB, userId)
 	} catch (error) {
 		console.error('Failed to load feature flags for authenticated user:', error)
-		return defaultFeatureFlags()
+		return disabledFeatureFlags()
 	}
 }
 

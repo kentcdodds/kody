@@ -6,6 +6,11 @@ import {
 	isFeatureFlagKey,
 	type FeatureFlagKey,
 } from './registry.ts'
+import { type AdminFeatureFlag } from './types.ts'
+
+export type { AdminFeatureFlag } from './types.ts'
+
+const maxFeatureFlagNoteLength = 500
 
 type GlobalFlagRow = {
 	key: string
@@ -27,26 +32,6 @@ type OverrideFlagRow = {
 type OverrideEnabledRow = {
 	flag_key: string
 	enabled: number
-}
-
-export type AdminFeatureFlag = {
-	key: string
-	description: string | null
-	defaultEnabled: boolean | null
-	stale: boolean
-	global: {
-		enabled: boolean
-		rolloutPercent: number | null
-		note: string
-		updatedBy: number | null
-		updatedAt: string
-	} | null
-	overrides: Array<{
-		userId: number
-		username: string
-		enabled: boolean
-		updatedAt: string
-	}>
 }
 
 /**
@@ -87,6 +72,22 @@ function assertValidRolloutPercent(rolloutPercent: number | null) {
 	) {
 		throw new Error('rolloutPercent must be an integer between 0 and 100.')
 	}
+}
+
+function normalizeFeatureFlagNote(note: unknown): string {
+	if (note === undefined) {
+		return ''
+	}
+	if (typeof note !== 'string') {
+		throw new Error('note must be a string.')
+	}
+	const trimmed = note.trim()
+	if (trimmed.length > maxFeatureFlagNoteLength) {
+		throw new Error(
+			`note must be at most ${maxFeatureFlagNoteLength} characters.`,
+		)
+	}
+	return trimmed
 }
 
 export async function isFeatureEnabled(
@@ -188,11 +189,12 @@ export async function setFeatureFlagGlobalState(
 		key: FeatureFlagKey
 		enabled: boolean
 		rolloutPercent: number | null
-		note?: string
+		note?: unknown
 		updatedBy: number
 	},
 ): Promise<void> {
 	assertValidRolloutPercent(input.rolloutPercent)
+	const note = normalizeFeatureFlagNote(input.note)
 	await db
 		.prepare(
 			`INSERT INTO feature_flags (key, enabled, rollout_percent, note, updated_by, updated_at)
@@ -208,7 +210,7 @@ export async function setFeatureFlagGlobalState(
 			input.key,
 			input.enabled ? 1 : 0,
 			input.rolloutPercent,
-			input.note?.trim() ?? '',
+			note,
 			input.updatedBy,
 		)
 		.run()
@@ -351,17 +353,14 @@ export async function deleteStaleFeatureFlag(
 		)
 	}
 
-	const overrideResult = await db
-		.prepare(`DELETE FROM feature_flag_user_overrides WHERE flag_key = ?`)
-		.bind(key)
-		.run()
-	const globalResult = await db
-		.prepare(`DELETE FROM feature_flags WHERE key = ?`)
-		.bind(key)
-		.run()
+	const results = await db.batch([
+		db
+			.prepare(`DELETE FROM feature_flag_user_overrides WHERE flag_key = ?`)
+			.bind(key),
+		db.prepare(`DELETE FROM feature_flags WHERE key = ?`).bind(key),
+	])
 
 	return (
-		(overrideResult.meta.changes ?? 0) > 0 ||
-		(globalResult.meta.changes ?? 0) > 0
+		(results[0]?.meta.changes ?? 0) > 0 || (results[1]?.meta.changes ?? 0) > 0
 	)
 }

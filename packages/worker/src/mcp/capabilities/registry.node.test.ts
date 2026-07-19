@@ -11,12 +11,37 @@ import {
 test('getCapabilityRegistryForContext bypasses connector caches when no connectors are attached', async () => {
 	clearCapabilityRegistryCacheForTests()
 	const get = vi.fn()
+	const prepare = vi.fn((query: string) => {
+		const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+		return {
+			bind() {
+				return this
+			},
+			async all() {
+				if (normalized.includes('feature_flag')) {
+					throw new Error(
+						'Feature-flag queries must not run when no capability declares featureFlag',
+					)
+				}
+				return { results: [], meta: { changes: 0 } }
+			},
+			async first() {
+				return null
+			},
+			async run() {
+				return { meta: { changes: 0 } }
+			},
+		}
+	})
 	const env = {
 		REMOTE_CONNECTOR_SESSION: {
 			idFromName(name: string) {
 				return name
 			},
 			get,
+		},
+		APP_DB: {
+			prepare,
 		},
 	} as unknown as Env
 	const callerContext = createMcpCallerContext({
@@ -35,6 +60,11 @@ test('getCapabilityRegistryForContext bypasses connector caches when no connecto
 	})
 
 	expect(get).not.toHaveBeenCalled()
+	expect(
+		prepare.mock.calls.some(([query]) =>
+			String(query).toLowerCase().includes('feature_flag'),
+		),
+	).toBe(false)
 	expect(registry.capabilityMap).toBe(getStaticRegistry().capabilityMap)
 })
 

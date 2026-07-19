@@ -100,6 +100,10 @@ function createFeatureFlagsTestEnv(
 				return createStatement(query, nextParams)
 			},
 			async first<T>() {
+				if (normalized.includes('select id from users where id = ?')) {
+					const user = users.get(Number(params[0]))
+					return (user ? { id: user.id } : null) as T | null
+				}
 				if (normalized.includes('select id from users where username = ?')) {
 					const username = String(params[0])
 					for (const user of users.values()) {
@@ -252,6 +256,17 @@ function createFeatureFlagsTestEnv(
 		APP_DB: {
 			prepare(query: string) {
 				return createStatement(query)
+			},
+			async batch(
+				statements: Array<{
+					run: () => Promise<{ meta: { changes: number } }>
+				}>,
+			) {
+				const results = []
+				for (const statement of statements) {
+					results.push(await statement.run())
+				}
+				return results
 			},
 		} as unknown as D1Database,
 	}
@@ -417,5 +432,154 @@ test('admin feature flags delete_stale on registry key returns 400', async () =>
 		ok: false,
 		error:
 			'Cannot delete registry feature flag "demo-indicator". Remove it from the code registry first.',
+	})
+})
+
+test('admin feature flags set_global rejects overlong notes', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const handler = createAdminFeatureFlagsApiHandler(
+		createFeatureFlagsTestEnv() as unknown as Env,
+	)
+	const response = await handler.handler({
+		request: new Request('https://example.com/admin/feature-flags.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'set_global',
+				key: 'demo-indicator',
+				enabled: true,
+				rolloutPercent: null,
+				note: 'x'.repeat(501),
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/feature-flags.json'),
+	} as never)
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'note must be at most 500 characters.',
+	})
+})
+
+test('admin feature flags set_user_override validates user identity and existence', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const handler = createAdminFeatureFlagsApiHandler(
+		createFeatureFlagsTestEnv({
+			users: [
+				{ id: 1, username: 'admin-user' },
+				{ id: 2, username: 'jane' },
+			],
+		}) as unknown as Env,
+	)
+
+	const neither = await handler.handler({
+		request: new Request('https://example.com/admin/feature-flags.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'set_user_override',
+				key: 'demo-indicator',
+				enabled: true,
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/feature-flags.json'),
+	} as never)
+	expect(neither.status).toBe(400)
+	await expect(neither.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Provide either userId or username.',
+	})
+
+	const both = await handler.handler({
+		request: new Request('https://example.com/admin/feature-flags.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'set_user_override',
+				key: 'demo-indicator',
+				enabled: true,
+				userId: 2,
+				username: 'jane',
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/feature-flags.json'),
+	} as never)
+	expect(both.status).toBe(400)
+	await expect(both.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Provide either userId or username, not both.',
+	})
+
+	const missingId = await handler.handler({
+		request: new Request('https://example.com/admin/feature-flags.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'set_user_override',
+				key: 'demo-indicator',
+				enabled: true,
+				userId: 404,
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/feature-flags.json'),
+	} as never)
+	expect(missingId.status).toBe(404)
+	await expect(missingId.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'User not found.',
+	})
+
+	const byUsername = await handler.handler({
+		request: new Request('https://example.com/admin/feature-flags.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'set_user_override',
+				key: 'demo-indicator',
+				enabled: true,
+				username: 'jane',
+			}),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/feature-flags.json'),
+	} as never)
+	expect(byUsername.status).toBe(200)
+	await expect(byUsername.json()).resolves.toMatchObject({
+		ok: true,
+		featureFlags: [
+			{
+				key: 'demo-indicator',
+				overrides: [
+					expect.objectContaining({
+						userId: 2,
+						username: 'jane',
+						enabled: true,
+					}),
+				],
+			},
+		],
 	})
 })

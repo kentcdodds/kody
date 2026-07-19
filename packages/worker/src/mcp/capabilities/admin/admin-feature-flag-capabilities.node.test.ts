@@ -439,4 +439,13 @@ test('admin_feature_flag_override rejects invalid keys and missing users', async
 			ctx,
 		),
 	).rejects.toThrow(/User not found for username "nobody"/)
+
+	await expect(
+		adminFeatureFlagOverrideCapability.handler(
+			{ key: 'demo-indicator', userId: 1, clear: true },
+			ctx,
+		),
+	).rejects.toThrow(
+		/No override exists for feature flag "demo-indicator" and userId 1/,
+	)
 })
