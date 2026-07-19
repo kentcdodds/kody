@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
+	getPlatformFeedbackByIdForAdmin,
+	updatePlatformFeedbackStatusForAdmin,
+} from './repo.ts'
+import {
 	getPlatformFeedbackForAdmin,
 	listPlatformFeedbackForAdmin,
 	submitPlatformFeedback,
@@ -251,6 +255,55 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	expect(rows.filter((row) => row.submitter_user_id === 'user-b')).toEqual([
 		{ id: second.id, submitter_user_id: 'user-b' },
 	])
+})
+
+test('platform feedback admin note updates reject the same stale revision', async () => {
+	const { db } = createPlatformFeedbackDb()
+	const submitted = await submitPlatformFeedback({
+		db,
+		submitterUserId: 'user-a',
+		category: 'friction',
+		summary: 'Setup is confusing',
+		details: 'The setup flow does not explain the next action.',
+	})
+	const stale = await getPlatformFeedbackByIdForAdmin(db, submitted.id)
+	expect(stale).not.toBeNull()
+	if (!stale) throw new Error('Expected submitted platform feedback.')
+	expect(stale.revision).toBe(0)
+
+	const firstUpdate = await updatePlatformFeedbackStatusForAdmin(db, {
+		feedbackId: stale.id,
+		expectedStatus: stale.status,
+		expectedRevision: stale.revision,
+		status: stale.status,
+		reviewedByUserId: 'admin-a',
+		reviewedAt: '2026-07-19T01:00:00.000Z',
+		adminNote: 'First competing note.',
+	})
+	const staleUpdate = await updatePlatformFeedbackStatusForAdmin(db, {
+		feedbackId: stale.id,
+		expectedStatus: stale.status,
+		expectedRevision: stale.revision,
+		status: stale.status,
+		reviewedByUserId: 'admin-b',
+		reviewedAt: '2026-07-19T01:00:00.000Z',
+		adminNote: 'Second competing note.',
+	})
+	expect(firstUpdate).toBe(true)
+	expect(staleUpdate).toBe(false)
+
+	const current = await getPlatformFeedbackByIdForAdmin(db, submitted.id)
+	expect(current).toMatchObject({
+		status: 'open',
+		reviewedByUserId: 'admin-a',
+		adminNote: 'First competing note.',
+		revision: 1,
+	})
+	const publicRecord = await getPlatformFeedbackForAdmin({
+		db,
+		feedbackId: submitted.id,
+	})
+	expect(publicRecord).not.toHaveProperty('revision')
 })
 
 test('platform feedback submission enforces the rolling rate limit and atomic active queue cap', async () => {

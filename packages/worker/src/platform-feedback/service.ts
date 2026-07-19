@@ -17,6 +17,7 @@ import {
 	type PlatformFeedbackAction,
 	type PlatformFeedbackCategory,
 	type PlatformFeedbackRecord,
+	type PlatformFeedbackRecordWithRevision,
 	type PlatformFeedbackRow,
 	type PlatformFeedbackStatus,
 } from './types.ts'
@@ -31,6 +32,13 @@ const submissionRateLimit = 10
 const submissionRateLimitWindowSeconds = 24 * 60 * 60
 const submissionRateLimitWindowMs = submissionRateLimitWindowSeconds * 1_000
 const submissionInsertAttempts = 2
+
+function toPlatformFeedbackRecord({
+	revision: _revision,
+	...record
+}: PlatformFeedbackRecordWithRevision): PlatformFeedbackRecord {
+	return record
+}
 
 function normalizeRequiredText(
 	value: string,
@@ -237,7 +245,11 @@ export async function getPlatformFeedbackForAdmin(input: {
 	db: D1Database
 	feedbackId: string
 }) {
-	return getPlatformFeedbackByIdForAdmin(input.db, input.feedbackId)
+	const feedback = await getPlatformFeedbackByIdForAdmin(
+		input.db,
+		input.feedbackId,
+	)
+	return feedback ? toPlatformFeedbackRecord(feedback) : null
 }
 
 export async function updatePlatformFeedbackForAdmin(input: {
@@ -267,11 +279,14 @@ export async function updatePlatformFeedbackForAdmin(input: {
 		})
 		const adminNoteChanged =
 			adminNote !== undefined && adminNote !== existing.adminNote
-		if (nextStatus === null && !adminNoteChanged) return existing
+		if (nextStatus === null && !adminNoteChanged) {
+			return toPlatformFeedbackRecord(existing)
+		}
 		const reviewedAt = new Date().toISOString()
 		const updated = await updatePlatformFeedbackStatusForAdmin(input.db, {
 			feedbackId: input.feedbackId,
 			expectedStatus: existing.status,
+			expectedRevision: existing.revision,
 			status: nextStatus ?? existing.status,
 			reviewedByUserId: reviewerUserId,
 			reviewedAt,
@@ -285,7 +300,7 @@ export async function updatePlatformFeedbackForAdmin(input: {
 		if (!feedback) {
 			throw new PlatformFeedbackNotFoundError(input.feedbackId)
 		}
-		return feedback
+		return toPlatformFeedbackRecord(feedback)
 	}
 	throw new PlatformFeedbackConcurrentUpdateError(input.feedbackId)
 }

@@ -50,6 +50,11 @@ export type PlatformFeedbackRecord = {
 	updatedAt: string
 }
 
+/** Internal full-record shape used for optimistic admin updates. */
+export type PlatformFeedbackRecordWithRevision = PlatformFeedbackRecord & {
+	revision: number
+}
+
 export type PlatformFeedbackListItem = Omit<
 	PlatformFeedbackRecord,
 	'details' | 'adminNote'

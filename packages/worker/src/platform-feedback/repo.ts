@@ -1,20 +1,20 @@
 import {
 	type PlatformFeedbackCategory,
 	type PlatformFeedbackListItem,
-	type PlatformFeedbackRecord,
+	type PlatformFeedbackRecordWithRevision,
 	type PlatformFeedbackRow,
 	type PlatformFeedbackStatus,
 } from './types.ts'
 
 const platformFeedbackFullColumns = `id, submitter_user_id, category, summary, details,
-	status, reviewed_by_user_id, reviewed_at, admin_note, created_at, updated_at`
+	status, reviewed_by_user_id, reviewed_at, admin_note, revision, created_at, updated_at`
 
 const platformFeedbackListColumns = `id, submitter_user_id, category, summary,
 	status, reviewed_by_user_id, reviewed_at, created_at, updated_at`
 
 function mapPlatformFeedbackRow(
 	row: Record<string, unknown>,
-): PlatformFeedbackRecord {
+): PlatformFeedbackRecordWithRevision {
 	return {
 		id: String(row['id']),
 		submitterUserId: String(row['submitter_user_id']),
@@ -28,6 +28,7 @@ function mapPlatformFeedbackRow(
 				: String(row['reviewed_by_user_id']),
 		reviewedAt: row['reviewed_at'] == null ? null : String(row['reviewed_at']),
 		adminNote: row['admin_note'] == null ? null : String(row['admin_note']),
+		revision: Number(row['revision']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -141,7 +142,7 @@ export async function getPlatformFeedbackSubmissionLimitCounts(
 export async function getPlatformFeedbackByIdForAdmin(
 	db: D1Database,
 	feedbackId: string,
-): Promise<PlatformFeedbackRecord | null> {
+): Promise<PlatformFeedbackRecordWithRevision | null> {
 	const row = await db
 		.prepare(
 			`SELECT ${platformFeedbackFullColumns}
@@ -198,6 +199,7 @@ export async function updatePlatformFeedbackStatusForAdmin(
 	input: {
 		feedbackId: string
 		expectedStatus: PlatformFeedbackStatus
+		expectedRevision: number
 		status: PlatformFeedbackStatus
 		reviewedByUserId: string
 		reviewedAt: string
@@ -209,8 +211,8 @@ export async function updatePlatformFeedbackStatusForAdmin(
 			`UPDATE platform_feedback
 			SET status = ?, reviewed_by_user_id = ?, reviewed_at = ?,
 				admin_note = CASE WHEN ? = 1 THEN ? ELSE admin_note END,
-				updated_at = ?
-			WHERE id = ? AND status = ?`,
+				updated_at = ?, revision = revision + 1
+			WHERE id = ? AND status = ? AND revision = ?`,
 		)
 		.bind(
 			input.status,
@@ -221,6 +223,7 @@ export async function updatePlatformFeedbackStatusForAdmin(
 			input.reviewedAt,
 			input.feedbackId,
 			input.expectedStatus,
+			input.expectedRevision,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
