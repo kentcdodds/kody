@@ -22,8 +22,26 @@ CREATE TABLE platform_feedback (
 	updated_at TEXT NOT NULL
 );
 
-CREATE INDEX idx_platform_feedback_status_created_at
-ON platform_feedback(status, created_at DESC);
+-- Admin list ordering without filters.
+CREATE INDEX idx_platform_feedback_created_at_id
+ON platform_feedback(created_at DESC, id DESC);
 
-CREATE INDEX idx_platform_feedback_submitter_created_at
-ON platform_feedback(submitter_user_id, created_at DESC);
+-- Admin status and category filters preserve the requested list ordering.
+CREATE INDEX idx_platform_feedback_status_created_at_id
+ON platform_feedback(status, created_at DESC, id DESC);
+
+CREATE INDEX idx_platform_feedback_category_created_at_id
+ON platform_feedback(category, created_at DESC, id DESC);
+
+-- Reviewer account cleanup.
+CREATE INDEX idx_platform_feedback_reviewer
+ON platform_feedback(reviewed_by_user_id);
+
+-- Atomic active-queue counts plus submitter deletion/export paths.
+CREATE INDEX idx_platform_feedback_submitter_status
+ON platform_feedback(submitter_user_id, status);
+
+-- Terminal feedback retention scans only resolved/dismissed rows by age.
+CREATE INDEX idx_platform_feedback_terminal_updated_at_id
+ON platform_feedback(updated_at, id)
+WHERE status IN ('resolved', 'dismissed');

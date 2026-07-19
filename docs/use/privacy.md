@@ -22,6 +22,10 @@ lists users and roles; it does not expose account content.
 Platform feedback you explicitly approve for admin review is a narrow
 user-content exception.
 
+Admins also moderate public community listings and attributed community reports.
+That review covers content deliberately published or reported through community
+features, not private package source or unrelated account content.
+
 ## Platform feedback
 
 When an agent encounters meaningful Kody friction, a Kody bug, a poor
@@ -36,10 +40,16 @@ approved submission to read and triage it, but that does not grant access to
 your packages, memories, email, secrets, or other account content. Agents must
 omit secrets and unrelated private content from the feedback they prepare.
 
-Kody stores approved feedback until your account is deleted. Your account export
-includes your own submissions, and account deletion removes them. If an admin
-who reviewed your feedback deletes their account, Kody clears that reviewer's
-attribution while retaining your submission.
+Each account can create at most 10 feedback submissions in a rolling 24-hour
+period and have at most 100 active submissions (open or triaged). Open and
+triaged feedback remains until it is resolved, dismissed, or your account is
+deleted. Resolved and dismissed feedback is removed 365 days after its last
+update. Account deletion removes any remaining submissions.
+
+Your account export includes your own submissions and their status. Internal
+reviewer identity, notes, and timestamps are not included. If an admin who
+reviewed your feedback deletes their account, Kody clears that reviewer's
+attribution while retaining your submission for the lifecycle described above.
 
 ## What an admin can never see
 
@@ -50,7 +60,7 @@ does not let admins browse:
 - Package invocation tokens
 - Values
 - Memories
-- Packages and their source
+- Private packages and their source
 - Jobs
 - Email inboxes and messages
 - Chat threads

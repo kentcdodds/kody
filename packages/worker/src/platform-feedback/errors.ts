@@ -32,10 +32,30 @@ export class PlatformFeedbackConcurrentUpdateError extends Error {
 	}
 }
 
+export class PlatformFeedbackSubmissionRateLimitError extends Error {
+	constructor(retryAfterSeconds: number) {
+		super(
+			`Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after ${retryAfterSeconds} seconds.`,
+		)
+		this.name = 'PlatformFeedbackSubmissionRateLimitError'
+	}
+}
+
+export class PlatformFeedbackActiveQueueLimitError extends Error {
+	constructor(limit: number) {
+		super(
+			`You already have ${limit} open or triaged platform feedback submissions. Wait for an admin to review them before submitting more.`,
+		)
+		this.name = 'PlatformFeedbackActiveQueueLimitError'
+	}
+}
+
 export type PlatformFeedbackDomainError =
 	| PlatformFeedbackNotFoundError
 	| PlatformFeedbackInvalidTransitionError
 	| PlatformFeedbackConcurrentUpdateError
+	| PlatformFeedbackSubmissionRateLimitError
+	| PlatformFeedbackActiveQueueLimitError
 
 export function isPlatformFeedbackDomainError(
 	error: unknown,
@@ -43,6 +63,8 @@ export function isPlatformFeedbackDomainError(
 	return (
 		error instanceof PlatformFeedbackNotFoundError ||
 		error instanceof PlatformFeedbackInvalidTransitionError ||
-		error instanceof PlatformFeedbackConcurrentUpdateError
+		error instanceof PlatformFeedbackConcurrentUpdateError ||
+		error instanceof PlatformFeedbackSubmissionRateLimitError ||
+		error instanceof PlatformFeedbackActiveQueueLimitError
 	)
 }

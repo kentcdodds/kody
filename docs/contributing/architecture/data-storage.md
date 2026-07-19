@@ -105,7 +105,9 @@ this under `excludedD1Surfaces` so the omission is explicit.
 
 Platform-feedback submissions are included in the submitting user's own D1
 export section. An export never includes submissions owned by other users,
-including feedback the exporter may have reviewed as an admin.
+including feedback the exporter may have reviewed as an admin. The submitter's
+feedback status may remain in the export, but internal review metadata
+(`reviewed_by_user_id`, `reviewed_at`, and `admin_note`) is redacted.
 
 Exports are versioned JSON documents:
 
@@ -194,8 +196,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   remaining legacy rows in one pass.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
-  cleared if that admin account is deleted. Rows persist until the submitting
-  account is deleted.
+  cleared if that admin account is deleted. Open and triaged rows remain until
+  they are resolved, dismissed, or the submitting account is deleted. Resolved
+  and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
+  removes any remaining rows.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history
@@ -734,6 +738,10 @@ Current retention policies:
 - `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
+- `platform_feedback`: open and triaged rows remain until review changes them to
+  resolved or dismissed, or the submitter deletes their account. Resolved and
+  dismissed rows keep 365 days after `updated_at`; submitter deletion removes
+  any remaining rows.
 - `audit_events`: global hashed auth/security audit events keep 180 days. They
   are not user-owned D1 rows and remain independent of account deletion/export.
 
@@ -745,6 +753,3 @@ Documented exemptions: `archived_job_artifacts` is exempt because job artifact
 cleanup is driven by each row's `retain_until` value, and `mcp_memories` is
 exempt because memories are durable user-curated content removed by explicit
 user action or account deletion rather than by time-based retention.
-`platform_feedback` is exempt because approved submissions are durable
-user-owned records kept until the submitting account is deleted, not
-automatically pruned by age.

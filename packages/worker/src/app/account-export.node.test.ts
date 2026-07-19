@@ -178,26 +178,40 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 			);
 	`)
 
-	const page = await readAccountExportSection({
+	const accountExport = await createAccountExport({
 		env: { APP_DB: db } as Env,
 		dbUserId: 1,
 		mcpUserId: 'user-aaa',
-		section: 'd1_table',
-		table: 'platform_feedback',
+		generatedAt: '2026-07-05T00:00:00.000Z',
 	})
 
-	expect(page.items).toEqual([
+	const feedbackRows = accountExport.d1.platform_feedback.rows
+	expect(feedbackRows).toEqual([
 		expect.objectContaining({
 			id: 'feedback-submitted-by-a',
 			submitter_user_id: 'user-aaa',
-			admin_note: 'Needs setup review.',
+			category: 'friction',
+			summary: 'Setup is confusing',
+			details: 'The setup flow needs clearer guidance.',
+			status: 'triaged',
+			created_at: '2026-07-04',
+			updated_at: '2026-07-05',
 		}),
 	])
+	expect(feedbackRows[0]).not.toHaveProperty('reviewed_by_user_id')
+	expect(feedbackRows[0]).not.toHaveProperty('reviewed_at')
+	expect(feedbackRows[0]).not.toHaveProperty('admin_note')
+	expect(feedbackRows.some((row) => row.id === 'feedback-reviewed-by-a')).toBe(
+		false,
+	)
+	expect(accountExport.d1.platform_feedback.redactedColumns).toEqual([
+		'admin_note',
+		'reviewed_at',
+		'reviewed_by_user_id',
+	])
 	expect(
-		(page.items as Array<{ id: string }>).some(
-			(row) => row.id === 'feedback-reviewed-by-a',
-		),
-	).toBe(false)
+		accountExport.manifest.sections['d1.platform_feedback']?.redactedColumns,
+	).toEqual(['admin_note', 'reviewed_at', 'reviewed_by_user_id'])
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {

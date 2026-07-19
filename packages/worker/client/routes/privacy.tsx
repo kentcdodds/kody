@@ -28,8 +28,10 @@ export function PrivacyRoute(_handle: Handle) {
 					account profile information (email and username), secrets, values,
 					memories, packages and their source, jobs, email inboxes and messages,
 					chat threads, durable storage, remote connector configuration, OAuth
-					grants, and package invocation tokens. All of this is scoped to your
-					account and is not shared with other users.
+					grants, package invocation tokens, and any platform feedback you
+					approve for submission. All of this remains scoped to your account
+					except for the narrow admin review of approved platform feedback
+					described below.
 				</p>
 			</section>
 
@@ -39,21 +41,51 @@ export function PrivacyRoute(_handle: Handle) {
 					On shared deployments, operators can grant an admin role for account
 					administration. Admins see account metadata only: user id, username,
 					email, created and updated timestamps, and role assignments. The admin
-					UI lists users and roles; it does not expose user content.
+					UI lists users and roles; it does not expose account content. Platform
+					feedback you explicitly approve for admin review is a narrow
+					user-content exception.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Admins also moderate public community listings and attributed
+					community reports. That review covers content deliberately published
+					or reported through community features, not private package source or
+					unrelated account content.
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Platform feedback</h2>
+				<p mix={css(descriptionCss)}>
+					An agent may briefly describe Kody friction and ask whether you want
+					it submitted. Nothing is submitted unless you explicitly approve.
+					Feedback is attributed to your account and is not anonymous. Admins
+					can read and triage only the approved submission, and agents must omit
+					secrets and unrelated private content.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Each account can create at most 10 feedback submissions in a rolling
+					24-hour period and have at most 100 active submissions (open or
+					triaged). Open and triaged feedback remains until it is resolved,
+					dismissed, or your account is deleted. Resolved and dismissed feedback
+					is removed 365 days after its last update. Your account export
+					includes your submissions and their status, but not internal reviewer
+					identity, notes, or timestamps. Account deletion removes any remaining
+					submissions.
 				</p>
 			</section>
 
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>What an admin can never see</h2>
 				<p mix={css(descriptionCss)}>
-					The admin role is not a data-access role. Admins cannot see:
+					The admin role is not a general data-access role. Approving platform
+					feedback does not let admins browse:
 				</p>
 				<ul mix={css(listCss)}>
 					<li>Secret values or secret metadata (names, scopes, allowlists)</li>
 					<li>Package invocation tokens</li>
 					<li>Values</li>
 					<li>Memories</li>
-					<li>Packages and their source</li>
+					<li>Private packages and their source</li>
 					<li>Jobs</li>
 					<li>Email inboxes and messages</li>
 					<li>Chat threads</li>

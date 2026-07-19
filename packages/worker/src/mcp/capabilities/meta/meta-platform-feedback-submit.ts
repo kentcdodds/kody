@@ -10,7 +10,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	{
 		name: 'meta_platform_feedback_submit',
 		description:
-			'Submit platform feedback only after asking the user and receiving explicit consent. The submission is attributed to the signed-in user and visible to deployment admins. Do not include secrets or unrelated private content.',
+			'Submit platform feedback only from an interactive MCP agent flow after asking the user and receiving explicit consent. Non-interactive package code and package apps cannot submit. The submission is attributed to the signed-in user and visible to deployment admins. Do not include secrets or unrelated private content.',
 		keywords: [
 			'platform feedback',
 			'friction',
@@ -52,6 +52,13 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const packageId =
+				ctx.callerContext.storageContext?.packageId?.trim() ?? ''
+			if (packageId) {
+				throw new Error(
+					'Platform feedback submission is only available from an interactive MCP agent flow after explicit user approval. Non-interactive package code and package apps cannot submit feedback.',
+				)
+			}
 			const feedback = await submitPlatformFeedback({
 				db: ctx.env.APP_DB,
 				submitterUserId: user.userId,

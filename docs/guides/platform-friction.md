@@ -84,14 +84,24 @@ After explicit approval, call `meta_platform_feedback_submit` with
 `user_confirmed: true`. Include only the approved Kody issue and the minimum
 useful reproduction context. Omit secrets, credentials, tokens, and unrelated
 private content. Never set `user_confirmed: true` based only on your own
-judgment.
+judgment. The capability accepts this confirmation only from an interactive
+context; scheduled, background, package, and other non-interactive execution
+cannot submit feedback. This gate records the direct approval asserted by the
+interactive caller rather than inferring approval from other conversation
+content.
 
 Feedback is attributed to the authenticated user and is not anonymous.
 Deployment admins can read and triage the approved submission through role-gated
 capabilities. Admin list results intentionally omit the full submission; a
 detail read exposes only the approved feedback, not unrelated account content.
-Kody retains submissions until the submitting account is deleted, includes them
-in that user's account export, and removes them during account deletion.
+Each account can create at most 10 feedback submissions in a rolling 24-hour
+period and have at most 100 active submissions (open or triaged).
+
+Open and triaged feedback remains until an admin resolves or dismisses it, or
+the submitting account is deleted. Resolved and dismissed feedback is removed
+365 days after its last update. The submitting user's account export includes
+the submission and status but redacts internal reviewer identity, notes, and
+timestamps. Account deletion removes any remaining submissions.
 
 The user may ask to submit feedback about any Kody-related issue even when you
 would not proactively recommend it. Use category `other` when no more specific

@@ -11,12 +11,14 @@ import {
 	memorySuppressionRetentionDays,
 	packageInvocationRetentionDays,
 	packageRuntimeRunRetentionDays,
+	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
 	pruneEntitlementDailyCountersForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePackageInvocationsForRetention,
 	prunePackageRuntimeRetention,
+	prunePlatformFeedbackForRetention,
 	prunePublishedBundleArtifactsForRetention,
 	pruneRetention,
 	pruneUsageRollupsForRetention,
@@ -284,6 +286,12 @@ function createRetentionDb() {
 			path TEXT,
 			reason TEXT,
 			timestamp TEXT NOT NULL
+		);
+		CREATE TABLE platform_feedback (
+			id TEXT PRIMARY KEY NOT NULL,
+			submitter_user_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			updated_at TEXT NOT NULL
 		);
 	`)
 	return {
@@ -627,6 +635,73 @@ test('package invocation and workflow retention keeps boundary and active idempo
 		'workflow-boundary',
 		'workflow-running',
 		'workflow-unknown',
+	])
+})
+
+test('platform feedback retention prunes terminal rows in bounded batches and runs round-robin', async () => {
+	const { sqlite, db } = createRetentionDb()
+	for (const [id, status, updatedAt] of [
+		[
+			'terminal-old-resolved',
+			'resolved',
+			daysAgo(platformFeedbackRetentionDays + 2),
+		],
+		[
+			'terminal-old-dismissed',
+			'dismissed',
+			daysAgo(platformFeedbackRetentionDays + 1),
+		],
+		['terminal-boundary', 'resolved', daysAgo(platformFeedbackRetentionDays)],
+		['active-old-open', 'open', daysAgo(platformFeedbackRetentionDays + 10)],
+		[
+			'active-old-triaged',
+			'triaged',
+			daysAgo(platformFeedbackRetentionDays + 10),
+		],
+	] as const) {
+		sqlite
+			.prepare(
+				`INSERT INTO platform_feedback (
+					id, submitter_user_id, status, updated_at
+				) VALUES (?, 'user-1', ?, ?)`,
+			)
+			.run(id, status, updatedAt)
+	}
+
+	expect(
+		await prunePlatformFeedbackForRetention({ db, now, batchSize: 1 }),
+	).toEqual({ selected: 1, deleted: 1 })
+	expect(
+		await prunePlatformFeedbackForRetention({ db, now, batchSize: 1 }),
+	).toEqual({ selected: 1, deleted: 1 })
+	expect(
+		await prunePlatformFeedbackForRetention({ db, now, batchSize: 1 }),
+	).toEqual({ selected: 0, deleted: 0 })
+	expect(idsForTable(sqlite, 'platform_feedback')).toEqual([
+		'active-old-open',
+		'active-old-triaged',
+		'terminal-boundary',
+	])
+
+	sqlite
+		.prepare(
+			`INSERT INTO platform_feedback (
+				id, submitter_user_id, status, updated_at
+			) VALUES ('runner-delete', 'user-1', 'resolved', ?)`,
+		)
+		.run(daysAgo(platformFeedbackRetentionDays + 1))
+	const env = {
+		APP_DB: db,
+		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
+		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
+	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	const result = await pruneRetention({ env, now })
+	expect(result.platformFeedback).toBe(1)
+	expect(result.batchesPerTable['platform_feedback']).toBe(1)
+	expect(idsForTable(sqlite, 'platform_feedback')).toEqual([
+		'active-old-open',
+		'active-old-triaged',
+		'terminal-boundary',
 	])
 })
 
@@ -1378,7 +1453,15 @@ test('retention coverage includes every live growth-pattern table or documented 
 			growthPattern.test(table.name)
 		const hasGlobalAuditShape =
 			table.name === 'audit_events' && columnNames.has('timestamp')
-		if (hasUserCreatedGrowthShape || hasGlobalAuditShape) {
+		const hasPlatformFeedbackGrowthShape =
+			table.name === 'platform_feedback' &&
+			columnNames.has('submitter_user_id') &&
+			columnNames.has('updated_at')
+		if (
+			hasUserCreatedGrowthShape ||
+			hasGlobalAuditShape ||
+			hasPlatformFeedbackGrowthShape
+		) {
 			candidateTables.add(table.name)
 		}
 	}

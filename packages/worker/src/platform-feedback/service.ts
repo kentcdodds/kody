@@ -1,7 +1,10 @@
+import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import {
+	PlatformFeedbackActiveQueueLimitError,
 	PlatformFeedbackConcurrentUpdateError,
 	PlatformFeedbackInvalidTransitionError,
 	PlatformFeedbackNotFoundError,
+	PlatformFeedbackSubmissionRateLimitError,
 } from './errors.ts'
 import {
 	getPlatformFeedbackByIdForAdmin,
@@ -22,6 +25,11 @@ const maxDetailsLength = 8_000
 const maxAdminNoteLength = 2_000
 const defaultPageSize = 20
 const maxPageSize = 100
+const activeQueueLimit = 100
+const submissionRateLimitConfig = {
+	maxRequests: 10,
+	windowSeconds: 24 * 60 * 60,
+}
 
 function normalizeRequiredText(
 	value: string,
@@ -36,8 +44,10 @@ function normalizeRequiredText(
 	return normalized
 }
 
-function normalizeAdminNote(adminNote: string | undefined) {
-	if (adminNote === undefined) return null
+function normalizeAdminNote(
+	adminNote: string | undefined,
+): string | null | undefined {
+	if (adminNote === undefined) return undefined
 	const normalized = adminNote.trim()
 	if (normalized.length > maxAdminNoteLength) {
 		throw new Error(
@@ -158,7 +168,30 @@ export async function submitPlatformFeedback(input: {
 		created_at: now,
 		updated_at: now,
 	}
-	await insertPlatformFeedback(input.db, row)
+	const rateLimitKey = `platform-feedback:submit:user:${submitterUserId}`
+	const rateLimit = await checkRateLimit(
+		input.db,
+		rateLimitKey,
+		submissionRateLimitConfig,
+	)
+	if (!rateLimit.allowed) {
+		throw new PlatformFeedbackSubmissionRateLimitError(
+			rateLimit.retryAfterSeconds ?? submissionRateLimitConfig.windowSeconds,
+		)
+	}
+	try {
+		const inserted = await insertPlatformFeedback(
+			input.db,
+			row,
+			activeQueueLimit,
+		)
+		if (!inserted) {
+			throw new PlatformFeedbackActiveQueueLimitError(activeQueueLimit)
+		}
+	} catch (error) {
+		await releaseRateLimit(input.db, rateLimitKey).catch(() => undefined)
+		throw error
+	}
 	return {
 		id: row.id,
 		submitterUserId: row.submitter_user_id,
@@ -224,12 +257,14 @@ export async function updatePlatformFeedbackForAdmin(input: {
 			status: existing.status,
 			action: input.action,
 		})
-		if (nextStatus === null) return existing
+		const adminNoteChanged =
+			adminNote !== undefined && adminNote !== existing.adminNote
+		if (nextStatus === null && !adminNoteChanged) return existing
 		const reviewedAt = new Date().toISOString()
 		const updated = await updatePlatformFeedbackStatusForAdmin(input.db, {
 			feedbackId: input.feedbackId,
 			expectedStatus: existing.status,
-			status: nextStatus,
+			status: nextStatus ?? existing.status,
 			reviewedByUserId: reviewerUserId,
 			reviewedAt,
 			adminNote,

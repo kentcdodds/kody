@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { checkRateLimit } from '#app/rate-limit.ts'
 import {
 	getPlatformFeedbackForAdmin,
 	listPlatformFeedbackForAdmin,
@@ -8,27 +9,53 @@ import {
 	updatePlatformFeedbackForAdmin,
 } from './service.ts'
 
+type TestD1Statement = {
+	bind(...params: Array<unknown>): TestD1Statement
+	all<T>(): Promise<{ results: Array<T>; meta: { changes: number } }>
+	first<T>(): Promise<T | null>
+	run(): Promise<{ meta: { changes: number } }>
+}
+
 function createD1FromSqlite(sqlite: DatabaseSync) {
+	function createStatement(
+		query: string,
+		params: Array<unknown> = [],
+	): TestD1Statement {
+		return {
+			bind(...boundParams: Array<unknown>) {
+				return createStatement(query, boundParams)
+			},
+			async all<T>() {
+				return {
+					results: sqlite.prepare(query).all(...params) as Array<T>,
+					meta: { changes: 0 },
+				}
+			},
+			async first<T>() {
+				return (sqlite.prepare(query).get(...params) ?? null) as T | null
+			},
+			async run() {
+				const result = sqlite.prepare(query).run(...params)
+				return { meta: { changes: result.changes } }
+			},
+		}
+	}
 	return {
 		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async all<T>() {
-							return {
-								results: sqlite.prepare(query).all(...params) as Array<T>,
-								meta: { changes: 0 },
-							}
-						},
-						async first<T>() {
-							return (sqlite.prepare(query).get(...params) ?? null) as T | null
-						},
-						async run() {
-							const result = sqlite.prepare(query).run(...params)
-							return { meta: { changes: result.changes } }
-						},
-					}
-				},
+			return createStatement(query)
+		},
+		async batch(statements: Array<TestD1Statement>) {
+			const results = []
+			sqlite.exec('BEGIN')
+			try {
+				for (const statement of statements) {
+					results.push(await statement.run())
+				}
+				sqlite.exec('COMMIT')
+				return results
+			} catch (error) {
+				sqlite.exec('ROLLBACK')
+				throw error
 			}
 		},
 	} as unknown as D1Database
@@ -134,27 +161,58 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		reviewedByUserId: 'admin-a',
 		adminNote: 'Needs setup-flow review.',
 	})
+	const correctedTriage = await updatePlatformFeedbackForAdmin({
+		db,
+		feedbackId: first.id,
+		reviewerUserId: 'admin-b',
+		action: 'triage',
+		adminNote: 'Corrected setup-flow note.',
+	})
+	expect(correctedTriage).toMatchObject({
+		status: 'triaged',
+		reviewedByUserId: 'admin-b',
+		adminNote: 'Corrected setup-flow note.',
+	})
 	expect(
 		await updatePlatformFeedbackForAdmin({
 			db,
 			feedbackId: first.id,
-			reviewerUserId: 'admin-b',
+			reviewerUserId: 'admin-c',
 			action: 'triage',
-			adminNote: 'This idempotent retry must not replace the first review.',
+			adminNote: 'Corrected setup-flow note.',
 		}),
-	).toEqual(triaged)
+	).toEqual(correctedTriage)
+	const clearedTriage = await updatePlatformFeedbackForAdmin({
+		db,
+		feedbackId: first.id,
+		reviewerUserId: 'admin-c',
+		action: 'triage',
+		adminNote: '   ',
+	})
+	expect(clearedTriage).toMatchObject({
+		status: 'triaged',
+		reviewedByUserId: 'admin-c',
+		adminNote: null,
+	})
+	const restoredTriage = await updatePlatformFeedbackForAdmin({
+		db,
+		feedbackId: first.id,
+		reviewerUserId: 'admin-d',
+		action: 'triage',
+		adminNote: 'Preserve this note when resolving.',
+	})
+	expect(restoredTriage.adminNote).toBe('Preserve this note when resolving.')
 
 	const resolved = await updatePlatformFeedbackForAdmin({
 		db,
 		feedbackId: first.id,
-		reviewerUserId: 'admin-b',
+		reviewerUserId: 'admin-e',
 		action: 'resolve',
-		adminNote: 'Setup guidance was added.',
 	})
 	expect(resolved).toMatchObject({
 		status: 'resolved',
-		reviewedByUserId: 'admin-b',
-		adminNote: 'Setup guidance was added.',
+		reviewedByUserId: 'admin-e',
+		adminNote: 'Preserve this note when resolving.',
 	})
 	expect(
 		await updatePlatformFeedbackForAdmin({
@@ -194,4 +252,108 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	expect(rows.filter((row) => row.submitter_user_id === 'user-b')).toEqual([
 		{ id: second.id, submitter_user_id: 'user-b' },
 	])
+})
+
+test('platform feedback submission enforces the rolling rate limit and atomic active queue cap', async () => {
+	const rateLimited = createPlatformFeedbackDb()
+	for (let index = 0; index < 10; index += 1) {
+		await submitPlatformFeedback({
+			db: rateLimited.db,
+			submitterUserId: 'rate-limited-user',
+			category: 'friction',
+			summary: `Feedback ${index}`,
+			details: `Feedback details ${index}`,
+		})
+	}
+	rateLimited.sqlite.prepare(`UPDATE _rate_limits SET ts = ts - 120`).run()
+	await checkRateLimit(rateLimited.db, 'short-window:other-user', {
+		maxRequests: 1,
+		windowSeconds: 60,
+	})
+	await expect(
+		submitPlatformFeedback({
+			db: rateLimited.db,
+			submitterUserId: 'rate-limited-user',
+			category: 'friction',
+			summary: 'Feedback 11',
+			details: 'This submission exceeds the rolling limit.',
+		}),
+	).rejects.toThrow(
+		'Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after 86400 seconds.',
+	)
+	expect(
+		rateLimited.sqlite
+			.prepare(`SELECT COUNT(*) AS total FROM platform_feedback`)
+			.get(),
+	).toEqual({ total: 10 })
+
+	const queueLimited = createPlatformFeedbackDb()
+	const insertQueued = queueLimited.sqlite.prepare(
+		`INSERT INTO platform_feedback (
+			id, submitter_user_id, category, summary, details, status,
+			created_at, updated_at
+		) VALUES (?, 'queue-limited-user', 'friction', ?, ?, ?, ?, ?)`,
+	)
+	const createdAt = '2026-07-19T00:00:00.000Z'
+	for (let index = 0; index < 99; index += 1) {
+		insertQueued.run(
+			`queued-${index}`,
+			`Queued feedback ${index}`,
+			`Queued feedback details ${index}`,
+			index % 2 === 0 ? 'open' : 'triaged',
+			createdAt,
+			createdAt,
+		)
+	}
+	for (let index = 0; index < 8; index += 1) {
+		expect(
+			await checkRateLimit(
+				queueLimited.db,
+				'platform-feedback:submit:user:queue-limited-user',
+				{ maxRequests: 10, windowSeconds: 24 * 60 * 60 },
+			),
+		).toEqual({ allowed: true, retryAfterSeconds: null })
+	}
+	await submitPlatformFeedback({
+		db: queueLimited.db,
+		submitterUserId: 'queue-limited-user',
+		category: 'bug',
+		summary: 'One hundredth active submission',
+		details: 'This reaches the active queue boundary.',
+	})
+	await expect(
+		submitPlatformFeedback({
+			db: queueLimited.db,
+			submitterUserId: 'queue-limited-user',
+			category: 'bug',
+			summary: 'One over the active queue boundary',
+			details: 'This must be rejected atomically.',
+		}),
+	).rejects.toThrow(
+		'You already have 100 open or triaged platform feedback submissions.',
+	)
+	queueLimited.sqlite
+		.prepare(
+			`UPDATE platform_feedback
+			SET status = 'resolved', updated_at = ?
+			WHERE id = 'queued-0'`,
+		)
+		.run(createdAt)
+	await submitPlatformFeedback({
+		db: queueLimited.db,
+		submitterUserId: 'queue-limited-user',
+		category: 'bug',
+		summary: 'Replacement active submission',
+		details: 'The rejected insertion refunded its rate-limit slot.',
+	})
+	expect(
+		queueLimited.sqlite
+			.prepare(
+				`SELECT COUNT(*) AS total
+				FROM platform_feedback
+				WHERE submitter_user_id = 'queue-limited-user'
+					AND status IN ('open', 'triaged')`,
+			)
+			.get(),
+	).toEqual({ total: 100 })
 })

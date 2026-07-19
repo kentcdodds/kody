@@ -9,6 +9,7 @@ import {
 import { adminPlatformFeedbackGetCapability } from './admin/admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin/admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin/admin-platform-feedback-update.ts'
+import { platformFeedbackContentWarning } from './admin/platform-feedback-shared.ts'
 import { metaPlatformFeedbackSubmitCapability } from './meta/meta-platform-feedback-submit.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -50,11 +51,16 @@ const openFeedback = {
 function createCapabilityContext(input?: {
 	userId?: string
 	roles?: Array<string>
+	packageId?: string
 }) {
 	return {
 		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
+			storageContext:
+				input?.packageId === undefined
+					? undefined
+					: { appId: 'package-app-1', packageId: input.packageId },
 			...(input
 				? {
 						user: {
@@ -95,6 +101,18 @@ test('meta platform feedback submission requires auth and literal user consent',
 			createCapabilityContext({ userId: 'user-1' }),
 		),
 	).rejects.toThrow()
+	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			input,
+			createCapabilityContext({
+				userId: 'user-1',
+				packageId: 'package-1',
+			}),
+		),
+	).rejects.toThrow(
+		'only available from an interactive MCP agent flow after explicit user approval',
+	)
 	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
 
 	const result = await metaPlatformFeedbackSubmitCapability.handler(
@@ -159,12 +177,13 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		category: 'friction',
 	})
 	expect(list).toMatchObject({ total: 3, page: 2, pageSize: 1 })
+	expect(list.content_warning).toBe(platformFeedbackContentWarning)
 	expect(list.feedback).toEqual([
 		{
 			id: 'feedback-1',
 			submitter_user_id: 'user-1',
 			category: 'friction',
-			summary: 'Setup is confusing',
+			summary_untrusted: 'Setup is confusing',
 			status: 'open',
 			reviewed_by_user_id: null,
 			reviewed_at: null,
@@ -172,6 +191,7 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 			updated_at: '2026-07-19T00:00:00.000Z',
 		},
 	])
+	expect(list.feedback[0]).not.toHaveProperty('summary')
 	expect(list.feedback[0]).not.toHaveProperty('details')
 	expect(list.feedback[0]).not.toHaveProperty('admin_note')
 
@@ -181,9 +201,13 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 	)
 	expect(get.feedback).toMatchObject({
 		id: 'feedback-1',
-		details: 'The setup flow does not explain the next action.',
+		summary_untrusted: 'Setup is confusing',
+		details_untrusted: 'The setup flow does not explain the next action.',
 		admin_note: null,
 	})
+	expect(get.feedback).not.toHaveProperty('summary')
+	expect(get.feedback).not.toHaveProperty('details')
+	expect(get.content_warning).toBe(platformFeedbackContentWarning)
 
 	const updated = await adminPlatformFeedbackUpdateCapability.handler(
 		{
@@ -203,9 +227,12 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 	expect(updated.feedback).toMatchObject({
 		id: 'feedback-1',
 		status: 'triaged',
+		summary_untrusted: 'Setup is confusing',
+		details_untrusted: 'The setup flow does not explain the next action.',
 		reviewed_by_user_id: 'admin-1',
 		admin_note: 'Needs setup review.',
 	})
+	expect(updated.content_warning).toBe(platformFeedbackContentWarning)
 	mockModule.updatePlatformFeedbackForAdmin.mockRejectedValueOnce(
 		new PlatformFeedbackInvalidTransitionError({
 			feedbackId: 'feedback-1',

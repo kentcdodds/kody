@@ -55,13 +55,21 @@ function mapPlatformFeedbackListRow(
 export async function insertPlatformFeedback(
 	db: D1Database,
 	row: PlatformFeedbackRow,
-): Promise<void> {
-	await db
+	activeQueueLimit: number,
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`INSERT INTO platform_feedback (
 				id, submitter_user_id, category, summary, details, status,
 				reviewed_by_user_id, reviewed_at, admin_note, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			WHERE (
+				SELECT COUNT(*)
+				FROM platform_feedback
+				WHERE submitter_user_id = ?
+					AND status IN ('open', 'triaged')
+			) < ?`,
 		)
 		.bind(
 			row.id,
@@ -75,8 +83,11 @@ export async function insertPlatformFeedback(
 			row.admin_note,
 			row.created_at,
 			row.updated_at,
+			row.submitter_user_id,
+			activeQueueLimit,
 		)
 		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function getPlatformFeedbackByIdForAdmin(
@@ -142,13 +153,14 @@ export async function updatePlatformFeedbackStatusForAdmin(
 		status: PlatformFeedbackStatus
 		reviewedByUserId: string
 		reviewedAt: string
-		adminNote: string | null
+		adminNote: string | null | undefined
 	},
 ): Promise<boolean> {
 	const result = await db
 		.prepare(
 			`UPDATE platform_feedback
-			SET status = ?, reviewed_by_user_id = ?, reviewed_at = ?, admin_note = ?,
+			SET status = ?, reviewed_by_user_id = ?, reviewed_at = ?,
+				admin_note = CASE WHEN ? = 1 THEN ? ELSE admin_note END,
 				updated_at = ?
 			WHERE id = ? AND status = ?`,
 		)
@@ -156,7 +168,8 @@ export async function updatePlatformFeedbackStatusForAdmin(
 			input.status,
 			input.reviewedByUserId,
 			input.reviewedAt,
-			input.adminNote,
+			input.adminNote === undefined ? 0 : 1,
+			input.adminNote ?? null,
 			input.reviewedAt,
 			input.feedbackId,
 			input.expectedStatus,

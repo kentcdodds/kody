@@ -52,6 +52,7 @@ export const packageRuntimeMaxRunsPerPackage = 500
 export const packageInvocationRetentionDays = 90
 export const memorySuppressionRetentionDays = 90
 export const workflowRunRetentionDays = 90
+export const platformFeedbackRetentionDays = 365
 export const publishedBundleArtifactRetentionDays = 30
 export const emailDeliveryEventRetentionDays = 90
 export const emailMessageRetentionDays = 365
@@ -109,6 +110,14 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		batchSize: retentionDefaultBatchSize,
 		description:
 			'Workflow run projections keep terminal states for 90 days; non-terminal rows are never pruned.',
+	},
+	{
+		table: 'platform_feedback',
+		scope: 'per-user',
+		retentionDays: platformFeedbackRetentionDays,
+		batchSize: retentionDefaultBatchSize,
+		description:
+			'Resolved and dismissed platform feedback is pruned 365 days after its last update; open and triaged feedback remains until resolved, dismissed, or submitter deletion.',
 	},
 	{
 		table: 'published_bundle_artifacts',
@@ -185,11 +194,6 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 			reason:
 				'Memories are durable user-curated content removed by explicit user action or account deletion, not by time-based retention.',
 		},
-		{
-			table: 'platform_feedback',
-			reason:
-				'Platform feedback is durable user-authored content retained for deployment-admin follow-up until the submitter deletes their account; v1 has no time-based pruning.',
-		},
 	] as const
 
 export type RetentionPruneResult = {
@@ -201,6 +205,7 @@ export type RetentionPruneResult = {
 	packageInvocations: number
 	memorySuppressions: number
 	workflowRuns: number
+	platformFeedback: number
 	publishedBundleArtifacts: {
 		deletedRows: number
 		deletedKvKeys: number
@@ -575,6 +580,45 @@ export async function pruneWorkflowRunsForRetention(input: {
 		table: 'workflow_runs',
 		idColumn: 'id',
 	})
+}
+
+export async function prunePlatformFeedbackForRetention(input: {
+	db: D1Database
+	now?: Date
+	batchSize?: number
+}) {
+	const cutoff = cutoffIso(
+		input.now ?? new Date(),
+		platformFeedbackRetentionDays,
+	)
+	const ids = await selectIds({
+		db: input.db,
+		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
+		sql: `SELECT id
+			FROM platform_feedback
+			WHERE status IN ('resolved', 'dismissed')
+				AND updated_at < ?
+			ORDER BY updated_at ASC, id ASC
+			LIMIT ?`,
+	})
+	let deleted = 0
+	const chunkSize = retentionDeleteIdsMaxParameters - 1
+	for (let index = 0; index < ids.length; index += chunkSize) {
+		const chunk = ids.slice(index, index + chunkSize)
+		const result = await runD1WithRetry(() =>
+			input.db
+				.prepare(
+					`DELETE FROM platform_feedback
+					WHERE id IN (${placeholders(chunk)})
+						AND status IN ('resolved', 'dismissed')
+						AND updated_at < ?`,
+				)
+				.bind(...chunk, cutoff)
+				.run(),
+		)
+		deleted += result.meta.changes ?? 0
+	}
+	return { selected: ids.length, deleted }
 }
 
 export async function prunePublishedBundleArtifactsForRetention(input: {
@@ -991,6 +1035,7 @@ export async function pruneRetention(input: {
 		packageInvocations: 0,
 		memorySuppressions: 0,
 		workflowRuns: 0,
+		platformFeedback: 0,
 		publishedBundleArtifacts: {
 			deletedRows: 0,
 			deletedKvKeys: 0,
@@ -1062,6 +1107,13 @@ export async function pruneRetention(input: {
 			() => pruneWorkflowRunsForRetention({ db, now }),
 			(count) => {
 				result.workflowRuns += count
+			},
+		),
+		countTask(
+			'platform_feedback',
+			() => prunePlatformFeedbackForRetention({ db, now }),
+			(count) => {
+				result.platformFeedback += count
 			},
 		),
 		{
