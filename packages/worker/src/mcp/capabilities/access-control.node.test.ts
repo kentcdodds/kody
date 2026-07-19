@@ -178,3 +178,28 @@ test('featureFlag-gated capabilities fail closed when the flag map is missing', 
 	expect(callerCanAccessCapability(callerContext, flagged)).toBe(false)
 	expect(callerCanAccessCapability(callerContext, flagged, null)).toBe(false)
 })
+
+test('featureFlag-gated capabilities require an authenticated caller', async () => {
+	const anonymousContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+	})
+	const flagged = createFlaggedCapability()
+	const enabledFlags = createFlagMap(true)
+
+	expect(
+		callerCanAccessCapability(anonymousContext, flagged, enabledFlags),
+	).toBe(false)
+	await expect(
+		assertCallerCanAccessCapability(anonymousContext, flagged, {
+			featureFlags: enabledFlags,
+		}),
+	).rejects.toThrow(/Authenticated MCP user is required/)
+
+	const filtered = filterCapabilityRegistryForCaller(
+		createRegistry([flagged, createOpenCapability()]),
+		anonymousContext,
+		enabledFlags,
+	)
+	expect(filtered.capabilityMap.example_flagged).toBeUndefined()
+	expect(filtered.capabilityMap.example_open).toBeTruthy()
+})

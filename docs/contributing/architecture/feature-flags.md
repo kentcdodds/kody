@@ -53,9 +53,11 @@ default-on flag can never bypass an operator kill switch when D1 is unavailable.
   `packages/worker/client/feature-flags.ts`.
 - **Capability gating**: a capability definition may declare
   `featureFlag: <key>`; `access-control.ts` hides it from search and denies
-  execution when the flag evaluates off for the caller (fail closed when the map
-  is unavailable). The flag map is only resolved when the registry actually
-  contains a gated capability.
+  execution when the flag evaluates off for the caller. Flag-gated capabilities
+  require an authenticated caller whose stable id resolves to a `users.id`;
+  anonymous callers, unresolvable identities, missing flag maps, and evaluation
+  failures all fail closed. The flag map is only resolved when the registry
+  actually contains a gated capability.
 
 The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised

@@ -71,14 +71,21 @@ async function resolveFeatureFlagUserId(
 /**
  * Resolve the caller's evaluated feature-flag map once per request. Used by
  * registry filtering (search/list) so access checks stay synchronous.
+ *
+ * Fail-closed rules: anonymous callers and authenticated callers whose stable
+ * id cannot be resolved to a `users.id` get every flag off, so gated
+ * capabilities never appear with a different flag state than the same user's
+ * app session would compute.
  */
 export async function resolveCallerFeatureFlags(
 	env: Env,
 	callerContext: McpCallerContext,
 ): Promise<CallerFeatureFlags> {
 	if (!env.APP_DB) return disabledFeatureFlags()
+	if (!callerContext.user?.userId) return disabledFeatureFlags()
 	try {
 		const userId = await resolveFeatureFlagUserId(env.APP_DB, callerContext)
+		if (userId === null) return disabledFeatureFlags()
 		return await getFeatureFlagsForUser(env.APP_DB, userId)
 	} catch {
 		// Fail closed: gated capabilities stay hidden when evaluation fails.
@@ -98,8 +105,10 @@ export function callerCanAccessCapability(
 		return true
 	}
 
+	// Flag-gated capabilities also require an authenticated caller: flags are
+	// evaluated per user, so there is no meaningful anonymous flag state.
 	const user = getUserAccessContext(callerContext)
-	if ((requiredRole || requiredPermission) && !user) return false
+	if (!user) return false
 	if (requiredRole && !hasRequiredRole(user, requiredRole)) return false
 	if (requiredPermission && !hasRequiredPermission(user, requiredPermission)) {
 		return false
@@ -130,7 +139,7 @@ export async function assertCallerCanAccessCapability(
 	}
 
 	const user = getUserAccessContext(callerContext)
-	if ((capability.requiredRole || capability.requiredPermission) && !user) {
+	if (!user) {
 		throw new Error(
 			`Authenticated MCP user is required to execute capability "${capability.name}".`,
 		)
