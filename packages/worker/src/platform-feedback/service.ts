@@ -10,6 +10,7 @@ import {
 	getPlatformFeedbackByIdForAdmin,
 	getPlatformFeedbackSubmissionLimitCounts,
 	insertPlatformFeedback,
+	listPlatformFeedbackPageRowsForAdmin,
 	listPlatformFeedbackRowsForAdmin,
 	updatePlatformFeedbackStatusForAdmin,
 } from './repo.ts'
@@ -166,6 +167,8 @@ function planTransition(input: {
 export async function submitPlatformFeedback(input: {
 	db: D1Database
 	submitterUserId: string
+	submitterUsername?: string | null
+	submitterEmail?: string | null
 	category: PlatformFeedbackCategory
 	summary: string
 	details: string
@@ -187,6 +190,8 @@ export async function submitPlatformFeedback(input: {
 	const row: PlatformFeedbackRow = {
 		id: feedbackId,
 		submitter_user_id: submitterUserId,
+		submitter_username: input.submitterUsername ?? null,
+		submitter_email: input.submitterEmail ?? null,
 		category: input.category,
 		summary,
 		details,
@@ -234,6 +239,8 @@ export async function submitPlatformFeedback(input: {
 	return {
 		id: row.id,
 		submitterUserId: row.submitter_user_id,
+		submitterUsername: row.submitter_username,
+		submitterEmail: row.submitter_email,
 		category: row.category,
 		summary: row.summary,
 		details: row.details,
@@ -253,14 +260,23 @@ export async function listPlatformFeedbackForAdmin(input: {
 	status?: PlatformFeedbackStatus
 	category?: PlatformFeedbackCategory
 }) {
-	const page = normalizePage(input.page)
+	let page = normalizePage(input.page)
 	const pageSize = normalizePageSize(input.pageSize)
-	const result = await listPlatformFeedbackRowsForAdmin(input.db, {
+	const query = {
 		page,
 		pageSize,
 		status: input.status,
 		category: input.category,
-	})
+	}
+	const result = await listPlatformFeedbackRowsForAdmin(input.db, query)
+	const lastPage = Math.ceil(result.total / pageSize)
+	if (result.total > 0 && page > lastPage) {
+		page = lastPage
+		result.items = await listPlatformFeedbackPageRowsForAdmin(input.db, {
+			...query,
+			page,
+		})
+	}
 	return { ...result, page, pageSize }
 }
 

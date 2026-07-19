@@ -11,7 +11,7 @@ type TestD1Statement = {
 	run(): Promise<{ meta: { changes: number } }>
 }
 
-function createD1FromSqlite(sqlite: DatabaseSync) {
+function createD1FromSqlite(sqlite: DatabaseSync, queries: Array<string>) {
 	function createStatement(
 		query: string,
 		params: Array<unknown> = [],
@@ -38,6 +38,7 @@ function createD1FromSqlite(sqlite: DatabaseSync) {
 
 	return {
 		prepare(query: string) {
+			queries.push(query.replace(/\s+/g, ' ').trim())
 			return createStatement(query)
 		},
 	} as unknown as D1Database
@@ -60,6 +61,15 @@ function createAdminPlatformFeedbackFixture() {
 	sqlite.exec(
 		readFileSync(
 			new URL('../../migrations/0062-platform-feedback.sql', import.meta.url),
+			'utf8',
+		),
+	)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0063-platform-feedback-submitter-snapshot.sql',
+				import.meta.url,
+			),
 			'utf8',
 		),
 	)
@@ -91,13 +101,16 @@ function createAdminPlatformFeedbackFixture() {
 		)
 	const insertFeedback = sqlite.prepare(
 		`INSERT INTO platform_feedback (
-			id, submitter_user_id, category, summary, details, status,
-			reviewed_by_user_id, reviewed_at, admin_note, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, submitter_user_id, submitter_username, submitter_email,
+			category, summary, details, status, reviewed_by_user_id,
+			reviewed_at, admin_note, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	insertFeedback.run(
 		'feedback-active',
 		'stable-active',
+		'snapshot-submitter',
+		'snapshot@example.com',
 		'bug',
 		'<script>summary remains text</script>',
 		'Full active feedback details.',
@@ -111,6 +124,8 @@ function createAdminPlatformFeedbackFixture() {
 	insertFeedback.run(
 		'feedback-missing',
 		'stable-deleted',
+		null,
+		null,
 		'suggestion',
 		'Missing submitter account',
 		'The feedback remains after the submitter identity is unavailable.',
@@ -121,14 +136,16 @@ function createAdminPlatformFeedbackFixture() {
 		'2026-07-19T00:00:00.000Z',
 		'2026-07-19T00:00:00.000Z',
 	)
+	const queries: Array<string> = []
 	return {
 		sqlite,
-		env: { APP_DB: createD1FromSqlite(sqlite) } as Env,
+		queries,
+		env: { APP_DB: createD1FromSqlite(sqlite, queries) } as Env,
 	}
 }
 
-test('admin platform feedback data lists safely and resolves identity only for selected feedback', async () => {
-	const { sqlite, env } = createAdminPlatformFeedbackFixture()
+test('admin platform feedback data lists safely and resolves identity only for legacy selected feedback', async () => {
+	const { sqlite, queries, env } = createAdminPlatformFeedbackFixture()
 
 	const list = await loadAdminPlatformFeedbackData(
 		env,
@@ -170,8 +187,8 @@ test('admin platform feedback data lists safely and resolves identity only for s
 		submitter_user_id: 'stable-active',
 		submitter: {
 			user_id: 'stable-active',
-			username: 'active-submitter',
-			email: 'active@example.com',
+			username: 'snapshot-submitter',
+			email: 'snapshot@example.com',
 		},
 		category: 'bug',
 		summary_untrusted: '<script>summary remains text</script>',
@@ -191,6 +208,7 @@ test('admin platform feedback data lists safely and resolves identity only for s
 	expect(serializedSelected).not.toContain('other-user')
 	expect(serializedSelected).not.toContain('other@example.com')
 	expect(serializedSelected).not.toContain('OTHER_USER_CONTENT_MUST_NOT_LEAK')
+	expect(queries.filter((query) => query.includes('FROM users'))).toEqual([])
 
 	const missingIdentity = await loadAdminPlatformFeedbackData(
 		env,
@@ -201,6 +219,16 @@ test('admin platform feedback data lists safely and resolves identity only for s
 		submitter_user_id: 'stable-deleted',
 		submitter: null,
 	})
+	expect(queries.filter((query) => query.includes('FROM users'))).toEqual([
+		'SELECT username, email FROM users WHERE stable_user_id = ? LIMIT 1',
+	])
+
+	const clampedSelection = await loadAdminPlatformFeedbackData(
+		env,
+		'https://example.com/admin/platform-feedback?page=999&feedbackId=feedback-active',
+	)
+	expect(clampedSelection.page).toBe(1)
+	expect(clampedSelection.selectedFeedback?.id).toBe('feedback-active')
 
 	const missingSelection = await loadAdminPlatformFeedbackData(
 		env,

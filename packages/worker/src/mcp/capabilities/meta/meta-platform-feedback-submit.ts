@@ -14,7 +14,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	{
 		name: 'meta_platform_feedback_submit',
 		description:
-			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notification integrations such as Discord. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
+			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notification integrations such as Discord. Copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion under the deployment operator’s retention and deletion controls. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
 		keywords: [
 			'platform feedback',
 			'friction',
@@ -46,7 +46,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			user_confirmed: z
 				.literal(true)
 				.describe(
-					'Must be true only after the agent shows the exact proposed summary and details and the user explicitly approves sending them, with the account user id, username, and email, immediately to deployment admins through admin-configured notification integrations such as Discord.',
+					'Must be true only after the agent shows the exact proposed summary and details and the user explicitly approves sending them, with the account user id, username, and email, immediately to deployment admins through admin-configured notification integrations such as Discord, after being told that copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion under the deployment operator’s retention and deletion controls.',
 				),
 		}),
 		outputSchema: z.object({
@@ -67,6 +67,8 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			const feedback = await submitPlatformFeedback({
 				db: ctx.env.APP_DB,
 				submitterUserId: user.userId,
+				submitterUsername: user.username ?? null,
+				submitterEmail: user.email,
 				category: args.category,
 				summary: args.summary,
 				details: args.details,

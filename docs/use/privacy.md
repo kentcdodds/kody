@@ -51,6 +51,14 @@ triaged feedback remains until it is resolved, dismissed, or your account is
 deleted. Resolved and dismissed feedback is removed 365 days after its last
 update. Account deletion removes any remaining submissions.
 
+When a notification is still queued, Kody rechecks that the feedback exists
+immediately before delivery and cancels it after account deletion when possible.
+Kody cannot recall a notification copy that was already delivered outside Kody.
+Admin notification copies, including Discord messages, may remain after Kody
+account deletion under the deployment operator's retention and deletion
+controls. Those copies contain only the exact approved feedback and its
+attribution described above, never unrelated account content.
+
 Your account export includes your own submissions and their status. Internal
 reviewer identity, notes, and timestamps are not included. If an admin who
 reviewed your feedback deletes their account, Kody clears that reviewer's

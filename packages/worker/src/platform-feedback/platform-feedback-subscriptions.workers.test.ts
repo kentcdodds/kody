@@ -14,6 +14,8 @@ const platformBaseUrl = 'https://kody.example.com'
 const openFeedback = {
 	id: 'feedback-integration-1',
 	submitterUserId: 'submitter-integration-1',
+	submitterUsername: 'feedback-submitter',
+	submitterEmail: 'feedback-submitter@example.com',
 	category: 'suggestion' as const,
 	summary: 'Make subscription failures easier to inspect',
 	details: 'Include enough approved context in the admin notification.',
@@ -90,6 +92,47 @@ async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()
+	}
+}
+
+async function ensurePlatformFeedbackTestSchema(db: D1Database) {
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS platform_feedback (
+				id TEXT PRIMARY KEY NOT NULL,
+				submitter_user_id TEXT NOT NULL,
+				submitter_username TEXT,
+				submitter_email TEXT,
+				category TEXT NOT NULL,
+				summary TEXT NOT NULL,
+				details TEXT NOT NULL,
+				status TEXT NOT NULL DEFAULT 'open',
+				reviewed_by_user_id TEXT,
+				reviewed_at TEXT,
+				admin_note TEXT,
+				revision INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	const columns = await db
+		.prepare(`PRAGMA table_info(platform_feedback)`)
+		.all<{ name: string }>()
+	const columnNames = new Set(
+		(columns.results ?? []).map((column) => column.name),
+	)
+	if (!columnNames.has('submitter_username')) {
+		await db
+			.prepare(
+				`ALTER TABLE platform_feedback ADD COLUMN submitter_username TEXT`,
+			)
+			.run()
+	}
+	if (!columnNames.has('submitter_email')) {
+		await db
+			.prepare(`ALTER TABLE platform_feedback ADD COLUMN submitter_email TEXT`)
+			.run()
 	}
 }
 
@@ -295,22 +338,45 @@ export default async function main(input = {}) {
 	return { packageId }
 }
 
-test('platform feedback dispatch carries approved feedback and identity idempotently only to admin subscribers', async () => {
+test('platform feedback dispatch keeps stored identity snapshots idempotent across live account changes and reaches only admin subscribers', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
+	await ensurePlatformFeedbackTestSchema(env.APP_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 
 	const submitterEmail = `feedback-submitter-${crypto.randomUUID()}@example.com`
 	const submitterUsername = `feedbacksubmitter-${crypto.randomUUID().slice(0, 8)}`
 	const submitterStableId = await createStableUserIdFromEmail(submitterEmail)
-	await seedAccount({
+	const submitterAccountId = await seedAccount({
 		email: submitterEmail,
 		username: submitterUsername,
 	})
 	const dispatchFeedback = {
 		...openFeedback,
 		submitterUserId: submitterStableId,
+		submitterUsername,
+		submitterEmail,
 	}
+	await env.APP_DB.prepare(
+		`INSERT OR REPLACE INTO platform_feedback (
+			id, submitter_user_id, submitter_username, submitter_email,
+			category, summary, details, status, reviewed_by_user_id,
+			reviewed_at, admin_note, revision, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?)`,
+	)
+		.bind(
+			dispatchFeedback.id,
+			dispatchFeedback.submitterUserId,
+			dispatchFeedback.submitterUsername,
+			dispatchFeedback.submitterEmail,
+			dispatchFeedback.category,
+			dispatchFeedback.summary,
+			dispatchFeedback.details,
+			dispatchFeedback.status,
+			dispatchFeedback.createdAt,
+			dispatchFeedback.updatedAt,
+		)
+		.run()
 
 	const adminEmail = `feedback-sub-admin-${crypto.randomUUID()}@example.com`
 	const adminStableId = await createStableUserIdFromEmail(adminEmail)
@@ -331,11 +397,6 @@ test('platform feedback dispatch carries approved feedback and identity idempote
 	const expectedPayload = buildPlatformFeedbackSubmittedEvent({
 		baseUrl: platformBaseUrl,
 		feedback: dispatchFeedback,
-		submitter: {
-			userId: submitterStableId,
-			username: submitterUsername,
-			email: submitterEmail,
-		},
 	})
 	const firstAdminPackage = await seedSubscribedPackage({
 		bundleKv,
@@ -380,11 +441,20 @@ test('platform feedback dispatch carries approved feedback and identity idempote
 	try {
 		await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
 			env: { ...env, APP_BASE_URL: platformBaseUrl },
-			feedback: dispatchFeedback,
+			feedbackId: dispatchFeedback.id,
 		})
+		await env.APP_DB.prepare(
+			`UPDATE users SET username = ?, email = ? WHERE id = ?`,
+		)
+			.bind(
+				`changed-${crypto.randomUUID().slice(0, 8)}`,
+				`changed-${crypto.randomUUID()}@example.com`,
+				submitterAccountId,
+			)
+			.run()
 		await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
 			env: { ...env, APP_BASE_URL: platformBaseUrl },
-			feedback: dispatchFeedback,
+			feedbackId: dispatchFeedback.id,
 		})
 
 		const invocations = await env.APP_DB.prepare(
@@ -446,14 +516,8 @@ test('platform feedback dispatch carries approved feedback and identity idempote
 
 test('platform feedback dispatch is a no-op without admins or RBAC tables', async () => {
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
+	await ensurePlatformFeedbackTestSchema(env.APP_DB)
 	await ensureRbacTestSchema(env.APP_DB)
-	const submitterEmail = `feedback-no-admin-submitter-${crypto.randomUUID()}@example.com`
-	const submitterUserId = await createStableUserIdFromEmail(submitterEmail)
-	await seedAccount({
-		email: submitterEmail,
-		username: `feedbacksubmitter-${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const feedback = { ...openFeedback, submitterUserId }
 	await env.APP_DB.prepare(`DELETE FROM user_roles`).run()
 	const countInvocations = async () => {
 		const row = await env.APP_DB.prepare(
@@ -466,7 +530,7 @@ test('platform feedback dispatch is a no-op without admins or RBAC tables', asyn
 	const withoutAdmins =
 		await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
 			env: { ...env, APP_BASE_URL: platformBaseUrl },
-			feedback: { ...feedback, id: 'feedback-without-admins' },
+			feedbackId: 'feedback-without-admins',
 		})
 	expect(withoutAdmins).toEqual([])
 	expect(await countInvocations()).toBe(before)
@@ -475,7 +539,7 @@ test('platform feedback dispatch is a no-op without admins or RBAC tables', asyn
 	await env.APP_DB.prepare(`DROP TABLE roles`).run()
 	const beforeRbac = await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
 		env: { ...env, APP_BASE_URL: platformBaseUrl },
-		feedback: { ...feedback, id: 'feedback-before-rbac' },
+		feedbackId: 'feedback-before-rbac',
 	})
 	expect(beforeRbac).toEqual([])
 	expect(await countInvocations()).toBe(before)

@@ -1,9 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import { PlatformFeedbackDispatchCancelledError } from './errors.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchPlatformFeedbackSubmittedSubscriptionEvent: vi.fn(),
-	getPlatformFeedbackForAdmin: vi.fn(),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -11,26 +11,10 @@ vi.mock('./package-subscriptions.ts', () => ({
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 }))
 
-vi.mock('./service.ts', () => ({
-	getPlatformFeedbackForAdmin: mocks.getPlatformFeedbackForAdmin,
-}))
-
 const { handlePlatformFeedbackDispatchQueue } =
 	await import('./dispatch-queue.ts')
 
-const openFeedback = {
-	id: 'feedback-1',
-	submitterUserId: 'submitter-1',
-	category: 'bug' as const,
-	summary: 'The button does not save',
-	details: 'The save button closes the form without saving the change.',
-	status: 'open' as const,
-	reviewedByUserId: null,
-	reviewedAt: null,
-	adminNote: null,
-	createdAt: '2026-07-19T00:00:00.000Z',
-	updatedAt: '2026-07-19T00:00:00.000Z',
-}
+const feedbackId = 'feedback-1'
 
 function createQueueMessage(id: string, body: unknown) {
 	return {
@@ -52,56 +36,37 @@ function createBatch(messages: Array<ReturnType<typeof createQueueMessage>>) {
 	} as unknown as MessageBatch<unknown>
 }
 
-test('platform feedback queue dispatches valid and duplicate messages while acknowledging permanent misses', async () => {
+test('platform feedback queue dispatches valid duplicates and acknowledges permanent deletion cancellation', async () => {
 	const first = createQueueMessage('queue-valid', {
-		feedbackId: openFeedback.id,
+		feedbackId,
 	})
 	const duplicate = createQueueMessage('queue-duplicate', {
-		feedbackId: openFeedback.id,
+		feedbackId,
 	})
 	const missing = createQueueMessage('queue-missing', {})
 	const invalid = createQueueMessage('queue-invalid', { feedbackId: '   ' })
 	const extraFields = createQueueMessage('queue-extra-fields', {
-		feedbackId: openFeedback.id,
+		feedbackId,
 		summary: 'must not cross the queue boundary',
 	})
 	const deleted = createQueueMessage('queue-deleted', {
 		feedbackId: 'feedback-deleted',
 	})
-	const identityMissingFeedback = {
-		...openFeedback,
-		id: 'feedback-missing-identity',
-		submitterUserId: 'deleted-account',
-	}
-	const identityMissing = createQueueMessage('queue-missing-identity', {
-		feedbackId: identityMissingFeedback.id,
-	})
-	mocks.getPlatformFeedbackForAdmin.mockImplementation(
+	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockImplementation(
 		async (input: { feedbackId: string }) => {
-			if (input.feedbackId === 'feedback-deleted') return null
-			if (input.feedbackId === identityMissingFeedback.id) {
-				return identityMissingFeedback
+			if (input.feedbackId === 'feedback-deleted') {
+				throw new PlatformFeedbackDispatchCancelledError(input.feedbackId)
 			}
-			return openFeedback
+			return []
 		},
 	)
-	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockResolvedValue([])
 
 	await handlePlatformFeedbackDispatchQueue(
-		createBatch([
-			first,
-			duplicate,
-			missing,
-			invalid,
-			extraFields,
-			deleted,
-			identityMissing,
-		]),
+		createBatch([first, duplicate, missing, invalid, extraFields, deleted]),
 		{ APP_DB: {} } as Env,
 		{} as ExecutionContext,
 	)
 
-	expect(mocks.getPlatformFeedbackForAdmin).toHaveBeenCalledTimes(4)
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).toHaveBeenCalledTimes(3)
@@ -109,19 +74,19 @@ test('platform feedback queue dispatches valid and duplicate messages while ackn
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).toHaveBeenNthCalledWith(1, {
 		env: expect.anything(),
-		feedback: openFeedback,
+		feedbackId,
 	})
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).toHaveBeenNthCalledWith(2, {
 		env: expect.anything(),
-		feedback: openFeedback,
+		feedbackId,
 	})
 	expect(
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).toHaveBeenNthCalledWith(3, {
 		env: expect.anything(),
-		feedback: identityMissingFeedback,
+		feedbackId: 'feedback-deleted',
 	})
 	for (const message of [
 		first,
@@ -130,27 +95,23 @@ test('platform feedback queue dispatches valid and duplicate messages while ackn
 		invalid,
 		extraFields,
 		deleted,
-		identityMissing,
 	]) {
 		expect(message.ack).toHaveBeenCalledTimes(1)
 		expect(message.retry).not.toHaveBeenCalled()
 	}
 })
 
-test('platform feedback queue retries load and subscription wrapper failures after thirty seconds', async () => {
+test('platform feedback queue retries lookup and subscription wrapper failures after thirty seconds', async () => {
 	consoleError.mockImplementation(() => {})
 	const loadFailure = createQueueMessage('queue-load-failure', {
 		feedbackId: 'feedback-load-failure',
 	})
 	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
-		feedbackId: openFeedback.id,
+		feedbackId,
 	})
-	mocks.getPlatformFeedbackForAdmin
-		.mockRejectedValueOnce(new Error('D1 unavailable'))
-		.mockResolvedValueOnce(openFeedback)
-	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockRejectedValueOnce(
-		new Error('subscription wrapper unavailable'),
-	)
+	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent
+		.mockRejectedValueOnce(new Error('D1 lookup unavailable'))
+		.mockRejectedValueOnce(new Error('subscription wrapper unavailable'))
 
 	await handlePlatformFeedbackDispatchQueue(
 		createBatch([loadFailure, dispatchFailure]),

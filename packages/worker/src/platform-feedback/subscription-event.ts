@@ -1,5 +1,4 @@
 import { platformFeedbackContentWarning } from './content-warning.ts'
-import { type PlatformFeedbackSubmitterIdentity } from './submitter-identity.ts'
 import {
 	type PlatformFeedbackCategory,
 	type PlatformFeedbackRecord,
@@ -30,9 +29,15 @@ export function buildPlatformFeedbackSubmittedEvent(input: {
 	baseUrl: string
 	feedback: Pick<
 		PlatformFeedbackRecord,
-		'id' | 'category' | 'createdAt' | 'summary' | 'details'
+		| 'id'
+		| 'submitterUserId'
+		| 'submitterUsername'
+		| 'submitterEmail'
+		| 'category'
+		| 'createdAt'
+		| 'summary'
+		| 'details'
 	>
-	submitter: PlatformFeedbackSubmitterIdentity
 }): PlatformFeedbackSubmittedEvent {
 	return {
 		event: platformFeedbackSubmittedTopic,
@@ -49,9 +54,9 @@ export function buildPlatformFeedbackSubmittedEvent(input: {
 			details_untrusted: input.feedback.details,
 		},
 		submitter: {
-			user_id: input.submitter.userId,
-			username: input.submitter.username,
-			email: input.submitter.email,
+			user_id: input.feedback.submitterUserId,
+			username: input.feedback.submitterUsername,
+			email: input.feedback.submitterEmail,
 		},
 	}
 }

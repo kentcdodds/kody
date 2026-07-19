@@ -14,7 +14,7 @@ function createIdentityDb(
 		queries,
 		db: {
 			prepare(query: string) {
-				queries.push(query)
+				queries.push(query.replace(/\s+/g, ' ').trim())
 				let stableUserId: string | null = null
 				const statement = {
 					bind(value: string) {
@@ -26,7 +26,7 @@ function createIdentityDb(
 							null) as T | null
 					},
 					async all<T>() {
-						return { results: rows as unknown as Array<T> }
+						throw new Error('identity lookup must never scan users')
 					},
 				}
 				return statement
@@ -52,7 +52,7 @@ test('platform feedback submitter identity resolves active accounts and preserve
 		email: 'author@example.com',
 	})
 	expect(active.queries).toEqual([
-		'SELECT id, email, stable_user_id, username FROM users WHERE stable_user_id = ?',
+		'SELECT username, email FROM users WHERE stable_user_id = ? LIMIT 1',
 	])
 
 	const missing = createIdentityDb([])
@@ -64,7 +64,6 @@ test('platform feedback submitter identity resolves active accounts and preserve
 		email: null,
 	})
 	expect(missing.queries).toEqual([
-		'SELECT id, email, stable_user_id, username FROM users WHERE stable_user_id = ?',
-		'SELECT id, email, stable_user_id, username FROM users',
+		'SELECT username, email FROM users WHERE stable_user_id = ? LIMIT 1',
 	])
 })

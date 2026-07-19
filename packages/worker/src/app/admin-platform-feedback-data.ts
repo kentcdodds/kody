@@ -39,7 +39,7 @@ function readCategoryFilter(
 		: null
 }
 
-function readFeedbackId(value: string | null) {
+export function readAdminPlatformFeedbackId(value: string | null) {
 	const normalized = value?.trim() ?? ''
 	return normalized.length > 0 && normalized.length <= maxFeedbackIdLength
 		? normalized
@@ -66,20 +66,26 @@ async function formatDetail(
 	db: D1Database,
 	feedback: PlatformFeedbackRecord,
 ): Promise<AdminPlatformFeedbackDetail> {
-	const submitter = await resolvePlatformFeedbackSubmitterIdentity(
-		db,
-		feedback.submitterUserId,
-	)
+	let username = feedback.submitterUsername
+	let email = feedback.submitterEmail
+	if (username === null || email === null) {
+		const liveIdentity = await resolvePlatformFeedbackSubmitterIdentity(
+			db,
+			feedback.submitterUserId,
+		)
+		username ??= liveIdentity.username
+		email ??= liveIdentity.email
+	}
 	return {
 		...formatListItem(feedback),
 		details_untrusted: feedback.details,
 		admin_note: feedback.adminNote,
 		submitter:
-			submitter.username && submitter.email
+			username !== null || email !== null
 				? {
-						user_id: submitter.userId,
-						username: submitter.username,
-						email: submitter.email,
+						user_id: feedback.submitterUserId,
+						username,
+						email,
 					}
 				: null,
 	}
@@ -98,8 +104,10 @@ export async function loadAdminPlatformFeedbackData(
 	)
 	const statusFilter = readStatusFilter(url.searchParams.get('status'))
 	const categoryFilter = readCategoryFilter(url.searchParams.get('category'))
-	const feedbackId = readFeedbackId(url.searchParams.get('feedbackId'))
-	const [list, selectedRecord] = await Promise.all([
+	const feedbackId = readAdminPlatformFeedbackId(
+		url.searchParams.get('feedbackId'),
+	)
+	const [initialList, selectedRecord] = await Promise.all([
 		listPlatformFeedbackForAdmin({
 			db: env.APP_DB,
 			page,
@@ -114,6 +122,17 @@ export async function loadAdminPlatformFeedbackData(
 				})
 			: Promise.resolve(null),
 	])
+	let list = initialList
+	const lastPage = list.total === 0 ? 1 : Math.ceil(list.total / list.pageSize)
+	if (list.page > lastPage) {
+		list = await listPlatformFeedbackForAdmin({
+			db: env.APP_DB,
+			page: lastPage,
+			pageSize,
+			status: statusFilter ?? undefined,
+			category: categoryFilter ?? undefined,
+		})
+	}
 
 	return {
 		ok: true,

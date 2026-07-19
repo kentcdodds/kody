@@ -604,6 +604,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{
 				id: 'feedback-submitted-by-a',
 				submitter_user_id: userAaa,
+				submitter_username: 'user-a',
+				submitter_email: 'a@example.com',
 				reviewed_by_user_id: userBbb,
 				reviewed_at: '2026-07-05',
 				admin_note: 'Reviewed by B.',
@@ -611,6 +613,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{
 				id: 'feedback-reviewed-by-a',
 				submitter_user_id: userBbb,
+				submitter_username: 'user-b',
+				submitter_email: 'b@example.com',
 				reviewed_by_user_id: userAaa,
 				reviewed_at: '2026-07-05',
 				admin_note: 'Private admin note from A.',
@@ -618,6 +622,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{
 				id: 'feedback-unrelated',
 				submitter_user_id: userBbb,
+				submitter_username: 'user-b',
+				submitter_email: 'b@example.com',
 				reviewed_by_user_id: userBbb,
 				reviewed_at: '2026-07-05',
 				admin_note: 'Reviewed by B.',
@@ -818,6 +824,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{
 			id: 'feedback-reviewed-by-a',
 			submitter_user_id: userBbb,
+			submitter_username: 'user-b',
+			submitter_email: 'b@example.com',
 			reviewed_by_user_id: null,
 			reviewed_at: null,
 			admin_note: null,
@@ -825,6 +833,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		{
 			id: 'feedback-unrelated',
 			submitter_user_id: userBbb,
+			submitter_username: 'user-b',
+			submitter_email: 'b@example.com',
 			reviewed_by_user_id: userBbb,
 			reviewed_at: '2026-07-05',
 			admin_note: 'Reviewed by B.',

@@ -77,6 +77,16 @@ export function PrivacyRoute(_handle: Handle) {
 					identity, notes, or timestamps. Account deletion removes any remaining
 					submissions.
 				</p>
+				<p mix={css(descriptionCss)}>
+					When a notification is still queued, Kody rechecks that the feedback
+					exists immediately before delivery and cancels it after account
+					deletion when possible. Kody cannot recall a copy already delivered
+					outside Kody. Admin notification copies, including Discord messages,
+					may remain after Kody account deletion under the deployment
+					operator&apos;s retention and deletion controls. Those copies contain
+					only the exact approved feedback and its attribution, never unrelated
+					account content.
+				</p>
 			</section>
 
 			<section mix={css(cardCss)}>

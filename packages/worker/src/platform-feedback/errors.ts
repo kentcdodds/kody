@@ -3,6 +3,18 @@ import {
 	type PlatformFeedbackStatus,
 } from './types.ts'
 
+export class PlatformFeedbackDispatchCancelledError extends Error {
+	readonly feedbackId: string
+
+	constructor(feedbackId: string) {
+		super(
+			`Platform feedback "${feedbackId}" was deleted before notification dispatch.`,
+		)
+		this.name = 'PlatformFeedbackDispatchCancelledError'
+		this.feedbackId = feedbackId
+	}
+}
+
 export class PlatformFeedbackNotFoundError extends Error {
 	constructor(feedbackId: string) {
 		super(`Platform feedback "${feedbackId}" was not found.`)

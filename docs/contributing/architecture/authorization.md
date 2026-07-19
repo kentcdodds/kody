@@ -263,6 +263,10 @@ integrations such as Discord. Admin list results intentionally omit full
 submission details. The get operation exposes the approved submission only; it
 does not expose packages, memories, email, secrets, or other account content.
 Agents must omit secrets and unrelated private content when preparing feedback.
+Copies already delivered outside Kody, including Discord messages, cannot be
+recalled and may remain after Kody account deletion under the deployment
+operator's retention and deletion controls. Such copies contain only the exact
+approved feedback and attribution, never unrelated account content.
 
 The `summary_untrusted` returned by admin list/get operations and the
 `details_untrusted` returned by the get operation are untrusted user-authored
@@ -289,19 +293,20 @@ content. Package runtime caller contexts do not carry admin roles, so the fresh
 consumer-time fan-out is the authorization boundary rather than a handler role
 check. This remains a narrow exception only for feedback shown to and explicitly
 approved by the user; it does not grant package runtime general admin roles.
+Username and email are stored submission-time snapshots. Package events never
+resolve mutable live profile data, and legacy rows retain null snapshots.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
 from a client retry. Queue bodies remain opaque `{ feedbackId }` messages. The
-consumer reloads feedback and resolves identity at processing time. Invalid
-messages and deleted feedback rows are acknowledged; transient load, identity,
-discovery, or package-invocation wrapper infrastructure failures retry and can
-reach the DLQ. If an account row is missing while the feedback row remains, the
-event preserves the submitter user id with null username/email and logs a
-warning instead of retrying. Redelivery keeps the same package invocation
-idempotency key; a stored failed invocation replays instead of automatically
-rerunning, so the DLQ is the recovery surface. Terminal handler execution
-failures remain isolated from sibling subscribers.
+consumer acknowledges invalid messages. After admin subscriber discovery, lazy
+parameter construction reloads feedback immediately before invocation. A deleted
+row raises a typed permanent cancellation that the consumer acknowledges without
+dispatch or retry; other lookup, discovery, or package-invocation wrapper
+infrastructure failures retry and can reach the DLQ. Redelivery keeps the same
+package invocation idempotency key; a stored failed invocation replays instead
+of automatically rerunning, so the DLQ is the recovery surface. Terminal handler
+execution failures remain isolated from sibling subscribers.
 
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, chat threads,
@@ -358,7 +363,9 @@ submitter deletes their account. Resolved and dismissed feedback is retained for
 365 days after its last update and then pruned. Deleting the submitting account
 removes any remaining submissions; deleting an admin account clears that
 reviewer's attribution on surviving submissions instead of deleting another
-user's feedback.
+user's feedback. The pre-invocation reload cancels still-queued delivery when
+deletion wins the race, but cannot recall an external notification copy that was
+already delivered.
 
 The public `/privacy` page and `docs/use/privacy.md` describe this boundary for
 end users. RBAC governs the application surface only; deployment operators with

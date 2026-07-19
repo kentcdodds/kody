@@ -147,12 +147,15 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
 		INSERT INTO platform_feedback (
-			id, submitter_user_id, category, summary, details, status,
-			reviewed_by_user_id, reviewed_at, admin_note, created_at, updated_at
+			id, submitter_user_id, submitter_username, submitter_email,
+			category, summary, details, status, reviewed_by_user_id,
+			reviewed_at, admin_note, created_at, updated_at
 		) VALUES
 			(
 				'feedback-submitted-by-a',
 				'user-aaa',
+				'user-a',
+				'a@example.com',
 				'friction',
 				'Setup is confusing',
 				'The setup flow needs clearer guidance.',
@@ -166,6 +169,8 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 			(
 				'feedback-reviewed-by-a',
 				'user-bbb',
+				'user-b',
+				'b@example.com',
 				'bug',
 				'Private feedback from B',
 				'This record belongs only in user B exports.',
@@ -190,6 +195,8 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 		expect.objectContaining({
 			id: 'feedback-submitted-by-a',
 			submitter_user_id: 'user-aaa',
+			submitter_username: 'user-a',
+			submitter_email: 'a@example.com',
 			category: 'friction',
 			summary: 'Setup is confusing',
 			details: 'The setup flow needs clearer guidance.',

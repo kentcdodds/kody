@@ -107,11 +107,21 @@ explicitly approved; it does not expose other account content. Each account can
 create at most 10 feedback submissions in a rolling 24-hour period and have at
 most 100 active submissions (open or triaged).
 
+Before asking for approval, also disclose that Kody cannot recall notification
+copies already delivered outside Kody. Admin notification copies, including
+Discord messages, may remain after Kody account deletion under the deployment
+operator's retention and deletion controls. This applies only to copies of the
+exact approved feedback and attribution described above, never unrelated
+content.
+
 Open and triaged feedback remains until an admin resolves or dismisses it, or
 the submitting account is deleted. Resolved and dismissed feedback is removed
 365 days after its last update. The submitting user's account export includes
 the submission and status but redacts internal reviewer identity, notes, and
-timestamps. Account deletion removes any remaining submissions.
+timestamps. Account deletion removes any remaining submissions. Kody rechecks a
+queued submission immediately before invoking discovered admin subscribers, so
+deletion cancels delivery when it wins that race; it cannot recall a copy that
+was already posted.
 
 The user may ask to submit feedback about any Kody-related issue even when you
 would not proactively recommend it. Use category `other` when no more specific
@@ -128,7 +138,9 @@ Use concise language:
 > feedback with this exact summary: `<summary>` and these exact details:
 > `<details>`. The approved text and your account user id, username, and email
 > may be sent immediately to deployment admins through configured notifications
-> such as Discord. Would you like me to submit it?
+> such as Discord. Copies already delivered outside Kody, including Discord
+> messages, may remain after Kody account deletion under the deployment
+> operator's retention and deletion controls. Would you like me to submit it?
 
 For memory:
 

@@ -333,8 +333,8 @@ export type AdminPlatformFeedbackDetail = AdminPlatformFeedbackListItem & {
 	admin_note: string | null
 	submitter: {
 		user_id: string
-		username: string
-		email: string
+		username: string | null
+		email: string | null
 	} | null
 }
 

@@ -25,6 +25,8 @@ export type PlatformFeedbackAction = (typeof platformFeedbackActions)[number]
 export type PlatformFeedbackRow = {
 	id: string
 	submitter_user_id: string
+	submitter_username: string | null
+	submitter_email: string | null
 	category: PlatformFeedbackCategory
 	summary: string
 	details: string
@@ -39,6 +41,8 @@ export type PlatformFeedbackRow = {
 export type PlatformFeedbackRecord = {
 	id: string
 	submitterUserId: string
+	submitterUsername: string | null
+	submitterEmail: string | null
 	category: PlatformFeedbackCategory
 	summary: string
 	details: string
@@ -57,5 +61,5 @@ export type PlatformFeedbackRecordWithRevision = PlatformFeedbackRecord & {
 
 export type PlatformFeedbackListItem = Omit<
 	PlatformFeedbackRecord,
-	'details' | 'adminNote'
+	'details' | 'adminNote' | 'submitterUsername' | 'submitterEmail'
 >

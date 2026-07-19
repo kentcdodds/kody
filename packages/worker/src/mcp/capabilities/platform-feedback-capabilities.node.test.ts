@@ -52,6 +52,8 @@ vi.mock('#worker/platform-feedback/service.ts', async (importOriginal) => {
 const openFeedback = {
 	id: 'feedback-1',
 	submitterUserId: 'user-1',
+	submitterUsername: 'user-1-name',
+	submitterEmail: 'user-1@example.com',
 	category: 'friction' as const,
 	summary: 'Setup is confusing',
 	details: 'The setup flow does not explain the next action.',
@@ -87,6 +89,7 @@ function createCapabilityContext(input?: {
 				? {
 						user: {
 							userId: input.userId ?? 'user-1',
+							username: `${input.userId ?? 'user-1'}-name`,
 							email: `${input.userId ?? 'user-1'}@example.com`,
 							roles: input.roles,
 						},
@@ -97,6 +100,14 @@ function createCapabilityContext(input?: {
 }
 
 test('meta platform feedback submission gates consent and isolates post-persistence enqueue failures', async () => {
+	expect(metaPlatformFeedbackSubmitCapability.description).toContain(
+		'Copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion',
+	)
+	expect(
+		JSON.stringify(metaPlatformFeedbackSubmitCapability.inputSchema),
+	).toContain(
+		'copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion',
+	)
 	mockModule.submitPlatformFeedback.mockResolvedValue(openFeedback)
 	const input = {
 		category: 'friction' as const,
@@ -186,6 +197,8 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 	expect(mockModule.submitPlatformFeedback).toHaveBeenCalledWith({
 		db: expect.anything(),
 		submitterUserId: 'user-1',
+		submitterUsername: 'user-1-name',
+		submitterEmail: 'user-1@example.com',
 		category: 'friction',
 		summary: 'Setup is confusing',
 		details: 'The setup flow does not explain the next action.',

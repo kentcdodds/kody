@@ -6,8 +6,9 @@ import {
 	type PlatformFeedbackStatus,
 } from './types.ts'
 
-const platformFeedbackFullColumns = `id, submitter_user_id, category, summary, details,
-	status, reviewed_by_user_id, reviewed_at, admin_note, revision, created_at, updated_at`
+const platformFeedbackFullColumns = `id, submitter_user_id, submitter_username,
+	submitter_email, category, summary, details, status, reviewed_by_user_id,
+	reviewed_at, admin_note, revision, created_at, updated_at`
 
 const platformFeedbackListColumns = `id, submitter_user_id, category, summary,
 	status, reviewed_by_user_id, reviewed_at, created_at, updated_at`
@@ -18,6 +19,12 @@ function mapPlatformFeedbackRow(
 	return {
 		id: String(row['id']),
 		submitterUserId: String(row['submitter_user_id']),
+		submitterUsername:
+			row['submitter_username'] == null
+				? null
+				: String(row['submitter_username']),
+		submitterEmail:
+			row['submitter_email'] == null ? null : String(row['submitter_email']),
 		category: String(row['category']) as PlatformFeedbackCategory,
 		summary: String(row['summary']),
 		details: String(row['details']),
@@ -65,10 +72,11 @@ export async function insertPlatformFeedback(
 	const result = await db
 		.prepare(
 			`INSERT INTO platform_feedback (
-				id, submitter_user_id, category, summary, details, status,
-				reviewed_by_user_id, reviewed_at, admin_note, created_at, updated_at
+				id, submitter_user_id, submitter_username, submitter_email,
+				category, summary, details, status, reviewed_by_user_id,
+				reviewed_at, admin_note, created_at, updated_at
 			)
-			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 			WHERE (
 				SELECT COUNT(*)
 				FROM platform_feedback
@@ -85,6 +93,8 @@ export async function insertPlatformFeedback(
 		.bind(
 			row.id,
 			row.submitter_user_id,
+			row.submitter_username,
+			row.submitter_email,
 			row.category,
 			row.summary,
 			row.details,
@@ -190,6 +200,33 @@ export async function listPlatformFeedbackRowsForAdmin(
 		.prepare(`SELECT COUNT(*) AS total FROM platform_feedback ${where}`)
 		.bind(...bindings)
 		.first<{ total: number }>()
+	const items = await listPlatformFeedbackPageRowsForAdmin(db, input)
+	return {
+		total: Number(countRow?.total ?? 0),
+		items,
+	}
+}
+
+export async function listPlatformFeedbackPageRowsForAdmin(
+	db: D1Database,
+	input: {
+		page: number
+		pageSize: number
+		status?: PlatformFeedbackStatus
+		category?: PlatformFeedbackCategory
+	},
+): Promise<Array<PlatformFeedbackListItem>> {
+	const filters: Array<string> = []
+	const bindings: Array<unknown> = []
+	if (input.status !== undefined) {
+		filters.push('status = ?')
+		bindings.push(input.status)
+	}
+	if (input.category !== undefined) {
+		filters.push('category = ?')
+		bindings.push(input.category)
+	}
+	const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : ''
 	const rows = await db
 		.prepare(
 			`SELECT ${platformFeedbackListColumns}
@@ -200,10 +237,7 @@ export async function listPlatformFeedbackRowsForAdmin(
 		)
 		.bind(...bindings, input.pageSize, (input.page - 1) * input.pageSize)
 		.all<Record<string, unknown>>()
-	return {
-		total: Number(countRow?.total ?? 0),
-		items: (rows.results ?? []).map(mapPlatformFeedbackListRow),
-	}
+	return (rows.results ?? []).map(mapPlatformFeedbackListRow)
 }
 
 export async function updatePlatformFeedbackStatusForAdmin(

@@ -19,7 +19,7 @@ type TestD1Statement = {
 	run(): Promise<{ meta: { changes: number } }>
 }
 
-function createD1FromSqlite(sqlite: DatabaseSync) {
+function createD1FromSqlite(sqlite: DatabaseSync, queries: Array<string> = []) {
 	function createStatement(
 		query: string,
 		params: Array<unknown> = [],
@@ -45,6 +45,7 @@ function createD1FromSqlite(sqlite: DatabaseSync) {
 	}
 	return {
 		prepare(query: string) {
+			queries.push(query.replace(/\s+/g, ' ').trim())
 			return createStatement(query)
 		},
 		async batch(statements: Array<TestD1Statement>) {
@@ -72,7 +73,17 @@ function createPlatformFeedbackDb() {
 			'utf8',
 		),
 	)
-	return { sqlite, db: createD1FromSqlite(sqlite) }
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0063-platform-feedback-submitter-snapshot.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+	const queries: Array<string> = []
+	return { sqlite, db: createD1FromSqlite(sqlite, queries), queries }
 }
 
 test('platform feedback workflow submits, lists, reads, transitions, and preserves submitter attribution', async () => {
@@ -80,6 +91,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	const first = await submitPlatformFeedback({
 		db,
 		submitterUserId: 'user-a',
+		submitterUsername: 'user-a-name',
+		submitterEmail: 'user-a@example.com',
 		category: 'friction',
 		summary: '  Setup is confusing  ',
 		details: '  The setup flow does not explain the next action.  ',
@@ -101,6 +114,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 
 	expect(first).toMatchObject({
 		submitterUserId: 'user-a',
+		submitterUsername: 'user-a-name',
+		submitterEmail: 'user-a@example.com',
 		category: 'friction',
 		summary: 'Setup is confusing',
 		details: 'The setup flow does not explain the next action.',
@@ -130,6 +145,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 				'updatedAt',
 			].sort(),
 		)
+		expect(item).not.toHaveProperty('submitterUsername')
+		expect(item).not.toHaveProperty('submitterEmail')
 	}
 	const bugFeedback = await listPlatformFeedbackForAdmin({
 		db,
@@ -145,9 +162,17 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	])
 
 	expect(
+		await getPlatformFeedbackForAdmin({ db, feedbackId: first.id }),
+	).toMatchObject({
+		submitterUsername: 'user-a-name',
+		submitterEmail: 'user-a@example.com',
+	})
+	expect(
 		await getPlatformFeedbackForAdmin({ db, feedbackId: second.id }),
 	).toMatchObject({
 		id: second.id,
+		submitterUsername: null,
+		submitterEmail: null,
 		details: 'The save button leaves the form unchanged.',
 		adminNote: null,
 	})
@@ -246,15 +271,62 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 
 	const rows = sqlite
 		.prepare(
-			`SELECT id, submitter_user_id FROM platform_feedback ORDER BY submitter_user_id, id`,
+			`SELECT id, submitter_user_id, submitter_username, submitter_email
+			 FROM platform_feedback
+			 ORDER BY submitter_user_id, id`,
 		)
-		.all() as Array<{ id: string; submitter_user_id: string }>
+		.all() as Array<{
+		id: string
+		submitter_user_id: string
+		submitter_username: string | null
+		submitter_email: string | null
+	}>
 	expect(rows.filter((row) => row.submitter_user_id === 'user-a')).toHaveLength(
 		2,
 	)
+	expect(rows.find((row) => row.id === first.id)).toMatchObject({
+		submitter_username: 'user-a-name',
+		submitter_email: 'user-a@example.com',
+	})
 	expect(rows.filter((row) => row.submitter_user_id === 'user-b')).toEqual([
-		{ id: second.id, submitter_user_id: 'user-b' },
+		{
+			id: second.id,
+			submitter_user_id: 'user-b',
+			submitter_username: null,
+			submitter_email: null,
+		},
 	])
+})
+
+test('platform feedback pagination clamps to the last nonempty page', async () => {
+	const { db, queries } = createPlatformFeedbackDb()
+	for (let index = 0; index < 3; index += 1) {
+		await submitPlatformFeedback({
+			db,
+			submitterUserId: `user-${index}`,
+			category: 'friction',
+			summary: `Feedback ${index}`,
+			details: `Feedback details ${index}`,
+		})
+	}
+
+	queries.length = 0
+	const page = await listPlatformFeedbackForAdmin({
+		db,
+		page: 99,
+		pageSize: 2,
+	})
+
+	expect(page).toMatchObject({ total: 3, page: 2, pageSize: 2 })
+	expect(page.items).toHaveLength(1)
+	expect(
+		queries.filter((query) => query.startsWith('SELECT COUNT(*) AS total')),
+	).toHaveLength(1)
+	expect(
+		queries.filter((query) =>
+			query.startsWith('SELECT id, submitter_user_id, category, summary'),
+		),
+	).toHaveLength(2)
 })
 
 test('platform feedback admin note updates reject the same stale revision', async () => {

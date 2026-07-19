@@ -2,17 +2,19 @@ import { expect, test, vi } from 'vitest'
 import { dispatchAdminPackageSubscriptionEvent } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { platformFeedbackContentWarning } from './content-warning.ts'
+import { PlatformFeedbackDispatchCancelledError } from './errors.ts'
 import {
 	buildPlatformFeedbackSubmittedEvent,
 	platformFeedbackSubmittedTopic,
 } from './subscription-event.ts'
+import { type PlatformFeedbackRecord } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
+	getPlatformFeedbackForAdmin: vi.fn(),
 	invokePackageSubscription: vi.fn(),
 	listAdminAccountRows: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
-	resolvePlatformFeedbackSubmitterIdentity: vi.fn(),
 }))
 
 vi.mock('#app/permissions-db.ts', () => ({
@@ -31,9 +33,8 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
 }))
 
-vi.mock('./submitter-identity.ts', () => ({
-	resolvePlatformFeedbackSubmitterIdentity:
-		mocks.resolvePlatformFeedbackSubmitterIdentity,
+vi.mock('./service.ts', () => ({
+	getPlatformFeedbackForAdmin: mocks.getPlatformFeedbackForAdmin,
 }))
 
 const { dispatchPlatformFeedbackSubmittedSubscriptionEvent } =
@@ -42,6 +43,8 @@ const { dispatchPlatformFeedbackSubmittedSubscriptionEvent } =
 const openFeedback = {
 	id: 'feedback-1',
 	submitterUserId: 'submitter-1',
+	submitterUsername: 'feedback-author',
+	submitterEmail: 'feedback-author@example.com',
 	category: 'friction' as const,
 	summary: 'The setup path is confusing',
 	details: 'The setup flow does not explain which action comes next.',
@@ -51,26 +54,17 @@ const openFeedback = {
 	adminNote: null,
 	createdAt: '2026-07-19T00:00:00.000Z',
 	updatedAt: '2026-07-19T00:00:00.000Z',
-}
+} satisfies PlatformFeedbackRecord
 
-const submitterIdentity = {
-	userId: openFeedback.submitterUserId,
-	username: 'feedback-author',
-	email: 'feedback-author@example.com',
-}
-
-function buildExpectedEvent(feedback = openFeedback) {
+function buildExpectedEvent(feedback: PlatformFeedbackRecord = openFeedback) {
 	return buildPlatformFeedbackSubmittedEvent({
 		baseUrl: 'https://heykody.dev',
 		feedback,
-		submitter: submitterIdentity,
 	})
 }
 
-function mockResolvedSubmitterIdentity() {
-	mocks.resolvePlatformFeedbackSubmitterIdentity.mockResolvedValue(
-		submitterIdentity,
-	)
+function mockResolvedFeedback(feedback: PlatformFeedbackRecord = openFeedback) {
+	mocks.getPlatformFeedbackForAdmin.mockResolvedValue(feedback)
 }
 
 function createSavedPackage(input: {
@@ -124,7 +118,6 @@ test('platform feedback submitted payload contains exactly the approved event fi
 	const payload = buildPlatformFeedbackSubmittedEvent({
 		baseUrl: 'https://kody.example.com',
 		feedback,
-		submitter: submitterIdentity,
 	})
 
 	expect(payload).toEqual({
@@ -177,7 +170,7 @@ test('platform feedback submitted payload contains exactly the approved event fi
 
 test('platform feedback attempts discovered siblings before rejecting a manifest failure', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mockResolvedSubmitterIdentity()
+	mockResolvedFeedback()
 	const first = createSavedPackage({
 		id: 'package-first',
 		userId: 'admin-stable-1',
@@ -244,7 +237,7 @@ test('platform feedback attempts discovered siblings before rejecting a manifest
 				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
 				APP_BASE_URL: 'https://heykody.dev',
 			},
-			feedback: openFeedback,
+			feedbackId: openFeedback.id,
 		}),
 	).rejects.toThrow('Admin package subscription discovery failed.')
 
@@ -292,27 +285,24 @@ test('platform feedback attempts discovered siblings before rejecting a manifest
 		},
 	)
 	expect(consoleWarn).toHaveBeenCalledTimes(2)
-	expect(mocks.resolvePlatformFeedbackSubmitterIdentity).toHaveBeenCalledWith(
-		expect.anything(),
-		openFeedback.submitterUserId,
-	)
+	expect(mocks.getPlatformFeedbackForAdmin).toHaveBeenCalledWith({
+		db: expect.anything(),
+		feedbackId: openFeedback.id,
+	})
 })
 
-test('platform feedback dispatch preserves submitter id and warns without retrying when the account identity is missing', async () => {
-	consoleWarn.mockImplementation(() => {})
+test('platform feedback dispatch preserves legacy null identity snapshots', async () => {
 	const subscribed = createSavedPackage({
 		id: 'package-subscriber',
 		userId: 'admin-stable-1',
 		sourceId: 'source-subscriber',
 	})
-	const missingIdentity = {
-		userId: openFeedback.submitterUserId,
-		username: null,
-		email: null,
+	const legacyFeedback = {
+		...openFeedback,
+		submitterUsername: null,
+		submitterEmail: null,
 	}
-	mocks.resolvePlatformFeedbackSubmitterIdentity.mockResolvedValue(
-		missingIdentity,
-	)
+	mockResolvedFeedback(legacyFeedback)
 	mocks.listAdminAccountRows.mockResolvedValue([
 		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
 	])
@@ -332,7 +322,7 @@ test('platform feedback dispatch preserves submitter id and warns without retryi
 				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
 				APP_BASE_URL: 'https://heykody.dev',
 			},
-			feedback: openFeedback,
+			feedbackId: legacyFeedback.id,
 		}),
 	).resolves.toEqual([{ status: 200, body: { ok: true } }])
 
@@ -340,19 +330,58 @@ test('platform feedback dispatch preserves submitter id and warns without retryi
 		expect.objectContaining({
 			params: buildPlatformFeedbackSubmittedEvent({
 				baseUrl: 'https://heykody.dev',
-				feedback: openFeedback,
-				submitter: missingIdentity,
+				feedback: legacyFeedback,
 			}),
 		}),
 	)
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'platform-feedback-submitter-identity-missing',
-		{
+})
+
+test('platform feedback skips lazy row enrichment when no admin subscribers exist', async () => {
+	mocks.getPlatformFeedbackForAdmin.mockClear()
+	mocks.listAdminAccountRows.mockResolvedValue([])
+
+	await expect(
+		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+			env: {
+				APP_DB: {} as D1Database,
+				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+				APP_BASE_URL: 'https://heykody.dev',
+			},
 			feedbackId: openFeedback.id,
-			submitterUserId: openFeedback.submitterUserId,
-		},
+		}),
+	).resolves.toEqual([])
+
+	expect(mocks.getPlatformFeedbackForAdmin).not.toHaveBeenCalled()
+})
+
+test('platform feedback permanently cancels when the row is deleted before lazy params load', async () => {
+	mocks.invokePackageSubscription.mockClear()
+	const subscribed = createSavedPackage({
+		id: 'package-subscriber',
+		userId: 'admin-stable-1',
+		sourceId: 'source-subscriber',
+	})
+	mocks.listAdminAccountRows.mockResolvedValue([
+		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
+	])
+	mocks.listSavedPackagesByUserId.mockResolvedValue([subscribed])
+	mocks.loadPackageManifestBySourceId.mockResolvedValue(
+		createManifest(subscribed.id),
 	)
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	mocks.getPlatformFeedbackForAdmin.mockResolvedValue(null)
+
+	await expect(
+		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+			env: {
+				APP_DB: {} as D1Database,
+				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+				APP_BASE_URL: 'https://heykody.dev',
+			},
+			feedbackId: 'deleted-feedback',
+		}),
+	).rejects.toBeInstanceOf(PlatformFeedbackDispatchCancelledError)
+
+	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
 test('generic admin fan-out defaults to skipping manifest and invocation failures', async () => {
@@ -427,7 +456,7 @@ test('generic admin fan-out defaults to skipping manifest and invocation failure
 
 test('platform feedback isolates terminal execution failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mockResolvedSubmitterIdentity()
+	mockResolvedFeedback()
 	const failed = createSavedPackage({
 		id: 'package-execution-failed',
 		userId: 'admin-stable-1',
@@ -459,7 +488,7 @@ test('platform feedback isolates terminal execution failures', async () => {
 				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
 				APP_BASE_URL: 'https://heykody.dev',
 			},
-			feedback: openFeedback,
+			feedbackId: openFeedback.id,
 		}),
 	).resolves.toEqual([executionFailure])
 })
@@ -475,7 +504,7 @@ test.each([
 	'platform feedback rejects retryable invocation infrastructure response %s after attempting siblings',
 	async (code, status) => {
 		consoleWarn.mockImplementation(() => {})
-		mockResolvedSubmitterIdentity()
+		mockResolvedFeedback()
 		const retryable = createSavedPackage({
 			id: 'package-retryable',
 			userId: 'admin-stable-1',
@@ -527,7 +556,7 @@ test.each([
 					BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
 					APP_BASE_URL: 'https://heykody.dev',
 				},
-				feedback: openFeedback,
+				feedbackId: openFeedback.id,
 			}),
 		).rejects.toThrow(
 			'Admin package subscription dispatch encountered retryable package invocation infrastructure errors.',

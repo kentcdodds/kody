@@ -1,6 +1,6 @@
 import { dispatchPlatformFeedbackSubmittedSubscriptionEvent } from './package-subscriptions.ts'
-import { getPlatformFeedbackForAdmin } from './service.ts'
 import { type PlatformFeedbackDispatchQueueMessage } from './dispatch-queue-producer.ts'
+import { PlatformFeedbackDispatchCancelledError } from './errors.ts'
 
 const platformFeedbackDispatchRetryDelaySeconds = 30
 
@@ -32,20 +32,16 @@ export async function handlePlatformFeedbackDispatchQueue(
 			continue
 		}
 		try {
-			const feedback = await getPlatformFeedbackForAdmin({
-				db: env.APP_DB,
-				feedbackId: parsed.feedbackId,
-			})
-			if (!feedback) {
-				queueMessage.ack()
-				continue
-			}
 			await dispatchPlatformFeedbackSubmittedSubscriptionEvent({
 				env,
-				feedback,
+				feedbackId: parsed.feedbackId,
 			})
 			queueMessage.ack()
 		} catch (error) {
+			if (error instanceof PlatformFeedbackDispatchCancelledError) {
+				queueMessage.ack()
+				continue
+			}
 			console.error('platform-feedback-dispatch-queue-processing-failed', {
 				queueMessageId: queueMessage.id,
 				feedbackId: parsed.feedbackId,

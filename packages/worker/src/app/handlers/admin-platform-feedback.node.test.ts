@@ -127,4 +127,26 @@ test('admin platform feedback JSON requires admin and audits list and detail rea
 			reason: 'feedback_id=feedback-1',
 		}),
 	)
+
+	logAuditEventSpy.mockClear()
+	mockModule.loadAdminPlatformFeedbackData.mockResolvedValueOnce(listPayload)
+	const notFoundResponse = await requestHandler('?feedbackId=missing-feedback')
+	expect(notFoundResponse.status).toBe(200)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'admin_platform_feedback_get',
+			result: 'success',
+			reason: 'feedback_id=missing-feedback;not_found',
+		}),
+	)
+
+	logAuditEventSpy.mockClear()
+	mockModule.loadAdminPlatformFeedbackData.mockResolvedValueOnce(listPayload)
+	const unsafeId = `missing\n${'x'.repeat(300)}`
+	await requestHandler(`?feedbackId=${encodeURIComponent(unsafeId)}`)
+	const boundedReason = logAuditEventSpy.mock.calls[0]?.[0].reason
+	expect(boundedReason).not.toContain('\n')
+	expect(boundedReason?.endsWith(';not_found')).toBe(true)
+	expect(boundedReason?.length).toBeLessThanOrEqual(222)
 })

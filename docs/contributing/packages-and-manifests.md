@@ -280,20 +280,27 @@ The event deliberately omits admin notes, reviewer fields, revision,
 `updated_at`, roles, plan, and unrelated account content. This is a narrow
 exception for feedback shown to and explicitly approved by the user before
 submission; it does not grant package runtime general admin roles or access to
-other user data. If the submitter account lookup no longer resolves while the
-feedback row remains, the event preserves the submitter user id with null
-username/email and dispatch logs a stable warning rather than retrying.
+other user data. Submitter username and email are snapshots stored with the
+submission; retries never resolve mutable live profile data, so profile changes
+cannot alter the request hash. Legacy rows created before snapshots retain null
+username/email. Copies already delivered outside Kody, including Discord
+messages, cannot be recalled and may remain after Kody account deletion under
+the deployment operator's retention and deletion controls. Such copies contain
+only the exact approved feedback and attribution, never unrelated account
+content.
 
 The feedback row is authoritative: submission awaits only Queue enqueue after
 persistence, and enqueue failure is logged without changing the successful
 response. Queue bodies remain opaque `{ feedbackId }` messages. The consumer
-reloads the feedback, resolves submitter identity, acknowledges invalid messages
-and deleted feedback rows, retries transient load/identity/discovery and
-package-invocation wrapper infrastructure failures, and routes exhausted
-messages to the DLQ. Redelivery uses the same idempotency key; stored failed
-invocations replay instead of automatically rerunning, making the DLQ the
-recovery surface. Terminal handler execution failures remain isolated from
-sibling subscribers, and fan-out uses bounded concurrency.
+acknowledges invalid messages. After admin subscriber discovery, lazy parameter
+construction reloads feedback immediately before invocation. A deleted row
+raises a typed permanent cancellation that is acknowledged without dispatch or
+retry; other lookup, discovery, and package-invocation wrapper infrastructure
+failures retry and route exhausted messages to the DLQ. Redelivery uses the same
+idempotency key; stored failed invocations replay instead of automatically
+rerunning, making the DLQ the recovery surface. Terminal handler execution
+failures remain isolated from sibling subscribers, and fan-out uses bounded
+concurrency.
 
 ## Package-owned workflows
 
