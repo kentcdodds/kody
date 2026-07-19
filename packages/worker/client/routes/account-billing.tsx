@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css, on } from 'remix/ui'
 import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,
@@ -291,16 +291,16 @@ export function AccountBillingRoute(handle: Handle) {
 								})}
 							>
 								{planTiers.map((tier) => {
-									const isCurrent = planCoversTier(
-										billing.effectivePlan,
-										tier.id,
-									)
+									const isCurrent = billing.effectivePlan === tier.id
+									const isIncluded =
+										!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
 									const paymentLink =
 										tier.id === 'free'
 											? undefined
 											: getPaymentLink(billing, tier.id)
 									const showSubscribe =
 										!isCurrent &&
+										!isIncluded &&
 										billing.configured &&
 										typeof paymentLink === 'string' &&
 										paymentLink.length > 0
@@ -337,14 +337,16 @@ export function AccountBillingRoute(handle: Handle) {
 												{tier.price}
 											</span>
 											<p mix={css(descriptionCss)}>{tier.description}</p>
-											{isCurrent ? (
+											{isCurrent || isIncluded ? (
 												<div>
 													<button
 														type="button"
 														disabled
 														mix={css(secondaryButtonCss)}
 													>
-														Current plan
+														{isCurrent
+															? 'Current plan'
+															: 'Included in your plan'}
 													</button>
 												</div>
 											) : showSubscribe ? (
@@ -376,14 +378,23 @@ export function AccountBillingRoute(handle: Handle) {
 								description="Open the Stripe billing portal to cancel, upgrade, update payment methods, or download invoices."
 							>
 								<div>
+									{/* Server-only redirect route: bypass the SPA router with a
+									    full-page navigation, matching the app's established
+									    window.location.assign pattern. */}
 									<a
 										href="/account/billing/portal"
-										mix={css({
-											...secondaryButtonCss,
-											display: 'inline-block',
-											textDecoration: 'none',
-											textAlign: 'center',
-										})}
+										mix={[
+											on('click', (event) => {
+												event.preventDefault()
+												window.location.assign('/account/billing/portal')
+											}),
+											css({
+												...secondaryButtonCss,
+												display: 'inline-block',
+												textDecoration: 'none',
+												textAlign: 'center',
+											}),
+										]}
 									>
 										Manage subscription
 									</a>
