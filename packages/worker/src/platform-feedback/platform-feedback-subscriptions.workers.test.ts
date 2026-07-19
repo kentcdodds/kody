@@ -96,6 +96,20 @@ async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 async function ensureRbacTestSchema(db: D1Database) {
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS users (
+				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+				username TEXT NOT NULL UNIQUE,
+				email TEXT NOT NULL UNIQUE,
+				password_hash TEXT NOT NULL,
+				email_verified_at TEXT,
+				stable_user_id TEXT,
+				created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE TABLE IF NOT EXISTS roles (
 				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 				name TEXT NOT NULL UNIQUE,
