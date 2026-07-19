@@ -3,10 +3,6 @@ import {
 	type PublicCommunityListing,
 } from '#app/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
-import {
-	type PlatformFeedbackCategory,
-	type PlatformFeedbackStatus,
-} from '#worker/platform-feedback/types.ts'
 
 export type CommunityIndexLoaderData = {
 	ok: true
@@ -323,9 +319,9 @@ export type AdminSystemEmailLoaderData = {
 export type AdminPlatformFeedbackListItem = {
 	id: string
 	submitter_user_id: string
-	category: PlatformFeedbackCategory
+	category: 'friction' | 'bug' | 'experience' | 'suggestion' | 'other'
 	summary_untrusted: string
-	status: PlatformFeedbackStatus
+	status: 'open' | 'triaged' | 'resolved' | 'dismissed'
 	reviewed_by_user_id: string | null
 	reviewed_at: string | null
 	created_at: string
