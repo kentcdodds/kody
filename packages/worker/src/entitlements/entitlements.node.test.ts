@@ -5,10 +5,12 @@ import {
 	buildEntitlementLimitMessage,
 } from './errors.ts'
 import {
+	getPlanRank,
 	nullPlanEmailFallbackLimits,
 	parsePlanName,
 	planLimits,
 	planNames,
+	resolveEffectivePlan,
 	resolvePlanLimit,
 } from './plans.ts'
 import {
@@ -31,7 +33,11 @@ type CounterRow = {
 
 function createEntitlementsTestDb(
 	input: {
-		users?: Array<{ email: string; plan: string | null }>
+		users?: Array<{
+			email: string
+			plan: string | null
+			stripe_plan?: string | null
+		}>
 		counts?: Partial<
 			Record<
 				| 'saved_packages'
@@ -92,9 +98,19 @@ function createEntitlementsTestDb(
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (
+								query.includes('SELECT plan, stripe_plan FROM users') ||
+								query.includes('SELECT plan FROM users')
+							) {
 								const user = users.find((row) => row.email === params[0])
-								return (user ? { plan: user.plan } : null) as T | null
+								return (
+									user
+										? {
+												plan: user.plan,
+												stripe_plan: user.stripe_plan ?? null,
+											}
+										: null
+								) as T | null
 							}
 							if (query.includes('FROM entitlement_daily_counters')) {
 								const row = counters.find(
@@ -255,7 +271,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 		resource: 'scheduled_jobs',
 	})
 	expect(noPlan.queries).toHaveLength(1)
-	expect(noPlan.queries[0]).toContain('SELECT plan FROM users')
+	expect(noPlan.queries[0]).toContain('SELECT plan, stripe_plan FROM users')
 
 	const under = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'personal' }],
@@ -585,7 +601,7 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 		requested: 1,
 	})
 	expect(noPlan.queries).toHaveLength(1)
-	expect(noPlan.queries[0]).toContain('SELECT plan FROM users')
+	expect(noPlan.queries[0]).toContain('SELECT plan, stripe_plan FROM users')
 
 	const atLimit = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'personal' }],
@@ -621,4 +637,90 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 		email: plannedEmail,
 		requested: 1,
 	})
+})
+
+test('getPlanRank orders free < personal < pro < partner', () => {
+	expect(getPlanRank('free')).toBeLessThan(getPlanRank('personal'))
+	expect(getPlanRank('personal')).toBeLessThan(getPlanRank('pro'))
+	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
+})
+
+test('resolveEffectivePlan never downgrades a NULL manual plan', () => {
+	expect(resolveEffectivePlan(null, 'pro')).toBeNull()
+	expect(resolveEffectivePlan(null, 'personal')).toBeNull()
+	expect(resolveEffectivePlan(null, null)).toBeNull()
+	expect(resolveEffectivePlan(null, 'unknown')).toBeNull()
+})
+
+test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
+	expect(resolveEffectivePlan('personal', 'pro')).toBe('pro')
+	expect(resolveEffectivePlan('pro', 'personal')).toBe('pro')
+	expect(resolveEffectivePlan('free', 'personal')).toBe('personal')
+	expect(resolveEffectivePlan('partner', 'pro')).toBe('partner')
+	expect(resolveEffectivePlan('personal', null)).toBe('personal')
+	expect(resolveEffectivePlan('personal', 'not-a-plan')).toBe('personal')
+})
+
+test('free plan limits are stricter than personal', () => {
+	expect(planLimits.free.maxSavedPackages).toBe(5)
+	expect(planLimits.free.maxScheduledJobs).toBe(3)
+	expect(planLimits.free.maxPackageServices).toBe(1)
+	expect(planLimits.free.packageServicePersistentAllowed).toBe(false)
+	expect(planLimits.free.maxSavedPackages).toBeLessThan(
+		planLimits.personal.maxSavedPackages!,
+	)
+	expect(planLimits.free.maxScheduledJobs).toBeLessThan(
+		planLimits.personal.maxScheduledJobs!,
+	)
+	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
+	expect(resolvePlanLimit('free', 'saved_packages')).toBe(5)
+})
+
+test('getUserPlan resolves effective plan from manual plan and stripe_plan', async () => {
+	const personalPlusProEmail = 'manual-personal-stripe-pro@example.com'
+	const nullPlusProEmail = 'manual-null-stripe-pro@example.com'
+	const proPlusPersonalEmail = 'manual-pro-stripe-personal@example.com'
+	const personalPlusProUserId =
+		await createStableUserIdFromEmail(personalPlusProEmail)
+	const nullPlusProUserId = await createStableUserIdFromEmail(nullPlusProEmail)
+	const proPlusPersonalUserId =
+		await createStableUserIdFromEmail(proPlusPersonalEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [
+			{
+				email: personalPlusProEmail,
+				plan: 'personal',
+				stripe_plan: 'pro',
+			},
+			{
+				email: nullPlusProEmail,
+				plan: null,
+				stripe_plan: 'pro',
+			},
+			{
+				email: proPlusPersonalEmail,
+				plan: 'pro',
+				stripe_plan: 'personal',
+			},
+		],
+	})
+
+	expect(
+		await getUserPlan(db, {
+			userId: personalPlusProUserId,
+			email: personalPlusProEmail,
+		}),
+	).toBe('pro')
+	expect(
+		await getUserPlan(db, {
+			userId: nullPlusProUserId,
+			email: nullPlusProEmail,
+		}),
+	).toBeNull()
+	expect(
+		await getUserPlan(db, {
+			userId: proPlusPersonalUserId,
+			email: proPlusPersonalEmail,
+		}),
+	).toBe('pro')
 })

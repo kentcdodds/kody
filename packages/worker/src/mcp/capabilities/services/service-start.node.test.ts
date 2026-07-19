@@ -45,7 +45,7 @@ function createEntitlementsTestDb(input: {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}

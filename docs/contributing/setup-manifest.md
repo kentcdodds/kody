@@ -132,6 +132,17 @@ automatically:
   secrets; enable the "Sign in with GitHub / Google / X" login buttons. A
   `MOCK_`-prefixed client id activates the in-worker mock flow on non-production
   runtimes. See `docs/contributing/social-login.md`.)
+- `STRIPE_SECRET_KEY` (optional Worker secret; enables Stripe checkout linking,
+  billing portal, and `users.stripe_plan` refresh. When unset, billing degrades
+  to manual plans.)
+- `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
+  Override for tests/mocks.)
+- `STRIPE_PERSONAL_PRICE_ID` / `STRIPE_PRO_PRICE_ID` (optional Worker vars;
+  Stripe Price ids mapped to the `personal` / `pro` plans. Production values are
+  set in `packages/worker/wrangler.jsonc`.)
+- `STRIPE_PERSONAL_PAYMENT_LINK` / `STRIPE_PRO_PAYMENT_LINK` (optional Worker
+  vars; Stripe Payment Link URLs for `/account/billing` checkout. Production
+  values are set in `packages/worker/wrangler.jsonc`.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.
@@ -179,6 +190,10 @@ Configure these GitHub Actions secrets and variables for workflows:
   production Kit audience. Create a Kit API key at
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
+- `STRIPE_SECRET_KEY` (optional GitHub / Worker secret; Stripe secret API key
+  for account billing. Production deploy syncs it when set. Price ids and
+  Payment Link URLs are Worker vars committed in
+  `packages/worker/wrangler.jsonc`, not GitHub secrets.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)

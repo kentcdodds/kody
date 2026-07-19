@@ -59,7 +59,7 @@ function createSecretTestDb(
 						async first<T>() {
 							if (
 								normalizedQuery.includes(
-									'select plan from users where email = ?',
+									'select plan, stripe_plan from users where email = ?',
 								)
 							) {
 								const [email] = params as Array<string>

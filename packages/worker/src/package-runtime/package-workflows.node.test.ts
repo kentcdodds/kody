@@ -126,7 +126,11 @@ function createWorkflowRunsDatabase(options?: {
 							if (query.includes('COUNT(*) AS count')) {
 								return { count: options?.activeCount ?? 0 }
 							}
-							if (query.includes('SELECT plan FROM users WHERE email = ?')) {
+							if (
+								query.includes(
+									'SELECT plan, stripe_plan FROM users WHERE email = ?',
+								)
+							) {
 								const email = String(params[0] ?? '')
 								const user = (options?.users ?? []).find(
 									(row) => row.email === email,

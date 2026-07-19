@@ -94,7 +94,9 @@ export type PlanLimits = {
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
  * metering exists. They are expected to be tuned once metering data is
- * available, and are deliberately not tied to any billing integration.
+ * available. Billing (packages/worker/src/billing/) maps Stripe
+ * subscriptions onto these plan names but the limit numbers stay
+ * independent of pricing.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
 	free: {

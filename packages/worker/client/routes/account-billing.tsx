@@ -64,7 +64,7 @@ const planTiers: Array<{
 	{
 		id: 'pro',
 		name: 'Pro',
-		price: '$10/month',
+		price: '$5/month',
 		description: 'Higher limits for heavier workflows and services.',
 	},
 ]

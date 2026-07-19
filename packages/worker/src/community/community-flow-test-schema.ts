@@ -6,6 +6,9 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			email TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
 			plan TEXT,
+			stripe_customer_id TEXT,
+			stripe_plan TEXT,
+			stripe_plan_refreshed_at TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,

@@ -14,75 +14,77 @@ function createInviteDb(invites: Array<InviteFixture> = []) {
 	const db = {
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async run() {
-							if (normalizedQuery.startsWith('insert into invites')) {
-								const [code, createdBy, note, maxUses, expiresAt, plan] = params
-								const invite: InviteFixture = {
-									code: String(code),
-									created_by: createdBy == null ? null : Number(createdBy),
-									note: String(note ?? ''),
-									max_uses: Number(maxUses),
-									use_count: 0,
-									expires_at: expiresAt == null ? null : String(expiresAt),
-									revoked_at: null,
-									created_at: '2026-07-05T00:00:00.000Z',
-									plan: plan == null ? null : String(plan),
-								}
-								records.set(invite.code, invite)
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (
-								normalizedQuery.startsWith('update invites') &&
-								normalizedQuery.includes('set use_count = use_count + 1')
-							) {
-								const code = String(params[0] ?? '')
-								const nowIso = String(params[1] ?? '')
-								const invite = records.get(code)
-								if (
-									invite &&
-									!invite.revoked_at &&
-									(!invite.expires_at || invite.expires_at > nowIso) &&
-									invite.use_count < invite.max_uses
-								) {
-									invite.use_count += 1
-									return { meta: { changes: 1, last_row_id: 0 } }
-								}
-							}
-							return { meta: { changes: 0, last_row_id: 0 } }
-						},
-						async first() {
-							const code = String(params[0] ?? '')
-							const invite = records.get(code)
-							return invite ? { ...invite } : null
-						},
-						async all() {
-							if (
-								normalizedQuery.startsWith('select') &&
-								normalizedQuery.includes('from invites') &&
-								normalizedQuery.includes('order by')
-							) {
-								const results = Array.from(records.values())
-									.map((invite) => ({ ...invite }))
-									.sort((left, right) => {
-										if (left.created_at !== right.created_at) {
-											return right.created_at.localeCompare(left.created_at)
-										}
-										return left.code.localeCompare(right.code)
-									})
-								return {
-									results,
-									meta: { changes: 0, last_row_id: 0 },
-								}
-							}
-							return {
-								results: [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						},
+			const createStatement = (params: Array<unknown>) => ({
+				async run() {
+					if (normalizedQuery.startsWith('insert into invites')) {
+						const [code, createdBy, note, maxUses, expiresAt, plan] = params
+						const invite: InviteFixture = {
+							code: String(code),
+							created_by: createdBy == null ? null : Number(createdBy),
+							note: String(note ?? ''),
+							max_uses: Number(maxUses),
+							use_count: 0,
+							expires_at: expiresAt == null ? null : String(expiresAt),
+							revoked_at: null,
+							created_at: '2026-07-05T00:00:00.000Z',
+							plan: plan == null ? null : String(plan),
+						}
+						records.set(invite.code, invite)
+						return { meta: { changes: 1, last_row_id: 0 } }
 					}
+					if (
+						normalizedQuery.startsWith('update invites') &&
+						normalizedQuery.includes('set use_count = use_count + 1')
+					) {
+						const code = String(params[0] ?? '')
+						const nowIso = String(params[1] ?? '')
+						const invite = records.get(code)
+						if (
+							invite &&
+							!invite.revoked_at &&
+							(!invite.expires_at || invite.expires_at > nowIso) &&
+							invite.use_count < invite.max_uses
+						) {
+							invite.use_count += 1
+							return { meta: { changes: 1, last_row_id: 0 } }
+						}
+					}
+					return { meta: { changes: 0, last_row_id: 0 } }
+				},
+				async first() {
+					const code = String(params[0] ?? '')
+					const invite = records.get(code)
+					return invite ? { ...invite } : null
+				},
+				async all() {
+					if (
+						normalizedQuery.startsWith('select') &&
+						normalizedQuery.includes('from invites') &&
+						normalizedQuery.includes('order by')
+					) {
+						const results = Array.from(records.values())
+							.map((invite) => ({ ...invite }))
+							.sort((left, right) => {
+								if (left.created_at !== right.created_at) {
+									return right.created_at.localeCompare(left.created_at)
+								}
+								return left.code.localeCompare(right.code)
+							})
+						return {
+							results,
+							meta: { changes: 0, last_row_id: 0 },
+						}
+					}
+					return {
+						results: [],
+						meta: { changes: 0, last_row_id: 0 },
+					}
+				},
+			})
+			return {
+				...createStatement([]),
+				bind(...params: Array<unknown>) {
+					return createStatement(params)
 				},
 			}
 		},

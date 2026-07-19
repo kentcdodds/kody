@@ -223,8 +223,8 @@
 				"WORKFLOW_CONCURRENT_LIMIT": "100",
 				"STRIPE_PERSONAL_PRICE_ID": "price_1Tv2yHLAQpAnsYszzIbslq5J",
 				"STRIPE_PERSONAL_PAYMENT_LINK": "https://buy.stripe.com/28E28s99q1fpgqieCe2Ry04",
-				"STRIPE_PRO_PRICE_ID": "price_1Tv2yILAQpAnsYszW1lwKIwh",
-				"STRIPE_PRO_PAYMENT_LINK": "https://buy.stripe.com/3cI7sM0CU1fpb5Y65I2Ry05",
+				"STRIPE_PRO_PRICE_ID": "price_1Tv3W2LAQpAnsYszSr4PGBkE",
+				"STRIPE_PRO_PAYMENT_LINK": "https://buy.stripe.com/3cIcN6clC7DNgqi8dQ2Ry06",
 			},
 		},
 		"preview": {
