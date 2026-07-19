@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { dispatchAdminPackageSubscriptionEvent } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	buildPlatformFeedbackSubmittedEvent,
@@ -112,7 +113,7 @@ test('platform feedback submitted payload is exact and opaque', () => {
 	expect(payload).not.toHaveProperty('admin_url')
 })
 
-test('platform feedback fans out to admin subscribers with isolated manifest and handler failures', async () => {
+test('platform feedback attempts discovered siblings before rejecting a manifest failure', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const first = createSavedPackage({
 		id: 'package-first',
@@ -182,19 +183,7 @@ test('platform feedback fans out to admin subscribers with isolated manifest and
 			},
 			feedback: openFeedback,
 		}),
-	).resolves.toEqual([
-		{
-			status: 500,
-			body: {
-				ok: false,
-				error: {
-					code: 'execution_failed',
-					message: 'Handler failed.',
-				},
-			},
-		},
-		{ status: 200, body: { ok: true } },
-	])
+	).rejects.toThrow('Admin package subscription discovery failed.')
 
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
 	const invocationInputs = mocks.invokePackageSubscription.mock.calls.map(
@@ -242,51 +231,101 @@ test('platform feedback fans out to admin subscribers with isolated manifest and
 	expect(consoleWarn).toHaveBeenCalledTimes(2)
 })
 
-test('platform feedback rejects retryable invocation infrastructure responses after attempting siblings', async () => {
+test('generic admin fan-out defaults to skipping manifest and invocation failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const retryable = createSavedPackage({
-		id: 'package-retryable',
-		userId: 'admin-stable-1',
-		sourceId: 'source-retryable',
-	})
-	const successfulSibling = createSavedPackage({
+	const successful = createSavedPackage({
 		id: 'package-successful',
 		userId: 'admin-stable-1',
 		sourceId: 'source-successful',
+	})
+	const broken = createSavedPackage({
+		id: 'package-broken',
+		userId: 'admin-stable-1',
+		sourceId: 'source-broken',
+	})
+	const thrown = createSavedPackage({
+		id: 'package-thrown',
+		userId: 'admin-stable-1',
+		sourceId: 'source-thrown',
 	})
 	mocks.listAdminAccountRows.mockResolvedValue([
 		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
 	])
 	mocks.listSavedPackagesByUserId.mockResolvedValue([
-		retryable,
-		successfulSibling,
+		successful,
+		thrown,
+		broken,
 	])
 	mocks.loadPackageManifestBySourceId.mockImplementation(
 		async (input: { sourceId: string }) => {
-			if (input.sourceId === retryable.sourceId) {
-				return createManifest(retryable.id)
+			if (input.sourceId === successful.sourceId) {
+				return createManifest(successful.id)
 			}
-			if (input.sourceId === successfulSibling.sourceId) {
-				return createManifest(successfulSibling.id)
+			if (input.sourceId === thrown.sourceId) {
+				return createManifest(thrown.id)
 			}
-			throw new Error(`Unexpected source id: ${input.sourceId}`)
+			throw new Error('manifest unavailable')
 		},
 	)
 	mocks.invokePackageSubscription.mockImplementation(
-		async (input: { savedPackage: { id: string } }) =>
-			input.savedPackage.id === retryable.id
-				? {
-						status: 500,
-						body: {
-							ok: false,
-							error: {
-								code: 'idempotency_persistence_failed',
-								message: 'Please retry.',
-							},
-						},
-					}
-				: { status: 200, body: { ok: true } },
+		async (input: { savedPackage: { id: string } }) => {
+			if (input.savedPackage.id === thrown.id) {
+				throw new Error('invocation unavailable')
+			}
+			return { status: 200, body: { ok: true } }
+		},
 	)
+
+	await expect(
+		dispatchAdminPackageSubscriptionEvent({
+			env: {
+				APP_DB: {} as D1Database,
+				BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+			},
+			baseUrl: 'https://heykody.dev',
+			topic: platformFeedbackSubmittedTopic,
+			getParams: () => ({}),
+			source: 'test',
+			buildIdempotencyKey: (savedPackage) => `test:${savedPackage.id}`,
+		}),
+	).resolves.toEqual([{ status: 200, body: { ok: true } }, null])
+
+	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-package-subscription-manifest-load-failed',
+		expect.objectContaining({ packageId: broken.id }),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-package-subscription-invocation-failed',
+		expect.objectContaining({ packageId: thrown.id }),
+	)
+})
+
+test('platform feedback isolates terminal execution failures', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const failed = createSavedPackage({
+		id: 'package-execution-failed',
+		userId: 'admin-stable-1',
+		sourceId: 'source-execution-failed',
+	})
+	mocks.listAdminAccountRows.mockResolvedValue([
+		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
+	])
+	mocks.listSavedPackagesByUserId.mockResolvedValue([failed])
+	mocks.loadPackageManifestBySourceId.mockResolvedValue(
+		createManifest(failed.id),
+	)
+	const executionFailure = {
+		status: 500,
+		body: {
+			ok: false,
+			error: {
+				code: 'execution_failed',
+				message: 'Handler failed.',
+			},
+		},
+	}
+	mocks.invokePackageSubscription.mockResolvedValue(executionFailure)
 
 	await expect(
 		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
@@ -297,22 +336,90 @@ test('platform feedback rejects retryable invocation infrastructure responses af
 			},
 			feedback: openFeedback,
 		}),
-	).rejects.toThrow(
-		'Admin package subscription dispatch encountered retryable package invocation infrastructure errors.',
-	)
-
-	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
-	expect(
-		mocks.invokePackageSubscription.mock.calls.map(
-			([{ savedPackage }]) => savedPackage.id,
-		),
-	).toEqual(expect.arrayContaining([retryable.id, successfulSibling.id]))
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'admin-package-subscription-handler-failed',
-		{
-			topic: platformFeedbackSubmittedTopic,
-			packageId: retryable.id,
-			status: 500,
-		},
-	)
+	).resolves.toEqual([executionFailure])
 })
+
+test.each([
+	['idempotency_lookup_failed', 500],
+	['idempotency_persistence_failed', 500],
+	['idempotency_conflict_unresolved', 500],
+	['invocation_in_progress', 409],
+	['invocation_failed', 500],
+	['idempotency_response_unavailable', 409],
+] as const)(
+	'platform feedback rejects retryable invocation infrastructure response %s after attempting siblings',
+	async (code, status) => {
+		consoleWarn.mockImplementation(() => {})
+		const retryable = createSavedPackage({
+			id: 'package-retryable',
+			userId: 'admin-stable-1',
+			sourceId: 'source-retryable',
+		})
+		const successfulSibling = createSavedPackage({
+			id: 'package-successful',
+			userId: 'admin-stable-1',
+			sourceId: 'source-successful',
+		})
+		mocks.listAdminAccountRows.mockResolvedValue([
+			{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
+		])
+		mocks.listSavedPackagesByUserId.mockResolvedValue([
+			retryable,
+			successfulSibling,
+		])
+		mocks.loadPackageManifestBySourceId.mockImplementation(
+			async (input: { sourceId: string }) => {
+				if (input.sourceId === retryable.sourceId) {
+					return createManifest(retryable.id)
+				}
+				if (input.sourceId === successfulSibling.sourceId) {
+					return createManifest(successfulSibling.id)
+				}
+				throw new Error(`Unexpected source id: ${input.sourceId}`)
+			},
+		)
+		mocks.invokePackageSubscription.mockImplementation(
+			async (input: { savedPackage: { id: string } }) =>
+				input.savedPackage.id === retryable.id
+					? {
+							status,
+							body: {
+								ok: false,
+								error: {
+									code,
+									message: 'Please retry.',
+								},
+							},
+						}
+					: { status: 200, body: { ok: true } },
+		)
+
+		await expect(
+			dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+				env: {
+					APP_DB: {} as D1Database,
+					BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+					APP_BASE_URL: 'https://heykody.dev',
+				},
+				feedback: openFeedback,
+			}),
+		).rejects.toThrow(
+			'Admin package subscription dispatch encountered retryable package invocation infrastructure errors.',
+		)
+
+		expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
+		expect(
+			mocks.invokePackageSubscription.mock.calls.map(
+				([{ savedPackage }]) => savedPackage.id,
+			),
+		).toEqual(expect.arrayContaining([retryable.id, successfulSibling.id]))
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'admin-package-subscription-handler-failed',
+			{
+				topic: platformFeedbackSubmittedTopic,
+				packageId: retryable.id,
+				status,
+			},
+		)
+	},
+)

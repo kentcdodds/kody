@@ -23,5 +23,7 @@ export async function dispatchPlatformFeedbackSubmittedSubscriptionEvent(input: 
 		buildIdempotencyKey: (savedPackage) =>
 			`platform-feedback:${input.feedback.id}:${savedPackage.id}:${platformFeedbackSubmittedTopic}`,
 		actorTokenId: platformFeedbackSubscriptionActorTokenId,
+		retryDiscoveryFailures: true,
+		retryInvocationInfrastructureFailures: true,
 	})
 }

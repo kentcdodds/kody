@@ -109,7 +109,7 @@ test('platform feedback queue dispatches valid and duplicate messages while ackn
 	}
 })
 
-test('platform feedback queue retries load and discovery failures after thirty seconds', async () => {
+test('platform feedback queue retries load and subscription wrapper failures after thirty seconds', async () => {
 	consoleError.mockImplementation(() => {})
 	const loadFailure = createQueueMessage('queue-load-failure', {
 		feedbackId: 'feedback-load-failure',
@@ -121,7 +121,7 @@ test('platform feedback queue retries load and discovery failures after thirty s
 		.mockRejectedValueOnce(new Error('D1 unavailable'))
 		.mockResolvedValueOnce(openFeedback)
 	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockRejectedValueOnce(
-		new Error('subscription discovery unavailable'),
+		new Error('subscription wrapper unavailable'),
 	)
 
 	await handlePlatformFeedbackDispatchQueue(

@@ -286,10 +286,11 @@ may enter package invocation parameters or Discord.
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
 from a client retry. Invalid messages and deleted feedback rows are
-acknowledged; transient load, discovery, or pre-execution package-invocation
-infrastructure failures retry, and package invocation idempotency makes
-redelivery safe. Terminal handler failures remain isolated from sibling
-subscribers.
+acknowledged; transient load, discovery, or package-invocation wrapper
+infrastructure failures retry and can reach the DLQ. Redelivery keeps the same
+package invocation idempotency key; a stored failed invocation replays instead
+of automatically rerunning, so the DLQ is the recovery surface. Terminal handler
+execution failures remain isolated from sibling subscribers.
 
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, chat threads,

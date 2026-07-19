@@ -278,10 +278,11 @@ submitter identity should enter package invocation parameters or Discord.
 The feedback row is authoritative: submission awaits only Queue enqueue after
 persistence, and enqueue failure is logged without changing the successful
 response. The consumer acknowledges invalid messages and deleted rows, retries
-transient load/discovery and pre-execution package-invocation infrastructure
-failures, and relies on package invocation idempotency for safe redelivery.
-Terminal handler failures remain isolated from sibling subscribers, and fan-out
-uses bounded concurrency.
+transient load/discovery and package-invocation wrapper infrastructure failures,
+and routes exhausted messages to the DLQ. Redelivery uses the same idempotency
+key; stored failed invocations replay instead of automatically rerunning, making
+the DLQ the recovery surface. Terminal handler execution failures remain
+isolated from sibling subscribers, and fan-out uses bounded concurrency.
 
 ## Package-owned workflows
 

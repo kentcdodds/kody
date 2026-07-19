@@ -18,6 +18,8 @@ const retryablePackageInvocationInfrastructureCodes = new Set([
 	'idempotency_persistence_failed',
 	'idempotency_conflict_unresolved',
 	'invocation_in_progress',
+	'invocation_failed',
+	'idempotency_response_unavailable',
 ])
 
 function readRetryablePackageInvocationInfrastructureCode(response: {
@@ -62,6 +64,7 @@ async function listAdminStableUserIds(db: D1Database) {
 		async (row) => await resolveUserStableId(row),
 	)
 	const stableIds = new Set<string>()
+	const discoveryErrors: Array<unknown> = []
 	for (const result of settled) {
 		if (result.status === 'fulfilled' && result.value) {
 			stableIds.add(result.value)
@@ -71,9 +74,13 @@ async function listAdminStableUserIds(db: D1Database) {
 			console.warn('admin-package-subscription-user-id-resolution-failed', {
 				error: result.reason,
 			})
+			discoveryErrors.push(result.reason)
 		}
 	}
-	return Array.from(stableIds)
+	return {
+		adminUserIds: Array.from(stableIds),
+		discoveryErrors,
+	}
 }
 
 async function loadMatchingSubscriptions(input: {
@@ -88,7 +95,9 @@ async function loadMatchingSubscriptions(input: {
 			userId: input.userId,
 		})
 	} catch (error) {
-		if (isMissingSavedPackagesTableError(error)) return []
+		if (isMissingSavedPackagesTableError(error)) {
+			return { subscriptions: [], discoveryErrors: [] }
+		}
 		throw error
 	}
 	const settled = await mapSettledInChunks(
@@ -111,6 +120,7 @@ async function loadMatchingSubscriptions(input: {
 		},
 	)
 	const subscriptions: Array<LoadedAdminPackageSubscription> = []
+	const discoveryErrors: Array<unknown> = []
 	for (const [index, result] of settled.entries()) {
 		if (result.status === 'fulfilled') {
 			if (result.value) subscriptions.push(result.value)
@@ -123,14 +133,15 @@ async function loadMatchingSubscriptions(input: {
 			sourceId: savedPackage?.sourceId,
 			error: result.reason,
 		})
+		discoveryErrors.push(result.reason)
 	}
-	return subscriptions
+	return { subscriptions, discoveryErrors }
 }
 
 /**
  * Fans an event out only to packages whose owners hold the admin role at
- * dispatch time. Failures are isolated while sibling attempts finish, then
- * retryable discovery or invocation infrastructure failures reject dispatch.
+ * dispatch time. Failures warn and skip by default; opt-in retry flags reject
+ * after all successfully discovered sibling attempts finish.
  */
 export async function dispatchAdminPackageSubscriptionEvent(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
@@ -140,9 +151,19 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 	source: string
 	buildIdempotencyKey: (savedPackage: SavedPackageRecord) => string
 	actorTokenId?: string
+	retryDiscoveryFailures?: boolean
+	retryInvocationInfrastructureFailures?: boolean
 }) {
-	const adminUserIds = await listAdminStableUserIds(input.env.APP_DB)
-	if (adminUserIds.length === 0) return []
+	const { adminUserIds, discoveryErrors: adminUserIdDiscoveryErrors } =
+		await listAdminStableUserIds(input.env.APP_DB)
+	if (adminUserIds.length === 0) {
+		if (input.retryDiscoveryFailures && adminUserIdDiscoveryErrors.length > 0) {
+			throw new Error('Admin package subscription discovery failed.', {
+				cause: adminUserIdDiscoveryErrors[0],
+			})
+		}
+		return []
+	}
 	const discovered = await mapSettledInChunks(
 		adminUserIds,
 		async (userId) =>
@@ -154,10 +175,11 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 			}),
 	)
 	const subscriptions: Array<LoadedAdminPackageSubscription> = []
-	const discoveryErrors: Array<unknown> = []
+	const discoveryErrors: Array<unknown> = [...adminUserIdDiscoveryErrors]
 	for (const [index, result] of discovered.entries()) {
 		if (result.status === 'fulfilled') {
-			subscriptions.push(...result.value)
+			subscriptions.push(...result.value.subscriptions)
+			discoveryErrors.push(...result.value.discoveryErrors)
 			continue
 		}
 		console.warn('admin-package-subscription-discovery-failed', {
@@ -168,7 +190,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 		discoveryErrors.push(result.reason)
 	}
 	if (subscriptions.length === 0) {
-		if (discoveryErrors.length > 0) {
+		if (input.retryDiscoveryFailures && discoveryErrors.length > 0) {
 			throw new Error('Admin package subscription discovery failed.', {
 				cause: discoveryErrors[0],
 			})
@@ -198,8 +220,9 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 			}
 			return {
 				response,
-				retryableInfrastructureCode:
-					readRetryablePackageInvocationInfrastructureCode(response),
+				retryableInfrastructureCode: input.retryInvocationInfrastructureFailures
+					? readRetryablePackageInvocationInfrastructureCode(response)
+					: null,
 			}
 		},
 	)
@@ -220,10 +243,12 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 			packageId: subscriptions[index]?.savedPackage.id,
 			error: result.reason,
 		})
-		invocationInfrastructureErrors.push(result.reason)
+		if (input.retryInvocationInfrastructureFailures) {
+			invocationInfrastructureErrors.push(result.reason)
+		}
 		return null
 	})
-	if (discoveryErrors.length > 0) {
+	if (input.retryDiscoveryFailures && discoveryErrors.length > 0) {
 		throw new Error('Admin package subscription discovery failed.', {
 			cause: discoveryErrors[0],
 		})
