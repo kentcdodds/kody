@@ -5,6 +5,9 @@ import { submitPlatformFeedback } from '#worker/platform-feedback/service.ts'
 import { platformFeedbackCategories } from '#worker/platform-feedback/types.ts'
 import { requireMcpUser } from './require-user.ts'
 
+const interactiveApprovalErrorMessage =
+	'Platform feedback submission is only available from an interactive MCP agent flow after explicit user approval. Non-interactive package code and package apps cannot submit feedback.'
+
 export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
@@ -52,12 +55,13 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			if (ctx.callerContext.executionOrigin !== 'interactive') {
+				throw new Error(interactiveApprovalErrorMessage)
+			}
 			const packageId =
 				ctx.callerContext.storageContext?.packageId?.trim() ?? ''
 			if (packageId) {
-				throw new Error(
-					'Platform feedback submission is only available from an interactive MCP agent flow after explicit user approval. Non-interactive package code and package apps cannot submit feedback.',
-				)
+				throw new Error(interactiveApprovalErrorMessage)
 			}
 			const feedback = await submitPlatformFeedback({
 				db: ctx.env.APP_DB,

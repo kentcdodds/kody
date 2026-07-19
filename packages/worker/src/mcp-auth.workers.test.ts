@@ -234,6 +234,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(validResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
 		baseUrl: 'https://example.com',
+		executionOrigin: 'interactive',
 		remoteConnectors: [],
 		storageContext: null,
 		user: { userId: 'user' },

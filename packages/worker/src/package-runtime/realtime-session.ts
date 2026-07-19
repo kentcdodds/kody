@@ -311,6 +311,7 @@ async function resolvePackageAppWorkerBuildInput(input: {
 	})
 	const callerContext = createMcpCallerContext({
 		baseUrl: input.binding.baseUrl,
+		executionOrigin: 'background',
 		user: {
 			userId: input.binding.userId,
 			email: '',

@@ -628,6 +628,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			})())
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
+			executionOrigin: 'background',
 			user: {
 				userId: binding.userId,
 				email: '',

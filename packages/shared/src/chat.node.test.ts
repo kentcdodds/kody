@@ -17,6 +17,7 @@ test('mcp context schemas accept valid user and caller payloads', () => {
 
 	const callerContext = parseSafe(mcpCallerContextSchema, {
 		baseUrl: 'https://example.com',
+		executionOrigin: 'interactive',
 		user: {
 			userId: 'user-1',
 			email: 'user@example.com',
@@ -24,4 +25,27 @@ test('mcp context schemas accept valid user and caller payloads', () => {
 		},
 	})
 	expect(callerContext.success).toBe(true)
+	if (callerContext.success) {
+		expect(callerContext.value.executionOrigin).toBe('interactive')
+	}
+})
+
+test('mcp caller context accepts legacy missing origins and validates marked origins', () => {
+	expect(
+		parseSafe(mcpCallerContextSchema, {
+			baseUrl: 'https://example.com',
+		}).success,
+	).toBe(true)
+	expect(
+		parseSafe(mcpCallerContextSchema, {
+			baseUrl: 'https://example.com',
+			executionOrigin: 'background',
+		}).success,
+	).toBe(true)
+	expect(
+		parseSafe(mcpCallerContextSchema, {
+			baseUrl: 'https://example.com',
+			executionOrigin: 'untrusted',
+		}).success,
+	).toBe(false)
 })

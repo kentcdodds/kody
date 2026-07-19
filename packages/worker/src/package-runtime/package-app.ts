@@ -695,6 +695,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	private createCallerContext(storageId: string | null) {
 		return createMcpCallerContext({
 			baseUrl: this.ctx.props.baseUrl,
+			executionOrigin: 'background',
 			user: {
 				userId: this.ctx.props.userId,
 				email: this.ctx.props.email,
@@ -1579,6 +1580,7 @@ export async function createPackageAppCallerContext(input: {
 }) {
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
+		executionOrigin: 'background',
 		user: {
 			userId: input.user.userId,
 			email: input.user.email,

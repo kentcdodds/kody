@@ -50,12 +50,22 @@ export class PlatformFeedbackActiveQueueLimitError extends Error {
 	}
 }
 
+export class PlatformFeedbackSubmissionConflictError extends Error {
+	constructor() {
+		super(
+			'Platform feedback submission limits changed concurrently. Retry the submission.',
+		)
+		this.name = 'PlatformFeedbackSubmissionConflictError'
+	}
+}
+
 export type PlatformFeedbackDomainError =
 	| PlatformFeedbackNotFoundError
 	| PlatformFeedbackInvalidTransitionError
 	| PlatformFeedbackConcurrentUpdateError
 	| PlatformFeedbackSubmissionRateLimitError
 	| PlatformFeedbackActiveQueueLimitError
+	| PlatformFeedbackSubmissionConflictError
 
 export function isPlatformFeedbackDomainError(
 	error: unknown,
@@ -65,6 +75,7 @@ export function isPlatformFeedbackDomainError(
 		error instanceof PlatformFeedbackInvalidTransitionError ||
 		error instanceof PlatformFeedbackConcurrentUpdateError ||
 		error instanceof PlatformFeedbackSubmissionRateLimitError ||
-		error instanceof PlatformFeedbackActiveQueueLimitError
+		error instanceof PlatformFeedbackActiveQueueLimitError ||
+		error instanceof PlatformFeedbackSubmissionConflictError
 	)
 }

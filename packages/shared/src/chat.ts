@@ -2,11 +2,13 @@ import {
 	array,
 	createSchema,
 	fail,
+	literal,
 	nullable,
 	object,
 	optional,
 	string,
 	type InferOutput,
+	union,
 } from 'remix/data-schema'
 
 const remoteConnectorInstanceIdFieldSchema = createSchema<unknown, string>(
@@ -52,8 +54,14 @@ const remoteConnectorRefSchema = object({
 	instanceId: remoteConnectorInstanceIdFieldSchema,
 })
 
+export const mcpExecutionOriginSchema = union([
+	literal('interactive'),
+	literal('background'),
+])
+
 export const mcpCallerContextSchema = object({
 	baseUrl: string(),
+	executionOrigin: optional(mcpExecutionOriginSchema),
 	user: optional(nullable(mcpUserContextSchema)),
 	remoteConnectors: optional(nullable(array(remoteConnectorRefSchema))),
 	storageContext: optional(nullable(mcpStorageContextSchema)),
@@ -72,6 +80,7 @@ export type McpUserContext = Omit<
 }
 export type McpStorageContext = InferOutput<typeof mcpStorageContextSchema>
 export type McpRepoContext = InferOutput<typeof mcpRepoContextSchema>
+export type McpExecutionOrigin = InferOutput<typeof mcpExecutionOriginSchema>
 type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
 
 export type McpCallerContext = Omit<McpCallerContextInferred, 'user'> & {

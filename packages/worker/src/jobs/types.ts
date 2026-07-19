@@ -100,7 +100,11 @@ export type JobExecutionOutcome = {
 
 export type PersistedJobCallerContext = Pick<
 	McpCallerContext,
-	'baseUrl' | 'remoteConnectors' | 'storageContext' | 'repoContext'
+	| 'baseUrl'
+	| 'executionOrigin'
+	| 'remoteConnectors'
+	| 'storageContext'
+	| 'repoContext'
 > & {
 	user: McpUserContext
 }

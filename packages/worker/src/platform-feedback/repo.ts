@@ -55,7 +55,11 @@ function mapPlatformFeedbackListRow(
 export async function insertPlatformFeedback(
 	db: D1Database,
 	row: PlatformFeedbackRow,
-	activeQueueLimit: number,
+	limits: {
+		activeQueueLimit: number
+		rollingWindowStart: string
+		submissionRateLimit: number
+	},
 ): Promise<boolean> {
 	const result = await db
 		.prepare(
@@ -69,6 +73,12 @@ export async function insertPlatformFeedback(
 				FROM platform_feedback
 				WHERE submitter_user_id = ?
 					AND status IN ('open', 'triaged')
+			) < ?
+			AND (
+				SELECT COUNT(*)
+				FROM platform_feedback
+				WHERE submitter_user_id = ?
+					AND created_at > ?
 			) < ?`,
 		)
 		.bind(
@@ -84,10 +94,48 @@ export async function insertPlatformFeedback(
 			row.created_at,
 			row.updated_at,
 			row.submitter_user_id,
-			activeQueueLimit,
+			limits.activeQueueLimit,
+			row.submitter_user_id,
+			limits.rollingWindowStart,
+			limits.submissionRateLimit,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
+}
+
+export async function getPlatformFeedbackSubmissionLimitCounts(
+	db: D1Database,
+	input: {
+		submitterUserId: string
+		rollingWindowStart: string
+	},
+) {
+	const counts = await db
+		.prepare(
+			`SELECT
+				(
+					SELECT COUNT(*)
+					FROM platform_feedback
+					WHERE submitter_user_id = ?
+						AND created_at > ?
+				) AS rolling_count,
+				(
+					SELECT COUNT(*)
+					FROM platform_feedback
+					WHERE submitter_user_id = ?
+						AND status IN ('open', 'triaged')
+				) AS active_count`,
+		)
+		.bind(
+			input.submitterUserId,
+			input.rollingWindowStart,
+			input.submitterUserId,
+		)
+		.first<{ rolling_count: number; active_count: number }>()
+	return {
+		rollingCount: Number(counts?.rolling_count ?? 0),
+		activeCount: Number(counts?.active_count ?? 0),
+	}
 }
 
 export async function getPlatformFeedbackByIdForAdmin(

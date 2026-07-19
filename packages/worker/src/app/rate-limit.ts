@@ -9,10 +9,6 @@ type RateLimitResult = {
 }
 
 const initializedDbs = new WeakSet<D1Database>()
-// Keep the global cleanup horizon at least as long as the longest configured
-// limiter. This prevents a short-window request from deleting another key's
-// still-active rolling-window slots.
-const rateLimitMaximumWindowSeconds = 24 * 60 * 60
 
 async function ensureRateLimitTable(db: D1Database) {
 	if (initializedDbs.has(db)) return
@@ -45,21 +41,13 @@ export async function checkRateLimit(
 	key: string,
 	config: RateLimitConfig,
 ): Promise<RateLimitResult> {
-	if (config.windowSeconds > rateLimitMaximumWindowSeconds) {
-		throw new Error(
-			`Rate-limit windows cannot exceed ${rateLimitMaximumWindowSeconds} seconds without extending the global retention horizon.`,
-		)
-	}
 	await ensureRateLimitTable(db)
 
 	const now = Math.floor(Date.now() / 1000)
 	const windowStart = now - config.windowSeconds
-	const globalRetentionStart = now - rateLimitMaximumWindowSeconds
 
 	const results = await db.batch([
-		db
-			.prepare(`DELETE FROM _rate_limits WHERE ts <= ?`)
-			.bind(globalRetentionStart),
+		db.prepare(`DELETE FROM _rate_limits WHERE ts <= ?`).bind(windowStart),
 		db
 			.prepare(
 				`INSERT INTO _rate_limits (key, ts)

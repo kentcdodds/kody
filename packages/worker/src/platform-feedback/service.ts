@@ -1,13 +1,14 @@
-import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import {
 	PlatformFeedbackActiveQueueLimitError,
 	PlatformFeedbackConcurrentUpdateError,
 	PlatformFeedbackInvalidTransitionError,
 	PlatformFeedbackNotFoundError,
+	PlatformFeedbackSubmissionConflictError,
 	PlatformFeedbackSubmissionRateLimitError,
 } from './errors.ts'
 import {
 	getPlatformFeedbackByIdForAdmin,
+	getPlatformFeedbackSubmissionLimitCounts,
 	insertPlatformFeedback,
 	listPlatformFeedbackRowsForAdmin,
 	updatePlatformFeedbackStatusForAdmin,
@@ -26,10 +27,10 @@ const maxAdminNoteLength = 2_000
 const defaultPageSize = 20
 const maxPageSize = 100
 const activeQueueLimit = 100
-const submissionRateLimitConfig = {
-	maxRequests: 10,
-	windowSeconds: 24 * 60 * 60,
-}
+const submissionRateLimit = 10
+const submissionRateLimitWindowSeconds = 24 * 60 * 60
+const submissionRateLimitWindowMs = submissionRateLimitWindowSeconds * 1_000
+const submissionInsertAttempts = 2
 
 function normalizeRequiredText(
 	value: string,
@@ -168,29 +169,36 @@ export async function submitPlatformFeedback(input: {
 		created_at: now,
 		updated_at: now,
 	}
-	const rateLimitKey = `platform-feedback:submit:user:${submitterUserId}`
-	const rateLimit = await checkRateLimit(
-		input.db,
-		rateLimitKey,
-		submissionRateLimitConfig,
-	)
-	if (!rateLimit.allowed) {
-		throw new PlatformFeedbackSubmissionRateLimitError(
-			rateLimit.retryAfterSeconds ?? submissionRateLimitConfig.windowSeconds,
-		)
-	}
-	try {
-		const inserted = await insertPlatformFeedback(
-			input.db,
-			row,
+	const rollingWindowStart = new Date(
+		new Date(now).getTime() - submissionRateLimitWindowMs,
+	).toISOString()
+	for (let attempt = 0; attempt < submissionInsertAttempts; attempt += 1) {
+		const didInsert = await insertPlatformFeedback(input.db, row, {
 			activeQueueLimit,
+			rollingWindowStart,
+			submissionRateLimit,
+		})
+		if (didInsert) {
+			break
+		}
+		const limitCounts = await getPlatformFeedbackSubmissionLimitCounts(
+			input.db,
+			{
+				submitterUserId,
+				rollingWindowStart,
+			},
 		)
-		if (!inserted) {
+		if (limitCounts.rollingCount >= submissionRateLimit) {
+			throw new PlatformFeedbackSubmissionRateLimitError(
+				submissionRateLimitWindowSeconds,
+			)
+		}
+		if (limitCounts.activeCount >= activeQueueLimit) {
 			throw new PlatformFeedbackActiveQueueLimitError(activeQueueLimit)
 		}
-	} catch (error) {
-		await releaseRateLimit(input.db, rateLimitKey).catch(() => undefined)
-		throw error
+		if (attempt === submissionInsertAttempts - 1) {
+			throw new PlatformFeedbackSubmissionConflictError()
+		}
 	}
 	return {
 		id: row.id,

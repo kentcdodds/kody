@@ -151,6 +151,7 @@ export async function handleMcpRequest({
 	})
 	const props: OAuthContextProps = createMcpCallerContext({
 		baseUrl: origin,
+		executionOrigin: 'interactive',
 		user: mcpUser,
 		remoteConnectors,
 	})

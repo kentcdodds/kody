@@ -354,6 +354,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 		expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({ APP_BASE_URL: 'https://app.example.com' }),
 			expect.objectContaining({
+				executionOrigin: 'background',
 				user: expect.objectContaining({ userId: 'user-1' }),
 			}),
 			'export default async function main(p){ return { ok: true, p }; }',

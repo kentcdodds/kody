@@ -2,6 +2,7 @@ import { parseSafe } from 'remix/data-schema'
 import {
 	mcpCallerContextSchema,
 	type McpCallerContext,
+	type McpExecutionOrigin,
 	type McpRepoContext,
 	type McpStorageContext,
 	type McpUserContext,
@@ -12,6 +13,7 @@ export type McpServerProps = McpCallerContext
 
 export function createMcpCallerContext(input: {
 	baseUrl: string
+	executionOrigin?: McpExecutionOrigin
 	user?: McpUserContext | null
 	remoteConnectors?: Array<RemoteConnectorRef> | null
 	storageContext?: McpStorageContext | null
@@ -19,6 +21,9 @@ export function createMcpCallerContext(input: {
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
+		...(input.executionOrigin === undefined
+			? {}
+			: { executionOrigin: input.executionOrigin }),
 		user: input.user ?? null,
 		remoteConnectors: input.remoteConnectors ?? null,
 		storageContext: input.storageContext ?? null,

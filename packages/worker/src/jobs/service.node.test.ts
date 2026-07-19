@@ -1793,7 +1793,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	})
 })
 
-test('executeJobOnce binds scheduled jobs to writable storage', async () => {
+test('executeJobOnce binds writable storage and overrides persisted interactive origin', async () => {
 	// Usage rollup writes are best-effort and fail against this fake env.
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
@@ -1840,7 +1840,10 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		},
 	} as unknown as Env
 	mockRepoPersistence()
-	const callerContext = createBaseCallerContext()
+	const callerContext = {
+		...createBaseCallerContext(),
+		executionOrigin: 'interactive' as const,
+	}
 
 	const jobView = await createJob({
 		env,
@@ -1958,10 +1961,11 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 			throw new Error('Expected created job row.')
 		}
 		expect(row.record.storageId).toBe(`job:${jobView.id}`)
+		expect(row.callerContext?.executionOrigin).toBe('interactive')
 		const outcome = await executeJobOnce({
 			env,
 			job: row.record,
-			callerContext,
+			callerContext: row.callerContext,
 		})
 
 		expect(outcome.execution).toEqual({
@@ -1971,6 +1975,15 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 			},
 			logs: ['storage helper executed'],
 		})
+		expect(executeSpy).toHaveBeenCalledWith(
+			env,
+			expect.objectContaining({
+				executionOrigin: 'background',
+			}),
+			expect.any(Object),
+			expect.any(Object),
+			expect.any(Object),
+		)
 		repoSessionRpcSpy.mockRestore()
 	} finally {
 		executeSpy.mockRestore()

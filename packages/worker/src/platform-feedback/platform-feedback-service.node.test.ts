@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { checkRateLimit } from '#app/rate-limit.ts'
 import {
 	getPlatformFeedbackForAdmin,
 	listPlatformFeedbackForAdmin,
@@ -265,11 +264,6 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			details: `Feedback details ${index}`,
 		})
 	}
-	rateLimited.sqlite.prepare(`UPDATE _rate_limits SET ts = ts - 120`).run()
-	await checkRateLimit(rateLimited.db, 'short-window:other-user', {
-		maxRequests: 1,
-		windowSeconds: 60,
-	})
 	await expect(
 		submitPlatformFeedback({
 			db: rateLimited.db,
@@ -294,7 +288,7 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			created_at, updated_at
 		) VALUES (?, 'queue-limited-user', 'friction', ?, ?, ?, ?, ?)`,
 	)
-	const createdAt = '2026-07-19T00:00:00.000Z'
+	const createdAt = new Date(Date.now() - 48 * 60 * 60 * 1_000).toISOString()
 	for (let index = 0; index < 99; index += 1) {
 		insertQueued.run(
 			`queued-${index}`,
@@ -304,15 +298,6 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			createdAt,
 			createdAt,
 		)
-	}
-	for (let index = 0; index < 8; index += 1) {
-		expect(
-			await checkRateLimit(
-				queueLimited.db,
-				'platform-feedback:submit:user:queue-limited-user',
-				{ maxRequests: 10, windowSeconds: 24 * 60 * 60 },
-			),
-		).toEqual({ allowed: true, retryAfterSeconds: null })
 	}
 	await submitPlatformFeedback({
 		db: queueLimited.db,
@@ -344,7 +329,7 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 		submitterUserId: 'queue-limited-user',
 		category: 'bug',
 		summary: 'Replacement active submission',
-		details: 'The rejected insertion refunded its rate-limit slot.',
+		details: 'A resolved active row makes room for this submission.',
 	})
 	expect(
 		queueLimited.sqlite

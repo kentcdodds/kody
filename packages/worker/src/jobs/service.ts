@@ -741,6 +741,7 @@ function createPackageJobCallerContext(input: {
 }): PersistedJobCallerContext {
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
+		executionOrigin: 'background',
 		user: {
 			userId: input.userId,
 			email: '',
@@ -1237,8 +1238,9 @@ export async function executeJobOnce(input: {
 				logs: [],
 			}
 		} else {
-			const runtimeCallerContext = {
+			const runtimeCallerContext: PersistedJobCallerContext = {
 				...input.callerContext,
+				executionOrigin: 'background',
 				storageContext: {
 					sessionId: input.callerContext.storageContext?.sessionId ?? null,
 					appId: input.callerContext.storageContext?.appId ?? null,

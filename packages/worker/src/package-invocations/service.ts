@@ -1046,6 +1046,7 @@ async function invokeSavedPackageModule(input: {
 				: sourceRow
 		const callerContext = createMcpCallerContext({
 			baseUrl: input.baseUrl,
+			executionOrigin: 'background',
 			user: {
 				userId: input.actor.userId,
 				email: input.actor.email,

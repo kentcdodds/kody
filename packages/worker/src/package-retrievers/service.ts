@@ -133,6 +133,7 @@ async function invokeRetriever(input: {
 	const limit = clampLimit(input.entry.maxResults, input.scope)
 	const callerContext = createMcpCallerContext({
 		baseUrl: input.baseUrl,
+		executionOrigin: 'background',
 		user: {
 			userId: input.userId,
 			email: '',

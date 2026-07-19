@@ -52,11 +52,13 @@ function createCapabilityContext(input?: {
 	userId?: string
 	roles?: Array<string>
 	packageId?: string
+	executionOrigin?: 'interactive' | 'background'
 }) {
 	return {
 		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
+			executionOrigin: input?.executionOrigin,
 			storageContext:
 				input?.packageId === undefined
 					? undefined
@@ -74,7 +76,7 @@ function createCapabilityContext(input?: {
 	}
 }
 
-test('meta platform feedback submission requires auth and literal user consent', async () => {
+test('meta platform feedback submission requires auth, consent, and a trusted interactive origin', async () => {
 	mockModule.submitPlatformFeedback.mockResolvedValue(openFeedback)
 	const input = {
 		category: 'friction' as const,
@@ -105,9 +107,29 @@ test('meta platform feedback submission requires auth and literal user consent',
 	await expect(
 		metaPlatformFeedbackSubmitCapability.handler(
 			input,
+			createCapabilityContext({ userId: 'user-1' }),
+		),
+	).rejects.toThrow(
+		'only available from an interactive MCP agent flow after explicit user approval',
+	)
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			input,
+			createCapabilityContext({
+				userId: 'user-1',
+				executionOrigin: 'background',
+			}),
+		),
+	).rejects.toThrow(
+		'only available from an interactive MCP agent flow after explicit user approval',
+	)
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(
+			input,
 			createCapabilityContext({
 				userId: 'user-1',
 				packageId: 'package-1',
+				executionOrigin: 'interactive',
 			}),
 		),
 	).rejects.toThrow(
@@ -117,7 +139,10 @@ test('meta platform feedback submission requires auth and literal user consent',
 
 	const result = await metaPlatformFeedbackSubmitCapability.handler(
 		input,
-		createCapabilityContext({ userId: 'user-1' }),
+		createCapabilityContext({
+			userId: 'user-1',
+			executionOrigin: 'interactive',
+		}),
 	)
 	expect(mockModule.submitPlatformFeedback).toHaveBeenCalledWith({
 		db: expect.anything(),

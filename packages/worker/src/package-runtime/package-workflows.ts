@@ -13,6 +13,7 @@ import {
 	type WorkflowStep,
 } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
 import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
 import {
@@ -1136,11 +1137,9 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				'Inline workflow payload is missing required package security context.',
 			)
 		}
-		const [{ runModuleWithRegistry }, { createMcpCallerContext }] =
-			await Promise.all([
-				import('#mcp/run-kody-registry.ts'),
-				import('#mcp/context.ts'),
-			])
+		// This stays lazy because run-kody-registry imports package-workflows to
+		// expose workflow helpers to executed modules.
+		const { runModuleWithRegistry } = await import('#mcp/run-kody-registry.ts')
 		const remoteConnectors = await listAttachedRemoteConnectorRefs({
 			env: this.env,
 			userId: payload.userId,
@@ -1151,6 +1150,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				baseUrl: getAppBaseUrl({
 					env: this.env,
 				}),
+				executionOrigin: 'background',
 				user: {
 					userId: payload.userId,
 					email: '',

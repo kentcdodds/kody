@@ -41,6 +41,10 @@ ON platform_feedback(reviewed_by_user_id);
 CREATE INDEX idx_platform_feedback_submitter_status
 ON platform_feedback(submitter_user_id, status);
 
+-- Rolling per-submitter submission counts.
+CREATE INDEX idx_platform_feedback_submitter_created_at
+ON platform_feedback(submitter_user_id, created_at);
+
 -- Terminal feedback retention scans only resolved/dismissed rows by age.
 CREATE INDEX idx_platform_feedback_terminal_updated_at_id
 ON platform_feedback(updated_at, id)
