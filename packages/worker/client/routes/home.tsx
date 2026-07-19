@@ -28,35 +28,38 @@ const workflowSteps = [
 	{
 		number: '01',
 		title: 'Search',
-		description: 'Discover capabilities, packages, integrations, and secrets.',
+		description:
+			'Discover packages, integrations, jobs, secrets, email, storage, and memories.',
 	},
 	{
 		number: '02',
 		title: 'Execute',
-		description: 'Run sandboxed code that calls into your capability graph.',
+		description:
+			'Run sandboxed code and explicit API calls with secrets kept server-side.',
 	},
 	{
 		number: '03',
 		title: 'Build',
-		description: 'Save packages, schedule jobs, and automate repeatable work.',
+		description:
+			'Save reusable packages and schedule Worker-native jobs that run while your computer is off.',
 	},
 ] as const
 
 const capabilityHighlights = [
 	{
-		title: 'Packages you can reuse',
+		title: 'Use the assistant you already have',
 		description:
-			'Save working capabilities once, then keep them ready for future tasks and prompts.',
+			'Connect Kody to Claude, ChatGPT, Cursor, or Codex through MCP. Kody makes zero inference calls, so there is no second agent or model bill.',
 	},
 	{
-		title: 'Connectors, secrets, and inboxes',
+		title: 'Durable jobs, not agent sessions',
 		description:
-			'Bring in external systems without losing the clean MCP surface your agent uses.',
+			'Jobs run explicit code and API calls. They are not persistent agent sessions, local processes, or general-purpose containers.',
 	},
 	{
-		title: 'Memory, sessions, and automation',
+		title: 'Self-service means ownership',
 		description:
-			'Keep long-running context, durable workflows, and per-user state behind the same assistant.',
+			'Bring your own OAuth apps and API keys. Your data is exportable and Kody is open source, so your assistant stays portable.',
 	},
 ] as const
 
@@ -149,7 +152,9 @@ export function HomeRoute(handle: Handle) {
 							Meet <span mix={css({ color: colors.primaryText })}>kody</span>
 						</h1>
 						<p mix={css(heroSubtitleCss)}>
-							Your personal assistant from any MCP host.
+							Kody gives your AI assistant secure, reusable access to your
+							services and lets it run durable Worker-native automations while
+							your computer is offline.
 						</p>
 					</div>
 					<div mix={css(commandPillRowCss)}>
@@ -179,7 +184,7 @@ export function HomeRoute(handle: Handle) {
 					<div mix={css(sectionHeaderCss)}>
 						<h2 mix={css(sectionTitleCss)}>How it works</h2>
 						<p mix={css(sectionDescriptionCss)}>
-							A small surface area for your agent, with much more behind it.
+							Add Kody to the AI assistant you already use through MCP.
 						</p>
 					</div>
 					<div mix={css(stepGridCss)}>
@@ -191,8 +196,8 @@ export function HomeRoute(handle: Handle) {
 					<div mix={css(sectionHeaderCss)}>
 						<h2 mix={css(sectionTitleCss)}>Capabilities</h2>
 						<p mix={css(sectionDescriptionCss)}>
-							Kody keeps the interface simple while giving each user a full
-							personal workspace.
+							Behind search and execute: reusable packages, scheduled jobs,
+							secrets, OAuth integrations, email, durable storage, and memories.
 						</p>
 					</div>
 					<div mix={css(capabilityGridCss)}>
@@ -203,8 +208,9 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				<p mix={css(trustLineCss)}>
-					Fully isolated per user. Your packages, secrets, memory, and data stay
-					yours alone.
+					Code runs in a sandbox. Secrets stay server-side and never enter
+					prompts or your assistant&apos;s context. Every user is fully
+					isolated.
 				</p>
 			</section>
 		)

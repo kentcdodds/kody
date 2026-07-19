@@ -2,7 +2,7 @@
   <img src="./packages/worker/public/logo.png" alt="kody logo" width="400" />
 
   <p>
-    <strong>An experimental personal assistant platform built on Cloudflare Workers and MCP</strong>
+    <strong>An open-source personal assistant platform built on Cloudflare Workers and MCP</strong>
   </p>
 
   <p>
@@ -16,10 +16,10 @@
 
 ---
 
-`kody` is an experimental personal assistant platform built on Cloudflare
-Workers and the Model Context Protocol (MCP). It ships a Remix UI, Worker-based
-request routing, package runtime plumbing, and OAuth-protected MCP endpoints.
-The project favors a compact MCP surface with powerful `search` and Code Mode
+`kody` is an open-source personal assistant platform built on Cloudflare Workers
+and the Model Context Protocol (MCP). It ships a Remix UI, Worker-based request
+routing, package runtime plumbing, and OAuth-protected MCP endpoints. The
+project favors a compact MCP surface with powerful `search` and Code Mode
 `execute` flows over a large static tool catalog.
 
 Kody is a multi-user personal assistant: each signed-in user gets a fully
@@ -69,7 +69,7 @@ If you are trying to understand what this repository is for, start with
 
 ## Scope
 
-- Personal assistant experiment, not a multi-tenant SaaS product
+- Open-source personal assistant platform, not a general-purpose agent harness
 - MCP-first architecture intended to work across compatible AI agent hosts
 - Compact MCP surface area preferred over a large static tool inventory
 - ChatGPT is a likely primary host target, while keeping the server usable from

@@ -99,7 +99,8 @@ export function WaitlistBanner(handle: Handle) {
 					) : (
 						<>
 							<p mix={css(promptCss)}>
-								Kody is invite-only — join the waiting list
+								Invite-only while we polish onboarding — join the waitlist to
+								get an invite
 							</p>
 							<form mix={[css(formCss), on('submit', handleSubmit)]}>
 								<label mix={css(nameFieldCss)}>

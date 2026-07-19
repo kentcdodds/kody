@@ -429,15 +429,15 @@ export function LoginRoute(handle: Handle) {
 				? 'Create your account'
 				: 'Welcome back'
 		const description = showWaitingList
-			? 'Kody is invite-only. Leave your name and email and we will let you know when a spot opens.'
+			? 'Kody is invite-only while we polish onboarding. Join the waitlist to get an invite.'
 			: isSignup
-				? 'Sign up with your invite code (password or social) to start using kody.'
+				? 'Use your invite code to create an account with a password or social login.'
 				: 'Log in to continue to kody.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const toggleLabel = isSignup
 			? 'Already have an account?'
 			: 'Need an account?'
-		const toggleAction = isSignup ? 'Sign in instead' : 'Sign up instead'
+		const toggleAction = isSignup ? 'Sign in instead' : 'Join the waitlist'
 
 		return (
 			<section mix={css(pageCss)}>
@@ -553,7 +553,7 @@ export function LoginRoute(handle: Handle) {
 									name="inviteCode"
 									defaultValue={prefillInviteCode}
 									autoComplete="one-time-code"
-									placeholder="Required for production launch cohorts"
+									placeholder="Enter your invite code"
 									mix={css(inputCss)}
 								/>
 							</label>
