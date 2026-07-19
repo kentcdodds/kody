@@ -1,0 +1,367 @@
+import { fnv1a32 } from '@kody-internal/shared/fnv1a.ts'
+import {
+	featureFlagDefinitions,
+	featureFlagKeys,
+	getFeatureFlagDefinition,
+	isFeatureFlagKey,
+	type FeatureFlagKey,
+} from './registry.ts'
+
+type GlobalFlagRow = {
+	key: string
+	enabled: number
+	rollout_percent: number | null
+	note: string
+	updated_by: number | null
+	updated_at: string
+}
+
+type OverrideFlagRow = {
+	flag_key: string
+	user_id: number
+	enabled: number
+	updated_at: string
+	username: string
+}
+
+type OverrideEnabledRow = {
+	flag_key: string
+	enabled: number
+}
+
+export type AdminFeatureFlag = {
+	key: string
+	description: string | null
+	defaultEnabled: boolean | null
+	stale: boolean
+	global: {
+		enabled: boolean
+		rolloutPercent: number | null
+		note: string
+		updatedBy: number | null
+		updatedAt: string
+	} | null
+	overrides: Array<{
+		userId: number
+		username: string
+		enabled: boolean
+		updatedAt: string
+	}>
+}
+
+/**
+ * Deterministic 0–99 bucket for percentage rollouts. Exported for tests.
+ */
+export function computeRolloutBucket(key: string, userId: number): number {
+	return fnv1a32(`${key}:${userId}`) % 100
+}
+
+function evaluateFlagState(input: {
+	key: string
+	userId: number | null
+	overrideEnabled: boolean | null
+	global: { enabled: boolean; rolloutPercent: number | null } | null
+	defaultEnabled: boolean
+}): boolean {
+	if (input.overrideEnabled !== null) {
+		return input.overrideEnabled
+	}
+	if (input.global) {
+		if (!input.global.enabled) return false
+		if (input.global.rolloutPercent === null) return true
+		if (input.userId === null) return false
+		return (
+			computeRolloutBucket(input.key, input.userId) <
+			input.global.rolloutPercent
+		)
+	}
+	return input.defaultEnabled
+}
+
+function assertValidRolloutPercent(rolloutPercent: number | null) {
+	if (rolloutPercent === null) return
+	if (
+		!Number.isInteger(rolloutPercent) ||
+		rolloutPercent < 0 ||
+		rolloutPercent > 100
+	) {
+		throw new Error('rolloutPercent must be an integer between 0 and 100.')
+	}
+}
+
+export async function isFeatureEnabled(
+	db: D1Database,
+	key: FeatureFlagKey,
+	userId: number | null,
+): Promise<boolean> {
+	if (userId !== null) {
+		const override = await db
+			.prepare(
+				`SELECT enabled
+				 FROM feature_flag_user_overrides
+				 WHERE flag_key = ? AND user_id = ?`,
+			)
+			.bind(key, userId)
+			.first<{ enabled: number }>()
+		if (override) {
+			return override.enabled === 1
+		}
+	}
+
+	const global = await db
+		.prepare(
+			`SELECT enabled, rollout_percent
+			 FROM feature_flags
+			 WHERE key = ?`,
+		)
+		.bind(key)
+		.first<{ enabled: number; rollout_percent: number | null }>()
+
+	return evaluateFlagState({
+		key,
+		userId,
+		overrideEnabled: null,
+		global: global
+			? {
+					enabled: global.enabled === 1,
+					rolloutPercent: global.rollout_percent,
+				}
+			: null,
+		defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
+	})
+}
+
+export async function getFeatureFlagsForUser(
+	db: D1Database,
+	userId: number | null,
+): Promise<Record<FeatureFlagKey, boolean>> {
+	const globalResult = await db
+		.prepare(
+			`SELECT key, enabled, rollout_percent
+			 FROM feature_flags`,
+		)
+		.all<{ key: string; enabled: number; rollout_percent: number | null }>()
+	const globalByKey = new Map(
+		(globalResult.results ?? []).map((row) => [row.key, row]),
+	)
+
+	const overrideByKey = new Map<string, boolean>()
+	if (userId !== null) {
+		const overrideResult = await db
+			.prepare(
+				`SELECT flag_key, enabled
+				 FROM feature_flag_user_overrides
+				 WHERE user_id = ?`,
+			)
+			.bind(userId)
+			.all<OverrideEnabledRow>()
+		for (const row of overrideResult.results ?? []) {
+			overrideByKey.set(row.flag_key, row.enabled === 1)
+		}
+	}
+
+	const flags = {} as Record<FeatureFlagKey, boolean>
+	for (const key of featureFlagKeys) {
+		const global = globalByKey.get(key)
+		const overrideEnabled = overrideByKey.has(key)
+			? (overrideByKey.get(key) ?? false)
+			: null
+		flags[key] = evaluateFlagState({
+			key,
+			userId,
+			overrideEnabled,
+			global: global
+				? {
+						enabled: global.enabled === 1,
+						rolloutPercent: global.rollout_percent,
+					}
+				: null,
+			defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
+		})
+	}
+	return flags
+}
+
+export async function setFeatureFlagGlobalState(
+	db: D1Database,
+	input: {
+		key: FeatureFlagKey
+		enabled: boolean
+		rolloutPercent: number | null
+		note?: string
+		updatedBy: number
+	},
+): Promise<void> {
+	assertValidRolloutPercent(input.rolloutPercent)
+	await db
+		.prepare(
+			`INSERT INTO feature_flags (key, enabled, rollout_percent, note, updated_by, updated_at)
+			 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			 ON CONFLICT(key) DO UPDATE SET
+				enabled = excluded.enabled,
+				rollout_percent = excluded.rollout_percent,
+				note = excluded.note,
+				updated_by = excluded.updated_by,
+				updated_at = CURRENT_TIMESTAMP`,
+		)
+		.bind(
+			input.key,
+			input.enabled ? 1 : 0,
+			input.rolloutPercent,
+			input.note?.trim() ?? '',
+			input.updatedBy,
+		)
+		.run()
+}
+
+export async function setFeatureFlagUserOverride(
+	db: D1Database,
+	input: {
+		key: FeatureFlagKey
+		userId: number
+		enabled: boolean
+		updatedBy: number
+	},
+): Promise<void> {
+	await db
+		.prepare(
+			`INSERT INTO feature_flag_user_overrides (flag_key, user_id, enabled, updated_by, updated_at)
+			 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+			 ON CONFLICT(flag_key, user_id) DO UPDATE SET
+				enabled = excluded.enabled,
+				updated_by = excluded.updated_by,
+				updated_at = CURRENT_TIMESTAMP`,
+		)
+		.bind(input.key, input.userId, input.enabled ? 1 : 0, input.updatedBy)
+		.run()
+}
+
+export async function clearFeatureFlagUserOverride(
+	db: D1Database,
+	input: { key: FeatureFlagKey; userId: number },
+): Promise<boolean> {
+	const result = await db
+		.prepare(
+			`DELETE FROM feature_flag_user_overrides
+			 WHERE flag_key = ? AND user_id = ?`,
+		)
+		.bind(input.key, input.userId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function listFeatureFlagsForAdmin(
+	db: D1Database,
+): Promise<Array<AdminFeatureFlag>> {
+	const globalResult = await db
+		.prepare(
+			`SELECT key, enabled, rollout_percent, note, updated_by, updated_at
+			 FROM feature_flags`,
+		)
+		.all<GlobalFlagRow>()
+	const globalByKey = new Map(
+		(globalResult.results ?? []).map((row) => [row.key, row]),
+	)
+
+	const overrideResult = await db
+		.prepare(
+			`SELECT o.flag_key, o.user_id, o.enabled, o.updated_at, u.username
+			 FROM feature_flag_user_overrides o
+			 JOIN users u ON u.id = o.user_id
+			 ORDER BY o.flag_key ASC, u.username ASC`,
+		)
+		.all<OverrideFlagRow>()
+	const overridesByKey = new Map<
+		string,
+		Array<AdminFeatureFlag['overrides'][number]>
+	>()
+	for (const row of overrideResult.results ?? []) {
+		const list = overridesByKey.get(row.flag_key) ?? []
+		list.push({
+			userId: row.user_id,
+			username: row.username,
+			enabled: row.enabled === 1,
+			updatedAt: row.updated_at,
+		})
+		overridesByKey.set(row.flag_key, list)
+	}
+
+	const flags: Array<AdminFeatureFlag> = []
+	const seenKeys = new Set<string>()
+
+	for (const definition of featureFlagDefinitions) {
+		seenKeys.add(definition.key)
+		const global = globalByKey.get(definition.key)
+		flags.push({
+			key: definition.key,
+			description: definition.description,
+			defaultEnabled: definition.defaultEnabled,
+			stale: false,
+			global: global
+				? {
+						enabled: global.enabled === 1,
+						rolloutPercent: global.rollout_percent,
+						note: global.note,
+						updatedBy: global.updated_by,
+						updatedAt: global.updated_at,
+					}
+				: null,
+			overrides: overridesByKey.get(definition.key) ?? [],
+		})
+	}
+
+	const staleKeys = new Set<string>()
+	for (const key of globalByKey.keys()) {
+		if (!seenKeys.has(key)) staleKeys.add(key)
+	}
+	for (const key of overridesByKey.keys()) {
+		if (!seenKeys.has(key)) staleKeys.add(key)
+	}
+
+	for (const key of [...staleKeys].sort()) {
+		const global = globalByKey.get(key)
+		flags.push({
+			key,
+			description: null,
+			defaultEnabled: null,
+			stale: true,
+			global: global
+				? {
+						enabled: global.enabled === 1,
+						rolloutPercent: global.rollout_percent,
+						note: global.note,
+						updatedBy: global.updated_by,
+						updatedAt: global.updated_at,
+					}
+				: null,
+			overrides: overridesByKey.get(key) ?? [],
+		})
+	}
+
+	return flags
+}
+
+export async function deleteStaleFeatureFlag(
+	db: D1Database,
+	key: string,
+): Promise<boolean> {
+	if (isFeatureFlagKey(key)) {
+		throw new Error(
+			`Cannot delete registry feature flag "${key}". Remove it from the code registry first.`,
+		)
+	}
+
+	const overrideResult = await db
+		.prepare(`DELETE FROM feature_flag_user_overrides WHERE flag_key = ?`)
+		.bind(key)
+		.run()
+	const globalResult = await db
+		.prepare(`DELETE FROM feature_flags WHERE key = ?`)
+		.bind(key)
+		.run()
+
+	return (
+		(overrideResult.meta.changes ?? 0) > 0 ||
+		(globalResult.meta.changes ?? 0) > 0
+	)
+}
