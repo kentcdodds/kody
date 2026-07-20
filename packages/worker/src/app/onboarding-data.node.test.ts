@@ -7,6 +7,17 @@ import {
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 
+test('onboarding setup prompt steers agents to fork trusted community packages before creating', () => {
+	const prompt = buildOnboardingSetupPrompt()
+	expect(prompt).toContain('community_search')
+	expect(prompt).toContain('trusted community package')
+	expect(prompt).toContain('community_fork')
+	expect(prompt).toContain(
+		'only create a new package if nothing suitable exists',
+	)
+	expect(prompt).not.toContain('then package things up once they work')
+})
+
 test('onboarding data builds the MCP URL and derives incomplete setup from verification plus grants', async () => {
 	expect(
 		buildMcpServerUrl({

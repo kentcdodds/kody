@@ -92,10 +92,15 @@ If those conditions are not met, stop and fix the integration first.
      similarly small account/profile endpoint.
    - Confirm the integration or secret name, token refresh behavior, and allowed
      hosts all work end-to-end.
-5. Only after the smoke test succeeds should you build or save the dependent
-   package or package app.
+5. Only after the smoke test succeeds should you obtain the dependent package or
+   package app.
+   - Call `community_search` for the provider or workflow (prefer `trusted`
+     matches). If a listing is close to the user's goal, fork or point them at
+     one-click install, then adapt — do not reimplement from scratch.
+   - Create or save a new package only when no suitable community listing
+     exists.
    - If the integration or tokens already exist and the smoke test passes,
-     proceed directly to package construction.
+     proceed directly to that fork-or-create step.
    - Do not spend extra time exploring the local repo when the integration
      state, secret names, allowed hosts, and provider contract are already clear
      enough.

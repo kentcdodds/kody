@@ -31,13 +31,31 @@ Keep the module focused and return structured evidence. Do not treat the
 ephemeral module as the durable source for behavior that must be maintained,
 reused, or evolved.
 
+### Fork a close community package before creating
+
+Community listings are excluded from general `search`. When you need durable
+reusable behavior and nothing in the user's account fits, call
+`community_search` and prefer **trusted** matches.
+
+If a listing is close to the user's goal:
+
+1. Inspect it with `community_get`.
+2. Fork with `community_fork` (or point the user at one-click install on
+   `/onboarding` or the listing detail page).
+3. Review the forked source, adapt it to the user's intent (including the README
+   `## Intent` section), then publish.
+
+Do not reimplement from scratch when a trusted community package is already
+close. Create a new package only when no suitable listing exists.
+
 ### Create a repo-backed package
 
 Create or extend a saved package when behavior is reusable, expected to evolve,
-or needs a named package-owned schedule that evolves with its implementation.
-The repo rooted at `package.json` is the durable source of truth. Package
-exports form the callable surface, while jobs, subscriptions, services,
-retrievers, and apps remain package-owned behavior.
+or needs a named package-owned schedule that evolves with its implementation,
+and no suitable community listing (or existing saved package) covers it. The
+repo rooted at `package.json` is the durable source of truth. Package exports
+form the callable surface, while jobs, subscriptions, services, retrievers, and
+apps remain package-owned behavior.
 
 Scheduling alone does not require a package. Use `job_schedule` directly for a
 genuinely ad hoc or one-off job, or for a simple self-contained schedule that is

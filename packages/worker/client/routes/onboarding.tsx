@@ -20,9 +20,9 @@ import {
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
-import { CommunityListingIcon } from '#app/community-listing-icon.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
 import {
 	onboardingPath,
 	resolveOnboardingPendingVerificationPath,
@@ -273,28 +273,17 @@ export function OnboardingRoute(handle: Handle) {
 								<h2 mix={css(cardTitleCss)}>3. Install a starter package</h2>
 								<p mix={css(descriptionCss)}>
 									These packages were reviewed by an admin and support one-click
-									install: they are copied into your account ready to run, and
-									your agent helps with any remaining setup.
+									install here: they are copied into your account ready to run.
+									After install, use Copy prompt so your agent can finish any
+									remaining setup.
 								</p>
 								<ul mix={css(starterListCss)}>
 									{featuredListings.map((listing) => (
-										<li key={listing.id}>
-											<a
-												href={`/community/${listing.id}`}
-												mix={css(starterCardCss)}
-												data-testid={`onboarding-starter-${listing.id}`}
-											>
-												<CommunityListingIcon listing={listing} size="card" />
-												<span mix={css(starterCardBodyCss)}>
-													<span mix={css(starterCardTitleCss)}>
-														{listing.name}
-													</span>
-													<span mix={css(starterCardDescriptionCss)}>
-														{listing.description}
-													</span>
-												</span>
-											</a>
-										</li>
+										<OnboardingStarterCard
+											key={listing.id}
+											listing={listing}
+											loggedIn={loggedIn}
+										/>
 									))}
 								</ul>
 								<p mix={css({ margin: 0 })}>
@@ -376,34 +365,4 @@ const starterListCss = {
 	margin: 0,
 	padding: 0,
 	listStyle: 'none',
-}
-
-const starterCardCss = {
-	...insetCardCss,
-	display: 'flex',
-	alignItems: 'center',
-	gap: '0.75rem',
-	textDecoration: 'none',
-	color: colors.text,
-	'&:hover': {
-		borderColor: colors.primary,
-	},
-}
-
-const starterCardBodyCss = {
-	display: 'flex',
-	flexDirection: 'column' as const,
-	gap: '0.25rem',
-	minWidth: 0,
-}
-
-const starterCardTitleCss = {
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.primaryText,
-	overflowWrap: 'anywhere' as const,
-}
-
-const starterCardDescriptionCss = {
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
 }

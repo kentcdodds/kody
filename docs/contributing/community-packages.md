@@ -103,7 +103,8 @@ the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
 on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
 `community_set_featured` capability, and the onboarding "Install a starter
-package" step. `community_get` exposes the effective `featured` flag.
+package" step (in-place Install on each starter card, then Copy prompt for agent
+setup). `community_get` exposes the effective `featured` flag.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.

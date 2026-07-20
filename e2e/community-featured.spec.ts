@@ -77,7 +77,8 @@ test('admins can feature trusted listings and members see them in onboarding', a
 		page.getByRole('button', { name: 'Feature in onboarding' }),
 	).toBeDisabled()
 
-	// Members now see the featured listing as an onboarding starter package.
+	// Members now see the featured listing as an onboarding starter package
+	// and can install it without leaving /onboarding.
 	await page.context().clearCookies()
 	await login({
 		email: memberUser.email,
@@ -86,14 +87,24 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	})
 	await page.goto('/onboarding')
 	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
-	const starterLink = page.getByTestId(`onboarding-starter-${trustedListingId}`)
-	await expect(starterLink).toBeVisible()
-	await expect(starterLink).toContainText(trustedListingName)
-	await starterLink.click()
-	await expect(page).toHaveURL(new RegExp(`/community/${trustedListingId}$`))
+	const starterCard = page.getByTestId(`onboarding-starter-${trustedListingId}`)
+	await expect(starterCard).toBeVisible()
+	await expect(starterCard).toContainText(trustedListingName)
+	await page
+		.getByTestId(`onboarding-starter-install-${trustedListingId}`)
+		.click()
 	await expect(
-		page.getByRole('button', { name: 'Install', exact: true }),
+		page.getByTestId(`onboarding-starter-copy-${trustedListingId}`),
 	).toBeVisible()
+	await expect(
+		page.getByTestId(`onboarding-starter-status-${trustedListingId}`),
+	).toContainText('Installed as')
+	await page.getByTestId(`onboarding-starter-copy-${trustedListingId}`).click()
+	await expect(
+		page.getByTestId(`onboarding-starter-copy-${trustedListingId}`),
+	).toHaveText('Copied')
+	await starterCard.getByRole('link', { name: trustedListingName }).click()
+	await expect(page).toHaveURL(new RegExp(`/community/${trustedListingId}$`))
 
 	// Removing the mark pulls the listing from onboarding again.
 	await page.context().clearCookies()

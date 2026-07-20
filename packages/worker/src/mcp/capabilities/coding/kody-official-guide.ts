@@ -27,13 +27,13 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-lifecycle.md',
 		title: 'Durable package lifecycle guide',
 		summary:
-			'Choose between invoking existing behavior, temporary execute exploration, direct job schedules, and a durable repo-backed package; test package-owned job wrappers safely.',
+			'Choose between invoking existing behavior, temporary execute exploration, forking a close trusted community package, direct job schedules, and creating a durable repo-backed package; test package-owned job wrappers safely.',
 	},
 	integration_bootstrap: {
 		file: 'integration-bootstrap.md',
 		title: 'Integration bootstrap guide',
 		summary:
-			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect integration/secret state, stop for setup, then run an authenticated smoke test.',
+			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect integration/secret state, stop for setup, run an authenticated smoke test, then prefer a trusted community fork before building from scratch.',
 	},
 	secret_backed_integration: {
 		file: 'secret-backed-integration.md',
@@ -135,8 +135,8 @@ function buildCapabilityDescription(): string {
 		'Load an official Kody guide from the kody GitHub repository (markdown).',
 		'Prefer this capability plus `search` results over local repo spelunking when Kody auth or integration behavior is already documented.',
 		'Use `guide: "package_authoring"` for package creation or material package updates, and `guide: "integration_bootstrap"` before building integration-dependent packages, package apps, or workflows.',
-		'Use `guide: "package_lifecycle"` to choose reuse vs temporary execute vs direct job scheduling vs a durable package, and before enabling package-owned schedules.',
-		'Integration bootstrap covers checking saved `integration` / `secret` entities and running a cheap authenticated smoke test before building.',
+		'Use `guide: "package_lifecycle"` to choose reuse vs temporary execute vs community fork vs direct job scheduling vs a new durable package, and before enabling package-owned schedules.',
+		'Integration bootstrap covers checking saved `integration` / `secret` entities, running a cheap authenticated smoke test, then preferring a trusted community fork before building.',
 		'Use `guide: "platform_friction"` for meaningful Kody friction, bugs, poor experiences, or suggestions; it distinguishes inline fixes, approved memory changes, and consent-gated attributed feedback.',
 		'',
 		'The `guide` input describes each available guide and when to use it. If you are unsure, call this capability instead of guessing.',
@@ -149,8 +149,8 @@ const guideFieldSchema = z
 		[
 			'Which guide to load.',
 			'`package_authoring`: required package-authoring guidance for README.md Intent sections when creating or materially changing packages.',
-			'`package_lifecycle`: choose existing invocation, temporary execute, direct job scheduling, or a durable repo-backed package; test package-owned job wrappers safely.',
-			'`integration_bootstrap`: required sequence before building packages/package apps that depend on a third-party integration.',
+			'`package_lifecycle`: choose existing invocation, temporary execute, community fork when close, direct job scheduling, or a new durable repo-backed package; test package-owned job wrappers safely.',
+			'`integration_bootstrap`: required sequence before building packages/package apps that depend on a third-party integration; after the smoke test, prefer a trusted community fork when one is close.',
 			'`secret_backed_integration`: default non-OAuth recipe after bootstrap when the integration is driven by saved secrets.',
 			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',

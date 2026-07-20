@@ -22,11 +22,17 @@ secret reference, then run work through **execute**.
   alias, `job_run_now` can trigger an existing job immediately for debugging or
   catch-up runs, and `job_update` / `job_delete` let you correct or remove an
   existing scheduled job by id.
+- **Prefer a close community package before creating one.** Community listings
+  are excluded from general `search`. Use `community_search` (prefer trusted
+  matches) and fork or adapt when a listing is close to the goal; create a new
+  package only when nothing suitable exists. See
+  [Community packages](./community-packages.md).
 - **Bootstrap integration-backed work before building.** When a package, package
   app, or workflow depends on OAuth, a saved secret, or a third-party API, use
   `search` and the `coding_guide_get` `integration_bootstrap` guide first.
   Confirm the integration or secret exists, run a cheap authenticated smoke test
-  in `execute`, then build the downstream artifact.
+  in `execute`, then prefer a trusted community fork before building the
+  downstream artifact.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
