@@ -2,7 +2,7 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
 	type CommunityActivityKind,
-	type CommunityActivityRecord,
+	type CommunityActivityRecordWithActorId,
 	type CommunityBanRecord,
 	type CommunityBanRow,
 	type CommunityForkRecord,
@@ -93,9 +93,10 @@ function mapCommunityRatingRow(
 
 function mapCommunityActivityRow(
 	row: Record<string, unknown>,
-): CommunityActivityRecord {
+): CommunityActivityRecordWithActorId {
 	const shared = {
 		id: String(row['id']),
+		actingUserId: String(row['acting_user_id']),
 		listingId: String(row['listing_id']),
 		listingName: String(row['listing_name']),
 		listingKodyId: String(row['listing_kody_id']),
@@ -192,6 +193,7 @@ const communityActivityUnion = `SELECT
 		community_forks.listing_kody_id,
 		'[unknown]'
 	) AS listing_kody_id,
+	community_forks.forker_user_id AS acting_user_id,
 	users.username AS acting_username,
 	community_forks.created_at AS occurred_at,
 	NULL AS stars,
@@ -208,6 +210,7 @@ SELECT
 	community_listings.id AS listing_id,
 	community_listings.name AS listing_name,
 	community_listings.kody_id AS listing_kody_id,
+	community_ratings.user_id AS acting_user_id,
 	users.username AS acting_username,
 	community_ratings.updated_at AS occurred_at,
 	community_ratings.stars AS stars,
@@ -702,7 +705,10 @@ export async function listCommunityActivityRowsForAdmin(
 		kind?: CommunityActivityKind
 		listingId?: string
 	},
-): Promise<{ total: number; items: Array<CommunityActivityRecord> }> {
+): Promise<{
+	total: number
+	items: Array<CommunityActivityRecordWithActorId>
+}> {
 	const filters = buildCommunityActivityFilters(input)
 	const count = await db
 		.prepare(
@@ -724,7 +730,7 @@ export async function listCommunityActivityPageRowsForAdmin(
 		kind?: CommunityActivityKind
 		listingId?: string
 	},
-): Promise<Array<CommunityActivityRecord>> {
+): Promise<Array<CommunityActivityRecordWithActorId>> {
 	const filters = buildCommunityActivityFilters(input)
 	const result = await db
 		.prepare(
@@ -746,7 +752,7 @@ export async function listCommunityActivityPageRowsForAdmin(
 export async function getCommunityActivityByIdForAdmin(
 	db: D1Database,
 	input: { kind: CommunityActivityKind; activityId: string },
-): Promise<CommunityActivityRecord | null> {
+): Promise<CommunityActivityRecordWithActorId | null> {
 	const row = await db
 		.prepare(
 			`SELECT activity.*

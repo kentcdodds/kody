@@ -35,9 +35,11 @@ a narrow role-gated admin metadata projection. It joins those rows only to
 public listing identity and the actor's username. Fork rows snapshot the public
 listing name and kody id so retained provenance remains intelligible after a
 listing is deleted. The projection never reads the forked Artifacts source, the
-public snapshot file tree, rating notes, email addresses, stable user ids, or
-unrelated account data. One-click installs and ordinary forks share the same row
-shape and therefore appear as `fork`.
+public snapshot file tree, rating notes, or unrelated account data. When a
+legacy account has no materialized stable id, the service performs one fallback
+account-identity scan and hashes email to recover its username; email and stable
+user ids remain absent from activity results and events. One-click installs and
+ordinary forks share the same row shape and therefore appear as `fork`.
 
 ## Account deletion inventory
 

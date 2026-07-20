@@ -19,6 +19,7 @@ import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { CommunityActionError } from './errors.ts'
 import {
@@ -70,6 +71,8 @@ import {
 	type CommunityListingRecord,
 	type CommunityListingWithAggregates,
 	type CommunityActivityKind,
+	type CommunityActivityRecord,
+	type CommunityActivityRecordWithActorId,
 	type CommunityRatingRecord,
 	type CommunityReportRecord,
 	type CommunityReportResolutionAction,
@@ -122,6 +125,38 @@ async function enqueueRecordedCommunityActivity(input: {
 	} catch (error) {
 		console.error('community-activity-dispatch-enqueue-failed', error)
 	}
+}
+
+async function resolveCommunityActivityActorUsernames(
+	db: D1Database,
+	items: Array<CommunityActivityRecordWithActorId>,
+): Promise<Array<CommunityActivityRecord>> {
+	const unresolvedActorIds = new Set(
+		items
+			.filter((item) => item.actingUsername === null)
+			.map((item) => item.actingUserId),
+	)
+	const usernamesByStableId = new Map<string, string>()
+	if (unresolvedActorIds.size > 0) {
+		const users = await db
+			.prepare(`SELECT id, email, stable_user_id, username FROM users`)
+			.all<{
+				id: number
+				email: string
+				stable_user_id: string | null
+				username: string
+			}>()
+		for (const user of users.results ?? []) {
+			const stableUserId = await resolveUserStableId(user)
+			if (!unresolvedActorIds.has(stableUserId)) continue
+			usernamesByStableId.set(stableUserId, user.username)
+		}
+	}
+	return items.map(({ actingUserId, ...item }) => ({
+		...item,
+		actingUsername:
+			item.actingUsername ?? usernamesByStableId.get(actingUserId) ?? null,
+	}))
 }
 
 async function deleteCommunityIconAssetsBestEffort(input: {
@@ -781,7 +816,12 @@ export async function listCommunityActivityForAdmin(input: {
 			page,
 		})
 	}
-	return { ...result, page, pageSize }
+	return {
+		...result,
+		items: await resolveCommunityActivityActorUsernames(input.db, result.items),
+		page,
+		pageSize,
+	}
 }
 
 export async function getCommunityActivityForAdmin(input: {
@@ -789,7 +829,12 @@ export async function getCommunityActivityForAdmin(input: {
 	kind: CommunityActivityKind
 	activityId: string
 }) {
-	return await getCommunityActivityByIdForAdmin(input.db, input)
+	const activity = await getCommunityActivityByIdForAdmin(input.db, input)
+	if (!activity) return null
+	return (
+		(await resolveCommunityActivityActorUsernames(input.db, [activity]))[0] ??
+		null
+	)
 }
 
 export async function forkCommunityListing(input: {

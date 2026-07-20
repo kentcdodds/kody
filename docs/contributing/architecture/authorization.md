@@ -377,8 +377,11 @@ This boundary is enforced structurally:
    `admin_community_activity_list` unions only `community_forks` and
    `community_ratings`, uses snapshotted/public listing identity plus acting
    username, and projects an explicit field allowlist. It never selects package
-   source, rating notes, email, stable user ids, or unrelated user tables.
-   Delivery reuses the same projection through fresh admin-owner fan-out.
+   source, rating notes, or unrelated user-content tables. For legacy accounts
+   whose stored stable id is still null, the service hashes account email in a
+   single legacy identity scan to recover the username; neither email nor stable
+   user id is returned. Delivery reuses the same projection through fresh
+   admin-owner fan-out.
 5. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
    (`id`, `username`, `email`, `email_verified`, `email_verified_at`, `plan`,
