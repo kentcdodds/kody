@@ -4,6 +4,7 @@ import {
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
 	buildCursorMcpJson,
+	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
 	mcpClientTabs,
@@ -14,7 +15,8 @@ const mcpServerUrl = 'https://heykody.dev/mcp'
 test('onboarding MCP client builders emit the structured configs each host expects', () => {
 	expect(mcpClientTabs.map((tab) => tab.id)).toEqual([
 		'cursor',
-		'codex-chatgpt',
+		'chatgpt',
+		'codex',
 		'claude-desktop',
 		'claude-code',
 		'opencode',
@@ -23,7 +25,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	])
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
-	).toEqual(['codex-chatgpt', 'claude-desktop'])
+	).toEqual(['chatgpt', 'claude-desktop'])
 
 	expect(JSON.parse(buildCursorMcpJson(mcpServerUrl))).toEqual({
 		mcpServers: {
@@ -62,5 +64,8 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	})
 	expect(buildCodexMcpToml(mcpServerUrl)).toBe(
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
+	)
+	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
+		'https://heykody.dev/apple-touch-icon.png',
 	)
 })

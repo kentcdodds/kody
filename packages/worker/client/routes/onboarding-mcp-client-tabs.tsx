@@ -6,6 +6,7 @@ import {
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
 	buildCursorMcpJson,
+	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
 	codingAgentPackageHint,
@@ -107,15 +108,18 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 				</>
 			)
 		}
-		case 'codex-chatgpt': {
-			const codexToml = buildCodexMcpToml(mcpServerUrl)
+		case 'chatgpt': {
+			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
 			return (
 				<>
 					<p mix={css(descriptionCss)}>
-						<strong>ChatGPT (web)</strong>: turn on Developer mode under
-						Settings → Security and login, then create a developer-mode app /
-						connector pointed at the MCP URL below. Complete OAuth when
-						prompted.
+						In ChatGPT, turn on <strong>Developer mode</strong> under Settings →
+						Security and login (reload ChatGPT if the Plugins UI does not appear
+						yet). Then open{' '}
+						<strong>Settings → Plugins → Browse plugins → Create app</strong>.
+						Paste the MCP URL below as the server URL. For the app icon,
+						download Kody&apos;s favicon from the link below — ChatGPT does not
+						let you change the icon later. Complete OAuth when prompted.
 					</p>
 					<CopyCard
 						label="MCP URL"
@@ -123,18 +127,31 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						copyLabel="Copy MCP URL"
 						variant="primary"
 					/>
+					<CopyCard
+						label="App icon (favicon)"
+						value={appIconUrl}
+						copyLabel="Copy icon URL"
+					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
+				</>
+			)
+		}
+		case 'codex': {
+			const codexToml = buildCodexMcpToml(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
-						<strong>Codex</strong> (ChatGPT desktop, Codex CLI, and the IDE
-						extension) share <code>~/.codex/config.toml</code>. Add this
-						streamable HTTP entry, then run <code>codex mcp login kody</code> if
-						OAuth does not start automatically:
+						Codex (ChatGPT desktop, Codex CLI, and the IDE extension) shares{' '}
+						<code>~/.codex/config.toml</code>. Add this streamable HTTP entry,
+						then run <code>codex mcp login kody</code> if OAuth does not start
+						automatically:
 					</p>
 					<CopyCard
 						label="config.toml"
 						value={codexToml}
 						copyLabel="Copy TOML"
 					/>
+					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
