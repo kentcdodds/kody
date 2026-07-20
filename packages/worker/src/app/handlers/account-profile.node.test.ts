@@ -259,6 +259,37 @@ test('account profile API updates username for the signed-in user', async () => 
 	)
 })
 
+test('account profile API treats an unchanged username as a no-op so grandfathered reserved usernames can still save profile fields', async () => {
+	// 'kody' is on the reserved username list; an account that already holds
+	// it must still be able to save display name / bio / visibility.
+	const testDb = createProfileTestDb([createUser(1, 'kody')])
+	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
+	mockModule.updateCommunityProfile.mockResolvedValue(undefined)
+
+	const response = await runHandler(
+		handler,
+		await createRequest({
+			session: { id: '1', email: 'kody@example.com', rememberMe: false },
+			method: 'POST',
+			body: { username: 'kody', displayName: 'Kody the Koala', bio: 'Hi' },
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	expect(await response.json()).toMatchObject({ ok: true, username: 'kody' })
+	expect(testDb.users.get(1)?.username).toBe('kody')
+	expect(mockModule.updateCommunityProfile).toHaveBeenCalledWith(
+		expect.objectContaining({
+			numericUserId: 1,
+			displayName: 'Kody the Koala',
+			bio: 'Hi',
+		}),
+	)
+	expect(logAuditEventSpy).not.toHaveBeenCalledWith(
+		expect.objectContaining({ action: 'update_username' }),
+	)
+})
+
 test('account profile API rejects invalid or duplicate usernames', async () => {
 	const testDb = createProfileTestDb([
 		createUser(1, 'current-user'),

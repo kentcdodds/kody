@@ -88,8 +88,13 @@ export function createAccountProfileApiHandler(env: Env) {
 			let nextUsername = user.username
 			let nextUser: AuthenticatedUser = user
 
-			if (hasUsername) {
-				const username = normalizeUsername(record.username)
+			// An unchanged username is a no-op rather than a validated update so
+			// accounts with grandfathered (e.g. reserved) usernames can still
+			// save display name, bio, and visibility from the combined form.
+			const username = hasUsername ? normalizeUsername(record.username) : ''
+			const usernameChanged = hasUsername && username !== user.username
+
+			if (usernameChanged) {
 				const usernameError = getUsernameValidationError(username)
 				if (usernameError) {
 					return jsonResponse({ ok: false, error: usernameError }, 400)
