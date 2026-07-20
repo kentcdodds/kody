@@ -2,7 +2,7 @@
   <img src="./packages/worker/public/logo.png" alt="kody logo" width="400" />
 
   <p>
-    <strong>An open-source personal assistant platform for builders, powered by Cloudflare Workers and MCP</strong>
+    <strong>Your assistant's home — the memory, keys, code, and automations your AI agent keeps, portable across every MCP host. Built on Cloudflare Workers.</strong>
   </p>
 
   <p>
@@ -16,11 +16,12 @@
 
 ---
 
-`kody` is an open-source personal assistant platform built on Cloudflare Workers
-and the Model Context Protocol (MCP). It ships a Remix UI, Worker-based request
-routing, package runtime plumbing, and OAuth-protected MCP endpoints. The
-project favors a compact MCP surface with powerful `search` and Code Mode
-`execute` flows over a large static tool catalog.
+Kody is your assistant's home—the memory, keys, code, and automations your AI
+agent keeps, portable across every MCP host. Built on Cloudflare Workers and the
+Model Context Protocol (MCP), it ships a Remix UI, Worker-based request routing,
+package runtime plumbing, and OAuth-protected MCP endpoints. The project favors
+a compact MCP surface with powerful `search` and Code Mode `execute` flows over
+a large static tool catalog.
 
 Kody is a multi-user personal assistant: each signed-in user gets a fully
 isolated assistant (packages, jobs, secrets, values, memories, and related
