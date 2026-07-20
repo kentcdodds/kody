@@ -99,8 +99,8 @@ export function WaitlistBanner(handle: Handle) {
 					) : (
 						<>
 							<p mix={css(promptCss)}>
-								Invite-only while we polish onboarding — join the waitlist to
-								get an invite
+								Built for people who want to own their automations. Join the
+								waitlist for an invite.
 							</p>
 							<form mix={[css(formCss), on('submit', handleSubmit)]}>
 								<label mix={css(nameFieldCss)}>

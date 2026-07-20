@@ -21,6 +21,7 @@ import {
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
+import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
 
 export function createAdminInvitesHandler(env: Env) {
 	return {
@@ -166,6 +167,17 @@ async function handleCreateInviteAction(input: {
 			400,
 		)
 	}
+	const planResult = readInvitePlan(input.body)
+	if (!planResult.ok) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					'Plan must be one of the known plan names, or empty for legacy/tierless.',
+			},
+			400,
+		)
+	}
 
 	try {
 		const invite = await createInvite({
@@ -175,6 +187,7 @@ async function handleCreateInviteAction(input: {
 			note,
 			maxUses,
 			expiresAt,
+			plan: planResult.plan,
 		})
 		const requestIp = getRequestIp(input.request) ?? undefined
 		void logAuditEvent({
@@ -184,7 +197,7 @@ async function handleCreateInviteAction(input: {
 			email: input.actor.email,
 			ip: requestIp,
 			path: input.url.pathname,
-			reason: `invite_code=${invite.code};max_uses=${invite.max_uses}`,
+			reason: `invite_code=${invite.code};max_uses=${invite.max_uses};plan=${planResult.plan ?? 'none'}`,
 		})
 	} catch (error) {
 		return jsonResponse(
@@ -198,6 +211,25 @@ async function handleCreateInviteAction(input: {
 	}
 
 	return jsonResponse(await loadAdminInvitesData(input.env))
+}
+
+/**
+ * Read an optional invite plan: missing/empty → null (legacy/tierless).
+ * Unknown non-empty values are rejected instead of being coerced to null.
+ */
+function readInvitePlan(
+	body: object,
+): { ok: true; plan: PlanName | null } | { ok: false } {
+	if (!('plan' in body)) return { ok: true, plan: null }
+	const value = (body as Record<string, unknown>).plan
+	if (value === null || value === undefined) return { ok: true, plan: null }
+	if (typeof value === 'string') {
+		const trimmed = value.trim()
+		if (!trimmed) return { ok: true, plan: null }
+		const plan = parsePlanName(trimmed)
+		if (plan) return { ok: true, plan }
+	}
+	return { ok: false }
 }
 
 async function handleRevokeInviteAction(input: {

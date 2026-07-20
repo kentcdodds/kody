@@ -171,7 +171,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stable_user_id from users where id = ?',
+							'select id, username, email, plan, stripe_plan, stable_user_id from users where id = ?',
 						)
 					) {
 						return (users.find((user) => user.id === Number(params[0])) ??

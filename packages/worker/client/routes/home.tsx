@@ -52,9 +52,9 @@ const capabilityHighlights = [
 			'Connect Kody to Claude, ChatGPT, Cursor, or Codex through MCP. Kody makes zero inference calls, so there is no second agent or model bill.',
 	},
 	{
-		title: 'Durable jobs, not agent sessions',
+		title: 'The fastest way to start',
 		description:
-			'Jobs run explicit code and API calls. They are not persistent agent sessions, local processes, or general-purpose containers.',
+			'Install a community package in one click. Every install is a fork you own—open it, change it, schedule it, or publish your version back.',
 	},
 	{
 		title: 'Self-service means ownership',
@@ -149,7 +149,8 @@ export function HomeRoute(handle: Handle) {
 					<img src="/logo.png" alt="kody logo" mix={css(heroLogoCss)} />
 					<div mix={css(heroTextCss)}>
 						<h1 mix={css(heroTitleCss)}>
-							Meet <span mix={css({ color: colors.primaryText })}>kody</span>
+							Kody{' '}
+							<span mix={css({ color: colors.primaryText })}>for builders</span>
 						</h1>
 						<p mix={css(heroSubtitleCss)}>
 							Kody gives your AI assistant secure, reusable access to your

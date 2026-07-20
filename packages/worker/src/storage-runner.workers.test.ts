@@ -48,7 +48,7 @@ async function ensureStorageBytesEmailTestSchema() {
 
 async function seedPlannedStorageUser(input: {
 	email: string
-	plan: 'personal' | null
+	plan: 'pro' | null
 	rawSize: number
 }) {
 	const userId = await createStableUserIdFromEmail(input.email)
@@ -159,13 +159,12 @@ test('storage runner preserves isolated state per storage id', async () => {
 
 test('storage runner write tools enforce storage byte entitlements for planned users', async () => {
 	await ensureStorageBytesEmailTestSchema()
-	const limit = planLimits.personal.maxStorageBytes
-	if (limit === null)
-		throw new Error('Expected a numeric personal storage cap.')
+	const limit = planLimits.pro.maxStorageBytes
+	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
 	const plannedEmail = `storage-planned-${crypto.randomUUID()}@example.com`
 	const plannedUserId = await seedPlannedStorageUser({
 		email: plannedEmail,
-		plan: 'personal',
+		plan: 'pro',
 		rawSize: limit,
 	})
 	const plannedStorageId = createExecuteStorageId()
@@ -191,7 +190,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 	}
 	expect(denied.details).toMatchObject({
 		resource: 'storage_bytes',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 	})
 	expect(denied.details.current).toBeGreaterThanOrEqual(limit)

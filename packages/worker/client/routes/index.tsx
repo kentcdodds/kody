@@ -1,6 +1,10 @@
 import { type RouteLoader } from '#client/client-router.tsx'
 import { AccountRoute, accountRouteLoader } from './account.tsx'
 import {
+	AccountBillingRoute,
+	accountBillingRouteLoader,
+} from './account-billing.tsx'
+import {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
@@ -84,6 +88,7 @@ import { VerifyRoute } from './verify.tsx'
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/': homeRouteLoader,
 	'/account': accountRouteLoader,
+	'/account/billing': accountBillingRouteLoader,
 	'/account/integrations': accountIntegrationsRouteLoader,
 	'/account/mcp-servers': accountMcpServersRouteLoader,
 	'/account/package-invocation-tokens':
@@ -127,6 +132,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 export const clientRoutes = {
 	'/': <HomeRoute />,
 	'/account': <AccountRoute />,
+	'/account/billing': <AccountBillingRoute />,
 	'/account/integrations': <AccountIntegrationsRoute />,
 	'/account/mcp-servers': <AccountMcpServersRoute />,
 	'/account/package-invocation-tokens': <AccountPackageInvocationTokensRoute />,

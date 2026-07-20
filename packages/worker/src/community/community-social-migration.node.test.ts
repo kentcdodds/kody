@@ -59,7 +59,7 @@ test('community social migration defaults profiles public, packages private, and
 		'2026-01-02T00:00:00.000Z',
 	)
 
-	applyMigration(db, '0065-community-social.sql')
+	applyMigration(db, '0068-community-social.sql')
 
 	expect(
 		db
@@ -122,7 +122,7 @@ test('user avatars migration adds nullable avatar_key column', () => {
 		VALUES (?, ?, ?)`,
 	).run('alice', 'alice@example.com', 'hash')
 
-	applyMigration(db, '0066-user-avatars.sql')
+	applyMigration(db, '0069-user-avatars.sql')
 
 	expect(
 		db.prepare(`SELECT avatar_key FROM users WHERE username = 'alice'`).get(),

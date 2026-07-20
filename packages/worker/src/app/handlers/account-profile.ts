@@ -1,11 +1,10 @@
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import {
-	buildAccountProfilePayload,
-	loadAccountProfileData,
-} from '#app/account-profile-data.ts'
+import { loadAccountProfileData } from '#app/account-profile-data.ts'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#app/database-errors.ts'
 import { type ProfileVisibility } from '#app/loader-data.ts'
@@ -13,6 +12,10 @@ import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { updateCommunityProfile } from '#worker/community/social-service.ts'
+import {
+	republishCommunityListingsAfterUsernameChange,
+	updatePackagesForUsernameChange,
+} from '#worker/package-registry/username-change-packages.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -85,14 +88,15 @@ export function createAccountProfileApiHandler(env: Env) {
 			}
 
 			const requestIp = getRequestIp(request) ?? undefined
-			let nextUsername = user.username
+			const previousUsername = user.username
 			let nextUser: AuthenticatedUser = user
+			let usernameChangeExtras: Record<string, unknown> = {}
 
 			// An unchanged username is a no-op rather than a validated update so
 			// accounts with grandfathered (e.g. reserved) usernames can still
 			// save display name, bio, and visibility from the combined form.
 			const username = hasUsername ? normalizeUsername(record.username) : ''
-			const usernameChanged = hasUsername && username !== user.username
+			const usernameChanged = hasUsername && username !== previousUsername
 
 			if (usernameChanged) {
 				const usernameError = getUsernameValidationError(username)
@@ -119,6 +123,11 @@ export function createAccountProfileApiHandler(env: Env) {
 					)
 				}
 
+				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+				const packageUserId = user.mcpUser.userId
+
+				// Claim the username first so concurrent renames lose on the unique
+				// constraint before any package publishes use the new scope.
 				try {
 					await db.update(usersTable, user.userId, {
 						username,
@@ -143,6 +152,61 @@ export function createAccountProfileApiHandler(env: Env) {
 					throw error
 				}
 
+				let packageUpdate
+				try {
+					packageUpdate = await updatePackagesForUsernameChange({
+						env,
+						baseUrl,
+						userId: packageUserId,
+						previousUsername,
+						nextUsername: username,
+					})
+				} catch (error) {
+					try {
+						await db.update(usersTable, user.userId, {
+							username: previousUsername,
+							updated_at: utcSqliteTimestamp(),
+						})
+					} catch (rollbackError) {
+						console.error(
+							JSON.stringify({
+								message: 'username-change rollback failed after package error',
+								userId: packageUserId,
+								error: getErrorMessage(rollbackError),
+							}),
+						)
+					}
+					void logAuditEvent({
+						category: 'account',
+						action: 'update_username',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'package_scope_update_failed',
+					})
+					return jsonResponse(
+						{
+							ok: false,
+							error: `Username was not changed because package updates failed: ${getErrorMessage(error)}`,
+						},
+						500,
+					)
+				}
+
+				const communityPackageIds = packageUpdate.updatedPackages
+					.filter((entry) => entry.shouldRepublishCommunityListing)
+					.map((entry) => entry.packageId)
+				const communityRepublish =
+					communityPackageIds.length > 0
+						? await republishCommunityListingsAfterUsernameChange({
+								env,
+								baseUrl,
+								userId: packageUserId,
+								packageIds: communityPackageIds,
+							})
+						: { republishedPackageIds: [], warnings: [] }
+
 				void logAuditEvent({
 					category: 'account',
 					action: 'update_username',
@@ -152,7 +216,25 @@ export function createAccountProfileApiHandler(env: Env) {
 					path: url.pathname,
 				})
 
-				nextUsername = username
+				const packageCount = packageUpdate.updatedPackages.length
+				const packageSummary =
+					packageCount === 0
+						? null
+						: `Updated ${packageCount} package${packageCount === 1 ? '' : 's'} to the new @${username} scope.`
+				const communityWarning =
+					communityRepublish.warnings.length > 0
+						? communityRepublish.warnings.join(' ')
+						: null
+
+				usernameChangeExtras = {
+					packagesUpdated: packageCount,
+					communityListingsRepublished:
+						communityRepublish.republishedPackageIds.length,
+					...(packageSummary ? { packageUpdateMessage: packageSummary } : {}),
+					...(communityWarning
+						? { communityUpdateWarning: communityWarning }
+						: {}),
+				}
 				nextUser = {
 					...user,
 					username,
@@ -189,16 +271,10 @@ export function createAccountProfileApiHandler(env: Env) {
 				})
 			}
 
-			if (hasProfileFields || hasUsername) {
-				return jsonResponse(await loadAccountProfileData(nextUser, env))
-			}
-
-			return jsonResponse(
-				buildAccountProfilePayload({
-					...nextUser,
-					username: nextUsername,
-				}),
-			)
+			return jsonResponse({
+				...(await loadAccountProfileData(nextUser, env)),
+				...usernameChangeExtras,
+			})
 		},
 	} satisfies Action<typeof routes.accountProfileApi>
 }

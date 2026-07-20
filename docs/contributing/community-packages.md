@@ -46,7 +46,7 @@ Migration: `packages/worker/migrations/0045-community-listings.sql`
 | `community_bans`     | Community-wide bans (publish, fork, rate, report)                  |
 
 Social / profiles migration:
-`packages/worker/migrations/0065-community-social.sql`
+`packages/worker/migrations/0068-community-social.sql`
 
 | Table / column                    | Purpose                                                           |
 | --------------------------------- | ----------------------------------------------------------------- |

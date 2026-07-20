@@ -352,7 +352,7 @@ function createDatabase(
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T = Record<string, unknown>>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								return selectOne(
 									'users',
 									(row) => row['email'] === params[0],
@@ -1317,7 +1317,7 @@ test('createJob enforces scheduled job entitlements for plan users and stays unl
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
 	const plannedEnv = {
 		APP_DB: createDatabase({
-			users: [{ email: plannedEmail, plan: 'personal' }],
+			users: [{ email: plannedEmail, plan: 'free' }],
 		}),
 	} as Env
 	mockRepoPersistence()
@@ -1325,8 +1325,8 @@ test('createJob enforces scheduled job entitlements for plan users and stays unl
 		userId: plannedUserId,
 		email: plannedEmail,
 	})
-	const limit = planLimits.personal.maxScheduledJobs
-	if (limit === null) throw new Error('Expected a numeric personal job limit.')
+	const limit = planLimits.free.maxScheduledJobs
+	if (limit === null) throw new Error('Expected a numeric free job limit.')
 
 	for (let index = 0; index < limit; index += 1) {
 		await createJob({
@@ -1350,7 +1350,7 @@ test('createJob enforces scheduled job entitlements for plan users and stays unl
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'scheduled_jobs',
-		plan: 'personal',
+		plan: 'free',
 		limit,
 		current: limit,
 	})

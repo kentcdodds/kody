@@ -56,7 +56,7 @@ function createDatabase(users: Array<Record<string, unknown>>) {
 				bind(...params: Array<unknown>) {
 					return {
 						async first() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								return users.find((row) => row['email'] === params[0]) ?? null
 							}
 							if (

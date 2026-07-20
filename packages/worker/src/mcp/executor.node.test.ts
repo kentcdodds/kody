@@ -857,7 +857,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 
 	const entitlementError = new EntitlementLimitError({
 		resource: 'saved_packages',
-		plan: 'personal',
+		plan: 'pro',
 		limit: 3,
 		current: 3,
 		upgradeHint: 'Remove an old package or upgrade your plan.',
@@ -867,7 +867,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		details: {
 			code: 'entitlement_limit_exceeded',
 			resource: 'saved_packages',
-			plan: 'personal',
+			plan: 'pro',
 			limit: 3,
 			current: 3,
 			upgradeHint: 'Remove an old package or upgrade your plan.',
@@ -884,7 +884,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		details: {
 			code: 'entitlement_limit_exceeded',
 			resource: 'saved_packages',
-			plan: 'personal',
+			plan: 'pro',
 			limit: 3,
 			current: 3,
 			upgradeHint: 'Remove an old package or upgrade your plan.',

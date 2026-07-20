@@ -50,7 +50,7 @@ function createBindingSendEnv() {
 async function seedVerifiedAccount(input: {
 	email: string
 	username?: string
-	plan?: 'personal' | null
+	plan?: 'pro' | null
 	verified?: boolean
 }) {
 	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
@@ -797,10 +797,9 @@ test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit
 	await ensureEmailTestSchema(env.APP_DB)
 	const email = `planned-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxEmailSendsPerDay
-	if (limit === null)
-		throw new Error('Expected a numeric personal email limit.')
-	await seedVerifiedAccount({ email, plan: 'personal' })
+	const limit = planLimits.pro.maxEmailSendsPerDay
+	if (limit === null) throw new Error('Expected a numeric pro email limit.')
+	await seedVerifiedAccount({ email, plan: 'pro' })
 	await env.APP_DB.prepare(
 		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
 			VALUES (?, ?, ?, ?, ?)`,
@@ -827,7 +826,7 @@ test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -838,10 +837,9 @@ test('sendOutboundEmail binds plan limits even when the caller context has no ac
 	await ensureEmailTestSchema(env.APP_DB)
 	const email = `contextless-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxEmailSendsPerDay
-	if (limit === null)
-		throw new Error('Expected a numeric personal email limit.')
-	await seedVerifiedAccount({ email, plan: 'personal' })
+	const limit = planLimits.pro.maxEmailSendsPerDay
+	if (limit === null) throw new Error('Expected a numeric pro email limit.')
+	await seedVerifiedAccount({ email, plan: 'pro' })
 	await env.APP_DB.prepare(
 		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
 			VALUES (?, ?, ?, ?, ?)`,
@@ -873,7 +871,7 @@ test('sendOutboundEmail binds plan limits even when the caller context has no ac
 	}
 	expect(error.details).toMatchObject({
 		resource: 'email_sends_per_day',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 	})
 })
@@ -882,7 +880,7 @@ test('sendOutboundEmail increments the daily counter when under the plan limit',
 	await ensureEmailTestSchema(env.APP_DB)
 	const email = `under-limit-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	await seedVerifiedAccount({ email, plan: 'personal' })
+	await seedVerifiedAccount({ email, plan: 'pro' })
 	expect(await readDailyEmailSendCounter(userId)).toBe(0)
 
 	const result = await sendSelfNotification({

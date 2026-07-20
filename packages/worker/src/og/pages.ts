@@ -21,12 +21,12 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		imageTitle: 'Meet kody',
+		imageTitle: 'Kody for builders',
 		imageSubtitle:
-			'Your personal assistant, built to work from any AI agent host that supports MCP.',
-		ogTitle: 'kody — your personal assistant',
+			'Own the packages and automations behind the AI assistant you already use.',
+		ogTitle: 'Kody — the personal assistant platform for builders',
 		ogDescription:
-			'Your personal assistant, built to work from any AI agent host that supports MCP.',
+			'Own the packages and automations behind the AI assistant you already use.',
 		path: '/',
 	},
 	community: {

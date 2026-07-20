@@ -4,6 +4,7 @@ import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	nullPlanEmailFallbackLimits,
 	parsePlanName,
+	resolveEffectivePlan,
 	resolveEmailResourceLimit,
 } from '#worker/entitlements/plans.ts'
 import {
@@ -256,13 +257,20 @@ export async function handleInboundEmail(
 	// The username lookup already resolved the account email, so plan and
 	// verified state come from one indexed point read (no stable-id scan).
 	const accountRow = await env.APP_DB.prepare(
-		`SELECT plan, email_verified_at FROM users WHERE email = ?`,
+		`SELECT plan, stripe_plan, email_verified_at FROM users WHERE email = ?`,
 	)
 		.bind(identity.email)
-		.first<{ plan: string | null; email_verified_at: string | null }>()
+		.first<{
+			plan: string | null
+			stripe_plan: string | null
+			email_verified_at: string | null
+		}>()
 	const account = {
 		email: identity.email,
-		plan: parsePlanName(accountRow?.plan),
+		plan: resolveEffectivePlan(
+			parsePlanName(accountRow?.plan),
+			accountRow?.stripe_plan ?? null,
+		),
 		emailVerified: Boolean(accountRow?.email_verified_at),
 	}
 

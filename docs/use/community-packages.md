@@ -4,6 +4,9 @@ Kody users on the same deployment can share **saved packages** with everyone
 through **community listings**. A listing is a pinned public snapshot of a
 published package — not a live link to the owner's private copy.
 
+A successful one-click install creates and publishes a fork you own. Open it,
+change it, schedule it, or publish your own version back to the community.
+
 Community listings are **public**: `/community` (searchable index) and
 `/community/:listingId` (detail) work without a Kody account. Forking, rating,
 and reporting require a signed-in MCP user.
@@ -63,7 +66,10 @@ formats.
 
 Re-running `community_publish` updates the public listing to the package's
 current published commit. Private edits after publishing do not change the
-listing until you publish again and re-run `community_publish`.
+listing until you publish again and re-run `community_publish`. When you change
+your username on `/account`, Kody republishes any of your listings that were
+already pinned to the package's latest commit so the public `@{username}/…` name
+stays current.
 
 `community_unpublish` removes an active listing you own. If an admin **delists**
 a listing, the owner cannot unpublish or re-publish it; only an admin hard

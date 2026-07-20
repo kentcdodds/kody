@@ -59,7 +59,7 @@ test('saved packages hidden migration defaults existing rows to visible and hydr
 	applyMigration(db, '0058-saved-packages-hidden.sql')
 	// Repo SELECTs include is_private (added in 0065); apply it so reads work.
 	applyMigration(db, '0045-community-listings.sql')
-	applyMigration(db, '0065-community-social.sql')
+	applyMigration(db, '0068-community-social.sql')
 
 	expect(
 		db.prepare(`SELECT hidden FROM saved_packages WHERE id = 'pkg-1'`).get(),

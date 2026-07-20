@@ -138,6 +138,16 @@ primitives:
     docs:
       - docs/contributing/architecture/entitlements.md
 
+  - id: billing
+    group: auth
+    name: Stripe billing
+    summary:
+      Payment-link checkout, customer linking, and subscription→plan sync.
+    code:
+      - packages/worker/src/billing/
+    docs:
+      - docs/contributing/architecture/entitlements.md
+
   - id: feature-flags
     group: auth
     name: Feature flags
@@ -189,7 +199,7 @@ primitives:
     code:
       - packages/worker/src/community/social-repo.ts
       - packages/worker/src/community/social-service.ts
-      - packages/worker/migrations/0065-community-social.sql
+      - packages/worker/migrations/0068-community-social.sql
     docs:
       - docs/use/community-profiles.md
       - docs/contributing/community-packages.md

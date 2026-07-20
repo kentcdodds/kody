@@ -50,7 +50,13 @@ Important fields:
 
 For predictable package resolution, saved packages must use a scoped
 `package.json.name`, and the leaf segment must match `kody.id`. For example,
-`@scope/my-package` must use `"kody": { "id": "my-package" }`.
+`@scope/my-package` must use `"kody": { "id": "my-package" }`. The scope is the
+account username. Changing your username on `/account` rewrites every saved
+package to the new `@{username}/…` name (including same-account `kody:@` imports
+and `kody.dependencies`), publishes an automatic update commit per package, and
+republishes any community listing that was already pinned to that package's
+latest commit. Third-party integrations and dynamic invocations that hard-code
+the old `@{username}` scope still need to be updated by their owners.
 
 ### npm dependencies
 

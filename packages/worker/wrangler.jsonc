@@ -221,6 +221,13 @@
 				"SENTRY_ENVIRONMENT": "production",
 				"ARTIFACTS_NAMESPACE": "production",
 				"WORKFLOW_CONCURRENT_LIMIT": "100",
+				// Public (non-secret) Stripe billing identity for production.
+				// Coupled to the live Stripe account: if a price or payment
+				// link is regenerated in Stripe, update these values in the
+				// same change or subscription plan matching silently degrades
+				// to the kody_plan metadata fallback.
+				"STRIPE_PRO_PRICE_ID": "price_1Tv3W2LAQpAnsYszSr4PGBkE",
+				"STRIPE_PRO_PAYMENT_LINK": "https://buy.stripe.com/3cIcN6clC7DNgqi8dQ2Ry06",
 			},
 		},
 		"preview": {

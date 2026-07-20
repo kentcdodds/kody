@@ -429,10 +429,10 @@ export function LoginRoute(handle: Handle) {
 				? 'Create your account'
 				: 'Welcome back'
 		const description = showWaitingList
-			? 'Kody is invite-only while we polish onboarding. Join the waitlist to get an invite.'
+			? 'Kody is built for people who want to own their automations. Join the waitlist for an invite.'
 			: isSignup
-				? 'Use your invite code to create an account with a password or social login.'
-				: 'Log in to continue to kody.'
+				? 'Use your invite code to create an account and start building automations you own.'
+				: 'Log in to keep building automations you own.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const toggleLabel = isSignup
 			? 'Already have an account?'

@@ -709,7 +709,7 @@ function createEntitlementsDatabase(input: {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
@@ -753,12 +753,11 @@ test('refreshSavedPackageProjection enforces the saved packages entitlement on i
 	setupDefaultMocks()
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxSavedPackages
-	if (limit === null)
-		throw new Error('Expected a numeric personal package limit.')
+	const limit = planLimits.pro.maxSavedPackages
+	if (limit === null) throw new Error('Expected a numeric pro package limit.')
 	const env = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			savedPackageCount: limit,
 			userId,
 		}),
@@ -796,7 +795,7 @@ test('refreshSavedPackageProjection enforces the saved packages entitlement on i
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'saved_packages',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -922,12 +921,11 @@ test('refreshSavedPackageProjection does not gate the update branch at the limit
 	setupDefaultMocks()
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxSavedPackages
-	if (limit === null)
-		throw new Error('Expected a numeric personal package limit.')
+	const limit = planLimits.pro.maxSavedPackages
+	if (limit === null) throw new Error('Expected a numeric pro package limit.')
 	const env = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			savedPackageCount: limit,
 			userId,
 		}),
