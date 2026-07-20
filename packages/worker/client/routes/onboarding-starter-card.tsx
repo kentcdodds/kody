@@ -194,6 +194,7 @@ export function OnboardingStarterCard(
 										css(tooltipSurfaceCss),
 										popover.surface({
 											open: tooltipOpen,
+											closeOnAnchorClick: false,
 											onHide() {
 												closeTooltip()
 											},

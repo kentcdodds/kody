@@ -130,10 +130,9 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	await expect(
 		page.getByTestId(`onboarding-starter-status-${trustedListingId}`),
 	).toContainText('Installed as')
-	await page.getByTestId(`onboarding-starter-copy-${trustedListingId}`).click()
 	await expect(
 		page.getByTestId(`onboarding-starter-copy-${trustedListingId}`),
-	).toHaveText('Copied')
+	).toHaveText('Copy prompt')
 	await starterCard.getByRole('link', { name: trustedListingName }).click()
 	await expect(page).toHaveURL(new RegExp(`/community/${trustedListingId}$`))
 
