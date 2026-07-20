@@ -129,7 +129,13 @@ test('buildBlogRssXml escapes markup and includes every catalog post', () => {
 
 	for (const post of posts) {
 		expect(xml).toContain(`<link>https://heykody.dev/blog/${post.slug}</link>`)
-		expect(xml).toContain(`<title>${post.title}</title>`)
+		const escapedTitle = post.title
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&apos;')
+		expect(xml).toContain(`<title>${escapedTitle}</title>`)
 	}
 
 	const escaped = buildBlogRssXml({
