@@ -211,7 +211,6 @@ export const EnvSchema = object({
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
-	STRIPE_PRO_PAYMENT_LINK: optionalUrlStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

@@ -71,6 +71,7 @@ import {
 } from '#app/handlers/account-two-factor.ts'
 import {
 	createAccountBillingApiHandler,
+	createAccountBillingCheckoutApiHandler,
 	createAccountBillingHandler,
 	createAccountBillingPortalHandler,
 	createAccountBillingSuccessHandler,
@@ -232,6 +233,7 @@ export function createAppRouter(env: Env) {
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
 			accountBilling: createAccountBillingHandler(env),
 			accountBillingApi: createAccountBillingApiHandler(env),
+			accountBillingCheckoutPost: createAccountBillingCheckoutApiHandler(env),
 			accountBillingSuccess: createAccountBillingSuccessHandler(env),
 			accountBillingPortal: createAccountBillingPortalHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),

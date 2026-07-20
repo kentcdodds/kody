@@ -142,7 +142,8 @@ primitives:
     group: auth
     name: Stripe billing
     summary:
-      Payment-link checkout, customer linking, and subscription→plan sync.
+      Authenticated Checkout Session creation, customer linking, and
+      subscription→plan sync.
     code:
       - packages/worker/src/billing/
     docs:

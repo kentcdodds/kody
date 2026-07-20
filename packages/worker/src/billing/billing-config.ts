@@ -9,7 +9,6 @@ import { type StripeSubscription } from './stripe-client.ts'
 type BillingEnv = {
 	STRIPE_SECRET_KEY?: string
 	STRIPE_PRO_PRICE_ID?: string
-	STRIPE_PRO_PAYMENT_LINK?: string
 }
 
 const activeSubscriptionStatuses = new Set(['active', 'trialing'])
@@ -22,16 +21,12 @@ export function getProPriceId(env: BillingEnv) {
 	return env.STRIPE_PRO_PRICE_ID?.trim() || null
 }
 
-export function getProPaymentLink(env: BillingEnv) {
-	return env.STRIPE_PRO_PAYMENT_LINK?.trim() || null
-}
-
 /**
  * Unguessable per-user checkout attribution value. The stable user id
  * alone is NOT sufficient (it is a plain SHA-256 of the account email, so
  * anyone who knows the email can derive it and mint checkout sessions that
  * would pass a naive comparison). Signing it with the deployment cookie
- * secret means only links rendered by this deployment for this user carry
+ * secret means only sessions created by this deployment for this user carry
  * a matching reference.
  */
 export async function createBillingLinkReference(
@@ -51,21 +46,6 @@ export async function createBillingLinkReference(
 		new TextEncoder().encode(`billing-link:${stableUserId}`),
 	)
 	return toHex(new Uint8Array(signature))
-}
-
-/**
- * Append checkout attribution params to a static Stripe Payment Link.
- * Does not log the resulting URL (it contains the signed user reference).
- */
-export function buildPaymentLinkUrl(input: {
-	baseUrl: string
-	clientReferenceId: string
-	email: string
-}) {
-	const url = new URL(input.baseUrl)
-	url.searchParams.set('client_reference_id', input.clientReferenceId)
-	url.searchParams.set('prefilled_email', input.email)
-	return url.toString()
 }
 
 function pickHigherPlan(

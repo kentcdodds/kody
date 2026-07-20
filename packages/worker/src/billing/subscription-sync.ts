@@ -112,7 +112,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 
 	// The reference is an HMAC of the stable user id keyed by the deployment
 	// cookie secret, so it cannot be derived from a (guessable) email hash by
-	// an attacker minting checkout sessions against the public payment link.
+	// an attacker who obtains or forges a Checkout Session client_reference_id.
 	const expectedReference = await createBillingLinkReference(
 		input.env,
 		input.user.stableUserId,

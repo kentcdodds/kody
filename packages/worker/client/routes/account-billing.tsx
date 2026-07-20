@@ -38,6 +38,7 @@ import {
 } from '#client/styles/style-primitives.ts'
 
 const billingApiPath = '/account/billing.json'
+const billingCheckoutApiPath = '/account/billing/checkout.json'
 const billingPath = '/account/billing'
 
 type PaidTier = 'pro'
@@ -103,10 +104,6 @@ function planCoversTier(
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }
 
-function getPaymentLink(data: AccountBillingLoaderData): string | undefined {
-	return data.paymentLinks.pro
-}
-
 export async function accountBillingRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
@@ -131,6 +128,7 @@ export function AccountBillingRoute(handle: Handle) {
 	let data: AccountBillingLoaderData | null = null
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
+	let checkoutPending = false
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: AccountBillingLoaderData) {
@@ -138,6 +136,48 @@ export function AccountBillingRoute(handle: Handle) {
 		status = 'ready'
 		message = payload.error ?? null
 		messageTone = payload.error ? 'error' : 'info'
+	}
+
+	async function startCheckout() {
+		if (checkoutPending) return
+		checkoutPending = true
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(billingCheckoutApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({}),
+			})
+			const payload = await readJson<{
+				ok?: boolean
+				url?: string
+				error?: string
+			}>(response)
+			if (response.ok && payload?.ok && typeof payload.url === 'string') {
+				window.location.assign(payload.url)
+				return
+			}
+			message =
+				typeof payload?.error === 'string' && payload.error.length > 0
+					? payload.error
+					: 'Unable to start checkout. Try again shortly.'
+			messageTone = 'error'
+			checkoutPending = false
+			handle.update()
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to start checkout. Try again shortly.'
+			messageTone = 'error'
+			checkoutPending = false
+			handle.update()
+		}
 	}
 
 	async function loadBilling(signal: AbortSignal) {
@@ -281,14 +321,11 @@ export function AccountBillingRoute(handle: Handle) {
 									const isCurrent = billing.effectivePlan === tier.id
 									const isIncluded =
 										!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
-									const paymentLink =
-										tier.id === 'free' ? undefined : getPaymentLink(billing)
 									const showSubscribe =
+										tier.id !== 'free' &&
 										!isCurrent &&
 										!isIncluded &&
-										billing.configured &&
-										typeof paymentLink === 'string' &&
-										paymentLink.length > 0
+										billing.checkoutAvailable
 
 									return (
 										<div
@@ -336,17 +373,18 @@ export function AccountBillingRoute(handle: Handle) {
 												</div>
 											) : showSubscribe ? (
 												<div>
-													<a
-														href={paymentLink}
-														mix={css({
-															...primaryButtonCss,
-															display: 'inline-block',
-															textDecoration: 'none',
-															textAlign: 'center',
-														})}
+													<button
+														type="button"
+														disabled={checkoutPending}
+														mix={[
+															on('click', () => void startCheckout()),
+															css(primaryButtonCss),
+														]}
 													>
-														Subscribe
-													</a>
+														{checkoutPending
+															? 'Starting checkout…'
+															: 'Subscribe'}
+													</button>
 												</div>
 											) : null}
 										</div>

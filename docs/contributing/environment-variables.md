@@ -118,9 +118,9 @@ safely. Manual `users.plan` grants and invite-assigned plans still work.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
 - `STRIPE_PRO_PRICE_ID` — Stripe Price id used to map active/trialing
-  subscriptions to the `pro` plan.
-- `STRIPE_PRO_PAYMENT_LINK` — Stripe Payment Link URL for checkout. Production
-  values are committed as Wrangler `vars` in `packages/worker/wrangler.jsonc`.
+  subscriptions to the `pro` plan and to create authenticated Checkout Sessions.
+  Production value is committed as a Wrangler `var` in
+  `packages/worker/wrangler.jsonc`.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

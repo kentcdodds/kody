@@ -266,12 +266,14 @@ Optional Stripe subscription billing lives in `packages/worker/src/billing/`
 host for tests/mocks). Without `STRIPE_SECRET_KEY`, billing surfaces degrade to
 manual plans only.
 
-Checkout uses Stripe Payment Links with `client_reference_id` set to the user's
-stable id and `prefilled_email` set to their account email.
-`GET /account/billing/success` verifies `client_reference_id` before linking
-`users.stripe_customer_id`, then refreshes `users.stripe_plan`.
-`GET /account/billing/portal` opens the Stripe customer portal for linked
-customers.
+Checkout sessions are created server-side for authenticated users via
+`POST /account/billing/checkout.json` (Stripe Checkout Session,
+`mode=subscription`, with a signed `client_reference_id`). Public Payment Links
+were removed after a card-testing incident so checkout is not reachable without
+a signed-in session. `GET /account/billing/success` verifies
+`client_reference_id` before linking `users.stripe_customer_id`, then refreshes
+`users.stripe_plan`. `GET /account/billing/portal` opens the Stripe customer
+portal for linked customers.
 
 `users.stripe_plan` stays fresh via an hourly cron lane
 (`refreshStaleStripePlans`: 25 users/sweep, 1h staleness) and an on-page refresh

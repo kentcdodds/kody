@@ -1,8 +1,6 @@
 import { type AccountBillingLoaderData } from '#app/loader-data.ts'
 import {
-	buildPaymentLinkUrl,
-	createBillingLinkReference,
-	getProPaymentLink,
+	getProPriceId,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
 import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
@@ -47,8 +45,6 @@ type BillingUserRow = {
 export async function loadAccountBillingData(input: {
 	env: Env
 	userId: number
-	email: string
-	stableUserId: string
 	errorCode?: string | null
 	now?: Date
 }): Promise<AccountBillingLoaderData> {
@@ -95,19 +91,7 @@ export async function loadAccountBillingData(input: {
 		}
 	}
 
-	const proBase = getProPaymentLink(input.env)
-	const paymentLinks: AccountBillingLoaderData['paymentLinks'] = {}
-	if (proBase) {
-		const clientReferenceId = await createBillingLinkReference(
-			input.env,
-			input.stableUserId,
-		)
-		paymentLinks.pro = buildPaymentLinkUrl({
-			baseUrl: proBase,
-			clientReferenceId,
-			email: input.email,
-		})
-	}
+	const checkoutAvailable = configured && Boolean(getProPriceId(input.env))
 
 	return {
 		ok: true,
@@ -117,7 +101,7 @@ export async function loadAccountBillingData(input: {
 		effectivePlan: resolveEffectivePlan(manualPlan, stripePlan),
 		hasStripeCustomer,
 		cancelAt,
-		paymentLinks,
+		checkoutAvailable,
 		...(error ? { error } : {}),
 	}
 }

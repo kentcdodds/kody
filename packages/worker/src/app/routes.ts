@@ -44,6 +44,7 @@ export const routes = route({
 	accountTwoFactorApiPost: post('/account/two-factor.json'),
 	accountBilling: '/account/billing',
 	accountBillingApi: '/account/billing.json',
+	accountBillingCheckoutPost: post('/account/billing/checkout.json'),
 	accountBillingSuccess: '/account/billing/success',
 	accountBillingPortal: '/account/billing/portal',
 	accountEmailChange: post('/account/email-change.json'),

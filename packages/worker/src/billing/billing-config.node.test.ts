@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	buildPaymentLinkUrl,
 	createBillingLinkReference,
 	resolveSubscriptionPlan,
 } from './billing-config.ts'
@@ -38,32 +37,6 @@ test('createBillingLinkReference is stable per user and not the raw stable id', 
 	expect(first).not.toBe(other)
 	expect(first).not.toBe(otherSecret)
 	expect(first).toMatch(/^[0-9a-f]{64}$/)
-})
-
-test('buildPaymentLinkUrl appends checkout params and preserves existing query params', () => {
-	const appended = new URL(
-		buildPaymentLinkUrl({
-			baseUrl: 'https://buy.stripe.com/test_pro',
-			clientReferenceId: 'signedref123',
-			email: 'user@example.com',
-		}),
-	)
-	expect(appended.origin + appended.pathname).toBe(
-		'https://buy.stripe.com/test_pro',
-	)
-	expect(appended.searchParams.get('client_reference_id')).toBe('signedref123')
-	expect(appended.searchParams.get('prefilled_email')).toBe('user@example.com')
-
-	const preserved = new URL(
-		buildPaymentLinkUrl({
-			baseUrl: 'https://buy.stripe.com/test?locale=en',
-			clientReferenceId: 'ref',
-			email: 'a@b.com',
-		}),
-	)
-	expect(preserved.searchParams.get('locale')).toBe('en')
-	expect(preserved.searchParams.get('client_reference_id')).toBe('ref')
-	expect(preserved.searchParams.get('prefilled_email')).toBe('a@b.com')
 })
 
 test('resolveSubscriptionPlan maps active price and metadata plans with soonest cancel_at', () => {

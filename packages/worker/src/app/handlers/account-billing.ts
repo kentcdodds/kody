@@ -12,9 +12,15 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
 	createBillingPortalSession,
+	createCheckoutSession,
 	BillingNotConfiguredError,
+	StripeApiError,
 } from '#worker/billing/stripe-client.ts'
-import { isBillingConfigured } from '#worker/billing/billing-config.ts'
+import {
+	createBillingLinkReference,
+	getProPriceId,
+	isBillingConfigured,
+} from '#worker/billing/billing-config.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
@@ -44,8 +50,6 @@ export function createAccountBillingHandler(env: Env) {
 			const accountBilling = await loadAccountBillingData({
 				env,
 				userId: user.userId,
-				email: user.email,
-				stableUserId: user.mcpUser.userId,
 				errorCode,
 			})
 			return renderAppPage({
@@ -75,13 +79,86 @@ export function createAccountBillingApiHandler(env: Env) {
 			const accountBilling = await loadAccountBillingData({
 				env,
 				userId: user.userId,
-				email: user.email,
-				stableUserId: user.mcpUser.userId,
 				errorCode,
 			})
 			return jsonResponse(accountBilling)
 		},
 	} satisfies Action<typeof routes.accountBillingApi>
+}
+
+export function createAccountBillingCheckoutApiHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+
+			if (request.method !== 'POST') {
+				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+			}
+
+			const priceId = getProPriceId(env)
+			if (!isBillingConfigured(env) || !priceId) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Billing is not configured on this deployment.',
+					},
+					409,
+				)
+			}
+
+			const row = await env.APP_DB.prepare(
+				`SELECT stripe_customer_id FROM users WHERE id = ?`,
+			)
+				.bind(user.userId)
+				.first<{ stripe_customer_id: string | null }>()
+			const customerId = row?.stripe_customer_id?.trim() || undefined
+			const clientReferenceId = await createBillingLinkReference(
+				env,
+				user.mcpUser.userId,
+			)
+			const successUrl = `${new URL('/account/billing/success', request.url).toString()}?session_id={CHECKOUT_SESSION_ID}`
+			const cancelUrl = new URL('/account/billing', request.url).toString()
+			const requestIp = getRequestIp(request) ?? undefined
+
+			try {
+				const session = await createCheckoutSession(env, {
+					priceId,
+					clientReferenceId,
+					successUrl,
+					cancelUrl,
+					...(customerId ? { customerId } : { customerEmail: user.email }),
+				})
+				void logAuditEvent({
+					category: 'account',
+					action: 'billing_checkout_started',
+					result: 'success',
+					email: user.email,
+					ip: requestIp,
+					path: new URL(request.url).pathname,
+				})
+				return jsonResponse({ ok: true, url: session.url })
+			} catch (error) {
+				if (error instanceof StripeApiError) {
+					console.error('billing_checkout_failed', {
+						userId: user.userId,
+						error: error.message,
+					})
+					return jsonResponse(
+						{
+							ok: false,
+							error: 'Unable to start checkout. Try again shortly.',
+						},
+						502,
+					)
+				}
+				throw error
+			}
+		},
+	} satisfies Action<typeof routes.accountBillingCheckoutPost>
 }
 
 export function createAccountBillingSuccessHandler(env: Env) {
