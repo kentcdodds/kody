@@ -14,6 +14,7 @@ import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import {
 	banCommunityUser,
 	listFeaturedCommunityListingsWithAggregates,
+	listCommunityActivityForAdmin,
 	resolveCommunityReport,
 	setCommunityListingFeatured,
 	setCommunityListingTrusted,
@@ -26,6 +27,7 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createArtifactsMswHandlers } from '#worker/test-support/artifacts-msw-handlers.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { type CommunityActivityDispatchQueueMessage } from './activity-dispatch-queue-producer.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 
@@ -55,15 +57,17 @@ async function insertTestUser(input: {
 	username: string
 }): Promise<TestUser> {
 	await ensureUsersTable()
+	const userId = await createStableUserIdFromEmail(input.email)
 	await runSql(
-		`INSERT INTO users (username, email, password_hash)
-			VALUES (?, ?, ?)`,
+		`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES (?, ?, ?, ?)`,
 		input.username,
 		input.email,
 		'test-password-hash',
+		userId,
 	)
 	return {
-		userId: await createStableUserIdFromEmail(input.email),
+		userId,
 		email: input.email,
 		username: input.username,
 		displayName: input.username,
@@ -176,11 +180,17 @@ test('community package flow works end-to-end through capability handlers', asyn
 		}),
 		{ onUnhandledRequest: 'bypass' },
 	)
+	const queuedActivity: Array<CommunityActivityDispatchQueueMessage> = []
 	const testEnv = {
 		...env,
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
 		CLOUDFLARE_API_TOKEN: 'artifacts-test-token',
 		CLOUDFLARE_API_BASE_URL: artifactsApiBaseUrl,
+		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: {
+			async send(message: CommunityActivityDispatchQueueMessage) {
+				queuedActivity.push(message)
+			},
+		},
 	} as Env
 
 	const unique = crypto.randomUUID()
@@ -258,6 +268,13 @@ test('community package flow works end-to-end through capability handlers', asyn
 		]),
 	)
 	expect(await countSavedPackagesForUser(forker.userId)).toBe(0)
+	expect(queuedActivity).toEqual([
+		{
+			eventId: expect.any(String),
+			kind: 'fork',
+			activityId: forkResult.fork_id,
+		},
+	])
 
 	const forkedSource = await env.APP_DB.prepare(
 		`SELECT id, user_id, entity_id, published_commit
@@ -305,6 +322,47 @@ test('community package flow works end-to-end through capability handlers', asyn
 	)
 	expect(ratedListing.rating_count).toBe(1)
 	expect(ratedListing.average_stars).toBe(5)
+	expect(ratedListing.fork_count).toBe(1)
+	expect(queuedActivity).toEqual([
+		{
+			eventId: expect.any(String),
+			kind: 'fork',
+			activityId: forkResult.fork_id,
+		},
+		{
+			eventId: expect.any(String),
+			kind: 'rating',
+			activityId: expect.any(String),
+		},
+	])
+	const activity = await listCommunityActivityForAdmin({
+		db: testEnv.APP_DB,
+		listingId,
+		pageSize: 10,
+	})
+	expect(activity).toMatchObject({
+		total: 2,
+		page: 1,
+		pageSize: 10,
+	})
+	expect(activity.items).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'fork',
+				listingId,
+				listingName: `@usera/${kodyId}`,
+				listingKodyId: kodyId,
+				actingUsername: 'userb',
+			}),
+			expect.objectContaining({
+				kind: 'rating',
+				listingId,
+				actingUsername: 'userb',
+				stars: 5,
+				adaptationEffort: 1,
+			}),
+		]),
+	)
 
 	// Admin curation: trust pins to the reviewed commit and the effective
 	// mark drops as soon as the owner republishes new content.

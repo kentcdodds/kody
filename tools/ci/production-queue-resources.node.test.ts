@@ -11,6 +11,10 @@ function createProductionEnv() {
 					binding: 'PLATFORM_FEEDBACK_DISPATCH_QUEUE',
 					queue: 'kody-platform-feedback-dispatch',
 				},
+				{
+					binding: 'COMMUNITY_ACTIVITY_DISPATCH_QUEUE',
+					queue: 'kody-community-activity-dispatch',
+				},
 			],
 			consumers: [
 				{
@@ -27,12 +31,19 @@ function createProductionEnv() {
 					max_retries: 3,
 					dead_letter_queue: 'kody-platform-feedback-dispatch-dlq',
 				},
+				{
+					queue: 'kody-community-activity-dispatch',
+					max_batch_size: 10,
+					max_batch_timeout: 5,
+					max_retries: 3,
+					dead_letter_queue: 'kody-community-activity-dispatch-dlq',
+				},
 			],
 		},
 	}
 }
 
-test('production queue config requires both consumers and a consistent platform feedback producer', () => {
+test('production queue config requires all consumers and consistent producers', () => {
 	const wranglerConfig = parseJsonc<{
 		env: { production: Record<string, unknown> }
 	}>(
@@ -52,6 +63,9 @@ test('production queue config requires both consumers and a consistent platform 
 		platformFeedbackDispatchQueueName: 'kody-platform-feedback-dispatch',
 		platformFeedbackDispatchDeadLetterQueueName:
 			'kody-platform-feedback-dispatch-dlq',
+		communityActivityDispatchQueueName: 'kody-community-activity-dispatch',
+		communityActivityDispatchDeadLetterQueueName:
+			'kody-community-activity-dispatch-dlq',
 	})
 
 	const missingFeedbackConsumer = createProductionEnv()
@@ -61,7 +75,7 @@ test('production queue config requires both consumers and a consistent platform 
 			productionEnv: missingFeedbackConsumer,
 			configPath: 'wrangler.jsonc',
 		}),
-	).toThrow('exactly two production Queue consumers')
+	).toThrow('exactly three production Queue consumers')
 
 	const mismatchedProducer = createProductionEnv()
 	mismatchedProducer.queues.producers[0] = {
@@ -75,5 +89,16 @@ test('production queue config requires both consumers and a consistent platform 
 		}),
 	).toThrow(
 		'must bind "PLATFORM_FEEDBACK_DISPATCH_QUEUE" to "kody-platform-feedback-dispatch"',
+	)
+
+	const missingCommunityProducer = createProductionEnv()
+	missingCommunityProducer.queues.producers.pop()
+	expect(() =>
+		parseProductionQueueResources({
+			productionEnv: missingCommunityProducer,
+			configPath: 'wrangler.jsonc',
+		}),
+	).toThrow(
+		'must bind "COMMUNITY_ACTIVITY_DISPATCH_QUEUE" to "kody-community-activity-dispatch"',
 	)
 })

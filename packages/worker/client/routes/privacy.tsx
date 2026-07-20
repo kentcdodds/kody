@@ -30,8 +30,8 @@ export function PrivacyRoute(_handle: Handle) {
 					chat threads, durable storage, remote connector configuration, OAuth
 					grants, package invocation tokens, and any platform feedback you
 					approve for submission. All of this remains scoped to your account
-					except for the narrow admin review of approved platform feedback
-					described below.
+					except for the narrow admin review of approved platform feedback and
+					the community activity metadata described below.
 				</p>
 			</section>
 
@@ -47,9 +47,12 @@ export function PrivacyRoute(_handle: Handle) {
 				</p>
 				<p mix={css(descriptionCss)}>
 					Admins also moderate public community listings and attributed
-					community reports. That review covers content deliberately published
-					or reported through community features, not private package source or
-					unrelated account content.
+					community reports, and can see who forked or rated a public listing,
+					when, and the rating scores. One-click installs appear as forks
+					because both use the same activity record. This view and
+					admin-configured notifications never include private package source,
+					rating notes, email, stable user ids, secrets, or unrelated account
+					content.
 				</p>
 			</section>
 

@@ -2,8 +2,18 @@ import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
+	handleCommunityActivityDispatchQueue: vi.fn(),
 	handleEmailDeliveryQueue: vi.fn(),
 	handlePlatformFeedbackDispatchQueue: vi.fn(),
+}))
+
+vi.mock('#worker/community/activity-dispatch-queue.ts', () => ({
+	handleCommunityActivityDispatchQueue:
+		mocks.handleCommunityActivityDispatchQueue,
+}))
+
+vi.mock('#worker/community/activity-dispatch-queue-names.ts', () => ({
+	communityActivityDispatchQueueName: 'kody-community-activity-dispatch',
 }))
 
 vi.mock('#worker/email/delivery-queue.ts', () => ({
@@ -27,16 +37,18 @@ function createBatch(queue: string) {
 	} as unknown as MessageBatch<unknown>
 }
 
-test('worker queue routing isolates email, platform feedback, and unknown queues', async () => {
+test('worker queue routing isolates known queues and retries unknown queues', async () => {
 	consoleError.mockImplementation(() => {})
 	const env = {} as Env
 	const ctx = {} as ExecutionContext
 	const emailBatch = createBatch('kody-email-delivery')
 	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
+	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
 	const unknownBatch = createBatch('unexpected-queue')
 
 	await handleQueueBatch(emailBatch, env, ctx)
 	await handleQueueBatch(feedbackBatch, env, ctx)
+	await handleQueueBatch(communityActivityBatch, env, ctx)
 	await handleQueueBatch(unknownBatch, env, ctx)
 
 	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledTimes(1)
@@ -48,6 +60,12 @@ test('worker queue routing isolates email, platform feedback, and unknown queues
 	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenCalledTimes(1)
 	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenCalledWith(
 		feedbackBatch,
+		env,
+		ctx,
+	)
+	expect(mocks.handleCommunityActivityDispatchQueue).toHaveBeenCalledTimes(1)
+	expect(mocks.handleCommunityActivityDispatchQueue).toHaveBeenCalledWith(
+		communityActivityBatch,
 		env,
 		ctx,
 	)

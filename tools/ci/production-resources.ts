@@ -37,6 +37,8 @@ type ResolvedProductionBindings = {
 	emailDeliveryDeadLetterQueueName: string
 	platformFeedbackDispatchQueueName: string
 	platformFeedbackDispatchDeadLetterQueueName: string
+	communityActivityDispatchQueueName: string
+	communityActivityDispatchDeadLetterQueueName: string
 }
 
 function parseArgs(argv: Array<string>): {
@@ -412,7 +414,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -471,6 +473,18 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.platformFeedbackDispatchDeadLetterQueueName,
 		dryRun: options.dryRun,
 	})
+	const communityActivityDispatchQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.communityActivityDispatchQueueName,
+		dryRun: options.dryRun,
+	})
+	const communityActivityDispatchDeadLetterQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.communityActivityDispatchDeadLetterQueueName,
+		dryRun: options.dryRun,
+	})
 	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
 	const emailEventSubscription = await ensureEmailSendingEventSubscription({
 		accountId: accountId ?? 'dry-run-account',
@@ -519,6 +533,12 @@ async function ensureProductionResources(options: CliOptions) {
 	)
 	console.log(
 		`platform_feedback_dispatch_dead_letter_queue_name=${platformFeedbackDispatchDeadLetterQueue.name}`,
+	)
+	console.log(
+		`community_activity_dispatch_queue_name=${communityActivityDispatchQueue.name}`,
+	)
+	console.log(
+		`community_activity_dispatch_dead_letter_queue_name=${communityActivityDispatchDeadLetterQueue.name}`,
 	)
 	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
 }

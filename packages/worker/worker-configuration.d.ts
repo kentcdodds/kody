@@ -16,6 +16,7 @@ declare namespace Cloudflare {
 		EMAIL: SendEmail;
 		USAGE_EVENTS: AnalyticsEngineDataset;
 		PLATFORM_FEEDBACK_DISPATCH_QUEUE: Queue;
+		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: Queue;
 		LOADER: WorkerLoader;
 		APP_LOADER: WorkerLoader;
 		AI: Ai;

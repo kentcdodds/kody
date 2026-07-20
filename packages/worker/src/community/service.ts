@@ -19,16 +19,20 @@ import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
+import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { CommunityActionError } from './errors.ts'
 import {
 	countCommunityForksByListingIds,
 	deleteCommunityListing,
 	deleteCommunityRatingsByListingId,
 	getCommunityBan,
+	getCommunityActivityByIdForAdmin,
 	getCommunityForkByListingAndUser,
 	getCommunityListingById,
 	getCommunityListingByOwnerAndPackage,
 	listCommunityForksByListingAndUser,
+	listCommunityActivityPageRowsForAdmin,
+	listCommunityActivityRowsForAdmin,
 	getCommunityRatingAggregatesByListingId,
 	getCommunityRatingAggregatesByListingIds,
 	getCommunityReportById,
@@ -65,6 +69,8 @@ import {
 import {
 	type CommunityListingRecord,
 	type CommunityListingWithAggregates,
+	type CommunityActivityKind,
+	type CommunityRatingRecord,
 	type CommunityReportRecord,
 	type CommunityReportResolutionAction,
 	type ForkCommunityListingResult,
@@ -73,6 +79,8 @@ import {
 const communityReadmeMaxChars = 20_000
 const communityBayesianPriorMean = 3.25
 const communityBayesianPriorWeight = 5
+const communityActivityDefaultPageSize = 20
+const communityActivityMaxPageSize = 100
 const intentHeadingPattern = /^##\s+intent\b/im
 
 // Offline deterministic embeddings produce small positive cosine scores for
@@ -87,6 +95,34 @@ export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 // pre-filter) but not through unfiltered browse pagination. Revisit with
 // a materialized score column if the catalog ever approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
+
+function normalizeCommunityActivityPage(value: number | undefined) {
+	if (value === undefined || !Number.isFinite(value)) return 1
+	return Math.max(1, Math.trunc(value))
+}
+
+function normalizeCommunityActivityPageSize(value: number | undefined) {
+	if (value === undefined || !Number.isFinite(value)) {
+		return communityActivityDefaultPageSize
+	}
+	return Math.min(communityActivityMaxPageSize, Math.max(1, Math.trunc(value)))
+}
+
+async function enqueueRecordedCommunityActivity(input: {
+	env: Env
+	kind: CommunityActivityKind
+	activityId: string
+}) {
+	try {
+		await enqueueCommunityActivityDispatch({
+			queue: input.env.COMMUNITY_ACTIVITY_DISPATCH_QUEUE,
+			kind: input.kind,
+			activityId: input.activityId,
+		})
+	} catch (error) {
+		console.error('community-activity-dispatch-enqueue-failed', error)
+	}
+}
 
 async function deleteCommunityIconAssetsBestEffort(input: {
 	env: Env
@@ -721,6 +757,41 @@ export async function searchCommunityListings(input: {
 		.map((entry) => entry.listing)
 }
 
+export async function listCommunityActivityForAdmin(input: {
+	db: D1Database
+	page?: number
+	pageSize?: number
+	kind?: CommunityActivityKind
+	listingId?: string
+}) {
+	let page = normalizeCommunityActivityPage(input.page)
+	const pageSize = normalizeCommunityActivityPageSize(input.pageSize)
+	const query = {
+		page,
+		pageSize,
+		kind: input.kind,
+		listingId: input.listingId,
+	}
+	const result = await listCommunityActivityRowsForAdmin(input.db, query)
+	const lastPage = Math.ceil(result.total / pageSize)
+	if (result.total > 0 && page > lastPage) {
+		page = lastPage
+		result.items = await listCommunityActivityPageRowsForAdmin(input.db, {
+			...query,
+			page,
+		})
+	}
+	return { ...result, page, pageSize }
+}
+
+export async function getCommunityActivityForAdmin(input: {
+	db: D1Database
+	kind: CommunityActivityKind
+	activityId: string
+}) {
+	return await getCommunityActivityByIdForAdmin(input.db, input)
+}
+
 export async function forkCommunityListing(input: {
 	env: Env
 	baseUrl: string
@@ -847,6 +918,11 @@ export async function forkCommunityListing(input: {
 			forked_source_id: ensuredSource.id,
 			target_kody_id: targetKodyId,
 		})
+		await enqueueRecordedCommunityActivity({
+			env: input.env,
+			kind: 'fork',
+			activityId: forkId,
+		})
 
 		invalidateCommunityPublicCache()
 
@@ -879,7 +955,7 @@ export async function rateCommunityListing(input: {
 	stars: number
 	adaptationEffort: number
 	note?: string
-}): Promise<void> {
+}): Promise<CommunityRatingRecord> {
 	await assertNotCommunityBanned(input.env.APP_DB, input.userId)
 
 	const listing = await getCommunityListingById(input.env.APP_DB, {
@@ -901,7 +977,7 @@ export async function rateCommunityListing(input: {
 		throw new Error('rate after forking')
 	}
 
-	await upsertCommunityRating(input.env.APP_DB, {
+	const rating = await upsertCommunityRating(input.env.APP_DB, {
 		id: crypto.randomUUID(),
 		listing_id: input.listingId,
 		user_id: input.userId,
@@ -909,7 +985,13 @@ export async function rateCommunityListing(input: {
 		adaptation_effort: input.adaptationEffort,
 		note: input.note?.trim() || null,
 	})
+	await enqueueRecordedCommunityActivity({
+		env: input.env,
+		kind: 'rating',
+		activityId: rating.id,
+	})
 	invalidateCommunityPublicCache()
+	return rating
 }
 
 export async function reportCommunityListing(input: {

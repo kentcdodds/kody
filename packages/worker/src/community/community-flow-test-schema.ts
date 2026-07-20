@@ -5,6 +5,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			username TEXT NOT NULL UNIQUE,
 			email TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
+			stable_user_id TEXT,
 			plan TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)

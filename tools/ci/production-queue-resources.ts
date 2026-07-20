@@ -1,4 +1,9 @@
 import {
+	communityActivityDispatchDeadLetterQueueName,
+	communityActivityDispatchQueueBinding,
+	communityActivityDispatchQueueName,
+} from '../../packages/worker/src/community/activity-dispatch-queue-names.ts'
+import {
 	platformFeedbackDispatchDeadLetterQueueName,
 	platformFeedbackDispatchQueueBinding,
 	platformFeedbackDispatchQueueName,
@@ -55,9 +60,9 @@ export function parseProductionQueueResources(input: {
 	}
 	const queueConfig = queues as Record<string, unknown>
 	const consumers = queueConfig.consumers
-	if (!Array.isArray(consumers) || consumers.length !== 2) {
+	if (!Array.isArray(consumers) || consumers.length !== 3) {
 		throw new Error(
-			`wrangler config "${input.configPath}" must define exactly two production Queue consumers.`,
+			`wrangler config "${input.configPath}" must define exactly three production Queue consumers.`,
 		)
 	}
 	const emailDelivery = readQueueConsumer({
@@ -70,6 +75,12 @@ export function parseProductionQueueResources(input: {
 		consumers,
 		queueName: platformFeedbackDispatchQueueName,
 		deadLetterQueueName: platformFeedbackDispatchDeadLetterQueueName,
+		configPath: input.configPath,
+	})
+	const communityActivityDispatch = readQueueConsumer({
+		consumers,
+		queueName: communityActivityDispatchQueueName,
+		deadLetterQueueName: communityActivityDispatchDeadLetterQueueName,
 		configPath: input.configPath,
 	})
 	const producers = queueConfig.producers
@@ -97,11 +108,33 @@ export function parseProductionQueueResources(input: {
 			`wrangler config "${input.configPath}" must bind "${platformFeedbackDispatchQueueBinding}" to "${platformFeedbackDispatchQueueName}".`,
 		)
 	}
+	const communityActivityProducer = producers.find((entry) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+			return false
+		return (
+			(entry as Record<string, unknown>).binding ===
+			communityActivityDispatchQueueBinding
+		)
+	})
+	if (
+		!communityActivityProducer ||
+		typeof communityActivityProducer !== 'object' ||
+		Array.isArray(communityActivityProducer) ||
+		(communityActivityProducer as Record<string, unknown>).queue !==
+			communityActivityDispatchQueueName
+	) {
+		throw new Error(
+			`wrangler config "${input.configPath}" must bind "${communityActivityDispatchQueueBinding}" to "${communityActivityDispatchQueueName}".`,
+		)
+	}
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,
 		platformFeedbackDispatchQueueName: platformFeedbackDispatch.queue,
 		platformFeedbackDispatchDeadLetterQueueName:
 			platformFeedbackDispatch.deadLetterQueue,
+		communityActivityDispatchQueueName: communityActivityDispatch.queue,
+		communityActivityDispatchDeadLetterQueueName:
+			communityActivityDispatch.deadLetterQueue,
 	}
 }

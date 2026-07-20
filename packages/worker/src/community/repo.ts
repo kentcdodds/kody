@@ -1,6 +1,8 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
+	type CommunityActivityKind,
+	type CommunityActivityRecord,
 	type CommunityBanRecord,
 	type CommunityBanRow,
 	type CommunityForkRecord,
@@ -9,6 +11,7 @@ import {
 	type CommunityListingRow,
 	type CommunityListingStatus,
 	type CommunityRatingAggregate,
+	type CommunityRatingRecord,
 	type CommunityRatingRow,
 	type CommunityReportRecord,
 	type CommunityReportRow,
@@ -73,6 +76,46 @@ function mapCommunityForkRow(
 	}
 }
 
+function mapCommunityRatingRow(
+	row: Record<string, unknown>,
+): CommunityRatingRecord {
+	return {
+		id: String(row['id']),
+		listingId: String(row['listing_id']),
+		userId: String(row['user_id']),
+		stars: Number(row['stars']),
+		adaptationEffort: Number(row['adaptation_effort']),
+		note: row['note'] == null ? null : String(row['note']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapCommunityActivityRow(
+	row: Record<string, unknown>,
+): CommunityActivityRecord {
+	const shared = {
+		id: String(row['id']),
+		listingId: String(row['listing_id']),
+		listingName: String(row['listing_name']),
+		listingKodyId: String(row['listing_kody_id']),
+		actingUsername:
+			row['acting_username'] == null ? null : String(row['acting_username']),
+		occurredAt: String(row['occurred_at']),
+	}
+	const kind = String(row['kind'])
+	if (kind === 'fork') return { ...shared, kind }
+	if (kind === 'rating') {
+		return {
+			...shared,
+			kind,
+			stars: Number(row['stars']),
+			adaptationEffort: Number(row['adaptation_effort']),
+		}
+	}
+	throw new Error(`Unsupported community activity kind: ${kind}`)
+}
+
 function mapCommunityReportRow(
 	row: Record<string, unknown>,
 ): CommunityReportRecord {
@@ -134,6 +177,58 @@ const communityListingSourceJoin = `LEFT JOIN entity_sources
 // D1 caps bound parameters per statement, so IN (...) lookups over large id
 // sets are issued in chunks (90 leaves headroom for fixed bindings).
 const maxSqlBindingsPerChunk = 90
+
+const communityActivityUnion = `SELECT
+	community_forks.id AS id,
+	'fork' AS kind,
+	community_listings.id AS listing_id,
+	community_listings.name AS listing_name,
+	community_listings.kody_id AS listing_kody_id,
+	users.username AS acting_username,
+	community_forks.created_at AS occurred_at,
+	NULL AS stars,
+	NULL AS adaptation_effort
+FROM community_forks
+INNER JOIN community_listings
+	ON community_listings.id = community_forks.listing_id
+LEFT JOIN users
+	ON users.stable_user_id = community_forks.forker_user_id
+UNION ALL
+SELECT
+	community_ratings.id AS id,
+	'rating' AS kind,
+	community_listings.id AS listing_id,
+	community_listings.name AS listing_name,
+	community_listings.kody_id AS listing_kody_id,
+	users.username AS acting_username,
+	community_ratings.updated_at AS occurred_at,
+	community_ratings.stars AS stars,
+	community_ratings.adaptation_effort AS adaptation_effort
+FROM community_ratings
+INNER JOIN community_listings
+	ON community_listings.id = community_ratings.listing_id
+LEFT JOIN users
+	ON users.stable_user_id = community_ratings.user_id`
+
+function buildCommunityActivityFilters(input: {
+	kind?: CommunityActivityKind
+	listingId?: string
+}) {
+	const filters: Array<string> = []
+	const bindings: Array<unknown> = []
+	if (input.kind !== undefined) {
+		filters.push('activity.kind = ?')
+		bindings.push(input.kind)
+	}
+	if (input.listingId !== undefined) {
+		filters.push('activity.listing_id = ?')
+		bindings.push(input.listingId)
+	}
+	return {
+		where: filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '',
+		bindings,
+	}
+}
 
 const communityListingSearchTextColumns = [
 	'name',
@@ -584,15 +679,79 @@ export async function countCommunityForksByListingIds(
 	return counts
 }
 
+export async function listCommunityActivityRowsForAdmin(
+	db: D1Database,
+	input: {
+		page: number
+		pageSize: number
+		kind?: CommunityActivityKind
+		listingId?: string
+	},
+): Promise<{ total: number; items: Array<CommunityActivityRecord> }> {
+	const filters = buildCommunityActivityFilters(input)
+	const count = await db
+		.prepare(
+			`SELECT COUNT(*) AS total
+			FROM (${communityActivityUnion}) AS activity
+			${filters.where}`,
+		)
+		.bind(...filters.bindings)
+		.first<{ total: number }>()
+	const items = await listCommunityActivityPageRowsForAdmin(db, input)
+	return { total: Number(count?.total ?? 0), items }
+}
+
+export async function listCommunityActivityPageRowsForAdmin(
+	db: D1Database,
+	input: {
+		page: number
+		pageSize: number
+		kind?: CommunityActivityKind
+		listingId?: string
+	},
+): Promise<Array<CommunityActivityRecord>> {
+	const filters = buildCommunityActivityFilters(input)
+	const result = await db
+		.prepare(
+			`SELECT activity.*
+			FROM (${communityActivityUnion}) AS activity
+			${filters.where}
+			ORDER BY activity.occurred_at DESC, activity.id DESC
+			LIMIT ? OFFSET ?`,
+		)
+		.bind(
+			...filters.bindings,
+			input.pageSize,
+			(input.page - 1) * input.pageSize,
+		)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map(mapCommunityActivityRow)
+}
+
+export async function getCommunityActivityByIdForAdmin(
+	db: D1Database,
+	input: { kind: CommunityActivityKind; activityId: string },
+): Promise<CommunityActivityRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT activity.*
+			FROM (${communityActivityUnion}) AS activity
+			WHERE activity.kind = ? AND activity.id = ?`,
+		)
+		.bind(input.kind, input.activityId)
+		.first<Record<string, unknown>>()
+	return row ? mapCommunityActivityRow(row) : null
+}
+
 export async function upsertCommunityRating(
 	db: D1Database,
 	row: Omit<CommunityRatingRow, 'created_at' | 'updated_at'> & {
 		created_at?: string
 		updated_at?: string
 	},
-): Promise<void> {
+): Promise<CommunityRatingRecord> {
 	const now = new Date().toISOString()
-	await db
+	const persisted = await db
 		.prepare(
 			`INSERT INTO community_ratings (
 				id, listing_id, user_id, stars, adaptation_effort, note, created_at, updated_at
@@ -601,7 +760,9 @@ export async function upsertCommunityRating(
 				stars = excluded.stars,
 				adaptation_effort = excluded.adaptation_effort,
 				note = excluded.note,
-				updated_at = excluded.updated_at`,
+				updated_at = excluded.updated_at
+			RETURNING id, listing_id, user_id, stars, adaptation_effort, note,
+				created_at, updated_at`,
 		)
 		.bind(
 			row.id,
@@ -613,7 +774,11 @@ export async function upsertCommunityRating(
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
-		.run()
+		.first<Record<string, unknown>>()
+	if (!persisted) {
+		throw new Error('Community rating upsert did not return a row.')
+	}
+	return mapCommunityRatingRow(persisted)
 }
 
 export async function deleteCommunityRatingsByListingId(

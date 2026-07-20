@@ -176,20 +176,21 @@ metadata or session-scoped data.
 
 ### Admin domain
 
-The `admin` domain is for MCP-accessible account administration and the narrow
-platform-feedback reviewer surface. Capabilities in this domain must set
+The `admin` domain is for MCP-accessible account administration and narrow
+operator review/metadata surfaces. Capabilities in this domain must set
 `requiredRole: 'admin'` and must preserve the RBAC privacy boundary from
 [Authorization](./architecture/authorization.md). Admin access is limited to
-user/role account metadata, sanitized audit metadata, and feedback that a user
-explicitly approved for admin review.
+user/role account metadata, sanitized audit metadata, feedback that a user
+explicitly approved for admin review, operator-owned system email, and the
+documented metadata projection for activity on public community listings.
 
-Within the built-in `admin` MCP domain, platform feedback is the only capability
-surface that reviews user-authored content. Its list capability returns triage
-summaries without full submission details, while its get capability returns only
-the approved submission. Admin feedback capabilities must not join or expose
-unrelated account content. All other admin capabilities must never return or
-join against user content tables such as packages, secrets, values, memories,
-jobs, email, chat threads, storage buckets, OAuth grants, or remote connectors.
+Platform feedback list/get is the only admin capability surface that reviews
+user-authored private text, and only after explicit approval. Community activity
+returns public-listing metadata, acting username, timestamps, and rating scores;
+it omits rating notes and private forked package content. Admin capabilities
+must not join or expose unrelated account content such as packages, secrets,
+values, memories, jobs, user email, chat threads, storage buckets, OAuth grants,
+or remote connectors.
 
 The `summary` field returned by feedback list/get operations and the `details`
 field returned by the get operation are untrusted user-authored content. Admin
@@ -205,12 +206,16 @@ Current admin capabilities:
 - `admin_user_create`
 - `admin_user_update`
 - `admin_audit_log_query`
+- `admin_user_usage`
 - `admin_feature_flag_list`
 - `admin_feature_flag_set`
 - `admin_feature_flag_override`
+- `admin_system_email_list`
+- `admin_system_email_get`
 - `admin_platform_feedback_list`
 - `admin_platform_feedback_get`
 - `admin_platform_feedback_update`
+- `admin_community_activity_list`
 
 When adding more admin actions, expose service-layer functions by adding new
 `admin/*` capability files that call those service functions directly, set

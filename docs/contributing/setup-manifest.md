@@ -38,6 +38,16 @@ This project uses the following resources:
     infrastructure failures before routing exhausted messages to the DLQ. Stored
     failures replay under the same idempotency key rather than automatically
     rerunning; terminal handler execution failures stay isolated.
+- Cloudflare Queue for durable community-activity subscription dispatch
+  - Producer binding: `COMMUNITY_ACTIVITY_DISPATCH_QUEUE`
+  - Queue: `kody-community-activity-dispatch`
+  - Dead-letter queue: `kody-community-activity-dispatch-dlq`
+  - The production consumer uses the same batch, retry, and DLQ settings as
+    platform-feedback dispatch. Production CI ensures both resources.
+  - Queue messages contain only `{ eventId, kind, activityId }`. The consumer
+    reloads the metadata-only activity projection, acknowledges invalid or
+    deleted activity, and retries transient lookup, subscription-discovery, or
+    package-invocation infrastructure failures.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
   - Preview: `kody-capabilities-preview`

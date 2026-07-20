@@ -197,3 +197,49 @@ redelivery safe, but a stored failed invocation replays rather than
 automatically rerunning; the DLQ is the recovery surface. Terminal handler
 execution failures are isolated without preventing attempts for sibling
 subscribers.
+
+## `community.activity.recorded` (admins)
+
+Successful community fork and rating writes enqueue a durable
+`community.activity.recorded` attempt. The Queue consumer dispatches only to
+packages saved by users who hold the admin role when the message is processed.
+Non-admin declarations are inert, and role revocation applies to the next
+attempt.
+
+Handlers receive activity metadata only:
+
+```ts
+type CommunityActivityRecordedEvent = {
+	event: 'community.activity.recorded'
+	event_id: string
+	activity:
+		| {
+				id: string
+				kind: 'fork'
+				listing: { id: string; name: string; kody_id: string }
+				actor: { username: string | null }
+				occurred_at: string
+		  }
+		| {
+				id: string
+				kind: 'rating'
+				listing: { id: string; name: string; kody_id: string }
+				actor: { username: string | null }
+				occurred_at: string
+				stars: number
+				adaptation_effort: number
+		  }
+}
+```
+
+The event omits stable user ids, email, forked package/source ids, target kody
+ids, rating notes, package source, secrets, and unrelated account content.
+One-click installs and ordinary forks both appear as `fork` because they share
+the same existing `community_forks` row shape. Rating records are upserts, so
+the reloaded activity contains the latest scores.
+
+Queue messages contain only `{ eventId, kind, activityId }`. Dispatch reloads
+the metadata projection after admin subscriber discovery. Missing activity is a
+permanent cancellation; transient lookup, discovery, and package-invocation
+infrastructure failures retry and can reach the dedicated DLQ. `event_id`
+provides a distinct package-invocation idempotency key for every recorded write.

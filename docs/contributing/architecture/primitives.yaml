@@ -432,6 +432,21 @@ primitives:
       - docs/contributing/architecture/authorization.md
       - docs/guides/package-subscriptions.md
 
+  - id: community-activity-dispatch-queue
+    group: storage
+    name: Community activity dispatch queue
+    summary:
+      Durable opaque event delivery from persisted community activity to admin
+      packages.
+    code:
+      - packages/worker/src/community/activity-dispatch-queue
+      - packages/worker/src/community/activity-package-subscriptions
+      - packages/worker/src/community/activity-subscription-event
+    docs:
+      - docs/contributing/setup-manifest.md
+      - docs/contributing/architecture/authorization.md
+      - docs/guides/package-subscriptions.md
+
   - id: community-assets-r2
     group: storage
     name: Community asset storage (R2)

@@ -30,6 +30,13 @@ explicitly approved enters that role-gated admin surface. The stored submitter
 id makes feedback attributed rather than anonymous; the exception never grants
 admins access to unrelated account data.
 
+Community forks and ratings remain user-owned rows for deletion and export, with
+a narrow role-gated admin metadata projection. It joins those rows only to
+public listing identity and the actor's username. It never reads the forked
+Artifacts source, the public snapshot file tree, rating notes, email addresses,
+stable user ids, or unrelated account data. One-click installs and ordinary
+forks share the same row shape and therefore appear as `fork`.
+
 ## Account deletion inventory
 
 Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`

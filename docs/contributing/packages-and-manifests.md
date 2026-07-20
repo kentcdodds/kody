@@ -302,6 +302,16 @@ rerunning, making the DLQ the recovery surface. Terminal handler execution
 failures remain isolated from sibling subscribers, and fan-out uses bounded
 concurrency.
 
+Successful community fork and rating writes similarly enqueue
+`community.activity.recorded` for admin-only package-subscription delivery. The
+event contains a unique event id, public listing id/name/kody id, activity kind,
+acting username, timestamp, and rating scores when applicable. It omits stable
+user ids, email, rating notes, forked source/package identifiers, package
+source, and unrelated account content. One-click installs appear as `fork`
+because both paths share the existing `community_forks` row shape. Consumer-time
+admin role checks, lazy metadata reload, retry behavior, and terminal-handler
+isolation match platform-feedback dispatch.
+
 ## Package-owned workflows
 
 Packages declare workflow entrypoints in runtime code, not in

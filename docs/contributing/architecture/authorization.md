@@ -14,6 +14,11 @@ crosses into the admin review surface only after the user explicitly approves
 it. The exception covers that attributed submission and its triage state, never
 unrelated user content.
 
+Community activity metadata is a fourth narrow exception. Admins may see who
+forked or rated a deliberately public community listing and when, plus rating
+scores. This boundary never exposes forked package source, rating notes,
+secrets, or unrelated account content.
+
 For browser and MCP authentication mechanics, see
 [Authentication](./authentication.md).
 
@@ -320,6 +325,24 @@ deletion, and attributed community reports can be reviewed and resolved. Those
 community surfaces expose content users chose to publish or report; they do not
 grant access to private package source or unrelated account content.
 
+**Admins can inspect activity metadata for public community listings.** The
+`admin_community_activity_list` capability returns a paginated, newest-first
+feed of fork and rating rows with listing id/name/kody id, acting username,
+timestamp, and rating scores. Existing storage does not distinguish a one-click
+install from an ordinary fork, so both appear as `fork`. The capability omits
+stable user ids, forked package/source ids, origin commits, target kody ids,
+rating notes, private package source, and all unrelated account content.
+
+New fork and rating writes enqueue an opaque activity id for durable
+`community.activity.recorded` package-subscription delivery. The Queue consumer
+reloads only the same metadata projection and fans out only to packages whose
+owners hold the admin role at processing time. A non-admin may declare the topic
+but never receives it, and role revocation applies on the next attempt. Each
+write gets a distinct event id for package-invocation idempotency. Deleted
+activity is acknowledged as a permanent cancellation; transient lookup,
+discovery, and package-invocation infrastructure failures retry and can reach
+the dedicated DLQ.
+
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
 is stored under `system:email` as platform content, not under Kent's or any
@@ -346,13 +369,19 @@ This boundary is enforced structurally:
    boundary. Admin list reads use a summary projection that omits full details;
    get and triage operations address only the selected approved submission. They
    never join unrelated user-content tables.
-4. **A shape test pins the admin users API payload.**
+4. **Community activity has a dedicated role-gated metadata projection.**
+   `admin_community_activity_list` unions only `community_forks` and
+   `community_ratings`, joins public listing identity and acting username, and
+   projects an explicit field allowlist. It never selects package source, rating
+   notes, email, stable user ids, or unrelated user tables. Delivery reuses the
+   same projection through fresh admin-owner fan-out.
+5. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
    (`id`, `username`, `email`, `email_verified`, `email_verified_at`, `plan`,
    `created_at`, `updated_at`, `roles`). The unit test in
    `admin-users.node.test.ts` asserts every user object in the list response has
    exactly those keys — an accidental widening fails `npm run validate`.
-5. **Existing owner-only paths take no admin bypass.** Secret reveal remains
+6. **Existing owner-only paths take no admin bypass.** Secret reveal remains
    session-authenticated and owner-only.
 
 Platform feedback remains user-owned for account lifecycle operations. Account

@@ -44,12 +44,14 @@ shared state between users.
 Optimize for:
 
 - Per-user isolation as a first-class invariant, enforced at the storage,
-  durable-object, vectorize, and runtime layers. Three narrow, documented
+  durable-object, vectorize, and runtime layers. Four narrow, documented
   exceptions exist: RBAC account administration (`access = 'any'`, limited to
   `user` and `role` entities), operator-owned system email for reserved platform
   addresses stored under `system:email`, and attributed platform feedback that a
-  user explicitly approved for role-gated admin review. The feedback exception
-  covers only the approved submission and never unrelated user content. See
+  user explicitly approved for role-gated admin review, plus role-gated metadata
+  about activity on deliberately public community listings. The community
+  exception covers who forked or rated which listing and when, including rating
+  scores, but never package source, rating notes, or unrelated user content. See
   [Authorization](./architecture/authorization.md).
 - Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
@@ -89,7 +91,8 @@ When working in this repo, do not assume:
   cross-user boundaries are RBAC account administration (`:any` on `user`/`role`
   only, behind explicit guards), operator-owned system email for reserved
   platform addresses, and explicitly approved, attributed platform feedback
-  exposed through role-gated admin review capabilities — see
+  exposed through role-gated admin review capabilities, plus role-gated
+  community activity metadata for public listings — see
   [Authorization](./architecture/authorization.md).
 - The main goal is enterprise-grade least-privilege design for many users.
 
@@ -118,8 +121,8 @@ If you are an agent working in this repo:
   at the runtime layer, and by user-aware filters at the search/vector layer.
   Cross-user access requires an explicit guard and one of the documented narrow
   boundaries: account administration, operator-owned system email, or
-  user-approved platform feedback — see
-  [Authorization](./architecture/authorization.md).
+  user-approved platform feedback, or public-listing community activity metadata
+  — see [Authorization](./architecture/authorization.md).
 - Avoid proposing a large static MCP tool catalog as the default direction.
 - Keep interoperability with MCP hosts in mind, especially around compact tool
   surfaces and clear server instructions.

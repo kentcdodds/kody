@@ -125,6 +125,7 @@ Core logic: `packages/worker/src/community/`
 | `service.ts`   | Publish, unpublish, search, fork, rate, report, admin resolution    |
 | `install.ts`   | One-click install: fork + publish checks + projection publish       |
 | `repo.ts`      | D1 queries                                                          |
+| `activity-*`   | Admin activity feed and durable admin subscription dispatch         |
 | `snapshot.ts`  | KV snapshot I/O                                                     |
 | `fork-scan.ts` | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
 | `og-image.ts`  | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
@@ -141,6 +142,14 @@ id to the forker's scope, scans cross-scope references, calls
 `rateCommunityListing` requires a prior fork row for the rater and rejects
 ratings from the listing owner. `reportCommunityListing` stores denormalized
 listing metadata for the admin queue.
+
+`listCommunityActivityForAdmin` exposes a role-gated metadata projection over
+forks and ratings. Rows contain public listing identity, acting username,
+timestamp, and rating scores; they omit rating notes, forked source/package ids,
+stable user ids, and package source. Rating rows use `updated_at`, so the feed
+shows the latest value for each user/listing rating. Since one-click install and
+agent fork both persist through `community_forks`, historical data cannot
+distinguish them and reports both as `fork`.
 
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks
@@ -169,6 +178,9 @@ Capabilities:
 - `community_report`
 - `community_set_trusted` (admin-only via `requiredRole`)
 - `community_set_featured` (admin-only via `requiredRole`)
+
+The admin domain also exposes `admin_community_activity_list`, guarded by
+`requiredRole: 'admin'`, for the narrow operator activity feed.
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
 builtin domains (see [Adding capabilities](./adding-kody.md)). Do not surface
@@ -216,6 +228,13 @@ Queue shows reporter, reason, and listing metadata. Actions use double-confirm:
 `resolveCommunityReport` in `service.ts` implements dismiss, delist, and delete.
 `banCommunityUser` / `unbanCommunityUser` manage community-wide bans.
 
+Successful fork and rating writes enqueue `{ eventId, kind, activityId }` for
+durable `community.activity.recorded` delivery. The Queue consumer reloads the
+same metadata-only projection and uses the shared admin package-subscription
+fan-out, which resolves admin package owners fresh for every attempt. The event
+therefore reaches only admin-owned subscribed packages and is suitable for
+operator notifications such as Discord.
+
 ## Inert fork mechanism
 
 Forks create an **`entity_sources`** row and Artifacts snapshot but **no**
@@ -246,6 +265,15 @@ contain cross-scope static imports or foreign `kody.dependencies` entries
    `(5 × 3.25 + count × averageStars) / (5 + count)`
 
 Empty queries sort by Bayesian score, then `publishedAt`.
+
+Fork counts are live `COUNT(*)` aggregates over `community_forks` grouped by
+listing id. Detail reads always count the selected listing. Browse and search
+counts are also correct for every materialized result, although unfiltered
+browse intentionally ranks only the newest 500 candidates. The reported
+production mismatch for `@kentcdodds/github` was therefore consistent with a
+data snapshot/cache artifact rather than a defect in the aggregate SQL; the
+worker integration test pins that a successful fork increments the surfaced
+count.
 
 `computeCommunityBayesianScore` in `service.ts` implements the prior so a few
 5-star ratings do not beat many good ratings.
