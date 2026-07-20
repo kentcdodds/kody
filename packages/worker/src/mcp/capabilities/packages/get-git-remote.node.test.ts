@@ -190,7 +190,7 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 		{ kody_id: 'unleashed-wifi', scope: 'read' },
 		createContext(),
 	)
-	expect(readSetup.createToken).toHaveBeenCalledWith('read', 3600)
+	expect(readSetup.createToken).toHaveBeenCalledWith('read', 14_400)
 	expect(readResult.scope).toBe('read')
 
 	resetMocks()

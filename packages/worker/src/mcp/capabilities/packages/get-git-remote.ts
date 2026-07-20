@@ -33,7 +33,7 @@ const getGitRemoteInputSchema = z.object({
 			'Package description used when `create: true` registers a new stub package. Ignored for existing packages.',
 		),
 	scope: z.enum(['read', 'write']).default('write'),
-	ttl_seconds: z.number().int().min(60).max(86_400).default(3600),
+	ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),
 })
 
 const outputSchema = markSecretInputFields(

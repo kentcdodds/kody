@@ -492,7 +492,7 @@ called package was republished.
 Choose the narrowest token scope that fits the task. Use `read` for inspection
 or local diffing, and `write` only when the git client needs to push. Keep TTLs
 short for autonomous agents and CI-style helpers; the tool accepts 60 seconds to
-24 hours and defaults to 30 minutes.
+24 hours and defaults to 4 hours.
 
 ## Search and discovery
 
