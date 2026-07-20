@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	buildPaymentLinkUrl,
+	createBillingLinkReference,
 	isBillingConfigured,
 	resolveSubscriptionPlan,
 } from './billing-config.ts'
@@ -34,27 +35,43 @@ test('isBillingConfigured requires a non-empty STRIPE_SECRET_KEY', () => {
 test('buildPaymentLinkUrl appends client_reference_id and prefilled_email', () => {
 	const url = buildPaymentLinkUrl({
 		baseUrl: 'https://buy.stripe.com/test_personal',
-		stableUserId: 'abc123stable',
+		clientReferenceId: 'signedref123',
 		email: 'user@example.com',
 	})
 	const parsed = new URL(url)
 	expect(parsed.origin + parsed.pathname).toBe(
 		'https://buy.stripe.com/test_personal',
 	)
-	expect(parsed.searchParams.get('client_reference_id')).toBe('abc123stable')
+	expect(parsed.searchParams.get('client_reference_id')).toBe('signedref123')
 	expect(parsed.searchParams.get('prefilled_email')).toBe('user@example.com')
 })
 
 test('buildPaymentLinkUrl preserves existing query params on the payment link', () => {
 	const url = buildPaymentLinkUrl({
 		baseUrl: 'https://buy.stripe.com/test?locale=en',
-		stableUserId: 'uid',
+		clientReferenceId: 'ref',
 		email: 'a@b.com',
 	})
 	const parsed = new URL(url)
 	expect(parsed.searchParams.get('locale')).toBe('en')
-	expect(parsed.searchParams.get('client_reference_id')).toBe('uid')
+	expect(parsed.searchParams.get('client_reference_id')).toBe('ref')
 	expect(parsed.searchParams.get('prefilled_email')).toBe('a@b.com')
+})
+
+test('createBillingLinkReference is stable per user and not the raw stable id', async () => {
+	const envStub = { COOKIE_SECRET: 'x'.repeat(32) }
+	const first = await createBillingLinkReference(envStub, 'stable-user-1')
+	const second = await createBillingLinkReference(envStub, 'stable-user-1')
+	const other = await createBillingLinkReference(envStub, 'stable-user-2')
+	const otherSecret = await createBillingLinkReference(
+		{ COOKIE_SECRET: 'y'.repeat(32) },
+		'stable-user-1',
+	)
+	expect(first).toBe(second)
+	expect(first).not.toBe('stable-user-1')
+	expect(first).not.toBe(other)
+	expect(first).not.toBe(otherSecret)
+	expect(first).toMatch(/^[0-9a-f]{64}$/)
 })
 
 test('resolveSubscriptionPlan ignores non-active statuses', () => {

@@ -1,6 +1,7 @@
 import { type AccountBillingLoaderData } from '#app/loader-data.ts'
 import {
 	buildPaymentLinkUrl,
+	createBillingLinkReference,
 	getPersonalPaymentLink,
 	getProPaymentLink,
 	isBillingConfigured,
@@ -24,6 +25,8 @@ const billingErrorMessages: Record<string, string> = {
 	missing_customer: 'The checkout session did not include a Stripe customer.',
 	customer_already_linked:
 		'This Stripe customer is already linked to another Kody account.',
+	account_already_linked:
+		'Your account is already linked to a different Stripe customer. Contact the operator to relink it.',
 	link_failed: 'Unable to link the Stripe checkout session.',
 	stripe_error: 'Unable to reach Stripe right now. Try again shortly.',
 	portal_failed: 'Unable to open the Stripe billing portal.',
@@ -102,19 +105,25 @@ export async function loadAccountBillingData(input: {
 	const personalBase = getPersonalPaymentLink(input.env)
 	const proBase = getProPaymentLink(input.env)
 	const paymentLinks: AccountBillingLoaderData['paymentLinks'] = {}
-	if (personalBase) {
-		paymentLinks.personal = buildPaymentLinkUrl({
-			baseUrl: personalBase,
-			stableUserId: input.stableUserId,
-			email: input.email,
-		})
-	}
-	if (proBase) {
-		paymentLinks.pro = buildPaymentLinkUrl({
-			baseUrl: proBase,
-			stableUserId: input.stableUserId,
-			email: input.email,
-		})
+	if (personalBase || proBase) {
+		const clientReferenceId = await createBillingLinkReference(
+			input.env,
+			input.stableUserId,
+		)
+		if (personalBase) {
+			paymentLinks.personal = buildPaymentLinkUrl({
+				baseUrl: personalBase,
+				clientReferenceId,
+				email: input.email,
+			})
+		}
+		if (proBase) {
+			paymentLinks.pro = buildPaymentLinkUrl({
+				baseUrl: proBase,
+				clientReferenceId,
+				email: input.email,
+			})
+		}
 	}
 
 	return {

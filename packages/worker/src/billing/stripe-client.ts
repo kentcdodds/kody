@@ -119,6 +119,11 @@ async function stripeRequest(
 
 	const response = await fetch(url.toString(), init)
 	const text = await response.text()
+	// Checkout session paths embed the session id; keep ids out of logs.
+	const loggablePath = input.path.replace(
+		/(checkout\/sessions\/)[^/?]+/,
+		'$1<redacted>',
+	)
 	let body: unknown = null
 	if (text) {
 		try {
@@ -126,7 +131,7 @@ async function stripeRequest(
 		} catch (error) {
 			console.error('stripe_api_invalid_json', {
 				status: response.status,
-				path: input.path,
+				path: loggablePath,
 			})
 			throw new StripeApiError('Stripe returned a non-JSON response.', {
 				status: response.status,
@@ -138,7 +143,7 @@ async function stripeRequest(
 	if (!response.ok) {
 		console.error('stripe_api_error', {
 			status: response.status,
-			path: input.path,
+			path: loggablePath,
 		})
 		throw new StripeApiError(
 			`Stripe API request failed with HTTP ${response.status}.`,

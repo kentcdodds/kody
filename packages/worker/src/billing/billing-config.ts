@@ -1,3 +1,4 @@
+import { toHex } from '@kody-internal/shared/hex.ts'
 import {
 	getPlanRank,
 	parsePlanName,
@@ -36,16 +37,43 @@ export function getProPaymentLink(env: BillingEnv) {
 }
 
 /**
+ * Unguessable per-user checkout attribution value. The stable user id
+ * alone is NOT sufficient (it is a plain SHA-256 of the account email, so
+ * anyone who knows the email can derive it and mint checkout sessions that
+ * would pass a naive comparison). Signing it with the deployment cookie
+ * secret means only links rendered by this deployment for this user carry
+ * a matching reference.
+ */
+export async function createBillingLinkReference(
+	env: Pick<Env, 'COOKIE_SECRET'>,
+	stableUserId: string,
+): Promise<string> {
+	const key = await crypto.subtle.importKey(
+		'raw',
+		new TextEncoder().encode(env.COOKIE_SECRET),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	)
+	const signature = await crypto.subtle.sign(
+		'HMAC',
+		key,
+		new TextEncoder().encode(`billing-link:${stableUserId}`),
+	)
+	return toHex(new Uint8Array(signature))
+}
+
+/**
  * Append checkout attribution params to a static Stripe Payment Link.
- * Does not log the resulting URL (it contains the stable user id).
+ * Does not log the resulting URL (it contains the signed user reference).
  */
 export function buildPaymentLinkUrl(input: {
 	baseUrl: string
-	stableUserId: string
+	clientReferenceId: string
 	email: string
 }) {
 	const url = new URL(input.baseUrl)
-	url.searchParams.set('client_reference_id', input.stableUserId)
+	url.searchParams.set('client_reference_id', input.clientReferenceId)
 	url.searchParams.set('prefilled_email', input.email)
 	return url.toString()
 }

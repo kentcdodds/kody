@@ -1,5 +1,6 @@
 import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
 import {
+	createBillingLinkReference,
 	isBillingConfigured,
 	resolveSubscriptionPlan,
 } from './billing-config.ts'
@@ -20,6 +21,7 @@ export class BillingLinkError extends Error {
 		| 'client_reference_mismatch'
 		| 'missing_customer'
 		| 'customer_already_linked'
+		| 'account_already_linked'
 		| 'stripe_error'
 
 	constructor(
@@ -108,7 +110,14 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 		)
 	}
 
-	if (session.client_reference_id !== input.user.stableUserId) {
+	// The reference is an HMAC of the stable user id keyed by the deployment
+	// cookie secret, so it cannot be derived from a (guessable) email hash by
+	// an attacker minting checkout sessions against the public payment link.
+	const expectedReference = await createBillingLinkReference(
+		input.env,
+		input.user.stableUserId,
+	)
+	if (session.client_reference_id !== expectedReference) {
 		throw new BillingLinkError(
 			'client_reference_mismatch',
 			'This checkout session does not belong to your account.',
@@ -132,6 +141,22 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 		throw new BillingLinkError(
 			'customer_already_linked',
 			'This Stripe customer is already linked to another Kody account.',
+		)
+	}
+
+	// First-link or same-customer only: this endpoint is a GET (Stripe's
+	// redirect target), so never let a later checkout session silently
+	// replace an established linkage.
+	const existing = await input.env.APP_DB.prepare(
+		`SELECT stripe_customer_id FROM users WHERE id = ?`,
+	)
+		.bind(input.user.id)
+		.first<{ stripe_customer_id: string | null }>()
+	const existingCustomerId = existing?.stripe_customer_id?.trim() || null
+	if (existingCustomerId && existingCustomerId !== customerId) {
+		throw new BillingLinkError(
+			'account_already_linked',
+			'Your account is already linked to a different Stripe customer. Contact the operator to relink it.',
 		)
 	}
 

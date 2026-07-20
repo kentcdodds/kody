@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { afterEach, expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { createBillingLinkReference } from './billing-config.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
@@ -71,6 +72,7 @@ async function seedUser(input: {
 		id: row.id,
 		email: input.email,
 		stableUserId,
+		linkReference: await createBillingLinkReference(env, stableUserId),
 	}
 }
 
@@ -134,7 +136,7 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 		checkout: {
 			id: 'cs_happy',
 			customer: 'cus_happy',
-			client_reference_id: user.stableUserId,
+			client_reference_id: user.linkReference,
 		},
 		subscriptions: {
 			data: [
@@ -200,7 +202,7 @@ test('linkStripeCustomerFromCheckoutSession rejects missing_customer', async () 
 		checkout: {
 			id: 'cs_no_customer',
 			customer: null,
-			client_reference_id: user.stableUserId,
+			client_reference_id: user.linkReference,
 		},
 	})
 
@@ -230,7 +232,7 @@ test('linkStripeCustomerFromCheckoutSession rejects customer_already_linked', as
 		checkout: {
 			id: 'cs_already',
 			customer: 'cus_already',
-			client_reference_id: claimant.stableUserId,
+			client_reference_id: claimant.linkReference,
 		},
 	})
 
@@ -248,6 +250,39 @@ test('linkStripeCustomerFromCheckoutSession rejects customer_already_linked', as
 	expect(error.code).toBe('customer_already_linked')
 	expect(await readUserBilling(claimant.id)).toMatchObject({
 		stripe_customer_id: null,
+	})
+})
+
+test('linkStripeCustomerFromCheckoutSession refuses to replace an established linkage', async () => {
+	const email = `link-replace-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({
+		email,
+		stripeCustomerId: 'cus_original',
+		stripePlan: 'personal',
+	})
+	stubStripeFetch({
+		checkout: {
+			id: 'cs_replacement',
+			customer: 'cus_other',
+			client_reference_id: user.linkReference,
+		},
+	})
+
+	const error = await linkStripeCustomerFromCheckoutSession({
+		env: createBillingEnv(),
+		user,
+		sessionId: 'cs_replacement',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(error instanceof BillingLinkError)) {
+		throw new Error('Expected BillingLinkError')
+	}
+	expect(error.code).toBe('account_already_linked')
+	expect(await readUserBilling(user.id)).toMatchObject({
+		stripe_customer_id: 'cus_original',
+		stripe_plan: 'personal',
 	})
 })
 

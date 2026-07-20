@@ -180,6 +180,11 @@ export function createAccountBillingPortalHandler(env: Env) {
 					customerId,
 					returnUrl,
 				})
+				// Trust assumption: portal.url comes from the Stripe API host,
+				// which is operator-controlled deployment config
+				// (STRIPE_API_BASE_URL, default api.stripe.com) — not
+				// user-influenced — so redirecting to it is not an open
+				// redirect.
 				return Response.redirect(portal.url, 302)
 			} catch (error) {
 				if (error instanceof BillingNotConfiguredError) {
