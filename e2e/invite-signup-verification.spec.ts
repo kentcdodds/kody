@@ -92,8 +92,13 @@ test('admin invite signup and email verification happy path', async ({
 			timeout: 1_000,
 		})
 	}).toPass({ timeout: 15_000 })
+	// Filter to visible matches: the create form's <select> also contains a
+	// hidden <option> with the same text.
 	await expect(
-		page.getByText('personal', { exact: true }).first(),
+		page
+			.getByText('personal', { exact: true })
+			.filter({ visible: true })
+			.first(),
 	).toBeVisible()
 
 	await page.getByLabel('User email').fill(adminCreatedEmail)

@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
 	shouldRunRetentionCron: vi.fn(() => false),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
 	shouldRunUsageAggregationCron: vi.fn(() => false),
+	refreshStaleStripePlans: vi.fn(async () => ({
+		refreshed: 0,
+		failed: 0,
+		skipped: true,
+	})),
 }))
 
 vi.mock('./jobs/reconcile-artifacts-pushes.ts', () => ({
@@ -32,6 +37,10 @@ vi.mock('#app/retention.ts', () => ({
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 	aggregateUsageRollups: mocks.aggregateUsageRollups,
 	shouldRunUsageAggregationCron: mocks.shouldRunUsageAggregationCron,
+}))
+
+vi.mock('#worker/billing/subscription-sync.ts', () => ({
+	refreshStaleStripePlans: mocks.refreshStaleStripePlans,
 }))
 
 const worker = (await import('./index.ts')).default
@@ -64,6 +73,9 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(
 		env,
 		new Date(scheduledTime),
+	)
+	expect(mocks.refreshStaleStripePlans).toHaveBeenCalledWith(
+		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.pruneRetention).not.toHaveBeenCalled()
 })
