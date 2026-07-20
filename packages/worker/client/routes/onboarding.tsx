@@ -152,6 +152,28 @@ export function OnboardingRoute(handle: Handle) {
 		}
 	}
 
+	// Users typically keep this page open while their MCP client runs the
+	// OAuth flow, so poll the same JSON endpoint until a grant shows up and
+	// collapse the completed steps without requiring a manual refresh.
+	async function pollForMcpConnection() {
+		if (status !== 'ready' || !loggedIn || hasMcpClient) return
+		if (document.hidden) return
+		if (!isOnboardingPath(readCurrentRouterHref(handle))) return
+		try {
+			const payload = await fetchOnboardingPayload(handle.signal)
+			if (handle.signal.aborted || !payload?.hasMcpClient) return
+			applyPayload(payload)
+			handle.update()
+		} catch {
+			// Transient poll failures are fine; the next tick retries.
+		}
+	}
+
+	if (typeof document !== 'undefined') {
+		const pollIntervalId = setInterval(pollForMcpConnection, 5000)
+		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
+	}
+
 	function applyRouteLoaderData(href: string) {
 		if (!isOnboardingPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
