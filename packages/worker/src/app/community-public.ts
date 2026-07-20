@@ -7,6 +7,7 @@ import {
 	type PublicProfilePackageItem,
 } from '#app/community-public-types.ts'
 import { routes } from '#app/routes.ts'
+import { parseUserAvatarCacheKey } from '#worker/community/avatar.ts'
 import {
 	type CommunityActivityItem,
 	type CommunityListingWithAggregates,
@@ -26,6 +27,19 @@ export {
  * into public JSON: stable user ids are unsalted email hashes and package
  * ids are the owner's private handles.
  */
+export function buildUserAvatarUrl(input: {
+	username: string
+	avatarKey: string | null
+}): string | null {
+	if (!input.avatarKey) return null
+	const cacheKey = parseUserAvatarCacheKey(input.avatarKey)
+	if (!cacheKey) return null
+	return routes.profileAvatar.href({
+		username: input.username,
+		cacheKey,
+	})
+}
+
 export function toPublicCommunityProfile(
 	profile: CommunityProfileRecord,
 ): PublicCommunityProfile {
@@ -33,6 +47,10 @@ export function toPublicCommunityProfile(
 		username: profile.username,
 		displayName: profile.displayName,
 		bio: profile.bio,
+		avatarUrl: buildUserAvatarUrl({
+			username: profile.username,
+			avatarKey: profile.avatarKey,
+		}),
 		visibility: profile.visibility,
 		joinedAt: profile.joinedAt,
 		followerCount: profile.followerCount,
@@ -62,6 +80,10 @@ export function toPublicCommunityActivityItem(
 		type: item.type,
 		actorUsername: item.actorUsername,
 		actorDisplayName: item.actorDisplayName,
+		actorAvatarUrl: buildUserAvatarUrl({
+			username: item.actorUsername,
+			avatarKey: item.actorAvatarKey,
+		}),
 		listingId: item.listingId,
 		listingName: item.listingName,
 		listingKodyId: item.listingKodyId,
@@ -75,6 +97,10 @@ export function toPublicCommunityStargazer(
 	return {
 		username: stargazer.username,
 		displayName: stargazer.displayName,
+		avatarUrl: buildUserAvatarUrl({
+			username: stargazer.username,
+			avatarKey: stargazer.avatarKey,
+		}),
 		starredAt: stargazer.starredAt,
 	}
 }

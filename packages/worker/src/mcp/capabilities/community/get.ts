@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { buildUserAvatarUrl } from '#app/community-public.ts'
 import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
 import { listCommunityStargazersForListing } from '#worker/community/social-service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -108,11 +109,18 @@ export const communityGetCapability = defineDomainCapability(
 				fork_instructions: communityGetForkInstructions,
 				stargazers: {
 					total_stars: totalStars,
-					recent_stargazers: stargazers.map((stargazer) => ({
-						username: stargazer.username,
-						display_name: stargazer.displayName,
-						starred_at: stargazer.starredAt,
-					})),
+					recent_stargazers: stargazers.map((stargazer) => {
+						const avatarPath = buildUserAvatarUrl({
+							username: stargazer.username,
+							avatarKey: stargazer.avatarKey,
+						})
+						return {
+							username: stargazer.username,
+							display_name: stargazer.displayName,
+							avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
+							starred_at: stargazer.starredAt,
+						}
+					}),
 				},
 			}
 		},

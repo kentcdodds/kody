@@ -226,6 +226,15 @@ function createTestDb(initial: RowMap): {
 									.map((row) => ({ kv_key: row['kv_key'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
+							if (lower === 'select avatar_key from users where id = ?') {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										avatar_key: row['avatar_key'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async first<T>() {
@@ -458,7 +467,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-job:b2fda105-005a-4e2b-9f22-1513b6752da2:event-runner'
 	const { db, rows } = createTestDb({
 		users: [
-			{ id: 1, email: 'a@example.com' },
+			{
+				id: 1,
+				email: 'a@example.com',
+				avatar_key: 'user-avatars/user-aaa/abc123.png',
+			},
 			{ id: 2, email: 'b@example.com' },
 		],
 		jobs: [
@@ -984,13 +997,14 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
 	expect(result.deletedKvKeys).toBe(13)
-	expect(result.deletedCommunityAssets).toBe(2)
+	expect(result.deletedCommunityAssets).toBe(3)
 	expect(result.deletedEmailBlobs).toBe(1)
 	// Both the pinned snapshot revision and the current icon commit revision
-	// (the source's published commit) are removed.
+	// (the source's published commit) are removed, plus the user's avatar.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([
 		'community-icon:v1/listing-1/abc123/asset',
 		'community-icon:v1/listing-1/commit-1/asset',
+		'user-avatars/user-aaa/abc123.png',
 	])
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({

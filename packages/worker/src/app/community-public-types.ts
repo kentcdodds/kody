@@ -32,6 +32,7 @@ export type PublicCommunityProfile = {
 	username: string
 	displayName: string
 	bio: string | null
+	avatarUrl: string | null
 	visibility: ProfileVisibility
 	joinedAt: string
 	followerCount: number
@@ -59,6 +60,7 @@ export type PublicCommunityActivityItem = {
 	type: CommunityActivityEventType
 	actorUsername: string
 	actorDisplayName: string
+	actorAvatarUrl: string | null
 	listingId: string
 	listingName: string
 	listingKodyId: string
@@ -68,6 +70,7 @@ export type PublicCommunityActivityItem = {
 export type PublicCommunityStargazer = {
 	username: string
 	displayName: string
+	avatarUrl: string | null
 	starredAt: string
 }
 

@@ -11,6 +11,7 @@ export const usersTable = table({
 		display_name: c.text(),
 		bio: c.text(),
 		profile_visibility: c.text(),
+		avatar_key: c.text(),
 		password_hash: c.text(),
 		email_verified_at: c.text(),
 		plan: c.text(),

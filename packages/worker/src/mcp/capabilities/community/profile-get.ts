@@ -96,7 +96,7 @@ export const communityProfileGetCapability = defineDomainCapability(
 
 			return {
 				user_found: true,
-				profile: toCommunityProfileOutput(profile),
+				profile: toCommunityProfileOutput(profile, baseUrl),
 				packages: packages.map((pkg) =>
 					toCommunityProfilePackageOutput(pkg, {
 						includePackageId: isSelf,

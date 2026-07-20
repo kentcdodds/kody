@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { getOwnerUsernameFromListingName } from '#app/community-public.ts'
+import {
+	buildUserAvatarUrl,
+	getOwnerUsernameFromListingName,
+} from '#app/community-public.ts'
 import {
 	type CommunityActivityItem,
 	type CommunityListingAggregates,
@@ -95,6 +98,7 @@ export const communityActivityItemSchema = z.object({
 	type: communityActivityTypeSchema,
 	actor_username: z.string(),
 	actor_display_name: z.string(),
+	actor_avatar_url: z.string().nullable(),
 	listing_id: z.string(),
 	listing_name: z.string(),
 	listing_kody_id: z.string(),
@@ -105,6 +109,7 @@ export const communityActivityItemSchema = z.object({
 export const communityStargazerSchema = z.object({
 	username: z.string(),
 	display_name: z.string(),
+	avatar_url: z.string().nullable(),
 	starred_at: z.string(),
 })
 
@@ -159,10 +164,15 @@ export function toCommunityActivityItemOutput(
 	item: CommunityActivityItem,
 	baseUrl: string,
 ) {
+	const avatarPath = buildUserAvatarUrl({
+		username: item.actorUsername,
+		avatarKey: item.actorAvatarKey,
+	})
 	return {
 		type: item.type,
 		actor_username: item.actorUsername,
 		actor_display_name: item.actorDisplayName,
+		actor_avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
 		listing_id: item.listingId,
 		listing_name: item.listingName,
 		listing_kody_id: item.listingKodyId,

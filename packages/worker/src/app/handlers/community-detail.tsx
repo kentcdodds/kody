@@ -176,6 +176,7 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 				averageStars: publicListing.averageStars,
 				ratingCount: publicListing.ratingCount,
 				forkCount: publicListing.forkCount,
+				starCount: publicListing.starCount,
 				iconDataUri,
 			})
 

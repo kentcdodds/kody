@@ -66,6 +66,7 @@ test('timeline API returns followee activity items', async () => {
 			actorUserId: 'stable-alice',
 			actorUsername: 'alice',
 			actorDisplayName: 'Alice',
+			actorAvatarKey: null,
 			listingId: 'listing-1',
 			listingName: '@alice/helper',
 			listingKodyId: 'helper',

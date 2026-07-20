@@ -7,6 +7,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			stable_user_id TEXT,
 			display_name TEXT,
 			bio TEXT,
+			avatar_key TEXT,
 			profile_visibility TEXT NOT NULL DEFAULT 'public' CHECK (profile_visibility IN ('public', 'private')),
 			password_hash TEXT NOT NULL,
 			plan TEXT,
@@ -214,6 +215,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		`ALTER TABLE users ADD COLUMN stable_user_id TEXT`,
 		`ALTER TABLE users ADD COLUMN display_name TEXT`,
 		`ALTER TABLE users ADD COLUMN bio TEXT`,
+		`ALTER TABLE users ADD COLUMN avatar_key TEXT`,
 		`ALTER TABLE users ADD COLUMN profile_visibility TEXT NOT NULL DEFAULT 'public'`,
 		`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
 	]

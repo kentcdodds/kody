@@ -62,6 +62,7 @@ function toCommunityProfileRecord(input: {
 			email: input.row.email,
 		}),
 		bio: input.row.bio,
+		avatarKey: input.row.avatar_key,
 		visibility: input.row.profile_visibility,
 		joinedAt: input.row.created_at,
 		followerCount: input.followerCount,

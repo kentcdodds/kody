@@ -13,6 +13,7 @@ import {
 	type PublicProfilePackageItem,
 } from '#app/community-public-types.ts'
 import { routes } from '#app/routes.ts'
+import { UserAvatar } from '#app/user-avatar.tsx'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -37,12 +38,22 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 	return () => (
 		<div data-testid="profile-frame">
 			<header mix={css(pageHeaderCss)}>
-				<h1 mix={css(pageTitleCss)} data-testid="profile-display-name">
-					{profile.displayName}
-				</h1>
-				<p mix={css(pageDescriptionCss)} data-testid="profile-username">
-					@{profile.username}
-				</p>
+				<div mix={css(profileHeadingCss)}>
+					<UserAvatar
+						displayName={profile.displayName}
+						avatarUrl={profile.avatarUrl}
+						size={80}
+						testId="profile-avatar"
+					/>
+					<div>
+						<h1 mix={css(pageTitleCss)} data-testid="profile-display-name">
+							{profile.displayName}
+						</h1>
+						<p mix={css(pageDescriptionCss)} data-testid="profile-username">
+							@{profile.username}
+						</p>
+					</div>
+				</div>
 				{profile.bio ? (
 					<p mix={css(descriptionCss)} data-testid="profile-bio">
 						{profile.bio}
@@ -148,16 +159,23 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 								key={`${item.type}:${item.listingId}:${item.createdAt}`}
 								mix={css(activityItemCss)}
 							>
-								<span>
-									{communityActivityVerb(item.type)}{' '}
-									<a
-										href={routes.communityDetail.href({
-											listingId: item.listingId,
-										})}
-										mix={css(mutedLinkCss)}
-									>
-										{item.listingName}
-									</a>
+								<span mix={css(activityActorCss)}>
+									<UserAvatar
+										displayName={item.actorDisplayName}
+										avatarUrl={item.actorAvatarUrl}
+										size={32}
+									/>
+									<span>
+										{communityActivityVerb(item.type)}{' '}
+										<a
+											href={routes.communityDetail.href({
+												listingId: item.listingId,
+											})}
+											mix={css(mutedLinkCss)}
+										>
+											{item.listingName}
+										</a>
+									</span>
 								</span>
 								<time
 									dateTime={item.createdAt}
@@ -177,6 +195,18 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 
 export async function renderProfileContentHtml(props: ProfileContentProps) {
 	return renderToString(<ProfileContent {...props} />)
+}
+
+const profileHeadingCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.md,
+}
+
+const activityActorCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.sm,
 }
 
 const sectionCss = {

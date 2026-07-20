@@ -85,6 +85,7 @@ export type CommunityProfileRecord = {
 	username: string
 	displayName: string
 	bio: string | null
+	avatarKey: string | null
 	visibility: ProfileVisibility
 	joinedAt: string
 	followerCount: number
@@ -104,6 +105,7 @@ export type CommunityActivityItem = {
 	actorUserId: string
 	actorUsername: string
 	actorDisplayName: string
+	actorAvatarKey: string | null
 	listingId: string
 	listingName: string
 	listingKodyId: string
@@ -124,6 +126,7 @@ export type CommunityStargazer = {
 	userId: string
 	username: string
 	displayName: string
+	avatarKey: string | null
 	starredAt: string
 }
 

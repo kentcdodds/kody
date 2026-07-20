@@ -1,3 +1,4 @@
+import { buildUserAvatarUrl } from '#app/community-public.ts'
 import {
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
@@ -20,6 +21,7 @@ export function buildAccountProfilePayload(
 	profileFields?: {
 		displayName?: string | null
 		bio?: string | null
+		avatarKey?: string | null
 		profileVisibility?: ProfileVisibility
 	},
 ): AccountProfileLoaderData {
@@ -37,6 +39,10 @@ export function buildAccountProfilePayload(
 				? rawDisplayName.trim()
 				: user.displayName || user.username,
 		bio: profileFields?.bio ?? null,
+		avatarUrl: buildUserAvatarUrl({
+			username: user.username,
+			avatarKey: profileFields?.avatarKey ?? null,
+		}),
 		profileVisibility: profileFields?.profileVisibility ?? 'public',
 	}
 }
@@ -44,7 +50,7 @@ export function buildAccountProfilePayload(
 /**
  * Load account profile settings. When `env` is provided, reads community
  * profile fields from the users row so the settings form shows persisted
- * display name / bio / visibility.
+ * display name / bio / visibility / avatar.
  */
 export async function loadAccountProfileData(
 	user: AuthenticatedUser,
@@ -63,6 +69,7 @@ export async function loadAccountProfileData(
 	return buildAccountProfilePayload(user, {
 		displayName: row.display_name,
 		bio: row.bio,
+		avatarKey: row.avatar_key,
 		profileVisibility: asProfileVisibility(row.profile_visibility),
 	})
 }

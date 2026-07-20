@@ -112,3 +112,27 @@ test('community social migration defaults profiles public, packages private, and
 		{ name: 'user_follows' },
 	])
 })
+
+test('user avatars migration adds nullable avatar_key column', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigration(db, '0001-init.sql')
+
+	db.prepare(
+		`INSERT INTO users (username, email, password_hash)
+		VALUES (?, ?, ?)`,
+	).run('alice', 'alice@example.com', 'hash')
+
+	applyMigration(db, '0066-user-avatars.sql')
+
+	expect(
+		db.prepare(`SELECT avatar_key FROM users WHERE username = 'alice'`).get(),
+	).toEqual({ avatar_key: null })
+
+	db.prepare(`UPDATE users SET avatar_key = ? WHERE username = 'alice'`).run(
+		'user-avatars/stable-alice/abcdef.png',
+	)
+
+	expect(
+		db.prepare(`SELECT avatar_key FROM users WHERE username = 'alice'`).get(),
+	).toEqual({ avatar_key: 'user-avatars/stable-alice/abcdef.png' })
+})

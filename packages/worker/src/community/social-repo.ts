@@ -30,12 +30,13 @@ export type UserSocialRow = {
 	stable_user_id: string | null
 	display_name: string | null
 	bio: string | null
+	avatar_key: string | null
 	profile_visibility: ProfileVisibility
 	created_at: string
 }
 
 const userSocialSelectColumns = `id, username, email, stable_user_id, display_name, bio,
-	profile_visibility, created_at`
+	avatar_key, profile_visibility, created_at`
 
 function mapUserSocialRow(row: Record<string, unknown>): UserSocialRow {
 	return {
@@ -47,6 +48,7 @@ function mapUserSocialRow(row: Record<string, unknown>): UserSocialRow {
 		display_name:
 			row['display_name'] == null ? null : String(row['display_name']),
 		bio: row['bio'] == null ? null : String(row['bio']),
+		avatar_key: row['avatar_key'] == null ? null : String(row['avatar_key']),
 		profile_visibility: String(row['profile_visibility']) as ProfileVisibility,
 		created_at: String(row['created_at']),
 	}
@@ -324,7 +326,8 @@ export async function listCommunityStargazers(
 ): Promise<Array<CommunityStargazer>> {
 	const rows = await db
 		.prepare(
-			`SELECT s.user_id, s.created_at, u.username, u.display_name, u.email
+			`SELECT s.user_id, s.created_at, u.username, u.display_name, u.email,
+				u.avatar_key
 			FROM community_stars s
 			JOIN users u ON u.stable_user_id = s.user_id
 				AND u.profile_visibility = 'public'
@@ -347,6 +350,7 @@ export async function listCommunityStargazers(
 				username,
 				email,
 			}),
+			avatarKey: row['avatar_key'] == null ? null : String(row['avatar_key']),
 			starredAt: String(row['created_at']),
 		}
 	})
@@ -468,6 +472,8 @@ function mapActivityRow(
 			username,
 			email,
 		}),
+		actorAvatarKey:
+			row['avatar_key'] == null ? null : String(row['avatar_key']),
 		listingId: String(row['listing_id']),
 		listingName: String(row['listing_name']),
 		listingKodyId: String(row['listing_kody_id']),
@@ -514,7 +520,8 @@ export async function listCommunityActivityForActors(
 				.prepare(
 					`SELECT e.event_type AS event_type, e.actor_user_id AS actor_user_id,
 						e.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
-						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email
+						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email,
+						u.avatar_key
 					FROM community_activity_events e
 					JOIN community_listings l ON l.id = e.listing_id AND l.status = 'active'
 					JOIN users u ON u.stable_user_id = e.actor_user_id ${publicProfileClause}
@@ -528,7 +535,8 @@ export async function listCommunityActivityForActors(
 				.prepare(
 					`SELECT 'listing_forked' AS event_type, f.forker_user_id AS actor_user_id,
 						f.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
-						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email
+						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email,
+						u.avatar_key
 					FROM community_forks f
 					JOIN community_listings l ON l.id = f.listing_id AND l.status = 'active'
 					JOIN saved_packages sp ON sp.id = f.forked_package_id
@@ -545,7 +553,8 @@ export async function listCommunityActivityForActors(
 				.prepare(
 					`SELECT 'listing_starred' AS event_type, s.user_id AS actor_user_id,
 						s.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
-						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email
+						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email,
+						u.avatar_key
 					FROM community_stars s
 					JOIN community_listings l ON l.id = s.listing_id AND l.status = 'active'
 					JOIN users u ON u.stable_user_id = s.user_id ${publicProfileClause}

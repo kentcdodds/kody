@@ -117,6 +117,7 @@ test('community stargazers API returns public stargazers', async () => {
 				userId: 'stable-bob',
 				username: 'bob',
 				displayName: 'Bob',
+				avatarKey: null,
 				starredAt: '2026-07-01T00:00:00.000Z',
 			},
 		],
@@ -141,6 +142,7 @@ test('community stargazers API returns public stargazers', async () => {
 			{
 				username: 'bob',
 				displayName: 'Bob',
+				avatarUrl: null,
 				starredAt: '2026-07-01T00:00:00.000Z',
 			},
 		],

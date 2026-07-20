@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { buildUserAvatarUrl } from '#app/community-public.ts'
 import {
 	type CommunityProfileRecord,
 	type PublicProfilePackage,
@@ -11,6 +12,7 @@ export const communityProfileOutputSchema = z.object({
 	username: z.string(),
 	display_name: z.string(),
 	bio: z.string().nullable(),
+	avatar_url: z.string().nullable(),
 	visibility: communityProfileVisibilitySchema,
 	joined_at: z.string(),
 	follower_count: z.number().int().nonnegative(),
@@ -36,11 +38,19 @@ export const communityProfileGetOutputSchema = z.object({
 	recent_activity: z.array(communityActivityItemSchema),
 })
 
-export function toCommunityProfileOutput(profile: CommunityProfileRecord) {
+export function toCommunityProfileOutput(
+	profile: CommunityProfileRecord,
+	baseUrl: string,
+) {
+	const avatarPath = buildUserAvatarUrl({
+		username: profile.username,
+		avatarKey: profile.avatarKey,
+	})
 	return {
 		username: profile.username,
 		display_name: profile.displayName,
 		bio: profile.bio,
+		avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
 		visibility: profile.visibility,
 		joined_at: profile.joinedAt,
 		follower_count: profile.followerCount,

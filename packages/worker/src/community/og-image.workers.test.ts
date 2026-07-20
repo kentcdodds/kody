@@ -14,6 +14,7 @@ test('renderCommunityOgImage works in workerd', async () => {
 		averageStars: 4.2,
 		ratingCount: 5,
 		forkCount: 9,
+		starCount: 3,
 		iconDataUri: `data:image/png;base64,${bytesToBase64(iconPng)}`,
 	})
 

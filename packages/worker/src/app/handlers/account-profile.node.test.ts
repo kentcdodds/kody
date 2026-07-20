@@ -26,6 +26,7 @@ type TestUser = {
 	password_hash: string
 	display_name: string | null
 	bio: string | null
+	avatar_key: string | null
 	profile_visibility: 'public' | 'private'
 	created_at: string
 	updated_at: string
@@ -138,7 +139,7 @@ function createUser(
 	username: string,
 	email = `${username}@example.com`,
 	profile?: Partial<
-		Pick<TestUser, 'display_name' | 'bio' | 'profile_visibility'>
+		Pick<TestUser, 'display_name' | 'bio' | 'avatar_key' | 'profile_visibility'>
 	>,
 ) {
 	return {
@@ -148,6 +149,7 @@ function createUser(
 		password_hash: 'unused',
 		display_name: profile?.display_name ?? null,
 		bio: profile?.bio ?? null,
+		avatar_key: profile?.avatar_key ?? null,
 		profile_visibility: profile?.profile_visibility ?? 'public',
 		created_at: new Date(0).toISOString(),
 		updated_at: new Date(0).toISOString(),
@@ -215,6 +217,7 @@ test('account profile API returns email and username for the signed-in user', as
 		username: 'current-user',
 		displayName: 'current-user',
 		bio: null,
+		avatarUrl: null,
 		profileVisibility: 'public',
 	})
 	// Reads are not audited.
@@ -406,6 +409,7 @@ test('account profile API rounds trip displayName, bio, and visibility', async (
 		username: 'current-user',
 		displayName: 'Current User',
 		bio: 'I build packages',
+		avatarUrl: null,
 		profileVisibility: 'private',
 	})
 	expect(mockModule.updateCommunityProfile).toHaveBeenCalledWith({

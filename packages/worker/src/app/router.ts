@@ -59,6 +59,7 @@ import {
 	createAccountPasskeysHandler,
 } from '#app/handlers/account-passkeys.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
+import { createAccountAvatarApiPostHandler } from '#app/handlers/account-avatar.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
 	createAccountStarsApiHandler,
@@ -107,7 +108,9 @@ import {
 	createProfileApiHandler,
 	createProfileFollowApiPostHandler,
 	createProfileHandler,
+	createProfileOgImageHandler,
 } from '#app/handlers/profile.tsx'
+import { createProfileAvatarHandler } from '#app/handlers/profile-avatar.ts'
 import {
 	createTimelineApiHandler,
 	createTimelineHandler,
@@ -201,6 +204,7 @@ export function createAppRouter(env: Env) {
 			accountPasskeysApiPost: createAccountPasskeysApiHandler(env),
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
+			accountAvatarApiPost: createAccountAvatarApiPostHandler(env),
 			accountStars: createAccountStarsHandler(env),
 			accountStarsApi: createAccountStarsApiHandler(env),
 			accountTwoFactor: createAccountTwoFactorHandler(env),
@@ -256,6 +260,8 @@ export function createAppRouter(env: Env) {
 			communityStargazersApi: createCommunityStargazersApiHandler(env),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),
+			profileAvatar: createProfileAvatarHandler(env),
+			profileOgImage: createProfileOgImageHandler(env),
 			profileFollowApiPost: createProfileFollowApiPostHandler(env),
 			timeline: createTimelineHandler(env),
 			timelineApi: createTimelineApiHandler(env),

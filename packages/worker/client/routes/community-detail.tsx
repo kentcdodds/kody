@@ -36,6 +36,7 @@ import {
 } from '#app/community-public-types.ts'
 import { type CommunityStargazersLoaderData } from '#app/loader-data.ts'
 import { formatCommunityPublishedDate } from '#app/community-display.ts'
+import { UserAvatar } from '#app/user-avatar.tsx'
 
 type CommunityDetailApiPayload = {
 	ok: true
@@ -868,18 +869,25 @@ export function CommunityDetailRoute(handle: Handle) {
 									data-testid="community-stargazers"
 								>
 									{stargazers.map((stargazer) => (
-										<li key={stargazer.username}>
-											<a
-												href={routes.profile.href({
-													username: stargazer.username,
-												})}
-												mix={css(mutedLinkCss)}
-											>
-												{stargazer.displayName}
-											</a>{' '}
-											<span mix={css({ color: colors.textMuted })}>
-												starred{' '}
-												{formatCommunityPublishedDate(stargazer.starredAt)}
+										<li key={stargazer.username} mix={css(stargazerRowCss)}>
+											<UserAvatar
+												displayName={stargazer.displayName}
+												avatarUrl={stargazer.avatarUrl}
+												size={32}
+											/>
+											<span>
+												<a
+													href={routes.profile.href({
+														username: stargazer.username,
+													})}
+													mix={css(mutedLinkCss)}
+												>
+													{stargazer.displayName}
+												</a>{' '}
+												<span mix={css({ color: colors.textMuted })}>
+													starred{' '}
+													{formatCommunityPublishedDate(stargazer.starredAt)}
+												</span>
 											</span>
 										</li>
 									))}
@@ -1086,6 +1094,12 @@ const stargazerListCss = {
 	padding: 0,
 	listStyle: 'none',
 	fontSize: typography.fontSize.sm,
+}
+
+const stargazerRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.5rem',
 }
 
 const checkListCss = {

@@ -15,6 +15,7 @@ import {
 	type ProfileVisibility,
 } from '#app/loader-data.ts'
 import { routes } from '#app/routes.ts'
+import { UserAvatar } from '#app/user-avatar.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
@@ -56,6 +57,7 @@ import {
 
 const emailChangeApiPath = '/account/email-change.json'
 const connectionsApiPath = '/account/connections.json'
+const accountAvatarApiPath = '/account/profile/avatar.json'
 
 const providerLabels: Record<string, string> = {
 	github: 'GitHub',
@@ -138,6 +140,8 @@ export function AccountRoute(handle: Handle) {
 	let savedDisplayName = ''
 	let savedBio = ''
 	let savedProfileVisibility: ProfileVisibility = 'public'
+	let avatarUrl: string | null = null
+	let avatarStatus: 'idle' | 'uploading' | 'removing' = 'idle'
 	let draftEmail = ''
 	let emailChangePassword = ''
 	let message: string | null = null
@@ -291,6 +295,88 @@ export function AccountRoute(handle: Handle) {
 		draftDisplayName = payload.displayName
 		draftBio = payload.bio ?? ''
 		draftProfileVisibility = payload.profileVisibility
+		avatarUrl = payload.avatarUrl
+	}
+
+	async function handleAvatarSelected(event: Event) {
+		const input = event.currentTarget
+		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
+		const file = input.files[0]
+		avatarStatus = 'uploading'
+		message = null
+		messageTone = 'info'
+		handle.update()
+
+		try {
+			const body = new FormData()
+			body.set('avatar', file)
+			const response = await fetch(accountAvatarApiPath, {
+				method: 'POST',
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				body,
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountProfileLoaderData & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to upload avatar.')
+			}
+			applyProfileFields(payload)
+			message = 'Avatar updated.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to upload avatar.'
+			messageTone = 'error'
+		} finally {
+			avatarStatus = 'idle'
+			input.value = ''
+			handle.update()
+		}
+	}
+
+	async function handleRemoveAvatar() {
+		avatarStatus = 'removing'
+		message = null
+		messageTone = 'info'
+		handle.update()
+
+		try {
+			const response = await fetch(accountAvatarApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ remove: true }),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountProfileLoaderData & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to remove avatar.')
+			}
+			applyProfileFields(payload)
+			message = 'Avatar removed.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to remove avatar.'
+			messageTone = 'error'
+		} finally {
+			avatarStatus = 'idle'
+			handle.update()
+		}
 	}
 
 	async function handleResendVerification() {
@@ -562,7 +648,7 @@ export function AccountRoute(handle: Handle) {
 						{emailVerified && needsOnboarding ? renderOnboardingBanner() : null}
 						<AccountManagementPanel
 							title="Profile"
-							description="Your username is unique. Display name, bio, and visibility control your public community profile."
+							description="Your username is unique. Display name, bio, avatar, and visibility control your public community profile."
 						>
 							<form
 								mix={[
@@ -570,6 +656,50 @@ export function AccountRoute(handle: Handle) {
 									on('submit', handleProfileSubmit),
 								]}
 							>
+								<div mix={css(avatarSectionCss)} data-testid="account-avatar">
+									<UserAvatar
+										displayName={draftDisplayName || username}
+										avatarUrl={avatarUrl}
+										size={72}
+										testId="account-avatar-image"
+									/>
+									<div mix={css({ display: 'grid', gap: spacing.sm })}>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Avatar</span>
+											<input
+												type="file"
+												name="avatar"
+												accept="image/png,image/jpeg,image/webp"
+												disabled={avatarStatus !== 'idle' || isSaving}
+												mix={[
+													css(inputCss),
+													on('change', (event) => {
+														void handleAvatarSelected(event)
+													}),
+												]}
+											/>
+										</label>
+										{avatarUrl ? (
+											<button
+												type="button"
+												disabled={avatarStatus !== 'idle' || isSaving}
+												mix={[
+													css(secondaryButtonCss),
+													on('click', () => {
+														void handleRemoveAvatar()
+													}),
+												]}
+											>
+												{avatarStatus === 'removing'
+													? 'Removing...'
+													: 'Remove avatar'}
+											</button>
+										) : null}
+										{avatarStatus === 'uploading' ? (
+											<p mix={css(descriptionCss)}>Uploading avatar…</p>
+										) : null}
+									</div>
+								</div>
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Username</span>
 									<input
@@ -932,6 +1062,13 @@ export function AccountRoute(handle: Handle) {
 const primaryButtonCss = getPrimaryButtonCss()
 const secondaryButtonCss = getSecondaryButtonCss()
 const dangerButtonCss = getDangerButtonCss()
+
+const avatarSectionCss = {
+	display: 'flex',
+	alignItems: 'flex-start',
+	gap: spacing.md,
+	flexWrap: 'wrap' as const,
+}
 
 const providerConnectButtonCss = {
 	...secondaryButtonCss,

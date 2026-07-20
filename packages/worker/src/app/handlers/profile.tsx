@@ -1,18 +1,26 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
+import { type RemixNode } from 'remix/ui'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { truncateCommunityText } from '#app/community-public.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { loadProfileData } from '#app/profile-data.ts'
 import { type routes } from '#app/routes.ts'
+import { OgHead } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { getUserAvatarObject } from '#worker/community/avatar.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	followCommunityUser,
+	getCommunityProfileByUsername,
 	unfollowCommunityUser,
 } from '#worker/community/social-service.ts'
+import { type CommunityProfileRecord } from '#worker/community/types.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
 const followBodySchema = z.object({
@@ -44,10 +52,28 @@ export function createProfileHandler(env: Env) {
 				})
 			}
 
+			const origin = getAppBaseUrl({ env, requestUrl: request.url })
+			const isPublicProfile = data.profile.visibility === 'public'
+			const pageTitle = `${data.profile.displayName} (@${data.profile.username}) — Kody`
+			const ogDescription =
+				data.profile.bio == null || data.profile.bio.trim() === ''
+					? 'Community profile on Kody.'
+					: truncateCommunityText(data.profile.bio, 200)
+
 			return renderAppPage({
 				request,
 				env,
 				title: data.profile.displayName,
+				extraHead: isPublicProfile
+					? ((
+							<OgHead
+								title={pageTitle}
+								description={ogDescription}
+								canonicalUrl={`${origin}/@${data.profile.username}`}
+								ogImageUrl={`${origin}/profiles/${data.profile.username}/og.png`}
+							/>
+						) as RemixNode)
+					: undefined,
 				loaderData: {
 					profileShell: {
 						ok: true,
@@ -78,6 +104,82 @@ export function createProfileApiHandler(env: Env) {
 			return jsonResponse(data)
 		},
 	} satisfies Action<typeof routes.profileApi>
+}
+
+/**
+ * Resolve a satori-safe data URI for the profile avatar. PNG and JPEG bytes
+ * embed directly; WebP (unsupported by satori) and load failures fall back to
+ * a null placeholder so the OG renderer can draw an initial-letter circle.
+ */
+async function loadProfileOgAvatarDataUri(input: {
+	env: Env
+	profile: CommunityProfileRecord
+}): Promise<string | null> {
+	if (!input.profile.avatarKey) return null
+
+	try {
+		const object = await getUserAvatarObject({
+			env: input.env,
+			avatarKey: input.profile.avatarKey,
+		})
+		if (!object) return null
+
+		const contentType = object.httpMetadata?.contentType ?? ''
+		if (contentType !== 'image/png' && contentType !== 'image/jpeg') {
+			return null
+		}
+
+		const bytes = new Uint8Array(await object.arrayBuffer())
+		return `data:${contentType};base64,${bytesToBase64(bytes)}`
+	} catch (error) {
+		console.error(
+			'profile-og-avatar-load-failed',
+			input.profile.username,
+			error,
+		)
+		return null
+	}
+}
+
+export function createProfileOgImageHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ params }) {
+			const profile = await getCommunityProfileByUsername({
+				env,
+				username: params.username,
+				includePrivate: false,
+			})
+			if (!profile) {
+				return new Response('Not found', { status: 404 })
+			}
+
+			const avatarDataUri = await loadProfileOgAvatarDataUri({ env, profile })
+			// Lazy import (sanctioned exception to the no-inline-imports rule):
+			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
+			// binaries, which would otherwise bloat isolate cold starts for a
+			// route that is only hit by social-media crawlers.
+			const { renderProfileOgImage } =
+				await import('#worker/community/profile-og-image.ts')
+			const png = await renderProfileOgImage({
+				displayName: profile.displayName,
+				username: profile.username,
+				bio: profile.bio,
+				followerCount: profile.followerCount,
+				publicPackageCount: profile.publicPackageCount,
+				listingCount: profile.listingCount,
+				avatarDataUri,
+			})
+
+			return new Response(png, {
+				status: 200,
+				headers: {
+					'Cache-Control': 'public, max-age=3600',
+					'Content-Type': 'image/png',
+				},
+			})
+		},
+	} satisfies Action<typeof routes.profileOgImage>
 }
 
 export function createProfileFollowApiPostHandler(env: Env) {

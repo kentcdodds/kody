@@ -271,6 +271,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		username: 'account-user',
 		displayName: 'account-user',
 		bio: null,
+		avatarUrl: null,
 		profileVisibility: 'public',
 	})
 	expect(accountProps.loaderData?.accountConnections).toEqual({

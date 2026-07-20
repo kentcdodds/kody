@@ -96,6 +96,7 @@ test('community detail OG image embeds PNG icons and falls back for WebP', async
 	expect(mocks.renderCommunityOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: listing.name,
+			starCount: listing.starCount,
 			iconDataUri: expect.stringMatching(/^data:image\/png;base64,/),
 		}),
 	)

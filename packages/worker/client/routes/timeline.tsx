@@ -6,6 +6,7 @@ import {
 import { type PublicCommunityActivityItem } from '#app/community-public-types.ts'
 import { type TimelineLoaderData } from '#app/loader-data.ts'
 import { routes } from '#app/routes.ts'
+import { UserAvatar } from '#app/user-avatar.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -146,24 +147,31 @@ export function TimelineRoute(handle: Handle) {
 								key={`${item.type}:${item.actorUsername}:${item.listingId}:${item.createdAt}`}
 								mix={css(itemCss)}
 							>
-								<p mix={css({ margin: 0 })}>
-									<a
-										href={routes.profile.href({
-											username: item.actorUsername,
-										})}
-										mix={css(mutedLinkCss)}
-									>
-										{item.actorDisplayName}
-									</a>{' '}
-									{communityActivityVerb(item.type).toLowerCase()}{' '}
-									<a
-										href={routes.communityDetail.href({
-											listingId: item.listingId,
-										})}
-										mix={css(mutedLinkCss)}
-									>
-										{item.listingName}
-									</a>
+								<p mix={css(actorRowCss)}>
+									<UserAvatar
+										displayName={item.actorDisplayName}
+										avatarUrl={item.actorAvatarUrl}
+										size={36}
+									/>
+									<span>
+										<a
+											href={routes.profile.href({
+												username: item.actorUsername,
+											})}
+											mix={css(mutedLinkCss)}
+										>
+											{item.actorDisplayName}
+										</a>{' '}
+										{communityActivityVerb(item.type).toLowerCase()}{' '}
+										<a
+											href={routes.communityDetail.href({
+												listingId: item.listingId,
+											})}
+											mix={css(mutedLinkCss)}
+										>
+											{item.listingName}
+										</a>
+									</span>
 								</p>
 								<time
 									dateTime={item.createdAt}
@@ -201,6 +209,13 @@ const itemCss = {
 	gap: spacing.xs,
 	paddingBottom: spacing.md,
 	borderBottom: `1px solid ${colors.border}`,
+}
+
+const actorRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.sm,
+	margin: 0,
 }
 
 const timeCss = {

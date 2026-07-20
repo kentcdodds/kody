@@ -15,11 +15,21 @@ Each account has profile fields:
 - **Display name** — shown on the profile and activity items (falls back to
   username when unset)
 - **Bio** — short public text
+- **Avatar** — optional profile image (PNG, JPEG, or WebP)
 - **Profile visibility** — `public` by default, or `private`
 
 Public profiles are at `/@username`. A public profile shows display name, bio,
-join date, follower and following counts, the user's **public packages**
+avatar, join date, follower and following counts, the user's **public packages**
 (metadata only), and recent public activity.
+
+### Avatars
+
+Upload or remove an avatar from **Account → Profile** in the web UI (MCP does
+not accept avatar uploads). Accepted formats are PNG, JPEG, and WebP, up to 1
+MB, with each side between 64px and 4096px and an aspect ratio of at most 3:1.
+Avatars appear on the public profile, in timeline and profile activity rows, and
+next to public stargazers on listing pages. Private profiles still keep the
+avatar for the owner; other users do not see it.
 
 Package privacy follows `package.json#private` (projected onto
 `saved_packages.is_private`):

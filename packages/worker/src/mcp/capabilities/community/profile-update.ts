@@ -7,6 +7,7 @@ import {
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { callerContextFields } from '#mcp/observability.ts'
 import {
 	communityProfileOutputSchema,
 	communityProfileVisibilitySchema,
@@ -91,7 +92,8 @@ export const communityProfileUpdateCapability = defineDomainCapability(
 			if (!profile) {
 				throw new Error('Community profile not found after update.')
 			}
-			return toCommunityProfileOutput(profile)
+			const { baseUrl } = callerContextFields(ctx.callerContext)
+			return toCommunityProfileOutput(profile, baseUrl)
 		},
 	},
 )

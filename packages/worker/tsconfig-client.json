@@ -26,6 +26,7 @@
 		"./src/app/community-frame-constants.ts",
 		"./src/app/profile-frame-constants.ts",
 		"./src/app/community-listing-icon.tsx",
+		"./src/app/user-avatar.tsx",
 		"./src/app/community-public-types.ts",
 		"./src/app/community-activity-display.ts",
 		"./src/app/community-display.ts",
