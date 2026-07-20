@@ -9,6 +9,7 @@ import {
 } from '#app/client-build-id.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
+import { resolveDocumentTitle } from '#app/document-title.ts'
 import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
@@ -48,11 +49,14 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
 
+	const documentTitle =
+		title ?? resolveDocumentTitle(requestUrl.pathname, loaderData)
+
 	const stream = renderToStream(
 		// Remix server components accept props via handle.props; JSX typing is loose here.
 		(
 			<SsrDocument
-				title={title}
+				title={documentTitle}
 				extraHead={extraHead}
 				url={url}
 				session={session}

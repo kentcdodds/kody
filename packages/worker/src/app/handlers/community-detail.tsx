@@ -83,6 +83,7 @@ export function createCommunityDetailHandler(env: Env) {
 					communityDetailShell: {
 						ok: true,
 						listingId,
+						name: detail.listing.name,
 						forkPrompt: detail.forkPrompt,
 						loggedIn: detail.loggedIn,
 						viewerIsAdmin: detail.viewerIsAdmin,

@@ -54,6 +54,7 @@ export type CommunityDetailLoaderData = {
 export type CommunityDetailShellLoaderData = {
 	ok: true
 	listingId: string
+	name: string
 	forkPrompt: string
 	loggedIn: boolean
 	viewerIsAdmin: boolean
