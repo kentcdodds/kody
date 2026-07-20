@@ -250,3 +250,67 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		'listing-without-forks': 0,
 	})
 })
+
+test('fork snapshot migration also handles preview schemas that already have snapshot columns', () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(
+		readFileSync(
+			new URL('../../migrations/0045-community-listings.sql', import.meta.url),
+			'utf8',
+		),
+	)
+	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN listing_name TEXT`)
+	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN listing_kody_id TEXT`)
+	sqlite.exec(`
+		INSERT INTO community_listings (
+			id, owner_user_id, package_id, source_id, kody_id, name, description,
+			tags_json, license, pinned_commit, status, created_at, updated_at,
+			published_at
+		) VALUES (
+			'listing-preview', 'owner', 'package', 'source', 'current-kody',
+			'@owner/current-name', 'description', '[]', 'MIT', 'commit', 'active',
+			'2026-07-20T00:00:00.000Z', '2026-07-20T00:00:00.000Z',
+			'2026-07-20T00:00:00.000Z'
+		);
+		INSERT INTO community_forks (
+			id, listing_id, forker_user_id, origin_commit, forked_package_id,
+			forked_source_id, target_kody_id, listing_name, listing_kody_id,
+			created_at
+		) VALUES (
+			'fork-preview', 'listing-preview', 'forker', 'commit', 'fork-package',
+			'fork-source', 'fork-kody', '@owner/stale-name', 'stale-kody',
+			'2026-07-20T00:01:00.000Z'
+		);
+	`)
+
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0070-community-fork-listing-snapshots.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+
+	const columns = sqlite
+		.prepare(`PRAGMA table_info(community_forks)`)
+		.all() as Array<{ name: string }>
+	expect(
+		columns.filter((column) => column.name === 'listing_name'),
+	).toHaveLength(1)
+	expect(
+		columns.filter((column) => column.name === 'listing_kody_id'),
+	).toHaveLength(1)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT listing_name, listing_kody_id FROM community_forks
+				 WHERE id = 'fork-preview'`,
+			)
+			.get(),
+	).toEqual({
+		listing_name: '@owner/current-name',
+		listing_kody_id: 'current-kody',
+	})
+})
