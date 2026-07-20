@@ -91,6 +91,51 @@ export default async () => await runtime.storage.sql('select 1')`,
 	})
 })
 
+test('findUnboundRuntimeHelperAccess matches inlined runtime helper declarations', () => {
+	// Real bundles inline the virtual runtime module into the entry module,
+	// so helpers are top-level declarations rather than import bindings.
+	const inlinedSource = `var storage = __kodyOptionalRuntimeObjectExport("storage", void 0);
+var refreshAccessToken = __kodyOptionalRuntimeFunctionExport("refreshAccessToken");
+async function main() {
+	const result = await storage.sql("select 1");
+	return result.rows;
+}`
+
+	expect(
+		findUnboundRuntimeHelperAccess({
+			errorMessage: "Cannot read properties of undefined (reading 'sql')",
+			modules: { 'bundle.js': inlinedSource },
+			unboundHelperNames: allOptionalHelperNames,
+		}),
+	).toEqual({
+		helperName: 'storage',
+		reference: 'storage.sql',
+	})
+
+	expect(
+		findUnboundRuntimeHelperAccess({
+			errorMessage: 'refreshAccessToken is not a function',
+			modules: { 'bundle.js': inlinedSource },
+			unboundHelperNames: allOptionalHelperNames,
+		}),
+	).toEqual({
+		helperName: 'refreshAccessToken',
+		reference: 'refreshAccessToken',
+	})
+
+	// A declaration initialized by an unrelated factory is not a helper.
+	expect(
+		findUnboundRuntimeHelperAccess({
+			errorMessage: "Cannot read properties of undefined (reading 'sql')",
+			modules: {
+				'bundle.js': `var storage = createMyStorage("storage");
+async function main() { return (await storage.sql("select 1")).rows }`,
+			},
+			unboundHelperNames: allOptionalHelperNames,
+		}),
+	).toBeNull()
+})
+
 test('findUnboundRuntimeHelperAccess matches calls to unbound function helpers', () => {
 	expect(
 		findUnboundRuntimeHelperAccess({

@@ -170,7 +170,11 @@ function escapeRegExp(value: string) {
 function collectRuntimeImportBindings(
 	source: string,
 ): Array<RuntimeImportBinding> {
-	if (!source.includes('kody:runtime') && !source.includes('runtime.js')) {
+	if (
+		!source.includes('kody:runtime') &&
+		!source.includes('runtime.js') &&
+		!source.includes('__kodyOptionalRuntime')
+	) {
 		return []
 	}
 	let program: unknown
@@ -181,6 +185,7 @@ function collectRuntimeImportBindings(
 	}
 	const bindings: Array<RuntimeImportBinding> = []
 	for (const node of readProgramBody(program)) {
+		collectInlinedRuntimeBindings(node, bindings)
 		if (readNodeType(node) !== 'ImportDeclaration') continue
 		if (readRecordValue(node, 'importKind') === 'type') continue
 		const specifier = readImportSourceValue(node)
@@ -215,6 +220,43 @@ function collectRuntimeImportBindings(
 		}
 	}
 	return bindings
+}
+
+const inlinedRuntimeExportFactoryNames = new Set([
+	'__kodyOptionalRuntimeObjectExport',
+	'__kodyOptionalRuntimeFunctionExport',
+])
+
+/**
+ * Bundlers can inline the virtual runtime module into the entry module, so
+ * helpers appear as plain top-level declarations instead of imports:
+ * `var storage = __kodyOptionalRuntimeObjectExport("storage", void 0);`.
+ * Collect those as named bindings so inlined bundles match too.
+ */
+function collectInlinedRuntimeBindings(
+	node: unknown,
+	bindings: Array<RuntimeImportBinding>,
+) {
+	if (readNodeType(node) !== 'VariableDeclaration') return
+	const declarations = readRecordValue(node, 'declarations')
+	if (!Array.isArray(declarations)) return
+	for (const declaration of declarations) {
+		if (readNodeType(declaration) !== 'VariableDeclarator') continue
+		const localName = readIdentifierName(readRecordValue(declaration, 'id'))
+		if (!localName) continue
+		const init = readRecordValue(declaration, 'init')
+		if (readNodeType(init) !== 'CallExpression') continue
+		const calleeName = readIdentifierName(readRecordValue(init, 'callee'))
+		if (!calleeName || !inlinedRuntimeExportFactoryNames.has(calleeName)) {
+			continue
+		}
+		const callArguments = readRecordValue(init, 'arguments')
+		const helperName = Array.isArray(callArguments)
+			? readImportedStringName(callArguments[0])
+			: null
+		if (!helperName) continue
+		bindings.push({ kind: 'named', helperName, localName })
+	}
 }
 
 function isRuntimeModuleSpecifier(specifier: string) {
