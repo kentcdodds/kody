@@ -152,10 +152,9 @@ agent fork both persist through `community_forks`, historical data cannot
 distinguish them and reports both as `fork`. New fork rows snapshot the public
 listing name and kody id; migration `0068-community-fork-listing-snapshots.sql`
 backfills existing rows while their listings still exist, preserving readable
-fork provenance after a later hard delete. Unrecoverable legacy orphan rows use
-explicit deleted/unknown placeholders. If an actor's legacy account row has no
-materialized stable id, the service resolves the username in one fallback
-email-hash scan; neither email nor stable user id enters the feed or event.
+fork provenance after a later hard delete. Pre-snapshot orphan rows use explicit
+deleted/unknown placeholders. Actor usernames use the materialized stable-id
+index; neither email nor stable user id enters the feed or event.
 
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks

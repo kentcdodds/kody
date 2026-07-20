@@ -67,11 +67,12 @@ export const stableUserIdBackfillBatchSize = 100
 
 /**
  * Persist the stable user id (SHA-256 of the normalized email) for every
- * legacy users row that still has a NULL `stable_user_id`, so lookups hit the
- * partial unique index (migration 0052) instead of the scan fallback. Pages
- * with a keyset on `id` in batches of 100 to stay within D1 limits on large
- * tables. Per-row failures (for example two rows whose emails normalize to
- * the same hash colliding on the unique index) are counted, not fatal.
+ * pre-materialization users row that still has a NULL `stable_user_id`. The
+ * production deploy runs this migration before installing code that requires
+ * indexed stable ids. Pages with a keyset on `id` in batches of 100 to stay
+ * within D1 limits on large tables. Per-row failures (for example two rows
+ * whose emails normalize to the same hash colliding on the unique index) are
+ * counted for the deploy step to reject.
  */
 export async function backfillStableUserIds(input: {
 	db: D1Database
@@ -116,8 +117,8 @@ export async function backfillStableUserIds(input: {
 
 /**
  * `POST /__maintenance/backfill-stable-user-ids`: one-off/idempotent backfill
- * of `users.stable_user_id` for legacy rows, authenticated like the reindex
- * endpoints (Bearer `CAPABILITY_REINDEX_SECRET`).
+ * of `users.stable_user_id` for the production deploy migration, authenticated
+ * like the reindex endpoints (Bearer `CAPABILITY_REINDEX_SECRET`).
  */
 export async function handleStableUserIdBackfillRequest(
 	request: Request,

@@ -1,8 +1,5 @@
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
-import {
-	isMissingStableUserIdColumnError,
-	type UserStableIdRow,
-} from '#worker/user-id.ts'
+import { type UserStableIdRow } from '#worker/user-id.ts'
 
 type PermissionRow = {
 	role_name: string
@@ -57,8 +54,8 @@ function isMissingRbacTableError(error: unknown) {
 
 /**
  * List account rows (email + stored stable id) for every user holding the
- * admin role. Returns an empty list on pre-RBAC databases so callers can
- * treat "no RBAC tables" as "no admins".
+ * admin role. Returns an empty list when RBAC tables do not exist so callers
+ * can treat that state as "no admins".
  */
 export async function listAdminAccountRows(
 	db: D1Database,
@@ -73,13 +70,6 @@ export async function listAdminAccountRows(
 		const result = await db
 			.prepare(select('u.email, u.stable_user_id'))
 			.all<{ email: string; stable_user_id: string | null }>()
-		return result.results ?? []
-	} catch (error) {
-		if (isMissingRbacTableError(error)) return []
-		if (!isMissingStableUserIdColumnError(error)) throw error
-	}
-	try {
-		const result = await db.prepare(select('u.email')).all<{ email: string }>()
 		return result.results ?? []
 	} catch (error) {
 		if (isMissingRbacTableError(error)) return []

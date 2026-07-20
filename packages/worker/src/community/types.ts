@@ -103,10 +103,6 @@ export type CommunityActivityRecord =
 			adaptationEffort: number
 	  })
 
-export type CommunityActivityRecordWithActorId = CommunityActivityRecord & {
-	actingUserId: string
-}
-
 export type CommunityForkRow = {
 	id: string
 	listing_id: string

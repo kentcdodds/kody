@@ -35,9 +35,8 @@ a narrow role-gated admin metadata projection. It joins those rows only to
 public listing identity and the actor's username. Fork rows snapshot the public
 listing name and kody id so retained provenance remains intelligible after a
 listing is deleted. The projection never reads the forked Artifacts source, the
-public snapshot file tree, rating notes, or unrelated account data. When a
-legacy account has no materialized stable id, the service performs one fallback
-account-identity scan and hashes email to recover its username; email and stable
+public snapshot file tree, rating notes, or unrelated account data. Actor
+usernames resolve through the materialized stable-id index; email and stable
 user ids remain absent from activity results and events. One-click installs and
 ordinary forks share the same row shape and therefore appear as `fork`.
 
@@ -201,10 +200,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   reverse-resolve stable ids at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
   stable ids with one indexed point read (`findUserRowByStableUserId` /
-  `findUserAccountByStableUserId`); legacy rows with a NULL `stable_user_id`
-  fall back to a scan-and-hash that self-heals by writing the computed id back,
-  and the `POST /__maintenance/backfill-stable-user-ids` endpoint backfills all
-  remaining legacy rows in one pass.
+  `findUserAccountByStableUserId`). Production deployment calls
+  `POST /__maintenance/backfill-stable-user-ids` before installing code that
+  requires materialized ids, and migration `0069-require-stable-user-ids.sql`
+  rejects future null/empty writes. Runtime lookups never scan or derive ids
+  from account email.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until

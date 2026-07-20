@@ -103,16 +103,12 @@ that act with only the hashed userId, mirroring `findUserAccount` in
 point read (unique partial index from migration 0052, persisted at signup),
 positive matches are cached per isolate (the mapping is a content hash, so hits
 can never go stale) and re-verified with one point read. Only use it on
-contextless paths; interactive surfaces already carry the email.
-
-Legacy rows with a NULL `stable_user_id` still fall back to a scan that hashes
-each email, but the scan is self-healing: a match writes the computed id back
-(`UPDATE ... WHERE stable_user_id IS NULL`), so each legacy row pays the scan at
-most once. The authenticated `POST /__maintenance/backfill-stable-user-ids`
-endpoint (`backfillStableUserIds` in
-`packages/worker/src/maintenance-handler.ts`) backfills all remaining legacy
-rows in keyset-paged batches, eliminating the scan entirely for existing
-deployments.
+contextless paths; interactive surfaces already carry the email. Production
+deployment invokes the authenticated
+`POST /__maintenance/backfill-stable-user-ids` migration before installing code
+that requires materialized ids. Migration `0069-require-stable-user-ids.sql`
+then prevents future null/empty values, so runtime resolution is always an
+indexed point read and never scans or hashes account email.
 
 ## The error shape
 

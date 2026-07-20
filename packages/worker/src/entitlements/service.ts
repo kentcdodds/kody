@@ -2,7 +2,6 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	createStableUserIdFromEmail,
 	findUserRowByStableUserId,
-	isMissingStableUserIdColumnError,
 	resolveUserStableId,
 } from '#worker/user-id.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
@@ -19,18 +18,17 @@ import {
  * Resolve the effective plan for a user, or null when the user is
  * legacy/unlimited.
  *
- * The MCP `userId` is the account's stored stable id, falling back to the
- * legacy SHA-256 email hash when a stored id has not been materialized yet.
- * The lookup goes through email while verifying that the account stable id
- * matches the given userId. When the pair does not match (synthetic
+ * The MCP `userId` is the account's stored stable id. The lookup goes through
+ * email while verifying that the account stable id matches the given userId.
+ * When the pair does not match (synthetic
  * runtime contexts, package-scoped caller contexts with an empty email, or
  * test fixtures), the lookup short-circuits to null without touching D1 —
  * which also means enforcement is skipped, matching the invariant that
  * enforcement only activates for users with a verified plan.
  *
- * Effective plan = f(manual users.plan, users.stripe_plan): a NULL manual
- * plan always wins (legacy/unlimited); otherwise the higher-ranked of the
- * manual grant and Stripe subscription plan is returned. Signature stays
+ * Effective plan = f(manual users.plan, users.stripe_plan): a NULL manual plan
+ * always wins (unlimited); otherwise the higher-ranked of the manual grant and
+ * Stripe subscription plan is returned. Signature stays
  * `(db, { userId, email })` so enforcement call sites are unchanged.
  */
 export async function getUserPlan(
@@ -41,19 +39,12 @@ export async function getUserPlan(
 	if (!email || !input.userId) return null
 	if ((await createStableUserIdFromEmail(email)) !== input.userId) {
 		if (!/^[a-f0-9]{64}$/i.test(input.userId)) return null
-		// Only the missing-column case (pre-migration databases and legacy
-		// test fixtures) may be treated as "no stored plan"; any other D1
-		// failure must propagate instead of silently disabling enforcement.
 		const storedMatch = await db
 			.prepare(
 				`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
 			)
 			.bind(email, input.userId)
 			.first<{ plan: string | null; stripe_plan: string | null }>()
-			.catch((error: unknown) => {
-				if (isMissingStableUserIdColumnError(error)) return null
-				throw error
-			})
 		return storedMatch
 			? resolveEffectivePlan(
 					parsePlanName(storedMatch.plan),
@@ -95,10 +86,7 @@ export type StableUserAccount = {
 
 /**
  * Reverse-resolve a stable MCP userId back to the account email, plan, and
- * verified-email state. Stored stable ids are one indexed point read; legacy
- * rows without one fall back to the scan in `findUserRowByStableUserId`,
- * which hashes each email and writes the computed id back so the scan is
- * paid at most once per row.
+ * verified-email state with one indexed stable-id point read.
  * Only call this on paths that genuinely have no caller context email (for
  * example package-runtime contexts acting with only the hashed userId);
  * inbound email routing resolves accounts via the indexed username lookup
@@ -125,27 +113,6 @@ export async function findUserAccountByStableUserId(
 				plan: string | null
 				email_verified_at: string | null
 			}>()
-			.catch(async (error: unknown) => {
-				// Only a schema missing the stable_user_id column downgrades to the
-				// legacy query; transient D1 failures must propagate, not silently
-				// change which lookup ran.
-				if (!isMissingStableUserIdColumnError(error)) throw error
-				const legacyRow = await db
-					.prepare(
-						`SELECT email, plan, email_verified_at
-						 FROM users
-						 WHERE email = ?`,
-					)
-					.bind(cachedEmail)
-					.first<{
-						email: string
-						plan: string | null
-						email_verified_at: string | null
-					}>()
-				return legacyRow
-					? { ...legacyRow, stable_user_id: null as string | null }
-					: null
-			})
 		if (row && (await resolveUserStableId(row)) === trimmed) {
 			return {
 				email: row.email,

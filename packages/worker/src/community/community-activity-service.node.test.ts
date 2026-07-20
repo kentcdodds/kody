@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	countCommunityForksByListingIds,
 	insertCommunityFork,
@@ -76,8 +75,6 @@ function createCommunityDb() {
 
 test('admin community activity reads forks and latest ratings newest-first with pagination and filters', async () => {
 	const { sqlite, db } = createCommunityDb()
-	const legacyForkerUserId =
-		await createStableUserIdFromEmail('forker@example.com')
 	sqlite
 		.prepare(
 			`INSERT INTO users (
@@ -87,7 +84,7 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		.run(
 			'forker',
 			'forker@example.com',
-			null,
+			'user-forker',
 			'rater',
 			'rater@example.com',
 			'user-rater',
@@ -135,7 +132,7 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		await insertCommunityFork(db, {
 			id: fork.id,
 			listing_id: fork.listingId,
-			forker_user_id: legacyForkerUserId,
+			forker_user_id: 'user-forker',
 			origin_commit: 'commit-1',
 			forked_package_id: `package-${fork.id}`,
 			forked_source_id: `source-${fork.id}`,

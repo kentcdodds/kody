@@ -2,7 +2,6 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { isReservedUsername } from '#app/reserved-usernames.ts'
 import {
 	findUserRowByStableUserId,
-	isMissingStableUserIdColumnError,
 	resolveUserStableId,
 } from '#worker/user-id.ts'
 
@@ -101,19 +100,6 @@ async function findUserAccount(input: {
 				stable_user_id: string | null
 				username: string | null
 			}>()
-			.catch(async (error: unknown) => {
-				// Only a schema missing the stable_user_id column downgrades to the
-				// legacy query; transient D1 failures must propagate, not silently
-				// change which lookup ran.
-				if (!isMissingStableUserIdColumnError(error)) throw error
-				const legacyRow = await input.db
-					.prepare(`SELECT email, username FROM users WHERE email = ?`)
-					.bind(email)
-					.first<{ email: string; username: string | null }>()
-				return legacyRow
-					? { ...legacyRow, stable_user_id: null as string | null }
-					: null
-			})
 		if (!row) return null
 		if ((await resolveUserStableId(row)) === userId) {
 			return {

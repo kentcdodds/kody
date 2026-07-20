@@ -150,15 +150,15 @@ Worker bindings (see `packages/worker/wrangler.jsonc`):
   require it because `WRANGLER_IS_LOCAL_DEV`, `SENTRY_ENVIRONMENT=test`, or a
   missing non-production binding keeps search on the deterministic offline path.
 
-Optional Worker secret:
+Worker secrets:
 
 - **`AI_GATEWAY_ID`** — Cloudflare AI Gateway id. When set, embedding calls use
   the Workers AI binding `gateway` option so production and preview inference is
   logged/routed through AI Gateway. When unset, the Worker calls Workers AI
   directly.
-- **`CAPABILITY_REINDEX_SECRET`** — Bearer token for
-  `POST /__maintenance/reindex-capabilities` (production deploy workflow calls
-  it after healthcheck when the GitHub secret is set). Use this endpoint after
+- **`CAPABILITY_REINDEX_SECRET`** — required in production; bearer token for the
+  pre-deploy stable-user-id migration and
+  `POST /__maintenance/reindex-capabilities`. Use the reindex endpoint after
   changing the embedding model, pooling, or Vectorize index dimensions; it
   rebuilds built-in capability, memory, job, and saved-package vectors with
   per-user `userId` metadata on user-owned rows. Local dev uses offline search
