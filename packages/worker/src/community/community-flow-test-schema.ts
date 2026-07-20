@@ -10,7 +10,6 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			avatar_key TEXT,
 			profile_visibility TEXT NOT NULL DEFAULT 'public' CHECK (profile_visibility IN ('public', 'private')),
 			password_hash TEXT NOT NULL,
-			stable_user_id TEXT,
 			plan TEXT,
 			stripe_customer_id TEXT,
 			stripe_plan TEXT,
