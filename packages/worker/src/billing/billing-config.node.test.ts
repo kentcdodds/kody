@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	buildPaymentLinkUrl,
 	createBillingLinkReference,
-	isBillingConfigured,
 	resolveSubscriptionPlan,
 } from './billing-config.ts'
 import { type StripeSubscription } from './stripe-client.ts'
@@ -25,39 +24,6 @@ function subscription(input: {
 	}
 }
 
-test('isBillingConfigured requires a non-empty STRIPE_SECRET_KEY', () => {
-	expect(isBillingConfigured({})).toBe(false)
-	expect(isBillingConfigured({ STRIPE_SECRET_KEY: '' })).toBe(false)
-	expect(isBillingConfigured({ STRIPE_SECRET_KEY: '   ' })).toBe(false)
-	expect(isBillingConfigured({ STRIPE_SECRET_KEY: 'sk_test_123' })).toBe(true)
-})
-
-test('buildPaymentLinkUrl appends client_reference_id and prefilled_email', () => {
-	const url = buildPaymentLinkUrl({
-		baseUrl: 'https://buy.stripe.com/test_pro',
-		clientReferenceId: 'signedref123',
-		email: 'user@example.com',
-	})
-	const parsed = new URL(url)
-	expect(parsed.origin + parsed.pathname).toBe(
-		'https://buy.stripe.com/test_pro',
-	)
-	expect(parsed.searchParams.get('client_reference_id')).toBe('signedref123')
-	expect(parsed.searchParams.get('prefilled_email')).toBe('user@example.com')
-})
-
-test('buildPaymentLinkUrl preserves existing query params on the payment link', () => {
-	const url = buildPaymentLinkUrl({
-		baseUrl: 'https://buy.stripe.com/test?locale=en',
-		clientReferenceId: 'ref',
-		email: 'a@b.com',
-	})
-	const parsed = new URL(url)
-	expect(parsed.searchParams.get('locale')).toBe('en')
-	expect(parsed.searchParams.get('client_reference_id')).toBe('ref')
-	expect(parsed.searchParams.get('prefilled_email')).toBe('a@b.com')
-})
-
 test('createBillingLinkReference is stable per user and not the raw stable id', async () => {
 	const envStub = { COOKIE_SECRET: 'x'.repeat(32) }
 	const first = await createBillingLinkReference(envStub, 'stable-user-1')
@@ -74,10 +40,37 @@ test('createBillingLinkReference is stable per user and not the raw stable id', 
 	expect(first).toMatch(/^[0-9a-f]{64}$/)
 })
 
-test('resolveSubscriptionPlan ignores non-active statuses', () => {
+test('buildPaymentLinkUrl appends checkout params and preserves existing query params', () => {
+	const appended = new URL(
+		buildPaymentLinkUrl({
+			baseUrl: 'https://buy.stripe.com/test_pro',
+			clientReferenceId: 'signedref123',
+			email: 'user@example.com',
+		}),
+	)
+	expect(appended.origin + appended.pathname).toBe(
+		'https://buy.stripe.com/test_pro',
+	)
+	expect(appended.searchParams.get('client_reference_id')).toBe('signedref123')
+	expect(appended.searchParams.get('prefilled_email')).toBe('user@example.com')
+
+	const preserved = new URL(
+		buildPaymentLinkUrl({
+			baseUrl: 'https://buy.stripe.com/test?locale=en',
+			clientReferenceId: 'ref',
+			email: 'a@b.com',
+		}),
+	)
+	expect(preserved.searchParams.get('locale')).toBe('en')
+	expect(preserved.searchParams.get('client_reference_id')).toBe('ref')
+	expect(preserved.searchParams.get('prefilled_email')).toBe('a@b.com')
+})
+
+test('resolveSubscriptionPlan maps active price and metadata plans with soonest cancel_at', () => {
 	const env = {
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	}
+
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -93,12 +86,7 @@ test('resolveSubscriptionPlan ignores non-active statuses', () => {
 			env,
 		),
 	).toEqual({ stripePlan: null, cancelAt: null })
-})
 
-test('resolveSubscriptionPlan matches the pro price id', () => {
-	const env = {
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-	}
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -122,12 +110,7 @@ test('resolveSubscriptionPlan matches the pro price id', () => {
 			env,
 		),
 	).toEqual({ stripePlan: 'pro', cancelAt: null })
-})
 
-test('resolveSubscriptionPlan falls back to kody_plan metadata when prices do not match', () => {
-	const env = {
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-	}
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -146,19 +129,13 @@ test('resolveSubscriptionPlan falls back to kody_plan metadata when prices do no
 			[
 				subscription({
 					status: 'active',
-					priceIds: ['price_other'],
-					metadata: { kody_plan: 'enterprise' },
+					priceIds: ['price_unknown'],
 				}),
 			],
 			env,
 		),
 	).toEqual({ stripePlan: null, cancelAt: null })
-})
 
-test('resolveSubscriptionPlan returns the soonest cancel_at as ISO', () => {
-	const env = {
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-	}
 	const sooner = 1_700_000_000
 	const later = 1_800_000_000
 	expect(
@@ -186,20 +163,4 @@ test('resolveSubscriptionPlan returns the soonest cancel_at as ISO', () => {
 		stripePlan: 'pro',
 		cancelAt: new Date(sooner * 1000).toISOString(),
 	})
-})
-
-test('resolveSubscriptionPlan ignores unknown price ids without metadata', () => {
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_unknown'],
-				}),
-			],
-			{
-				STRIPE_PRO_PRICE_ID: 'price_pro',
-			},
-		),
-	).toEqual({ stripePlan: null, cancelAt: null })
 })

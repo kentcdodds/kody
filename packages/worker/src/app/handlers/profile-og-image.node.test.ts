@@ -67,7 +67,9 @@ test('profile OG image public PNG, avatar fallback, and unavailable profiles', a
 	} as never)
 	expect(publicResponse.status).toBe(200)
 	expect(publicResponse.headers.get('Content-Type')).toBe('image/png')
-	expect(publicResponse.headers.get('Cache-Control')).toBe('public, max-age=3600')
+	expect(publicResponse.headers.get('Cache-Control')).toBe(
+		'public, max-age=3600',
+	)
 	expect(mocks.renderProfileOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			displayName: 'Alice',

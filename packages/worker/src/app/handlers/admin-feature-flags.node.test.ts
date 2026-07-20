@@ -290,9 +290,7 @@ function createHandlerRequest(
 					? {}
 					: { 'Content-Type': 'application/json' }),
 			},
-			...(input.body === undefined
-				? {}
-				: { body: JSON.stringify(input.body) }),
+			...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
 		}),
 		params: {},
 		url: new URL('https://example.com/admin/feature-flags.json'),
