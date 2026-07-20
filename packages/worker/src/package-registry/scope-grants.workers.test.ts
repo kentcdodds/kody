@@ -138,9 +138,9 @@ test('insertPackageScopeGrant rejects person-account scope owners', async () => 
 
 	await expect(
 		insertPackageScopeGrant(env.APP_DB, {
-			scopeOwnerUserId: person.id,
-			granteeUserId: grantee.id,
-			createdByUserId: admin.id,
+			scopeOwnerUserId: person.stableUserId,
+			granteeUserId: grantee.stableUserId,
+			createdByUserId: admin.stableUserId,
 		}),
 	).rejects.toThrow(
 		'Package scope grants can only be created on platform accounts.',
@@ -203,7 +203,7 @@ test('admin package scope grant create, list, and revoke handlers', async () => 
 		expect.objectContaining({
 			scope: platform.username,
 			username: grantee.username,
-			created_by_user_id: admin.id,
+			created_by_user_id: admin.stableUserId,
 			created_at: expect.any(String),
 		}),
 	])

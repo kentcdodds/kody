@@ -1,15 +1,11 @@
-import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import { logAuditEvent } from '#app/audit-log.ts'
-import { getUsernameFormatValidationError } from '#app/username.ts'
+import { type McpUserContext } from "@kody-internal/shared/chat.ts";
+import { logAuditEvent } from "#app/audit-log.ts";
+import { getUsernameFormatValidationError } from "#app/username.ts";
 import {
-	findUserRowByStableUserId,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
-import {
-	getPlatformAccountByUsername,
-	hasPackageScopeGrant,
-} from './scope-grants.ts'
-import { getMcpUserPackageScope } from './user-scope.ts'
+  getPlatformAccountByUsername,
+  hasPackageScopeGrant,
+} from "./scope-grants.ts";
+import { getMcpUserPackageScope } from "./user-scope.ts";
 
 /**
  * The acting-user / owning-account pair for a package operation.
@@ -22,19 +18,19 @@ import { getMcpUserPackageScope } from './user-scope.ts'
  * differ only when acting under a package scope grant on a platform account.
  */
 export type PackageOwnerContext = {
-	ownerUserId: string
-	ownerScope: string
-	ownerEmail: string
-	actorUserId: string
-	delegated: boolean
-}
+  ownerUserId: string;
+  ownerScope: string;
+  ownerEmail: string;
+  actorUserId: string;
+  delegated: boolean;
+};
 
 export const packageScopeInputDescription =
-	'Optional package scope (without "@") to act in, for example "kody". Requires an explicit package scope grant on that platform account. Omit to act in your own personal scope.'
+  'Optional package scope (without "@") to act in, for example "kody". Requires an explicit package scope grant on that platform account. Omit to act in your own personal scope.';
 
 function normalizeRequestedScope(scope: string | undefined) {
-	const normalized = scope?.trim().toLowerCase().replace(/^@/, '') ?? ''
-	return normalized || null
+  const normalized = scope?.trim().toLowerCase().replace(/^@/, "") ?? "";
+  return normalized || null;
 }
 
 /**
@@ -51,70 +47,53 @@ function normalizeRequestedScope(scope: string | undefined) {
  * caller's email so scope use stays attributable to a person.
  */
 export async function resolvePackageOwnerContext(
-	db: D1Database,
-	user: McpUserContext,
-	requestedScope?: string,
+  db: D1Database,
+  user: McpUserContext,
+  requestedScope?: string,
 ): Promise<PackageOwnerContext> {
-	const ownScope = await getMcpUserPackageScope(db, user)
-	const scope = normalizeRequestedScope(requestedScope)
-	if (!scope || scope === ownScope) {
-		return {
-			ownerUserId: user.userId,
-			ownerScope: ownScope,
-			ownerEmail: user.email,
-			actorUserId: user.userId,
-			delegated: false,
-		}
-	}
+  const ownScope = await getMcpUserPackageScope(db, user);
+  const scope = normalizeRequestedScope(requestedScope);
+  if (!scope || scope === ownScope) {
+    return {
+      ownerUserId: user.userId,
+      ownerScope: ownScope,
+      ownerEmail: user.email,
+      actorUserId: user.userId,
+      delegated: false,
+    };
+  }
 
-	const formatError = getUsernameFormatValidationError(scope)
-	if (formatError) {
-		throw new Error(`Invalid package scope "@${scope}": ${formatError}`)
-	}
-	const platformAccount = await getPlatformAccountByUsername(db, scope)
-	if (!platformAccount) {
-		throw new Error(
-			`Package scope "@${scope}" is not a platform account scope you can act in.`,
-		)
-	}
-	const callerRow = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-	}>({
-		db,
-		stableUserId: user.userId,
-		select: 'SELECT id, email, stable_user_id FROM users',
-	})
-	if (!callerRow) {
-		throw new Error(
-			'Cannot resolve package scope because the signed-in user record was not found.',
-		)
-	}
-	const granted = await hasPackageScopeGrant(db, {
-		scopeOwnerUserId: platformAccount.id,
-		granteeUserId: callerRow.id,
-	})
-	if (!granted) {
-		throw new Error(`You do not have a package scope grant for "@${scope}".`)
-	}
-	await logAuditEvent({
-		db,
-		category: 'account',
-		action: 'package_scope_delegated_access',
-		result: 'success',
-		email: user.email,
-		path: '/mcp',
-		reason: `scope=@${platformAccount.username}`,
-	})
-	return {
-		ownerUserId: await resolveUserStableId({
-			email: platformAccount.email,
-			stable_user_id: platformAccount.stable_user_id,
-		}),
-		ownerScope: platformAccount.username,
-		ownerEmail: platformAccount.email,
-		actorUserId: user.userId,
-		delegated: true,
-	}
+  const formatError = getUsernameFormatValidationError(scope);
+  if (formatError) {
+    throw new Error(`Invalid package scope "@${scope}": ${formatError}`);
+  }
+  const platformAccount = await getPlatformAccountByUsername(db, scope);
+  if (!platformAccount) {
+    throw new Error(
+      `Package scope "@${scope}" is not a platform account scope you can act in.`,
+    );
+  }
+  const granted = await hasPackageScopeGrant(db, {
+    scopeOwnerUserId: platformAccount.stableUserId,
+    granteeUserId: user.userId,
+  });
+  if (!granted) {
+    throw new Error(`You do not have a package scope grant for "@${scope}".`);
+  }
+  await logAuditEvent({
+    db,
+    category: "account",
+    action: "package_scope_delegated_access",
+    result: "success",
+    email: user.email,
+    path: "/mcp",
+    reason: `scope=@${platformAccount.username}`,
+  });
+  return {
+    ownerUserId: platformAccount.stableUserId,
+    ownerScope: platformAccount.username,
+    ownerEmail: platformAccount.email,
+    actorUserId: user.userId,
+    delegated: true,
+  };
 }

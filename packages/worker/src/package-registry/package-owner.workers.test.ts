@@ -67,9 +67,9 @@ test('resolvePackageOwnerContext returns platform owner when a grant exists', as
 		username: reservedPlatformUsername(),
 	})
 	await insertPackageScopeGrant(env.APP_DB, {
-		scopeOwnerUserId: platform.userId,
-		granteeUserId: person.id,
-		createdByUserId: person.id,
+		scopeOwnerUserId: platform.stableUserId,
+		granteeUserId: person.stableUserId,
+		createdByUserId: person.stableUserId,
 	})
 
 	const context = await resolvePackageOwnerContext(
