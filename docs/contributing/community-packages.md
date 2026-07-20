@@ -149,7 +149,11 @@ timestamp, and rating scores; they omit rating notes, forked source/package ids,
 stable user ids, and package source. Rating rows use `updated_at`, so the feed
 shows the latest value for each user/listing rating. Since one-click install and
 agent fork both persist through `community_forks`, historical data cannot
-distinguish them and reports both as `fork`.
+distinguish them and reports both as `fork`. New fork rows snapshot the public
+listing name and kody id; migration `0068-community-fork-listing-snapshots.sql`
+backfills existing rows while their listings still exist, preserving readable
+fork provenance after a later hard delete. Unrecoverable legacy orphan rows use
+explicit deleted/unknown placeholders.
 
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks

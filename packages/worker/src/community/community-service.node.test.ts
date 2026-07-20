@@ -824,6 +824,8 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		expect.anything(),
 		expect.objectContaining({
 			target_kody_id: 'my-discord-gateway',
+			listing_name: '@owner/discord-gateway',
+			listing_kody_id: 'discord-gateway',
 		}),
 	)
 	expect(mockModule.enqueueCommunityActivityDispatch).toHaveBeenCalledWith({

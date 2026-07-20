@@ -83,6 +83,8 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			forked_package_id TEXT NOT NULL,
 			forked_source_id TEXT NOT NULL,
 			target_kody_id TEXT NOT NULL,
+			listing_name TEXT,
+			listing_kody_id TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
 		`CREATE TABLE IF NOT EXISTS community_ratings (

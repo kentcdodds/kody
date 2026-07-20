@@ -331,7 +331,11 @@ feed of fork and rating rows with listing id/name/kody id, acting username,
 timestamp, and rating scores. Existing storage does not distinguish a one-click
 install from an ordinary fork, so both appear as `fork`. The capability omits
 stable user ids, forked package/source ids, origin commits, target kody ids,
-rating notes, private package source, and all unrelated account content.
+rating notes, private package source, and all unrelated account content. Fork
+rows snapshot the public listing name and kody id so intentional listing
+deletion does not erase retained fork provenance; legacy orphan rows whose
+listing identity can no longer be recovered use explicit deleted/unknown
+placeholders.
 
 New fork and rating writes enqueue an opaque activity id for durable
 `community.activity.recorded` package-subscription delivery. The Queue consumer
@@ -371,10 +375,10 @@ This boundary is enforced structurally:
    never join unrelated user-content tables.
 4. **Community activity has a dedicated role-gated metadata projection.**
    `admin_community_activity_list` unions only `community_forks` and
-   `community_ratings`, joins public listing identity and acting username, and
-   projects an explicit field allowlist. It never selects package source, rating
-   notes, email, stable user ids, or unrelated user tables. Delivery reuses the
-   same projection through fresh admin-owner fan-out.
+   `community_ratings`, uses snapshotted/public listing identity plus acting
+   username, and projects an explicit field allowlist. It never selects package
+   source, rating notes, email, stable user ids, or unrelated user tables.
+   Delivery reuses the same projection through fresh admin-owner fan-out.
 5. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
    (`id`, `username`, `email`, `email_verified`, `email_verified_at`, `plan`,

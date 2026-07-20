@@ -32,10 +32,12 @@ admins access to unrelated account data.
 
 Community forks and ratings remain user-owned rows for deletion and export, with
 a narrow role-gated admin metadata projection. It joins those rows only to
-public listing identity and the actor's username. It never reads the forked
-Artifacts source, the public snapshot file tree, rating notes, email addresses,
-stable user ids, or unrelated account data. One-click installs and ordinary
-forks share the same row shape and therefore appear as `fork`.
+public listing identity and the actor's username. Fork rows snapshot the public
+listing name and kody id so retained provenance remains intelligible after a
+listing is deleted. The projection never reads the forked Artifacts source, the
+public snapshot file tree, rating notes, email addresses, stable user ids, or
+unrelated account data. One-click installs and ordinary forks share the same row
+shape and therefore appear as `fork`.
 
 ## Account deletion inventory
 

@@ -181,15 +181,23 @@ const maxSqlBindingsPerChunk = 90
 const communityActivityUnion = `SELECT
 	community_forks.id AS id,
 	'fork' AS kind,
-	community_listings.id AS listing_id,
-	community_listings.name AS listing_name,
-	community_listings.kody_id AS listing_kody_id,
+	community_forks.listing_id AS listing_id,
+	COALESCE(
+		community_listings.name,
+		community_forks.listing_name,
+		'[deleted listing]'
+	) AS listing_name,
+	COALESCE(
+		community_listings.kody_id,
+		community_forks.listing_kody_id,
+		'[unknown]'
+	) AS listing_kody_id,
 	users.username AS acting_username,
 	community_forks.created_at AS occurred_at,
 	NULL AS stars,
 	NULL AS adaptation_effort
 FROM community_forks
-INNER JOIN community_listings
+LEFT JOIN community_listings
 	ON community_listings.id = community_forks.listing_id
 LEFT JOIN users
 	ON users.stable_user_id = community_forks.forker_user_id
@@ -592,14 +600,19 @@ export async function setCommunityListingStatus(
 
 export async function insertCommunityFork(
 	db: D1Database,
-	row: Omit<CommunityForkRow, 'created_at'> & { created_at?: string },
+	row: Omit<CommunityForkRow, 'created_at'> & {
+		listing_name: string
+		listing_kody_id: string
+		created_at?: string
+	},
 ): Promise<void> {
 	await db
 		.prepare(
 			`INSERT INTO community_forks (
 				id, listing_id, forker_user_id, origin_commit, forked_package_id,
-				forked_source_id, target_kody_id, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				forked_source_id, target_kody_id, listing_name, listing_kody_id,
+				created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -609,6 +622,8 @@ export async function insertCommunityFork(
 			row.forked_package_id,
 			row.forked_source_id,
 			row.target_kody_id,
+			row.listing_name,
+			row.listing_kody_id,
 			row.created_at ?? new Date().toISOString(),
 		)
 		.run()

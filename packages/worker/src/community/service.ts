@@ -917,6 +917,8 @@ export async function forkCommunityListing(input: {
 			forked_package_id: packageId,
 			forked_source_id: ensuredSource.id,
 			target_kody_id: targetKodyId,
+			listing_name: listing.name,
+			listing_kody_id: listing.kodyId,
 		})
 		await enqueueRecordedCommunityActivity({
 			env: input.env,

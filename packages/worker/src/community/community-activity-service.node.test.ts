@@ -61,6 +61,15 @@ function createCommunityDb() {
 			'utf8',
 		),
 	)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0068-community-fork-listing-snapshots.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
@@ -128,6 +137,9 @@ test('admin community activity reads forks and latest ratings newest-first with 
 			forked_package_id: `package-${fork.id}`,
 			forked_source_id: `source-${fork.id}`,
 			target_kody_id: `target-${fork.id}`,
+			listing_name:
+				fork.listingId === 'listing-1' ? '@owner/alpha' : '@owner/beta',
+			listing_kody_id: fork.listingId === 'listing-1' ? 'alpha' : 'beta',
 			created_at: fork.createdAt,
 		})
 	}
@@ -207,6 +219,24 @@ test('admin community activity reads forks and latest ratings newest-first with 
 			activityId: 'rating-original',
 		}),
 	).toEqual(firstPage.items[0])
+
+	sqlite.prepare(`DELETE FROM community_listings WHERE id = 'listing-2'`).run()
+	const deletedListingActivity = await listCommunityActivityForAdmin({
+		db,
+		kind: 'fork',
+		listingId: 'listing-2',
+	})
+	expect(deletedListingActivity.items).toEqual([
+		{
+			id: 'fork-3',
+			kind: 'fork',
+			listingId: 'listing-2',
+			listingName: '@owner/beta',
+			listingKodyId: 'beta',
+			actingUsername: 'forker',
+			occurredAt: '2026-07-20T00:03:00.000Z',
+		},
+	])
 
 	expect(
 		await countCommunityForksByListingIds(db, [
