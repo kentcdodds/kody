@@ -1,14 +1,17 @@
-import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
 	getEnabledOauthProviders,
 	oauthProviderDefinitions,
 } from '#app/oauth-providers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import { createPageOgHeadNode } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 
-export function createAuthPageHandler(env: Env, pageId: 'login' | 'signup') {
+export function createAuthPageHandler(
+	env: Env,
+	// Retained so login/signup call sites stay explicit; head metadata comes
+	// from the document-head registry keyed by request pathname.
+	_pageId: 'login' | 'signup',
+) {
 	return {
 		middleware: [],
 		async handler({ request }: { request: Request }) {
@@ -33,15 +36,14 @@ export function createAuthPageHandler(env: Env, pageId: 'login' | 'signup') {
 				return Response.redirect(redirectUrl, 302)
 			}
 
-			const origin = getAppBaseUrl({ env, requestUrl: request.url })
-
 			// Server-render the social login buttons with the rest of the
 			// page: the enabled-provider list is deployment configuration,
 			// not per-user data, so there is nothing to lazily load.
+			// Document title/OG come from the shared registry by pathname
+			// (`/login` vs `/signup`).
 			return renderAppPage({
 				request,
 				env,
-				extraHead: createPageOgHeadNode({ origin, pageId }),
 				loaderData: {
 					authProviders: {
 						ok: true,

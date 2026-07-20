@@ -7,9 +7,13 @@ import {
 	buildStylesheetHref,
 	getClientBuildId,
 } from '#app/client-build-id.ts'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
+import {
+	absolutizeDocumentHead,
+	resolveDocumentHead,
+} from '#app/document-head.ts'
 import { getEnv } from '#app/env.ts'
-import { resolveDocumentTitle } from '#app/document-title.ts'
 import { type AppLoaderData, getRequestUrl } from '#app/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
@@ -21,7 +25,12 @@ import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
 export type RenderAppPageInput = {
 	request: Request
 	env: Env
+	/** Optional title override (e.g. not-found pages). Defaults to the registry. */
 	title?: string
+	/**
+	 * Escape hatch for unmanaged head tags. Route-level title/OG/canonical/RSS
+	 * come from the document-head registry and should not be passed here.
+	 */
 	extraHead?: RemixNode
 	loaderData?: AppLoaderData
 	notFound?: boolean
@@ -48,15 +57,20 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	const url = getRequestUrl(request)
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
-
-	const documentTitle =
-		title ?? resolveDocumentTitle(requestUrl.pathname, loaderData)
+	const origin = getAppBaseUrl({ env, requestUrl: request.url })
+	const documentHead = absolutizeDocumentHead(
+		resolveDocumentHead(requestUrl.pathname, loaderData),
+		origin,
+	)
+	if (title !== undefined) {
+		documentHead.title = title
+	}
 
 	const stream = renderToStream(
 		// Remix server components accept props via handle.props; JSX typing is loose here.
 		(
 			<SsrDocument
-				title={documentTitle}
+				documentHead={documentHead}
 				extraHead={extraHead}
 				url={url}
 				session={session}

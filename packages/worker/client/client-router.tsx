@@ -1,7 +1,7 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#app/loader-data.ts'
-import { applyDocumentTitle } from './document-title.ts'
+import { applyDocumentHead } from './document-head.ts'
 import {
 	abortIntentPrefetch,
 	prefetchRouteOnIntent,
@@ -503,11 +503,12 @@ async function runNavigationWithLoader(
 			setPreloadedNavigationData(nextPath, loadedData)
 		}
 
-		// Document title lives outside the hydrated `#root` tree, so SSR
-		// `<title>` would otherwise stick across SPA navigations. Resolve from
-		// the shared registry (+ loader data for dynamic routes) here so every
-		// route gets a title update without per-page wiring.
-		applyDocumentTitle(destination.pathname, loadedData)
+		// Document head lives outside the hydrated `#root` tree, so SSR
+		// `<title>` / OG / canonical tags would otherwise stick across SPA
+		// navigations. Resolve from the shared registry (+ loader data for
+		// dynamic routes) here so every route stays in sync without per-page
+		// wiring.
+		applyDocumentHead(destination.pathname, loadedData)
 
 		if (options?.skipPushState) {
 			notify()
@@ -522,7 +523,7 @@ async function runNavigationWithLoader(
 		// current URL) have no href change to trigger a route's fallback
 		// refetch, so mark the destination stale for routes to consume.
 		markNavigationDataStale(nextPath)
-		applyDocumentTitle(destination.pathname)
+		applyDocumentHead(destination.pathname)
 		if (options?.skipPushState) {
 			notify()
 		} else {

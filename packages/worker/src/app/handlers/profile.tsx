@@ -1,16 +1,10 @@
-/** @jsxImportSource remix/ui */
-/** @jsxRuntime automatic */
-import { type RemixNode } from 'remix/ui'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { truncateCommunityText } from '#app/community-public.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { loadProfileData } from '#app/profile-data.ts'
 import { type routes } from '#app/routes.ts'
-import { OgHead } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getUserAvatarObject } from '#worker/community/avatar.ts'
@@ -52,33 +46,15 @@ export function createProfileHandler(env: Env) {
 				})
 			}
 
-			const origin = getAppBaseUrl({ env, requestUrl: request.url })
-			const isPublicProfile = data.profile.visibility === 'public'
-			const pageTitle = `${data.profile.displayName} (@${data.profile.username}) — Kody`
-			const ogDescription =
-				data.profile.bio == null || data.profile.bio.trim() === ''
-					? 'Community profile on Kody.'
-					: truncateCommunityText(data.profile.bio, 200)
-
 			return renderAppPage({
 				request,
 				env,
-				title: data.profile.displayName,
-				extraHead: isPublicProfile
-					? ((
-							<OgHead
-								title={pageTitle}
-								description={ogDescription}
-								canonicalUrl={`${origin}/@${data.profile.username}`}
-								ogImageUrl={`${origin}/profiles/${data.profile.username}/og.png`}
-							/>
-						) as RemixNode)
-					: undefined,
 				loaderData: {
 					profileShell: {
 						ok: true,
 						username: data.profile.username,
 						displayName: data.profile.displayName,
+						bio: data.profile.bio,
 						isSelf: data.isSelf,
 						loggedIn: data.loggedIn,
 						isFollowing: data.isFollowing,

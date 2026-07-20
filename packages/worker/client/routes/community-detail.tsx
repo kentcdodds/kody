@@ -113,6 +113,7 @@ export async function communityDetailRouteLoader(
 			ok: true,
 			listingId,
 			name: payload.listing.name,
+			description: payload.listing.description,
 			forkPrompt: payload.forkPrompt,
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,

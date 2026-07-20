@@ -1,16 +1,8 @@
 import { jsonResponse as buildJsonResponse } from '#worker/json-response.ts'
-/** @jsxImportSource remix/ui */
-/** @jsxRuntime automatic */
-import { type RemixNode } from 'remix/ui'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
-import {
-	truncateCommunityText,
-	toPublicCommunityListing,
-} from '#app/community-public.ts'
+import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import { OgHead } from '#app/ssr-document.tsx'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -58,32 +50,15 @@ export function createCommunityDetailHandler(env: Env) {
 				})
 			}
 
-			const origin = getAppBaseUrl({ env, requestUrl: request.url })
-			const canonicalUrl = `${origin}/community/${listingId}`
-			const ogImageUrl = `${canonicalUrl}/og.png`
-			const pageTitle = `${detail.listing.name} — Kody community package`
-			const ogDescription = truncateCommunityText(
-				detail.listing.description,
-				200,
-			)
-
 			return renderAppPage({
 				request,
 				env,
-				title: pageTitle,
-				extraHead: (
-					<OgHead
-						title={pageTitle}
-						description={ogDescription}
-						canonicalUrl={canonicalUrl}
-						ogImageUrl={ogImageUrl}
-					/>
-				) as RemixNode,
 				loaderData: {
 					communityDetailShell: {
 						ok: true,
 						listingId,
 						name: detail.listing.name,
+						description: detail.listing.description,
 						forkPrompt: detail.forkPrompt,
 						loggedIn: detail.loggedIn,
 						viewerIsAdmin: detail.viewerIsAdmin,

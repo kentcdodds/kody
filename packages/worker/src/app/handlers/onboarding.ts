@@ -1,6 +1,5 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadOnboardingFeaturedListings } from '#app/community-data.ts'
@@ -8,7 +7,6 @@ import {
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
-import { createPageOgHeadNode } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 
@@ -37,12 +35,9 @@ export function createOnboardingHandler(env: Env) {
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
 				}
-				const origin = getAppBaseUrl({ env, requestUrl: request.url })
 				return renderAppPage({
 					request,
 					env,
-					title: 'Get started',
-					extraHead: createPageOgHeadNode({ origin, pageId: 'onboarding' }),
 					loaderData: { onboarding },
 				})
 			}
@@ -58,12 +53,9 @@ export function createOnboardingHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
 			})
-			const origin = getAppBaseUrl({ env, requestUrl: request.url })
 			return renderAppPage({
 				request,
 				env,
-				title: 'Get started',
-				extraHead: createPageOgHeadNode({ origin, pageId: 'onboarding' }),
 				loaderData: { onboarding },
 			})
 		},

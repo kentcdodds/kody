@@ -1,10 +1,6 @@
-/** @jsxImportSource remix/ui */
-/** @jsxRuntime automatic */
-import { type RemixNode } from 'remix/ui'
 import { type Action } from 'remix/router'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { type routes } from '#app/routes.ts'
-import { createPageOgHeadNode, OgHead } from '#app/ssr-document.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	getBlogPost,
@@ -18,24 +14,11 @@ export function createBlogHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const origin = getAppBaseUrl({ env, requestUrl: request.url })
 			const posts = listBlogPosts().map(toBlogPostSummary)
 
 			return renderAppPage({
 				request,
 				env,
-				title: 'Blog',
-				extraHead: (
-					<>
-						{createPageOgHeadNode({ origin, pageId: 'blog' })}
-						<link
-							rel="alternate"
-							type="application/rss+xml"
-							title="Kody Blog RSS"
-							href={`${origin}/blog/rss.xml`}
-						/>
-					</>
-				) as RemixNode,
 				loaderData: {
 					blog: { ok: true, posts },
 				},
@@ -71,23 +54,9 @@ export function createBlogPostHandler(env: Env) {
 				})
 			}
 
-			const origin = getAppBaseUrl({ env, requestUrl: request.url })
-			const canonicalUrl = `${origin}/blog/${post.slug}`
-			const ogImageUrl = `${canonicalUrl}/og.png`
-			const pageTitle = `${post.title} — Kody Blog`
-
 			return renderAppPage({
 				request,
 				env,
-				title: pageTitle,
-				extraHead: (
-					<OgHead
-						title={pageTitle}
-						description={post.description}
-						canonicalUrl={canonicalUrl}
-						ogImageUrl={ogImageUrl}
-					/>
-				) as RemixNode,
 				loaderData: {
 					blogPost: {
 						ok: true,

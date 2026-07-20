@@ -55,6 +55,7 @@ export type CommunityDetailShellLoaderData = {
 	ok: true
 	listingId: string
 	name: string
+	description: string
 	forkPrompt: string
 	loggedIn: boolean
 	viewerIsAdmin: boolean
@@ -81,6 +82,7 @@ export type ProfileShellLoaderData = {
 	ok: true
 	username: string
 	displayName: string
+	bio: string | null
 	isSelf: boolean
 	loggedIn: boolean
 	isFollowing: boolean

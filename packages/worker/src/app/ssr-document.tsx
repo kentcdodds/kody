@@ -6,6 +6,7 @@ import {
 	buildClientEntryHref,
 	buildStylesheetHref,
 } from '#app/client-build-id.ts'
+import { type ResolvedDocumentHead } from '#app/document-head.ts'
 import { publicOgPages, type PublicOgPageId } from '#worker/og/pages.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
@@ -13,9 +14,90 @@ export const STYLESHEET_HREF = '/styles.css'
 
 export type SsrDocumentProps = AppRootProps & {
 	title?: string
+	documentHead?: ResolvedDocumentHead
 	extraHead?: RemixNode
 	clientEntryHref?: string
 	stylesheetHref?: string
+}
+
+/**
+ * Managed OG / Twitter / canonical tags. Marked with `data-kody-head` so the
+ * client router can upsert or remove them on SPA navigations.
+ */
+export function ManagedDocumentHead(
+	handle: Handle<{ head: ResolvedDocumentHead }>,
+) {
+	return () => {
+		const { head } = handle.props
+		return (
+			<>
+				{head.og && head.canonicalUrl ? (
+					<>
+						<meta
+							property="og:title"
+							content={head.og.title}
+							data-kody-head="og:title"
+						/>
+						<meta
+							property="og:description"
+							content={head.og.description}
+							data-kody-head="og:description"
+						/>
+						<meta
+							property="og:image"
+							content={head.og.imageUrl}
+							data-kody-head="og:image"
+						/>
+						<meta
+							property="og:type"
+							content="website"
+							data-kody-head="og:type"
+						/>
+						<meta
+							property="og:url"
+							content={head.canonicalUrl}
+							data-kody-head="og:url"
+						/>
+						<meta
+							name="twitter:card"
+							content="summary_large_image"
+							data-kody-head="twitter:card"
+						/>
+						<meta
+							name="twitter:title"
+							content={head.og.title}
+							data-kody-head="twitter:title"
+						/>
+						<meta
+							name="twitter:description"
+							content={head.og.description}
+							data-kody-head="twitter:description"
+						/>
+						<meta
+							name="twitter:image"
+							content={head.og.imageUrl}
+							data-kody-head="twitter:image"
+						/>
+						<link
+							rel="canonical"
+							href={head.canonicalUrl}
+							data-kody-head="canonical"
+						/>
+					</>
+				) : null}
+				{(head.links ?? []).map((link, index) => (
+					<link
+						key={`link:${index}`}
+						rel={link.rel}
+						href={link.href}
+						type={link.type}
+						title={link.title}
+						data-kody-head={`link:${index}`}
+					/>
+				))}
+			</>
+		)
+	}
 }
 
 export function SsrDocument(handle: Handle<SsrDocumentProps>) {
@@ -49,7 +131,12 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				/>
 				<link rel="manifest" href="/site.webmanifest" />
 				<meta name="theme-color" content="#2563eb" />
-				<title>{handle.props.title ?? 'kody'}</title>
+				<title>
+					{handle.props.documentHead?.title ?? handle.props.title ?? 'kody'}
+				</title>
+				{handle.props.documentHead ? (
+					<ManagedDocumentHead head={handle.props.documentHead} />
+				) : null}
 				{handle.props.extraHead ?? null}
 				<link rel="modulepreload" href={clientEntryHref} />
 				<link rel="stylesheet" href={stylesheetHref} />
@@ -77,31 +164,29 @@ type OgHeadProps = {
 }
 
 /**
- * Open Graph / Twitter card tags for public pages. `ogImageUrl` should point
- * at a Satori-generated 1200×630 PNG (`/og/:page.png` for static pages,
- * `/community/:listingId/og.png` for community packages).
+ * Open Graph / Twitter card tags for public pages. Prefer the document-head
+ * registry for route-level metadata; this remains for one-off SSR callers.
  */
 export function OgHead(handle: Handle<OgHeadProps>) {
 	return () => (
-		<>
-			<meta property="og:title" content={handle.props.title} />
-			<meta property="og:description" content={handle.props.description} />
-			<meta property="og:image" content={handle.props.ogImageUrl} />
-			<meta property="og:type" content="website" />
-			<meta property="og:url" content={handle.props.canonicalUrl} />
-			<meta name="twitter:card" content="summary_large_image" />
-			<meta name="twitter:title" content={handle.props.title} />
-			<meta name="twitter:description" content={handle.props.description} />
-			<meta name="twitter:image" content={handle.props.ogImageUrl} />
-			<link rel="canonical" href={handle.props.canonicalUrl} />
-		</>
+		<ManagedDocumentHead
+			head={{
+				title: handle.props.title,
+				canonicalUrl: handle.props.canonicalUrl,
+				og: {
+					title: handle.props.title,
+					description: handle.props.description,
+					imageUrl: handle.props.ogImageUrl,
+				},
+			}}
+		/>
 	)
 }
 
 /**
  * Build the `extraHead` node for a registered public page (see
- * `#worker/og/pages.ts`). Kept here so plain `.ts` handlers can attach OG
- * tags without needing JSX.
+ * `#worker/og/pages.ts`). Kept for callers that still pass `extraHead`
+ * explicitly; prefer the document-head registry via `renderAppPage`.
  */
 export function createPageOgHeadNode(input: {
 	origin: string
