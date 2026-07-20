@@ -77,6 +77,83 @@ export async function seedUserInE2eDatabase(input: {
 	)
 }
 
+export async function seedSavedPackageInE2eDatabase(input: {
+	ownerEmail: string
+	packageId: string
+	kodyId: string
+	name: string
+}) {
+	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
+	const sourceId = `source-${input.packageId}`
+	executeE2eD1Command(
+		`INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, source_id, has_app
+		) VALUES (
+			${quoteSqlString(input.packageId)},
+			${quoteSqlString(ownerUserId)},
+			${quoteSqlString(input.name)},
+			${quoteSqlString(input.kodyId)},
+			'Package seeded for account picker e2e coverage.',
+			'[]',
+			${quoteSqlString(sourceId)},
+			0
+		)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			kody_id = excluded.kody_id,
+			updated_at = CURRENT_TIMESTAMP;`,
+	)
+}
+
+export async function seedIntegrationInE2eDatabase(input: {
+	ownerEmail: string
+	name: string
+	tokenUrl: string
+	apiBaseUrl: string
+	requiredHosts: Array<string>
+	scopes: Array<string>
+}) {
+	const ownerUserId = await createStableUserIdFromEmail(input.ownerEmail)
+	const bucketId = `e2e-integration-bucket-${ownerUserId}`
+	const valueName = `_integration:${input.name}`
+	const value = JSON.stringify({
+		name: input.name,
+		tokenUrl: input.tokenUrl,
+		apiBaseUrl: input.apiBaseUrl,
+		flow: 'pkce',
+		clientIdValueName: `${input.name}-client-id`,
+		clientSecretSecretName: null,
+		accessTokenSecretName: `${input.name}-access-token`,
+		refreshTokenSecretName: `${input.name}-refresh-token`,
+		requiredHosts: input.requiredHosts,
+		authorization: {
+			authorizeUrl: `https://auth.${input.name}.example.com/authorize`,
+			scopes: input.scopes,
+		},
+	})
+	executeE2eD1Command(
+		`INSERT INTO value_buckets (id, user_id, scope, binding_key)
+		VALUES (
+			${quoteSqlString(bucketId)},
+			${quoteSqlString(ownerUserId)},
+			'user',
+			''
+		)
+		ON CONFLICT(user_id, scope, binding_key) DO UPDATE SET
+			updated_at = CURRENT_TIMESTAMP;
+		INSERT INTO value_entries (bucket_id, name, description, value)
+		VALUES (
+			${quoteSqlString(bucketId)},
+			${quoteSqlString(valueName)},
+			${quoteSqlString(`OAuth integration config for ${input.name}`)},
+			${quoteSqlString(value)}
+		)
+		ON CONFLICT(bucket_id, name) DO UPDATE SET
+			value = excluded.value,
+			updated_at = CURRENT_TIMESTAMP;`,
+	)
+}
+
 export function assignRoleInE2eDatabase(email: string, role: string) {
 	executeE2eD1Command(buildRoleAssignmentSql({ email, role }))
 }

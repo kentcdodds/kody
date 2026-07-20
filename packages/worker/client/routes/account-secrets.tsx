@@ -25,12 +25,12 @@ import {
 	readJson,
 	submitApprovalRequest,
 } from '#client/routes/account-approval-shared.ts'
-import { TypeaheadCombobox } from '#client/typeahead-combobox.tsx'
+import { Combobox } from '#client/combobox.tsx'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	colors,
 	mq,
 	radius,
-	shadows,
 	spacing,
 	typography,
 } from '#client/styles/tokens.ts'
@@ -112,7 +112,7 @@ type EditorState = {
 	value: string
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
-	allowedPackages: Array<{ id: string; value: string }>
+	allowedPackages: Array<string>
 }
 
 type SelectionState = {
@@ -133,15 +133,6 @@ const secretsBasePath = '/account/secrets'
 function isAccountSecretsPath(href: string) {
 	const path = new URL(href, 'http://localhost').pathname
 	return path === secretsBasePath || path.startsWith(`${secretsBasePath}/`)
-}
-
-let nextAllowedPackageRowId = 0
-
-function createAllowedPackageRow(value = '') {
-	return {
-		id: `allowed-package-${nextAllowedPackageRowId++}`,
-		value,
-	}
 }
 
 function formatRelativeTtl(ttlMs: number | null) {
@@ -166,7 +157,7 @@ function createEmptyEditorState(
 		value: '',
 		allowedHosts: [''],
 		allowedCapabilities: [''],
-		allowedPackages: [createAllowedPackageRow()],
+		allowedPackages: [],
 	}
 }
 
@@ -213,7 +204,7 @@ function createEditorStateFromNewSecretQuery(
 				: state.allowedCapabilities,
 		allowedPackages:
 			scope === 'user' && allowedPackages.length > 0
-				? allowedPackages.map((value) => createAllowedPackageRow(value))
+				? allowedPackages
 				: state.allowedPackages,
 	}
 }
@@ -272,10 +263,7 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
-		allowedPackages:
-			allowedPackages.length > 0
-				? allowedPackages.map((value) => createAllowedPackageRow(value))
-				: [createAllowedPackageRow()],
+		allowedPackages,
 	}
 }
 
@@ -336,8 +324,8 @@ function getAlreadyAddedNotice(input: {
 	href: string
 	selectedSecret: SecretDetail | null
 	approval: ApprovalView | null
+	formatPackageId: (packageId: string) => string
 }) {
-	const formatPackageId = (packageId: string) => packageId
 	const requestedHost = normalizeSingleAllowedHost(
 		readRequestedHost(input.href),
 	)
@@ -391,7 +379,7 @@ function getAlreadyAddedNotice(input: {
 		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
 	if (packageAlreadyAdded) {
 		items.push(
-			`Package ${formatPackageId(requestedPackageId)} is already in allowed packages.`,
+			`Package ${input.formatPackageId(requestedPackageId)} is already in allowed packages.`,
 		)
 	}
 	if (items.length === 0) return null
@@ -515,8 +503,8 @@ function readFilterState(
 function filterSecrets(
 	secrets: Array<SecretListItem>,
 	filters: SecretFilterState,
+	packagesById: ReadonlyMap<string, { kodyId: string; name: string }>,
 ) {
-	const search = filters.search.trim().toLowerCase()
 	return secrets.filter((secret) => {
 		if (filters.scope !== 'all' && secret.scope !== filters.scope) return false
 		if (
@@ -525,9 +513,11 @@ function filterSecrets(
 			secret.packageId !== filters.packageId
 		)
 			return false
-		if (!search) return true
-
-		const haystack = [
+		const allowedPackageNames = secret.allowedPackages.flatMap((packageId) => {
+			const metadata = packagesById.get(packageId)
+			return metadata ? [metadata.kodyId, metadata.name] : []
+		})
+		return matchesSearchQuery(filters.search, [
 			secret.name,
 			secret.description,
 			secret.packageTitle ?? '',
@@ -535,16 +525,9 @@ function filterSecrets(
 			...secret.allowedHosts,
 			...secret.allowedCapabilities,
 			...secret.allowedPackages,
-		]
-
-			.join(' ')
-			.toLowerCase()
-		return haystack.includes(search)
+			...allowedPackageNames,
+		])
 	})
-}
-
-function buildPackageOptionDescription(updatedAt: string) {
-	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
 }
 
 const truncatedTextCss = {
@@ -572,8 +555,6 @@ export function AccountSecretsRoute(handle: Handle) {
 	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
 	const deleteSecretCheck = createDoubleCheck(handle)
-	const filterPackageCombobox = TypeaheadCombobox(handle)
-	const editorPackageCombobox = TypeaheadCombobox(handle)
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -668,7 +649,9 @@ export function AccountSecretsRoute(handle: Handle) {
 
 	function formatAllowedPackageLabel(packageId: string) {
 		const meta = packagesById.get(packageId)
-		return meta ? `${meta.name} (${packageId})` : packageId
+		return meta
+			? `${meta.kodyId} (${packageId})`
+			: `Unknown package (${packageId})`
 	}
 
 	async function loadAccountSecrets() {
@@ -826,13 +809,9 @@ export function AccountSecretsRoute(handle: Handle) {
 			)
 			const allowedPackages =
 				submittedEditorState.scope === 'user'
-					? Array.from(
-							new Set(
-								submittedEditorState.allowedPackages
-									.map((entry) => entry.value.trim())
-									.filter((value) => value.length > 0),
-							),
-						).sort((left, right) => left.localeCompare(right))
+					? [...submittedEditorState.allowedPackages].sort((left, right) =>
+							left.localeCompare(right),
+						)
 					: []
 			const response = await fetch(accountSecretsApiPath, {
 				method: 'POST',
@@ -1005,35 +984,21 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function updateAllowedPackage(id: string, value: string) {
+	function addAllowedPackage(packageId: string) {
+		if (editorState.allowedPackages.includes(packageId)) return
 		editorState = {
 			...editorState,
-			allowedPackages: editorState.allowedPackages.map((pkg) =>
-				pkg.id === id ? { ...pkg, value } : pkg,
+			allowedPackages: [...editorState.allowedPackages, packageId],
+		}
+		handle.update()
+	}
+
+	function removeAllowedPackage(packageId: string) {
+		editorState = {
+			...editorState,
+			allowedPackages: editorState.allowedPackages.filter(
+				(candidate) => candidate !== packageId,
 			),
-		}
-		handle.update()
-	}
-
-	function addAllowedPackage() {
-		editorState = {
-			...editorState,
-			allowedPackages: [
-				...editorState.allowedPackages,
-				createAllowedPackageRow(),
-			],
-		}
-		handle.update()
-	}
-
-	function removeAllowedPackage(id: string) {
-		const nextPackages = editorState.allowedPackages.filter(
-			(pkg) => pkg.id !== id,
-		)
-		editorState = {
-			...editorState,
-			allowedPackages:
-				nextPackages.length > 0 ? nextPackages : [createAllowedPackageRow()],
 		}
 		handle.update()
 	}
@@ -1078,12 +1043,18 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		const selection = getSelectionState(currentHref)
 		const filters = readFilterState(currentHref, packageOptions)
-		const filteredSecrets = filterSecrets(secrets, filters)
-		const packageSelectOptions = packageOptions.map((packageOption) => ({
-			id: packageOption.id,
-			label: packageOption.title,
-			description: buildPackageOptionDescription(packageOption.updatedAt),
-		}))
+		const filteredSecrets = filterSecrets(secrets, filters, packagesById)
+		const packageSelectOptions = packageOptions.map((packageOption) => {
+			const metadata = packagesById.get(packageOption.id)
+			return {
+				id: packageOption.id,
+				label: metadata?.kodyId ?? packageOption.title,
+				description: packageOption.id,
+			}
+		})
+		const availableAllowedPackageOptions = packageSelectOptions.filter(
+			(option) => !editorState.allowedPackages.includes(option.id),
+		)
 		const filterPackageOptions = [
 			{
 				id: '',
@@ -1102,6 +1073,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			href: currentHref,
 			selectedSecret,
 			approval,
+			formatPackageId: formatAllowedPackageLabel,
 		})
 		const approvalCard =
 			approval &&
@@ -1110,6 +1082,9 @@ export function AccountSecretsRoute(handle: Handle) {
 			!alreadyAddedNotice?.packageAlreadyAdded
 				? approval
 				: null
+		const requestedPackageMetadata = approvalCard?.requestedPackageId
+			? packagesById.get(approvalCard.requestedPackageId)
+			: null
 
 		return (
 			<AccountManagementShell>
@@ -1157,11 +1132,19 @@ export function AccountSecretsRoute(handle: Handle) {
 								Approve secret access
 							</h2>
 							{approvalCard.requestedPackageId ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Allow package <code>{approvalCard.requestedPackageId}</code>{' '}
-									to use secret <code>{approvalCard.name}</code> from the{' '}
-									{getScopeLabel(approvalCard.scope)} scope.
-								</p>
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										Allow package{' '}
+										<strong mix={css({ color: colors.text })}>
+											{requestedPackageMetadata?.kodyId ?? 'Unknown package'}
+										</strong>{' '}
+										to use secret <code>{approvalCard.name}</code> from the{' '}
+										{getScopeLabel(approvalCard.scope)} scope.
+									</p>
+									<code mix={css({ color: colors.textMuted })}>
+										{approvalCard.requestedPackageId}
+									</code>
+								</div>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Allow <code>{approvalCard.requestedHost}</code> to receive
@@ -1176,16 +1159,37 @@ export function AccountSecretsRoute(handle: Handle) {
 								</p>
 							) : null}
 							{approvalCard.requestedPackageId ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Current allowed packages:{' '}
-									{approvalCard.currentAllowedPackages.length > 0
-										? approvalCard.currentAllowedPackages
-												.map((packageId) =>
-													formatAllowedPackageLabel(packageId),
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<span mix={css({ color: colors.textMuted })}>
+										Current allowed packages:
+									</span>
+									{approvalCard.currentAllowedPackages.length > 0 ? (
+										<ul
+											mix={css({
+												margin: 0,
+												paddingLeft: spacing.lg,
+												display: 'grid',
+												gap: spacing.xs,
+											})}
+										>
+											{approvalCard.currentAllowedPackages.map((packageId) => {
+												const metadata = packagesById.get(packageId)
+												return (
+													<li key={packageId}>
+														<span mix={css(packageIdentityCss)}>
+															<strong>
+																{metadata?.kodyId ?? 'Unknown package'}
+															</strong>
+															<code>{packageId}</code>
+														</span>
+													</li>
 												)
-												.join(', ')
-										: 'none'}
-								</p>
+											})}
+										</ul>
+									) : (
+										<span mix={css({ color: colors.textMuted })}>None</span>
+									)}
+								</div>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Current allowed hosts:{' '}
@@ -1329,26 +1333,24 @@ export function AccountSecretsRoute(handle: Handle) {
 										<option value="package">Package</option>
 									</select>
 								</label>
-								{packageOptions.length > 0
-									? filterPackageCombobox({
-											id: 'secret-package-filter',
-											label: 'Package filter',
-											placeholder: 'Filter by package',
-											value: filters.scope === 'user' ? '' : filters.packageId,
-											disabled: filters.scope === 'user',
-											options: filterPackageOptions,
-											onChange: (packageId) => {
-												replaceLocation(
-													buildHrefWithUpdatedFilters({
-														packageId,
-													}),
-												)
-											},
-											inputCss,
-											listCss: comboboxListCss,
-											optionCss: comboboxOptionCss,
-										})
-									: null}
+								{packageOptions.length > 0 ? (
+									<Combobox
+										key={`secret-package-filter:${filters.packageId}`}
+										id="secret-package-filter"
+										label="Package filter"
+										placeholder="Filter by package"
+										value={filters.scope === 'user' ? '' : filters.packageId}
+										disabled={filters.scope === 'user'}
+										options={filterPackageOptions}
+										onChange={(packageId) => {
+											replaceLocation(
+												buildHrefWithUpdatedFilters({
+													packageId,
+												}),
+											)
+										}}
+									/>
+								) : null}
 							</div>
 							{status === 'ready' && secrets.length === 0 ? (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -1541,25 +1543,23 @@ export function AccountSecretsRoute(handle: Handle) {
 									</label>
 								</div>
 
-								{editorState.scope === 'package'
-									? editorPackageCombobox({
-											id: 'secret-editor-package',
-											label: 'Package',
-											placeholder: 'Choose a package',
-											value: editorState.packageId,
-											options: packageSelectOptions,
-											onChange: (packageId) => {
-												editorState = {
-													...editorState,
-													packageId,
-												}
-												handle.update()
-											},
-											inputCss,
-											listCss: comboboxListCss,
-											optionCss: comboboxOptionCss,
-										})
-									: null}
+								{editorState.scope === 'package' ? (
+									<Combobox
+										key={`secret-editor-package:${editorState.packageId}`}
+										id="secret-editor-package"
+										label="Package"
+										placeholder="Choose a package"
+										value={editorState.packageId}
+										options={packageSelectOptions}
+										onChange={(packageId) => {
+											editorState = {
+												...editorState,
+												packageId,
+											}
+											handle.update()
+										}}
+									/>
+								) : null}
 
 								<SecretEditorFields
 									description={editorState.description}
@@ -1600,68 +1600,72 @@ export function AccountSecretsRoute(handle: Handle) {
 										<div mix={css({ display: 'grid', gap: spacing.xs })}>
 											<span mix={css(fieldLabelCss)}>Allowed packages</span>
 											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												Only listed package ids may access this user secret from
+												Only selected packages may access this user secret from
 												package runtimes.
 											</p>
 										</div>
-										<div mix={css({ display: 'grid', gap: spacing.sm })}>
-											{editorState.allowedPackages.map((packageEntry) => (
-												<div
-													key={packageEntry.id}
-													mix={css({
-														display: 'grid',
-														gridTemplateColumns: 'minmax(0, 1fr) auto',
-														gap: spacing.sm,
-													})}
-												>
-													<input
-														type="text"
-														value={packageEntry.value}
-														placeholder="saved package id"
-														mix={[
-															on(
-																'input',
+										{editorState.allowedPackages.length > 0 ? (
+											<div mix={css({ display: 'grid', gap: spacing.sm })}>
+												{editorState.allowedPackages.map((packageId) => {
+													const metadata = packagesById.get(packageId)
+													const packageLabel =
+														metadata?.kodyId ?? 'Unknown package'
+													return (
+														<div
+															key={packageId}
+															mix={css({
+																display: 'grid',
+																gridTemplateColumns: 'minmax(0, 1fr) auto',
+																gap: spacing.sm,
+																alignItems: 'center',
+																padding: spacing.sm,
+																border: `1px solid ${colors.border}`,
+																borderRadius: radius.md,
+															})}
+														>
+															<span mix={css(packageIdentityCss)}>
+																<strong>{packageLabel}</strong>
+																<code>{packageId}</code>
+															</span>
+															<button
+																type="button"
+																aria-label={`Remove package ${packageLabel}`}
+																mix={[
+																	on(
+																		'click',
 
-																(event) => {
-																	updateAllowedPackage(
-																		packageEntry.id,
-																		event.currentTarget.value,
-																	)
-																},
-															),
+																		() => removeAllowedPackage(packageId),
+																	),
 
-															css(inputCss),
-														]}
-													/>
-
-													<button
-														type="button"
-														mix={[
-															on(
-																'click',
-
-																() => removeAllowedPackage(packageEntry.id),
-															),
-
-															css(secondaryButtonCss),
-														]}
-													>
-														Remove
-													</button>
-												</div>
-											))}
-										</div>
-										<div>
-											<button
-												type="button"
-												mix={[
-													on('click', () => addAllowedPackage()),
-													css(secondaryButtonCss),
-												]}
-											>
-												Add package
-											</button>
-										</div>
+																	css(secondaryButtonCss),
+																]}
+															>
+																Remove
+															</button>
+														</div>
+													)
+												})}
+											</div>
+										) : (
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												No packages currently have access.
+											</p>
+										)}
+										{availableAllowedPackageOptions.length > 0 ? (
+											<Combobox
+												key={`allowed-package-picker:${editorState.allowedPackages.join(',')}`}
+												id="secret-allowed-package"
+												label="Add allowed package"
+												placeholder="Search saved packages"
+												value=""
+												options={availableAllowedPackageOptions}
+												onChange={addAllowedPackage}
+											/>
+										) : packageOptions.length > 0 ? (
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												All saved packages are already allowed.
+											</p>
+										) : null}
 									</div>
 								) : null}
 
@@ -1759,40 +1763,13 @@ export function AccountSecretsRoute(handle: Handle) {
 	}
 }
 
-const comboboxListCss = {
-	position: 'absolute' as const,
-	top: '100%',
-	left: 0,
-	right: 0,
-	zIndex: 10,
-	marginTop: spacing.xs,
-	maxHeight: '18rem',
-	overflowY: 'auto' as const,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	boxShadow: shadows.md,
-	padding: spacing.xs,
+const packageIdentityCss = {
 	display: 'grid',
 	gap: spacing.xs,
-}
-
-const comboboxOptionCss = {
-	display: 'grid',
-	gap: spacing.xs,
-	width: '100%',
-	textAlign: 'left' as const,
-	padding: spacing.sm,
-	borderRadius: radius.md,
-	border: 'none',
-	backgroundColor: 'transparent',
-	color: colors.text,
-	cursor: 'pointer',
-	'&[data-active="true"]': {
-		backgroundColor: colors.primarySoftest,
-	},
-	'&:hover': {
-		backgroundColor: colors.primarySoftest,
+	minWidth: 0,
+	'& code': {
+		color: colors.textMuted,
+		overflowWrap: 'anywhere' as const,
 	},
 }
 

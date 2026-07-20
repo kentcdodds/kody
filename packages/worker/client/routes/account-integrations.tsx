@@ -16,6 +16,7 @@ import {
 } from '#client/route-loader.ts'
 import {
 	AccountManagementMessage,
+	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
@@ -25,6 +26,7 @@ import {
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
 } from '#client/routes/integration-provider-catalog.ts'
+import { filterIntegrations } from '#client/routes/integration-filter.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -154,6 +156,7 @@ function renderIntegrationDetail(label: string, value: string) {
 export function AccountIntegrationsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let integrations: Array<AccountIntegrationListItem> = []
+	let integrationQuery = ''
 	let message: string | null = null
 	const loadLatch = createRouteLoadLatch()
 
@@ -225,6 +228,10 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			integrations.length === 0
 				? 'No integrations yet. Pick a service and copy its prompt into your agent — setup takes a few minutes.'
 				: 'Add another service: copy a prompt into your agent.'
+		const filteredIntegrations = filterIntegrations(
+			integrations,
+			integrationQuery,
+		)
 
 		return (
 			<AccountManagementShell>
@@ -248,111 +255,151 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' && integrations.length > 0 ? (
-					<section mix={css(providerCatalogGridCss)}>
-						{integrations.map((integration) => {
-							const connectHref = buildConnectOauthHref(integration)
-							return (
-								<article key={integration.valueName} mix={css(cardCss)}>
-									<header
-										mix={css({
-											display: 'flex',
-											alignItems: 'flex-start',
-											justifyContent: 'space-between',
-											gap: spacing.md,
-										})}
-									>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<h2 mix={css(cardTitleCss)}>{integration.name}</h2>
-											<p mix={css(descriptionCss)}>
-												Stored as {integration.valueName}
-											</p>
-										</div>
-										<span
-											mix={css({
-												width: 'max-content',
-												padding: `${spacing.xs} ${spacing.sm}`,
-												borderRadius: radius.full,
-												backgroundColor: colors.primarySoftest,
-												color: colors.primaryText,
-												fontSize: typography.fontSize.sm,
-												fontWeight: typography.fontWeight.medium,
-											})}
-										>
-											{integration.flow}
-										</span>
-									</header>
+					<section
+						aria-labelledby="saved-integrations-heading"
+						mix={css({ display: 'grid', gap: spacing.md })}
+					>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<h2 id="saved-integrations-heading" mix={css(sectionTitleCss)}>
+								Saved integrations
+							</h2>
+							<AccountManagementSearchField
+								label="Search integrations"
+								placeholder="Search names, hosts, scopes, or stored values"
+								value={integrationQuery}
+								onInput={(value) => {
+									integrationQuery = value
+									handle.update()
+								}}
+							/>
+							<p
+								role="status"
+								aria-live="polite"
+								mix={css({ margin: 0, color: colors.textMuted })}
+							>
+								{filteredIntegrations.length === integrations.length
+									? `${integrations.length} integration${integrations.length === 1 ? '' : 's'}`
+									: `${filteredIntegrations.length} of ${integrations.length} integrations`}
+							</p>
+						</div>
 
-									<section mix={css(detailGridCss)}>
-										{renderIntegrationDetail('Token URL', integration.tokenUrl)}
-										{renderIntegrationDetail(
-											'API base URL',
-											formatOptional(integration.apiBaseUrl),
-										)}
-										{renderIntegrationDetail(
-											'Authorize URL',
-											formatOptional(integration.authorization?.authorizeUrl),
-										)}
-										{renderIntegrationDetail(
-											'Scopes',
-											formatList(integration.authorization?.scopes),
-										)}
-									</section>
-
-									<section mix={css(insetCardCss)}>
-										<h3 mix={css(sectionTitleCss)}>Stored names</h3>
-										<div mix={css(detailGridCss)}>
-											{renderIntegrationDetail(
-												'Client ID value',
-												integration.clientIdValueName,
-											)}
-											{renderIntegrationDetail(
-												'Client secret',
-												formatOptional(integration.clientSecretSecretName),
-											)}
-											{renderIntegrationDetail(
-												'Access token secret',
-												integration.accessTokenSecretName,
-											)}
-											{renderIntegrationDetail(
-												'Refresh token secret',
-												formatOptional(integration.refreshTokenSecretName),
-											)}
-										</div>
-									</section>
-
-									<section mix={css(detailGridCss)}>
-										{renderIntegrationDetail(
-											'Required hosts',
-											formatList(integration.requiredHosts),
-										)}
-										{renderIntegrationDetail(
-											'Updated',
-											formatTimestamp(integration.updatedAt),
-										)}
-									</section>
-
-									{connectHref ? (
-										<div>
-											<a
-												href={connectHref}
+						{filteredIntegrations.length > 0 ? (
+							<div mix={css(providerCatalogGridCss)}>
+								{filteredIntegrations.map((integration) => {
+									const connectHref = buildConnectOauthHref(integration)
+									return (
+										<article key={integration.valueName} mix={css(cardCss)}>
+											<header
 												mix={css({
-													...getPrimaryButtonCss(),
-													display: 'inline-flex',
-													textDecoration: 'none',
+													display: 'flex',
+													alignItems: 'flex-start',
+													justifyContent: 'space-between',
+													gap: spacing.md,
 												})}
 											>
-												Reconnect OAuth
-											</a>
-										</div>
-									) : (
-										<p mix={css(descriptionCss)}>
-											This integration does not include authorization details
-											yet.
-										</p>
-									)}
-								</article>
-							)
-						})}
+												<div mix={css({ display: 'grid', gap: spacing.xs })}>
+													<h2 mix={css(cardTitleCss)}>{integration.name}</h2>
+													<p mix={css(descriptionCss)}>
+														Stored as {integration.valueName}
+													</p>
+												</div>
+												<span
+													mix={css({
+														width: 'max-content',
+														padding: `${spacing.xs} ${spacing.sm}`,
+														borderRadius: radius.full,
+														backgroundColor: colors.primarySoftest,
+														color: colors.primaryText,
+														fontSize: typography.fontSize.sm,
+														fontWeight: typography.fontWeight.medium,
+													})}
+												>
+													{integration.flow}
+												</span>
+											</header>
+
+											<section mix={css(detailGridCss)}>
+												{renderIntegrationDetail(
+													'Token URL',
+													integration.tokenUrl,
+												)}
+												{renderIntegrationDetail(
+													'API base URL',
+													formatOptional(integration.apiBaseUrl),
+												)}
+												{renderIntegrationDetail(
+													'Authorize URL',
+													formatOptional(
+														integration.authorization?.authorizeUrl,
+													),
+												)}
+												{renderIntegrationDetail(
+													'Scopes',
+													formatList(integration.authorization?.scopes),
+												)}
+											</section>
+
+											<section mix={css(insetCardCss)}>
+												<h3 mix={css(sectionTitleCss)}>Stored names</h3>
+												<div mix={css(detailGridCss)}>
+													{renderIntegrationDetail(
+														'Client ID value',
+														integration.clientIdValueName,
+													)}
+													{renderIntegrationDetail(
+														'Client secret',
+														formatOptional(integration.clientSecretSecretName),
+													)}
+													{renderIntegrationDetail(
+														'Access token secret',
+														integration.accessTokenSecretName,
+													)}
+													{renderIntegrationDetail(
+														'Refresh token secret',
+														formatOptional(integration.refreshTokenSecretName),
+													)}
+												</div>
+											</section>
+
+											<section mix={css(detailGridCss)}>
+												{renderIntegrationDetail(
+													'Required hosts',
+													formatList(integration.requiredHosts),
+												)}
+												{renderIntegrationDetail(
+													'Updated',
+													formatTimestamp(integration.updatedAt),
+												)}
+											</section>
+
+											{connectHref ? (
+												<div>
+													<a
+														href={connectHref}
+														mix={css({
+															...getPrimaryButtonCss(),
+															display: 'inline-flex',
+															textDecoration: 'none',
+														})}
+													>
+														Reconnect OAuth
+													</a>
+												</div>
+											) : (
+												<p mix={css(descriptionCss)}>
+													This integration does not include authorization
+													details yet.
+												</p>
+											)}
+										</article>
+									)
+								})}
+							</div>
+						) : (
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								No integrations match your search.
+							</p>
+						)}
 					</section>
 				) : null}
 
